@@ -1,0 +1,35 @@
+# Caddy reverse proxy configuration for aiwatchdogs.in
+# Provides automatic HTTPS via Let's Encrypt / ZeroSSL and unbuffered SSE streaming.
+
+www.aiwatchdogs.in {
+	redir https://aiwatchdogs.in{uri} permanent
+}
+
+aiwatchdogs.in {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# Unbuffered Server-Sent Events stream (do not gzip-buffer live SSE chunks)
+	handle /api/stream {
+		reverse_proxy hub:8000 {
+			flush_interval -1
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# API, onboarding endpoints (/join.txt, /join.sh), and built React SPA
+	handle {
+		encode zstd gzip
+		reverse_proxy hub:8000 {
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}

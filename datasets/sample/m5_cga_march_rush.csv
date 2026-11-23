@@ -1,0 +1,7 @@
+# [SAMPLE DEMO DATASET] Synthetic Demand-for-Grants monthly expenditure pacing modeled on CGA Monthly Accounts, OpenBudgetsIndia & GFR 2017 Rule 62(3).
+demand_no,ministry_name,jurisdiction,fiscal_year,be_crore,re_crore,actual_crore,q4_spend_crore,march_spend_crore,mof_waiver_recorded,pac_explanatory_note_tabled,source_url
+Demand-84-DEMO,Ministry of Rural Connectivity — Demo,Union of India,FY 2024-25,4200,4000,3950,1880,960,false,false,https://cga.nic.in
+Demand-59-DEMO,Department of Urban Water Infrastructure — Demo,Union of India,FY 2024-25,2400,2200,1320,560,240,false,false,https://openbudgetsindia.org
+Demand-85-DEMO,Ministry of Rail Freight Corridors — Demo,Union of India,FY 2024-25,6500,6800,6680,2448,1088,true,true,https://cga.nic.in
+Demand-25-DEMO,Department of School Literacy — Demo,Union of India,FY 2024-25,5100,5050,4920,1363.5,555.5,false,true,https://openbudgetsindia.org
+Demand-46-DEMO,Ministry of Health Research — Demo,Union of India,FY 2024-25,3200,3150,3080,882,346.5,false,true,https://indiabudget.gov.in

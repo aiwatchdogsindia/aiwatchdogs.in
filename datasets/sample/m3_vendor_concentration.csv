@@ -1,0 +1,14 @@
+# [SAMPLE DEMO DATASET] Synthetic public works & utility tenders modeled on CCI Bid-Rigging & OECD Procurement Concentration Indicators. No real individual or firm is accused.
+tender_id,buyer_name,item_category,vendor_name,award_date,l1_bid_inr,l2_bid_inr,award_value_inr,jurisdiction,fiscal_year,source_url
+DEMO-IRR-2024-101,State Irrigation & Flood Control Dept — Demo,River Embankment Works,Demo Kosi Civil Contractors Pvt Ltd,2024-05-12,82000000,83100000,82000000,State:Bihar,FY 2024-25,https://eprocure.gov.in
+DEMO-IRR-2024-102,State Irrigation & Flood Control Dept — Demo,River Embankment Works,Demo Kosi Civil Contractors Pvt Ltd,2024-07-19,74000000,75350000,74000000,State:Bihar,FY 2024-25,https://eprocure.gov.in
+DEMO-IRR-2024-103,State Irrigation & Flood Control Dept — Demo,River Embankment Works,Demo Mithila Earthmovers LLP,2024-09-08,61000000,62150000,61000000,State:Bihar,FY 2024-25,https://eprocure.gov.in
+DEMO-IRR-2024-104,State Irrigation & Flood Control Dept — Demo,River Embankment Works,Demo Kosi Civil Contractors Pvt Ltd,2024-11-04,91000000,92300000,91000000,State:Bihar,FY 2024-25,https://eprocure.gov.in
+DEMO-IRR-2024-105,State Irrigation & Flood Control Dept — Demo,River Embankment Works,Demo Kosi Civil Contractors Pvt Ltd,2025-01-14,68000000,69200000,68000000,State:Bihar,FY 2024-25,https://eprocure.gov.in
+DEMO-IRR-2024-106,State Irrigation & Flood Control Dept — Demo,River Embankment Works,Demo Gandak Infra Projects Pvt Ltd,2025-02-22,44000000,47800000,44000000,State:Bihar,FY 2024-25,https://eprocure.gov.in
+DEMO-PWR-2024-201,State Power Distribution Utility — Demo,Distribution Transformers,Demo Awadh Power Equipment Ltd,2024-05-25,22000000,24200000,22000000,State:Uttar Pradesh,FY 2024-25,https://eprocure.gov.in
+DEMO-PWR-2024-202,State Power Distribution Utility — Demo,Distribution Transformers,Demo Gomti Electromech Pvt Ltd,2024-07-15,20000000,21800000,20000000,State:Uttar Pradesh,FY 2024-25,https://eprocure.gov.in
+DEMO-PWR-2024-203,State Power Distribution Utility — Demo,Distribution Transformers,Demo Prayag Grid Systems LLP,2024-09-10,19000000,21280000,19000000,State:Uttar Pradesh,FY 2024-25,https://eprocure.gov.in
+DEMO-PWR-2024-204,State Power Distribution Utility — Demo,Distribution Transformers,Demo Doab Switchgear Industries,2024-11-02,18000000,19980000,18000000,State:Uttar Pradesh,FY 2024-25,https://eprocure.gov.in
+DEMO-PWR-2024-205,State Power Distribution Utility — Demo,Distribution Transformers,Demo Bundelkhand Transformers Pvt Ltd,2025-01-08,12000000,13440000,12000000,State:Uttar Pradesh,FY 2024-25,https://eprocure.gov.in
+DEMO-PWR-2024-206,State Power Distribution Utility — Demo,Distribution Transformers,Demo Rohilkhand Electricals Ltd,2025-02-18,9000000,9990000,9000000,State:Uttar Pradesh,FY 2024-25,https://eprocure.gov.in

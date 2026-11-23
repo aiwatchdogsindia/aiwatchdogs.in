@@ -1,0 +1,71 @@
+/* AI Watchdogs · India — Editorial Broadsheet + Dark Observatory Design Tokens */
+
+:root {
+  /* Archival Paper Surfaces */
+  --bg-paper: #F6F4EF;
+  --bg-surface: #FFFFFF;
+  --bg-sunk: #ECE8DF;
+  --bg-sunk-hover: #E5E0D5;
+
+  /* Crisp 1px Hairline Rules */
+  --border-hairline: #E2DED4;
+  --border-strong: #C9C3B5;
+  --border-ink: #1B1A17;
+
+  /* Ink Hierarchy */
+  --ink-primary: #1B1A17;
+  --ink-secondary: #3E3C35;
+  --ink-muted: #5E5B52;
+  --ink-faint: #847F73;
+
+  /* Epistemic Visual Grammar — "Only peer-verified looks like a result" */
+  --ep-verified-fg: #2F6B4F;
+  --ep-verified-bg: #E6F0E9;
+  --ep-verified-bd: #B4D5C1;
+
+  --ep-review-fg: #855814;
+  --ep-review-bg: #FBF4E4;
+  --ep-review-bd: #CCA055;
+
+  --ep-cleared-fg: #3B526B;
+  --ep-cleared-bg: #EBF0F5;
+  --ep-cleared-bd: #C4D2E0;
+
+  --ep-disputed-fg: #A2321F;
+  --ep-disputed-bg: #F7E4E0;
+  --ep-disputed-bd: #E2B9B0;
+
+  --ep-rti-fg: #2B4D9B;
+  --ep-rti-bg: #E8EEFA;
+  --ep-rti-bd: #BCD0F5;
+
+  --ep-contrib-fg: #2B6FD6;
+  --ep-contrib-bg: #E8F0FD;
+  --ep-contrib-bd: #BBD3F8;
+
+  /* Dark Observatory Canvas (Luminescence lives ONLY here) */
+  --obs-bg: #0A0C10;
+  --obs-surface: #11151C;
+  --obs-surface-raised: #171D27;
+  --obs-border: #232B38;
+  --obs-ink: #F3E9D2;
+  --obs-muted: #9AA4B2;
+  --obs-amber: #F2B84B;
+  --obs-emerald: #4ADE80;
+  --obs-cobalt: #93C5FD;
+  --obs-cream: #F3E9D2;
+  --obs-terracotta: #F87171;
+  --obs-slate: #94A3B8;
+
+  /* Typography */
+  --font-serif: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, Cambria, serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+
+  /* Layout */
+  --container-max: 1280px;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-pill: 999px;
+}

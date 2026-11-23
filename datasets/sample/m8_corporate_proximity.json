@@ -1,0 +1,83 @@
+{
+  "is_demo_sample": true,
+  "dataset_badge": "[SAMPLE DEMO DATASET]",
+  "notice": "[SAMPLE DEMO DATASET] Synthetic corporate-procurement-disclosure records modeled on MCA21 & ECI public disclosure schemas. Strictly neutral governance disclosure demo; no real individual or company is referenced.",
+  "source_url": "https://mca.gov.in",
+  "records": [
+    {
+      "tender_id": "DEMO-SMARTCITY-2025-101",
+      "buyer_name": "Regional Smart City Mission SPV — Demo",
+      "vendor_name": "Demo Apex Greenfield Infra Pvt Ltd",
+      "cin": "U45200DL2024PTC990001",
+      "incorporation_date": "2024-11-01",
+      "award_date": "2025-01-14",
+      "award_value_inr": 84000000,
+      "jurisdiction": "State:Delhi",
+      "fiscal_year": "FY 2024-25",
+      "competing_bidders": [
+        {"vendor_name": "Demo Apex Greenfield Infra Pvt Ltd", "cin": "U45200DL2024PTC990001", "dins": ["09900111"], "registered_address": "Plot 14 Demo Industrial Estate, New Delhi"},
+        {"vendor_name": "Demo Established Urban Works Ltd", "cin": "U45200DL2012PLC220004", "dins": ["07700222"], "registered_address": "Tower B Sector 18, Gurugram"}
+      ],
+      "source_url": "https://mca.gov.in"
+    },
+    {
+      "tender_id": "DEMO-NH-2025-402",
+      "buyer_name": "State Highway Development Corporation — Demo",
+      "vendor_name": "Demo Vindhya Builders Pvt Ltd",
+      "cin": "U45309MP2018PTC990102",
+      "incorporation_date": "2018-04-10",
+      "award_date": "2025-01-25",
+      "award_value_inr": 125000000,
+      "jurisdiction": "State:Madhya Pradesh",
+      "fiscal_year": "FY 2024-25",
+      "competing_bidders": [
+        {"vendor_name": "Demo Vindhya Builders Pvt Ltd", "cin": "U45309MP2018PTC990102", "dins": ["09911223", "09911224"], "registered_address": "Suite 302 Demo Commercial Complex, Bhopal"},
+        {"vendor_name": "Demo Satpura Engineering Pvt Ltd", "cin": "U45309MP2019PTC990205", "dins": ["09911223", "09911555"], "registered_address": "Suite 302 Demo Commercial Complex, Bhopal"},
+        {"vendor_name": "Demo Narmada Infra Projects Ltd", "cin": "U45309MP2010PLC110908", "dins": ["06611888"], "registered_address": "Plot 88 Govindpura Industrial Area, Bhopal"}
+      ],
+      "source_url": "https://mca.gov.in"
+    },
+    {
+      "tender_id": "DEMO-GRID-2025-503",
+      "buyer_name": "State Transmission Utility — Demo",
+      "vendor_name": "Demo Meridian Energy Corp Ltd",
+      "cin": "L40100MH2011PLC990303",
+      "incorporation_date": "2011-06-15",
+      "award_date": "2024-03-10",
+      "award_value_inr": 420000000,
+      "electoral_bond_inr": 60000000,
+      "disclosure_date": "2024-01-25",
+      "jurisdiction": "State:Maharashtra",
+      "fiscal_year": "FY 2023-24",
+      "source_url": "https://eci.gov.in"
+    },
+    {
+      "tender_id": "DEMO-METRO-2025-604",
+      "buyer_name": "Urban Metro Rail Corporation — Demo",
+      "vendor_name": "Demo Peninsular Rolling Stock Ltd",
+      "cin": "L35200KA2010PLC990404",
+      "incorporation_date": "2010-03-18",
+      "award_date": "2025-02-02",
+      "award_value_inr": 210000000,
+      "jurisdiction": "State:Karnataka",
+      "fiscal_year": "FY 2024-25",
+      "competing_bidders": [
+        {"vendor_name": "Demo Peninsular Rolling Stock Ltd", "cin": "L35200KA2010PLC990404", "dins": ["05511001"], "registered_address": "Peenya Industrial Area Phase 2, Bengaluru"},
+        {"vendor_name": "Demo Southern Rail Systems Ltd", "cin": "L35200TN2008PLC880101", "dins": ["04422002"], "registered_address": "Guindy Industrial Estate, Chennai"}
+      ],
+      "source_url": "https://mca.gov.in"
+    },
+    {
+      "tender_id": "DEMO-WATER-2025-705",
+      "buyer_name": "Municipal Water Supply Board — Demo",
+      "vendor_name": "Demo Coastal Pipelines & Engineering Ltd",
+      "cin": "U41000GJ2013PLC990505",
+      "incorporation_date": "2013-09-22",
+      "award_date": "2025-02-14",
+      "award_value_inr": 62000000,
+      "jurisdiction": "State:Gujarat",
+      "fiscal_year": "FY 2024-25",
+      "source_url": "https://mca.gov.in"
+    }
+  ]
+}

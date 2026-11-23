@@ -1,0 +1,14 @@
+# [SAMPLE DEMO DATASET] Synthetic BOQ unit-price & post-award contract variation records modeled on GeM/CPPP benchmarking and CVC variation guidelines.
+tender_id,buyer_name,item_category,unit,quantity,unit_price_inr,awarded_value_inr,final_value_inr,jurisdiction,fiscal_year,source_url
+DEMO-BOQ-2025-001,District Panchayati Raj Dept — Demo A,Solar Street Light 30W LED,piece,200,11200,2240000,2240000,State:Madhya Pradesh,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-002,District Panchayati Raj Dept — Demo B,Solar Street Light 30W LED,piece,250,11500,2875000,2875000,State:Madhya Pradesh,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-003,District Panchayati Raj Dept — Demo C,Solar Street Light 30W LED,piece,180,11800,2124000,2124000,State:Gujarat,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-004,District Panchayati Raj Dept — Demo D,Solar Street Light 30W LED,piece,300,11400,3420000,3420000,State:Gujarat,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-005,District Panchayati Raj Dept — Demo E,Solar Street Light 30W LED,piece,220,11600,2552000,2552000,State:Odisha,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-006,Municipal Urban Lighting Cell — Demo F,Solar Street Light 30W LED,piece,500,27500,13750000,13750000,State:Madhya Pradesh,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-007,State Health Infrastructure Corp — Demo A,Digital X-Ray Machine 500mA,unit,4,1450000,5800000,5800000,State:Tamil Nadu,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-008,State Health Infrastructure Corp — Demo B,Digital X-Ray Machine 500mA,unit,3,1500000,4500000,4680000,State:Karnataka,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-009,State Health Infrastructure Corp — Demo C,Digital X-Ray Machine 500mA,unit,5,1480000,7400000,7548000,State:Kerala,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-010,State Health Infrastructure Corp — Demo D,Digital X-Ray Machine 500mA,unit,4,1520000,6080000,6080000,State:Maharashtra,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-011,State Health Infrastructure Corp — Demo E,Digital X-Ray Machine 500mA,unit,6,1490000,8940000,8940000,State:Telangana,FY 2024-25,https://gem.gov.in
+DEMO-BOQ-2025-012,District Medical College Procurement — Demo G,Digital X-Ray Machine 500mA,unit,10,1480000,14800000,21460000,State:Karnataka,FY 2024-25,https://eprocure.gov.in

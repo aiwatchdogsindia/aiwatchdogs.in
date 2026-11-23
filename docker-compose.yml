@@ -1,0 +1,47 @@
+services:
+  hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aiwatchdogs-hub
+    restart: unless-stopped
+    ports:
+      - "${AIWATCHDOGS_PORT:-8000}:8000"
+    environment:
+      AIWATCHDOGS_DB_PATH: /app/data/aiwatchdogs.db
+      AIWATCHDOGS_WEB_DIST: /app/web/dist
+      AIWATCHDOGS_HOST: 0.0.0.0
+      AIWATCHDOGS_PORT: 8000
+      AIWATCHDOGS_PUBLIC_URL: ${AIWATCHDOGS_PUBLIC_URL:-http://localhost:8000}
+    volumes:
+      - aiwatchdogs_data:/app/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  # Optional automatic HTTPS reverse proxy for production deployment at aiwatchdogs.in
+  # Start with: docker compose --profile tls up -d --build
+  caddy:
+    image: caddy:2-alpine
+    container_name: aiwatchdogs-caddy
+    profiles: ["tls", "prod"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      hub:
+        condition: service_healthy
+
+volumes:
+  aiwatchdogs_data:
+  caddy_data:
+  caddy_config:
