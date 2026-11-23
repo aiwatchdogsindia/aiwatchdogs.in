@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from datetime import date, datetime
 from statistics import median
@@ -17,6 +18,18 @@ GFR_THRESHOLDS: tuple[tuple[float, str, str], ...] = (
     (5_000_000.0, "INR 50 Lakh", "GFR 2017 Rule 161 (Limited vs Open Advertised Tender ceiling)"),
 )
 
+_NEUTRAL_REPLACE_RE = re.compile(
+    r"\b(?:scam(?:s|med|mer|mers)?|corrupt(?:ed|ing|ly|ion)?|brib(?:e|es|ed|ing|ery)|"
+    r"fraud(?:s|ulent|ulently|ster|sters)?|kickback(?:s)?|guilty|stolen|rigged|"
+    r"crook(?:s|ed)?|loot(?:s|ed|ing|er|ers)?|embezzl(?:e|es|ed|ing|ement))\b",
+    re.IGNORECASE,
+)
+
+
+def _neutralize_external_text(text: str) -> str:
+    """Neutralize prohibited BNS Sec 356 terms if present inside external public record strings."""
+    return _NEUTRAL_REPLACE_RE.sub("compliance-review", text)
+
 
 def _to_float(value: Any, default: float = 0.0) -> float:
     if value is None or value == "":
@@ -30,8 +43,20 @@ def _to_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _to_int(value: Any, default: int = 0) -> int:
-    return int(round(_to_float(value, float(default))))
+def _to_int_opt(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text or text in {"--", "-", "NA", "N/A", "null", "None"}:
+        return None
+    try:
+        return int(round(float(text.replace(",", ""))))
+    except ValueError:
+        return None
 
 
 def _parse_date(value: Any) -> date | None:
@@ -42,9 +67,33 @@ def _parse_date(value: Any) -> date | None:
     if isinstance(value, date):
         return value
     raw = str(value).strip()
+    if not raw or raw in {"--", "-", "NA", "N/A"}:
+        return None
     if "T" in raw:
-        raw = raw.split("T", 1)[0]
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d"):
+        raw_iso = raw.split("T", 1)[0]
+        try:
+            return datetime.strptime(raw_iso, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+
+    for fmt in (
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%d-%m %H:%M:%S",
+        "%Y-%d-%m %H:%M",
+        "%Y-%d-%m",
+        "%d-%b-%Y %I:%M %p",
+        "%d-%b-%Y %H:%M",
+        "%d-%b-%Y",
+        "%d/%b/%Y %I:%M %p",
+        "%d/%b/%Y",
+        "%d-%m-%Y %H:%M:%S",
+        "%d-%m-%Y %H:%M",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%Y/%m/%d",
+    ):
         try:
             return datetime.strptime(raw, fmt).date()
         except ValueError:
@@ -62,20 +111,47 @@ def _norm_key(value: Any, fallback: str = "general") -> str:
     return " ".join(text.split())
 
 
+def _extract_proc_value(rec: dict[str, Any]) -> float:
+    """Extract procurement monetary value with tender_value_inr / tender/value/amount fallback."""
+    for key in (
+        "award_value_inr",
+        "awards/0/value/amount",
+        "tender_value_inr",
+        "tender/value/amount",
+        "value_inr",
+        "amount_inr",
+        "l1_bid_inr",
+    ):
+        val = _to_float(rec.get(key), 0.0)
+        if val > 0:
+            return val
+    return 0.0
+
+
 def _extract_bid_window_days(rec: dict[str, Any]) -> int | None:
-    explicit = rec.get("bid_window_days")
-    if explicit is not None and str(explicit).strip() != "":
-        return _to_int(explicit)
-    start = _parse_date(rec.get("tender_start_date") or rec.get("published_date"))
-    end = _parse_date(rec.get("tender_end_date") or rec.get("closing_date"))
+    start = _parse_date(
+        rec.get("tender_start_date")
+        or rec.get("tender/tenderPeriod/startDate")
+        or rec.get("published_date")
+        or rec.get("tender/datePublished")
+    )
+    end = _parse_date(
+        rec.get("tender_end_date")
+        or rec.get("tender/tenderPeriod/endDate")
+        or rec.get("closing_date")
+    )
     if start and end:
         return max(0, (end - start).days)
-    return None
+    explicit = rec.get("bid_window_days")
+    if explicit is None or str(explicit).strip() == "":
+        explicit = rec.get("tender/tenderPeriod/durationInDays")
+    return _to_int_opt(explicit)
 
 
 def _build_citation(rec: dict[str, Any], idx: int, excerpt: str) -> dict[str, Any]:
     record_id = (
         rec.get("tender_id")
+        or rec.get("tender/id")
         or rec.get("ocid")
         or rec.get("po_id")
         or rec.get("contract_id")
@@ -99,6 +175,23 @@ def _severity_from_exposure(exposure_inr: float, high_signal: bool = False) -> s
     return "low"
 
 
+def _cap_leads_deterministically(
+    leads: list[AuditLeadCandidate],
+    ctx: dict[str, Any],
+    default_cap: int = 5,
+) -> tuple[list[AuditLeadCandidate], int]:
+    """Sort leads deterministically by exposure desc and cap to top N."""
+    sorted_leads = sorted(
+        leads,
+        key=lambda lead: (-float(lead.monetary_exposure_inr), lead.entity_name, lead.title),
+    )
+    total_detected = len(sorted_leads)
+    max_leads = int(ctx.get("max_leads", default_cap))
+    if max_leads > 0 and len(sorted_leads) > max_leads:
+        return sorted_leads[:max_leads], total_detected
+    return sorted_leads, total_detected
+
+
 def run_m1_single_bidder(
     records: list[dict[str, Any]],
     context: dict[str, Any] | None = None,
@@ -113,10 +206,10 @@ def run_m1_single_bidder(
     by_buyer: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
 
     for idx, rec in enumerate(records):
-        val = _to_float(rec.get("award_value_inr", rec.get("value_inr", rec.get("amount_inr", 0))))
+        val = _extract_proc_value(rec)
         total_audited += max(0.0, val)
         buyer = _norm_str(
-            rec.get("buyer_name") or rec.get("entity_name") or rec.get("department"),
+            rec.get("buyer_name") or rec.get("buyer/name") or rec.get("entity_name") or rec.get("department"),
             "Unspecified Public Buyer",
         )
         by_buyer[buyer].append((idx, rec))
@@ -128,40 +221,51 @@ def run_m1_single_bidder(
         competitive = [
             (idx, r)
             for idx, r in indexed_rows
-            if _norm_key(r.get("procurement_method"), "open") not in {"proprietary", "direct_exempt"}
+            if _norm_key(r.get("procurement_method") or r.get("tender/procurementMethod"), "open")
+            not in {"proprietary", "direct_exempt"}
         ]
         if not competitive:
             cleared_count += len(indexed_rows)
             continue
 
+        evaluated_comp = 0
         single_bid_rows: list[tuple[int, dict[str, Any]]] = []
         short_window_single_rows: list[tuple[int, dict[str, Any]]] = []
         vendor_single_rows: dict[str, list[tuple[int, dict[str, Any]]]] = defaultdict(list)
 
         for idx, rec in competitive:
-            bid_count = _to_int(
-                rec.get("bid_count")
-                if rec.get("bid_count") is not None
-                else rec.get("num_bids", rec.get("number_of_tenderers", 0))
-            )
+            raw_bc = rec.get("bid_count")
+            if raw_bc is None or str(raw_bc).strip() == "":
+                raw_bc = rec.get("num_bids", rec.get("number_of_tenderers", rec.get("tender/numberOfTenderers")))
+            bid_count = _to_int_opt(raw_bc)
+            if bid_count is None or bid_count <= 0:
+                continue
+            evaluated_comp += 1
             window_days = _extract_bid_window_days(rec)
             if bid_count == 1:
                 single_bid_rows.append((idx, rec))
                 vendor = _norm_str(
-                    rec.get("vendor_name") or rec.get("supplier_name") or rec.get("awardee"),
-                    "Unspecified Vendor",
+                    rec.get("vendor_name")
+                    or rec.get("supplier_name")
+                    or rec.get("awardee")
+                    or rec.get("awards/0/suppliers/0/name"),
+                    "",
                 )
-                vendor_single_rows[vendor].append((idx, rec))
+                if vendor and vendor.lower() != "unspecified vendor":
+                    vendor_single_rows[vendor].append((idx, rec))
                 if window_days is not None and window_days < short_window_limit:
                     short_window_single_rows.append((idx, rec))
 
-        total_comp = len(competitive)
-        single_share = len(single_bid_rows) / total_comp if total_comp else 0.0
+        if evaluated_comp == 0:
+            cleared_count += len(indexed_rows)
+            continue
+
+        single_share = len(single_bid_rows) / evaluated_comp
         repeat_vendors = {
             v: rows for v, rows in vendor_single_rows.items() if len(rows) >= 3
         }
 
-        share_triggered = total_comp >= min_tenders and single_share > single_bid_share_threshold
+        share_triggered = evaluated_comp >= min_tenders and single_share > single_bid_share_threshold
         repeat_triggered = bool(repeat_vendors)
         short_window_triggered = len(short_window_single_rows) >= 2
 
@@ -169,13 +273,11 @@ def run_m1_single_bidder(
             cleared_count += len(indexed_rows)
             continue
 
-        exposure_inr = sum(
-            _to_float(r.get("award_value_inr", r.get("value_inr", r.get("amount_inr", 0))))
-            for _, r in single_bid_rows
-        )
+        exposure_inr = sum(_extract_proc_value(r) for _, r in single_bid_rows)
         sample_rec = single_bid_rows[0][1] if single_bid_rows else competitive[0][1]
         jurisdiction = _norm_str(sample_rec.get("jurisdiction"), "Union of India")
         fiscal_year = _norm_str(sample_rec.get("fiscal_year"), "FY 2024-25")
+        safe_buyer = _neutralize_external_text(buyer)
 
         rules_hit: list[str] = []
         if share_triggered:
@@ -183,9 +285,9 @@ def run_m1_single_bidder(
                 f"single_bid_share={single_share * 100:.1f}% > {single_bid_share_threshold * 100:.0f}%"
             )
         if repeat_triggered:
-            top_repeat = max(repeat_vendors.items(), key=lambda kv: len(kv[1]))
+            top_repeat = max(repeat_vendors.items(), key=lambda kv: (len(kv[1]), kv[0]))
             rules_hit.append(
-                f"repeat_single_bid_vendor={top_repeat[0]} ({len(top_repeat[1])} awards)"
+                f"repeat_single_bid_vendor={_neutralize_external_text(top_repeat[0])} ({len(top_repeat[1])} awards)"
             )
         if short_window_triggered:
             rules_hit.append(
@@ -198,18 +300,18 @@ def run_m1_single_bidder(
                 idx,
                 (
                     f"Tender {rec.get('tender_id') or rec.get('ocid')}: "
-                    f"bids={rec.get('bid_count', rec.get('number_of_tenderers', 1))}, "
+                    f"bids={rec.get('bid_count', rec.get('tender/numberOfTenderers', 1))}, "
                     f"window={_extract_bid_window_days(rec)}d, "
-                    f"award=INR {_to_float(rec.get('award_value_inr', rec.get('value_inr', 0))):,.0f}"
+                    f"value=INR {_extract_proc_value(rec):,.0f}"
                 ),
             )
             for idx, rec in single_bid_rows[:5]
         ]
 
         summary = (
-            f"Public record anomaly observed in {buyer} ({jurisdiction}, {fiscal_year}): "
-            f"{len(single_bid_rows)} of {total_comp} competitive tenders ({single_share * 100:.1f}%) "
-            f"resulted in single-bidder awards totaling INR {exposure_inr:,.0f}, including "
+            f"Public record anomaly observed in {safe_buyer} ({jurisdiction}, {fiscal_year}): "
+            f"{len(single_bid_rows)} of {evaluated_comp} competitive tenders ({single_share * 100:.1f}%) "
+            f"resulted in single-bidder outcomes totaling INR {exposure_inr:,.0f}, including "
             f"{len(short_window_single_rows)} single-bid tender(s) with bid windows under "
             f"{short_window_limit} days. Triggers noted under CVC Single-Tender Guidelines and "
             f"GFR 2017 Rule 166: {'; '.join(rules_hit)}."
@@ -218,16 +320,16 @@ def run_m1_single_bidder(
         high_signal = single_share >= 0.50 or bool(repeat_vendors) or len(short_window_single_rows) >= 3
         leads.append(
             AuditLeadCandidate(
-                title=f"Procurement Red-Flag Lead: Single-Bidder Concentration ({single_share * 100:.1f}%) — {buyer}",
+                title=f"Procurement Red-Flag Lead: Single-Bidder Concentration ({single_share * 100:.1f}%) — {safe_buyer}",
                 summary=summary,
                 methodology_code="M1",
-                entity_name=buyer,
+                entity_name=safe_buyer,
                 jurisdiction=jurisdiction,
                 fiscal_year=fiscal_year,
                 monetary_exposure_inr=round(exposure_inr, 2),
                 severity=_severity_from_exposure(exposure_inr, high_signal=high_signal),
                 anomaly_metrics={
-                    "competitive_tenders": total_comp,
+                    "competitive_tenders": evaluated_comp,
                     "single_bid_count": len(single_bid_rows),
                     "single_bid_share_pct": round(single_share * 100.0, 2),
                     "short_window_single_bid_count": len(short_window_single_rows),
@@ -243,15 +345,21 @@ def run_m1_single_bidder(
                     "Shortened bid windows can reflect urgent public-health, flood-relief, or emergency infrastructure restoration timelines approved by the department.",
                     "A single responsive bid may occur after open advertisement if other participating bidders failed routine technical or statutory eligibility checks.",
                 ],
-                suggested_authority=buyer,
+                suggested_authority=safe_buyer,
             )
         )
 
+    top_leads, total_detected = _cap_leads_deterministically(leads, ctx)
+    lead_note = (
+        f"top {len(top_leads)} of {total_detected} lead(s)"
+        if total_detected > len(top_leads)
+        else f"{len(top_leads)} lead(s)"
+    )
     summary_text = (
         f"M1 scanned {len(records)} procurement records across {len(by_buyer)} buyers "
-        f"(INR {total_audited:,.0f} audited): {len(leads)} lead(s), {cleared_count} cleared record(s)."
+        f"(INR {total_audited:,.0f} audited): {lead_note}, {cleared_count} cleared record(s)."
     )
-    return leads, cleared_count, round(total_audited, 2), summary_text
+    return top_leads, cleared_count, round(total_audited, 2), summary_text
 
 
 def run_m2_split_tendering(
@@ -269,14 +377,26 @@ def run_m2_split_tendering(
     grouped: dict[tuple[str, str], list[tuple[int, dict[str, Any], float, date | None]]] = defaultdict(list)
 
     for idx, rec in enumerate(records):
-        val = _to_float(rec.get("award_value_inr", rec.get("value_inr", rec.get("amount_inr", 0))))
+        val = _extract_proc_value(rec)
         total_audited += max(0.0, val)
         buyer = _norm_str(
-            rec.get("buyer_name") or rec.get("entity_name") or rec.get("department"),
+            rec.get("buyer_name") or rec.get("buyer/name") or rec.get("entity_name") or rec.get("department"),
             "Unspecified Public Buyer",
         )
-        category = _norm_str(rec.get("item_category") or rec.get("category"), "General Goods & Services")
-        award_dt = _parse_date(rec.get("award_date") or rec.get("po_date") or rec.get("date"))
+        category = _norm_str(
+            rec.get("item_category")
+            or rec.get("tenderclassification/description")
+            or rec.get("tender/classification/description")
+            or rec.get("category"),
+            "General Goods & Services",
+        )
+        award_dt = _parse_date(
+            rec.get("award_date")
+            or rec.get("po_date")
+            or rec.get("tender_start_date")
+            or rec.get("tender/datePublished")
+            or rec.get("date")
+        )
         grouped[(buyer, category)].append((idx, rec, val, award_dt))
 
     leads: list[AuditLeadCandidate] = []
@@ -293,24 +413,33 @@ def run_m2_split_tendering(
             if len(hugging) < min_cluster_count:
                 continue
 
-            # Sort chronologically (putting rows with dates first, preserving index order otherwise).
-            hugging.sort(key=lambda item: (item[3] or date(1970, 1, 1), item[0]))
+            # Sort chronologically (rows with valid dates sorted ascending, undated last)
+            dated = sorted([h for h in hugging if h[3] is not None], key=lambda item: (item[3], item[0]))
+            undated = sorted([h for h in hugging if h[3] is None], key=lambda item: item[0])
 
             best_cluster: list[tuple[int, dict[str, Any], float, date | None]] = []
             best_sum = 0.0
-            for start_i in range(len(hugging)):
-                start_dt = hugging[start_i][3]
-                window: list[tuple[int, dict[str, Any], float, date | None]] = []
-                for end_i in range(start_i, len(hugging)):
-                    end_dt = hugging[end_i][3]
-                    if start_dt and end_dt and (end_dt - start_dt).days > window_days_limit:
-                        break
-                    window.append(hugging[end_i])
-                window_sum = sum(x[2] for x in window)
-                if len(window) >= min_cluster_count and window_sum > threshold_inr:
-                    if window_sum > best_sum:
-                        best_sum = window_sum
-                        best_cluster = window
+
+            # O(n) two-pointer rolling 60-day window over dated records
+            if dated:
+                right = 0
+                running_sum = 0.0
+                for left in range(len(dated)):
+                    start_dt = dated[left][3]
+                    while right < len(dated) and (dated[right][3] - start_dt).days <= window_days_limit:  # type: ignore[operator]
+                        running_sum += dated[right][2]
+                        right += 1
+                    count = right - left
+                    if count >= min_cluster_count and running_sum > threshold_inr and running_sum > best_sum:
+                        best_sum = running_sum
+                        best_cluster = dated[left:right]
+                    running_sum -= dated[left][2]
+
+            if not best_cluster and len(undated) >= min_cluster_count:
+                u_sum = sum(x[2] for x in undated)
+                if u_sum > threshold_inr:
+                    best_sum = u_sum
+                    best_cluster = undated
 
             if not best_cluster:
                 continue
@@ -324,13 +453,15 @@ def run_m2_split_tendering(
             sample_rec = best_cluster[0][1]
             jurisdiction = _norm_str(sample_rec.get("jurisdiction"), "Union of India")
             fiscal_year = _norm_str(sample_rec.get("fiscal_year"), "FY 2024-25")
+            safe_buyer = _neutralize_external_text(buyer)
+            safe_cat = _neutralize_external_text(category)
 
             citations = [
                 _build_citation(
                     rec,
                     idx,
                     (
-                        f"PO {rec.get('po_id') or rec.get('tender_id')}: "
+                        f"PO {rec.get('po_id') or rec.get('tender_id') or rec.get('ocid')}: "
                         f"INR {val:,.0f} ({(val / threshold_inr) * 100:.1f}% of {threshold_label}) "
                         f"on {dt.isoformat() if dt else 'date N/A'}"
                     ),
@@ -339,8 +470,8 @@ def run_m2_split_tendering(
             ]
 
             summary = (
-                f"Public record anomaly in {buyer} ({jurisdiction}, {fiscal_year}) for "
-                f"'{category}': {len(best_cluster)} purchase orders within {span_days} days each "
+                f"Public record anomaly in {safe_buyer} ({jurisdiction}, {fiscal_year}) for "
+                f"'{safe_cat}': {len(best_cluster)} tenders/purchase orders within {span_days} days each "
                 f"clustered between {min(ratios):.1f}% and {max(ratios):.1f}% of the {threshold_label} "
                 f"statutory threshold ({gfr_anchor}), aggregating INR {best_sum:,.0f} "
                 f"({best_sum / threshold_inr:.2f}x the ceiling)."
@@ -348,16 +479,16 @@ def run_m2_split_tendering(
 
             leads.append(
                 AuditLeadCandidate(
-                    title=f"Procurement Red-Flag Lead: {len(best_cluster)} POs Clustering Below {threshold_label} — {buyer}",
+                    title=f"Procurement Red-Flag Lead: {len(best_cluster)} POs Clustering Below {threshold_label} — {safe_buyer}",
                     summary=summary,
                     methodology_code="M2",
-                    entity_name=buyer,
+                    entity_name=safe_buyer,
                     jurisdiction=jurisdiction,
                     fiscal_year=fiscal_year,
                     monetary_exposure_inr=round(best_sum, 2),
                     severity=_severity_from_exposure(best_sum, high_signal=len(best_cluster) >= 4),
                     anomaly_metrics={
-                        "item_category": category,
+                        "item_category": safe_cat,
                         "threshold_inr": threshold_inr,
                         "threshold_label": threshold_label,
                         "cluster_po_count": len(best_cluster),
@@ -374,17 +505,22 @@ def run_m2_split_tendering(
                         "Emergent operational requirements or distinct delivery locations may necessitate independent call-offs under approved rate contracts.",
                         "Standardized unit pack sizes or GeM lot limits can naturally price individual orders just below administrative ceilings.",
                     ],
-                    suggested_authority=buyer,
+                    suggested_authority=safe_buyer,
                 )
             )
 
     cleared_count = len(records) - len(flagged_record_indices)
+    top_leads, total_detected = _cap_leads_deterministically(leads, ctx)
+    lead_note = (
+        f"top {len(top_leads)} of {total_detected} threshold-hugging lead(s)"
+        if total_detected > len(top_leads)
+        else f"{len(top_leads)} threshold-hugging lead(s)"
+    )
     summary_text = (
         f"M2 scanned {len(records)} purchase records across {len(grouped)} buyer-category groups "
-        f"(INR {total_audited:,.0f} audited): {len(leads)} threshold-hugging lead(s), "
-        f"{cleared_count} cleared record(s)."
+        f"(INR {total_audited:,.0f} audited): {lead_note}, {cleared_count} cleared record(s)."
     )
-    return leads, cleared_count, round(total_audited, 2), summary_text
+    return top_leads, cleared_count, round(total_audited, 2), summary_text
 
 
 def run_m3_vendor_concentration(
@@ -399,19 +535,42 @@ def run_m3_vendor_concentration(
 
     total_audited = 0.0
     grouped: dict[tuple[str, str], list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+    unawarded_cleared = 0
 
     for idx, rec in enumerate(records):
-        val = _to_float(rec.get("award_value_inr", rec.get("value_inr", rec.get("l1_bid_inr", 0))))
+        # For M3 concentration we audit awarded contracts with an identified vendor/supplier
+        vendor = _norm_str(
+            rec.get("vendor_name")
+            or rec.get("supplier_name")
+            or rec.get("awardee")
+            or rec.get("awards/0/suppliers/0/name"),
+            "",
+        )
+        val = _to_float(
+            rec.get("award_amount_inr")
+            if rec.get("has_award") is True
+            else rec.get("award_value_inr", rec.get("awards/0/value/amount", rec.get("value_inr", rec.get("l1_bid_inr", 0))))
+        )
         total_audited += max(0.0, val)
+        if not vendor or val <= 0:
+            unawarded_cleared += 1
+            continue
+
         buyer = _norm_str(
-            rec.get("buyer_name") or rec.get("entity_name") or rec.get("department"),
+            rec.get("buyer_name") or rec.get("buyer/name") or rec.get("entity_name") or rec.get("department"),
             "Unspecified Public Buyer",
         )
-        category = _norm_str(rec.get("item_category") or rec.get("category"), "General Procurement")
+        category = _norm_str(
+            rec.get("item_category")
+            or rec.get("tenderclassification/description")
+            or rec.get("tender/classification/description")
+            or rec.get("category"),
+            "General Procurement",
+        )
         grouped[(buyer, category)].append((idx, rec))
 
     leads: list[AuditLeadCandidate] = []
-    cleared_count = 0
+    cleared_count = unawarded_cleared
 
     for (buyer, category), rows in sorted(grouped.items()):
         vendor_totals: dict[str, float] = defaultdict(float)
@@ -422,12 +581,19 @@ def run_m3_vendor_concentration(
         narrow_spread_rows: list[tuple[int, dict[str, Any], float]] = []
 
         for idx, rec in rows:
-            val = _to_float(rec.get("award_value_inr", rec.get("value_inr", rec.get("l1_bid_inr", 0))))
-            vendor = _norm_str(
-                rec.get("vendor_name") or rec.get("supplier_name") or rec.get("awardee"),
-                "Unspecified Vendor",
+            val = _to_float(
+                rec.get("award_amount_inr")
+                if rec.get("has_award") is True
+                else rec.get("award_value_inr", rec.get("awards/0/value/amount", rec.get("value_inr", rec.get("l1_bid_inr", 0))))
             )
-            if val > 0:
+            vendor = _norm_str(
+                rec.get("vendor_name")
+                or rec.get("supplier_name")
+                or rec.get("awardee")
+                or rec.get("awards/0/suppliers/0/name"),
+                "",
+            )
+            if val > 0 and vendor:
                 vendor_totals[vendor] += val
                 vendor_counts[vendor] += 1
                 group_value += val
@@ -446,13 +612,13 @@ def run_m3_vendor_concentration(
                 if spread_pct <= 3.0:
                     narrow_spread_rows.append((idx, rec, spread_pct))
 
-        if group_value <= 0:
+        if group_value <= 0 or not vendor_totals:
             cleared_count += len(rows)
             continue
 
         shares = {v: amt / group_value for v, amt in vendor_totals.items()}
         hhi = sum(s * s for s in shares.values())
-        top_vendor, top_share = max(shares.items(), key=lambda kv: kv[1])
+        top_vendor, top_share = max(shares.items(), key=lambda kv: (kv[1], kv[0]))
         narrow_ratio = (len(narrow_spread_rows) / len(spread_values)) if spread_values else 0.0
 
         hhi_triggered = len(rows) >= min_group_tenders and hhi > hhi_threshold
@@ -478,44 +644,47 @@ def run_m3_vendor_concentration(
         jurisdiction = _norm_str(sample_rec.get("jurisdiction"), "Union of India")
         fiscal_year = _norm_str(sample_rec.get("fiscal_year"), "FY 2024-25")
         exposure_inr = vendor_totals[top_vendor] if (hhi_triggered or share_triggered) else group_value
+        safe_buyer = _neutralize_external_text(buyer)
+        safe_cat = _neutralize_external_text(category)
+        safe_vendor = _neutralize_external_text(top_vendor)
 
         citations = [
             _build_citation(
                 rec,
                 idx,
                 (
-                    f"Contract {rec.get('tender_id') or rec.get('contract_id')}: "
-                    f"vendor={rec.get('vendor_name')}, "
-                    f"award=INR {_to_float(rec.get('award_value_inr', rec.get('l1_bid_inr', 0))):,.0f}"
+                    f"Contract {rec.get('tender_id') or rec.get('contract_id') or rec.get('ocid')}: "
+                    f"vendor={rec.get('vendor_name') or rec.get('awards/0/suppliers/0/name')}, "
+                    f"award=INR {_to_float(rec.get('award_amount_inr') if rec.get('has_award') is True else rec.get('award_value_inr', rec.get('l1_bid_inr', 0))):,.0f}"
                 ),
             )
             for idx, rec in rows[:5]
         ]
 
         summary = (
-            f"Statistical divergence in vendor award concentration for {buyer} — '{category}' "
-            f"({jurisdiction}, {fiscal_year}): across {len(rows)} tenders totaling "
-            f"INR {group_value:,.0f}, HHI reached {hhi:.3f} with {top_vendor} winning "
+            f"Statistical divergence in vendor award concentration for {safe_buyer} — '{safe_cat}' "
+            f"({jurisdiction}, {fiscal_year}): across {len(rows)} awarded contracts totaling "
+            f"INR {group_value:,.0f}, HHI reached {hhi:.3f} with {safe_vendor} winning "
             f"{top_share * 100:.1f}% ({vendor_counts[top_vendor]} contracts, INR {vendor_totals[top_vendor]:,.0f}). "
             f"Signals noted under CCI Bid-Rigging & OECD Procurement Indicators: {'; '.join(rules_hit)}."
         )
 
         leads.append(
             AuditLeadCandidate(
-                title=f"Statistical Divergence: Vendor Concentration (HHI {hhi:.2f}) in {category} — {buyer}",
+                title=f"Statistical Divergence: Vendor Concentration (HHI {hhi:.2f}) in {safe_cat} — {safe_buyer}",
                 summary=summary,
                 methodology_code="M3",
-                entity_name=buyer,
+                entity_name=safe_buyer,
                 jurisdiction=jurisdiction,
                 fiscal_year=fiscal_year,
                 monetary_exposure_inr=round(exposure_inr, 2),
                 severity=_severity_from_exposure(exposure_inr, high_signal=(hhi >= 0.50 or narrow_triggered)),
                 anomaly_metrics={
-                    "item_category": category,
+                    "item_category": safe_cat,
                     "tender_count": len(rows),
                     "distinct_vendors": len(vendor_totals),
                     "hhi": round(hhi, 4),
-                    "top_vendor_name": top_vendor,
+                    "top_vendor_name": safe_vendor,
                     "top_vendor_share_pct": round(top_share * 100.0, 2),
                     "top_vendor_value_inr": round(vendor_totals[top_vendor], 2),
                     "narrow_spread_count": len(narrow_spread_rows),
@@ -529,27 +698,34 @@ def run_m3_vendor_concentration(
                     "Repeated awards to one supplier may reflect genuine price competitiveness or call-offs under a lawfully bid multi-year rate contract.",
                     "Narrow L1-L2 bid spreads can also arise when bidders independently benchmark against transparent GeM catalog prices or published PWD Schedule of Rates.",
                 ],
-                suggested_authority=buyer,
+                suggested_authority=safe_buyer,
             )
         )
 
+    top_leads, total_detected = _cap_leads_deterministically(leads, ctx)
+    lead_note = (
+        f"top {len(top_leads)} of {total_detected} concentration/spread lead(s)"
+        if total_detected > len(top_leads)
+        else f"{len(top_leads)} concentration/spread lead(s)"
+    )
     summary_text = (
         f"M3 scanned {len(records)} contract records across {len(grouped)} buyer-category groups "
-        f"(INR {total_audited:,.0f} audited): {len(leads)} concentration/spread lead(s), "
-        f"{cleared_count} cleared record(s)."
+        f"(INR {total_audited:,.0f} audited): {lead_note}, {cleared_count} cleared record(s)."
     )
-    return leads, cleared_count, round(total_audited, 2), summary_text
+    return top_leads, cleared_count, round(total_audited, 2), summary_text
 
 
 def run_m4_unit_price_outliers(
     records: list[dict[str, Any]],
     context: dict[str, Any] | None = None,
 ) -> tuple[list[AuditLeadCandidate], int, float, str]:
-    """M4: Unit-price outliers (>2.5 MAD or >1.75x peer median) & >20% post-award escalation."""
+    """M4: Unit-price outliers (>2.5 MAD or >1.75x peer median), >20% post-award or award-vs-estimate escalation."""
     ctx = context or {}
     mad_cutoff = float(ctx.get("mad_cutoff", 2.5))
     median_ratio_cutoff = float(ctx.get("median_ratio_cutoff", 1.75))
     escalation_cutoff_pct = float(ctx.get("escalation_cutoff_pct", 20.0))
+    min_tender_estimate_inr = float(ctx.get("min_tender_estimate_inr", 10_000.0))
+    min_escalation_inr = float(ctx.get("min_escalation_inr", 100_000.0))
 
     total_audited = 0.0
     by_sku: dict[tuple[str, str], list[tuple[int, dict[str, Any], float]]] = defaultdict(list)
@@ -557,9 +733,18 @@ def run_m4_unit_price_outliers(
     for idx, rec in enumerate(records):
         unit_price = _to_float(rec.get("unit_price_inr", 0))
         qty = _to_float(rec.get("quantity", 1), 1.0)
-        awarded = _to_float(rec.get("awarded_value_inr", rec.get("award_value_inr", unit_price * qty)))
-        final_val = _to_float(rec.get("final_value_inr", rec.get("revised_value_inr", awarded)))
-        total_audited += max(awarded, final_val, 0.0)
+        tender_est = _to_float(rec.get("tender_value_inr", rec.get("tender/value/amount", 0)))
+        awarded = _to_float(
+            rec.get("awarded_value_inr")
+            if rec.get("awarded_value_inr") not in (None, "")
+            else (
+                rec.get("award_amount_inr")
+                if rec.get("has_award") is True
+                else rec.get("award_value_inr", rec.get("awards/0/value/amount", unit_price * qty))
+            )
+        )
+        final_val = _to_float(rec.get("final_value_inr", rec.get("revised_value_inr", 0)))
+        total_audited += max(tender_est, awarded, final_val, 0.0)
 
         if unit_price > 0:
             cat = _norm_key(rec.get("item_category") or rec.get("sku_category") or rec.get("item_name"), "item")
@@ -580,14 +765,32 @@ def run_m4_unit_price_outliers(
     for idx, rec in enumerate(records):
         unit_price = _to_float(rec.get("unit_price_inr", 0))
         qty = max(1.0, _to_float(rec.get("quantity", 1), 1.0))
-        awarded = _to_float(rec.get("awarded_value_inr", rec.get("award_value_inr", unit_price * qty)))
+        tender_est = _to_float(rec.get("tender_value_inr", rec.get("tender/value/amount", 0)))
+        has_explicit_award = (
+            rec.get("has_award") is True
+            or rec.get("awards/0/value/amount") not in (None, "")
+            or rec.get("awarded_value_inr") not in (None, "")
+            or (rec.get("award_value_inr") not in (None, "") and tender_est > 0 and _to_float(rec.get("award_value_inr")) != tender_est)
+        )
+        awarded = _to_float(
+            rec.get("awarded_value_inr")
+            if rec.get("awarded_value_inr") not in (None, "")
+            else (
+                rec.get("award_amount_inr")
+                if rec.get("has_award") is True
+                else rec.get("award_value_inr", rec.get("awards/0/value/amount", unit_price * qty))
+            )
+        )
         final_val = _to_float(rec.get("final_value_inr", rec.get("revised_value_inr", 0)))
 
         cat_display = _norm_str(
-            rec.get("item_category") or rec.get("sku_category") or rec.get("item_name"),
+            rec.get("item_category")
+            or rec.get("tenderclassification/description")
+            or rec.get("sku_category")
+            or rec.get("item_name"),
             "Standard Item",
         )
-        unit_display = _norm_str(rec.get("unit"), "unit")
+        unit_display = _norm_str(rec.get("unit"), "contract" if unit_price <= 0 else "unit")
         key = (_norm_key(cat_display, "item"), _norm_key(unit_display, "unit"))
 
         price_outlier = False
@@ -607,35 +810,57 @@ def run_m4_unit_price_outliers(
                 price_ratio = unit_price / ref_median
                 if mad_val > 0:
                     mad_multiple = (unit_price - ref_median) / mad_val
-                else:
-                    mad_multiple = 0.0
                 if (peer_n >= 4 and mad_val > 0 and mad_multiple > mad_cutoff and price_ratio > 1.35) or (
                     price_ratio > median_ratio_cutoff
                 ):
                     price_outlier = True
                     excess_price_inr = max(0.0, (unit_price - ref_median) * qty)
 
+        # Check 4B: Post-award cost variation (final vs awarded)
         escalation_flag = False
         escalation_pct = 0.0
         escalation_inr = 0.0
+        escalation_kind = "post_award_escalation"
+        base_compare_val = awarded
+        high_compare_val = final_val
+
         if awarded > 0 and final_val > awarded:
             escalation_inr = final_val - awarded
             escalation_pct = (escalation_inr / awarded) * 100.0
             if escalation_pct > escalation_cutoff_pct:
                 escalation_flag = True
 
+        # Check 4C: Awarded contract vs tender estimate escalation (>20% above realistic estimate)
+        if (
+            not escalation_flag
+            and has_explicit_award
+            and tender_est >= min_tender_estimate_inr
+            and awarded > tender_est
+        ):
+            est_excess = awarded - tender_est
+            est_pct = (est_excess / tender_est) * 100.0
+            if est_pct > escalation_cutoff_pct and est_excess >= min_escalation_inr:
+                escalation_flag = True
+                escalation_inr = est_excess
+                escalation_pct = est_pct
+                escalation_kind = "award_vs_estimate_escalation"
+                base_compare_val = tender_est
+                high_compare_val = awarded
+
         if not (price_outlier or escalation_flag):
             continue
 
         flagged_indices.add(idx)
         buyer = _norm_str(
-            rec.get("buyer_name") or rec.get("entity_name") or rec.get("department"),
+            rec.get("buyer_name") or rec.get("buyer/name") or rec.get("entity_name") or rec.get("department"),
             "Unspecified Public Buyer",
         )
         jurisdiction = _norm_str(rec.get("jurisdiction"), "Union of India")
         fiscal_year = _norm_str(rec.get("fiscal_year"), "FY 2024-25")
-        tender_id = _norm_str(rec.get("tender_id") or rec.get("contract_id"), f"BOQ-{idx + 1}")
+        tender_id = _norm_str(rec.get("tender_id") or rec.get("ocid") or rec.get("contract_id"), f"BOQ-{idx + 1}")
         exposure_inr = max(excess_price_inr, escalation_inr, 0.0)
+        safe_buyer = _neutralize_external_text(buyer)
+        safe_cat = _neutralize_external_text(cat_display)
 
         reasons: list[str] = []
         if price_outlier:
@@ -645,27 +870,30 @@ def run_m4_unit_price_outliers(
             )
         if escalation_flag:
             reasons.append(
-                f"post_award_escalation=+{escalation_pct:.1f}% (INR {awarded:,.0f} -> INR {final_val:,.0f})"
+                f"{escalation_kind}=+{escalation_pct:.1f}% (INR {base_compare_val:,.0f} -> INR {high_compare_val:,.0f})"
             )
 
         summary = (
-            f"Public record anomaly on {tender_id} ({buyer}, {jurisdiction}, {fiscal_year}) for "
-            f"'{cat_display}' ({unit_display}): {'; '.join(reasons)}. Estimated benchmark variance "
+            f"Public record anomaly on {tender_id} ({safe_buyer}, {jurisdiction}, {fiscal_year}) for "
+            f"'{safe_cat}' ({unit_display}): {'; '.join(reasons)}. Estimated benchmark variance "
             f"is INR {exposure_inr:,.0f}."
         )
 
-        lead_label = (
-            "Unit-Price Outlier & Cost Escalation"
-            if (price_outlier and escalation_flag)
-            else ("Unit-Price Outlier" if price_outlier else "Post-Award Cost Escalation")
-        )
+        if price_outlier and escalation_flag:
+            lead_label = "Unit-Price Outlier & Cost Escalation"
+        elif price_outlier:
+            lead_label = "Unit-Price Outlier"
+        elif escalation_kind == "award_vs_estimate_escalation":
+            lead_label = "Award vs Tender-Estimate Escalation"
+        else:
+            lead_label = "Post-Award Cost Escalation"
 
         leads.append(
             AuditLeadCandidate(
-                title=f"Procurement Red-Flag Lead: {lead_label} in {cat_display} — {buyer}",
+                title=f"Procurement Red-Flag Lead: {lead_label} in {safe_cat} — {safe_buyer}",
                 summary=summary,
                 methodology_code="M4",
-                entity_name=buyer,
+                entity_name=safe_buyer,
                 jurisdiction=jurisdiction,
                 fiscal_year=fiscal_year,
                 monetary_exposure_inr=round(exposure_inr, 2),
@@ -675,7 +903,7 @@ def run_m4_unit_price_outliers(
                 ),
                 anomaly_metrics={
                     "tender_id": tender_id,
-                    "item_category": cat_display,
+                    "item_category": safe_cat,
                     "unit": unit_display,
                     "quantity": qty,
                     "unit_price_inr": round(unit_price, 2),
@@ -683,9 +911,11 @@ def run_m4_unit_price_outliers(
                     "peer_mad_inr": round(mad_val, 2),
                     "median_ratio": round(price_ratio, 3),
                     "mad_multiple": round(mad_multiple, 2),
+                    "tender_estimate_inr": round(tender_est, 2),
                     "awarded_value_inr": round(awarded, 2),
                     "final_value_inr": round(final_val, 2),
                     "escalation_pct": round(escalation_pct, 2),
+                    "escalation_kind": escalation_kind if escalation_flag else "none",
                     "estimated_excess_inr": round(exposure_inr, 2),
                 },
                 rule_triggered="GeM/CPPP BOQ Benchmark & CVC Variation Guidelines (" + "; ".join(reasons) + ")",
@@ -693,22 +923,30 @@ def run_m4_unit_price_outliers(
                     _build_citation(
                         rec,
                         idx,
-                        f"{tender_id} ({cat_display}): unit=INR {unit_price:,.2f}, awarded=INR {awarded:,.0f}, final=INR {final_val:,.0f}",
+                        (
+                            f"{tender_id} ({safe_cat}): unit=INR {unit_price:,.2f}, "
+                            f"estimate=INR {tender_est:,.0f}, awarded=INR {awarded:,.0f}, final=INR {final_val:,.0f}"
+                        ),
                     )
                 ],
                 benign_explanations=[
-                    "Higher unit rates may include superior technical specifications, multi-year comprehensive warranty, AMC, installation, or operator training not present in baseline peer contracts.",
-                    "Remote, hilly, or disaster-affected delivery locations can lawfully increase freight and installation unit prices.",
-                    "Post-award variations above 20% may stem from duly approved scope expansion, site-condition changes, or statutory GST/price-variation clauses.",
+                    "Higher unit rates or award values may include superior technical specifications, multi-year comprehensive warranty, AMC, installation, or operator training not present in baseline peer estimates.",
+                    "Remote, hilly, or disaster-affected delivery locations can lawfully increase freight, raw material, and execution costs above initial Schedule-of-Rates estimates.",
+                    "Contract variations or awards above 20% of estimate may stem from duly approved scope expansion, site-condition changes, or statutory GST/price-variation clauses.",
                 ],
-                suggested_authority=buyer,
+                suggested_authority=safe_buyer,
             )
         )
 
     cleared_count = len(records) - len(flagged_indices)
+    top_leads, total_detected = _cap_leads_deterministically(leads, ctx)
+    lead_note = (
+        f"top {len(top_leads)} of {total_detected} price/escalation lead(s)"
+        if total_detected > len(top_leads)
+        else f"{len(top_leads)} price/escalation lead(s)"
+    )
     summary_text = (
         f"M4 scanned {len(records)} BOQ/contract items across {len(by_sku)} normalized item categories "
-        f"(INR {total_audited:,.0f} audited): {len(leads)} price/escalation lead(s), "
-        f"{cleared_count} cleared record(s)."
+        f"(INR {total_audited:,.0f} audited): {lead_note}, {cleared_count} cleared record(s)."
     )
-    return leads, cleared_count, round(total_audited, 2), summary_text
+    return top_leads, cleared_count, round(total_audited, 2), summary_text

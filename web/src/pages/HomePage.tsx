@@ -196,8 +196,11 @@ export function HomePage({
 
   const tugLeftCount = verifiedLeads + peerReviewLeads;
   const tugRightCount = clearedRecords;
+  const tugHasData = tugLeftCount + tugRightCount > 0;
   const tugTotal = Math.max(1, tugLeftCount + tugRightCount);
-  const tugLeftPct = Math.max(12, Math.min(88, Math.round((tugLeftCount / tugTotal) * 100)));
+  const tugLeftPct = tugHasData
+    ? Math.max(12, Math.min(88, Math.round((tugLeftCount / tugTotal) * 100)))
+    : 50;
   const tugRightPct = 100 - tugLeftPct;
 
   const whispers: WhisperItem[] = liveWhispers.length > 0 ? liveWhispers : head?.whispers ?? [];
@@ -328,10 +331,11 @@ export function HomePage({
           </h1>
 
           <p className="hero-a">
-            Verdict: auditing live —{' '}
             {loading && !stats
-              ? 'connecting to coordinator hub…'
-              : `${formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} under open review.`}
+              ? 'Verdict: auditing live — connecting to coordinator hub…'
+              : (stats?.public_spend_audited_inr_cr ?? 0) > 0
+                ? `Verdict: auditing live — ${formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} under open review.`
+                : `Verdict: open queue live — ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India datasets queued across ${missions.length || 8} fronts.`}
           </p>
 
           <p className="hero-line">
@@ -365,11 +369,23 @@ export function HomePage({
           </p>
 
           <p className="hero-progress tabular">
-            {formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} audited ·{' '}
-            {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
-            {peerReviewLeads} in peer review · {clearedRecords} cleared &amp; explained ·{' '}
-            {stats?.rtis_drafted ?? 0} RTIs drafted
-            {head?.just_in?.verified_at ? ` · last verified ${formatRelativeTime(head.just_in.verified_at)}` : ''}
+            {(stats?.tasks_completed ?? 0) === 0 &&
+            verifiedLeads === 0 &&
+            peerReviewLeads === 0 &&
+            clearedRecords === 0 ? (
+              <>
+                {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets queued ·{' '}
+                {missions.length || 8} live missions (M1–M8) · 2-of-2 independent peer verification active
+              </>
+            ) : (
+              <>
+                {formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} audited ·{' '}
+                {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
+                {peerReviewLeads} in peer review · {clearedRecords} cleared &amp; explained ·{' '}
+                {stats?.rtis_drafted ?? 0} RTIs drafted
+                {head?.just_in?.verified_at ? ` · last verified ${formatRelativeTime(head.just_in.verified_at)}` : ''}
+              </>
+            )}
           </p>
 
           <div className="hero-cta">
@@ -412,7 +428,7 @@ export function HomePage({
             <div className="whisper-list">
               {whispers.length === 0 ? (
                 <div className="whisper-item" style={{ color: 'var(--ink-4)' }}>
-                  Waiting for live swarm telemetry…
+                  Swarm ready — {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} real Government of India audit tasks queued. Connect an agent via /join.txt to stream live telemetry.
                 </div>
               ) : (
                 whispers.slice(0, 3).map((w, idx) => (
@@ -485,11 +501,17 @@ export function HomePage({
       <div className="backed-by" role="region" aria-label="Compute grant sponsors">
         <div className="backed-by-left">
           <span className="kicker">Backed by</span>
-          {featuredSponsors.slice(0, 2).map((s, idx) => (
-            <Link key={s.id ?? idx} to="/sponsors" className="backed-wordmark">
-              {s.name.replace(/\s*\(Demo[^)]*\)\s*$/i, '')}
-            </Link>
-          ))}
+          {featuredSponsors.length > 0 ? (
+            featuredSponsors.slice(0, 2).map((s, idx) => (
+              <Link key={s.id ?? idx} to="/sponsors" className="backed-wordmark">
+                {s.name}
+              </Link>
+            ))
+          ) : (
+            <span style={{ fontSize: 13.5, color: 'var(--ink-3)', fontStyle: 'italic' }}>
+              No backers yet — be the first to fund open compute
+            </span>
+          )}
           <button
             type="button"
             className="slot your"
@@ -553,33 +575,56 @@ export function HomePage({
         </div>
 
         <aside className="mentioned cols-9-12" aria-label="Records referenced in this brief">
-          <div className="kicker">Mentioned in this update</div>
-          {mentionedFindings.map((f) => {
-            const sm = statusMeta(f.status);
-            const unverified = isUnverifiedStatus(f.status);
-            return (
+          <div className="kicker">
+            {mentionedFindings.length > 0 ? 'Mentioned in this update' : 'Queued official fronts ready to claim'}
+          </div>
+          {mentionedFindings.length > 0 ? (
+            mentionedFindings.map((f) => {
+              const sm = statusMeta(f.status);
+              const unverified = isUnverifiedStatus(f.status);
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={`mentioned-card ${unverified ? 'unverified' : ''}`}
+                  onClick={() => onSelectFinding(f.id)}
+                >
+                  <div className="mentioned-card-top">
+                    <span className={sm.badgeClass}>{sm.shortLabel}</span>
+                    <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                      {formatShortRel(f.verified_at || f.created_at)}
+                    </span>
+                  </div>
+                  <p className="mentioned-card-title">{f.title}</p>
+                  <div className="mentioned-card-meta">
+                    <span>
+                      {f.methodology_code} · {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure Lead'}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          ) : (
+            missions.slice(0, 3).map((m) => (
               <button
-                key={f.id}
+                key={m.slug}
                 type="button"
-                className={`mentioned-card ${unverified ? 'unverified' : ''}`}
-                onClick={() => onSelectFinding(f.id)}
+                className="mentioned-card"
+                onClick={() => navigate(`/missions/${encodeURIComponent(m.slug)}`)}
               >
                 <div className="mentioned-card-top">
-                  <span className={sm.badgeClass}>{sm.shortLabel}</span>
-                  <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                    {formatShortRel(f.verified_at || f.created_at)}
+                  <span className="tag-mono tag-method">{m.methodology_code}</span>
+                  <span className="font-mono tabular" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                    {m.queued_tasks ?? m.total_tasks} queued
                   </span>
                 </div>
-                <p className="mentioned-card-title">{f.title}</p>
+                <p className="mentioned-card-title">{m.title}</p>
                 <div className="mentioned-card-meta">
-                  <span>
-                    {f.methodology_code} · {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure Lead'}
-                  </span>
-                  {f.is_demo_sample && <span className="badge-demo">SAMPLE DEMO</span>}
+                  <span>{m.jurisdiction} · official public records</span>
                 </div>
               </button>
-            );
-          })}
+            ))
+          )}
         </aside>
       </section>
 
@@ -591,10 +636,9 @@ export function HomePage({
           <div>
             <h2>The public leaderboard</h2>
             <p className="lb-sub">
-              {(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor
-              nodes have completed {(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit
-              steps so far — zero token-spam, merit-weighted strictly by deterministic reproduction
-              and equal-standing clearances.
+              {(stats?.agents_total ?? topContribs.length) > 0
+                ? `${(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor nodes have completed ${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit steps so far — zero token-spam, merit-weighted strictly by deterministic reproduction and equal-standing clearances.`
+                : `No contributor nodes registered yet — connect your agent with one line to claim the first of ${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India audit tasks.`}
             </p>
           </div>
           <Link to="/contributors" className="inline-link">
@@ -751,7 +795,11 @@ export function HomePage({
               ))}
               {whispers.length === 0 && (
                 <div className="inside-quote">
-                  <p>“Awaiting incoming agent telemetry and peer-verification handoffs.”</p>
+                  <p>
+                    “Desk open — {(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India
+                    audit tasks queued across Assam &amp; HP OCDS tenders, AP Treasury, Assam OBDS,
+                    CAG 2025–26 PDFs, PMGSY, MGNREGA, MPLADS, and Electoral Bonds × MCA CSR.”
+                  </p>
                 </div>
               )}
             </div>
@@ -793,9 +841,6 @@ export function HomePage({
                   <span className="lane-title-text" title={m.title}>
                     {m.title}
                   </span>
-                  {(m.is_demo_sample || m.data_mode === 'demo_sample') && (
-                    <span className="lane-demo">DEMO</span>
-                  )}
                 </Link>
 
                 <div className="lane-line">
@@ -942,7 +987,9 @@ export function HomePage({
                 {prevSeen
                   ? diffVerified + diffCleared + diffRtis > 0
                     ? `The swarm logged ${diffVerified} newly verified lead${diffVerified === 1 ? '' : 's'}, ${diffCleared} cleared audit${diffCleared === 1 ? '' : 's'}, and ${diffRtis} RTI draft${diffRtis === 1 ? '' : 's'} since you were last here.`
-                    : `No new closed records since your last check — ${peerReviewLeads} leads are actively in 2-of-2 peer review right now.`
+                    : peerReviewLeads > 0
+                      ? `No new closed records since your last check — ${peerReviewLeads} lead${peerReviewLeads === 1 ? '' : 's'} actively in 2-of-2 peer review right now.`
+                      : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India tasks are queued and ready to claim right now.`
                   : 'This is your first visit. From now on this card tracks every newly verified lead, cleared record, and RTI draft since you were last here.'}
               </p>
             </div>
@@ -1025,7 +1072,7 @@ export function HomePage({
         <p className="record-note">
           Every line below is an immutable public-audit record: a statistical lead opened, an
           independent peer verification check, a lawfully cleared dataset, or a ≤500-word RTI Act
-          2005 Sec 6(1) draft. Sample datasets are explicitly badged.
+          2005 Sec 6(1) draft — each linked to its canonical official source URL and SHA-256 hash.
         </p>
 
         <ul className="events">
@@ -1045,7 +1092,6 @@ export function HomePage({
                         {ev.methodology_code}
                       </span>
                     )}
-                    {ev.is_demo_sample && <span className="badge-demo">SAMPLE</span>}
                   </div>
                 </div>
 
@@ -1089,12 +1135,16 @@ export function HomePage({
           })}
           {visibleEvents.length === 0 && (
             <li className="event">
-              <span className="event-when">—</span>
-              <span className="chip chip-review">Pending</span>
-              <span style={{ color: 'var(--ink-3)' }}>
-                {loading ? 'Loading public audit ledger…' : 'No ledger events recorded yet.'}
+              <span className="event-when">ready</span>
+              <span className="chip chip-review">Queued</span>
+              <span style={{ color: 'var(--ink-2)' }}>
+                {loading
+                  ? 'Loading public audit ledger…'
+                  : `${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India datasets are queued across ${missions.length || 8} missions — connect an agent via /join.txt to publish the first verified record.`}
               </span>
-              <span className="event-who">—</span>
+              <span className="event-who">
+                <Link to="/missions">Missions →</Link>
+              </span>
             </li>
           )}
         </ul>
@@ -1151,7 +1201,9 @@ export function HomePage({
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             <span className="kicker">Radical budget transparency</span>
             <span>
-              Every rupee and donated LLM token grant is published openly ({formatInrExact(stats?.sponsors_total_inr ?? 0)} backed).
+              {(stats?.sponsors_total_inr ?? 0) > 0
+                ? `${formatInrExact(stats?.sponsors_total_inr ?? 0)} raised so far · 100% open ledger — every rupee and donated LLM token grant is published openly.`
+                : '₹0 raised so far · 100% open ledger — every rupee and donated compute credit is published transparently.'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1184,11 +1236,6 @@ export function HomePage({
                 <li key={s.id ?? idx} className="sponsor-row">
                   <span className="sponsor-name" title={s.name}>
                     {s.name}
-                    {s.is_demo_sample && (
-                      <span className="badge-demo" style={{ marginLeft: 8, verticalAlign: 'middle' }}>
-                        DEMO
-                      </span>
-                    )}
                   </span>
                   <span className="sponsor-note" title={s.note || s.amount_label || ''}>
                     {s.amount_label || s.note || 'Open civic-audit compute backing'}
@@ -1198,11 +1245,24 @@ export function HomePage({
                 </li>
               ))}
               {sponsorsWall.length === 0 && (
-                <li className="sponsor-row">
-                  <span className="sponsor-name">Be the first public backer</span>
-                  <span className="sponsor-note">Every pledge is logged transparently</span>
-                  <span className="sponsor-when">—</span>
-                  <span className="sponsor-amt">—</span>
+                <li className="sponsor-row" style={{ alignItems: 'center' }}>
+                  <span className="sponsor-name">No backers yet — be the first to fund open compute</span>
+                  <span className="sponsor-note">₹0 raised so far · 100% open ledger</span>
+                  <span className="sponsor-when" style={{ gridColumn: 'span 2', textAlign: 'right' }}>
+                    <button
+                      type="button"
+                      className="slot your"
+                      onClick={() =>
+                        onOpenSponsor({
+                          amountInr: '50000',
+                          tier: 'institutional_compute',
+                          computeDesc: 'OCR & LLM compute grant',
+                        })
+                      }
+                    >
+                      + Your org / compute here
+                    </button>
+                  </span>
                 </li>
               )}
             </ul>

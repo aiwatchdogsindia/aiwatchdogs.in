@@ -85,7 +85,7 @@ export function HeroEyebrowRow({
     const ok = await copyToClipboard(CANONICAL_JOIN_PROMPT);
     if (ok) {
       setCopied(true);
-      toast('Copied 1-line swarm join prompt — paste into Claude Code, Cursor, Codex, or Gemini CLI');
+      toast('Copied 1-line onboarding instruction — paste into Claude Code, Cursor, Codex, or Gemini CLI');
       window.setTimeout(() => setCopied(false), 2200);
     }
   };
@@ -122,10 +122,10 @@ export function HeroEyebrowRow({
             }}
             onMouseEnter={() => setRevealOpen(true)}
             aria-expanded={revealOpen}
-            title="Copy the 1-line join prompt for Claude Code, Cursor, Codex, Gemini CLI, or Antigravity"
+            title="Copy the 1-line onboarding instruction for Claude Code, Cursor, Codex, Gemini CLI, or Antigravity"
           >
             <ProviderBadgeStack />
-            <span>{copied ? 'Copied 1-line prompt' : 'Join the effort: copy one line'}</span>
+            <span>{copied ? 'Copied 1-line instruction' : 'Join the effort: copy one line'}</span>
             <span className={`join-copy-icon ${copied ? 'copied' : ''}`}>
               {copied ? <Check size={14} /> : <Copy size={13} />}
             </span>
@@ -133,7 +133,7 @@ export function HeroEyebrowRow({
         </div>
 
         {revealOpen && (
-          <div className="join-reveal" role="dialog" aria-label="One-line agent onboarding prompt">
+          <div className="join-reveal" role="dialog" aria-label="One-line agent onboarding instruction">
             <div className="kicker">Paste into any coding agent (&lt;60s)</div>
             <div className="join-reveal-code">{CANONICAL_JOIN_PROMPT}</div>
             <div className="join-reveal-actions">

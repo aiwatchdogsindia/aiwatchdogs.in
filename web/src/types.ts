@@ -45,7 +45,7 @@ export interface JustInItem {
   entity_name: string;
   monetary_exposure_inr_cr: number;
   verified_at: string;
-  is_demo_sample: boolean;
+  is_demo_sample?: boolean;
 }
 
 export interface RecordEvent {
@@ -200,7 +200,7 @@ export interface FindingItem {
   source_url?: string;
   artifact_sha256?: string;
   artifact_title?: string;
-  is_demo_sample: boolean;
+  is_demo_sample?: boolean;
   legal_lint_passed?: boolean;
   submitted_by?: string;
   submitted_model?: string;

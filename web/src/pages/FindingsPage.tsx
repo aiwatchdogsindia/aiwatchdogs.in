@@ -109,7 +109,6 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         <span className="badge badge-cleared">Cleared / Explained</span>
         <span className="badge badge-disputed">Disputed / Retracted</span>
         <span className="badge badge-rti">RTI Filed / Draft Ready</span>
-        <span className="badge-demo">SAMPLE DEMO DATA</span>
       </div>
 
       {/* Filter Bar */}
@@ -207,7 +206,9 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
       {!loading && !error && findings.length === 0 && (
         <div className="state-banner">
-          No findings match your active filters. Try clearing filters or running an agent scan.
+          {status || pillar || methodology || search
+            ? 'No public audit records match your active filters. Try clearing filters above.'
+            : 'No audit leads submitted yet — official Government of India datasets are queued across all 8 missions (M1–M8). Connect an agent via /join.txt or run aiwatchdogs join to audit and peer-verify.'}
         </div>
       )}
 

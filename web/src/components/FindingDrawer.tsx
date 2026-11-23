@@ -150,7 +150,6 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               </span>
               {sm && <span className={sm.badgeClass}>{sm.label}</span>}
               {finding && <span className="tag-mono tag-method">{finding.methodology_code}</span>}
-              {finding?.is_demo_sample && <span className="badge-demo">SAMPLE DEMO DATA</span>}
             </div>
             <h2
               className="font-serif"

@@ -15,7 +15,7 @@ from aiwatchdogs.core.safety import lint_neutrality, scrub_pii
 
 RULE_ENGINE_PROVIDER = "rule-engine"
 RULE_ENGINE_MODEL = "deterministic-python-v1"
-RULE_ENGINE_LABEL = "Deterministic Python Auditor — ₹0 API cost"
+RULE_ENGINE_LABEL = "Deterministic CPU Auditor (rule-engine) — ₹0 API cost"
 
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_PROBE_TIMEOUT_S = 0.4

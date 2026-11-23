@@ -86,9 +86,6 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 <span className="tag-mono tag-method">{detail.methodology_code}</span>
                 <span className="tag-mono">{pillarLabel(detail.pillar)}</span>
                 <span className="tag-mono">{detail.jurisdiction}</span>
-                {detail.data_mode === 'demo_sample' && (
-                  <span className="badge-demo">SAMPLE DEMO DATA + LIVE CONNECTOR READY</span>
-                )}
               </div>
 
               <h1 className="section-title" style={{ fontSize: 32, marginBottom: 8 }}>
@@ -338,9 +335,6 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     <span className="tag-mono tag-method">{m.methodology_code}</span>
                     <span className="tag-mono">{pillarLabel(m.pillar)}</span>
                     <span className="tag-mono">{m.jurisdiction}</span>
-                    {m.data_mode === 'demo_sample' && (
-                      <span className="badge-demo">SAMPLE DEMO DATA</span>
-                    )}
                   </div>
                   <span className="font-mono tabular" style={{ fontWeight: 600 }}>
                     {pct}%

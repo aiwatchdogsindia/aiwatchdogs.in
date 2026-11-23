@@ -379,18 +379,6 @@ table th.num {
   white-space: nowrap;
 }
 
-.just-in-demo {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: var(--r-999);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: var(--ink-6);
-  white-space: nowrap;
-}
-
 .just-in-cta {
   background: none;
   border: none;
@@ -562,23 +550,6 @@ table th.num {
   border: 1px solid var(--in-work-ring);
   font-style: normal;
   font-weight: 500;
-}
-
-/* Sample Demo Pill */
-.badge-demo {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  background: var(--sunk-2);
-  border: 1px solid var(--rule-strong);
-  padding: 1px 7px;
-  border-radius: var(--r-999);
-  white-space: nowrap;
 }
 
 .tag-mono {
@@ -1794,6 +1765,17 @@ table th.num {
   white-space: nowrap;
 }
 
+.org-seat.open-slot {
+  border-style: dashed;
+  background: rgba(251, 250, 246, 0.88);
+}
+
+.org-seat.open-slot:hover {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--raised);
+}
+
 .org-more-pill {
   position: absolute;
   right: 16px;
@@ -2048,16 +2030,6 @@ table th.num {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.lane-demo {
-  font-size: 9px;
-  letter-spacing: 0.05em;
-  padding: 1px 5px;
-  border-radius: var(--r-999);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--obs-muted);
-  flex-shrink: 0;
 }
 
 .lane-line {

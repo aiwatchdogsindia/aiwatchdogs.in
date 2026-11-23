@@ -37,6 +37,7 @@ interface ClusterInfo {
   radius: number;
   verifiedCount: number;
   reviewCount: number;
+  sourceCount: number;
   totalCount: number;
 }
 
@@ -248,11 +249,13 @@ export function ObservatoryMap({
       let maxR = 64;
       let vCount = 0;
       let rCount = 0;
+      let sCount = 0;
 
       members.forEach((node, i) => {
         const kind = classifyNodeKind(node);
         if (kind === 'verified') vCount += 1;
         if (kind === 'review') rCount += 1;
+        if (kind === 'source') sCount += 1;
 
         let x = center.cx;
         let y = center.cy;
@@ -304,6 +307,7 @@ export function ObservatoryMap({
         radius: Math.min(138, Math.max(76, maxR)),
         verifiedCount: vCount,
         reviewCount: rCount,
+        sourceCount: sCount,
         totalCount: members.length,
       });
     }
@@ -417,7 +421,11 @@ export function ObservatoryMap({
   // Search combobox matches
   const searchMatches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return world.worldNodes.filter((w) => w.kind === 'verified' || w.kind === 'review').slice(0, 7);
+    if (!q) {
+      const findingHits = world.worldNodes.filter((w) => w.kind === 'verified' || w.kind === 'review');
+      if (findingHits.length > 0) return findingHits.slice(0, 7);
+      return world.worldNodes.filter((w) => w.kind === 'mission' || w.kind === 'source').slice(0, 8);
+    }
     return world.worldNodes
       .filter((w) => {
         const metaStr = w.node.meta ? JSON.stringify(w.node.meta).toLowerCase() : '';
@@ -553,11 +561,11 @@ export function ObservatoryMap({
 
         ctx.font = `400 ${Math.max(8, 9.5 / Math.sqrt(cam.zoom))}px "JetBrains Mono", monospace`;
         ctx.fillStyle = 'rgba(201,195,181,0.58)';
-        ctx.fillText(
-          `${cl.verifiedCount} verified · ${cl.reviewCount} in review`,
-          cl.cx,
-          cl.cy + cl.radius + 30 / Math.sqrt(cam.zoom),
-        );
+        const clSub =
+          cl.verifiedCount > 0 || cl.reviewCount > 0
+            ? `${cl.verifiedCount} verified · ${cl.reviewCount} in review`
+            : `${cl.sourceCount > 0 ? `${cl.sourceCount} official source${cl.sourceCount === 1 ? '' : 's'}` : `${cl.totalCount} mapped`} · ready to audit`;
+        ctx.fillText(clSub, cl.cx, cl.cy + cl.radius + 30 / Math.sqrt(cam.zoom));
         ctx.restore();
       }
 
@@ -979,8 +987,9 @@ export function ObservatoryMap({
             </span>
           </div>
           <h2>
-            {verifiedCount} peer-verified lead{verifiedCount === 1 ? '' : 's'}. {agentsActive} agent
-            {agentsActive === 1 ? '' : 's'} auditing {missionsCount} public-spending fronts.
+            {verifiedCount > 0 || agentsActive > 0
+              ? `${verifiedCount} peer-verified lead${verifiedCount === 1 ? '' : 's'}. ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing ${missionsCount} public-spending fronts.`
+              : `${missionsCount} live Government of India audit fronts. ${nodes.length} official datasets & portals mapped.`}
           </h2>
           <div className="map-head-sub">
             <span className="live-pulse" style={{ color: 'var(--green-on-dark)' }}>
@@ -1109,7 +1118,6 @@ export function ObservatoryMap({
           <div className="map-card-meta">
             <span>{hoveredNode.wn.node.type}</span>
             {hoveredNode.wn.node.status && <span>· {hoveredNode.wn.node.status.replace(/_/g, ' ')}</span>}
-            {Boolean(hoveredNode.wn.node.meta?.is_demo_sample) && <span>· SAMPLE</span>}
           </div>
           <div className="map-card-title">{hoveredNode.wn.node.label}</div>
           {hoveredNode.wn.node.value_inr_cr != null && hoveredNode.wn.node.value_inr_cr > 0 && (
@@ -1138,9 +1146,6 @@ export function ObservatoryMap({
                 <span className="tag-mono tag-method">
                   {String(pinnedWn.node.meta?.methodology_code)}
                 </span>
-              )}
-              {Boolean(pinnedWn.node.meta?.is_demo_sample) && (
-                <span className="badge-demo">SAMPLE DEMO</span>
               )}
               {pinnedWn.isCommunity && (
                 <span className="tag-provider">Community Node</span>
@@ -1187,10 +1192,22 @@ export function ObservatoryMap({
             {Boolean(pinnedWn.node.meta?.entity_name) && (
               <span>· {String(pinnedWn.node.meta?.entity_name)}</span>
             )}
+            {Boolean(pinnedWn.node.meta?.authority) && (
+              <span>· {String(pinnedWn.node.meta?.authority)}</span>
+            )}
+            {Boolean(pinnedWn.node.meta?.jurisdiction) && (
+              <span>· {String(pinnedWn.node.meta?.jurisdiction)}</span>
+            )}
             {Boolean(pinnedWn.node.meta?.submitted_by) && (
               <span>· @{String(pinnedWn.node.meta?.submitted_by)}</span>
             )}
           </div>
+
+          {Boolean(pinnedWn.node.meta?.description) && (
+            <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: 'var(--ink-2)' }}>
+              {String(pinnedWn.node.meta?.description)}
+            </p>
+          )}
 
           {pinnedWn.node.value_inr_cr != null && pinnedWn.node.value_inr_cr > 0 && (
             <div

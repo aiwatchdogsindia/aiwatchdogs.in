@@ -169,7 +169,7 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
               enforcing a mandatory pre-storage scrubber that detects and redacts 12-digit{' '}
               <strong>Aadhaar</strong> numbers (with Verhoeff checksum verification),{' '}
               <strong>PAN</strong>, Indian bank <strong>IFSC/account numbers</strong>, personal
-              mobile numbers, and personal email addresses before anything reaches SQLite or disk.
+              mobile numbers, and personal email addresses before anything reaches Postgres, SQLite, or disk.
             </p>
           </div>
 

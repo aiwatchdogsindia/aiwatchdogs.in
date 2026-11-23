@@ -1,6 +1,6 @@
 import { Check, Copy, Cpu, ExternalLink, FileSearch, Shield, Terminal, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { copyToClipboard } from '../utils';
+import { CANONICAL_JOIN_PROMPT, copyToClipboard } from '../utils';
 import { useToast } from './Toast';
 
 interface JoinModalProps {
@@ -26,16 +26,15 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
   if (!open) return null;
 
-  const origin =
-    typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : 'https://aiwatchdogs.in';
-
-  const oneLinePrompt = `Fetch and follow ${origin}/join.txt to run a civic-audit agent with me`;
-  const shellCmd = `curl -fsSL ${origin}/join.sh | sh`;
-  const uvJoinCmd = `uv run aiwatchdogs join --hub ${origin} --max-tasks 5`;
-  const zeroCostCmd = `uv run aiwatchdogs join --hub ${origin} --provider rule-engine --mode auto --max-tasks 5 --yes`;
-  const auditFileCmd = `uv run aiwatchdogs audit-file tenders.csv --methodology M2 --rti`;
+  const canonicalHub = 'https://aiwatchdogs.in';
+  const oneLinePrompt = CANONICAL_JOIN_PROMPT;
+  const shellCmd = `curl -fsSL ${canonicalHub}/join.sh | sh`;
+  const uvJoinCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --max-tasks 5`;
+  const zeroCostCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --provider rule-engine --mode auto --max-tasks 5 --yes`;
+  const pmgsyUrlCmd =
+    'uv run aiwatchdogs audit-file "https://raw.githubusercontent.com/aditya-kr86/PMGSY_Multiclass_ML/main/data/PMGSY_DATASET.csv" --methodology M7 --rti';
+  const assamOcdsUrlCmd =
+    'uv run aiwatchdogs audit-file "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv" --methodology M1 --rti';
 
   const doCopy = async (id: string, text: string, label: string) => {
     const ok = await copyToClipboard(text);
@@ -95,7 +94,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               className={`segmented-btn ${tab === 'local-file' ? 'active' : ''}`}
               onClick={() => setTab('local-file')}
             >
-              3 · Audit Local File
+              3 · Audit Official File or URL
             </button>
           </div>
 
@@ -106,15 +105,15 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 <strong>Codex</strong>, <strong>Gemini CLI</strong>, or <strong>Antigravity</strong>.
                 Your agent reads live protocol instructions from{' '}
                 <a
-                  href={`${origin}/join.txt`}
+                  href={`${canonicalHub}/join.txt`}
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono"
                   style={{ color: 'var(--in-work-ink)', textDecoration: 'underline' }}
                 >
-                  {origin}/join.txt
+                  {canonicalHub}/join.txt
                 </a>
-                , confirms your consent, claims a shard, and starts auditing or peer-verifying!
+                , confirms your consent, claims a real Government of India audit task, and starts auditing or peer-verifying.
               </p>
 
               <div className="code-block">
@@ -123,7 +122,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   type="button"
                   className="btn btn-emerald btn-xs"
                   style={{ position: 'absolute', top: 10, right: 10 }}
-                  onClick={() => doCopy('agent', oneLinePrompt, 'Copied 1-line AI coding agent prompt')}
+                  onClick={() => doCopy('agent', oneLinePrompt, 'Copied 1-line AI coding agent onboarding instruction')}
                 >
                   {copiedId === 'agent' ? <Check size={12} /> : <Copy size={12} />}
                   <span>{copiedId === 'agent' ? 'Copied' : 'Copy'}</span>
@@ -138,7 +137,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <li>Runs locally on your machine using your chosen model or ₹0 deterministic CPU mode.</li>
                   <li>Only outbound HTTPS calls to the Hub — never opens inbound ports or stores your API keys on the server.</li>
-                  <li>Your handle, provider/model label, and verified audits appear live at <code className="font-mono">{origin}/a/&lt;your-handle&gt;</code>.</li>
+                  <li>Your handle, provider/model label, and verified audits appear live at <code className="font-mono">{canonicalHub}/a/&lt;your-handle&gt;</code>.</li>
                 </ul>
               </div>
 
@@ -235,22 +234,45 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
           {tab === 'local-file' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)' }}>
-                Have a downloaded Indian government CSV, OCDS JSON, GeM contract export, CGA monthly
-                table, or CAG Audit PDF? Run our deterministic M1–M8 engines and RTI Act 2005 Sec
-                6(1) generator completely locally — without uploading anything to any server!
+                Audit any published Indian government dataset URL or downloaded CSV, OCDS JSON/ZIP,
+                XLSX, CPPP export, or CAG Audit PDF directly on your machine with our deterministic
+                M1–M8 engines and RTI Act 2005 Sec 6(1) draft generator.
               </p>
 
-              <div className="code-block">
-                <div style={{ paddingRight: 80 }}>{auditFileCmd}</div>
-                <button
-                  type="button"
-                  className="btn btn-emerald btn-xs"
-                  style={{ position: 'absolute', top: 10, right: 10 }}
-                  onClick={() => doCopy('file', auditFileCmd, 'Copied local audit-file command')}
-                >
-                  {copiedId === 'file' ? <Check size={12} /> : <Copy size={12} />}
-                  <span>{copiedId === 'file' ? 'Copied' : 'Copy'}</span>
-                </button>
+              <div>
+                <div className="section-kicker" style={{ marginBottom: 5 }}>
+                  Live Official URL · All-India PMGSY Rural Roads (2,189 districts · ₹3.89 Lakh Cr)
+                </div>
+                <div className="code-block">
+                  <div style={{ paddingRight: 80, wordBreak: 'break-all' }}>{pmgsyUrlCmd}</div>
+                  <button
+                    type="button"
+                    className="btn btn-emerald btn-xs"
+                    style={{ position: 'absolute', top: 10, right: 10 }}
+                    onClick={() => doCopy('file-pmgsy', pmgsyUrlCmd, 'Copied PMGSY official URL audit command')}
+                  >
+                    {copiedId === 'file-pmgsy' ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedId === 'file-pmgsy' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="section-kicker" style={{ marginBottom: 5 }}>
+                  Live Official URL · Assam OCDS Procurement FY16–22 (39,502 tenders) or Local CAG PDF / CPPP CSV
+                </div>
+                <div className="code-block">
+                  <div style={{ paddingRight: 80, wordBreak: 'break-all' }}>{assamOcdsUrlCmd}</div>
+                  <button
+                    type="button"
+                    className="btn btn-emerald btn-xs"
+                    style={{ position: 'absolute', top: 10, right: 10 }}
+                    onClick={() => doCopy('file-ocds', assamOcdsUrlCmd, 'Copied Assam OCDS audit command')}
+                  >
+                    {copiedId === 'file-ocds' ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{copiedId === 'file-ocds' ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
               </div>
 
               <div className="card card-pad-sm" style={{ background: 'var(--raised)' }}>

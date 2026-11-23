@@ -1,16 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FindingItem, JustInItem } from '../types';
-import { formatInrCr, formatRelativeTime } from '../utils';
+import { formatInrCr, formatRelativeTime, isUnverifiedStatus } from '../utils';
 
 interface JustInBarProps {
   justIn?: JustInItem | null;
   fallbackFinding?: FindingItem | null;
+  queuedTasks?: number;
+  missionsCount?: number;
   onSelectFinding: (id: string | number) => void;
+  onOpenJoin?: () => void;
 }
 
-export function JustInBar({ justIn, fallbackFinding, onSelectFinding }: JustInBarProps) {
+export function JustInBar({
+  justIn,
+  fallbackFinding,
+  queuedTasks = 0,
+  missionsCount = 8,
+  onSelectFinding,
+  onOpenJoin,
+}: JustInBarProps) {
   const [arriving, setArriving] = useState(false);
   const prevIdRef = useRef<string | number | null>(null);
+
+  const isVerifiedItem =
+    Boolean(justIn) ||
+    Boolean(
+      fallbackFinding &&
+        (fallbackFinding.status === 'verified' || fallbackFinding.status === 'rti_filed'),
+    );
 
   const item: JustInItem | null =
     justIn ??
@@ -24,7 +41,6 @@ export function JustInBar({ justIn, fallbackFinding, onSelectFinding }: JustInBa
             ? fallbackFinding.monetary_exposure_inr / 1e7
             : 0,
           verified_at: fallbackFinding.verified_at || fallbackFinding.created_at || '',
-          is_demo_sample: fallbackFinding.is_demo_sample,
         }
       : null);
 
@@ -39,17 +55,50 @@ export function JustInBar({ justIn, fallbackFinding, onSelectFinding }: JustInBa
     prevIdRef.current = item.id;
   }, [item]);
 
-  if (!item) return null;
+  if (!item) {
+    if (queuedTasks <= 0) return null;
+    return (
+      <div
+        className="just-in"
+        role="region"
+        aria-label="Open Government of India audit queue"
+      >
+        <span className="just-in-kicker">
+          <span className="live-dot sm" aria-hidden="true" />
+          <span>OPEN AUDIT QUEUE</span>
+        </span>
+
+        <span className="just-in-title">
+          {queuedTasks} official Government of India dataset{queuedTasks === 1 ? '' : 's'} queued
+          across {missionsCount || 8} live civic-audit fronts (M1–M8)
+        </span>
+
+        <span className="just-in-meta">2-of-2 quorum active</span>
+
+        {onOpenJoin && (
+          <button type="button" className="just-in-cta" onClick={onOpenJoin}>
+            Claim a task →
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const kickerLabel = isVerifiedItem
+    ? 'JUST VERIFIED'
+    : fallbackFinding && isUnverifiedStatus(fallbackFinding.status)
+      ? 'IN PEER REVIEW'
+      : 'LATEST AUDIT RECORD';
 
   return (
     <div
       className={`just-in ${arriving ? 'arriving' : ''}`}
       role="region"
-      aria-label="Latest peer-verified audit record"
+      aria-label="Latest public audit record"
     >
       <span className="just-in-kicker">
         <span className="live-dot sm" aria-hidden="true" />
-        <span>JUST VERIFIED</span>
+        <span>{kickerLabel}</span>
       </span>
 
       <span className="just-in-title">{item.title}</span>
@@ -59,8 +108,6 @@ export function JustInBar({ justIn, fallbackFinding, onSelectFinding }: JustInBa
           {formatInrCr(item.monetary_exposure_inr_cr)}
         </span>
       )}
-
-      {item.is_demo_sample && <span className="just-in-demo">SAMPLE DEMO</span>}
 
       {item.verified_at && (
         <span className="just-in-meta">{formatRelativeTime(item.verified_at)}</span>

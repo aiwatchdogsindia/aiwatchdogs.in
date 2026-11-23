@@ -1,18 +1,61 @@
-"""SQLite (WAL mode) database layer for AI Watchdogs India Coordinator Hub."""
+"""Dual-backend database layer (Neon Postgres + SQLite WAL) for AI Watchdogs India Coordinator Hub.
+
+Automatically uses PostgreSQL (via psycopg v3) when ``DATABASE_URL`` or ``POSTGRES_URL``
+is configured in the environment (or passed explicitly), and falls back to thread-safe
+SQLite WAL mode for offline local development and pytest suites.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
+
+try:
+    import psycopg
+    from psycopg.rows import dict_row
+except ImportError:  # pragma: no cover - psycopg[binary] is a core dependency
+    psycopg = None  # type: ignore[assignment]
+    dict_row = None  # type: ignore[assignment]
 
 DEFAULT_DB_REL_PATH = Path("data/aiwatchdogs.db")
 VERCEL_DB_PATH = Path("/tmp/aiwatchdogs.db")
+
+HUB_TABLES: frozenset[str] = frozenset(
+    {
+        "public_sources",
+        "missions",
+        "agents",
+        "evidence_artifacts",
+        "tasks",
+        "findings",
+        "peer_verifications",
+        "rti_drafts",
+        "whispers",
+        "sponsors",
+        "treasury_ledger",
+    }
+)
+PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
+PG_SEED_ADVISORY_LOCK_KEY = 84729105
+
+DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
+    (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
+    if psycopg is not None
+    else (sqlite3.IntegrityError,)
+)
+
+_PG_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
+    (psycopg.OperationalError, psycopg.InterfaceError)
+    if psycopg is not None
+    else ()
+)
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS public_sources (
@@ -43,7 +86,7 @@ CREATE TABLE IF NOT EXISTS missions (
     statutory_anchors_json TEXT NOT NULL DEFAULT '[]',
     source_ids_json TEXT NOT NULL DEFAULT '[]',
     sample_dataset_path TEXT NOT NULL DEFAULT '',
-    data_mode TEXT NOT NULL DEFAULT 'demo_sample',
+    data_mode TEXT NOT NULL DEFAULT 'live_public',
     status TEXT NOT NULL DEFAULT 'active',
     priority INTEGER NOT NULL DEFAULT 1,
     total_tasks INTEGER NOT NULL DEFAULT 0,
@@ -88,7 +131,7 @@ CREATE TABLE IF NOT EXISTS evidence_artifacts (
     file_format TEXT NOT NULL,
     sha256 TEXT NOT NULL,
     byte_size INTEGER NOT NULL DEFAULT 0,
-    is_demo_sample INTEGER NOT NULL DEFAULT 1,
+    is_demo_sample INTEGER NOT NULL DEFAULT 0,
     pii_scrubbed INTEGER NOT NULL DEFAULT 1,
     fetched_at TEXT NOT NULL,
     parsed_metadata_json TEXT NOT NULL DEFAULT '{}'
@@ -138,7 +181,7 @@ CREATE TABLE IF NOT EXISTS findings (
     source_url TEXT NOT NULL DEFAULT '',
     artifact_sha256 TEXT NOT NULL DEFAULT '',
     dataset_path TEXT NOT NULL DEFAULT '',
-    is_demo_sample INTEGER NOT NULL DEFAULT 1,
+    is_demo_sample INTEGER NOT NULL DEFAULT 0,
     citations_json TEXT NOT NULL DEFAULT '[]',
     benign_explanations_json TEXT NOT NULL DEFAULT '[]',
     suggested_authority TEXT NOT NULL DEFAULT '',
@@ -213,7 +256,7 @@ CREATE TABLE IF NOT EXISTS sponsors (
     url TEXT,
     message TEXT NOT NULL DEFAULT '',
     featured INTEGER NOT NULL DEFAULT 0,
-    is_demo_entry INTEGER NOT NULL DEFAULT 1,
+    is_demo_entry INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -228,7 +271,7 @@ CREATE TABLE IF NOT EXISTS treasury_ledger (
     amount_inr REAL NOT NULL,
     compute_credit_units TEXT NOT NULL DEFAULT '',
     receipt_ref TEXT NOT NULL,
-    is_demo_entry INTEGER NOT NULL DEFAULT 1,
+    is_demo_entry INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
 
@@ -244,6 +287,11 @@ CREATE INDEX IF NOT EXISTS idx_whispers_created ON whispers(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agents_score ON agents(compute_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_date ON treasury_ledger(entry_date DESC);
 """
+
+_AUTOINC_RE = re.compile(r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b", re.IGNORECASE)
+_INSERT_OR_IGNORE_RE = re.compile(r"^\s*INSERT\s+OR\s+IGNORE\s+INTO\b", re.IGNORECASE)
+_CREATE_TABLE_RE = re.compile(r"^\s*CREATE\s+TABLE\b", re.IGNORECASE)
+_REAL_TYPE_RE = re.compile(r"\bREAL\b")
 
 
 def utc_now_iso() -> str:
@@ -262,8 +310,28 @@ def loads_json(raw: str | None, default: Any) -> Any:
 
 
 def dumps_json(value: Any) -> str:
-    """Serialize a Python object to compact JSON for SQLite storage."""
+    """Serialize a Python object to compact JSON for database storage."""
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def is_postgres_url(value: str | Path | None) -> bool:
+    """Return True if value looks like a PostgreSQL connection URL."""
+    if not value or not isinstance(value, str):
+        return False
+    lowered = value.strip().lower()
+    return lowered.startswith("postgres://") or lowered.startswith("postgresql://")
+
+
+def resolve_database_url(database_url: str | None = None) -> str | None:
+    """Resolve PostgreSQL URL from explicit argument or DATABASE_URL / POSTGRES_URL env vars."""
+    if database_url is not None:
+        cleaned = database_url.strip()
+        return cleaned if is_postgres_url(cleaned) else None
+    for env_key in ("DATABASE_URL", "POSTGRES_URL"):
+        val = (os.environ.get(env_key) or "").strip()
+        if is_postgres_url(val):
+            return val
+    return None
 
 
 def resolve_db_path(db_path: str | Path | None = None) -> Path:
@@ -283,16 +351,318 @@ def resolve_db_path(db_path: str | Path | None = None) -> Path:
     return resolved
 
 
-class Database:
-    """Thread-safe SQLite (WAL) database wrapper with clean transaction scopes."""
+def split_sql_statements(script_sql: str) -> list[str]:
+    """Split a multi-statement SQL script safely without breaking on semicolons inside quotes/comments."""
+    statements: list[str] = []
+    buf: list[str] = []
+    in_single = False
+    in_double = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    n = len(script_sql)
+    while i < n:
+        ch = script_sql[i]
+        nxt = script_sql[i + 1] if i + 1 < n else ""
+        if in_line_comment:
+            buf.append(ch)
+            if ch == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            buf.append(ch)
+            if ch == "*" and nxt == "/":
+                buf.append(nxt)
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+        if in_single:
+            buf.append(ch)
+            if ch == "'" and nxt == "'":
+                buf.append(nxt)
+                i += 2
+                continue
+            if ch == "'":
+                in_single = False
+            i += 1
+            continue
+        if in_double:
+            buf.append(ch)
+            if ch == '"' and nxt == '"':
+                buf.append(nxt)
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = resolve_db_path(db_path)
+        if ch == "-" and nxt == "-":
+            buf.append(ch)
+            buf.append(nxt)
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == "/" and nxt == "*":
+            buf.append(ch)
+            buf.append(nxt)
+            in_block_comment = True
+            i += 2
+            continue
+        if ch == "'":
+            in_single = True
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_double = True
+            buf.append(ch)
+            i += 1
+            continue
+        if ch == ";":
+            stmt = "".join(buf).strip()
+            if stmt:
+                statements.append(stmt)
+            buf = []
+            i += 1
+            continue
+
+        buf.append(ch)
+        i += 1
+
+    tail = "".join(buf).strip()
+    if tail:
+        statements.append(tail)
+    return statements
+
+
+def translate_sql_for_postgres(sql: str, *, parameterized: bool = False) -> str | None:
+    """Translate SQLite-style SQL into PostgreSQL-compatible SQL.
+
+    Returns ``None`` for SQLite-only statements (such as ``PRAGMA``) that should be skipped.
+    Replaces ``?`` placeholders with ``%s`` only outside quotes and comments.
+    """
+    stripped = sql.strip()
+    if not stripped:
+        return None
+    if stripped.upper().startswith("PRAGMA"):
+        return None
+
+    # Handle SQLite DDL dialects
+    if _CREATE_TABLE_RE.match(stripped):
+        stripped = _AUTOINC_RE.sub("SERIAL PRIMARY KEY", stripped)
+        stripped = _REAL_TYPE_RE.sub("DOUBLE PRECISION", stripped)
+
+    # Handle INSERT OR IGNORE INTO ... -> INSERT INTO ... ON CONFLICT DO NOTHING
+    if _INSERT_OR_IGNORE_RE.match(stripped):
+        has_semicolon = stripped.endswith(";")
+        core = stripped[:-1].rstrip() if has_semicolon else stripped
+        core = _INSERT_OR_IGNORE_RE.sub("INSERT INTO", core, count=1)
+        if "ON CONFLICT" not in core.upper():
+            core = f"{core} ON CONFLICT DO NOTHING"
+        stripped = f"{core};" if has_semicolon else core
+
+    if not parameterized:
+        return stripped
+
+    # Scan character-by-character so literal '?' inside quotes/comments stays untouched,
+    # while every literal '%' is escaped as '%%' for psycopg3 pyformat safety.
+    out: list[str] = []
+    in_single = False
+    in_double = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    n = len(stripped)
+    while i < n:
+        ch = stripped[i]
+        nxt = stripped[i + 1] if i + 1 < n else ""
+        if in_line_comment:
+            out.append("%%" if ch == "%" else ch)
+            if ch == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            out.append("%%" if ch == "%" else ch)
+            if ch == "*" and nxt == "/":
+                out.append(nxt)
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+        if in_single:
+            if ch == "'" and nxt == "'":
+                out.append("''")
+                i += 2
+                continue
+            out.append("%%" if ch == "%" else ch)
+            if ch == "'":
+                in_single = False
+            i += 1
+            continue
+        if in_double:
+            if ch == '"' and nxt == '"':
+                out.append('""')
+                i += 2
+                continue
+            out.append("%%" if ch == "%" else ch)
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
+
+        if ch == "-" and nxt == "-":
+            out.append("--")
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == "/" and nxt == "*":
+            out.append("/*")
+            in_block_comment = True
+            i += 2
+            continue
+        if ch == "'":
+            in_single = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            in_double = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "%":
+            out.append("%%")
+            i += 1
+            continue
+        if ch == "?":
+            out.append("%s")
+            i += 1
+            continue
+
+        out.append(ch)
+        i += 1
+
+    return "".join(out)
+
+
+class _NoOpCursor:
+    """Empty cursor returned when skipping SQLite-only PRAGMA statements on Postgres."""
+
+    rowcount: int = 0
+
+    def fetchone(self) -> None:
+        return None
+
+    def fetchall(self) -> list[dict[str, Any]]:
+        return []
+
+
+class _PgConnectionAdapter:
+    """Thin adapter exposing sqlite3.Connection-compatible execute/executescript over psycopg v3."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+        self._stmt_count = 0
+
+    def reset_stmt_count(self) -> None:
+        self._stmt_count = 0
+
+    def execute(self, sql: str, params: Sequence[Any] | None = None) -> Any:
+        has_params = params is not None and len(params) > 0
+        translated = translate_sql_for_postgres(sql, parameterized=has_params)
+        if translated is None:
+            return _NoOpCursor()
+
+        conn = self._db._ensure_pg_connection()
+        try:
+            if has_params:
+                cursor = conn.execute(translated, tuple(params))  # type: ignore[arg-type]
+            else:
+                cursor = conn.execute(translated)
+            self._stmt_count += 1
+            return cursor
+        except _PG_TRANSIENT_ERRORS:
+            # Neon serverless connections can close while idle; transparently reconnect
+            # and retry once if no prior statement has executed in this unit of work.
+            if self._stmt_count > 0:
+                raise
+            conn = self._db._reconnect_pg()
+            if has_params:
+                cursor = conn.execute(translated, tuple(params))  # type: ignore[arg-type]
+            else:
+                cursor = conn.execute(translated)
+            self._stmt_count += 1
+            return cursor
+
+    def executescript(self, script_sql: str) -> None:
+        for stmt in split_sql_statements(script_sql):
+            self.execute(stmt)
+
+    def commit(self) -> None:
+        conn = self._db._pg_conn
+        if conn is not None and not conn.closed:
+            conn.commit()
+
+    def rollback(self) -> None:
+        conn = self._db._pg_conn
+        if conn is not None and not conn.closed:
+            conn.rollback()
+
+
+class Database:
+    """Thread-safe dual-backend database wrapper (Neon Postgres + SQLite WAL)."""
+
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        *,
+        database_url: str | None = None,
+    ) -> None:
         self._lock = threading.RLock()
-        self._conn = self._open_connection()
+        self._tx_depth = 0
+        self._conn: sqlite3.Connection | None = None
+        self._pg_conn: Any = None
+        self._pg_adapter: _PgConnectionAdapter | None = None
+
+        # Explicit local db_path always selects SQLite (so pytest tmp_path never hits Neon),
+        # unless db_path itself is a postgres:// URL.
+        if db_path is not None and is_postgres_url(db_path):
+            pg_url: str | None = str(db_path).strip()
+        elif database_url is not None:
+            pg_url = resolve_database_url(database_url)
+        elif db_path is None:
+            pg_url = resolve_database_url(None)
+        else:
+            pg_url = None
+
+        if pg_url:
+            if psycopg is None:  # pragma: no cover
+                raise RuntimeError(
+                    "PostgreSQL DATABASE_URL is set, but 'psycopg[binary]' is not installed."
+                )
+            self.backend = "postgres"
+            self.is_postgres = True
+            self.database_url: str | None = pg_url
+            self.db_path: Path | None = None
+            self._pg_conn = self._open_pg_connection()
+            self._pg_adapter = _PgConnectionAdapter(self)
+        else:
+            self.backend = "sqlite"
+            self.is_postgres = False
+            self.database_url = None
+            self.db_path = resolve_db_path(db_path)
+            self._conn = self._open_sqlite_connection()
+
         self.init_schema()
 
-    def _open_connection(self) -> sqlite3.Connection:
+    def _open_sqlite_connection(self) -> sqlite3.Connection:
+        assert self.db_path is not None
         conn = sqlite3.connect(
             str(self.db_path),
             check_same_thread=False,
@@ -305,39 +675,155 @@ class Database:
         conn.execute("PRAGMA busy_timeout = 30000;")
         return conn
 
-    def init_schema(self) -> None:
-        """Create all Hub tables and indexes idempotently."""
-        with self._lock:
-            self._conn.executescript(SCHEMA_SQL)
-            self._conn.commit()
+    def _open_pg_connection(self) -> Any:
+        assert psycopg is not None and self.database_url is not None
+        dsn = self.database_url
+        if dsn.startswith("postgres://"):
+            dsn = "postgresql://" + dsn[len("postgres://") :]
+        # prepare_threshold=None is critical for Neon PgBouncer transaction pooling!
+        return psycopg.connect(
+            dsn,
+            row_factory=dict_row,
+            autocommit=False,
+            prepare_threshold=None,
+            connect_timeout=15,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
+        )
 
-    @contextmanager
-    def transaction(self) -> Iterator[sqlite3.Connection]:
-        """Acquire write lock and yield a transactional SQLite connection."""
-        with self._lock:
+    def _ensure_pg_connection(self) -> Any:
+        if self._pg_conn is None or self._pg_conn.closed or getattr(self._pg_conn, "broken", False):
+            self._pg_conn = self._open_pg_connection()
+        return self._pg_conn
+
+    def _reconnect_pg(self) -> Any:
+        old = self._pg_conn
+        if old is not None and not old.closed:
             try:
-                yield self._conn
-                self._conn.commit()
+                old.close()
             except Exception:
-                self._conn.rollback()
-                raise
+                pass
+        self._pg_conn = self._open_pg_connection()
+        return self._pg_conn
+
+    def init_schema(self) -> None:
+        """Create all Hub tables and indexes idempotently on SQLite or Postgres.
+
+        On PostgreSQL, first performs a read-only ``information_schema.tables`` check so
+        warm/cold serverless instances never acquire table-level ``ShareLock`` via
+        ``CREATE INDEX IF NOT EXISTS`` once the schema is already initialized. When
+        bootstrapping a fresh database, serializes DDL under a transaction-scoped
+        advisory lock.
+        """
+        with self._lock:
+            if self.is_postgres:
+                with self.read() as conn:
+                    rows = conn.execute(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = current_schema()"
+                    ).fetchall()
+                    existing = {str(r["table_name"]) for r in rows}
+                if HUB_TABLES.issubset(existing):
+                    return
+
+                with self.transaction() as conn:
+                    conn.execute(f"SELECT pg_advisory_xact_lock({PG_SCHEMA_ADVISORY_LOCK_KEY})")
+                    rows = conn.execute(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = current_schema()"
+                    ).fetchall()
+                    existing = {str(r["table_name"]) for r in rows}
+                    if HUB_TABLES.issubset(existing):
+                        return
+                    conn.executescript(SCHEMA_SQL)
+            else:
+                assert self._conn is not None
+                self._conn.executescript(SCHEMA_SQL)
+                self._conn.commit()
 
     @contextmanager
-    def read(self) -> Iterator[sqlite3.Connection]:
-        """Acquire lock and yield SQLite connection for consistent reads."""
+    def transaction(self) -> Iterator[Any]:
+        """Acquire write lock and yield a transactional database connection."""
         with self._lock:
-            yield self._conn
+            is_outer = self._tx_depth == 0
+            self._tx_depth += 1
+            try:
+                if self.is_postgres:
+                    assert self._pg_adapter is not None
+                    if is_outer:
+                        self._ensure_pg_connection()
+                        self._pg_adapter.reset_stmt_count()
+                    yield self._pg_adapter
+                    if is_outer:
+                        self._pg_adapter.commit()
+                else:
+                    assert self._conn is not None
+                    yield self._conn
+                    if is_outer:
+                        self._conn.commit()
+            except Exception:
+                if is_outer:
+                    if self.is_postgres and self._pg_adapter is not None:
+                        try:
+                            self._pg_adapter.rollback()
+                        except Exception:
+                            pass
+                    elif self._conn is not None:
+                        self._conn.rollback()
+                raise
+            finally:
+                self._tx_depth -= 1
+
+    @contextmanager
+    def read(self) -> Iterator[Any]:
+        """Acquire lock and yield database connection for consistent reads."""
+        with self._lock:
+            if self.is_postgres:
+                assert self._pg_adapter is not None
+                is_outer = self._tx_depth == 0
+                if is_outer:
+                    self._ensure_pg_connection()
+                    self._pg_adapter.reset_stmt_count()
+                try:
+                    yield self._pg_adapter
+                finally:
+                    # Release implicit Postgres read transaction cleanly so PgBouncer never stays IDLE IN TRANSACTION
+                    if is_outer:
+                        try:
+                            self._pg_adapter.rollback()
+                        except Exception:
+                            pass
+            else:
+                assert self._conn is not None
+                yield self._conn
 
     def health_check(self) -> bool:
-        """Verify SQLite connectivity and WAL mode."""
+        """Verify database connectivity cleanly on SQLite or Neon Postgres."""
         try:
             with self.read() as conn:
                 row = conn.execute("SELECT 1 AS ok").fetchone()
                 return bool(row and row["ok"] == 1)
-        except sqlite3.Error:
+        except Exception:
+            if self.is_postgres:
+                try:
+                    with self._lock:
+                        self._reconnect_pg()
+                    with self.read() as conn:
+                        row = conn.execute("SELECT 1 AS ok").fetchone()
+                        return bool(row and row["ok"] == 1)
+                except Exception:
+                    return False
             return False
 
     def close(self) -> None:
-        """Close the underlying SQLite connection."""
+        """Close the underlying database connection."""
         with self._lock:
-            self._conn.close()
+            if self.is_postgres:
+                if self._pg_conn is not None and not self._pg_conn.closed:
+                    self._pg_conn.close()
+                self._pg_conn = None
+            elif self._conn is not None:
+                self._conn.close()
+                self._conn = None

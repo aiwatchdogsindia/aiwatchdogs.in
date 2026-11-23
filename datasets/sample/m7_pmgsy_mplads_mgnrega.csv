@@ -1,8 +1,0 @@
-# [SAMPLE DEMO DATASET] Synthetic welfare & rural infrastructure records modeled on PMGSY OMMAS, MPLADS e-SAKSHI, and MGNREGA MIS R9.2 statutory criteria.
-scheme,work_id,entity_name,jurisdiction,fiscal_year,sanctioned_cost_inr,expenditure_inr,dpr_cost_inr,awarded_cost_inr,sanctioned_km,completed_km,delay_months,dlp_quality_unsatisfactory,sanctioned_inr,released_inr,months_elapsed,work_status,has_geotag_photo,wage_spend_inr,material_spend_inr,social_audit_flagged_inr,social_audit_recovered_inr,source_url
-PMGSY,DEMO-PMGSY-OD-401,Odisha Rural Works Division — Demo,State:Odisha,FY 2024-25,48000000,45120000,50000000,35500000,12.0,6.24,11,false,,,,,,,,,,https://ommas.nic.in
-PMGSY,DEMO-PMGSY-CG-402,Chhattisgarh Rural Roads Agency — Demo,State:Chhattisgarh,FY 2024-25,36000000,31680000,36500000,34800000,9.5,8.2,2,false,,,,,,,,,,https://ommas.nic.in
-MPLADS,DEMO-MPLADS-UP-801,District MPLADS Nodal Cell (Demo East),State:Uttar Pradesh,FY 2024-25,,,,,,,,false,7500000,6600000,19,in_progress,false,,,,,https://mplads.mospi.gov.in
-MPLADS,DEMO-MPLADS-TN-802,District MPLADS Nodal Cell (Demo South),State:Tamil Nadu,FY 2024-25,,,,,,,,false,5000000,5000000,8,completed,true,,,,,https://mplads.mospi.gov.in
-MGNREGA,DEMO-NREGA-BR-901,Demo Block Programme Officer (North),State:Bihar,FY 2024-25,,,,,,,,false,,,,,,14280000,15720000,1850000,230000,https://nrega.nic.in
-MGNREGA,DEMO-NREGA-KL-902,Demo Block Programme Officer (Coastal),State:Kerala,FY 2024-25,,,,,,,,false,,,,,,21235000,9765000,420000,420000,https://nrega.nic.in

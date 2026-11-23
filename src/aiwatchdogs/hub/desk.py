@@ -6,7 +6,6 @@ import csv
 import io
 import re
 import secrets
-import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -14,14 +13,13 @@ from fastapi import HTTPException, status
 
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
-from aiwatchdogs.hub.database import Database, dumps_json, loads_json, utc_now_iso
-from aiwatchdogs.hub.seed import INDEPENDENCE_PLEDGE, SEED_AGENTS
+from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
+from aiwatchdogs.hub.seed import INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 LEASE_MINUTES = 45
 VALID_VERDICTS = frozenset({"confirm", "dispute", "reject_false_positive", "flag_pii_or_legal"})
-SEED_AGENT_HANDLES = frozenset(str(a["handle"]).strip().lower() for a in SEED_AGENTS)
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -54,7 +52,7 @@ class DeskService:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _serialize_source(row: sqlite3.Row) -> dict[str, Any]:
+    def _serialize_source(row: Any) -> dict[str, Any]:
         return {
             "id": row["id"],
             "slug": row["slug"],
@@ -73,7 +71,7 @@ class DeskService:
 
     @staticmethod
     def _serialize_mission(
-        row: sqlite3.Row,
+        row: Any,
         queued_tasks: int = 0,
         peer_review_count: int = 0,
         rungs: list[dict[str, Any]] | None = None,
@@ -112,7 +110,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_agent(row: sqlite3.Row, window_score: int | None = None) -> dict[str, Any]:
+    def _serialize_agent(row: Any, window_score: int | None = None) -> dict[str, Any]:
         last_hb = _parse_iso(row["last_heartbeat_at"])
         now = datetime.now(timezone.utc)
         age_sec = int((now - last_hb).total_seconds()) if last_hb else 999999
@@ -146,7 +144,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_finding(row: sqlite3.Row, has_rti_draft: bool = False) -> dict[str, Any]:
+    def _serialize_finding(row: Any, has_rti_draft: bool = False) -> dict[str, Any]:
         exposure = float(row["monetary_exposure_inr"] or 0.0)
         return {
             "id": row["id"],
@@ -188,7 +186,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_verification(row: sqlite3.Row) -> dict[str, Any]:
+    def _serialize_verification(row: Any) -> dict[str, Any]:
         return {
             "id": row["id"],
             "finding_id": row["finding_id"],
@@ -206,7 +204,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_rti(row: sqlite3.Row) -> dict[str, Any]:
+    def _serialize_rti(row: Any) -> dict[str, Any]:
         return {
             "id": row["id"],
             "finding_id": row["finding_id"],
@@ -225,7 +223,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_whisper(row: sqlite3.Row) -> dict[str, Any]:
+    def _serialize_whisper(row: Any) -> dict[str, Any]:
         return {
             "id": row["id"],
             "agent_handle": row["agent_handle"],
@@ -239,7 +237,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_sponsor(row: sqlite3.Row) -> dict[str, Any]:
+    def _serialize_sponsor(row: Any) -> dict[str, Any]:
         return {
             "id": row["id"],
             "name": row["name"],
@@ -255,7 +253,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_ledger(row: sqlite3.Row) -> dict[str, Any]:
+    def _serialize_ledger(row: Any) -> dict[str, Any]:
         amt = float(row["amount_inr"] or 0.0)
         direction = row["direction"]
         return {
@@ -276,7 +274,7 @@ class DeskService:
 
     def _insert_whisper(
         self,
-        conn: sqlite3.Connection,
+        conn: Any,
         *,
         agent_handle: str,
         provider: str,
@@ -310,10 +308,12 @@ class DeskService:
             "created_at": created,
         }
 
-    def _reclaim_expired_leases(self, conn: sqlite3.Connection) -> int:
+    def _reclaim_expired_leases(self, conn: Any) -> int:
         now = utc_now_iso()
+        lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
         expired = conn.execute(
-            "SELECT id, claimed_by_agent_id FROM tasks WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?",
+            f"SELECT id, claimed_by_agent_id FROM tasks "
+            f"WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?{lock_clause}",
             (now,),
         ).fetchall()
         for row in expired:
@@ -322,7 +322,7 @@ class DeskService:
                 UPDATE tasks
                 SET status = 'queued', claimed_by_agent_id = NULL, claimed_by_handle = NULL,
                     lease_id = NULL, lease_expires_at = NULL, progress_pct = 0, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? AND status = 'claimed'
                 """,
                 (now, row["id"]),
             )
@@ -335,10 +335,10 @@ class DeskService:
 
     def _authenticate_agent(
         self,
-        conn: sqlite3.Connection,
+        conn: Any,
         token: str | None,
         required: bool = True,
-    ) -> sqlite3.Row | None:
+    ) -> Any | None:
         if not token:
             if required:
                 raise HTTPException(
@@ -506,12 +506,22 @@ class DeskService:
                 conn.execute("SELECT COALESCE(SUM(amount_inr), 0) AS s FROM sponsors").fetchone()["s"] or 0.0
             )
 
-        orchestrator_brief = (
-            f"Swarm focus: {peer_review_cnt} public-record leads await independent 2-of-2 peer verification "
-            f"across 8 Indian civic-audit fronts ({tasks_queued} queued tasks ready for local Ollama, BYO API, "
-            "or Rs 0 deterministic CPU nodes). Every finding requires SHA-256 provenance, neutral BNS Sec 356 "
-            "wording, and benign explanations; cleared records earn equal standing."
-        )
+        if verified_cnt == 0 and peer_review_cnt == 0:
+            orchestrator_brief = (
+                f"Live Government of India Audit Queue: {tasks_queued} verified official datasets "
+                f"(Assam & HP OCDS, AP Monthly Treasury, Assam OBDS, CGA Monthly Accounts, CAG 2025–26 PDFs, "
+                f"PMGSY, MGNREGA, SC Electoral Bonds × MCA CSR) ready across {len(missions)} active missions "
+                f"({len(active_agents)} active contributor nodes). Every finding requires SHA-256 provenance, "
+                "neutral BNS Sec 356 framing, benign explanations, and independent 2-of-2 peer verification."
+            )
+        else:
+            orchestrator_brief = (
+                f"Swarm focus: {verified_cnt} verified leads, {peer_review_cnt} leads awaiting 2-of-2 peer "
+                f"verification, and {tasks_queued} queued Government of India audit tasks across "
+                f"{len(missions)} live missions ({len(active_agents)} active contributor nodes; "
+                f"{cleared_cnt} cleared records). Every lead requires SHA-256 provenance, neutral BNS Sec 356 "
+                "wording, and benign explanations."
+            )
 
         return {
             "generated_at": generated_at,
@@ -550,7 +560,7 @@ class DeskService:
         }
 
     @staticmethod
-    def _build_record_events(conn: sqlite3.Connection, limit: int = 20) -> list[dict[str, Any]]:
+    def _build_record_events(conn: Any, limit: int = 20) -> list[dict[str, Any]]:
         events: list[tuple[datetime, int, str, dict[str, Any]]] = []
         epoch_min = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -671,7 +681,7 @@ class DeskService:
 
     @staticmethod
     def _build_mission_rungs(
-        conn: sqlite3.Connection,
+        conn: Any,
         mission_id: str | None = None,
         max_rungs: int = 24,
     ) -> dict[str, list[dict[str, Any]]]:
@@ -761,7 +771,7 @@ class DeskService:
             result[mid] = [it[3] for it in items]
         return result
 
-    def _fetch_missions(self, conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    def _fetch_missions(self, conn: Any) -> list[dict[str, Any]]:
         queued_map = {
             r["mission_id"]: r["c"]
             for r in conn.execute(
@@ -827,21 +837,26 @@ class DeskService:
                 "SELECT * FROM tasks WHERE mission_id = ? ORDER BY CASE status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, updated_at DESC LIMIT 30",
                 (mid,),
             ).fetchall()
-            tasks = [
-                {
-                    "id": t["id"],
-                    "task_type": t["task_type"],
-                    "methodology_code": t["methodology_code"],
-                    "title": t["title"],
-                    "status": t["status"],
-                    "claimed_by_handle": t["claimed_by_handle"],
-                    "progress_pct": t["progress_pct"],
-                    "target_finding_id": t["target_finding_id"],
-                    "created_at": t["created_at"],
-                    "completed_at": t["completed_at"],
-                }
-                for t in t_rows
-            ]
+            tasks = []
+            for t in t_rows:
+                t_payload = loads_json(t["payload_json"], {})
+                tasks.append(
+                    {
+                        "id": t["id"],
+                        "task_type": t["task_type"],
+                        "methodology_code": t["methodology_code"],
+                        "title": t["title"],
+                        "status": t["status"],
+                        "claimed_by_handle": t["claimed_by_handle"],
+                        "progress_pct": t["progress_pct"],
+                        "target_finding_id": t["target_finding_id"],
+                        "dataset_url": t_payload.get("dataset_url"),
+                        "source_url": t_payload.get("source_url"),
+                        "expected_sha256": t_payload.get("expected_sha256"),
+                        "created_at": t["created_at"],
+                        "completed_at": t["completed_at"],
+                    }
+                )
 
         return {**mission, "sources": sources, "findings": findings, "tasks": tasks}
 
@@ -873,7 +888,8 @@ class DeskService:
         if search and search.strip():
             like = f"%{search.strip()}%"
             clauses.append(
-                "(title LIKE ? OR summary LIKE ? OR entity_name LIKE ? OR jurisdiction LIKE ? OR rule_triggered LIKE ?)"
+                "(LOWER(title) LIKE LOWER(?) OR LOWER(summary) LIKE LOWER(?) OR LOWER(entity_name) LIKE LOWER(?) "
+                "OR LOWER(jurisdiction) LIKE LOWER(?) OR LOWER(rule_triggered) LIKE LOWER(?))"
             )
             params.extend([like, like, like, like, like])
 
@@ -1122,7 +1138,7 @@ class DeskService:
             f = self._serialize_finding(f_row)
             f_node_id = f"finding:{f['id']}"
             submitted_by = str(f["submitted_by"] or "").strip()
-            is_community = bool(submitted_by) and submitted_by.lower() not in SEED_AGENT_HANDLES
+            is_community = bool(submitted_by)
             add_node(
                 {
                     "id": f_node_id,
@@ -1625,19 +1641,29 @@ class DeskService:
                 clauses.append("mission_slug = ?")
                 params.append(preferred_mission.strip())
 
-            # Prioritize peer_verify in auto mode so leads reach 2-of-2 quorum rapidly
+            # Prioritize peer_verify in auto mode so leads reach 2-of-2 quorum rapidly.
+            # On Postgres, FOR UPDATE SKIP LOCKED prevents concurrent serverless instances
+            # from double-claiming or blocking on the same task row, and keeping task updates
+            # strictly before agent updates guarantees consistent table lock ordering.
+            lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
             candidates = conn.execute(
                 f"""
                 SELECT * FROM tasks
                 WHERE {' AND '.join(clauses)}
                 ORDER BY
                     CASE task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
-                    created_at ASC
+                    created_at ASC,
+                    id ASC
+                {lock_clause}
                 """,
                 params,
             ).fetchall()
 
-            chosen: sqlite3.Row | None = None
+            now = utc_now_iso()
+            lease_id = f"lease-{secrets.token_hex(8)}"
+            lease_expires = _future_iso(LEASE_MINUTES)
+            chosen: Any | None = None
+
             for cand in candidates:
                 excluded = set(loads_json(cand["excluded_handles_json"], []))
                 if agent_handle in excluded:
@@ -1645,31 +1671,29 @@ class DeskService:
                 target_fid = cand["target_finding_id"]
                 if target_fid and target_fid in ineligible_findings:
                     continue
-                chosen = cand
-                break
+                cur = conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status = 'claimed', claimed_by_agent_id = ?, claimed_by_handle = ?,
+                        lease_id = ?, lease_expires_at = ?, progress_pct = 5,
+                        attempt_count = attempt_count + 1, updated_at = ?
+                    WHERE id = ? AND status = 'queued'
+                    """,
+                    (agent["id"], agent_handle, lease_id, lease_expires, now, cand["id"]),
+                )
+                if cur.rowcount == 1:
+                    chosen = cand
+                    break
 
-            now = utc_now_iso()
-            conn.execute(
-                "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
-                (now, agent["id"]),
-            )
             if chosen is None:
+                conn.execute(
+                    "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                    (now, agent["id"]),
+                )
                 return None
 
-            lease_id = f"lease-{secrets.token_hex(8)}"
-            lease_expires = _future_iso(LEASE_MINUTES)
             conn.execute(
-                """
-                UPDATE tasks
-                SET status = 'claimed', claimed_by_agent_id = ?, claimed_by_handle = ?,
-                    lease_id = ?, lease_expires_at = ?, progress_pct = 5,
-                    attempt_count = attempt_count + 1, updated_at = ?
-                WHERE id = ?
-                """,
-                (agent["id"], agent_handle, lease_id, lease_expires, now, chosen["id"]),
-            )
-            conn.execute(
-                "UPDATE agents SET current_task_id = ?, last_heartbeat_at = ? WHERE id = ?",
+                "UPDATE agents SET current_task_id = ?, last_heartbeat_at = ?, status = 'active' WHERE id = ?",
                 (chosen["id"], now, agent["id"]),
             )
             whisper = self._insert_whisper(
@@ -1880,10 +1904,10 @@ class DeskService:
     def _handle_submit_finding(
         self,
         *,
-        conn: sqlite3.Connection,
-        task: sqlite3.Row,
-        agent: sqlite3.Row,
-        mission: sqlite3.Row,
+        conn: Any,
+        task: Any,
+        agent: Any,
+        mission: Any,
         finding_in: Any,
         whisper_text: str,
         metrics: dict[str, Any],
@@ -1928,15 +1952,101 @@ class DeskService:
             severity = "medium"
         anomaly_metrics = finding_in.get("anomaly_metrics") if isinstance(finding_in.get("anomaly_metrics"), dict) else {}
         rule_triggered = str(finding_in.get("rule_triggered") or f"{method_code}-Deterministic-Rule").strip()
-        source_url = str(finding_in.get("source_url") or task_payload.get("source_url") or "").strip()
-        dataset_path = str(finding_in.get("dataset_path") or task_payload.get("dataset_path") or mission["sample_dataset_path"]).strip()
+        dataset_url = str(finding_in.get("dataset_url") or task_payload.get("dataset_url") or "").strip()
+        source_url = str(
+            finding_in.get("source_url")
+            or finding_in.get("canonical_url")
+            or task_payload.get("source_url")
+            or dataset_url
+            or ""
+        ).strip()
+        dataset_path = str(
+            finding_in.get("dataset_path")
+            or dataset_url
+            or task_payload.get("dataset_path")
+            or mission["sample_dataset_path"]
+            or ""
+        ).strip()
         artifact_sha256 = str(
             finding_in.get("artifact_sha256")
+            or task_payload.get("expected_sha256")
             or task_payload.get("artifact_sha256")
             or compute_sha256(f"{finding_id}:{title}:{dataset_path}")
         ).strip()
-        artifact_id = finding_in.get("artifact_id") or task_payload.get("artifact_id")
-        is_demo = 1 if finding_in.get("is_demo_sample", task_payload.get("is_demo_sample", True)) else 0
+        requested_artifact_id = finding_in.get("artifact_id") or task_payload.get("artifact_id")
+        is_demo = 1 if finding_in.get("is_demo_sample", task_payload.get("is_demo_sample", False)) else 0
+
+        # Ensure artifact_id references a valid evidence_artifacts row (FK-safe on Postgres & SQLite)
+        artifact_id: str | None = None
+        if requested_artifact_id:
+            existing_art = conn.execute(
+                "SELECT id FROM evidence_artifacts WHERE id = ?",
+                (str(requested_artifact_id),),
+            ).fetchone()
+            if existing_art is not None:
+                artifact_id = existing_art["id"]
+
+        if artifact_id is None and (dataset_url or source_url or artifact_sha256):
+            artifact_id = f"art-{finding_id}"
+            mission_sources = loads_json(mission["source_ids_json"], [])
+            primary_source_id: str | None = None
+            if mission_sources:
+                src_check = conn.execute(
+                    "SELECT id FROM public_sources WHERE id = ?",
+                    (str(mission_sources[0]),),
+                ).fetchone()
+                if src_check is not None:
+                    primary_source_id = src_check["id"]
+            canonical_ref = dataset_url or source_url or dataset_path
+            lower_ref = canonical_ref.lower()
+            if lower_ref.endswith(".pdf"):
+                fmt = "pdf"
+            elif lower_ref.endswith(".xlsx") or lower_ref.endswith(".xls"):
+                fmt = "xlsx"
+            elif lower_ref.endswith(".zip"):
+                fmt = "json.zip"
+            elif lower_ref.endswith(".json"):
+                fmt = "json"
+            elif lower_ref.endswith(".aspx") or lower_ref.endswith(".html"):
+                fmt = "html"
+            else:
+                fmt = "csv"
+            art_title = str(
+                finding_in.get("artifact_title")
+                or task_payload.get("artifact_title")
+                or f"{method_code} Official Public Dataset ({jurisdiction})"
+            ).strip()
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO evidence_artifacts (
+                    id, source_id, mission_id, title, canonical_url, archive_url,
+                    local_path, file_format, sha256, byte_size, is_demo_sample,
+                    pii_scrubbed, fetched_at, parsed_metadata_json
+                ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    artifact_id,
+                    primary_source_id,
+                    mission["id"],
+                    art_title,
+                    canonical_ref,
+                    dataset_path or None,
+                    fmt,
+                    artifact_sha256,
+                    int(metrics.get("byte_size") or 0),
+                    is_demo,
+                    now,
+                    dumps_json(
+                        {
+                            "source_url": source_url,
+                            "dataset_url": dataset_url,
+                            "secondary_url": task_payload.get("secondary_url"),
+                            "methodology_code": method_code,
+                        }
+                    ),
+                ),
+            )
+
         suggested_authority = str(finding_in.get("suggested_authority") or mission["ministry_or_authority"]).strip()
         agent_trace = finding_in.get("agent_trace") if isinstance(finding_in.get("agent_trace"), dict) else {}
         agent_trace = {
@@ -2029,10 +2139,15 @@ class DeskService:
                             "finding_id": finding_id,
                             "submitted_by": agent["handle"],
                             "methodology_code": method_code,
+                            "dataset_url": dataset_url,
+                            "secondary_url": task_payload.get("secondary_url"),
+                            "secondary_sha256": task_payload.get("secondary_sha256"),
                             "dataset_path": dataset_path,
                             "source_url": source_url,
+                            "canonical_url": source_url,
                             "artifact_id": artifact_id,
                             "artifact_sha256": artifact_sha256,
+                            "expected_sha256": task_payload.get("expected_sha256") or artifact_sha256,
                             "title": title,
                             "summary": summary,
                             "entity_name": entity_name,
@@ -2127,10 +2242,10 @@ class DeskService:
     def _handle_submit_verification(
         self,
         *,
-        conn: sqlite3.Connection,
-        task: sqlite3.Row,
-        agent: sqlite3.Row,
-        mission: sqlite3.Row,
+        conn: Any,
+        task: Any,
+        agent: Any,
+        mission: Any,
         verif_in: Any,
         whisper_text: str,
         now: str,
@@ -2208,7 +2323,7 @@ class DeskService:
                     now,
                 ),
             )
-        except sqlite3.IntegrityError as exc:
+        except DB_INTEGRITY_ERRORS as exc:
             raise HTTPException(
                 status_code=409,
                 detail="Duplicate verification prohibited by uniqueness constraint.",
@@ -2239,14 +2354,15 @@ class DeskService:
             all_fp = all(v["verdict"] == "reject_false_positive" for v in all_votes)
             new_status = "retracted_false_positive" if all_fp else "disputed"
 
+        new_verified_at = now if (new_status == "verified" and not finding_row["verified_at"]) else finding_row["verified_at"]
         conn.execute(
             """
             UPDATE findings
             SET confirm_count = ?, dispute_count = ?, verification_score = ?,
-                status = ?, verified_at = CASE WHEN ? = 'verified' AND verified_at IS NULL THEN ? ELSE verified_at END
+                status = ?, verified_at = ?
             WHERE id = ?
             """,
-            (confirm_count, dispute_count, consensus, new_status, new_status, now, finding_id),
+            (confirm_count, dispute_count, consensus, new_status, new_verified_at, finding_id),
         )
 
         # Complete current verification task & credit verifier
@@ -2427,10 +2543,10 @@ class DeskService:
     def _handle_submit_cleared(
         self,
         *,
-        conn: sqlite3.Connection,
-        task: sqlite3.Row,
-        agent: sqlite3.Row,
-        mission: sqlite3.Row,
+        conn: Any,
+        task: Any,
+        agent: Any,
+        mission: Any,
         whisper_text: str,
         metrics: dict[str, Any],
         now: str,

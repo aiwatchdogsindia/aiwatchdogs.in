@@ -51,7 +51,6 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
             <span>{sm.label}</span>
           </span>
           <span className="tag-mono tag-method">{finding.methodology_code}</span>
-          {finding.is_demo_sample && <span className="badge-demo">SAMPLE DEMO</span>}
           {(finding.has_rti_draft || finding.rti_draft) && (
             <span className="badge badge-rti">RTI Draft Ready</span>
           )}

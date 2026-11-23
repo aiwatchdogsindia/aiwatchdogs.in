@@ -87,6 +87,37 @@ export function LiveOrganism({
     });
   }, [agents, missions, missionBySlug, whispers]);
 
+  const openMissionSlots = useMemo(() => {
+    if (seats.length > 0 || missions.length === 0) return [];
+    const slice = missions.slice(0, 6);
+    const count = slice.length;
+    return slice.map((mission, idx) => {
+      const angle = -Math.PI * 0.8 + (idx * 2 * Math.PI) / count;
+      const x = CX + Math.cos(angle) * RX;
+      const y = CY + Math.sin(angle) * RY;
+      const tint = pillarTint(mission.pillar);
+      const queued = mission.queued_tasks ?? Math.max(0, mission.total_tasks - mission.completed_tasks);
+      return {
+        mission,
+        x,
+        y,
+        pctX: (x / W) * 100,
+        pctY: (y / H) * 100,
+        tint,
+        queued,
+      };
+    });
+  }, [seats.length, missions]);
+
+  const totalQueuedTasks = useMemo(
+    () =>
+      missions.reduce(
+        (acc, m) => acc + (m.queued_tasks ?? Math.max(0, m.total_tasks - m.completed_tasks)),
+        0,
+      ),
+    [missions],
+  );
+
   // Build up to 3 peer handoff curves between active seats
   const peerArcs = useMemo(() => {
     if (seats.length < 2) return [];
@@ -134,6 +165,12 @@ export function LiveOrganism({
               <stop offset="100%" stopColor={`rgba(${s.tint.rgb}, 0)`} />
             </radialGradient>
           ))}
+          {openMissionSlots.map((slot, idx) => (
+            <radialGradient key={`open-wash-${idx}`} id={`org-open-wash-${idx}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={`rgba(${slot.tint.rgb}, 0.16)`} />
+              <stop offset="100%" stopColor={`rgba(${slot.tint.rgb}, 0)`} />
+            </radialGradient>
+          ))}
         </defs>
 
         {/* Subtle elliptical dashed orbit track */}
@@ -149,9 +186,12 @@ export function LiveOrganism({
           opacity="0.7"
         />
 
-        {/* Soft radial pillar washes behind each seat */}
+        {/* Soft radial pillar washes behind each seat or open mission slot */}
         {seats.map((s, idx) => (
           <circle key={`halo-${s.agent.handle}`} cx={s.x} cy={s.y} r="94" fill={`url(#org-wash-${idx})`} />
+        ))}
+        {openMissionSlots.map((slot, idx) => (
+          <circle key={`open-halo-${slot.mission.slug}`} cx={slot.x} cy={slot.y} r="84" fill={`url(#org-open-wash-${idx})`} />
         ))}
 
         {/* Curved peer-verification handoff arcs */}
@@ -164,6 +204,19 @@ export function LiveOrganism({
             strokeWidth="1.1"
             strokeDasharray="3 5"
             opacity="0.32"
+          />
+        ))}
+
+        {/* Dashed standby spokes for open mission slots when 0 agents are live */}
+        {openMissionSlots.map((slot, idx) => (
+          <path
+            key={`open-spoke-${idx}`}
+            d={`M ${slot.x.toFixed(1)} ${slot.y.toFixed(1)} L ${CX} ${CY}`}
+            fill="none"
+            stroke="#D6D1C5"
+            strokeWidth="1"
+            strokeDasharray="3 5"
+            opacity="0.7"
           />
         ))}
 
@@ -222,9 +275,39 @@ export function LiveOrganism({
             {latestVerif.created_at && <span>· {formatShortRel(latestVerif.created_at)}</span>}
           </button>
         ) : (
-          <span className="gate-verdict">2-of-2 quorum gate active</span>
+          <span className="gate-verdict">
+            {totalQueuedTasks > 0
+              ? `${totalQueuedTasks} official tasks ready · 2-of-2 quorum active`
+              : '2-of-2 quorum gate active'}
+          </span>
         )}
       </div>
+
+      {/* Open Mission Slots when 0 agents are live yet */}
+      {openMissionSlots.map((slot) => (
+        <Link
+          key={slot.mission.slug}
+          to={`/missions/${encodeURIComponent(slot.mission.slug)}`}
+          className="org-seat open-slot"
+          style={{ left: `${slot.pctX}%`, top: `${slot.pctY}%` }}
+        >
+          <div className="org-seat-top">
+            <span className="org-seat-id">
+              <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
+              <span>{slot.mission.methodology_code} · Open slot</span>
+            </span>
+            <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
+              {slot.queued}q
+            </span>
+          </div>
+          <div className="org-seat-pillar">{slot.mission.title}</div>
+          <div className="org-seat-act">
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink-4)' }}>
+              {slot.mission.jurisdiction} · ready to claim
+            </span>
+          </div>
+        </Link>
+      ))}
 
       {/* Desktop Radial Seats (up to 6 active agents) */}
       {seats.map((s) => {
@@ -283,6 +366,30 @@ export function LiveOrganism({
               </span>
             </div>
           </button>
+        ))}
+        {openMissionSlots.map((slot) => (
+          <Link
+            key={`mob-open-${slot.mission.slug}`}
+            to={`/missions/${encodeURIComponent(slot.mission.slug)}`}
+            className="org-mobile-chip"
+            style={{ borderStyle: 'dashed' }}
+          >
+            <div className="org-seat-top">
+              <span className="org-seat-id">
+                <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
+                <span>{slot.mission.methodology_code} · Open slot</span>
+              </span>
+              <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
+                {slot.queued} queued
+              </span>
+            </div>
+            <div className="org-seat-pillar">{slot.mission.title}</div>
+            <div className="org-seat-act">
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {slot.mission.jurisdiction} · ready to claim
+              </span>
+            </div>
+          </Link>
         ))}
       </div>
 

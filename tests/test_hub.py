@@ -4,13 +4,34 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from aiwatchdogs.hub.app import create_app
+from aiwatchdogs.hub.database import (
+    HUB_TABLES,
+    SCHEMA_SQL,
+    VERCEL_DB_PATH,
+    resolve_database_url,
+    resolve_db_path,
+    split_sql_statements,
+    translate_sql_for_postgres,
+)
 from aiwatchdogs.hub.seed import seed_database
+
+EXPECTED_REAL_MISSION_SLUGS = {
+    "assam-ocds-single-bid",
+    "assam-gfr-split-tendering",
+    "ocds-vendor-concentration",
+    "ocds-cost-escalation-watch",
+    "fiscal-march-rush-budgets",
+    "cag-union-state-audit-paras",
+    "rural-schemes-pmgsy-mgnrega-mplads",
+    "electoral-bonds-mca-csr-disclosure",
+}
 
 
 @pytest.fixture()
@@ -22,7 +43,12 @@ def client(tmp_path: Path) -> TestClient:
     application.state.db.close()
 
 
-def _register_agent(client: TestClient, handle: str, provider: str = "ollama", model: str = "qwen2.5:14b") -> dict:
+def _register_agent(
+    client: TestClient,
+    handle: str,
+    provider: str = "ollama",
+    model: str = "qwen2.5:14b",
+) -> dict:
     resp = client.post(
         "/api/agents/register",
         json={
@@ -48,6 +74,7 @@ def test_health_and_onboarding_templates(client: TestClient) -> None:
     hdata = health.json()
     assert hdata["status"] == "ok"
     assert hdata["db_ok"] is True
+    assert hdata["db_backend"] == "sqlite"
 
     join_txt = client.get("/join.txt")
     assert join_txt.status_code == 200
@@ -57,109 +84,143 @@ def test_health_and_onboarding_templates(client: TestClient) -> None:
     assert "/api/desk/next" in join_txt.text
     assert "/api/desk/beat" in join_txt.text
     assert "/api/desk/submit" in join_txt.text
+    assert "dataset_url" in join_txt.text
+    assert "expected_sha256" in join_txt.text
     assert "benign_explanations" in join_txt.text
+    assert "datasets/sample" not in join_txt.text
+    assert "demo" not in join_txt.text.lower()
+    assert "sample" not in join_txt.text.lower()
 
     join_sh = client.get("/join.sh")
     assert join_sh.status_code == 200
     assert "shellscript" in join_sh.headers["content-type"]
     assert join_sh.text.startswith("#!/usr/bin/env sh")
     assert "aiwatchdogs join" in join_sh.text
+    assert "datasets/sample" not in join_sh.text
 
 
-def test_seed_idempotency_and_public_read_endpoints(client: TestClient) -> None:
+def test_seed_idempotency_zero_fake_data_and_real_goi_work_queue(client: TestClient) -> None:
     # Re-running seeder must be a no-op
     assert seed_database(client.app.state.db) is False
 
+    # 1. /api/head starts 100% honest: ZERO fake agents, findings, whispers, or sponsors
     head = client.get("/api/head")
     assert head.status_code == 200
     hd = head.json()
-    assert isinstance(hd["orchestrator_brief"], str) and len(hd["orchestrator_brief"]) > 20
-    assert hd["stats"]["agents_total"] == 10
-    assert hd["stats"]["agents_active"] == 10
-    assert hd["stats"]["findings_verified"] == 6
-    assert hd["stats"]["findings_peer_review"] == 3
-    assert hd["stats"]["findings_cleared"] == 3
-    assert hd["stats"]["rtis_drafted"] == 6
-    assert hd["stats"]["tasks_queued"] >= 10
-    assert len(hd["missions"]) == 8
-    assert len(hd["just_joined"]) == 6
-    assert len(hd["whispers"]) >= 10
-    assert len(hd["sponsors_featured"]) >= 4
+    assert isinstance(hd["started_at"], str) and hd["started_at"].endswith("Z")
+    assert hd["started_at"] <= hd["generated_at"]
+    assert "demo" not in hd["orchestrator_brief"].lower()
+    assert "sample" not in hd["orchestrator_brief"].lower()
+    assert "16" in hd["orchestrator_brief"]
 
-    # Sources catalog (all 15 Indian public sources)
+    assert hd["stats"]["agents_total"] == 0
+    assert hd["stats"]["agents_active"] == 0
+    assert hd["stats"]["findings_verified"] == 0
+    assert hd["stats"]["findings_peer_review"] == 0
+    assert hd["stats"]["findings_cleared"] == 0
+    assert hd["stats"]["rtis_drafted"] == 0
+    assert hd["stats"]["sponsors_total_inr"] == 0.0
+    assert hd["stats"]["tasks_queued"] == 16
+    assert hd["stats"]["tasks_completed"] == 0
+    assert hd["just_in"] is None
+    assert hd["just_joined"] == []
+    assert hd["active_agents"] == []
+    assert hd["recent_findings"] == []
+    assert hd["recent_verifications"] == []
+    assert hd["whispers"] == []
+    assert hd["record_events"] == []
+    assert hd["sponsors_featured"] == []
+    assert hd["sponsors_recent"] == []
+
+    # 2. All 15 canonical Indian public data sources (Tiers 1, 2, 3)
     sources = client.get("/api/sources")
     assert sources.status_code == 200
     sdata = sources.json()
     assert sdata["total"] == 15
     assert {s["ingestion_tier"] for s in sdata["sources"]} == {1, 2, 3}
 
-    # Missions list & detail
-    missions = client.get("/api/missions")
-    assert missions.status_code == 200
-    assert missions.json()["total"] == 8
+    # 3. All 8 real live_public missions with real queued Government of India tasks
+    missions_resp = client.get("/api/missions")
+    assert missions_resp.status_code == 200
+    missions = missions_resp.json()["missions"]
+    assert len(missions) == 8
+    assert {m["slug"] for m in missions} == EXPECTED_REAL_MISSION_SLUGS
 
-    m_detail = client.get("/api/missions/ocds-single-bid-assam-hp")
+    total_queued_across_missions = 0
+    for m in missions:
+        assert m["data_mode"] == "live_public"
+        assert m["is_demo_sample"] is False
+        assert m["sample_dataset_path"] == ""
+        assert m["queued_tasks"] >= 1
+        assert len(m["rungs"]) >= 1
+        total_queued_across_missions += m["queued_tasks"]
+    assert total_queued_across_missions == 16
+
+    # Verify mission detail & all 16 task payloads have real HTTPS URLs & 64-hex SHA-256
+    m_detail = client.get("/api/missions/assam-ocds-single-bid")
     assert m_detail.status_code == 200
     md = m_detail.json()
-    assert md["slug"] == "ocds-single-bid-assam-hp"
+    assert md["slug"] == "assam-ocds-single-bid"
+    assert md["data_mode"] == "live_public"
     assert len(md["sources"]) >= 2
-    assert len(md["findings"]) >= 2
-    assert len(md["tasks"]) >= 1
+    assert md["findings"] == []
+    assert len(md["tasks"]) == 1
+    assert md["tasks"][0]["dataset_url"].startswith("https://")
+    assert len(md["tasks"][0]["expected_sha256"]) == 64
 
-    # Findings filters & detail
-    verified = client.get("/api/findings?status=verified")
-    assert verified.status_code == 200
-    assert verified.json()["total"] == 6
+    with client.app.state.db.read() as conn:
+        t_rows = conn.execute("SELECT id, methodology_code, payload_json FROM tasks WHERE status = 'queued'").fetchall()
+        assert len(t_rows) == 16
+        for tr in t_rows:
+            payload = json.loads(tr["payload_json"])
+            assert payload["dataset_url"].startswith("https://")
+            assert payload["source_url"].startswith("https://")
+            assert len(payload["expected_sha256"]) == 64
+            assert payload["methodology_code"] == tr["methodology_code"]
+            assert payload["jurisdiction"]
+            assert payload["fiscal_year"]
+            assert payload["description"]
+            assert payload["artifact_title"]
+            assert payload["is_demo_sample"] is False
+            assert "datasets/sample" not in tr["payload_json"]
+            if tr["methodology_code"] == "M8":
+                assert payload["secondary_url"].startswith("https://")
 
-    m5 = client.get("/api/findings?methodology=M5&search=March")
-    assert m5.status_code == 200
-    assert m5.json()["total"] >= 1
-
-    f_detail = client.get("/api/findings/fnd-demo-m1-01")
-    assert f_detail.status_code == 200
-    fd = f_detail.json()
-    assert fd["status"] == "verified"
-    assert len(fd["verifications"]) == 2
-    assert fd["rti_draft"] is not None
-    assert fd["rti_draft"]["word_count"] <= 500
-    assert len(fd["benign_explanations"]) >= 1
-
-    # Graph endpoint
+    # 4. Graph renders ministries, 8 real missions, and official sources cleanly even with 0 findings
     graph = client.get("/api/graph")
     assert graph.status_code == 200
     gdata = graph.json()
     node_types = {n["type"] for n in gdata["nodes"]}
-    assert {"ministry", "mission", "finding", "source"}.issubset(node_types)
+    assert {"ministry", "mission", "source"}.issubset(node_types)
+    assert "finding" not in node_types
+    mission_nodes = [n for n in gdata["nodes"] if n["type"] == "mission"]
+    assert len(mission_nodes) == 8
+    assert all(n["meta"]["is_demo_sample"] is False for n in mission_nodes)
     assert len(gdata["edges"]) >= 20
 
-    # Live & Contributors endpoints
-    live = client.get("/api/live")
-    assert live.status_code == 200
-    ldata = live.json()
-    assert len(ldata["agents"]) == 10
-    assert len(ldata["model_breakdown"]) >= 4
+    # 5. Live, Contributors, Sponsors, Ledger all handle fresh empty state gracefully
+    live = client.get("/api/live").json()
+    assert live["agents"] == []
+    assert live["whispers"] == []
+    assert live["model_breakdown"] == []
+    assert live["total_count"] == 0
 
-    contrib_all = client.get("/api/contributors?window=all")
-    assert contrib_all.status_code == 200
-    assert contrib_all.json()["total"] == 10
-
-    contrib_hour = client.get("/api/contributors?window=hour")
-    assert contrib_hour.status_code == 200
-    assert contrib_hour.json()["window"] == "hour"
-
-    profile = client.get("/api/contributors/satyameva-node")
-    assert profile.status_code == 200
-    pdata = profile.json()
-    assert pdata["handle"] == "satyameva-node"
-    assert pdata["contributor"]["handle"] == "satyameva-node"
-    assert len(pdata["submitted_findings"]) >= 1
-    assert len(pdata["verifications"]) >= 1
+    contrib_all = client.get("/api/contributors?window=all").json()
+    assert contrib_all == {"window": "all", "contributors": [], "total": 0}
+    contrib_hour = client.get("/api/contributors?window=hour").json()
+    assert contrib_hour == {"window": "hour", "contributors": [], "total": 0}
 
 
 def test_sponsors_pledge_and_open_treasury_ledger_json_and_csv(client: TestClient) -> None:
     sponsors_before = client.get("/api/sponsors").json()
-    before_total = sponsors_before["total_pledged_inr"]
+    assert sponsors_before["total_pledged_inr"] == 0.0
+    assert sponsors_before["sponsors"] == []
     assert "deterministic evidence" in sponsors_before["independence_pledge"].lower()
+
+    ledger_before = client.get("/api/ledger?format=json").json()
+    assert ledger_before["summary"]["entry_count"] == 0
+    assert ledger_before["summary"]["net_balance_inr"] == 0.0
+    assert ledger_before["entries"] == []
 
     pledge = client.post(
         "/api/sponsors/pledge",
@@ -180,50 +241,58 @@ def test_sponsors_pledge_and_open_treasury_ledger_json_and_csv(client: TestClien
     assert pl["ledger_entry"]["amount_inr"] == 25000.0
 
     sponsors_after = client.get("/api/sponsors").json()
-    assert sponsors_after["total_pledged_inr"] == pytest.approx(before_total + 25000.0)
+    assert sponsors_after["total_pledged_inr"] == pytest.approx(25000.0)
+    assert len(sponsors_after["sponsors"]) == 1
 
     ledger_json = client.get("/api/ledger?format=json")
     assert ledger_json.status_code == 200
     lj = ledger_json.json()
-    assert lj["summary"]["total_inflow_inr"] > lj["summary"]["total_outflow_inr"]
-    assert lj["summary"]["entry_count"] >= 10
+    assert lj["summary"]["total_inflow_inr"] == pytest.approx(25000.0)
+    assert lj["summary"]["total_outflow_inr"] == 0.0
+    assert lj["summary"]["entry_count"] == 1
 
     ledger_csv = client.get("/api/ledger?format=csv")
     assert ledger_csv.status_code == 200
     assert "text/csv" in ledger_csv.headers["content-type"]
     rows = list(csv.DictReader(io.StringIO(ledger_csv.text)))
-    assert len(rows) == lj["summary"]["entry_count"]
-    assert any(r["counterparty"] == "Citizens for Open Audits Foundation" for r in rows)
+    assert len(rows) == 1
+    assert rows[0]["counterparty"] == "Citizens for Open Audits Foundation"
 
 
 def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(client: TestClient) -> None:
-    # Register 3 independent contributor nodes
+    # Register 3 real independent contributor nodes
     author = _register_agent(client, "alpha-auditor", provider="ollama", model="qwen2.5:14b")
     peer1 = _register_agent(client, "beta-verifier", provider="gemini", model="gemini-2.5-pro")
     peer2 = _register_agent(client, "gamma-verifier", provider="rule-engine", model="deterministic-cpu-v1")
 
-    # Author claims an anomaly_scan task specifically
+    # Author claims the real M2 Assam GFR Rule 161 anomaly_scan task
     claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": author["api_token"]},
-        json={"handle": "alpha-auditor", "mode": "investigate", "preferred_mission": "gem-split-tendering-threshold"},
+        json={"handle": "alpha-auditor", "mode": "investigate", "preferred_mission": "assam-gfr-split-tendering"},
     )
     assert claim.status_code == 200, claim.text
     claim_data = claim.json()
     lease_id = claim_data["lease_id"]
     assert claim_data["task"]["task_type"] == "anomaly_scan"
-    assert claim_data["task"]["mission_slug"] == "gem-split-tendering-threshold"
+    assert claim_data["task"]["mission_slug"] == "assam-gfr-split-tendering"
+    assert claim_data["task"]["payload"]["dataset_url"].startswith("https://")
+    assert claim_data["task"]["payload"]["is_demo_sample"] is False
 
     # Send heartbeat with live whisper
     beat = client.post(
         "/api/desk/beat",
         headers={"X-Agent-Token": author["api_token"]},
-        json={"lease_id": lease_id, "progress_pct": 55, "whisper": "Checking GFR Rule 149 rolling 60-day PO window."},
+        json={
+            "lease_id": lease_id,
+            "progress_pct": 55,
+            "whisper": "Verified SHA-256 on Assam OCDS FY16-22; scanning GFR Rule 161 ₹50L clusters.",
+        },
     )
     assert beat.status_code == 200
     assert beat.json()["status"] == "active"
 
-    # 1. Server-side neutrality rejection (accusatory term 'corrupt' / 'scam' -> 422)
+    # 1. Server-side neutrality rejection (accusatory terms -> 422)
     bad_submit = client.post(
         "/api/desk/submit",
         headers={"X-Agent-Token": author["api_token"]},
@@ -231,25 +300,24 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
             "lease_id": lease_id,
             "outcome": "finding",
             "finding": {
-                "title": "Massive corrupt scam uncovered in GeM orders",
+                "title": "Massive corrupt scam uncovered in Assam tenders",
                 "summary": "This is obvious fraud and bribery.",
                 "methodology_code": "M2",
-                "entity_name": "Sample Unit",
-                "jurisdiction": "State:Sample",
-                "fiscal_year": "FY2024-25",
-                "monetary_exposure_inr": 3500000,
+                "entity_name": "BTC PWD Assam",
+                "jurisdiction": "State:Assam",
+                "fiscal_year": "FY2016-22",
+                "monetary_exposure_inr": 19200000,
                 "severity": "high",
                 "anomaly_metrics": {"cluster_po_count": 4},
-                "rule_triggered": "GFR-2017-R149",
-                "citations": [{"row_id": "PO-1"}],
+                "rule_triggered": "GFR-2017-R161",
+                "citations": [{"row_id": "OCID-1"}],
                 "benign_explanations": [],
-                "suggested_authority": "Sample Dept",
+                "suggested_authority": "Finance Department, Government of Assam",
             },
         },
     )
     assert bad_submit.status_code == 422
-    violations = bad_submit.json()["detail"]["violations"]
-    assert len(violations) >= 2
+    assert len(bad_submit.json()["detail"]["violations"]) >= 2
 
     # 2. Server-side neutrality rejection for missing benign_explanations -> 422
     missing_benign = client.post(
@@ -259,49 +327,50 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
             "lease_id": lease_id,
             "outcome": "finding",
             "finding": {
-                "title": "Public Record Anomaly: Threshold-hugging purchase order cluster",
-                "summary": "Deterministic scan flagged 4 awards between 92% and 98% of Rs 10L ceiling.",
+                "title": "Public Record Anomaly: Threshold-hugging procurement cluster in Assam OCDS",
+                "summary": "Deterministic scan flagged 4 tenders between ₹42.5L and ₹49.95L within 60 days.",
                 "methodology_code": "M2",
-                "entity_name": "Sample Hospital Unit",
-                "jurisdiction": "State:Sample",
-                "fiscal_year": "FY2024-25",
-                "monetary_exposure_inr": 3840000,
+                "entity_name": "BTC-PWD Assam",
+                "jurisdiction": "State:Assam",
+                "fiscal_year": "FY2016-22",
+                "monetary_exposure_inr": 19200000,
                 "severity": "high",
-                "anomaly_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 3840000},
-                "rule_triggered": "GFR-2017-R149",
-                "citations": [{"row_id": "PO-1..4"}],
+                "anomaly_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 19200000},
+                "rule_triggered": "GFR-2017-R161",
+                "citations": [{"row_id": "OCID-1..4"}],
                 "benign_explanations": [],
-                "suggested_authority": "Directorate of Health Services",
+                "suggested_authority": "Finance Department, Government of Assam",
             },
         },
     )
     assert missing_benign.status_code == 422
 
-    # 3. Clean neutral finding with PII embedded gets scrubbed and accepted into peer_review + spawns 2 peer_verify tasks
+    # 3. Clean neutral finding with embedded PII -> scrubbed, accepted, spawns 2 peer_verify tasks & real artifact
     good_submit = client.post(
         "/api/desk/submit",
         headers={"X-Agent-Token": author["api_token"]},
         json={
             "lease_id": lease_id,
             "outcome": "finding",
-            "whisper": "Submitted M2 threshold cluster for independent peer verification.",
+            "whisper": "Submitted M2 Assam GFR Rule 161 cluster for independent 2-of-2 peer verification.",
             "finding": {
-                "title": "Public Record Anomaly: 4 POs hugging Rs 10L GeM bidding ceiling",
-                "summary": "Deterministic scan flagged 4 awards summing to Rs 38.40L within 30 days (contact john.doe@example.com scrubbed).",
+                "title": "Public Record Anomaly: 4 Assam tenders hugging ₹50L GFR Rule 161 ceiling",
+                "summary": "Deterministic scan flagged 4 tenders summing to ₹1.92 Cr within 45 days (contact officer@assam.example scrubbed).",
                 "methodology_code": "M2",
-                "entity_name": "Sample State Medical Stores",
-                "jurisdiction": "State:Sample",
-                "fiscal_year": "FY2024-25",
-                "monetary_exposure_inr": 3840000,
+                "entity_name": "BTC-PWD Assam",
+                "jurisdiction": "State:Assam",
+                "fiscal_year": "FY2016-22",
+                "monetary_exposure_inr": 19200000,
                 "severity": "high",
-                "anomaly_metrics": {"threshold_inr": 1000000, "cluster_po_count": 4, "cluster_sum_inr": 3840000},
-                "rule_triggered": "GFR-2017-R149-Split-Threshold",
-                "source_url": "https://gem.gov.in/",
-                "citations": [{"row_id": "PO-1..4", "excerpt": "4 awards Rs 9.5L-9.7L"}],
+                "anomaly_metrics": {"threshold_inr": 5000000, "cluster_po_count": 4, "cluster_sum_inr": 19200000},
+                "rule_triggered": "GFR-2017-R161-Split-Threshold",
+                "source_url": "https://assam.open-contracting.in/datasets",
+                "artifact_sha256": "01a3ab8b7dcd3023e10f2e14cf7685d16825932feb88a363d69bc1177af4a77e",
+                "citations": [{"row_id": "OCID-1..4", "excerpt": "4 tenders ₹47.5L–₹49.2L"}],
                 "benign_explanations": [
-                    "Distinct emergency hospital wing requisitions can lawfully fall below individual GeM bidding limits."
+                    "Distinct road stretch work packages across separate rural sub-divisions may lawfully fall under individual administrative sanctions."
                 ],
-                "suggested_authority": "State Directorate of Health Services",
+                "suggested_authority": "Finance Department, Government of Assam",
             },
         },
     )
@@ -320,20 +389,61 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     )
     assert settled_beat.status_code == 410
 
-    # Verify PII was scrubbed in stored finding
+    # Verify PII scrubbed, is_demo_sample is False, and real evidence_artifact was created
     stored = client.get(f"/api/findings/{finding_id}").json()
-    assert "john.doe@example.com" not in stored["summary"]
+    assert "officer@assam.example" not in stored["summary"]
     assert "[REDACTED_EMAIL]" in stored["summary"]
+    assert stored["is_demo_sample"] is False
+    assert stored["artifact"] is not None
+    assert stored["artifact"]["sha256"] == "01a3ab8b7dcd3023e10f2e14cf7685d16825932feb88a363d69bc1177af4a77e"
+    assert stored["artifact"]["is_demo_sample"] is False
 
-    # 4. Self-verification MUST be blocked (author should not get own peer_verify task, and direct attempt -> 409)
+    # Case-insensitive search works across SQLite & Postgres
+    search_resp = client.get("/api/findings?methodology=M2&search=assam")
+    assert search_resp.status_code == 200
+    assert search_resp.json()["total"] == 1
+
+    # 4. Self-verification MUST be blocked (author gets 204 for own peer_verify, and 409 if targeting own finding)
     author_verify_claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": author["api_token"]},
-        json={"handle": "alpha-auditor", "mode": "verify", "preferred_mission": "gem-split-tendering-threshold"},
+        json={"handle": "alpha-auditor", "mode": "verify"},
     )
-    assert author_verify_claim.status_code == 204  # Only peer_verify tasks in this mission belong to alpha-auditor!
+    assert author_verify_claim.status_code == 204
 
-    # Test explicit 409 self-verification block by having author claim a different verify task and try targeting own finding_id
+    # Have peer1 submit an independent finding on M1 so a peer_verify task exists for alpha-auditor to claim
+    m1_claim = client.post(
+        "/api/desk/next",
+        headers={"X-Agent-Token": peer1["api_token"]},
+        json={"handle": "beta-verifier", "mode": "investigate", "preferred_mission": "assam-ocds-single-bid"},
+    )
+    assert m1_claim.status_code == 200
+    m1_submit = client.post(
+        "/api/desk/submit",
+        headers={"X-Agent-Token": peer1["api_token"]},
+        json={
+            "lease_id": m1_claim.json()["lease_id"],
+            "outcome": "finding",
+            "finding": {
+                "title": "Public Record Anomaly: Single-bidder share >35% in Assam Health OCDS",
+                "summary": "81 of 228 tenders (35.5%) received a single bid totaling ₹60.43 Cr.",
+                "methodology_code": "M1",
+                "entity_name": "Health and Family Welfare Department, Assam",
+                "jurisdiction": "State:Assam",
+                "fiscal_year": "FY2016-22",
+                "monetary_exposure_inr": 604300000,
+                "severity": "high",
+                "anomaly_metrics": {"single_bid_rate_pct": 35.53},
+                "rule_triggered": "GFR-2017-R166",
+                "citations": [{"source_ref": "assam_ocds_v2.csv"}],
+                "benign_explanations": ["Specialized hospital equipment may require proprietary OEM procurement."],
+                "suggested_authority": "Health and Family Welfare Department, Government of Assam",
+            },
+        },
+    )
+    assert m1_submit.status_code == 200
+
+    # Author claims M1 peer_verify lease and attempts to target their own M2 finding_id -> HTTP 409!
     other_verify_claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": author["api_token"]},
@@ -355,7 +465,6 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
         },
     )
     assert self_attempt.status_code == 409
-    # Release that unrelated lease cleanly
     rel = client.post(
         "/api/desk/release",
         headers={"X-Agent-Token": author["api_token"]},
@@ -363,14 +472,17 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     )
     assert rel.status_code == 200
 
-    # 5. Independent Peer 1 claims & confirms the new finding (still peer_review: 1/2)
+    # 5. Independent Peer 1 claims & confirms the M2 finding (1/2, still peer_review)
     p1_claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": peer1["api_token"]},
-        json={"handle": "beta-verifier", "mode": "verify", "preferred_mission": "gem-split-tendering-threshold"},
+        json={"handle": "beta-verifier", "mode": "verify", "preferred_mission": "assam-gfr-split-tendering"},
     )
     assert p1_claim.status_code == 200, p1_claim.text
-    assert p1_claim.json()["task"]["payload"]["finding_id"] == finding_id
+    p1_payload = p1_claim.json()["task"]["payload"]
+    assert p1_payload["finding_id"] == finding_id
+    assert p1_payload["dataset_url"].startswith("https://")
+    assert p1_payload["expected_sha256"] == "01a3ab8b7dcd3023e10f2e14cf7685d16825932feb88a363d69bc1177af4a77e"
 
     p1_sub = client.post(
         "/api/desk/submit",
@@ -382,9 +494,9 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
                 "finding_id": finding_id,
                 "verdict": "confirm",
                 "checks": {"provenance_ok": True, "math_reproduced": True, "rule_valid": True, "legal_pii_ok": True},
-                "reproduced_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 3840000},
+                "reproduced_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 19200000},
                 "confidence": 0.95,
-                "notes": "Independently reproduced M2 metrics.",
+                "notes": "Independently reproduced Assam OCDS M2 metrics and verified SHA-256.",
             },
         },
     )
@@ -393,19 +505,19 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     assert p1_sub.json()["confirm_count"] == 1
     assert p1_sub.json()["promoted_to_verified"] is False
 
-    # Peer 1 must NOT be allowed to claim the 2nd verification slot for the same finding (double-verify prevention)
+    # Peer 1 cannot claim 2nd verification slot for the same finding (double-verify prevention)
     p1_second_claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": peer1["api_token"]},
-        json={"handle": "beta-verifier", "mode": "verify", "preferred_mission": "gem-split-tendering-threshold"},
+        json={"handle": "beta-verifier", "mode": "verify", "preferred_mission": "assam-gfr-split-tendering"},
     )
     assert p1_second_claim.status_code == 204
 
-    # 6. Independent Peer 2 claims & confirms -> 2/2 Quorum PROMOTES to 'verified' & auto-generates RTI draft <=500 words!
+    # 6. Independent Peer 2 claims & confirms -> 2/2 Quorum PROMOTES to 'verified' & auto-generates <=500w RTI draft!
     p2_claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": peer2["api_token"]},
-        json={"handle": "gamma-verifier", "mode": "verify", "preferred_mission": "gem-split-tendering-threshold"},
+        json={"handle": "gamma-verifier", "mode": "verify", "preferred_mission": "assam-gfr-split-tendering"},
     )
     assert p2_claim.status_code == 200, p2_claim.text
     assert p2_claim.json()["task"]["payload"]["finding_id"] == finding_id
@@ -420,9 +532,9 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
                 "finding_id": finding_id,
                 "verdict": "confirm",
                 "checks": {"provenance_ok": True, "math_reproduced": True, "rule_valid": True, "legal_pii_ok": True},
-                "reproduced_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 3840000},
+                "reproduced_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 19200000},
                 "confidence": 0.97,
-                "notes": "Second independent confirmation — math and neutrality clean.",
+                "notes": "Second independent confirmation — SHA-256, math, and neutrality verified.",
             },
         },
     )
@@ -434,7 +546,7 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     assert p2_res["promoted_to_verified"] is True
     assert p2_res["rti_draft_id"] == f"rti-{finding_id}"
 
-    # Verify finding dossier now includes 2 independent verifications & <=500-word RTI Act 2005 draft
+    # Verify finding dossier includes 2 independent verifications & <=500-word RTI Act 2005 draft
     verified_dossier = client.get(f"/api/findings/{finding_id}").json()
     assert verified_dossier["status"] == "verified"
     assert len(verified_dossier["verifications"]) == 2
@@ -442,14 +554,39 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     assert verified_dossier["rti_draft"]["word_count"] <= 500
     assert "Section 6(1)" in verified_dossier["rti_draft"]["body_text"]
 
-    # Explicit POST /api/findings/{id}/rti-draft regeneration works too
+    # Explicit POST /api/findings/{id}/rti-draft regeneration works cleanly
     rti_regen = client.post(
         f"/api/findings/{finding_id}/rti-draft",
-        json={"public_authority": "Department of Expenditure, Government of India"},
+        json={"public_authority": "Finance Department, Government of Assam"},
     )
     assert rti_regen.status_code == 200
-    assert rti_regen.json()["public_authority"] == "Department of Expenditure, Government of India"
+    assert rti_regen.json()["public_authority"] == "Finance Department, Government of Assam"
     assert rti_regen.json()["word_count"] <= 500
+
+    # Verify /api/head, /api/graph, and /api/contributors reflect real live activity
+    hd = client.get("/api/head").json()
+    assert hd["stats"]["agents_total"] == 3
+    assert hd["stats"]["findings_verified"] == 1
+    assert hd["stats"]["findings_peer_review"] == 1
+    assert hd["stats"]["rtis_drafted"] == 1
+    assert hd["just_in"] is not None
+    assert hd["just_in"]["id"] == finding_id
+    assert hd["just_in"]["is_demo_sample"] is False
+    assert len(hd["recent_verifications"]) == 2
+    timestamps = [ev["ts"] for ev in hd["record_events"]]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+    graph = client.get("/api/graph").json()
+    finding_nodes = [n for n in graph["nodes"] if n["type"] == "finding"]
+    assert len(finding_nodes) == 2
+    # Every real finding comes from real registered community agents -> is_community is True!
+    assert all(fn["meta"]["is_community"] is True for fn in finding_nodes)
+    assert all(fn["meta"]["is_demo_sample"] is False for fn in finding_nodes)
+
+    profile = client.get("/api/contributors/alpha-auditor").json()
+    assert profile["handle"] == "alpha-auditor"
+    assert profile["findings_verified"] == 1
+    assert len(profile["submitted_findings"]) == 1
 
 
 def test_cleared_outcome_credits_contributor_equally_and_sse_stream_connects(client: TestClient) -> None:
@@ -466,8 +603,8 @@ def test_cleared_outcome_credits_contributor_equally_and_sse_stream_connects(cli
         json={
             "lease_id": claim.json()["lease_id"],
             "outcome": "cleared",
-            "whisper": "All 18 procurement rows checked cleanly within statutory rules.",
-            "metrics": {"records_scanned": 18, "cleared_count": 18, "monetary_audited_inr": 25000000},
+            "whisper": "All scanned official records passed deterministic thresholds cleanly.",
+            "metrics": {"records_scanned": 48, "cleared_count": 48, "monetary_audited_inr": 250000000},
         },
     )
     assert submit.status_code == 200
@@ -477,7 +614,6 @@ def test_cleared_outcome_credits_contributor_equally_and_sse_stream_connects(cli
     assert profile["cleared_submitted"] == 1
     assert profile["compute_score"] >= 10
 
-    # SSE stream emits initial connected event cleanly
     with client.stream("GET", "/api/stream?max_events=1") as stream_resp:
         assert stream_resp.status_code == 200
         assert "text/event-stream" in stream_resp.headers["content-type"]
@@ -495,7 +631,7 @@ def test_spa_fallback_and_unknown_api_404(tmp_path: Path) -> None:
 
     application = create_app(db_path=tmp_path / "spa.db", seed=False, web_dist=dist_dir)
     with TestClient(application) as tc:
-        root = tc.get("/missions/ocds-single-bid-assam-hp")
+        root = tc.get("/missions/assam-ocds-single-bid")
         assert root.status_code == 200
         assert "AI Watchdogs SPA" in root.text
 
@@ -506,168 +642,6 @@ def test_spa_fallback_and_unknown_api_404(tmp_path: Path) -> None:
         missing_api = tc.get("/api/does-not-exist")
         assert missing_api.status_code == 404
     application.state.db.close()
-
-
-def test_dashboard_parity_additive_fields_head_missions_and_graph(client: TestClient) -> None:
-    # 1. /api/head additive fields
-    head = client.get("/api/head")
-    assert head.status_code == 200
-    hd = head.json()
-
-    assert isinstance(hd["started_at"], str) and hd["started_at"].endswith("Z")
-    assert hd["started_at"] <= hd["generated_at"]
-
-    just_in = hd["just_in"]
-    assert just_in is not None
-    assert {
-        "id",
-        "title",
-        "methodology_code",
-        "entity_name",
-        "monetary_exposure_inr_cr",
-        "verified_at",
-        "is_demo_sample",
-    }.issubset(just_in.keys())
-    assert just_in["id"] == "fnd-demo-m7-01"  # newest seeded verified finding (52m ago)
-    assert just_in["is_demo_sample"] is True
-
-    recent_verifs = hd["recent_verifications"]
-    assert 1 <= len(recent_verifs) <= 6
-    v0 = recent_verifs[0]
-    assert {
-        "id",
-        "finding_id",
-        "finding_title",
-        "methodology_code",
-        "verifier_handle",
-        "model_id",
-        "model",
-        "verdict",
-        "created_at",
-    }.issubset(v0.keys())
-
-    sponsors_recent = hd["sponsors_recent"]
-    assert 1 <= len(sponsors_recent) <= 12
-    assert len(sponsors_recent) == 10  # 10 seeded sponsors
-    s0 = sponsors_recent[0]
-    assert {
-        "id",
-        "name",
-        "tier",
-        "amount_inr",
-        "compute_grant",
-        "note",
-        "website_url",
-        "is_demo",
-        "created_at",
-    }.issubset(s0.keys())
-    # Ordered by created_at DESC (spn-10 was 1 day ago, spn-01 was 12 days ago)
-    assert s0["id"] == "spn-10"
-    assert s0["is_demo"] is True
-
-    record_events = hd["record_events"]
-    assert 1 <= len(record_events) <= 20
-    valid_kinds = {"verified", "peer_review", "cleared", "disputed", "rti"}
-    seen_kinds = set()
-    for ev in record_events:
-        assert {
-            "id",
-            "ts",
-            "kind",
-            "tag",
-            "title",
-            "actor",
-            "methodology_code",
-            "finding_id",
-            "monetary_exposure_inr_cr",
-            "is_demo_sample",
-        }.issubset(ev.keys())
-        assert ev["kind"] in valid_kinds
-        seen_kinds.add(ev["kind"])
-    assert {"verified", "peer_review", "cleared", "rti"}.issubset(seen_kinds)
-    # Chronological descending order
-    timestamps = [ev["ts"] for ev in record_events]
-    assert timestamps == sorted(timestamps, reverse=True)
-
-    # 2. Mission rungs in both /api/head and /api/missions
-    valid_rung_states = {"verified", "hard", "peer_review", "cleared", "queued", "disputed"}
-    missions_resp = client.get("/api/missions")
-    assert missions_resp.status_code == 200
-    for mission_list in (hd["missions"], missions_resp.json()["missions"]):
-        assert len(mission_list) == 8
-        for m in mission_list:
-            assert isinstance(m["rungs"], list)
-            assert 1 <= len(m["rungs"]) <= 24
-            for rung in m["rungs"]:
-                assert {"id", "state", "label", "kind"}.issubset(rung.keys())
-                assert rung["state"] in valid_rung_states
-                assert rung["kind"] in {"finding", "task"}
-                if rung["kind"] == "finding":
-                    assert rung["finding_id"] == rung["id"]
-
-    # 3. /api/graph meta fields for Observatory Map clustering & community rings
-    graph = client.get("/api/graph").json()
-    mission_nodes = [n for n in graph["nodes"] if n["type"] == "mission"]
-    finding_nodes = [n for n in graph["nodes"] if n["type"] == "finding"]
-    assert len(mission_nodes) == 8
-    assert len(finding_nodes) == 12
-    for mn in mission_nodes:
-        assert {"slug", "pillar", "methodology_code", "progress_pct"}.issubset(mn["meta"].keys())
-        assert mn["meta"]["pillar"] == mn["pillar"]
-    for fn in finding_nodes:
-        assert {
-            "mission_slug",
-            "submitted_by",
-            "is_community",
-            "monetary_exposure_inr_cr",
-            "methodology_code",
-            "is_demo_sample",
-        }.issubset(fn["meta"].keys())
-        # All seeded findings come from seed agents -> is_community False
-        assert fn["meta"]["is_community"] is False
-
-    # 4. External/community contributor submission flips is_community=True in /api/graph
-    ext_agent = _register_agent(client, "citizen-node-99", provider="ollama", model="qwen2.5:14b")
-    claim = client.post(
-        "/api/desk/next",
-        headers={"X-Agent-Token": ext_agent["api_token"]},
-        json={"handle": "citizen-node-99", "mode": "investigate", "preferred_mission": "gem-split-tendering-threshold"},
-    )
-    assert claim.status_code == 200
-    submit = client.post(
-        "/api/desk/submit",
-        headers={"X-Agent-Token": ext_agent["api_token"]},
-        json={
-            "lease_id": claim.json()["lease_id"],
-            "outcome": "finding",
-            "finding": {
-                "title": "Public Record Anomaly: Community-surfaced GeM threshold cluster",
-                "summary": "Deterministic scan flagged 4 awards near the Rs 10L GeM bidding limit.",
-                "methodology_code": "M2",
-                "entity_name": "Community Sample Hospital",
-                "jurisdiction": "State:Sample",
-                "fiscal_year": "FY2024-25",
-                "monetary_exposure_inr": 3900000,
-                "severity": "high",
-                "anomaly_metrics": {"cluster_po_count": 4},
-                "rule_triggered": "GFR-2017-R149",
-                "citations": [{"row_id": "PO-10..13"}],
-                "benign_explanations": [
-                    "Independent hospital departments may issue separate urgent requisitions within GFR rules."
-                ],
-                "suggested_authority": "State Directorate of Health Services",
-            },
-        },
-    )
-    assert submit.status_code == 200
-    new_fid = submit.json()["finding_id"]
-
-    graph_after = client.get("/api/graph").json()
-    comm_node = next(n for n in graph_after["nodes"] if n["id"] == f"finding:{new_fid}")
-    assert comm_node["meta"]["submitted_by"] == "citizen-node-99"
-    assert comm_node["meta"]["is_community"] is True
-    assert comm_node["meta"]["mission_slug"] == "gem-split-tendering-threshold"
-    assert comm_node["meta"]["monetary_exposure_inr_cr"] == pytest.approx(0.39)
 
 
 def test_head_and_graph_graceful_on_empty_unseeded_db(tmp_path: Path) -> None:
@@ -686,23 +660,60 @@ def test_head_and_graph_graceful_on_empty_unseeded_db(tmp_path: Path) -> None:
     application.state.db.close()
 
 
-def test_vercel_serverless_db_default_forwarded_headers_and_bounded_sse(
+def test_postgres_sql_translation_and_vercel_defaults(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from aiwatchdogs.hub.database import VERCEL_DB_PATH, resolve_db_path
+    # 1. PostgreSQL SQL translator parity checks
+    assert translate_sql_for_postgres("PRAGMA journal_mode = WAL;") is None
+    assert (
+        translate_sql_for_postgres(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, amt REAL NOT NULL);"
+        )
+        == "CREATE TABLE t (id SERIAL PRIMARY KEY, amt DOUBLE PRECISION NOT NULL);"
+    )
+    assert (
+        translate_sql_for_postgres("INSERT OR IGNORE INTO t (id, v) VALUES (?, ?);", parameterized=True)
+        == "INSERT INTO t (id, v) VALUES (%s, %s) ON CONFLICT DO NOTHING;"
+    )
+    # Preserves literal '?' inside single-quoted string and escapes literal '%'
+    assert (
+        translate_sql_for_postgres(
+            "SELECT 'what? 50%' AS note FROM t WHERE id = ? AND LOWER(name) LIKE LOWER(?)",
+            parameterized=True,
+        )
+        == "SELECT 'what? 50%%' AS note FROM t WHERE id = %s AND LOWER(name) LIKE LOWER(%s)"
+    )
+    # Full SCHEMA_SQL splits cleanly into executable DDL statements with DOUBLE PRECISION
+    stmts = split_sql_statements(SCHEMA_SQL)
+    assert len(stmts) >= 20
+    translated = [translate_sql_for_postgres(s) for s in stmts]
+    assert all(t is not None for t in translated)
+    assert any("DOUBLE PRECISION" in (t or "") for t in translated)
+    # HUB_TABLES stays strictly in sync with CREATE TABLE statements in SCHEMA_SQL
+    import re
+    schema_tables = set(re.findall(r"CREATE TABLE IF NOT EXISTS\s+([a-z_]+)", SCHEMA_SQL))
+    assert schema_tables == HUB_TABLES
 
-    # 1. Database path defaults to /tmp/aiwatchdogs.db when VERCEL is set and AIWATCHDOGS_DB_PATH is unset
+    # 2. DATABASE_URL / POSTGRES_URL detection
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@ep-demo.aws.neon.tech/neondb?sslmode=require")
+    assert resolve_database_url() == "postgresql://user:pass@ep-demo.aws.neon.tech/neondb?sslmode=require"
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("POSTGRES_URL", "postgres://user:pass@ep-demo.aws.neon.tech/neondb")
+    assert resolve_database_url() == "postgres://user:pass@ep-demo.aws.neon.tech/neondb"
+    monkeypatch.delenv("POSTGRES_URL", raising=False)
+    assert resolve_database_url() is None
+
+    # 3. SQLite fallback defaults on Vercel when DATABASE_URL is unset
     monkeypatch.delenv("AIWATCHDOGS_DB_PATH", raising=False)
     monkeypatch.setenv("VERCEL", "1")
     assert resolve_db_path() == VERCEL_DB_PATH
 
-    # Explicit AIWATCHDOGS_DB_PATH still takes precedence on Vercel
     custom_db = tmp_path / "override.db"
     monkeypatch.setenv("AIWATCHDOGS_DB_PATH", str(custom_db))
     assert resolve_db_path() == custom_db
 
-    # 2. /join.txt and /join.sh respect X-Forwarded-Proto & X-Forwarded-Host -> https://aiwatchdogs.in
+    # 4. /join.txt and /join.sh respect X-Forwarded-Proto & X-Forwarded-Host -> https://aiwatchdogs.in
     monkeypatch.delenv("AIWATCHDOGS_PUBLIC_URL", raising=False)
     application = create_app(db_path=tmp_path / "vercel_test.db", seed=True)
     with TestClient(application) as tc:
@@ -720,7 +731,7 @@ def test_vercel_serverless_db_default_forwarded_headers_and_bounded_sse(
         assert "https://aiwatchdogs.in" in join_sh.text
         assert "http://aiwatchdogs.in" not in join_sh.text
 
-        # 3. SSE stream closes cleanly after bounded max_duration without hanging
+        # 5. SSE stream closes cleanly after bounded max_duration without hanging
         with tc.stream("GET", "/api/stream?keepalive=0.5&max_duration=0.6") as resp:
             assert resp.status_code == 200
             assert "text/event-stream" in resp.headers["content-type"]

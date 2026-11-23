@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from aiwatchdogs.cli.config import (
+    DEFAULT_HUB_URL,
     ENV_CONFIG_PATH,
     AgentConfig,
     get_config_path,
@@ -30,13 +31,109 @@ from aiwatchdogs.cli.providers import (
     enrich_finding_summary,
 )
 from aiwatchdogs.cli.runner import AgentRunner
+from aiwatchdogs.core.models import LoadedDataset
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality
 from aiwatchdogs.hub.app import create_app
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_DIR = REPO_ROOT / "datasets" / "sample"
-
 cli_runner = CliRunner()
+
+
+# ---------------------------------------------------------------------------
+# Inline Realistic Fixtures (Zero datasets/sample/ dependency)
+# ---------------------------------------------------------------------------
+
+
+def _write_m1_ocds_fixture(path: Path) -> Path:
+    """Create a realistic OCDS JSON fixture that triggers M1 single-bidder concentration."""
+    releases = []
+    for idx in range(1, 7):
+        single = idx <= 4
+        releases.append(
+            {
+                "ocid": f"ocds-assam-2024-{idx:03d}",
+                "id": f"rel-{idx:03d}",
+                "date": f"2024-05-{10 + idx:02d}T10:00:00Z",
+                "jurisdiction": "Assam",
+                "fiscal_year": "FY2024-25",
+                "source_url": "https://assamtenders.gov.in/",
+                "buyer": {"id": "BYR-AS-HF", "name": "Assam Health & Family Welfare Directorate"},
+                "tender": {
+                    "id": f"TND-AS-{idx:03d}",
+                    "title": f"District Medical Equipment Supply Lot {idx}",
+                    "procurementMethod": "open",
+                    "numberOfTenderers": 1 if single else 4,
+                    "tenderPeriod": {
+                        "startDate": "2024-05-01T10:00:00Z",
+                        "endDate": "2024-05-08T10:00:00Z" if single else "2024-05-25T10:00:00Z",
+                    },
+                    "value": {"amount": 4500000 + idx * 100000, "currency": "INR"},
+                    "items": [{"classification": {"description": "Hospital Equipment"}}],
+                },
+                "awards": [
+                    {
+                        "id": f"AWD-AS-{idx:03d}",
+                        "date": f"2024-05-{15 + idx:02d}T10:00:00Z",
+                        "value": {"amount": 4500000 + idx * 100000, "currency": "INR"},
+                        "suppliers": [
+                            {
+                                "id": "SUP-01" if single else f"SUP-{idx:02d}",
+                                "name": "Brahmaputra MedTech Pvt Ltd" if single else f"Vendor {idx} Enterprises",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+    package = {
+        "uri": "https://assam.open-contracting.in/datasets",
+        "jurisdiction": "Assam",
+        "fiscal_year": "FY2024-25",
+        "releases": releases,
+    }
+    path.write_text(json.dumps(package, indent=2), encoding="utf-8")
+    return path
+
+
+def _write_m2_split_csv_fixture(path: Path, *, multi_buyer: bool = False) -> Path:
+    """Create a realistic GFR 2017 split-tendering CSV fixture for M2."""
+    rows = [
+        "tender_id,buyer_name,vendor_name,item_category,award_date,award_value_inr,jurisdiction,fiscal_year,source_url",
+        "PO-101,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-02,4850000,Assam,FY2024-25,https://assamtenders.gov.in/",
+        "PO-102,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-14,4910000,Assam,FY2024-25,https://assamtenders.gov.in/",
+        "PO-103,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-29,4940000,Assam,FY2024-25,https://assamtenders.gov.in/",
+        "PO-104,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-09-09,4880000,Assam,FY2024-25,https://assamtenders.gov.in/",
+    ]
+    if multi_buyer:
+        rows.extend(
+            [
+                "PO-201,District PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-03,960000,Assam,FY2024-25,https://assamtenders.gov.in/",
+                "PO-202,District PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-15,980000,Assam,FY2024-25,https://assamtenders.gov.in/",
+                "PO-203,District PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-28,975000,Assam,FY2024-25,https://assamtenders.gov.in/",
+            ]
+        )
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return path
+
+
+def _write_m5_march_rush_csv_fixture(path: Path) -> Path:
+    """Create a realistic AP Monthly Treasury CSV fixture triggering GFR Rule 62(3) March Rush."""
+    rows = [
+        "District,Year,Month,Major Head,Major Head Description,Amount,source_url",
+        "Krishna,2016,APR,2202,General Education,80000000,https://treasury.ap.gov.in",
+        "Krishna,2016,MAY,2202,General Education,85000000,https://treasury.ap.gov.in",
+        "Krishna,2016,JUN,2202,General Education,90000000,https://treasury.ap.gov.in",
+        "Krishna,2016,JUL,2202,General Education,95000000,https://treasury.ap.gov.in",
+        "Krishna,2016,AUG,2202,General Education,90000000,https://treasury.ap.gov.in",
+        "Krishna,2016,SEP,2202,General Education,100000000,https://treasury.ap.gov.in",
+        "Krishna,2016,OCT,2202,General Education,95000000,https://treasury.ap.gov.in",
+        "Krishna,2016,NOV,2202,General Education,90000000,https://treasury.ap.gov.in",
+        "Krishna,2016,DEC,2202,General Education,105000000,https://treasury.ap.gov.in",
+        "Krishna,2017,JAN,2202,General Education,150000000,https://treasury.ap.gov.in",
+        "Krishna,2017,FEB,2202,General Education,180000000,https://treasury.ap.gov.in",
+        "Krishna,2017,MAR,2202,General Education,440000000,https://treasury.ap.gov.in",
+    ]
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    return path
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +142,7 @@ cli_runner = CliRunner()
 
 
 def test_config_persistence_and_0600_permissions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert DEFAULT_HUB_URL == "https://aiwatchdogs.in"
     cfg_file = tmp_path / "secure" / "config.json"
     monkeypatch.setenv(ENV_CONFIG_PATH, str(cfg_file))
 
@@ -92,7 +190,7 @@ def test_whoami_cli_unconfigured_and_configured(tmp_path: Path, monkeypatch: pyt
 
     save_config(
         AgentConfig(
-            handle="satya-tester",
+            handle="civic-auditor",
             hub_url="https://aiwatchdogs.in",
             api_token="awd_supersecret_9876543210",
             provider="rule-engine",
@@ -104,8 +202,8 @@ def test_whoami_cli_unconfigured_and_configured(tmp_path: Path, monkeypatch: pyt
     )
     res_cfg = cli_runner.invoke(cli_app, ["whoami"])
     assert res_cfg.exit_code == 0
-    assert "satya-tester" in res_cfg.stdout
-    assert "https://aiwatchdogs.in/a/satya-tester" in res_cfg.stdout
+    assert "civic-auditor" in res_cfg.stdout
+    assert "https://aiwatchdogs.in/a/civic-auditor" in res_cfg.stdout
     assert "0o600" in res_cfg.stdout
     assert "supersecret" not in res_cfg.stdout
 
@@ -130,6 +228,7 @@ def test_detect_providers_offline_fallback_rule_engine() -> None:
     assert providers[0].provider == RULE_ENGINE_PROVIDER
     assert providers[0].zero_cost is True
     assert "₹0" in providers[0].label
+    assert "CPU" in providers[0].label
     assert best.provider == RULE_ENGINE_PROVIDER
 
 
@@ -169,12 +268,12 @@ def test_detect_providers_ollama_vllm_and_cloud_keys() -> None:
 
 
 def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
-    sample_lead = {
+    audit_lead = {
         "title": "Public Record Anomaly: Split-tendering cluster below INR 10L GeM threshold",
         "summary": "Deterministic scan flagged 4 POs totaling INR 38.4L priced at 95%-98% of the INR 10L ceiling.",
         "methodology_code": "M2",
-        "entity_name": "Sample Public Buyer Division",
-        "jurisdiction": "Union of India",
+        "entity_name": "District Public Works Division",
+        "jurisdiction": "Assam",
         "fiscal_year": "FY2024-25",
         "monetary_exposure_inr": 3840000.0,
         "rule_triggered": "GFR-2017-R149-Split-Tendering",
@@ -185,7 +284,7 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
     }
 
     # 1. Deterministic rule-engine mode (zero HTTP calls)
-    det = enrich_finding_summary(sample_lead, None)
+    det = enrich_finding_summary(audit_lead, None)
     assert det["used_llm"] is False
     assert det["neutrality_passed"] is True
     assert det["enriched_by"] == "rule-engine"
@@ -214,7 +313,7 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
         base_url="http://127.0.0.1:11434",
     )
     with httpx.Client(transport=httpx.MockTransport(_ollama_ok)) as client:
-        enriched = enrich_finding_summary(sample_lead, ollama_cfg, http_client=client)
+        enriched = enrich_finding_summary(audit_lead, ollama_cfg, http_client=client)
     assert enriched["used_llm"] is True
     assert enriched["enriched_by"] == "ollama/qwen2.5:14b"
     assert enriched["neutrality_passed"] is True
@@ -237,7 +336,7 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
     )
     with httpx.Client(transport=httpx.MockTransport(_openai_defamatory)) as client:
         safe_fallback = enrich_finding_summary(
-            sample_lead,
+            audit_lead,
             openai_cfg,
             http_client=client,
             env={"OPENAI_API_KEY": "sk-test"},
@@ -245,7 +344,7 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
     assert safe_fallback["used_llm"] is False
     assert safe_fallback["fallback_reason"] is not None
     assert "neutrality_violation" in safe_fallback["fallback_reason"]
-    assert safe_fallback["summary"] == sample_lead["summary"]
+    assert safe_fallback["summary"] == audit_lead["summary"]
     assert lint_neutrality(
         safe_fallback["title"],
         safe_fallback["summary"],
@@ -265,7 +364,7 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
     )
     with httpx.Client(transport=httpx.MockTransport(_gemini_down)) as client:
         down_fallback = enrich_finding_summary(
-            sample_lead,
+            audit_lead,
             gemini_cfg,
             http_client=client,
             env={"GEMINI_API_KEY": "test-key"},
@@ -280,26 +379,30 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
 
 
 @pytest.mark.parametrize(
-    ("filename", "methodology"),
+    ("builder", "filename", "methodology"),
     [
-        ("m1_ocds_procurement.json", "M1"),
-        ("m2_gem_split_tenders.csv", "M2"),
-        ("m5_cga_march_rush.csv", "M5"),
+        (_write_m1_ocds_fixture, "assam_ocds_fixture.json", "M1"),
+        (_write_m2_split_csv_fixture, "assam_gfr_split_fixture.csv", "M2"),
+        (_write_m5_march_rush_csv_fixture, "ap_treasury_march_rush.csv", "M5"),
     ],
 )
-def test_audit_file_sample_datasets_json_and_rti(filename: str, methodology: str) -> None:
-    sample_path = SAMPLE_DIR / filename
-    assert sample_path.is_file(), f"Expected sample dataset {sample_path}"
+def test_audit_file_inline_datasets_json_and_rti(
+    tmp_path: Path,
+    builder: Any,
+    filename: str,
+    methodology: str,
+) -> None:
+    dataset_path = builder(tmp_path / filename)
 
     res = cli_runner.invoke(
         cli_app,
-        ["audit-file", str(sample_path), "--methodology", methodology, "--json", "--rti"],
+        ["audit-file", str(dataset_path), "--methodology", methodology, "--json", "--rti"],
     )
     assert res.exit_code == 0, res.output
     data = json.loads(res.stdout)
 
     assert data["methodology_code"] == methodology
-    assert data["is_demo_sample"] is True
+    assert data["is_demo_sample"] is False
     assert data["records_scanned"] > 0
     assert len(data["sha256"]) == 64
     assert len(data["leads"]) >= 1
@@ -314,13 +417,15 @@ def test_audit_file_sample_datasets_json_and_rti(filename: str, methodology: str
 
 
 def test_audit_file_rich_output_and_cleared_file(tmp_path: Path) -> None:
-    # Rich formatted report with RTI panel
+    m2_csv = _write_m2_split_csv_fixture(tmp_path / "m2_split.csv")
+
+    # Rich formatted report with RTI panel — zero demo/sample badge!
     res = cli_runner.invoke(
         cli_app,
-        ["audit-file", str(SAMPLE_DIR / "m2_gem_split_tenders.csv"), "--methodology", "M2", "--rti"],
+        ["audit-file", str(m2_csv), "--methodology", "M2", "--rti"],
     )
     assert res.exit_code == 0, res.output
-    assert "SAMPLE DEMO DATASET" in res.stdout
+    assert "SAMPLE DEMO" not in res.stdout
     assert "RTI Act 2005" in res.stdout
 
     # Clean file with 0 threshold-hugging POs -> CLEARED
@@ -339,6 +444,7 @@ def test_audit_file_rich_output_and_cleared_file(tmp_path: Path) -> None:
     clean_data = json.loads(res_clean.stdout)
     assert clean_data["records_scanned"] == 2
     assert clean_data["leads"] == []
+    assert clean_data["is_demo_sample"] is False
 
     # Invalid methodology code
     res_bad = cli_runner.invoke(
@@ -349,15 +455,201 @@ def test_audit_file_rich_output_and_cleared_file(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. Full End-to-End AgentRunner Flow Against Live FastAPI Hub (ASGI)
+# 4. Remote dataset_url + secondary_url + expected_sha256 + Multi-Lead Peer Verify
 # ---------------------------------------------------------------------------
+
+
+def test_runner_remote_dataset_url_secondary_url_and_expected_sha256(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    m2_csv = _write_m2_split_csv_fixture(tmp_path / "remote_m2.csv")
+    raw_bytes = m2_csv.read_bytes()
+    expected_sha = compute_sha256(raw_bytes)
+    loader_calls: list[dict[str, Any]] = []
+
+    from aiwatchdogs.connectors.loader import load_dataset as real_load_dataset
+
+    def _stub_load_dataset(
+        path_or_url: str,
+        fmt: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> LoadedDataset:
+        loader_calls.append({"path_or_url": path_or_url, "fmt": fmt, "context": context})
+        loaded = real_load_dataset(str(m2_csv), fmt=fmt)
+        return loaded.model_copy(update={"source_ref": path_or_url, "is_demo_sample": False})
+
+    monkeypatch.setattr("aiwatchdogs.cli.runner.load_dataset", _stub_load_dataset)
+
+    beats: list[dict[str, Any]] = []
+    submitted: list[dict[str, Any]] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/desk/beat":
+            beats.append(json.loads(request.content))
+            return httpx.Response(200, json={"status": "active"})
+        if request.url.path == "/api/desk/submit":
+            submitted.append(json.loads(request.content))
+            return httpx.Response(200, json={"status": "accepted", "finding_id": "fnd-remote-1"})
+        return httpx.Response(404)
+
+    cfg = AgentConfig(handle="remote-url-node", hub_url="http://mockhub", api_token="awd_tok")
+    with httpx.Client(transport=httpx.MockTransport(_handler), base_url="http://mockhub") as client:
+        runner = AgentRunner(cfg, http_client=client)
+        result = runner.execute_task(
+            {
+                "lease_id": "lease-remote-1",
+                "task": {
+                    "id": "tsk-remote-1",
+                    "task_type": "anomaly_scan",
+                    "mission_slug": "assam-gfr-split-tendering",
+                    "methodology_code": "M2",
+                    "title": "Assam GFR Rule 161 Split-Tendering Scan",
+                    "payload": {
+                        "dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/v2.csv",
+                        "secondary_url": "https://raw.githubusercontent.com/spfrantz/MCA-CSR-Scraper/master/examples/csr_top_100.csv",
+                        "source_url": "https://assamtenders.gov.in/",
+                        "expected_sha256": expected_sha,
+                        "artifact_title": "Assam OCDS FY16-22",
+                        "jurisdiction": "Assam",
+                        "fiscal_year": "FY2016-22",
+                        "is_demo_sample": False,
+                    },
+                },
+            }
+        )
+
+    assert result["status"] == "completed"
+    assert result["outcome"] == "finding"
+    assert len(loader_calls) == 1
+    assert loader_calls[0]["path_or_url"].startswith("https://raw.githubusercontent.com/")
+    assert loader_calls[0]["context"]["secondary_url"].endswith("csr_top_100.csv")
+
+    # Verify factual real-time whisper contains dataset title, count, and matched hash
+    assert any(
+        "Downloaded Assam OCDS FY16-22" in (b.get("whisper") or "")
+        and f"sha256:{expected_sha[:8]} matched" in (b.get("whisper") or "")
+        for b in beats
+    )
+
+    body = submitted[0]
+    finding = body["finding"]
+    assert finding["is_demo_sample"] is False
+    assert finding["artifact_sha256"] == expected_sha
+    assert finding["canonical_url"] == "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/v2.csv"
+    assert finding["source_url"] == "https://assamtenders.gov.in/"
+    assert finding["secondary_url"].endswith("csr_top_100.csv")
+    assert body["metrics"]["expected_sha256_matched"] is True
+    assert body["metrics"]["records_scanned"] == 4
+    assert body["metrics"]["monetary_audited_inr"] > 0
+
+
+def test_runner_peer_verify_multi_lead_matching(tmp_path: Path) -> None:
+    """Ensure _handle_peer_verify matches the exact target finding among multiple engine leads."""
+    multi_csv = _write_m2_split_csv_fixture(tmp_path / "multi_buyer_m2.csv", multi_buyer=True)
+    sha = compute_sha256(multi_csv.read_bytes())
+
+    from aiwatchdogs.connectors.loader import load_dataset as real_load_dataset
+    from aiwatchdogs.engines.registry import run_engine
+
+    loaded = real_load_dataset(str(multi_csv))
+    eng = run_engine("M2", loaded.records)
+    assert len(eng.leads) >= 2
+
+    # Explicitly target the second (smaller exposure) lead to verify entity+rule matching!
+    target = min(eng.leads, key=lambda ld: float(ld.monetary_exposure_inr))
+
+    submitted: list[dict[str, Any]] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/desk/beat":
+            return httpx.Response(200, json={"status": "active"})
+        if request.url.path == "/api/desk/submit":
+            submitted.append(json.loads(request.content))
+            return httpx.Response(200, json={"status": "accepted"})
+        return httpx.Response(404)
+
+    cfg = AgentConfig(handle="multi-lead-verifier", hub_url="http://mockhub", api_token="awd_tok")
+    with httpx.Client(transport=httpx.MockTransport(_handler), base_url="http://mockhub") as client:
+        runner = AgentRunner(cfg, http_client=client)
+        res = runner.execute_task(
+            {
+                "lease_id": "lease-pv-multi",
+                "task": {
+                    "id": "tsk-pv-multi",
+                    "task_type": "peer_verify",
+                    "methodology_code": "M2",
+                    "payload": {
+                        "finding_id": "fnd-target-beta",
+                        "canonical_url": str(multi_csv),
+                        "artifact_sha256": sha,
+                        "methodology_code": "M2",
+                        "title": target.title,
+                        "summary": target.summary,
+                        "entity_name": target.entity_name,
+                        "monetary_exposure_inr": float(target.monetary_exposure_inr),
+                        "anomaly_metrics": target.anomaly_metrics,
+                        "rule_triggered": target.rule_triggered,
+                        "benign_explanations": target.benign_explanations,
+                    },
+                },
+            }
+        )
+
+    assert res["verification"]["verdict"] == "confirm"
+    assert res["verification"]["checks"] == {
+        "provenance_ok": True,
+        "math_reproduced": True,
+        "rule_valid": True,
+        "legal_pii_ok": True,
+    }
+    assert res["verification"]["reproduced_metrics"]["entity_name"] == target.entity_name
+    assert len(submitted) == 1
+
+
+# ---------------------------------------------------------------------------
+# 5. Full End-to-End AgentRunner Flow Against Live FastAPI Hub (ASGI)
+# ---------------------------------------------------------------------------
+
+
+def _point_mission_task_to_local_fixture(
+    hub_app: Any,
+    mission_slug: str,
+    fixture_path: Path,
+) -> None:
+    """Re-point a seeded mission's queued task to a local temp fixture for offline E2E tests."""
+    sha = compute_sha256(fixture_path.read_bytes())
+    db = hub_app.state.db
+    with db.transaction() as conn:
+        row = conn.execute(
+            "SELECT id, payload_json FROM tasks WHERE mission_slug = ? AND status = 'queued' ORDER BY id ASC LIMIT 1",
+            (mission_slug,),
+        ).fetchone()
+        assert row is not None, f"Expected queued task for mission {mission_slug}"
+        payload = json.loads(row["payload_json"])
+        payload["dataset_url"] = str(fixture_path)
+        payload["dataset_path"] = str(fixture_path)
+        payload["expected_sha256"] = sha
+        conn.execute(
+            "UPDATE tasks SET payload_json = ? WHERE id = ?",
+            (json.dumps(payload), row["id"]),
+        )
 
 
 def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_path: Path) -> None:
     hub_app = create_app(db_path=tmp_path / "live_hub.db", seed=True)
+    m2_fixture = _write_m2_split_csv_fixture(tmp_path / "assam_gfr_m2.csv")
+    _point_mission_task_to_local_fixture(hub_app, "assam-gfr-split-tendering", m2_fixture)
 
     with TestClient(hub_app, base_url="http://testserver") as asgi_client:
-        # Node 1: Investigator claims M2 scan task, audits real sample CSV, submits neutral finding
+        # Confirm Hub starts 100% honest: 0 fake agents, 0 fake findings, 8 live missions, 16 queued tasks!
+        head0 = asgi_client.get("/api/head").json()
+        assert head0["stats"]["agents_total"] == 0
+        assert head0["stats"]["findings_verified"] == 0
+        assert head0["stats"]["tasks_queued"] == 16
+        assert all(m["data_mode"] == "live_public" for m in head0["missions"])
+
+        # Node 1: Investigator claims M2 scan task, audits inline CSV, submits neutral finding
         cfg_investigator = AgentConfig(
             handle="cli-auditor-one",
             hub_url="http://testserver",
@@ -375,7 +667,7 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
         )
         summary_inv = runner_inv.run_loop(
             max_tasks=1,
-            preferred_mission="gem-split-tendering-threshold",
+            preferred_mission="assam-gfr-split-tendering",
         )
 
         assert stat.S_IMODE(inv_cfg_path.stat().st_mode) == 0o600
@@ -388,10 +680,11 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
         assert submit_resp["finding_status"] == "peer_review"
         assert submit_resp["peer_verify_tasks_created"] == 2
 
-        # Verify finding is stored in peer_review before independent checks
+        # Verify finding is stored in peer_review with is_demo_sample=False before independent checks
         f_before = asgi_client.get(f"/api/findings/{finding_id}").json()
         assert f_before["status"] == "peer_review"
         assert f_before["confirm_count"] == 0
+        assert f_before["is_demo_sample"] is False
 
         # Node 2 & Node 3: Two independent peer verifiers re-load CSV, check SHA-256,
         # reproduce deterministic M2 math within 1% tolerance, check neutrality & zero PII!
@@ -412,7 +705,7 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
             )
             summary_ver = runner_ver.run_loop(
                 max_tasks=1,
-                preferred_mission="gem-split-tendering-threshold",
+                preferred_mission="assam-gfr-split-tendering",
             )
             assert summary_ver.tasks_completed == 1
             assert summary_ver.verifications_submitted == 1
@@ -448,11 +741,14 @@ async def test_httpx_asgi_transport_live_hub_health_and_head(tmp_path: Path) -> 
 
         head = await client.get("/api/head")
         assert head.status_code == 200
-        assert head.json()["stats"]["tasks_queued"] >= 8
+        data = head.json()
+        assert data["stats"]["tasks_queued"] == 16
+        assert data["stats"]["agents_total"] == 0
+        assert len(data["missions"]) == 8
 
 
 # ---------------------------------------------------------------------------
-# 5. Edge Cases: Cleared Outcome, 410 Gone, Exception Release, Peer Verdicts
+# 6. Edge Cases: Cleared Outcome, 410 Gone, Exception Release, Peer Verdicts
 # ---------------------------------------------------------------------------
 
 
@@ -473,7 +769,7 @@ def test_runner_cleared_410_gone_and_exception_release(tmp_path: Path) -> None:
             "task": {
                 "id": "tsk-clear-1",
                 "task_type": "anomaly_scan",
-                "mission_slug": "gem-split-tendering-threshold",
+                "mission_slug": "assam-gfr-split-tendering",
                 "methodology_code": "M2",
                 "title": "Clean dataset scan",
                 "instructions": "Run M2",
@@ -507,7 +803,7 @@ def test_runner_cleared_410_gone_and_exception_release(tmp_path: Path) -> None:
             "task": {
                 "id": "tsk-410",
                 "task_type": "anomaly_scan",
-                "mission_slug": "gem-split-tendering-threshold",
+                "mission_slug": "assam-gfr-split-tendering",
                 "methodology_code": "M2",
                 "title": "Already settled task",
                 "instructions": "Run M2",
@@ -541,7 +837,7 @@ def test_runner_cleared_410_gone_and_exception_release(tmp_path: Path) -> None:
             "task": {
                 "id": "tsk-err",
                 "task_type": "anomaly_scan",
-                "mission_slug": "gem-split-tendering-threshold",
+                "mission_slug": "assam-gfr-split-tendering",
                 "methodology_code": "M2",
                 "title": "Missing file task",
                 "instructions": "Run M2",
@@ -577,7 +873,7 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
     )
     clean_sha = compute_sha256(clean_csv.read_bytes())
 
-    m2_sample = SAMPLE_DIR / "m2_gem_split_tenders.csv"
+    m2_fixture = _write_m2_split_csv_fixture(tmp_path / "real_m2_fixture.csv")
     submitted: list[dict[str, Any]] = []
 
     def _handler(request: httpx.Request) -> httpx.Response:
@@ -654,14 +950,14 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
                     "methodology_code": "M2",
                     "payload": {
                         "finding_id": "f-bad-sha",
-                        "dataset_path": str(m2_sample),
+                        "dataset_path": str(m2_fixture),
                         "artifact_sha256": "0" * 64,
                         "methodology_code": "M2",
                         "title": "Public Record Anomaly: Threshold cluster",
                         "summary": "Summary of threshold cluster.",
-                        "entity_name": "Sample Buyer",
+                        "entity_name": "NHM Assam Procurement Cell",
                         "monetary_exposure_inr": 100.0,
-                        "rule_triggered": "GFR-2017-R149",
+                        "rule_triggered": "GFR-2017-R161",
                         "benign_explanations": ["Lawful urgent indents."],
                     },
                 },
@@ -674,7 +970,7 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. Typer CLI `join --yes`, `status`, and `missions` Against Live FastAPI Hub
+# 7. Typer CLI `join --yes`, `run`, `status`, and `missions` Against Live Hub
 # ---------------------------------------------------------------------------
 
 
@@ -686,6 +982,10 @@ def test_cli_join_status_missions_against_live_hub(
     monkeypatch.setenv(ENV_CONFIG_PATH, str(cfg_file))
 
     hub_app = create_app(db_path=tmp_path / "cli_hub.db", seed=True)
+    m1_fixture = _write_m1_ocds_fixture(tmp_path / "assam_m1.json")
+    m2_fixture = _write_m2_split_csv_fixture(tmp_path / "assam_m2.csv")
+    _point_mission_task_to_local_fixture(hub_app, "assam-ocds-single-bid", m1_fixture)
+    _point_mission_task_to_local_fixture(hub_app, "assam-gfr-split-tendering", m2_fixture)
 
     with TestClient(hub_app, base_url="http://testserver") as asgi_client:
         # Route CLI httpx calls & AgentRunner to the in-process ASGI TestClient
@@ -723,6 +1023,7 @@ def test_cli_join_status_missions_against_live_hub(
         assert res_join.exit_code == 0, res_join.output
         assert "Follow your agent live" in res_join.stdout
         assert "http://testserver/a/cli-join-node" in res_join.stdout
+        assert "SAMPLE" not in res_join.stdout.upper()
         assert cfg_file.is_file()
         assert stat.S_IMODE(cfg_file.stat().st_mode) == 0o600
 
@@ -734,7 +1035,7 @@ def test_cli_join_status_missions_against_live_hub(
         # 2. `aiwatchdogs run` using saved config (headless)
         res_run = cli_runner.invoke(
             cli_app,
-            ["run", "--mode", "investigate", "--max-tasks", "1"],
+            ["run", "--mode", "investigate", "--mission", "assam-gfr-split-tendering", "--max-tasks", "1"],
         )
         assert res_run.exit_code == 0, res_run.output
         assert "Agent Run Summary" in res_run.stdout
@@ -753,5 +1054,7 @@ def test_cli_join_status_missions_against_live_hub(
             env={"COLUMNS": "140"},
         )
         assert res_missions.exit_code == 0, res_missions.output
-        assert "ocds-single-bid-assam-hp" in res_missions.stdout
-        assert "gem-split-tendering-threshold" in res_missions.stdout
+        assert "assam-ocds-single-bid" in res_missions.stdout
+        assert "assam-gfr-split-tendering" in res_missions.stdout
+        assert "live_public" in res_missions.stdout
+        assert "demo_sample" not in res_missions.stdout

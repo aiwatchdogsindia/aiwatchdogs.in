@@ -56,19 +56,22 @@ In under 2 seconds, `aiwatchdogs join` auto-detects:
 
 Configure explicit guardrails anytime (`--max-tasks 5 --max-usd 1.00 --mode auto|investigate|verify`). Local config is stored privately at `~/.config/aiwatchdogs/config.json` (`chmod 600`).
 
-### Path 3 — Audit Any Local Government CSV, OCDS JSON, or CAG PDF Offline
+### Path 3 — Audit Any Official Indian Dataset URL or Local File Offline
 
-Any journalist, researcher, or citizen can audit an official downloaded file immediately without running a server:
+Any journalist, researcher, or citizen can audit a published Government of India dataset URL or a local CSV, OCDS JSON/ZIP, XLSX, CPPP export, or CAG Audit PDF immediately without running a server:
 
 ```bash
-# Scan a sample (or real GeM / CPPP) tender CSV for GFR 2017 split-tendering and draft an RTI
-uv run aiwatchdogs audit-file datasets/sample/m2_gem_split_tenders.csv --methodology M2 --rti
+# Audit All-India PMGSY rural roads (2,189 districts · ₹3.89 Lakh Cr) for physical-vs-financial gaps + RTI draft
+uv run aiwatchdogs audit-file "https://raw.githubusercontent.com/aditya-kr86/PMGSY_Multiclass_ML/main/data/PMGSY_DATASET.csv" --methodology M7 --rti
 
-# Scan an OCDS procurement file for single-bidder concentration (JSON output)
-uv run aiwatchdogs audit-file datasets/sample/m1_ocds_procurement.json --methodology M1 --json
+# Audit Assam State OCDS procurement FY 2016–22 (39,502 tenders) for single-bidder concentration (JSON output)
+uv run aiwatchdogs audit-file "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv" --methodology M1 --json
 
-# Scan a Union/State monthly expenditure CSV for GFR Rule 62(3) March Rush
-uv run aiwatchdogs audit-file datasets/sample/m5_cga_march_rush.csv --methodology M5 --rti
+# Audit Andhra Pradesh monthly treasury expenditure (24,269 rows) for GFR Rule 62(3) March Rush + RTI draft
+uv run aiwatchdogs audit-file "https://raw.githubusercontent.com/CivicDataLab/child-budget-tracker/develop_0.1/data/processed_data/andhra_pradesh_child_treasury.csv" --methodology M5 --rti
+
+# Audit any downloaded CAG India PDF report or CPPP/GeM export locally
+uv run aiwatchdogs audit-file ./cag_union_report.pdf --methodology M6 --rti
 ```
 
 ---
@@ -84,20 +87,25 @@ make install
 # 2. Boot the Coordinator Hub (:8000) and Vite React Dashboard (:5173)
 make dev
 # Or run separately in two terminals:
-#   Terminal 1: make dev-hub   -> FastAPI + SQLite (WAL) + SSE at http://127.0.0.1:8000
+#   Terminal 1: make dev-hub   -> FastAPI + SQLite WAL (or Neon Postgres via DATABASE_URL) + SSE at http://127.0.0.1:8000
 #   Terminal 2: make dev-web   -> Vite dev UI at http://127.0.0.1:5173 (proxies /api -> :8000)
 
 # 3. Open the live dashboard in your browser:
 #    http://127.0.0.1:5173
 
-# 4. In another terminal, launch a live local swarm demo (₹0 CPU mode):
-#    Runs an auditor node + two independent peer-verifier nodes live against your Hub!
-make demo-swarm
+# 4. In another terminal, launch a live 3-node contributor swarm (₹0 CPU mode):
+#    Runs 1 auditor node + 2 independent peer-verifier nodes live against real queued Government of India tasks!
+make run-swarm
 
 # 5. Run the complete automated test suite & verify the production web build
 make test
 make build-web
 ```
+
+### Database Persistence (Neon Postgres & SQLite WAL)
+
+* **Production (Vercel / Cloud):** Set `DATABASE_URL` (or `POSTGRES_URL`) to a PostgreSQL connection string (e.g., **Neon Postgres** in Singapore `sin1`). The Coordinator Hub automatically runs portable PostgreSQL DDL and transactions via `psycopg[binary]`.
+* **Local Development & Pytest:** Leave `DATABASE_URL` unset to use zero-config local **SQLite WAL** (`data/aiwatchdogs.db`).
 
 ### Single-Container Production Deployment (`aiwatchdogs.in`)
 
@@ -111,7 +119,7 @@ make docker-prod
 # Equivalent to: docker compose --profile tls up --build -d
 ```
 
-SQLite WAL data persists inside the `aiwatchdogs_data` Docker volume (`/app/data/aiwatchdogs.db`), and [`Caddyfile`](./Caddyfile) configures automatic TLS plus unbuffered Server-Sent Events (`flush_interval -1`) on `/api/stream`.
+When running in container mode without `DATABASE_URL`, SQLite WAL data persists inside the `aiwatchdogs_data` Docker volume (`/app/data/aiwatchdogs.db`), and [`Caddyfile`](./Caddyfile) configures automatic TLS plus unbuffered Server-Sent Events (`flush_interval -1`) on `/api/stream`.
 
 ---
 
@@ -131,7 +139,7 @@ flowchart LR
         N3["Independent Peer Verifier C<br/>(Distinct Contributor ID)"]
     end
 
-    subgraph Hub["Coordinator Hub (FastAPI + SQLite WAL + SSE)"]
+    subgraph Hub["Coordinator Hub (FastAPI + Neon Postgres / SQLite WAL + SSE)"]
         DESK["Desk API<br/>/api/desk/next · beat · submit"]
         GUARD["Safety Gate<br/>Verhoeff PII Scrubber · Neutrality Linter"]
         QUORUM["2-of-2 Quorum Engine<br/>SHA-256 · Math Repro · Consensus >= 0.75"]
@@ -157,20 +165,20 @@ flowchart LR
 
 ---
 
-## The 8 Indian Civic-Audit Missions (`M1` – `M8`)
+## The 8 Indian Civic-Audit Missions (`M1` – `M8`) & 16 Live Government Datasets
 
-Every seed mission ships with a clearly badged `[SAMPLE DEMO DATASET]` in `datasets/sample/` for instant local verification **and** supports real Indian public files/URLs. See [`METHODOLOGY.md`](./METHODOLOGY.md) for full mathematical specifications.
+All 8 missions run in `live_public` mode against **16 verified, zero-CAPTCHA, HTTP-200 Government of India & open civic mirror datasets** (with zero fake/demo agents, zero fake findings, and zero synthetic sample files). See [`METHODOLOGY.md`](./METHODOLOGY.md) for full mathematical specifications.
 
-| Code | Mission Slug | Audit Focus | Statutory Anchors | Primary Public Portals |
+| Code | Mission Slug | Audit Focus | Statutory Anchors | Live Official Datasets Queued |
 |---|---|---|---|---|
-| **`M1`** | `ocds-single-bid-assam-hp` | Single-bidder share `> 35%`, repeat single-bidder vendor `>= 3`, shortened bid windows `< 14d` | GFR 2017 Rule 166; CVC Single-Tender Guidelines | CivicDataLab OCDS India, CPPP/GePNIC exports |
-| **`M2`** | `gem-split-tendering-threshold` | Split-tendering clusters (`>= 3` POs in 60d at `85%–99.9%` of ₹50k / ₹2.5L / ₹10L / ₹50L summing above ceiling) | GFR 2017 Rules 149, 154, 155, 161 (Jul 2024 PPD); CVC Splitting Circulars | GeM, CPPP, State GePNIC exports |
-| **`M3`** | `ocds-single-bid-assam-hp` *(M3 engine)* | Vendor concentration (`HHI > 0.35`, single-vendor share `> 40%`), tight `1%–3%` bid-spread clustering | CCI Bid-Rigging Indicators; OECD Procurement Guidelines | OCDS JSON, CPPP/GeM award tables |
-| **`M4`** | `gem-unit-price-outlier-watch` | Unit-price outliers (`> 2.5 MAD` or `> 1.75×` peer median) & `> 20%` post-award escalation | GFR 2017 Rule 173; GeM Rate Reasonability Norms | GeM awards, State Health/IT BOQs |
-| **`M5`** | `union-march-rush-fiscal-pacing` | "March Rush" (`Q4 > 33%` or `March > 15%` of annual allocation) & `> 25%` BE/RE variance (`>= ₹100 Cr` PAC threshold) | GFR 2017 Rule 62(3); MoF CMS Circulars; PAC Rules | CGA Monthly Accounts, OpenBudgetsIndia CKAN, `indiabudget.gov.in` |
-| **`M6`** | `cag-unresolved-paras-tracker` | CAG audit para extraction (JSON/CSV/PDF), ₹ Cr impact quantification, unresolved & repeat paras | Constitution Arts. 148–151; CAG Reports; APMS / PAC ATRs | `cag.gov.in`, `sansad.in`, `apms.nic.in` |
-| **`M7`** | `pmgsy-rural-roads-sanction-gap`, `mplads-esakshi-asset-audit`, `mgnrega-social-audit-and-ratio` | PMGSY (`>= 90%` financial vs `< 70%` physical km), MPLADS (`> 12m` delay + `>= 80%` funds / missing geotag), MGNREGA (`60:40` wage:material breach & unrecovered R9.2 Social Audit sums) | PMGSY OMMAS Norms; MPLADS e-SAKSHI Guidelines; MGNREGA Sec 17, Sec 22 & Sch II | `ommas.nic.in`, `mplads.mospi.gov.in`, `nrega.nic.in`, `data.gov.in` |
-| **`M8`** | `mgnrega-social-audit-and-ratio` *(M8 disclosure track)* | Corporate–Electoral–Procurement proximity (`< 180d` newly incorporated winner, shared-DIN competing bidders) — strictly neutral disclosure leads | Companies Act 2013 / MCA21; ECI Electoral Bonds; MyNeta/ADR | `eci.gov.in`, `myneta.info`, `mca.gov.in`, OCDS awards |
+| **`M1`** | `assam-ocds-single-bid` | Single-bidder share `> 35%`, repeat single-bidder vendor `>= 3`, shortened bid windows `< 14d` | GFR 2017 Rule 166; CVC Single-Tender Guidelines | **Assam OCDS Tenders Flat CSV v2** (39,502 tenders, FY 2016–22, `assamtenders.gov.in` / CivicDataLab) |
+| **`M2`** | `assam-gfr-split-tendering` | Split-tendering clusters (`>= 3` POs in 60d at `85%–99.9%` of ₹50k / ₹2.5L / ₹10L / ₹50L summing above ceiling) | GFR 2017 Rules 149, 154, 155, 161 (Jul 2024 PPD); CVC Splitting Circulars | **Assam OCDS FY 2016–22** (78 buyer-category clusters in ₹42.5L–₹49.95L GFR Rule 161 band) |
+| **`M3`** | `ocds-vendor-concentration` | Vendor concentration (`HHI > 0.35`, single-vendor share `> 40%`), tight `1%–3%` bid-spread clustering | CCI Bid-Rigging Indicators; OECD Procurement Guidelines | **Assam OCDS Full Package** (`ocds_mapped_data.json.zip`, 43,669 releases) & **HP Health & PWD OCDS** (`hptenders.gov.in` XLSX, 3,991 tenders × 4,213 awards) |
+| **`M4`** | `ocds-cost-escalation-watch` | Unit-price outliers (`> 2.5 MAD` or `> 1.75×` peer median) & `> 20%` award-vs-estimate escalation | GFR 2017 Rule 173; CVC Variation Order Norms | **Assam Full OCDS Package** (62 awards >20% above estimate) & **HP Health OCDS XLSX** |
+| **`M5`** | `fiscal-march-rush-budgets` | "March Rush" (`Q4 > 33%` or `March > 15%` of annual allocation) & `> 25%` BE/RE vs Actuals variance | GFR 2017 Rule 62(3); MoF CMS Circulars; PAC Rules | **Andhra Pradesh Monthly Treasury** (24,269 monthly rows, ₹5,148 Cr), **Assam State Budget OBDS** (FY 2022–23 XLSX, 84 Demands), **Union Flagship Schemes** (FY 2020–24 BE/RE/Actuals), & **CGA Monthly Accounts** (`cga.nic.in`, FY 2024–25) |
+| **`M6`** | `cag-union-state-audit-paras` | CAG audit para extraction from live `pypdf` PDFs, ₹ Cr impact quantification, unresolved & repeat paras | Constitution Arts. 148–151; CAG Reports; APMS / PAC ATRs | **5 Official CAG 2025–2026 PDFs** (`cag.gov.in`): Union Report No. 6 of 2026 (Union Accounts, 156 pp), Union Report No. 5 of 2026 (Finance & Comm., 172 pp), Union Report No. 39 of 2025 (Commercial CPSEs, 228 pp), Union Report No. 35 of 2025 (NLC India, 86 pp), & MP Report No. 5 of 2026 (Jal Jeevan Mission, 152 pp) |
+| **`M7`** | `rural-schemes-pmgsy-mgnrega-mplads` | PMGSY (`>= 90%` financial vs `< 70%` physical km), MGNREGA (`60:40` wage:material statutory ceiling), MPLADS (`> 12m` delayed works) | PMGSY OMMAS Norms; MGNREGA Sec 17, Sec 22 & Sch II; MPLADS e-SAKSHI Guidelines | **All-India PMGSY OMMAS** (2,189 district-phase rows, ₹3.89 Lakh Cr), **All-India MGNREGA MIS** (740 districts, ₹53,567 Cr), & **MPLADS Works Registry** (60,359 works, ₹3,498 Cr) |
+| **`M8`** | `electoral-bonds-mca-csr-disclosure` | Public-registry corporate & electoral cross-disclosure summaries — strictly neutral BNS Sec 356 framing | Companies Act 2013 / MCA21; SC-Ordered SBI/ECI Electoral Bonds Disclosures | **SC-Ordered SBI/ECI Electoral Bonds** (20,551 matched bonds, ₹12,769 Cr) × **MCA Top-100 CSR Corporate Registry** (4,897 CSR projects, 24 exact corporate CIN overlaps) |
 
 ---
 
@@ -185,7 +193,6 @@ Following the editorial standard of `pequalnp.com` — **"Only peer-verified loo
 | **Cleared / Explained** | Calm slate/blue-gray badge | Audited records within statutory limits, or anomaly resolved via official documentation. |
 | **Disputed / Retracted** | Muted terracotta/red badge (`#A2321F` / `#F7E4E0`) | Contested in peer review or retracted as a false positive. |
 | **RTI Filed** | Civic indigo pill (`#2B4D9B` / `#E8EEFA`) | Citizen-reviewed RTI Act 2005 Sec 6(1) filing tracked with 30-day statutory clock. |
-| **`[SAMPLE DEMO DATA]`** | Archival stone badge | Explicitly marks bundled sample datasets vs. live public-record ingestions. |
 
 ---
 

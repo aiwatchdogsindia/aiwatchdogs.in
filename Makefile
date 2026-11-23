@@ -1,4 +1,4 @@
-.PHONY: help install dev dev-hub dev-web build-web test demo-swarm docker-up docker-prod
+.PHONY: help install dev dev-hub dev-web build-web test run-swarm docker-up docker-prod
 
 HUB_URL ?= http://127.0.0.1:8000
 
@@ -7,11 +7,11 @@ help:
 	@echo ""
 	@echo "  make install      Install Python deps (uv sync) and web deps (npm install)"
 	@echo "  make dev          Run Coordinator Hub (:8000) and Vite Dashboard (:5173) together"
-	@echo "  make dev-hub      Run FastAPI Coordinator Hub on http://127.0.0.1:8000"
+	@echo "  make dev-hub      Run FastAPI Coordinator Hub on http://127.0.0.1:8000 (SQLite or DATABASE_URL Postgres)"
 	@echo "  make dev-web      Run Vite React dev server on http://127.0.0.1:5173"
 	@echo "  make build-web    Build production frontend bundle into web/dist"
 	@echo "  make test         Run full Python pytest test suite via uv"
-	@echo "  make demo-swarm   Run a local multi-node zero-cost CPU swarm against HUB_URL"
+	@echo "  make run-swarm    Run a live 3-node zero-cost CPU swarm (1 auditor + 2 verifiers) against HUB_URL"
 	@echo "  make docker-up    Build and start local Docker container on port 8000"
 	@echo "  make docker-prod  Build and start Hub + Caddy automatic HTTPS (aiwatchdogs.in)"
 
@@ -38,12 +38,12 @@ build-web:
 test:
 	uv run pytest -v
 
-demo-swarm:
-	@echo "Running local zero-cost CPU contributor swarm demo against $(HUB_URL)..."
-	@echo "(Make sure the Hub is running first via 'make dev-hub' or 'make dev')"
+run-swarm:
+	@echo "Running live 3-node zero-cost CPU contributor swarm against $(HUB_URL)..."
+	@echo "(Audits real queued Government of India datasets and promotes leads via 2-of-2 peer quorum)"
 	@TMP_DIR=$$(mktemp -d); \
 		trap 'rm -rf "$$TMP_DIR"' EXIT; \
-		echo "--> [Node 1/3] auditor-alpha: claiming anomaly_scan tasks..."; \
+		echo "--> [Node 1/3] auditor-alpha: claiming real Government of India anomaly_scan tasks..."; \
 		AIWATCHDOGS_CONFIG_PATH="$$TMP_DIR/auditor-alpha.json" \
 			uv run aiwatchdogs run --hub "$(HUB_URL)" --handle auditor-alpha --provider rule-engine --mode investigate --max-tasks 2; \
 		echo "--> [Node 2/3] verifier-beta: independent peer verification pass 1..."; \

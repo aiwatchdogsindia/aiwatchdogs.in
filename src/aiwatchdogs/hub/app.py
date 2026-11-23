@@ -116,11 +116,12 @@ def _public_base_url(request: Request) -> str:
 def create_app(
     *,
     db_path: str | Path | None = None,
+    database_url: str | None = None,
     seed: bool = True,
     web_dist: str | Path | None = None,
 ) -> FastAPI:
     """Factory creating a configured AI Watchdogs India Coordinator Hub FastAPI app."""
-    db = Database(db_path=db_path)
+    db = Database(db_path=db_path, database_url=database_url)
     if seed:
         seed_database(db)
     broker = SSEBroker()
@@ -168,6 +169,7 @@ def create_app(
             "service": "aiwatchdogs-hub",
             "version": "0.1.0",
             "db_ok": db.health_check(),
+            "db_backend": db.backend,
             "sse_subscribers": broker.subscriber_count,
             "timestamp": utc_now_iso(),
         }
@@ -417,7 +419,21 @@ def create_app(
     return application
 
 
-app = create_app()
+_DEFAULT_APP: FastAPI | None = None
+
+
+def get_default_app() -> FastAPI:
+    """Return the lazily-initialized process-wide default Hub ASGI application."""
+    global _DEFAULT_APP
+    if _DEFAULT_APP is None:
+        _DEFAULT_APP = create_app()
+    return _DEFAULT_APP
+
+
+def __getattr__(name: str) -> Any:
+    if name == "app":
+        return get_default_app()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def run_cli() -> None:

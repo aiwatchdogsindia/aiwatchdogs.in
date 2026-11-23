@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import inspect
 import json
 import re
 import secrets
@@ -339,26 +340,39 @@ def run(
 
 @app.command("audit-file")
 def audit_file(
-    path_or_url: str = typer.Argument(..., help="Local CSV/JSON/OCDS/PDF path or Tier-1 public URL to audit."),
+    path_or_url: str = typer.Argument(
+        ...,
+        help="Local CSV/JSON/OCDS/XLSX/ZIP/PDF/HTML path or official public dataset URL to audit.",
+    ),
     methodology: str = typer.Option(..., "--methodology", "-m", help="Audit methodology code (M1 through M8)."),
+    secondary_url: str | None = typer.Option(
+        None,
+        "--secondary-url",
+        help="Optional secondary official CSV/JSON URL for cross-registry joins (e.g. M8 Electoral Bonds x MCA CSR).",
+    ),
     as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON report to stdout."),
     rti: bool = typer.Option(False, "--rti", help="Generate lawful RTI Act 2005 Sec 6(1) draft(s) for detected leads."),
     authority: str | None = typer.Option(None, "--authority", help="Optional Public Authority override for RTI draft."),
 ) -> None:
-    """Standalone offline/local civic-audit analyzer (zero server or API key required)."""
+    """Standalone civic-audit analyzer for official Government of India files & URLs (zero API key required)."""
     code = methodology.strip().upper()
     if code not in METHODOLOGY_CATALOG:
         valid = ", ".join(sorted(METHODOLOGY_CATALOG.keys()))
         err_console.print(f"[red]Unknown methodology '{methodology}'. Valid codes: {valid}[/red]")
         raise typer.Exit(code=2)
 
+    load_ctx: dict[str, Any] | None = {"secondary_url": secondary_url} if secondary_url else None
     try:
-        dataset = load_dataset(path_or_url)
+        params = inspect.signature(load_dataset).parameters
+        if "context" in params and load_ctx is not None:
+            dataset = load_dataset(path_or_url, context=load_ctx)
+        else:
+            dataset = load_dataset(path_or_url)
     except Exception as exc:
         err_console.print(f"[red]Failed to load dataset '{path_or_url}': {exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    result = run_engine(code, dataset.records)
+    result = run_engine(code, dataset.records, context=load_ctx)
 
     processed_leads: list[dict[str, Any]] = []
     rti_drafts: list[dict[str, Any]] = []
@@ -388,7 +402,7 @@ def audit_file(
         "format": dataset.format,
         "sha256": dataset.sha256,
         "byte_size": dataset.byte_size,
-        "is_demo_sample": dataset.is_demo_sample,
+        "is_demo_sample": False,
         "pii_redactions": dataset.pii_redactions,
         "methodology_code": result.methodology_code,
         "methodology_name": METHODOLOGY_CATALOG[code].get("name", code),
@@ -405,17 +419,16 @@ def audit_file(
         typer.echo(json.dumps(report, indent=2, ensure_ascii=False))
         return
 
-    demo_badge = "  [bold yellow][SAMPLE DEMO DATASET][/bold yellow]" if dataset.is_demo_sample else ""
     header_text = (
-        f"[bold]Source:[/bold] {dataset.source_ref}{demo_badge}\n"
+        f"[bold]Source:[/bold] {dataset.source_ref}\n"
         f"[bold]Methodology:[/bold] {code} — {METHODOLOGY_CATALOG[code].get('name', code)}\n"
         f"[bold]SHA-256:[/bold] {dataset.sha256}\n"
-        f"[bold]Scanned:[/bold] {result.records_scanned} records  ·  "
+        f"[bold]Scanned:[/bold] {result.records_scanned:,} records  ·  "
         f"[bold]Monetary Audited:[/bold] {_format_inr(result.monetary_audited_inr)}  ·  "
         f"[bold]Leads:[/bold] {len(processed_leads)}  ·  "
         f"[bold]PII Scrubbed:[/bold] {len(dataset.pii_redactions)}"
     )
-    console.print(Panel(header_text, title="AI Watchdogs India · Local Deterministic Audit", border_style="cyan"))
+    console.print(Panel(header_text, title="AI Watchdogs India · Deterministic Public-Record Audit", border_style="cyan"))
 
     if not processed_leads:
         console.print(

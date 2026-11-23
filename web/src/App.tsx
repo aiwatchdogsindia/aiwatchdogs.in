@@ -182,7 +182,7 @@ function AppShell() {
       return (
         <SponsorsLedgerPage
           activeView="sponsors"
-          onOpenSponsor={() => openSponsor()}
+          onOpenSponsor={openSponsor}
           refreshTick={refreshTick}
         />
       );
@@ -192,7 +192,7 @@ function AppShell() {
       return (
         <SponsorsLedgerPage
           activeView="ledger"
-          onOpenSponsor={() => openSponsor()}
+          onOpenSponsor={openSponsor}
           refreshTick={refreshTick}
         />
       );
@@ -224,7 +224,10 @@ function AppShell() {
       <JustInBar
         justIn={head?.just_in}
         fallbackFinding={fallbackVerified}
+        queuedTasks={head?.stats.tasks_queued ?? 0}
+        missionsCount={head?.missions.length ?? 0}
         onSelectFinding={setSelectedFindingId}
+        onOpenJoin={() => setJoinOpen(true)}
       />
 
       {headError && (

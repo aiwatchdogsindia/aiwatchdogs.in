@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 import time
 from collections.abc import Callable
@@ -73,14 +74,16 @@ def _resolve_dataset_ref(ref: str) -> str:
 
 
 def _extract_target_ref(payload: dict[str, Any]) -> str | None:
-    """Extract dataset file path or URL from a Desk task payload or embedded finding."""
+    """Extract official dataset URL or local file path from a Desk task payload or finding."""
     for key in (
+        "dataset_url",
         "dataset_path",
-        "source_ref",
+        "canonical_url",
         "file_path",
         "artifact_path",
-        "source_url",
+        "source_ref",
         "url",
+        "source_url",
         "path",
     ):
         val = payload.get(key)
@@ -89,26 +92,110 @@ def _extract_target_ref(payload: dict[str, Any]) -> str | None:
 
     artifact = payload.get("artifact")
     if isinstance(artifact, dict):
-        for key in ("source_ref", "file_path", "dataset_path", "canonical_url", "url", "path"):
+        for key in (
+            "dataset_url",
+            "canonical_url",
+            "source_ref",
+            "file_path",
+            "dataset_path",
+            "url",
+            "path",
+        ):
             val = artifact.get(key)
             if isinstance(val, str) and val.strip():
                 return _resolve_dataset_ref(val)
 
     finding = payload.get("finding")
     if isinstance(finding, dict):
-        for key in ("dataset_path", "source_ref", "source_url", "artifact_path"):
+        for key in (
+            "dataset_url",
+            "canonical_url",
+            "dataset_path",
+            "source_ref",
+            "artifact_path",
+            "source_url",
+        ):
             val = finding.get(key)
             if isinstance(val, str) and val.strip():
                 return _resolve_dataset_ref(val)
+        trace = finding.get("agent_trace")
+        if isinstance(trace, dict):
+            for key in ("dataset_url", "canonical_url", "dataset_path", "source_ref"):
+                val = trace.get(key)
+                if isinstance(val, str) and val.strip():
+                    return _resolve_dataset_ref(val)
         citations = finding.get("citations")
         if isinstance(citations, list):
             for cit in citations:
                 if isinstance(cit, dict):
-                    for key in ("source_ref", "dataset_path", "file_path", "source_url", "url"):
+                    for key in (
+                        "dataset_url",
+                        "canonical_url",
+                        "source_ref",
+                        "dataset_path",
+                        "file_path",
+                        "source_url",
+                        "url",
+                    ):
                         val = cit.get(key)
                         if isinstance(val, str) and val.strip():
                             return _resolve_dataset_ref(val)
     return None
+
+
+def _extract_secondary_url(payload: dict[str, Any]) -> str | None:
+    """Extract optional secondary dataset URL (e.g. MCA CSR CSV for M8 Electoral Bonds cross-check)."""
+    candidates: list[Any] = [
+        payload.get("secondary_url"),
+        (payload.get("context") or {}).get("secondary_url") if isinstance(payload.get("context"), dict) else None,
+    ]
+    finding = payload.get("finding")
+    if isinstance(finding, dict):
+        candidates.append(finding.get("secondary_url"))
+        trace = finding.get("agent_trace")
+        if isinstance(trace, dict):
+            candidates.append(trace.get("secondary_url"))
+        citations = finding.get("citations")
+        if isinstance(citations, list):
+            for cit in citations:
+                if isinstance(cit, dict):
+                    candidates.append(cit.get("secondary_url"))
+    for val in candidates:
+        if isinstance(val, str) and val.strip():
+            return _resolve_dataset_ref(val)
+    return None
+
+
+def _build_task_context(payload: dict[str, Any]) -> dict[str, Any]:
+    """Assemble engine/loader context hints from a Desk task payload or embedded finding."""
+    ctx: dict[str, Any] = {}
+    nested = payload.get("context")
+    if isinstance(nested, dict):
+        ctx.update(nested)
+
+    finding = payload.get("finding") if isinstance(payload.get("finding"), dict) else {}
+    for key in (
+        "dataset_url",
+        "source_url",
+        "canonical_url",
+        "jurisdiction",
+        "fiscal_year",
+        "artifact_title",
+        "methodology_code",
+        "max_rows",
+        "filter_buyer",
+        "expected_sha256",
+    ):
+        val = payload.get(key)
+        if val is None and isinstance(finding, dict):
+            val = finding.get(key)
+        if val is not None and key not in ctx:
+            ctx[key] = val
+
+    secondary = _extract_secondary_url(payload)
+    if secondary:
+        ctx["secondary_url"] = secondary
+    return ctx
 
 
 def _select_top_lead(leads: list[Any]) -> Any:
@@ -121,8 +208,16 @@ def _select_top_lead(leads: list[Any]) -> Any:
     )
 
 
-def _scrub_citations(citations: list[dict[str, Any]], dataset: LoadedDataset) -> list[dict[str, Any]]:
+def _scrub_citations(
+    citations: list[dict[str, Any]],
+    dataset: LoadedDataset,
+    *,
+    canonical_url: str | None = None,
+    source_url: str | None = None,
+    secondary_url: str | None = None,
+) -> list[dict[str, Any]]:
     cleaned: list[dict[str, Any]] = []
+    ref_url = canonical_url or dataset.source_ref
     for item in citations:
         if not isinstance(item, dict):
             continue
@@ -131,16 +226,30 @@ def _scrub_citations(citations: list[dict[str, Any]], dataset: LoadedDataset) ->
             if text_key in copy_item and isinstance(copy_item[text_key], str):
                 copy_item[text_key], _ = scrub_pii(copy_item[text_key])
         copy_item.setdefault("sha256", dataset.sha256)
-        copy_item.setdefault("source_ref", dataset.source_ref)
+        copy_item.setdefault("source_ref", ref_url)
+        if canonical_url:
+            copy_item.setdefault("canonical_url", canonical_url)
+            if canonical_url.startswith(("http://", "https://")):
+                copy_item.setdefault("dataset_url", canonical_url)
+        if source_url:
+            copy_item.setdefault("source_url", source_url)
+        if secondary_url:
+            copy_item.setdefault("secondary_url", secondary_url)
         cleaned.append(copy_item)
     if not cleaned:
-        cleaned.append(
-            {
-                "source_ref": dataset.source_ref,
-                "sha256": dataset.sha256,
-                "excerpt": f"Deterministic audit over {len(dataset.records)} public records.",
-            }
-        )
+        entry: dict[str, Any] = {
+            "source_ref": ref_url,
+            "source_url": source_url or ref_url,
+            "sha256": dataset.sha256,
+            "excerpt": f"Deterministic audit over {len(dataset.records):,} public records.",
+        }
+        if canonical_url:
+            entry["canonical_url"] = canonical_url
+            if canonical_url.startswith(("http://", "https://")):
+                entry["dataset_url"] = canonical_url
+        if secondary_url:
+            entry["secondary_url"] = secondary_url
+        cleaned.append(entry)
     return cleaned
 
 
@@ -159,14 +268,34 @@ def _match_reproduced_lead(
     if not isinstance(sub_metrics, dict):
         sub_metrics = {}
 
-    def _score_candidate(cand: Any) -> tuple[int, int, float]:
+    def _score_candidate(cand: Any) -> tuple[int, int, int, float]:
         cand_entity = str(getattr(cand, "entity_name", "")).strip().lower()
         cand_rule = str(getattr(cand, "rule_triggered", "")).strip().lower()
-        entity_match = 1 if (sub_entity and cand_entity == sub_entity) else 0
-        rule_match = 1 if (sub_rule and cand_rule == sub_rule) else 0
+        if sub_entity and cand_entity == sub_entity:
+            entity_match = 2
+        elif sub_entity and (sub_entity in cand_entity or cand_entity in sub_entity):
+            entity_match = 1
+        else:
+            entity_match = 0
+
+        if sub_rule and cand_rule == sub_rule:
+            rule_match = 2
+        elif sub_rule and (sub_rule in cand_rule or cand_rule in sub_rule):
+            rule_match = 1
+        else:
+            rule_match = 0
+
+        cand_metrics = getattr(cand, "anomaly_metrics", {}) or {}
+        metric_hits = 0
+        if sub_metrics and isinstance(cand_metrics, dict):
+            for key, sval in sub_metrics.items():
+                cval = cand_metrics.get(key)
+                if _is_number(sval) and _is_number(cval) and _within_tolerance(float(sval), float(cval)):
+                    metric_hits += 1
+
         cand_mon = float(getattr(cand, "monetary_exposure_inr", 0.0) or 0.0)
         mon_diff = abs(cand_mon - float(sub_monetary or 0.0)) if _is_number(sub_monetary) else 0.0
-        return (entity_match, rule_match, -mon_diff)
+        return (entity_match, rule_match, metric_hits, -mon_diff)
 
     best = max(reproduced_leads, key=_score_candidate)
     best_metrics = getattr(best, "anomaly_metrics", {}) or {}
@@ -439,6 +568,14 @@ class AgentRunner:
         target_ref = _extract_target_ref(payload)
         if target_ref:
             fmt = payload.get("format") or payload.get("file_format")
+            load_ctx = _build_task_context(payload)
+            params = inspect.signature(load_dataset).parameters
+            if "context" in params:
+                return load_dataset(
+                    target_ref,
+                    fmt=str(fmt) if fmt else None,
+                    context=load_ctx or None,
+                )
             return load_dataset(target_ref, fmt=str(fmt) if fmt else None)
 
         inline_records = payload.get("records")
@@ -450,31 +587,51 @@ class AgentRunner:
                 sha256=compute_sha256(raw_text),
                 byte_size=len(raw_text.encode("utf-8")),
                 format="json",
-                is_demo_sample=bool(payload.get("is_demo_sample", False)),
+                is_demo_sample=False,
                 source_ref=str(payload.get("source_ref", "inline-task-payload")),
                 pii_redactions=[],
             )
-        raise ValueError("Task payload missing dataset_path, source_url, or inline records")
+        raise ValueError("Task payload missing dataset_url, dataset_path, source_url, or inline records")
 
-    def _execute_anomaly_scan(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
+    def _handle_anomaly_scan(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
         task_id = task.get("id")
         mission_slug = str(task.get("mission_slug", ""))
         methodology_code = str(task.get("methodology_code", "")).upper().strip()
         payload = task.get("payload") or {}
+        artifact_label = str(
+            payload.get("artifact_title") or task.get("title") or mission_slug or methodology_code
+        ).strip()
+        target_ref = _extract_target_ref(payload)
+        secondary_url = _extract_secondary_url(payload)
+        engine_context = _build_task_context(payload)
 
         if not self.heartbeat(
             lease_id,
-            whisper=f"Loading public dataset for {mission_slug or methodology_code} ({methodology_code})",
+            whisper=f"Fetching {artifact_label} ({methodology_code}) from official source",
             progress_pct=15,
         ):
             return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
 
         dataset = self._load_task_dataset(payload)
+
+        expected_sha = str(payload.get("expected_sha256") or "").strip().lower()
+        sha_matched: bool | None = None
+        if expected_sha:
+            sha_matched = dataset.sha256.lower() == expected_sha
+            sha_note = (
+                f"sha256:{dataset.sha256[:8]} matched"
+                if sha_matched
+                else f"sha256:{dataset.sha256[:8]} (updated from {expected_sha[:8]})"
+            )
+        else:
+            sha_note = f"sha256:{dataset.sha256[:8]}"
+
+        action_verb = "Downloaded" if (target_ref or "").startswith(("http://", "https://")) else "Loaded"
         if not self.heartbeat(
             lease_id,
             whisper=(
-                f"Loaded {len(dataset.records)} records (sha256:{dataset.sha256[:10]}); "
-                f"running deterministic engine {methodology_code}"
+                f"{action_verb} {artifact_label} ({len(dataset.records):,} records, {sha_note}); "
+                f"running {methodology_code} deterministic checks"
             ),
             progress_pct=50,
         ):
@@ -483,8 +640,16 @@ class AgentRunner:
         engine_res = run_engine(
             methodology_code,
             dataset.records,
-            context=payload.get("context") if isinstance(payload.get("context"), dict) else None,
+            context=engine_context or None,
         )
+
+        canonical_url = str(
+            payload.get("dataset_url")
+            or payload.get("canonical_url")
+            or target_ref
+            or dataset.source_ref
+        ).strip()
+        source_url = str(payload.get("source_url") or canonical_url).strip()
 
         metrics = {
             "records_scanned": engine_res.records_scanned,
@@ -493,8 +658,10 @@ class AgentRunner:
             "leads_found": len(engine_res.leads),
             "script_hash": engine_res.script_hash,
             "artifact_sha256": dataset.sha256,
+            "expected_sha256_matched": sha_matched,
             "source_ref": dataset.source_ref,
-            "is_demo_sample": dataset.is_demo_sample,
+            "canonical_url": canonical_url,
+            "is_demo_sample": False,
             "pii_redactions_count": len(dataset.pii_redactions),
         }
 
@@ -502,14 +669,18 @@ class AgentRunner:
             clean_summary, _ = scrub_pii(engine_res.summary)
             if not self.heartbeat(
                 lease_id,
-                whisper=f"Cleared {engine_res.records_scanned} records under {methodology_code}: 0 red-flag thresholds breached",
+                whisper=(
+                    f"Cleared {engine_res.records_scanned:,} records in {artifact_label} "
+                    f"under {methodology_code}: 0 statutory thresholds breached"
+                ),
                 progress_pct=90,
             ):
                 return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
             resp = self.submit(
                 lease_id,
                 outcome="cleared",
-                whisper=clean_summary or f"Cleared {engine_res.records_scanned} records with zero statutory anomalies.",
+                whisper=clean_summary
+                or f"Cleared {engine_res.records_scanned:,} records in {artifact_label} with zero statutory anomalies.",
                 metrics=metrics,
             )
             return {
@@ -532,7 +703,7 @@ class AgentRunner:
         if not lint_res.passed:
             raise ValueError(f"Neutrality lint rejected lead before submission: {lint_res.violations}")
 
-        finding_payload = {
+        finding_payload: dict[str, Any] = {
             "title": clean_title,
             "summary": clean_summary,
             "methodology_code": top_lead.methodology_code,
@@ -543,15 +714,23 @@ class AgentRunner:
             "severity": top_lead.severity,
             "anomaly_metrics": top_lead.anomaly_metrics,
             "rule_triggered": top_lead.rule_triggered,
-            "citations": _scrub_citations(list(top_lead.citations), dataset),
+            "citations": _scrub_citations(
+                list(top_lead.citations),
+                dataset,
+                canonical_url=canonical_url,
+                source_url=source_url,
+                secondary_url=secondary_url,
+            ),
             "benign_explanations": clean_benign,
             "suggested_authority": top_lead.suggested_authority,
             "artifact_id": payload.get("artifact_id"),
+            "artifact_title": artifact_label,
             "artifact_sha256": dataset.sha256,
-            "dataset_path": payload.get("dataset_path") or dataset.source_ref,
-            "source_ref": dataset.source_ref,
-            "source_url": payload.get("source_url") or dataset.source_ref,
-            "is_demo_sample": dataset.is_demo_sample,
+            "dataset_path": canonical_url,
+            "canonical_url": canonical_url,
+            "source_ref": canonical_url,
+            "source_url": source_url,
+            "is_demo_sample": False,
             "agent_trace": {
                 "handle": self.config.handle,
                 "provider": self.config.provider,
@@ -559,12 +738,25 @@ class AgentRunner:
                 "enriched_by": enriched["enriched_by"],
                 "verifier_script_hash": engine_res.script_hash,
                 "artifact_sha256": dataset.sha256,
+                "expected_sha256_matched": sha_matched,
+                "canonical_url": canonical_url,
+                "records_scanned": engine_res.records_scanned,
+                "monetary_audited_inr": engine_res.monetary_audited_inr,
+                **({"dataset_url": canonical_url} if canonical_url.startswith(("http://", "https://")) else {}),
+                **({"secondary_url": secondary_url} if secondary_url else {}),
             },
         }
+        if canonical_url.startswith(("http://", "https://")):
+            finding_payload["dataset_url"] = canonical_url
+        if secondary_url:
+            finding_payload["secondary_url"] = secondary_url
 
         if not self.heartbeat(
             lease_id,
-            whisper=f"Submitting {methodology_code} audit lead for {clean_entity} (peer review pending)",
+            whisper=(
+                f"Submitting {methodology_code} lead for {clean_entity} "
+                f"({len(engine_res.leads)} lead(s) from {engine_res.records_scanned:,} records; peer review pending)"
+            ),
             progress_pct=90,
         ):
             return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
@@ -585,7 +777,10 @@ class AgentRunner:
             "response": resp,
         }
 
-    def _execute_peer_verify(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
+    # Backwards-compatible internal alias
+    _execute_anomaly_scan = _handle_anomaly_scan
+
+    def _handle_peer_verify(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
         task_id = task.get("id")
         payload = task.get("payload") or {}
         finding_id = str(
@@ -635,9 +830,16 @@ class AgentRunner:
         lint_res = lint_neutrality(title, summary, [str(b) for b in benign])
         legal_pii_ok = bool(lint_res.passed and len(benign) > 0 and len(pii_hits) == 0)
 
-        # Check 2: Independent dataset reload & SHA-256 provenance verification
-        merged_payload = {**payload, "finding": finding}
+        # Check 2: Independent dataset reload (dataset_url / canonical_url / secondary_url) & SHA-256 verification
+        merged_payload: dict[str, Any] = {**payload, "finding": finding}
+        if _extract_target_ref(merged_payload) is None and finding_id:
+            fetched = self._fetch_finding(finding_id)
+            if isinstance(fetched, dict):
+                finding = {**fetched, **finding}
+                merged_payload = {**payload, "finding": finding}
+
         dataset = self._load_task_dataset(merged_payload)
+        engine_context = _build_task_context(merged_payload)
 
         expected_sha = str(
             payload.get("expected_sha256")
@@ -656,7 +858,10 @@ class AgentRunner:
 
         if not self.heartbeat(
             lease_id,
-            whisper=f"Re-running deterministic engine {methodology_code} over {len(dataset.records)} records",
+            whisper=(
+                f"Re-loaded {len(dataset.records):,} public records (sha256:{dataset.sha256[:8]}); "
+                f"independently reproducing {methodology_code} checks for {entity_name or finding_id}"
+            ),
             progress_pct=60,
         ):
             return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
@@ -671,7 +876,7 @@ class AgentRunner:
             repro = run_engine(
                 methodology_code,
                 dataset.records,
-                context=payload.get("context") if isinstance(payload.get("context"), dict) else None,
+                context=engine_context or None,
             )
             reproduced_leads_count = len(repro.leads)
             matched_lead, math_ok, repro_summary = _match_reproduced_lead(finding, repro.leads)
@@ -761,6 +966,9 @@ class AgentRunner:
             "response": resp,
         }
 
+    # Backwards-compatible internal alias
+    _execute_peer_verify = _handle_peer_verify
+
     def execute_task(self, lease: dict[str, Any]) -> dict[str, Any]:
         """Execute a single claimed lease, releasing cleanly if any error occurs."""
         lease_id = str(lease["lease_id"])
@@ -769,9 +977,9 @@ class AgentRunner:
 
         try:
             if task_type == "peer_verify":
-                return self._execute_peer_verify(lease_id, task)
+                return self._handle_peer_verify(lease_id, task)
             if task_type in ("anomaly_scan", "ingest_parse"):
-                return self._execute_anomaly_scan(lease_id, task)
+                return self._handle_anomaly_scan(lease_id, task)
             self.release(
                 lease_id,
                 reason="unsupported_task_type",

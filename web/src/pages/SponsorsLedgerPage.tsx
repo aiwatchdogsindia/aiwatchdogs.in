@@ -8,15 +8,30 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import type { SponsorPreset } from '../components/SponsorModal';
 import { Link } from '../router';
 import type { LedgerEntry, SponsorItem } from '../types';
 import { formatInrExact } from '../utils';
 
 interface SponsorsLedgerPageProps {
   activeView: 'sponsors' | 'ledger';
-  onOpenSponsor: () => void;
+  onOpenSponsor: (preset?: SponsorPreset) => void;
   refreshTick: number;
 }
+
+const PLEDGE_PRESETS: Array<{ label: string; preset: SponsorPreset }> = [
+  { label: '₹500', preset: { amountInr: '500', tier: 'citizen_backer', computeDesc: '' } },
+  { label: '₹2,500', preset: { amountInr: '2500', tier: 'citizen_backer', computeDesc: '' } },
+  { label: '₹10,000', preset: { amountInr: '10000', tier: 'patron', computeDesc: '' } },
+  {
+    label: 'Compute Grant',
+    preset: {
+      amountInr: '50000',
+      tier: 'institutional_compute',
+      computeDesc: '50M LLM tokens / OCR GPU credits',
+    },
+  },
+];
 
 export function SponsorsLedgerPage({
   activeView,
@@ -108,7 +123,7 @@ export function SponsorsLedgerPage({
               Public Ledger ({ledger.length})
             </Link>
           </div>
-          <button type="button" className="btn btn-primary" onClick={onOpenSponsor}>
+          <button type="button" className="btn btn-primary" onClick={() => onOpenSponsor()}>
             <HeartHandshake size={15} />
             <span>Sponsor / Donate Compute</span>
           </button>
@@ -171,7 +186,11 @@ export function SponsorsLedgerPage({
         </div>
         <div className="kpi-cell">
           <span className="kpi-value">{formatInrExact(sponsorsTotal)}</span>
-          <span className="kpi-label">Total Ranked Backer Pledges ({sponsors.length})</span>
+          <span className="kpi-label">
+            {sponsorsTotal > 0
+              ? `Total Ranked Backer Pledges (${sponsors.length})`
+              : '₹0 raised so far · 100% open ledger'}
+          </span>
         </div>
       </div>
 
@@ -192,7 +211,6 @@ export function SponsorsLedgerPage({
                     <div key={s.id ?? idx} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                         <span className="tag-mono">{s.tier.replace(/_/g, ' ')}</span>
-                        {s.is_demo_sample && <span className="badge-demo">SAMPLE DEMO</span>}
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                         <h3 className="font-serif" style={{ margin: 0, fontSize: 20, lineHeight: 1.25 }}>
@@ -223,8 +241,53 @@ export function SponsorsLedgerPage({
                     </div>
                   ))}
                   {institutional.length === 0 && (
-                    <div className="state-banner" style={{ gridColumn: '1 / -1' }}>
-                      Become our first institutional compute-grant sponsor.
+                    <div
+                      className="card card-pad"
+                      style={{
+                        gridColumn: '1 / -1',
+                        borderStyle: 'dashed',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 18,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div className="section-kicker" style={{ marginBottom: 0 }}>
+                          ₹0 raised so far · 100% open ledger
+                        </div>
+                        <div className="font-serif" style={{ fontSize: 21, lineHeight: 1.3 }}>
+                          No backers yet — be the first to fund open compute
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+                          <button
+                            type="button"
+                            className="slot your"
+                            onClick={() =>
+                              onOpenSponsor({
+                                amountInr: '50000',
+                                tier: 'institutional_compute',
+                                computeDesc: 'OCR & LLM compute grant',
+                              })
+                            }
+                          >
+                            + Your org / compute here
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {PLEDGE_PRESETS.map((item) => (
+                          <button
+                            key={item.label}
+                            type="button"
+                            className="amount-chip"
+                            onClick={() => onOpenSponsor(item.preset)}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -247,14 +310,7 @@ export function SponsorsLedgerPage({
                       {citizenBackers.map((s, idx) => (
                         <tr key={s.id ?? idx}>
                           <td className="font-mono tabular">#{idx + 1}</td>
-                          <td style={{ fontWeight: 600 }}>
-                            {s.name}{' '}
-                            {s.is_demo_sample && (
-                              <span className="badge-demo" style={{ marginLeft: 6 }}>
-                                DEMO
-                              </span>
-                            )}
-                          </td>
+                          <td style={{ fontWeight: 600 }}>{s.name}</td>
                           <td className="font-mono" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
                             {s.handle || '—'}
                           </td>
@@ -270,7 +326,7 @@ export function SponsorsLedgerPage({
                       {citizenBackers.length === 0 && (
                         <tr>
                           <td colSpan={5} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: 20 }}>
-                            No citizen backers listed yet — click “Sponsor / Donate Compute” to add your pledge!
+                            No backers yet — be the first to fund open compute. Every pledge appears on the 100% open ledger above.
                           </td>
                         </tr>
                       )}
@@ -345,14 +401,7 @@ export function SponsorsLedgerPage({
                             <span>{row.category.replace(/_/g, ' ')}</span>
                           </span>
                         </td>
-                        <td style={{ fontWeight: 600 }}>
-                          {row.counterparty}{' '}
-                          {row.is_demo_sample && (
-                            <span className="badge-demo" style={{ marginLeft: 4 }}>
-                              DEMO
-                            </span>
-                          )}
-                        </td>
+                        <td style={{ fontWeight: 600 }}>{row.counterparty}</td>
                         <td style={{ fontSize: 13, color: 'var(--ink-secondary)' }}>
                           <div>{row.description}</div>
                           {row.compute_credits_desc && (
@@ -380,7 +429,7 @@ export function SponsorsLedgerPage({
                   {ledger.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: 24 }}>
-                        No treasury entries recorded yet.
+                        ₹0 raised so far · 100% open ledger — inflows, compute credit grants, and hosting expenses will appear here automatically.
                       </td>
                     </tr>
                   )}
