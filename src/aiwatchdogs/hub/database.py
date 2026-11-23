@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 DEFAULT_DB_REL_PATH = Path("data/aiwatchdogs.db")
+VERCEL_DB_PATH = Path("/tmp/aiwatchdogs.db")
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS public_sources (
@@ -266,12 +267,17 @@ def dumps_json(value: Any) -> str:
 
 
 def resolve_db_path(db_path: str | Path | None = None) -> Path:
-    """Resolve SQLite DB path from argument, AIWATCHDOGS_DB_PATH, or default."""
+    """Resolve SQLite DB path from argument, AIWATCHDOGS_DB_PATH, Vercel /tmp, or local default."""
     if db_path is not None:
         resolved = Path(db_path)
     else:
         env_path = os.environ.get("AIWATCHDOGS_DB_PATH")
-        resolved = Path(env_path) if env_path else DEFAULT_DB_REL_PATH
+        if env_path:
+            resolved = Path(env_path)
+        elif os.environ.get("VERCEL"):
+            resolved = VERCEL_DB_PATH
+        else:
+            resolved = DEFAULT_DB_REL_PATH
     if str(resolved) != ":memory:":
         resolved.parent.mkdir(parents=True, exist_ok=True)
     return resolved

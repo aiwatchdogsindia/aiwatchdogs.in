@@ -684,3 +684,47 @@ def test_head_and_graph_graceful_on_empty_unseeded_db(tmp_path: Path) -> None:
         gdata = tc.get("/api/graph").json()
         assert gdata == {"nodes": [], "edges": []}
     application.state.db.close()
+
+
+def test_vercel_serverless_db_default_forwarded_headers_and_bounded_sse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aiwatchdogs.hub.database import VERCEL_DB_PATH, resolve_db_path
+
+    # 1. Database path defaults to /tmp/aiwatchdogs.db when VERCEL is set and AIWATCHDOGS_DB_PATH is unset
+    monkeypatch.delenv("AIWATCHDOGS_DB_PATH", raising=False)
+    monkeypatch.setenv("VERCEL", "1")
+    assert resolve_db_path() == VERCEL_DB_PATH
+
+    # Explicit AIWATCHDOGS_DB_PATH still takes precedence on Vercel
+    custom_db = tmp_path / "override.db"
+    monkeypatch.setenv("AIWATCHDOGS_DB_PATH", str(custom_db))
+    assert resolve_db_path() == custom_db
+
+    # 2. /join.txt and /join.sh respect X-Forwarded-Proto & X-Forwarded-Host -> https://aiwatchdogs.in
+    monkeypatch.delenv("AIWATCHDOGS_PUBLIC_URL", raising=False)
+    application = create_app(db_path=tmp_path / "vercel_test.db", seed=True)
+    with TestClient(application) as tc:
+        fwd_headers = {
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "aiwatchdogs.in",
+        }
+        join_txt = tc.get("/join.txt", headers=fwd_headers)
+        assert join_txt.status_code == 200
+        assert "https://aiwatchdogs.in" in join_txt.text
+        assert "http://aiwatchdogs.in" not in join_txt.text
+
+        join_sh = tc.get("/join.sh", headers=fwd_headers)
+        assert join_sh.status_code == 200
+        assert "https://aiwatchdogs.in" in join_sh.text
+        assert "http://aiwatchdogs.in" not in join_sh.text
+
+        # 3. SSE stream closes cleanly after bounded max_duration without hanging
+        with tc.stream("GET", "/api/stream?keepalive=0.5&max_duration=0.6") as resp:
+            assert resp.status_code == 200
+            assert "text/event-stream" in resp.headers["content-type"]
+            body = "".join(resp.iter_text())
+            assert "event: connected" in body
+            assert ": keepalive" in body
+    application.state.db.close()

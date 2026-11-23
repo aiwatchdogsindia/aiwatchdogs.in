@@ -58,12 +58,15 @@ class SSEBroker:
         self,
         keepalive_seconds: float = 15.0,
         max_events: int | None = None,
+        max_duration_seconds: float | None = None,
     ) -> AsyncIterator[str]:
-        """Yield formatted SSE frames for a connected client until disconnect."""
-        self._loop = asyncio.get_running_loop()
+        """Yield formatted SSE frames for a connected client until disconnect or max_duration."""
+        loop = asyncio.get_running_loop()
+        self._loop = loop
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self._max_queue_size)
         self._subscribers.add(queue)
         sent = 0
+        deadline = (loop.time() + max_duration_seconds) if max_duration_seconds is not None else None
         try:
             init_payload = {
                 "type": "connected",
@@ -71,14 +74,21 @@ class SSEBroker:
                 "message": "Connected to AI Watchdogs India live telemetry stream",
                 "subscribers": len(self._subscribers),
             }
-            yield self._format_sse("connected", init_payload)
+            yield "retry: 3000\n" + self._format_sse("connected", init_payload)
             sent += 1
             if max_events is not None and sent >= max_events:
                 return
 
             while True:
+                wait_timeout = keepalive_seconds
+                if deadline is not None:
+                    remaining = deadline - loop.time()
+                    if remaining <= 0:
+                        yield f": keepalive {utc_now_iso()}\n\n"
+                        return
+                    wait_timeout = min(keepalive_seconds, remaining)
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=keepalive_seconds)
+                    event = await asyncio.wait_for(queue.get(), timeout=wait_timeout)
                     event_type = str(event.get("type", "whisper"))
                     yield self._format_sse(event_type, event)
                     sent += 1
@@ -86,6 +96,8 @@ class SSEBroker:
                         return
                 except asyncio.TimeoutError:
                     yield f": keepalive {utc_now_iso()}\n\n"
+                    if deadline is not None and (deadline - loop.time()) <= 0:
+                        return
         except (asyncio.CancelledError, GeneratorExit):
             return
         finally:

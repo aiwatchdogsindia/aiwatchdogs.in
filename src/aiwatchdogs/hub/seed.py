@@ -12,6 +12,7 @@ Populates:
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -104,10 +105,29 @@ def _file_hash_and_size(repo_root: Path, rel_path: str, fallback_seed: str) -> t
 def _detect_repo_root(repo_root: Path | None = None) -> Path:
     if repo_root is not None:
         return Path(repo_root)
-    # src/aiwatchdogs/hub/seed.py -> parents[3] is repo root
+    # Locate repo root across local editable checkouts and Vercel /var/task bundles.
     here = Path(__file__).resolve()
-    for parent in [here.parents[3], Path.cwd()]:
-        if (parent / "datasets" / "sample").is_dir() or (parent / "pyproject.toml").is_file():
+    candidates: list[Path] = []
+    for env_key in ("AIWATCHDOGS_REPO_ROOT", "LAMBDA_TASK_ROOT"):
+        env_val = os.environ.get(env_key)
+        if env_val:
+            candidates.append(Path(env_val))
+    if len(here.parents) > 3:
+        candidates.append(here.parents[3])
+    candidates.extend([Path.cwd(), Path("/var/task"), *here.parents])
+
+    seen: set[Path] = set()
+    unique_candidates: list[Path] = []
+    for c in candidates:
+        if c not in seen:
+            seen.add(c)
+            unique_candidates.append(c)
+
+    for parent in unique_candidates:
+        if (parent / "datasets" / "sample").is_dir():
+            return parent
+    for parent in unique_candidates:
+        if (parent / "pyproject.toml").is_file():
             return parent
     return Path.cwd()
 
@@ -662,6 +682,11 @@ def seed_database(db: Database, repo_root: Path | None = None) -> bool:
     now_iso = _iso_ago(0)
 
     with db.transaction() as conn:
+        # Re-check inside the write lock to avoid cold-start races under concurrent Fluid Compute requests
+        row = conn.execute("SELECT COUNT(*) AS cnt FROM public_sources").fetchone()
+        if row and row["cnt"] > 0:
+            return False
+
         # 1. Public data sources (all 15 canonical Indian sources)
         for src in PUBLIC_SOURCES:
             conn.execute(

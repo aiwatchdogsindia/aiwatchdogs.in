@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "buildCommand": "cd web && npm ci && npm run build",
+  "outputDirectory": "web/dist",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "{src/**,datasets/sample/**}",
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/missions", "destination": "/index.html" },
+    { "source": "/missions/(.*)", "destination": "/index.html" },
+    { "source": "/findings", "destination": "/index.html" },
+    { "source": "/live", "destination": "/index.html" },
+    { "source": "/contributors", "destination": "/index.html" },
+    { "source": "/a/(.*)", "destination": "/index.html" },
+    { "source": "/sponsors", "destination": "/index.html" },
+    { "source": "/ledger", "destination": "/index.html" },
+    { "source": "/how-it-works", "destination": "/index.html" }
+  ]
+}

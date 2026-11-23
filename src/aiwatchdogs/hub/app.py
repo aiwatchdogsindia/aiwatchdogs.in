@@ -82,7 +82,10 @@ def _resolve_web_dist(web_dist: str | Path | None = None) -> Path:
     if env_val:
         return Path(env_val)
     here = Path(__file__).resolve()
-    candidates = [here.parents[3] / "web" / "dist", Path.cwd() / "web" / "dist"]
+    candidates: list[Path] = []
+    if len(here.parents) > 3:
+        candidates.append(here.parents[3] / "web" / "dist")
+    candidates.append(Path.cwd() / "web" / "dist")
     for c in candidates:
         if c.is_dir():
             return c
@@ -93,6 +96,20 @@ def _public_base_url(request: Request) -> str:
     env_url = os.environ.get("AIWATCHDOGS_PUBLIC_URL")
     if env_url:
         return env_url.rstrip("/")
+
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    if forwarded_proto or forwarded_host:
+        scheme = forwarded_proto or ("https" if os.environ.get("VERCEL") else request.url.scheme)
+        host = forwarded_host or request.headers.get("host", "").split(",")[0].strip() or request.url.netloc
+        if host:
+            return f"{scheme}://{host}".rstrip("/")
+
+    if os.environ.get("VERCEL"):
+        host = request.headers.get("host", "").split(",")[0].strip() or request.url.netloc
+        if host:
+            return f"https://{host}".rstrip("/")
+
     return str(request.base_url).rstrip("/")
 
 
@@ -134,6 +151,7 @@ def create_app(
             "https://aiwatchdogs.in",
             "https://www.aiwatchdogs.in",
         ],
+        allow_origin_regex=r"^https://[a-z0-9-]+\.vercel\.app$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -175,10 +193,18 @@ def create_app(
     @application.get("/api/stream")
     async def api_stream(
         max_events: int | None = Query(default=None, ge=1, le=500),
-        keepalive: float = Query(default=15.0, ge=0.5, le=60.0),
+        keepalive: float | None = Query(default=None, ge=0.5, le=60.0),
+        max_duration: float | None = Query(default=None, ge=0.5, le=300.0),
     ) -> StreamingResponse:
+        is_vercel = bool(os.environ.get("VERCEL"))
+        effective_keepalive = keepalive if keepalive is not None else (10.0 if is_vercel else 15.0)
+        effective_max_duration = max_duration if max_duration is not None else (25.0 if is_vercel else None)
         return StreamingResponse(
-            broker.subscribe(keepalive_seconds=keepalive, max_events=max_events),
+            broker.subscribe(
+                keepalive_seconds=effective_keepalive,
+                max_events=max_events,
+                max_duration_seconds=effective_max_duration,
+            ),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
