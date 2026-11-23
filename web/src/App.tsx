@@ -1,12 +1,12 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api/client';
-import { EyebrowBar } from './components/EyebrowBar';
 import { FindingDrawer } from './components/FindingDrawer';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { JoinModal } from './components/JoinModal';
-import { SponsorModal } from './components/SponsorModal';
+import { JustInBar } from './components/JustInBar';
+import { SponsorModal, type SponsorPreset } from './components/SponsorModal';
 import { ToastProvider } from './components/Toast';
 import { sseEventToWhisper, useSwarmStream, type SseEventPacket } from './hooks/useSwarmStream';
 import { ContributorsPage } from './pages/ContributorsPage';
@@ -29,7 +29,13 @@ function AppShell() {
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [sponsorOpen, setSponsorOpen] = useState(false);
+  const [sponsorPreset, setSponsorPreset] = useState<SponsorPreset | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | number | null>(null);
+
+  const openSponsor = useCallback((preset?: SponsorPreset) => {
+    setSponsorPreset(preset ?? null);
+    setSponsorOpen(true);
+  }, []);
 
   const fetchHead = useCallback(async () => {
     try {
@@ -96,6 +102,11 @@ function AppShell() {
     setRefreshTick((t) => t + 1);
   }, [fetchHead]);
 
+  const fallbackVerified =
+    head?.recent_findings.find((f) => f.status === 'verified' || f.status === 'rti_filed') ??
+    head?.recent_findings[0] ??
+    null;
+
   // Route matching
   const renderPage = () => {
     const cleanPath = pathname.replace(/\/+$/, '') || '/';
@@ -108,7 +119,7 @@ function AppShell() {
           sseStatus={sseStatus}
           loading={headLoading}
           onOpenJoin={() => setJoinOpen(true)}
-          onOpenSponsor={() => setSponsorOpen(true)}
+          onOpenSponsor={openSponsor}
           onSelectFinding={setSelectedFindingId}
           refreshTick={refreshTick}
         />
@@ -142,6 +153,7 @@ function AppShell() {
       return (
         <LiveSwarmPage
           liveWhispers={liveWhispers}
+          missions={head?.missions ?? []}
           sseStatus={sseStatus}
           onSelectFinding={setSelectedFindingId}
           refreshTick={refreshTick}
@@ -170,7 +182,7 @@ function AppShell() {
       return (
         <SponsorsLedgerPage
           activeView="sponsors"
-          onOpenSponsor={() => setSponsorOpen(true)}
+          onOpenSponsor={() => openSponsor()}
           refreshTick={refreshTick}
         />
       );
@@ -180,7 +192,7 @@ function AppShell() {
       return (
         <SponsorsLedgerPage
           activeView="ledger"
-          onOpenSponsor={() => setSponsorOpen(true)}
+          onOpenSponsor={() => openSponsor()}
           refreshTick={refreshTick}
         />
       );
@@ -198,7 +210,7 @@ function AppShell() {
         sseStatus={sseStatus}
         loading={headLoading}
         onOpenJoin={() => setJoinOpen(true)}
-        onOpenSponsor={() => setSponsorOpen(true)}
+        onOpenSponsor={openSponsor}
         onSelectFinding={setSelectedFindingId}
         refreshTick={refreshTick}
       />
@@ -207,18 +219,17 @@ function AppShell() {
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <EyebrowBar
-        activeCount={head?.stats.agents_active ?? 0}
-        justJoined={head?.just_joined ?? []}
-        sseStatus={sseStatus}
-      />
-
       <Header onOpenJoin={() => setJoinOpen(true)} />
+
+      <JustInBar
+        justIn={head?.just_in}
+        fallbackFinding={fallbackVerified}
+        onSelectFinding={setSelectedFindingId}
+      />
 
       {headError && (
         <div className="offline-banner" role="alert">
           <div
-            className="container"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -246,8 +257,10 @@ function AppShell() {
       <main style={{ flex: 1 }}>{renderPage()}</main>
 
       <Footer
+        agentsActive={head?.stats.agents_active ?? 0}
+        verifiedCount={head?.stats.findings_verified ?? 0}
         onOpenJoin={() => setJoinOpen(true)}
-        onOpenSponsor={() => setSponsorOpen(true)}
+        onOpenSponsor={() => openSponsor()}
       />
 
       <FindingDrawer
@@ -260,6 +273,7 @@ function AppShell() {
 
       <SponsorModal
         open={sponsorOpen}
+        preset={sponsorPreset}
         onClose={() => setSponsorOpen(false)}
         onSuccess={triggerFullRefresh}
       />

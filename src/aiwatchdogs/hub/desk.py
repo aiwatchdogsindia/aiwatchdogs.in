@@ -15,12 +15,13 @@ from fastapi import HTTPException, status
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.hub.database import Database, dumps_json, loads_json, utc_now_iso
-from aiwatchdogs.hub.seed import INDEPENDENCE_PLEDGE
+from aiwatchdogs.hub.seed import INDEPENDENCE_PLEDGE, SEED_AGENTS
 from aiwatchdogs.hub.sse import SSEBroker
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 LEASE_MINUTES = 45
 VALID_VERDICTS = frozenset({"confirm", "dispute", "reject_false_positive", "flag_pii_or_legal"})
+SEED_AGENT_HANDLES = frozenset(str(a["handle"]).strip().lower() for a in SEED_AGENTS)
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -75,6 +76,7 @@ class DeskService:
         row: sqlite3.Row,
         queued_tasks: int = 0,
         peer_review_count: int = 0,
+        rungs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         total = int(row["total_tasks"] or 0)
         completed = int(row["completed_tasks"] or 0)
@@ -105,6 +107,7 @@ class DeskService:
             "cleared_count": int(row["cleared_count"] or 0),
             "monetary_audited_inr": monetary,
             "monetary_audited_inr_cr": _inr_to_cr(monetary),
+            "rungs": list(rungs) if rungs is not None else [],
             "created_at": row["created_at"],
         }
 
@@ -357,12 +360,25 @@ class DeskService:
     # ------------------------------------------------------------------
 
     def get_head(self) -> dict[str, Any]:
+        generated_at = utc_now_iso()
         with self.db.read() as conn:
             missions = self._fetch_missions(conn)
             rti_finding_ids = {
                 r["finding_id"]
                 for r in conn.execute("SELECT finding_id FROM rti_drafts").fetchall()
             }
+
+            min_agent_row = conn.execute("SELECT MIN(joined_at) AS min_ts FROM agents").fetchone()
+            min_mission_row = conn.execute("SELECT MIN(created_at) AS min_ts FROM missions").fetchone()
+            started_candidates: list[tuple[datetime, str]] = []
+            for ts_val in (
+                min_agent_row["min_ts"] if min_agent_row else None,
+                min_mission_row["min_ts"] if min_mission_row else None,
+            ):
+                parsed = _parse_iso(ts_val)
+                if parsed is not None and ts_val:
+                    started_candidates.append((parsed, ts_val))
+            started_at = min(started_candidates, key=lambda item: item[0])[1] if started_candidates else generated_at
 
             all_agents = conn.execute("SELECT * FROM agents ORDER BY compute_score DESC, joined_at DESC").fetchall()
             serialized_agents = [self._serialize_agent(r) for r in all_agents]
@@ -381,6 +397,30 @@ class DeskService:
                 }
                 for r in just_joined_rows
             ]
+
+            just_in_row = conn.execute(
+                """
+                SELECT id, title, methodology_code, entity_name, monetary_exposure_inr,
+                       verified_at, created_at, is_demo_sample
+                FROM findings
+                WHERE status IN ('verified', 'rti_filed')
+                ORDER BY COALESCE(verified_at, created_at) DESC, id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            just_in: dict[str, Any] | None = (
+                {
+                    "id": just_in_row["id"],
+                    "title": just_in_row["title"],
+                    "methodology_code": just_in_row["methodology_code"],
+                    "entity_name": just_in_row["entity_name"],
+                    "monetary_exposure_inr_cr": _inr_to_cr(just_in_row["monetary_exposure_inr"]),
+                    "verified_at": just_in_row["verified_at"] or just_in_row["created_at"],
+                    "is_demo_sample": bool(just_in_row["is_demo_sample"]),
+                }
+                if just_in_row is not None
+                else None
+            )
 
             recent_finding_rows = conn.execute(
                 """
@@ -401,6 +441,26 @@ class DeskService:
                 for r in recent_finding_rows
             ]
 
+            recent_verif_rows = conn.execute(
+                """
+                SELECT pv.*, f.title AS finding_title, f.methodology_code, f.status AS finding_status
+                FROM peer_verifications pv
+                JOIN findings f ON f.id = pv.finding_id
+                ORDER BY pv.created_at DESC, pv.id ASC
+                LIMIT 6
+                """
+            ).fetchall()
+            recent_verifications = [
+                {
+                    **self._serialize_verification(r),
+                    "model": r["model_id"],
+                    "finding_title": r["finding_title"],
+                    "methodology_code": r["methodology_code"],
+                    "finding_status": r["finding_status"],
+                }
+                for r in recent_verif_rows
+            ]
+
             whisper_rows = conn.execute(
                 "SELECT * FROM whispers ORDER BY created_at DESC LIMIT 25"
             ).fetchall()
@@ -410,6 +470,22 @@ class DeskService:
                 "SELECT * FROM sponsors WHERE featured = 1 ORDER BY amount_inr DESC LIMIT 6"
             ).fetchall()
             sponsors_featured = [self._serialize_sponsor(r) for r in sponsor_rows]
+
+            recent_sponsor_rows = conn.execute(
+                "SELECT * FROM sponsors ORDER BY created_at DESC, id ASC LIMIT 12"
+            ).fetchall()
+            sponsors_recent = [
+                {
+                    **self._serialize_sponsor(r),
+                    "compute_grant": r["compute_credits_desc"],
+                    "note": r["message"],
+                    "website_url": r["url"],
+                    "is_demo": bool(r["is_demo_entry"]),
+                }
+                for r in recent_sponsor_rows
+            ]
+
+            record_events = self._build_record_events(conn, limit=20)
 
             # Aggregate stats
             spend_inr = sum(m["monetary_audited_inr"] for m in missions)
@@ -438,7 +514,8 @@ class DeskService:
         )
 
         return {
-            "generated_at": utc_now_iso(),
+            "generated_at": generated_at,
+            "started_at": started_at,
             "orchestrator_brief": orchestrator_brief,
             "independence_pledge": INDEPENDENCE_PLEDGE,
             "stats": {
@@ -459,14 +536,230 @@ class DeskService:
                 "cleared_records": int(cleared_cnt),
                 "disputed": int(disputed_cnt),
             },
+            "just_in": just_in,
             "just_joined": just_joined,
             "active_agents": active_agents,
             "missions": missions,
             "recent_findings": recent_findings,
+            "recent_verifications": recent_verifications,
             "whispers": whispers,
+            "record_events": record_events,
             "top_contributors": serialized_agents[:10],
             "sponsors_featured": sponsors_featured,
+            "sponsors_recent": sponsors_recent,
         }
+
+    @staticmethod
+    def _build_record_events(conn: sqlite3.Connection, limit: int = 20) -> list[dict[str, Any]]:
+        events: list[tuple[datetime, int, str, dict[str, Any]]] = []
+        epoch_min = datetime.min.replace(tzinfo=timezone.utc)
+
+        def push(ts: str | None, tie_rank: int, payload: dict[str, Any]) -> None:
+            parsed = _parse_iso(ts) or epoch_min
+            events.append((parsed, tie_rank, payload["id"], payload))
+
+        finding_rows = conn.execute(
+            """
+            SELECT id, title, status, methodology_code, submitted_by,
+                   monetary_exposure_inr, is_demo_sample, created_at, verified_at
+            FROM findings
+            ORDER BY COALESCE(verified_at, created_at) DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        for r in finding_rows:
+            st = str(r["status"] or "")
+            if st in ("verified", "rti_filed"):
+                kind, tag, tie_rank = "verified", "Verified", 3
+                ts = r["verified_at"] or r["created_at"]
+            elif st in ("cleared", "resolved_explained"):
+                kind, tag, tie_rank = "cleared", "Cleared", 3
+                ts = r["verified_at"] or r["created_at"]
+            elif st in ("disputed", "retracted_false_positive"):
+                kind, tag, tie_rank = "disputed", "Disputed", 2
+                ts = r["verified_at"] or r["created_at"]
+            else:
+                kind, tag, tie_rank = "peer_review", "In review", 1
+                ts = r["created_at"]
+            push(
+                ts,
+                tie_rank,
+                {
+                    "id": f"finding:{r['id']}",
+                    "ts": ts,
+                    "kind": kind,
+                    "tag": tag,
+                    "title": r["title"],
+                    "actor": r["submitted_by"],
+                    "methodology_code": r["methodology_code"],
+                    "finding_id": r["id"],
+                    "monetary_exposure_inr_cr": _inr_to_cr(r["monetary_exposure_inr"]),
+                    "is_demo_sample": bool(r["is_demo_sample"]),
+                },
+            )
+
+        verif_rows = conn.execute(
+            """
+            SELECT pv.id, pv.finding_id, pv.verifier_handle, pv.verdict, pv.created_at,
+                   f.title AS finding_title, f.methodology_code,
+                   f.monetary_exposure_inr, f.is_demo_sample
+            FROM peer_verifications pv
+            JOIN findings f ON f.id = pv.finding_id
+            ORDER BY pv.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        for r in verif_rows:
+            verdict = str(r["verdict"] or "confirm")
+            if verdict == "confirm":
+                kind, tag, tie_rank = "peer_review", "Peer check", 1
+                title = f"Peer check confirmed: {r['finding_title']}"
+            else:
+                kind, tag, tie_rank = "disputed", "Peer dispute", 2
+                title = f"Peer review flagged ({verdict}): {r['finding_title']}"
+            push(
+                r["created_at"],
+                tie_rank,
+                {
+                    "id": f"verif:{r['id']}",
+                    "ts": r["created_at"],
+                    "kind": kind,
+                    "tag": tag,
+                    "title": title,
+                    "actor": r["verifier_handle"],
+                    "methodology_code": r["methodology_code"],
+                    "finding_id": r["finding_id"],
+                    "monetary_exposure_inr_cr": _inr_to_cr(r["monetary_exposure_inr"]),
+                    "is_demo_sample": bool(r["is_demo_sample"]),
+                },
+            )
+
+        rti_rows = conn.execute(
+            """
+            SELECT rd.id, rd.finding_id, rd.public_authority, rd.subject, rd.created_at,
+                   f.title AS finding_title, f.methodology_code, f.submitted_by,
+                   f.monetary_exposure_inr, f.is_demo_sample
+            FROM rti_drafts rd
+            JOIN findings f ON f.id = rd.finding_id
+            ORDER BY rd.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        for r in rti_rows:
+            push(
+                r["created_at"],
+                4,
+                {
+                    "id": f"rti:{r['id']}",
+                    "ts": r["created_at"],
+                    "kind": "rti",
+                    "tag": "RTI draft",
+                    "title": f"RTI Sec 6(1) draft for {r['public_authority']}: {r['finding_title']}",
+                    "actor": r["submitted_by"],
+                    "methodology_code": r["methodology_code"],
+                    "finding_id": r["finding_id"],
+                    "monetary_exposure_inr_cr": _inr_to_cr(r["monetary_exposure_inr"]),
+                    "is_demo_sample": bool(r["is_demo_sample"]),
+                },
+            )
+
+        events.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+        return [item[3] for item in events[:limit]]
+
+    @staticmethod
+    def _build_mission_rungs(
+        conn: sqlite3.Connection,
+        mission_id: str | None = None,
+        max_rungs: int = 24,
+    ) -> dict[str, list[dict[str, Any]]]:
+        stage_order = {
+            ("verified", "finding"): 0,
+            ("verified", "task"): 1,
+            ("cleared", "finding"): 2,
+            ("peer_review", "finding"): 3,
+            ("hard", "task"): 4,
+            ("disputed", "finding"): 5,
+            ("disputed", "task"): 5,
+            ("queued", "task"): 6,
+        }
+        grouped: dict[str, list[tuple[int, str, str, dict[str, Any]]]] = {}
+
+        if mission_id is not None:
+            f_rows = conn.execute(
+                "SELECT id, mission_id, title, status, created_at FROM findings WHERE mission_id = ?",
+                (mission_id,),
+            ).fetchall()
+            t_rows = conn.execute(
+                "SELECT id, mission_id, title, task_type, status, target_finding_id, created_at FROM tasks WHERE mission_id = ?",
+                (mission_id,),
+            ).fetchall()
+        else:
+            f_rows = conn.execute(
+                "SELECT id, mission_id, title, status, created_at FROM findings"
+            ).fetchall()
+            t_rows = conn.execute(
+                "SELECT id, mission_id, title, task_type, status, target_finding_id, created_at FROM tasks"
+            ).fetchall()
+
+        for r in f_rows:
+            st = str(r["status"] or "")
+            if st in ("verified", "rti_filed"):
+                rung_state = "verified"
+            elif st in ("cleared", "resolved_explained"):
+                rung_state = "cleared"
+            elif st in ("disputed", "retracted_false_positive"):
+                rung_state = "disputed"
+            else:
+                rung_state = "peer_review"
+            rung = {
+                "id": r["id"],
+                "state": rung_state,
+                "label": str(r["title"] or "")[:90],
+                "kind": "finding",
+                "finding_id": r["id"],
+            }
+            rank = stage_order.get((rung_state, "finding"), 3)
+            grouped.setdefault(r["mission_id"], []).append((rank, str(r["created_at"] or ""), r["id"], rung))
+
+        for r in t_rows:
+            st = str(r["status"] or "")
+            ttype = str(r["task_type"] or "")
+            if st in ("completed", "settled"):
+                rung_state = "verified"
+            elif st == "claimed" or (st == "queued" and ttype == "peer_verify"):
+                rung_state = "hard"
+            elif st == "failed":
+                rung_state = "disputed"
+            else:
+                rung_state = "queued"
+            rung = {
+                "id": r["id"],
+                "state": rung_state,
+                "label": str(r["title"] or "")[:90],
+                "kind": "task",
+            }
+            if r["target_finding_id"]:
+                rung["finding_id"] = r["target_finding_id"]
+            rank = stage_order.get((rung_state, "task"), 6)
+            grouped.setdefault(r["mission_id"], []).append((rank, str(r["created_at"] or ""), r["id"], rung))
+
+        result: dict[str, list[dict[str, Any]]] = {}
+        for mid, items in grouped.items():
+            items.sort(key=lambda item: (item[0], item[1], item[2]))
+            if len(items) > max_rungs:
+                # Preserve frontier (non-verified) items & findings while capping total at max_rungs
+                frontier = [it for it in items if it[3]["state"] != "verified"]
+                verified_items = [it for it in items if it[3]["state"] == "verified"]
+                keep_frontier = frontier[: min(len(frontier), max_rungs // 2)]
+                keep_verified = verified_items[-(max_rungs - len(keep_frontier)) :] if (max_rungs - len(keep_frontier)) > 0 else []
+                combined = keep_verified + keep_frontier
+                combined.sort(key=lambda item: (item[0], item[1], item[2]))
+                items = combined[:max_rungs]
+            result[mid] = [it[3] for it in items]
+        return result
 
     def _fetch_missions(self, conn: sqlite3.Connection) -> list[dict[str, Any]]:
         queued_map = {
@@ -481,12 +774,14 @@ class DeskService:
                 "SELECT mission_id, COUNT(*) AS c FROM findings WHERE status IN ('peer_review', 'raw_lead') GROUP BY mission_id"
             ).fetchall()
         }
+        rungs_map = self._build_mission_rungs(conn)
         rows = conn.execute("SELECT * FROM missions ORDER BY priority ASC, id ASC").fetchall()
         return [
             self._serialize_mission(
                 r,
                 queued_tasks=queued_map.get(r["id"], 0),
                 peer_review_count=pr_map.get(r["id"], 0),
+                rungs=rungs_map.get(r["id"], []),
             )
             for r in rows
         ]
@@ -509,7 +804,8 @@ class DeskService:
                 "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? AND status IN ('peer_review', 'raw_lead')",
                 (mid,),
             ).fetchone()["c"]
-            mission = self._serialize_mission(row, queued_tasks=queued_cnt, peer_review_count=pr_cnt)
+            rungs = self._build_mission_rungs(conn, mission_id=mid).get(mid, [])
+            mission = self._serialize_mission(row, queued_tasks=queued_cnt, peer_review_count=pr_cnt, rungs=rungs)
 
             source_ids = mission["source_ids"]
             sources: list[dict[str, Any]] = []
@@ -791,9 +1087,11 @@ class DeskService:
                     "value_inr_cr": m["monetary_audited_inr_cr"],
                     "meta": {
                         "slug": m["slug"],
+                        "pillar": m["pillar"],
                         "methodology_code": m["methodology_code"],
                         "progress_pct": m["progress_pct"],
                         "verified_findings_count": m["verified_findings_count"],
+                        "is_demo_sample": m["is_demo_sample"],
                     },
                 }
             )
@@ -823,6 +1121,8 @@ class DeskService:
         for f_row in finding_rows:
             f = self._serialize_finding(f_row)
             f_node_id = f"finding:{f['id']}"
+            submitted_by = str(f["submitted_by"] or "").strip()
+            is_community = bool(submitted_by) and submitted_by.lower() not in SEED_AGENT_HANDLES
             add_node(
                 {
                     "id": f_node_id,
@@ -833,6 +1133,10 @@ class DeskService:
                     "value_inr_cr": f["monetary_exposure_inr_cr"],
                     "meta": {
                         "finding_id": f["id"],
+                        "mission_slug": f["mission_slug"],
+                        "submitted_by": submitted_by,
+                        "is_community": is_community,
+                        "monetary_exposure_inr_cr": f["monetary_exposure_inr_cr"],
                         "methodology_code": f["methodology_code"],
                         "entity_name": f["entity_name"],
                         "severity": f["severity"],

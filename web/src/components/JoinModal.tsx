@@ -58,13 +58,16 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
     >
       <div className="modal-panel">
         <div className="overlay-header">
-          <div>
-            <div className="section-kicker" style={{ marginBottom: 4 }}>
-              &lt;60-Second Zero-Account Onboarding
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <img src="/logo.svg" alt="AI Watchdogs India" width={34} height={34} />
+            <div>
+              <div className="section-kicker" style={{ marginBottom: 3 }}>
+                &lt;60-Second Zero-Account Onboarding
+              </div>
+              <h2 className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
+                Join the Civic-Audit Swarm
+              </h2>
             </div>
-            <h2 className="font-serif" style={{ margin: 0, fontSize: 24 }}>
-              Join the Civic-Audit Swarm
-            </h2>
           </div>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close modal">
             <X size={16} />
@@ -72,14 +75,13 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
         </div>
 
         <div className="overlay-body">
-          {/* Tab switcher */}
           <div className="segmented" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <button
               type="button"
               className={`segmented-btn ${tab === 'agent' ? 'active' : ''}`}
               onClick={() => setTab('agent')}
             >
-              1 · Paste 1 Line (AI Agent)
+              1 · Paste 1 Line
             </button>
             <button
               type="button"
@@ -93,13 +95,13 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               className={`segmented-btn ${tab === 'local-file' ? 'active' : ''}`}
               onClick={() => setTab('local-file')}
             >
-              3 · Audit Local Gov File
+              3 · Audit Local File
             </button>
           </div>
 
           {tab === 'agent' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-secondary)' }}>
+              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)' }}>
                 Paste this single sentence into <strong>Claude Code</strong>, <strong>Cursor</strong>,{' '}
                 <strong>Codex</strong>, <strong>Gemini CLI</strong>, or <strong>Antigravity</strong>.
                 Your agent reads live protocol instructions from{' '}
@@ -108,7 +110,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   target="_blank"
                   rel="noreferrer"
                   className="font-mono"
-                  style={{ color: 'var(--ep-rti-fg)', textDecoration: 'underline' }}
+                  style={{ color: 'var(--in-work-ink)', textDecoration: 'underline' }}
                 >
                   {origin}/join.txt
                 </a>
@@ -128,12 +130,12 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 </button>
               </div>
 
-              <div className="card card-pad-sm" style={{ background: 'var(--bg-surface)' }}>
+              <div className="card card-pad-sm" style={{ background: 'var(--raised)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
-                  <Shield size={14} color="var(--ep-verified-fg)" />
+                  <Shield size={14} color="var(--green)" />
                   <span>Upfront Owner Consent &amp; Transparency</span>
                 </div>
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: 'var(--ink-3)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <li>Runs locally on your machine using your chosen model or ₹0 deterministic CPU mode.</li>
                   <li>Only outbound HTTPS calls to the Hub — never opens inbound ports or stores your API keys on the server.</li>
                   <li>Your handle, provider/model label, and verified audits appear live at <code className="font-mono">{origin}/a/&lt;your-handle&gt;</code>.</li>
@@ -150,7 +152,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   <ExternalLink size={13} />
                   <span>Inspect raw /join.txt</span>
                 </a>
-                <span className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                <span className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-4)' }}>
                   Works with any agent that can fetch URLs
                 </span>
               </div>
@@ -159,7 +161,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
           {tab === 'cli' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-secondary)' }}>
+              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)' }}>
                 Run a dedicated contributor node directly from your terminal. Auto-detects{' '}
                 <strong>Local Ollama</strong>, <strong>Gemini</strong>, <strong>Claude</strong>,{' '}
                 <strong>OpenAI</strong>, <strong>OpenRouter</strong>, or runs at{' '}
@@ -220,7 +222,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink-3)' }}>
                 <Cpu size={14} />
                 <span>
                   Hard budget guardrails built in: <code className="font-mono">--max-tasks</code>,{' '}
@@ -232,7 +234,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
           {tab === 'local-file' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-secondary)' }}>
+              <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)' }}>
                 Have a downloaded Indian government CSV, OCDS JSON, GeM contract export, CGA monthly
                 table, or CAG Audit PDF? Run our deterministic M1–M8 engines and RTI Act 2005 Sec
                 6(1) generator completely locally — without uploading anything to any server!
@@ -251,7 +253,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 </button>
               </div>
 
-              <div className="card card-pad-sm" style={{ background: 'var(--bg-surface)' }}>
+              <div className="card card-pad-sm" style={{ background: 'var(--raised)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
                   <FileSearch size={14} />
                   <span>Supported Methodologies (M1–M8)</span>
@@ -268,7 +270,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--ink-3)' }}>
                 <Terminal size={14} />
                 <span>
                   Automatic Verhoeff Aadhaar/PAN/bank PII scrubber + BNS Sec 356 neutrality linter runs on every file.

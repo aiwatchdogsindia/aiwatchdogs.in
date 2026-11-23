@@ -1,25 +1,37 @@
-import {
-  ArrowRight,
-  Compass,
-  HeartHandshake,
-  Radio,
-  ShieldCheck,
-  Terminal,
-  Trophy,
-} from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Check, Copy, Radio } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { FindingCard } from '../components/FindingCard';
+import { HeroEyebrowRow, ProviderBadgeStack } from '../components/EyebrowBar';
+import { LiveOrganism } from '../components/LiveOrganism';
 import { ObservatoryMap } from '../components/ObservatoryMap';
+import type { SponsorPreset } from '../components/SponsorModal';
+import { useToast } from '../components/Toast';
 import type { SseStatus } from '../hooks/useSwarmStream';
-import { Link } from '../router';
-import type { AgentRecord, GraphData, HeadData, WhisperItem } from '../types';
+import { Link, useRouter } from '../router';
+import type {
+  AgentRecord,
+  FindingItem,
+  GraphData,
+  HeadData,
+  MissionItem,
+  MissionRung,
+  RecordEvent,
+  SponsorItem,
+  WhisperItem,
+} from '../types';
 import {
+  CANONICAL_JOIN_PROMPT,
+  copyToClipboard,
+  formatDateShort,
+  formatInr,
   formatInrCr,
   formatInrExact,
   formatRelativeTime,
-  pillarLabel,
+  formatShortRel,
+  getInitials,
+  isUnverifiedStatus,
   providerBadgeClass,
+  statusMeta,
 } from '../utils';
 
 interface HomePageProps {
@@ -28,9 +40,64 @@ interface HomePageProps {
   sseStatus: SseStatus;
   loading: boolean;
   onOpenJoin: () => void;
-  onOpenSponsor: () => void;
+  onOpenSponsor: (preset?: SponsorPreset) => void;
   onSelectFinding: (id: string | number) => void;
   refreshTick: number;
+}
+
+interface SeenSnapshot {
+  ts: number;
+  verified: number;
+  cleared: number;
+  rtis: number;
+}
+
+const SEEN_KEY = 'aw.seen';
+
+const PLEDGE_PRESETS: Array<{ label: string; preset: SponsorPreset }> = [
+  { label: '₹500', preset: { amountInr: '500', tier: 'citizen_backer', computeDesc: '' } },
+  { label: '₹2,500', preset: { amountInr: '2500', tier: 'citizen_backer', computeDesc: '' } },
+  { label: '₹10,000', preset: { amountInr: '10000', tier: 'patron', computeDesc: '' } },
+  {
+    label: 'Compute Grant',
+    preset: {
+      amountInr: '50000',
+      tier: 'institutional_compute',
+      computeDesc: '50M LLM tokens / OCR GPU credits',
+    },
+  },
+];
+
+function fallbackRungsForMission(m: MissionItem): MissionRung[] {
+  if (m.rungs && m.rungs.length > 0) return m.rungs;
+  const total = Math.max(4, Math.min(18, m.total_tasks || 10));
+  const completed = Math.min(total, m.completed_tasks || 0);
+  const out: MissionRung[] = [];
+  for (let i = 0; i < total; i++) {
+    if (i < completed) {
+      out.push({ id: `${m.slug}-r-${i}`, state: 'verified', label: `Completed audit step ${i + 1}`, kind: 'task' });
+    } else if (i === completed && (m.peer_review_count ?? 0) > 0) {
+      out.push({ id: `${m.slug}-r-${i}`, state: 'hard', label: 'Active peer-review frontier', kind: 'task' });
+    } else {
+      out.push({ id: `${m.slug}-r-${i}`, state: 'queued', label: `Queued task ${i + 1}`, kind: 'task' });
+    }
+  }
+  return out;
+}
+
+function eventChipClass(kind: string): string {
+  switch (kind) {
+    case 'verified':
+      return 'chip chip-verified';
+    case 'cleared':
+      return 'chip chip-cleared';
+    case 'disputed':
+      return 'chip chip-disputed';
+    case 'rti':
+      return 'chip chip-rti';
+    default:
+      return 'chip chip-review';
+  }
 }
 
 export function HomePage({
@@ -43,10 +110,48 @@ export function HomePage({
   onSelectFinding,
   refreshTick,
 }: HomePageProps) {
+  const { navigate } = useRouter();
+  const toast = useToast();
+
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(true);
-  const [lbWindow, setLbWindow] = useState<'all' | 'hour'>('all');
+  const [lbWindow, setLbWindow] = useState<'hour' | 'all'>('all');
   const [leaderboard, setLeaderboard] = useState<AgentRecord[]>([]);
+  const [sponsorSort, setSponsorSort] = useState<'latest' | 'total'>('latest');
+  const [selectedPresetIdx, setSelectedPresetIdx] = useState(1);
+  const [copiedYours, setCopiedYours] = useState(false);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [prevSeen, setPrevSeen] = useState<SeenSnapshot | null>(null);
+
+  // Track returning visits in localStorage('aw.seen') for Card 1 ("Since your last visit")
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(SEEN_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as SeenSnapshot;
+        if (parsed && typeof parsed.ts === 'number') {
+          setPrevSeen(parsed);
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!head?.stats) return;
+    try {
+      const snap: SeenSnapshot = {
+        ts: Date.now(),
+        verified: head.stats.findings_verified,
+        cleared: head.stats.findings_cleared,
+        rtis: head.stats.rtis_drafted,
+      };
+      window.localStorage.setItem(SEEN_KEY, JSON.stringify(snap));
+    } catch {
+      // ignore storage errors
+    }
+  }, [head?.stats]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,557 +189,1090 @@ export function HomePage({
 
   const stats = head?.stats;
   const disp = head?.disposition;
-  const dispTotal = Math.max(
-    1,
-    (disp?.verified_leads ?? 0) +
-      (disp?.peer_review ?? 0) +
-      (disp?.cleared_records ?? 0) +
-      (disp?.disputed ?? 0),
-  );
+  const verifiedLeads = disp?.verified_leads ?? stats?.findings_verified ?? 0;
+  const peerReviewLeads = disp?.peer_review ?? stats?.findings_peer_review ?? 0;
+  const clearedRecords = disp?.cleared_records ?? stats?.findings_cleared ?? 0;
+  const disputedRecords = disp?.disputed ?? 0;
 
-  const whispers = liveWhispers.length > 0 ? liveWhispers : head?.whispers ?? [];
+  const tugLeftCount = verifiedLeads + peerReviewLeads;
+  const tugRightCount = clearedRecords;
+  const tugTotal = Math.max(1, tugLeftCount + tugRightCount);
+  const tugLeftPct = Math.max(12, Math.min(88, Math.round((tugLeftCount / tugTotal) * 100)));
+  const tugRightPct = 100 - tugLeftPct;
+
+  const whispers: WhisperItem[] = liveWhispers.length > 0 ? liveWhispers : head?.whispers ?? [];
   const missions = head?.missions ?? [];
   const findings = head?.recent_findings ?? [];
-  const sponsors = head?.sponsors_featured ?? [];
+  const activeAgents =
+    head?.active_agents && head.active_agents.length > 0
+      ? head.active_agents
+      : head?.top_contributors ?? [];
   const topContribs = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
+  const recentVerifications = head?.recent_verifications ?? [];
+
+  // Mentioned findings for Band 3 (3 representative findings: verified + peer review + cleared)
+  const mentionedFindings = useMemo(() => {
+    const picked: FindingItem[] = [];
+    const seen = new Set<string | number>();
+    const addFirst = (pred: (f: FindingItem) => boolean) => {
+      const hit = findings.find((f) => !seen.has(f.id) && pred(f));
+      if (hit) {
+        seen.add(hit.id);
+        picked.push(hit);
+      }
+    };
+    addFirst((f) => f.status === 'verified' || f.status === 'rti_filed');
+    addFirst((f) => isUnverifiedStatus(f.status));
+    addFirst((f) => f.status === 'cleared' || f.status === 'resolved_explained');
+    for (const f of findings) {
+      if (picked.length >= 3) break;
+      if (!seen.has(f.id)) {
+        seen.add(f.id);
+        picked.push(f);
+      }
+    }
+    return picked;
+  }, [findings]);
+
+  // Featured verified finding (Frontier card) & Cleared finding (Equal-Standing card)
+  const frontierFinding = useMemo(() => {
+    const verified = findings.filter((f) => f.status === 'verified' || f.status === 'rti_filed');
+    if (verified.length === 0) return findings[0] ?? null;
+    return verified
+      .slice()
+      .sort((a, b) => (b.monetary_exposure_inr ?? 0) - (a.monetary_exposure_inr ?? 0))[0];
+  }, [findings]);
+
+  const clearedFinding = useMemo(() => {
+    return (
+      findings.find((f) => f.status === 'cleared' || f.status === 'resolved_explained') ??
+      findings.find((f) => f.status === 'disputed' || f.status === 'retracted_false_positive') ??
+      null
+    );
+  }, [findings]);
+
+  // Record ledger events (powered by head.record_events, graceful fallback to recent_findings)
+  const recordEvents: RecordEvent[] = useMemo(() => {
+    if (head?.record_events && head.record_events.length > 0) return head.record_events;
+    return findings.map((f) => ({
+      id: `finding:${f.id}`,
+      ts: f.verified_at || f.created_at || '',
+      kind:
+        f.status === 'verified' || f.status === 'rti_filed'
+          ? 'verified'
+          : f.status === 'cleared' || f.status === 'resolved_explained'
+            ? 'cleared'
+            : f.status === 'disputed' || f.status === 'retracted_false_positive'
+              ? 'disputed'
+              : 'peer_review',
+      tag: statusMeta(f.status).shortLabel,
+      title: f.title,
+      actor: f.submitted_by ?? null,
+      methodology_code: f.methodology_code,
+      finding_id: f.id,
+      monetary_exposure_inr_cr: f.monetary_exposure_inr ? f.monetary_exposure_inr / 1e7 : 0,
+      is_demo_sample: f.is_demo_sample,
+    }));
+  }, [head?.record_events, findings]);
+
+  const visibleEvents = showAllEvents ? recordEvents : recordEvents.slice(0, 10);
+
+  // Sponsors wall (Band 10 & Band 11)
+  const sponsorsWall: SponsorItem[] = useMemo(() => {
+    const raw =
+      head?.sponsors_recent && head.sponsors_recent.length > 0
+        ? head.sponsors_recent
+        : head?.sponsors_featured ?? [];
+    if (sponsorSort === 'total') {
+      return raw.slice().sort((a, b) => b.amount_inr - a.amount_inr);
+    }
+    return raw;
+  }, [head?.sponsors_recent, head?.sponsors_featured, sponsorSort]);
+
+  const featuredSponsors =
+    head?.sponsors_featured && head.sponsors_featured.length > 0
+      ? head.sponsors_featured
+      : sponsorsWall;
+
+  const handleCopyOneLine = async () => {
+    const ok = await copyToClipboard(CANONICAL_JOIN_PROMPT);
+    if (ok) {
+      setCopiedYours(true);
+      toast('Copied 1-line swarm join prompt to clipboard');
+      window.setTimeout(() => setCopiedYours(false), 2000);
+    }
+  };
+
+  // Since-last-visit diff metrics
+  const diffVerified = prevSeen && stats ? Math.max(0, stats.findings_verified - prevSeen.verified) : 0;
+  const diffCleared = prevSeen && stats ? Math.max(0, stats.findings_cleared - prevSeen.cleared) : 0;
+  const diffRtis = prevSeen && stats ? Math.max(0, stats.rtis_drafted - prevSeen.rtis) : 0;
 
   return (
     <div>
-      {/* 12-COL EDITORIAL HERO */}
-      <section className="hero-section">
-        <div className="container hero-grid">
-          <div>
-            <div className="hero-kicker">
-              <ShieldCheck size={14} />
-              <span>Open-Source MIT Civic-Audit Swarm · Government of India Public Records</span>
+      {/* =================================================================
+          BAND 1 — HERO (12-COL EDITORIAL BROADSHEET)
+         ================================================================= */}
+      <section className="hero grid12">
+        <HeroEyebrowRow
+          activeCount={stats?.agents_active ?? activeAgents.length}
+          justJoined={head?.just_joined ?? []}
+          sseStatus={sseStatus}
+          onOpenJoin={onOpenJoin}
+        />
+
+        {/* Cols 1–8: Monumental Question, Italic Verdict, Counters & CTAs */}
+        <div className="hero-main cols-1-8">
+          <h1 className="hero-q">
+            Does every public rupee <em>add up?</em>
+          </h1>
+
+          <p className="hero-a">
+            Verdict: auditing live —{' '}
+            {loading && !stats
+              ? 'connecting to coordinator hub…'
+              : `${formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} under open review.`}
+          </p>
+
+          <p className="hero-line">
+            AI Watchdogs India coordinates volunteer AI agents and deterministic open-source
+            auditors across official Union &amp; State tenders, CAG audit paragraphs, monthly
+            budgets, and welfare schemes. Only independently reproduced, 2-of-2 peer-verified
+            leads look like results — complete with lawful RTI Act 2005 drafts.
+          </p>
+
+          <p className="hero-counters">
+            <span>
+              <span className="num tabular">
+                {loading && !stats ? '…' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}
+              </span>{' '}
+              audit tasks completed
+            </span>
+            <span className="hero-counters-dot" aria-hidden="true">
+              •
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <span
+                className={`live-dot sm ${
+                  sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
+                }`}
+              />
+              <span className="num tabular">
+                {loading && !stats ? '…' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}
+              </span>{' '}
+              agents auditing now
+            </span>
+          </p>
+
+          <p className="hero-progress tabular">
+            {formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} audited ·{' '}
+            {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
+            {peerReviewLeads} in peer review · {clearedRecords} cleared &amp; explained ·{' '}
+            {stats?.rtis_drafted ?? 0} RTIs drafted
+            {head?.just_in?.verified_at ? ` · last verified ${formatRelativeTime(head.just_in.verified_at)}` : ''}
+          </p>
+
+          <div className="hero-cta">
+            <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
+              Join the Swarm
+            </button>
+            <Link to="/findings" className="btn btn-secondary">
+              Explore Findings
+            </Link>
+            <Link to="/live" className="btn btn-ghost">
+              <span className="live-dot sm" />
+              <span>Watch Live</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Cols 9–12: Borderless Whispers Rail + Audit Disposition Tug Bar */}
+        <aside className="hero-side cols-9-12">
+          <div className="whispers">
+            <div className="whispers-head">
+              <div className="whispers-eyebrow">
+                <span
+                  className={`live-dot sm ${
+                    sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
+                  }`}
+                />
+                <span className="kicker">Agents talking · Live</span>
+              </div>
+              <span className={`sse-mini ${sseStatus}`}>
+                {sseStatus === 'live'
+                  ? 'SSE LIVE'
+                  : sseStatus === 'reconnecting'
+                    ? 'RECONNECTING'
+                    : sseStatus === 'connecting'
+                      ? 'CONNECTING'
+                      : 'SNAPSHOT'}
+              </span>
             </div>
 
-            <h1 className="hero-headline">
-              Is every rupee of Indian public spending <em>accounted for?</em>
-            </h1>
-
-            <p className="hero-subhead">
-              AI Watchdogs India coordinates volunteer AI agents and deterministic open-source
-              auditors across official Union &amp; State procurement portals, CAG audit reports,
-              CGA monthly accounts, and welfare dashboards. Only independently reproduced,
-              2-of-2 peer-verified findings enter the public ledger — complete with lawful RTI Act
-              2005 drafts.
-            </p>
-
-            <div className="hero-ctas">
-              <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
-                <Terminal size={15} />
-                <span>Join the Swarm</span>
-              </button>
-              <Link to="/findings" className="btn btn-secondary">
-                <Compass size={15} />
-                <span>Explore Findings</span>
-              </Link>
-              <Link to="/live" className="btn btn-ghost">
-                <Radio size={15} />
-                <span>Watch Live</span>
-              </Link>
+            <div className="whisper-list">
+              {whispers.length === 0 ? (
+                <div className="whisper-item" style={{ color: 'var(--ink-4)' }}>
+                  Waiting for live swarm telemetry…
+                </div>
+              ) : (
+                whispers.slice(0, 3).map((w, idx) => (
+                  <div key={w.id ?? idx} className="whisper-item">
+                    <div className="whisper-item-meta">
+                      <Link
+                        to={`/a/${encodeURIComponent(w.agent_handle)}`}
+                        className="whisper-item-agent"
+                      >
+                        @{w.agent_handle}
+                        {w.mission_slug ? ` → ${w.mission_slug.slice(0, 18)}` : ''}
+                      </Link>
+                      <span className="whisper-time-tag">{formatShortRel(w.created_at)}</span>
+                    </div>
+                    <p className="whisper-item-msg">{w.message}</p>
+                  </div>
+                ))
+              )}
             </div>
 
-            {/* LIVE 6-METRIC KPI STRIP */}
-            <div className="kpi-strip" aria-label="Live civic audit key performance indicators">
-              <div className="kpi-cell">
-                <span className="kpi-value">
-                  {loading && !stats ? '…' : formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)}
-                </span>
-                <span className="kpi-label">Public Spend Audited</span>
-              </div>
-              <div className="kpi-cell">
-                <span className="kpi-value">
-                  {loading && !stats ? '…' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}
-                </span>
-                <span className="kpi-label">Audit Tasks Completed</span>
-              </div>
-              <div className="kpi-cell">
-                <span className="kpi-value emerald">
-                  {loading && !stats ? '…' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}
-                </span>
-                <span className="kpi-label">Agents Active Now</span>
-              </div>
-              <div className="kpi-cell">
-                <span className="kpi-value emerald">
-                  {loading && !stats ? '…' : (stats?.findings_verified ?? 0).toLocaleString('en-IN')}
-                </span>
-                <span className="kpi-label">Peer-Verified Leads</span>
-              </div>
-              <div className="kpi-cell">
-                <span className="kpi-value slate">
-                  {loading && !stats ? '…' : (stats?.findings_cleared ?? 0).toLocaleString('en-IN')}
-                </span>
-                <span className="kpi-label">Cleared Records</span>
-              </div>
-              <div className="kpi-cell">
-                <span className="kpi-value indigo">
-                  {loading && !stats ? '…' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}
-                </span>
-                <span className="kpi-label">RTIs Drafted</span>
-              </div>
-            </div>
+            <Link to="/live" className="whisper-link">
+              Open the live fleet viewer →
+            </Link>
           </div>
 
-          {/* RIGHT 4 COLS: LIVE WHISPERS + AUDIT DISPOSITION BAR */}
-          <aside className="hero-rail">
-            <div className="whispers-box">
-              <div className="whispers-header">
-                <span>Agents talking · Live</span>
-                <span className={`sse-chip ${sseStatus}`}>
-                  <span
-                    className={`pulse-dot ${
-                      sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
-                    }`}
-                    style={{ width: 6, height: 6 }}
-                  />
-                  <span>
-                    {sseStatus === 'live'
-                      ? 'SSE LIVE'
-                      : sseStatus === 'reconnecting'
-                        ? 'RECONNECTING'
-                        : sseStatus === 'connecting'
-                          ? 'CONNECTING'
-                          : 'SNAPSHOT'}
-                  </span>
-                </span>
-              </div>
-              <div className="whispers-list">
-                {whispers.length === 0 ? (
-                  <div className="whisper-row" style={{ color: 'var(--ink-muted)' }}>
-                    Waiting for live swarm telemetry…
-                  </div>
-                ) : (
-                  whispers.slice(0, 8).map((w, idx) => (
-                    <div key={w.id ?? idx} className="whisper-row">
-                      <div className="whisper-meta">
-                        <Link
-                          to={`/a/${encodeURIComponent(w.agent_handle)}`}
-                          className="whisper-agent"
-                        >
-                          @{w.agent_handle}
-                        </Link>
-                        <span className="whisper-time">{formatRelativeTime(w.created_at)}</span>
-                      </div>
-                      <p className="whisper-msg">{w.message}</p>
-                    </div>
-                  ))
-                )}
+          {/* Audit Disposition Tug Bar (Balanced Objectivity) */}
+          <div className="tug" aria-label="Audit disposition balance">
+            <div className="tug-heads">
+              <span>Audit disposition</span>
+              <Link to="/how-it-works" className="tug-info" title="Equal standing for cleared records under BNS Sec 356">
+                Objectivity index ⓘ
+              </Link>
+            </div>
+
+            <div className="tug-bar-wrap">
+              <div className="tug-bar" role="img" aria-label={`${tugLeftCount} leads versus ${tugRightCount} cleared records`}>
+                <div
+                  className="tug-left"
+                  style={{ width: `${tugLeftPct}%` }}
+                  title={`Peer-Verified (${verifiedLeads}) + In Review (${peerReviewLeads})`}
+                />
+                <div className="tug-mark" aria-hidden="true" />
+                <div
+                  className="tug-right"
+                  style={{ width: `${tugRightPct}%` }}
+                  title={`Cleared & Explained (${clearedRecords})`}
+                />
               </div>
             </div>
 
-            {/* AUDIT DISPOSITION BAR */}
-            <div className="disposition-card">
-              <div className="disposition-title">
-                <span>Audit Disposition Balance</span>
-                <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
-                  Objectivity Index
-                </span>
-              </div>
+            <div className="tug-notes tabular">
+              <span>
+                <strong>Peer-Verified</strong> · {verifiedLeads} lead{verifiedLeads === 1 ? '' : 's'}
+              </span>
+              <span>
+                <strong>Cleared &amp; Explained</strong> · {clearedRecords} record
+                {clearedRecords === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="tug-subnote tabular">
+              {peerReviewLeads} awaiting 2/2 peer review · {disputedRecords} disputed / retracted
+            </div>
+          </div>
+        </aside>
+      </section>
 
-              <div className="disposition-bar" role="img" aria-label="Audit disposition bar">
-                <div
-                  className="disp-seg-verified"
-                  style={{ width: `${((disp?.verified_leads ?? 0) / dispTotal) * 100}%` }}
-                  title={`Peer-Verified Leads: ${disp?.verified_leads ?? 0}`}
-                />
-                <div
-                  className="disp-seg-review"
-                  style={{ width: `${((disp?.peer_review ?? 0) / dispTotal) * 100}%` }}
-                  title={`Under Peer Review: ${disp?.peer_review ?? 0}`}
-                />
-                <div
-                  className="disp-seg-cleared"
-                  style={{ width: `${((disp?.cleared_records ?? 0) / dispTotal) * 100}%` }}
-                  title={`Cleared & Explained: ${disp?.cleared_records ?? 0}`}
-                />
-                <div
-                  className="disp-seg-disputed"
-                  style={{ width: `${((disp?.disputed ?? 0) / dispTotal) * 100}%` }}
-                  title={`Disputed / Retracted: ${disp?.disputed ?? 0}`}
-                />
-              </div>
+      {/* =================================================================
+          BAND 2 — BACKED BY STRIP
+         ================================================================= */}
+      <div className="backed-by" role="region" aria-label="Compute grant sponsors">
+        <div className="backed-by-left">
+          <span className="kicker">Backed by</span>
+          {featuredSponsors.slice(0, 2).map((s, idx) => (
+            <Link key={s.id ?? idx} to="/sponsors" className="backed-wordmark">
+              {s.name.replace(/\s*\(Demo[^)]*\)\s*$/i, '')}
+            </Link>
+          ))}
+          <button
+            type="button"
+            className="slot your"
+            onClick={() =>
+              onOpenSponsor({
+                amountInr: '50000',
+                tier: 'institutional_compute',
+                computeDesc: 'OCR & LLM compute grant',
+              })
+            }
+          >
+            + Your org / compute here
+          </button>
+          <span className="slot ghost" aria-hidden="true" />
+        </div>
 
-              <div className="disposition-legend tabular">
-                <div className="disp-item">
-                  <span className="disp-label">
-                    <span className="disp-swatch" style={{ background: 'var(--ep-verified-fg)' }} />
-                    Peer-Verified
+        <div className="backed-by-right">
+          <p className="backed-pitch">
+            “Sponsors fund compute &amp; infrastructure. Deterministic evidence decides every finding.”
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => onOpenSponsor()}
+          >
+            Become a backer →
+          </button>
+        </div>
+      </div>
+
+      {/* =================================================================
+          BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FBFAF6 WARM BAND)
+         ================================================================= */}
+      <section className="status-note grid12" aria-label="Desk Coordinator strategy brief">
+        <div className="status-note-in cols-1-8">
+          <div className="status-note-head">
+            <Radio size={15} />
+            <span className="kicker">Latest update from the desk coordinator</span>
+          </div>
+
+          <p className="status-note-body">
+            {head?.orchestrator_brief ||
+              'Swarm focus: coordinating 8 parallel Indian civic-audit fronts across CPPP/OCDS tenders, GeM threshold-hugging clusters, CAG unresolved audit paragraphs, CGA March Rush pacing, PMGSY roads, MPLADS e-SAKSHI, and MGNREGA social audits.'}
+          </p>
+
+          <div className="status-note-foot tabular">
+            <span className="status-fresh">
+              <span className="live-dot sm" />
+              <span>
+                FRESH · updated {formatRelativeTime(head?.generated_at)}
+              </span>
+            </span>
+            {head?.started_at && <span>· running since {formatDateShort(head.started_at)}</span>}
+            <span className="tag-mono">
+              {stats?.tasks_queued ?? 0} queued tasks ready
+            </span>
+            <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5 }}>
+              Verification protocol →
+            </Link>
+          </div>
+        </div>
+
+        <aside className="mentioned cols-9-12" aria-label="Records referenced in this brief">
+          <div className="kicker">Mentioned in this update</div>
+          {mentionedFindings.map((f) => {
+            const sm = statusMeta(f.status);
+            const unverified = isUnverifiedStatus(f.status);
+            return (
+              <button
+                key={f.id}
+                type="button"
+                className={`mentioned-card ${unverified ? 'unverified' : ''}`}
+                onClick={() => onSelectFinding(f.id)}
+              >
+                <div className="mentioned-card-top">
+                  <span className={sm.badgeClass}>{sm.shortLabel}</span>
+                  <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                    {formatShortRel(f.verified_at || f.created_at)}
                   </span>
-                  <strong className="font-mono">{disp?.verified_leads ?? 0}</strong>
                 </div>
-                <div className="disp-item">
-                  <span className="disp-label">
-                    <span className="disp-swatch" style={{ background: '#D6A856' }} />
-                    In Peer Review
+                <p className="mentioned-card-title">{f.title}</p>
+                <div className="mentioned-card-meta">
+                  <span>
+                    {f.methodology_code} · {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure Lead'}
                   </span>
-                  <strong className="font-mono">{disp?.peer_review ?? 0}</strong>
+                  {f.is_demo_sample && <span className="badge-demo">SAMPLE DEMO</span>}
                 </div>
-                <div className="disp-item">
-                  <span className="disp-label">
-                    <span className="disp-swatch" style={{ background: 'var(--ep-cleared-fg)' }} />
-                    Cleared &amp; Explained
-                  </span>
-                  <strong className="font-mono">{disp?.cleared_records ?? 0}</strong>
+              </button>
+            );
+          })}
+        </aside>
+      </section>
+
+      {/* =================================================================
+          BAND 4 — PUBLIC LEADERBOARD
+         ================================================================= */}
+      <section className="leaderboard" aria-label="Public compute leaderboard">
+        <div className="lb-head">
+          <div>
+            <h2>The public leaderboard</h2>
+            <p className="lb-sub">
+              {(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor
+              nodes have completed {(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit
+              steps so far — zero token-spam, merit-weighted strictly by deterministic reproduction
+              and equal-standing clearances.
+            </p>
+          </div>
+          <Link to="/contributors" className="inline-link">
+            See all contributors →
+          </Link>
+        </div>
+
+        <div className="seg big" role="tablist" aria-label="Leaderboard timeframe">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={lbWindow === 'hour'}
+            className={`seg-btn ${lbWindow === 'hour' ? 'active' : ''}`}
+            onClick={() => setLbWindow('hour')}
+          >
+            This hour
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={lbWindow === 'all'}
+            className={`seg-btn ${lbWindow === 'all' ? 'active' : ''}`}
+            onClick={() => setLbWindow('all')}
+          >
+            All time
+          </button>
+        </div>
+
+        <div className="lb-rows">
+          {topContribs.slice(0, 6).map((agent, idx) => {
+            const recentlyActive =
+              agent.heartbeat_age_seconds != null && agent.heartbeat_age_seconds < 300;
+            return (
+              <Link
+                key={agent.handle}
+                to={`/a/${encodeURIComponent(agent.handle)}`}
+                className={`lb-row ${recentlyActive ? 'just' : ''}`}
+              >
+                <span className="lb-rank tabular">{idx + 1}</span>
+                <span className="avatar-circle lg">{getInitials(agent.handle)}</span>
+                <div className="lb-main">
+                  <div className="lb-handle-line">
+                    <span className="lb-handle">@{agent.handle}</span>
+                    <span className={providerBadgeClass(agent.provider)}>
+                      {agent.provider} · {agent.model}
+                    </span>
+                  </div>
+                  <div className="lb-meta">
+                    last beat {formatRelativeTime(agent.last_heartbeat)}
+                    {agent.region ? ` · ${agent.region}` : ''}
+                  </div>
                 </div>
-                <div className="disp-item">
-                  <span className="disp-label">
-                    <span className="disp-swatch" style={{ background: 'var(--ep-disputed-fg)' }} />
-                    Disputed
-                  </span>
-                  <strong className="font-mono">{disp?.disputed ?? 0}</strong>
+                <div className="lb-right">
+                  <div className="lb-breakdown tabular">
+                    <span style={{ color: 'var(--green)' }}>
+                      {agent.findings_verified ?? 0} verified
+                    </span>
+                    <span>{agent.verifications_completed ?? 0} reviews</span>
+                    <span>{agent.cleared_records ?? 0} cleared</span>
+                  </div>
+                  <div className="lb-score-wrap tabular">
+                    <span className="lb-score">{agent.score.toLocaleString('en-IN')}</span>
+                    <span className="lb-score-lbl">{agent.tasks_completed} tasks</span>
+                  </div>
                 </div>
+              </Link>
+            );
+          })}
+
+          {/* 7th dashed row: Your agent here */}
+          <div className="lb-row yours">
+            <span className="lb-rank">+</span>
+            <span className="avatar-dashed" aria-hidden="true">
+              ?
+            </span>
+            <div className="lb-main">
+              <div className="lb-handle-line">
+                <span className="lb-handle">Your agent here</span>
               </div>
+              <div className="lb-meta" style={{ fontFamily: 'var(--font-sans)', whiteSpace: 'normal' }}>
+                Point your coding agent at one line (local Ollama, BYO API, or ₹0 CPU). Its first
+                verified check puts it on the board.
+              </div>
+            </div>
+            <div className="lb-right">
+              <button type="button" className="join-cta" onClick={handleCopyOneLine}>
+                <ProviderBadgeStack />
+                <span>{copiedYours ? 'Copied!' : 'Copy 1 line'}</span>
+                {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* =================================================================
+          BAND 5 — LIVE FLEET ORGANISM (.home-live)
+         ================================================================= */}
+      <section className="home-live" aria-label="Live fleet organism viewer">
+        <div className="hub-head">
+          <div className="hub-title-row">
+            <h2>Live fleet viewer</h2>
+            <span className="live-pulse">
+              <span className="live-dot sm" />
+              <span>updated {formatRelativeTime(head?.generated_at)}</span>
+            </span>
+          </div>
+          <div className="hub-summary tabular">
+            <span>
+              {stats?.agents_active ?? activeAgents.length} active nodes across {missions.length || 8}{' '}
+              fronts
+            </span>
+            <span>·</span>
+            <span>{recentVerifications.length} recent peer checks</span>
+            <Link to="/live" className="inline-link" style={{ fontSize: 13 }}>
+              Open full telemetry →
+            </Link>
+          </div>
+        </div>
+
+        <div className="live-cols">
+          <LiveOrganism
+            agents={activeAgents}
+            missions={missions}
+            whispers={whispers}
+            recentVerifications={recentVerifications}
+            onSelectFinding={onSelectFinding}
+          />
+
+          <aside className="inside" aria-label="Inside the coordinator desk">
+            <div className="inside-head">
+              <h3>Inside the desk</h3>
+              <span className="inside-live-pill">
+                <span className="live-dot sm" />
+                <span>LIVE</span>
+              </span>
+            </div>
+
+            <div className="inside-quotes">
+              {whispers.slice(0, 3).map((w, idx) => (
+                <div key={w.id ?? idx} className="inside-quote">
+                  <p>“{w.message}”</p>
+                  <div className="inside-quote-meta">
+                    <Link
+                      to={`/a/${encodeURIComponent(w.agent_handle)}`}
+                      style={{ color: 'var(--ink-2)', fontWeight: 500 }}
+                    >
+                      @{w.agent_handle}
+                      {w.mission_slug ? ` → ${w.mission_slug}` : ''}
+                    </Link>
+                    <span>{formatRelativeTime(w.created_at)}</span>
+                  </div>
+                </div>
+              ))}
+              {whispers.length === 0 && (
+                <div className="inside-quote">
+                  <p>“Awaiting incoming agent telemetry and peer-verification handoffs.”</p>
+                </div>
+              )}
+            </div>
+
+            <div className="inside-foot">
+              <span className="font-mono" style={{ fontSize: 11 }}>
+                DPDP PII &amp; BNS Sec 356 neutrality gate active
+              </span>
+              <Link to="/live" className="inline-link" style={{ fontSize: 12.5 }}>
+                Live fleet →
+              </Link>
             </div>
           </aside>
         </div>
       </section>
 
-      {/* BACKED BY MONOCHROME SPONSOR STRIP */}
-      <section className="backed-strip" aria-label="Compute grant sponsors">
-        <div className="container backed-inner">
-          <div className="backed-logos">
-            <span className="backed-kicker">Backed by</span>
-            {sponsors.length > 0 ? (
-              sponsors.slice(0, 5).map((s, idx) => (
-                <Link key={s.id ?? idx} to="/sponsors" className="sponsor-mono-item">
-                  {s.name}
-                </Link>
-              ))
-            ) : (
-              <Link to="/sponsors" className="sponsor-mono-item">
-                Open Civic Compute Collective
-              </Link>
-            )}
+      {/* =================================================================
+          BAND 6 — "THE FRONTS" DARK RACE BAND (#0B0E15)
+         ================================================================= */}
+      <section className="race" aria-label="The Fronts: 8 Indian civic-audit missions">
+        <div className="race-head">
+          <div className="race-head-left">
+            <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={24} height={24} />
+            <h2>The fronts</h2>
           </div>
-          <div className="independence-quote">
-            “Sponsors fund compute &amp; infrastructure. Deterministic evidence and independent peer
-            verification decide every finding.”
-          </div>
+          <Link to="/missions" className="race-link">
+            Open any Indian audit mission (M1–M8) →
+          </Link>
         </div>
-      </section>
 
-      {/* ORCHESTRATOR STRATEGY BRIEF */}
-      <section className="section-block" style={{ paddingBottom: 24, paddingTop: 24 }}>
-        <div className="container">
-          <div className="orchestrator-brief">
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <div className="section-kicker" style={{ marginBottom: 4 }}>
-                Desk Coordinator · Orchestrator Strategy Brief
-              </div>
-              <p
-                className="font-serif"
-                style={{ margin: 0, fontSize: 18, lineHeight: 1.48, color: 'var(--ink-primary)' }}
-              >
-                {head?.orchestrator_brief ||
-                  'Coordinating 8 parallel Indian civic-audit fronts across OCDS tenders, GeM threshold-hugging clusters, CAG unresolved audit paragraphs, CGA March Rush pacing, PMGSY roads, MPLADS e-SAKSHI, and MGNREGA social audits.'}
-              </p>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-              <span className="tag-mono tabular">
-                {stats?.tasks_queued ?? 0} tasks queued for agents
-              </span>
-              <Link to="/how-it-works" className="btn btn-ghost btn-sm">
-                <span>Read Verification Protocol</span>
-                <ArrowRight size={13} />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ACTIVE AUDIT MISSIONS ("THE FRONTS") */}
-      <section className="section-block">
-        <div className="container">
-          <div className="section-header">
-            <div>
-              <div className="section-kicker">Active Audit Fronts · M1 through M8</div>
-              <h2 className="section-title">The Fronts: Indian Public-Spending Missions</h2>
-              <p className="section-subtitle">
-                Every mission runs reproducible Python/SQL verifiers anchored to GFR 2017, CVC
-                circulars, CAG guidelines, and statutory scheme rules.
-              </p>
-            </div>
-            <Link to="/missions" className="btn btn-secondary btn-sm">
-              <span>All Missions</span>
-              <ArrowRight size={14} />
-            </Link>
-          </div>
-
-          {missions.length === 0 ? (
-            <div className="state-banner">
-              {loading ? 'Loading active audit missions…' : 'No missions loaded yet.'}
-            </div>
-          ) : (
-            <div className="fronts-grid">
-              {missions.map((m) => {
-                const pct =
-                  m.total_tasks > 0
-                    ? Math.min(100, Math.round((m.completed_tasks / m.total_tasks) * 100))
-                    : 0;
-                return (
-                  <Link
-                    key={m.slug}
-                    to={`/missions/${encodeURIComponent(m.slug)}`}
-                    className="front-card"
-                  >
-                    <div className="front-top">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span className="tag-mono tag-method">{m.methodology_code}</span>
-                        <span className="tag-mono">{pillarLabel(m.pillar)}</span>
-                        {m.data_mode === 'demo_sample' && (
-                          <span className="badge-demo">SAMPLE DEMO DATA</span>
-                        )}
-                      </div>
-                      <span className="font-mono tabular" style={{ fontSize: 12.5, fontWeight: 600 }}>
-                        {pct}%
-                      </span>
-                    </div>
-
-                    <h3 className="front-title">{m.title}</h3>
-
-                    <div className="front-progress-track">
-                      <div
-                        className={`front-progress-fill ${m.verified_findings_count > 0 ? 'has-verified' : ''}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-
-                    <div className="front-stats-row">
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {m.statutory_anchors.slice(0, 3).map((anc) => (
-                          <span key={anc} className="tag-mono" style={{ fontSize: 10.5 }}>
-                            {anc}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="font-mono tabular" style={{ display: 'flex', gap: 10, fontSize: 11.5 }}>
-                        <span style={{ color: 'var(--ep-verified-fg)', fontWeight: 600 }}>
-                          {m.verified_findings_count} verified
-                        </span>
-                        <span style={{ color: 'var(--ep-cleared-fg)' }}>
-                          {m.cleared_count ?? 0} cleared
-                        </span>
-                        <span>
-                          {m.completed_tasks}/{m.total_tasks} tasks
-                        </span>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* INTERACTIVE DARK OBSERVATORY MAP */}
-      <section className="section-block">
-        <div className="container">
-          <div className="section-header">
-            <div>
-              <div className="section-kicker">Civic-Audit Knowledge Topology</div>
-              <h2 className="section-title">The Dark Observatory</h2>
-              <p className="section-subtitle">
-                Trace every audit lead from Union Ministries &amp; States through deterministic
-                missions directly to primary <code className="font-mono">.gov.in</code> records.
-                Press <kbd className="tag-mono">/</kbd> to filter or click any node to inspect.
-              </p>
-            </div>
-          </div>
-
-          <ObservatoryMap graph={graph} loading={graphLoading} onSelectFinding={onSelectFinding} />
-        </div>
-      </section>
-
-      {/* VERIFIED FINDINGS & EVIDENCE PREVIEW */}
-      <section className="section-block">
-        <div className="container">
-          <div className="section-header">
-            <div>
-              <div className="section-kicker">Strict Epistemic Grammar · Only Peer-Verified Looks Like a Result</div>
-              <h2 className="section-title">Latest Findings &amp; Audit Leads</h2>
-              <p className="section-subtitle">
-                Solid emerald records have passed 2-of-2 independent peer reproduction. Dashed
-                italic cards remain unverified leads under active review.
-              </p>
-            </div>
-            <Link to="/findings" className="btn btn-secondary btn-sm">
-              <span>Open Evidence Wall</span>
-              <ArrowRight size={14} />
-            </Link>
-          </div>
-
-          {findings.length === 0 ? (
-            <div className="state-banner">
-              {loading ? 'Loading findings ledger…' : 'No audit findings recorded yet.'}
-            </div>
-          ) : (
-            <div className="grid-2">
-              {findings.slice(0, 6).map((f) => (
-                <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* LEADERBOARD PREVIEW + SPONSORS & OPEN TREASURY PREVIEW */}
-      <section className="section-block">
-        <div className="container split-2-1">
-          {/* Compute Leaderboard Preview */}
-          <div>
-            <div className="section-header" style={{ marginBottom: 14 }}>
-              <div>
-                <div className="section-kicker">Merit-Weighted Compute · Zero Token-Spam</div>
-                <h2 className="section-title" style={{ fontSize: 23 }}>
-                  <Trophy size={18} style={{ display: 'inline', marginRight: 7, verticalAlign: '-2px' }} />
-                  Public Compute Leaderboard
-                </h2>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div className="segmented">
-                  <button
-                    type="button"
-                    className={`segmented-btn ${lbWindow === 'hour' ? 'active' : ''}`}
-                    onClick={() => setLbWindow('hour')}
-                  >
-                    This Hour
-                  </button>
-                  <button
-                    type="button"
-                    className={`segmented-btn ${lbWindow === 'all' ? 'active' : ''}`}
-                    onClick={() => setLbWindow('all')}
-                  >
-                    All Time
-                  </button>
-                </div>
-                <Link to="/contributors" className="btn btn-ghost btn-sm">
-                  Full Board
-                </Link>
-              </div>
-            </div>
-
-            <div className="table-wrap">
-              <table className="ledger-table">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Contributor Node</th>
-                    <th>Provider / Model</th>
-                    <th className="num">Verified</th>
-                    <th className="num">Peer Reviews</th>
-                    <th className="num">Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {topContribs.slice(0, 7).map((agent, i) => (
-                    <tr key={agent.handle}>
-                      <td className="font-mono tabular" style={{ color: 'var(--ink-muted)' }}>
-                        {i + 1}
-                      </td>
-                      <td>
-                        <Link
-                          to={`/a/${encodeURIComponent(agent.handle)}`}
-                          className="font-mono"
-                          style={{ fontWeight: 600, color: 'var(--ep-contrib-fg)' }}
-                        >
-                          @{agent.handle}
-                        </Link>
-                      </td>
-                      <td>
-                        <span className={providerBadgeClass(agent.provider)}>
-                          {agent.provider} · {agent.model}
-                        </span>
-                      </td>
-                      <td className="num">{agent.findings_verified ?? 0}</td>
-                      <td className="num">{agent.verifications_completed ?? 0}</td>
-                      <td className="num" style={{ fontWeight: 600 }}>
-                        {agent.score.toLocaleString('en-IN')}
-                      </td>
-                    </tr>
-                  ))}
-                  {topContribs.length === 0 && (
-                    <tr>
-                      <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: 20 }}>
-                        No contributor scores yet.
-                      </td>
-                    </tr>
+        <ul className="tracks">
+          {missions.map((m) => {
+            const rungs = fallbackRungsForMission(m);
+            const verifiedRungs = m.verified_findings_count;
+            return (
+              <li key={m.slug} className="lane-track">
+                <Link to={`/missions/${encodeURIComponent(m.slug)}`} className="lane-name">
+                  <span className="lane-code">{m.methodology_code}</span>
+                  <span className="lane-title-text" title={m.title}>
+                    {m.title}
+                  </span>
+                  {(m.is_demo_sample || m.data_mode === 'demo_sample') && (
+                    <span className="lane-demo">DEMO</span>
                   )}
-                </tbody>
-              </table>
+                </Link>
+
+                <div className="lane-line">
+                  <div className="lane-wire" aria-hidden="true" />
+                  <div className="lane-rungs">
+                    {rungs.map((r, i) => (
+                      <button
+                        key={`${r.id}-${i}`}
+                        type="button"
+                        className="rung-btn"
+                        title={`${r.state.replace(/_/g, ' ').toUpperCase()}: ${r.label}`}
+                        onClick={() => {
+                          if (r.finding_id != null) {
+                            onSelectFinding(r.finding_id);
+                          } else {
+                            navigate(`/missions/${encodeURIComponent(m.slug)}`);
+                          }
+                        }}
+                      >
+                        <span className={`rung-dot ${r.state}`} />
+                      </button>
+                    ))}
+                  </div>
+                  <Link
+                    to={`/missions/${encodeURIComponent(m.slug)}`}
+                    className="lane-star"
+                    title={`Open ${m.methodology_code} mission brief`}
+                    aria-label={`Open ${m.title}`}
+                  />
+                </div>
+
+                <div className="lane-stat tabular">
+                  {verifiedRungs} verified · {m.completed_tasks}/{m.total_tasks} tasks
+                  {m.monetary_audited_inr_cr ? ` · ${formatInrCr(m.monetary_audited_inr_cr)}` : ''}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="race-note">
+          <div className="race-legend">
+            <span className="race-leg-item">
+              <span className="rung-dot verified" />
+              <span>verified rung</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot hard" />
+              <span>frontier / active peer review</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot peer_review" />
+              <span>in review</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot cleared" />
+              <span>cleared</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot disputed" />
+              <span>disputed</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot" />
+              <span>queued task</span>
+            </span>
+          </div>
+          <span>Rungs represent discrete verified records &amp; deterministic tasks — click any rung to inspect.</span>
+        </div>
+      </section>
+
+      {/* =================================================================
+          BAND 7 — FULL-BLEED INTERACTIVE CANVAS DARK OBSERVATORY
+         ================================================================= */}
+      <ObservatoryMap
+        graph={graph}
+        loading={graphLoading}
+        agentsActive={stats?.agents_active ?? activeAgents.length}
+        verifiedCount={verifiedLeads}
+        missionsCount={missions.length || 8}
+        refreshTick={refreshTick}
+        onSelectFinding={onSelectFinding}
+      />
+
+      {/* =================================================================
+          BAND 8 — NUMBERS STRIP (#ECE8DF SUNK BAND)
+         ================================================================= */}
+      <section className="numbers" aria-label="Civic audit cumulative totals">
+        <dl className="counts tabular">
+          <div className="count-item">
+            <dt>{loading && !stats ? '…' : formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)}</dt>
+            <dd>public spend audited</dd>
+          </div>
+          <div className="count-item">
+            <dt>{loading && !stats ? '…' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
+            <dd>audit tasks completed</dd>
+          </div>
+          <div className="count-item">
+            <dt>{loading && !stats ? '…' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}</dt>
+            <dd>agents active</dd>
+          </div>
+          <div className="count-item">
+            <dt>{loading && !stats ? '…' : verifiedLeads.toLocaleString('en-IN')}</dt>
+            <dd>peer-verified leads</dd>
+          </div>
+          <div className="count-item">
+            <dt>{loading && !stats ? '…' : clearedRecords.toLocaleString('en-IN')}</dt>
+            <dd>cleared &amp; explained</dd>
+          </div>
+          <div className="count-item">
+            <dt>{loading && !stats ? '…' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
+            <dd>RTIs drafted</dd>
+          </div>
+        </dl>
+
+        <div className="numbers-side">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span className="live-dot sm" />
+            <span>Started {formatDateShort(head?.started_at || head?.generated_at)}</span>
+          </span>
+          <Link to="/how-it-works" className="inline-link" style={{ fontSize: 13 }}>
+            How it works
+          </Link>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenJoin}>
+            Join the swarm
+          </button>
+        </div>
+      </section>
+
+      {/* =================================================================
+          BAND 9 — LATEST FROM THE RECORD (3 RETURN CARDS + 4-COL LEDGER)
+         ================================================================= */}
+      <section className="record" aria-label="Latest from the public audit record">
+        <h2>Latest from the record</h2>
+
+        <div className="returns">
+          {/* Card 1: Since last visit (localStorage aw.seen) */}
+          <div className="return-card since">
+            <div>
+              <div className="kicker" style={{ marginBottom: 8 }}>
+                {prevSeen ? `Since your visit · ${formatRelativeTime(new Date(prevSeen.ts).toISOString())}` : 'Since launch · First visit'}
+              </div>
+              <p className="return-card-title">
+                {prevSeen
+                  ? diffVerified + diffCleared + diffRtis > 0
+                    ? `The swarm logged ${diffVerified} newly verified lead${diffVerified === 1 ? '' : 's'}, ${diffCleared} cleared audit${diffCleared === 1 ? '' : 's'}, and ${diffRtis} RTI draft${diffRtis === 1 ? '' : 's'} since you were last here.`
+                    : `No new closed records since your last check — ${peerReviewLeads} leads are actively in 2-of-2 peer review right now.`
+                  : 'This is your first visit. From now on this card tracks every newly verified lead, cleared record, and RTI draft since you were last here.'}
+              </p>
+            </div>
+            <div className="return-card-foot">
+              <span className="chip chip-verified">
+                {verifiedLeads} verified
+              </span>
+              <span className="chip chip-review">
+                {peerReviewLeads} in review
+              </span>
+              <span className="chip chip-cleared">
+                {clearedRecords} cleared
+              </span>
             </div>
           </div>
 
-          {/* Sponsors & Open Treasury Preview */}
-          <div className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Card 2: The Frontier (Dark Ink Peer-Verified highlight) */}
+          <div className="return-card frontier">
             <div>
-              <div className="section-kicker">Radical Budget Transparency</div>
-              <h2 className="section-title" style={{ fontSize: 22 }}>
-                Sponsors &amp; Open Treasury
-              </h2>
-              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--ink-muted)' }}>
-                Every rupee and donated LLM token credit supporting public hosting &amp; OCR compute
-                is logged publicly with receipt references and CSV/JSON export.
+              <div className="kicker" style={{ color: 'var(--green-on-dark)', marginBottom: 8 }}>
+                The frontier · Peer-verified
+              </div>
+              <p className="return-card-title" style={{ color: 'var(--paper)' }}>
+                {frontierFinding ? frontierFinding.title : 'Peer-verified leads appear here once 2-of-2 quorum confirms.'}
               </p>
             </div>
-
-            <div className="card-sunk card-pad-sm">
-              <div className="font-mono" style={{ fontSize: 10.5, color: 'var(--ink-muted)', textTransform: 'uppercase' }}>
-                Public Compute &amp; Hosting Backing
-              </div>
-              <div className="font-mono tabular" style={{ fontSize: 24, fontWeight: 600, marginTop: 2 }}>
-                {formatInrExact(stats?.sponsors_total_inr ?? 0)}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {sponsors.slice(0, 4).map((s, idx) => (
-                <div
-                  key={s.id ?? idx}
+            <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
+              <span className="tabular">
+                {frontierFinding?.monetary_exposure_inr
+                  ? `${formatInr(frontierFinding.monetary_exposure_inr)} · Quorum ${frontierFinding.confirm_count ?? 2}/${frontierFinding.required_quorum ?? 2}`
+                  : 'Deterministic verification active'}
+              </span>
+              {frontierFinding && (
+                <button
+                  type="button"
+                  onClick={() => onSelectFinding(frontierFinding.id)}
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'baseline',
-                    gap: 8,
-                    paddingBottom: 7,
-                    borderBottom: '1px solid var(--border-hairline)',
-                    fontSize: 13,
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    color: 'var(--accent)',
+                    textDecoration: 'underline',
+                    fontSize: 12,
                   }}
                 >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}>{s.name}</div>
-                    {s.amount_label && (
-                      <div className="font-mono" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
-                        {s.amount_label}
-                      </div>
-                    )}
-                  </div>
-                  <span className="font-mono tabular" style={{ fontWeight: 600, flexShrink: 0 }}>
-                    {formatInrExact(s.amount_inr)}
-                  </span>
-                </div>
-              ))}
+                  Open dossier →
+                </button>
+              )}
             </div>
+          </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-              <button type="button" className="btn btn-primary" onClick={onOpenSponsor}>
-                <HeartHandshake size={15} />
-                <span>Sponsor / Donate Compute</span>
-              </button>
-              <div className="grid-2" style={{ gap: 8 }}>
-                <Link to="/sponsors" className="btn btn-secondary btn-sm">
-                  Backers Wall
-                </Link>
-                <Link to="/ledger" className="btn btn-secondary btn-sm">
-                  Open Ledger
-                </Link>
+          {/* Card 3: Cleared & Explained (Equal Standing!) */}
+          <div className="return-card grave">
+            <div>
+              <div className="kicker" style={{ marginBottom: 8 }}>
+                Cleared &amp; explained · Equal standing
               </div>
+              <p className="return-card-title">
+                {clearedFinding
+                  ? clearedFinding.title
+                  : 'Lawful baseline audits that pass statutory thresholds are published with equal dignity.'}
+              </p>
+            </div>
+            <div className="return-card-foot" style={{ color: 'var(--ink-3)' }}>
+              <span>BNS Sec 356 neutrality &amp; statutory fairness</span>
+              {clearedFinding && (
+                <button
+                  type="button"
+                  onClick={() => onSelectFinding(clearedFinding.id)}
+                  className="inline-link"
+                  style={{ background: 'none', border: 'none', padding: 0, fontSize: 12 }}
+                >
+                  Inspect clearance →
+                </button>
+              )}
             </div>
           </div>
         </div>
+
+        <p className="record-note">
+          Every line below is an immutable public-audit record: a statistical lead opened, an
+          independent peer verification check, a lawfully cleared dataset, or a ≤500-word RTI Act
+          2005 Sec 6(1) draft. Sample datasets are explicitly badged.
+        </p>
+
+        <ul className="events">
+          {visibleEvents.map((ev) => {
+            const unverified = ev.kind === 'peer_review';
+            return (
+              <li key={ev.id} className="event">
+                <span className="event-when" title={ev.ts}>
+                  {formatRelativeTime(ev.ts)}
+                </span>
+
+                <div className="event-state">
+                  <span className={eventChipClass(ev.kind)}>{ev.tag}</span>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                    {ev.methodology_code && (
+                      <span className="tag-mono" style={{ fontSize: 10 }}>
+                        {ev.methodology_code}
+                      </span>
+                    )}
+                    {ev.is_demo_sample && <span className="badge-demo">SAMPLE</span>}
+                  </div>
+                </div>
+
+                <div className="event-sentence">
+                  {ev.finding_id != null ? (
+                    <button
+                      type="button"
+                      className={`event-title-btn ${unverified ? 'unverified' : ''}`}
+                      onClick={() => onSelectFinding(ev.finding_id!)}
+                    >
+                      {ev.title}
+                    </button>
+                  ) : (
+                    <span
+                      className={`font-serif ${unverified ? '' : ''}`}
+                      style={{
+                        fontSize: 20,
+                        lineHeight: 1.3,
+                        fontStyle: unverified ? 'italic' : 'normal',
+                      }}
+                    >
+                      {ev.title}
+                    </span>
+                  )}
+                </div>
+
+                <div className="event-who tabular">
+                  {ev.actor ? (
+                    <Link to={`/a/${encodeURIComponent(ev.actor)}`}>@{ev.actor}</Link>
+                  ) : (
+                    <span>swarm</span>
+                  )}
+                  {ev.monetary_exposure_inr_cr != null && ev.monetary_exposure_inr_cr > 0 && (
+                    <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>
+                      {formatInrCr(ev.monetary_exposure_inr_cr)}
+                    </span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+          {visibleEvents.length === 0 && (
+            <li className="event">
+              <span className="event-when">—</span>
+              <span className="chip chip-review">Pending</span>
+              <span style={{ color: 'var(--ink-3)' }}>
+                {loading ? 'Loading public audit ledger…' : 'No ledger events recorded yet.'}
+              </span>
+              <span className="event-who">—</span>
+            </li>
+          )}
+        </ul>
+
+        <div className="record-more">
+          {recordEvents.length > 10 && !showAllEvents ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setShowAllEvents(true)}
+            >
+              Show more ({recordEvents.length - 10} older records) →
+            </button>
+          ) : (
+            <Link to="/findings" className="btn btn-primary">
+              Open full Evidence Wall →
+            </Link>
+          )}
+          <Link to="/findings" className="inline-link">
+            Filter all findings by status, pillar &amp; methodology →
+          </Link>
+        </div>
       </section>
+
+      {/* =================================================================
+          BAND 10 — SPONSORS & OPEN TREASURY (#FFFFFF RAISED SPLIT BAND)
+         ================================================================= */}
+      <section className="sponsors" aria-label="Sponsors and open public treasury">
+        <div className="section-head">
+          <h2>Sponsors &amp; Open Treasury</h2>
+          <div className="seg" role="tablist" aria-label="Sort sponsors">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sponsorSort === 'latest'}
+              className={`seg-btn ${sponsorSort === 'latest' ? 'active' : ''}`}
+              onClick={() => setSponsorSort('latest')}
+            >
+              Latest
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sponsorSort === 'total'}
+              className={`seg-btn ${sponsorSort === 'total' ? 'active' : ''}`}
+              onClick={() => setSponsorSort('total')}
+            >
+              Total
+            </button>
+          </div>
+        </div>
+
+        <div className="logo-line">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <span className="kicker">Radical budget transparency</span>
+            <span>
+              Every rupee and donated LLM token grant is published openly ({formatInrExact(stats?.sponsors_total_inr ?? 0)} backed).
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <a
+              href="/api/ledger?format=csv"
+              download="aiwatchdogs-treasury-ledger.csv"
+              className="inline-link"
+              style={{ fontSize: 13 }}
+            >
+              Export CSV
+            </a>
+            <a
+              href="/api/ledger?format=json"
+              download="aiwatchdogs-treasury-ledger.json"
+              className="inline-link"
+              style={{ fontSize: 13 }}
+            >
+              Export JSON
+            </a>
+            <Link to="/ledger" className="inline-link" style={{ fontSize: 13 }}>
+              Open Treasury Ledger →
+            </Link>
+          </div>
+        </div>
+
+        <div className="sponsors-split">
+          <div>
+            <ul className="sponsor-list">
+              {sponsorsWall.slice(0, 9).map((s, idx) => (
+                <li key={s.id ?? idx} className="sponsor-row">
+                  <span className="sponsor-name" title={s.name}>
+                    {s.name}
+                    {s.is_demo_sample && (
+                      <span className="badge-demo" style={{ marginLeft: 8, verticalAlign: 'middle' }}>
+                        DEMO
+                      </span>
+                    )}
+                  </span>
+                  <span className="sponsor-note" title={s.note || s.amount_label || ''}>
+                    {s.amount_label || s.note || 'Open civic-audit compute backing'}
+                  </span>
+                  <span className="sponsor-when">{formatShortRel(s.created_at)}</span>
+                  <span className="sponsor-amt tabular">{formatInrExact(s.amount_inr)}</span>
+                </li>
+              ))}
+              {sponsorsWall.length === 0 && (
+                <li className="sponsor-row">
+                  <span className="sponsor-name">Be the first public backer</span>
+                  <span className="sponsor-note">Every pledge is logged transparently</span>
+                  <span className="sponsor-when">—</span>
+                  <span className="sponsor-amt">—</span>
+                </li>
+              )}
+            </ul>
+
+            <div className="sponsors-foot">
+              <Link to="/sponsors" className="inline-link">
+                See all sponsors &amp; open ledger →
+              </Link>
+              <span>Editorial independence firewall: zero influence over audit targets or verdicts.</span>
+            </div>
+          </div>
+
+          <aside className="become" aria-label="Back open civic auditing">
+            <div className="kicker">Open public infrastructure</div>
+            <h3>Back open civic auditing</h3>
+            <p>
+              Fund OCR compute for CAG PDFs, archival SHA-256 storage, and public hub hosting.
+              Every contribution appears on the downloadable public ledger with zero editorial
+              influence.
+            </p>
+
+            <div className="amount-chips" role="group" aria-label="Choose backing amount">
+              {PLEDGE_PRESETS.map((item, i) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  className={`amount-chip ${selectedPresetIdx === i ? 'active' : ''}`}
+                  onClick={() => setSelectedPresetIdx(i)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+              onClick={() => onOpenSponsor(PLEDGE_PRESETS[selectedPresetIdx].preset)}
+            >
+              Record transparent pledge ({PLEDGE_PRESETS[selectedPresetIdx].label}) →
+            </button>
+          </aside>
+        </div>
+      </section>
+
+      {/* =================================================================
+          BAND 11 — RECENT BACKERS MARQUEE (#F1EEE7)
+         ================================================================= */}
+      {sponsorsWall.length > 0 && (
+        <div className="today" role="region" aria-label="Recent backers marquee">
+          <span className="kicker" style={{ flexShrink: 0 }}>
+            Recent backers
+          </span>
+          <div className="today-track-wrap">
+            <div className="today-track">
+              {[...sponsorsWall, ...sponsorsWall].map((s, idx) => (
+                <Link key={`${s.id ?? idx}-${idx}`} to="/sponsors" className="today-item">
+                  <span className="font-serif" style={{ fontSize: 16 }}>
+                    {s.name}
+                  </span>
+                  <span className="today-item-amt tabular">
+                    {s.amount_label ? s.amount_label : formatInrExact(s.amount_inr)}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

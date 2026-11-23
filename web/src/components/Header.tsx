@@ -1,4 +1,4 @@
-import { Menu, Terminal, X } from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useRouter } from '../router';
 
@@ -7,53 +7,67 @@ interface HeaderProps {
 }
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/missions', label: 'Missions' },
-  { to: '/findings', label: 'Findings' },
-  { to: '/live', label: 'Live Swarm' },
-  { to: '/contributors', label: 'Contributors' },
-  { to: '/sponsors', label: 'Sponsors & Ledger' },
-  { to: '/how-it-works', label: 'How It Works' },
+  { to: '/#map', label: 'Map', key: 'map' },
+  { to: '/missions', label: 'Missions', key: 'missions' },
+  { to: '/findings', label: 'Findings', key: 'findings' },
+  { to: '/live', label: 'Live', key: 'live' },
+  { to: '/contributors', label: 'Contributors', key: 'contributors' },
+  { to: '/how-it-works', label: 'How it works', key: 'how-it-works' },
 ];
 
 export function Header({ onOpenJoin }: HeaderProps) {
-  const { pathname } = useRouter();
+  const { pathname, hash } = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const isActive = (to: string) => {
-    if (to === '/') return pathname === '/';
-    if (to === '/sponsors') return pathname.startsWith('/sponsors') || pathname.startsWith('/ledger');
-    if (to === '/contributors') return pathname.startsWith('/contributors') || pathname.startsWith('/a/');
-    return pathname === to || pathname.startsWith(`${to}/`);
+  const isActive = (item: (typeof NAV_ITEMS)[number]) => {
+    if (item.key === 'map') return pathname === '/' && hash === '#map';
+    if (item.key === 'contributors') {
+      return pathname.startsWith('/contributors') || pathname.startsWith('/a/');
+    }
+    return pathname === item.to || pathname.startsWith(`${item.to}/`);
   };
+
+  const sponsorsActive = pathname.startsWith('/sponsors') || pathname.startsWith('/ledger');
 
   return (
     <header className="site-header">
-      <div className="container header-inner">
-        <Link to="/" className="masthead" onClick={() => setMobileOpen(false)}>
-          <span className="masthead-title">
-            AI Watchdogs <span className="masthead-dot">·</span> India
-          </span>
-          <span className="masthead-sub">aiwatchdogs.in · Open Civic-Audit Swarm</span>
-        </Link>
+      <div className="site-header-row">
+        <div className="brand-wrap">
+          <Link to="/" className="brand" onClick={() => setMobileOpen(false)}>
+            <img
+              src="/logo.svg"
+              alt="AI Watchdogs India"
+              className="brand-logo"
+              width={30}
+              height={30}
+            />
+            <span className="brand-text">
+              <span className="brand-mark">AI Watchdogs · India</span>
+              <span className="brand-tag">an open AI swarm auditing public spending</span>
+            </span>
+          </Link>
+        </div>
 
-        <nav className="main-nav" aria-label="Primary navigation">
+        <nav className="site-nav" aria-label="Primary navigation">
           {NAV_ITEMS.map((item) => (
             <Link
-              key={item.to}
+              key={item.key}
               to={item.to}
-              className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
+              className={`site-nav-link ${isActive(item) ? 'active' : ''}`}
             >
               {item.label}
             </Link>
           ))}
         </nav>
 
-        <div className="header-actions">
-          <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
-            <Terminal size={14} />
-            <span>Join Swarm</span>
-          </button>
+        <div className="header-right">
+          <Link
+            to="/sponsors"
+            className="btn btn-primary btn-sm"
+            aria-current={sponsorsActive ? 'page' : undefined}
+          >
+            Sponsors
+          </Link>
           <button
             type="button"
             className="mobile-menu-btn"
@@ -68,11 +82,18 @@ export function Header({ onOpenJoin }: HeaderProps) {
 
       <div className={`mobile-nav-drawer ${mobileOpen ? 'open' : ''}`}>
         <div className="mobile-nav-list">
+          <Link
+            to="/"
+            className={`mobile-nav-link ${pathname === '/' && !hash ? 'active' : ''}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            Home
+          </Link>
           {NAV_ITEMS.map((item) => (
             <Link
-              key={item.to}
+              key={item.key}
               to={item.to}
-              className={`nav-link ${isActive(item.to) ? 'active' : ''}`}
+              className={`mobile-nav-link ${isActive(item) ? 'active' : ''}`}
               onClick={() => setMobileOpen(false)}
             >
               {item.label}
@@ -80,11 +101,22 @@ export function Header({ onOpenJoin }: HeaderProps) {
           ))}
           <Link
             to="/ledger"
-            className={`nav-link ${pathname === '/ledger' ? 'active' : ''}`}
+            className={`mobile-nav-link ${pathname === '/ledger' ? 'active' : ''}`}
             onClick={() => setMobileOpen(false)}
           >
-            Public Treasury Ledger
+            Open Ledger
           </Link>
+          <button
+            type="button"
+            className="mobile-nav-link"
+            style={{ background: 'none', textAlign: 'left', fontWeight: 600 }}
+            onClick={() => {
+              setMobileOpen(false);
+              onOpenJoin();
+            }}
+          >
+            Join Swarm →
+          </button>
         </div>
       </div>
     </header>

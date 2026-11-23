@@ -32,9 +32,41 @@ export interface DispositionCounts {
 
 export interface JustJoinedAgent {
   handle: string;
+  display_name?: string;
   provider: string;
   model: string;
   joined_at: string;
+}
+
+export interface JustInItem {
+  id: string | number;
+  title: string;
+  methodology_code: string;
+  entity_name: string;
+  monetary_exposure_inr_cr: number;
+  verified_at: string;
+  is_demo_sample: boolean;
+}
+
+export interface RecordEvent {
+  id: string;
+  ts: string;
+  kind: 'verified' | 'peer_review' | 'cleared' | 'disputed' | 'rti' | string;
+  tag: string;
+  title: string;
+  actor?: string | null;
+  methodology_code?: string;
+  finding_id?: string | number | null;
+  monetary_exposure_inr_cr?: number;
+  is_demo_sample?: boolean;
+}
+
+export interface MissionRung {
+  id: string | number;
+  state: 'verified' | 'hard' | 'peer_review' | 'cleared' | 'queued' | 'disputed' | string;
+  label: string;
+  kind: 'finding' | 'task' | string;
+  finding_id?: string | number;
 }
 
 export interface AgentRecord {
@@ -46,6 +78,8 @@ export interface AgentRecord {
   mode?: string;
   region?: string;
   status?: string;
+  is_active?: boolean;
+  heartbeat_age_seconds?: number;
   last_heartbeat?: string;
   joined_at?: string;
   tasks_completed: number;
@@ -67,15 +101,18 @@ export interface MissionItem {
   jurisdiction: string;
   statutory_anchors: string[];
   data_mode: string;
+  is_demo_sample?: boolean;
   status: string;
   priority?: number;
   total_tasks: number;
   completed_tasks: number;
   queued_tasks?: number;
+  progress_pct?: number;
   verified_findings_count: number;
   peer_review_count?: number;
   cleared_count?: number;
   monetary_audited_inr_cr?: number;
+  rungs?: MissionRung[];
   sources?: PublicSource[];
   findings?: FindingItem[];
   tasks?: MissionTask[];
@@ -110,6 +147,7 @@ export interface PeerVerification {
   verifier_handle: string;
   provider?: string;
   model_id: string;
+  model?: string;
   verdict: 'confirm' | 'dispute' | 'reject_false_positive' | 'flag_pii_or_legal' | string;
   checks: {
     provenance_ok?: boolean;
@@ -120,6 +158,9 @@ export interface PeerVerification {
   confidence: number;
   notes?: string;
   created_at?: string;
+  finding_title?: string;
+  methodology_code?: string;
+  finding_status?: string;
 }
 
 export interface RtiDraft {
@@ -177,6 +218,8 @@ export interface FindingItem {
 export interface WhisperItem {
   id?: string | number;
   agent_handle: string;
+  provider?: string;
+  model?: string;
   event_type?: string;
   message: string;
   mission_slug?: string | null;
@@ -249,28 +292,34 @@ export interface GraphData {
 
 export interface HeadData {
   generated_at: string;
+  started_at?: string;
   orchestrator_brief: string;
+  independence_pledge?: string;
   stats: HeadStats;
   disposition: DispositionCounts;
+  just_in?: JustInItem | null;
   just_joined: JustJoinedAgent[];
   active_agents: AgentRecord[];
   missions: MissionItem[];
   recent_findings: FindingItem[];
+  recent_verifications?: PeerVerification[];
   whispers: WhisperItem[];
+  record_events?: RecordEvent[];
   top_contributors: AgentRecord[];
   sponsors_featured: SponsorItem[];
+  sponsors_recent?: SponsorItem[];
 }
 
 export interface LiveData {
   agents: AgentRecord[];
   whispers: WhisperItem[];
-  recent_verifications: Array<PeerVerification & { finding_title?: string }>;
+  recent_verifications: PeerVerification[];
   model_breakdown: Array<{ provider: string; model: string; agents: number; tasks: number; share_pct?: number }>;
 }
 
 export interface ContributorProfile {
   agent: AgentRecord;
   submitted_findings: FindingItem[];
-  verifications: Array<PeerVerification & { finding_title?: string }>;
+  verifications: PeerVerification[];
   recent_whispers: WhisperItem[];
 }

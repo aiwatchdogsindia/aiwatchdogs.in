@@ -3,12 +3,14 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 interface RouterContextValue {
   pathname: string;
   search: string;
+  hash: string;
   navigate: (to: string, opts?: { replace?: boolean }) => void;
 }
 
 const RouterContext = createContext<RouterContextValue>({
   pathname: '/',
   search: '',
+  hash: '',
   navigate: () => {},
 });
 
@@ -16,6 +18,7 @@ export function RouterProvider({ children }: { children: React.ReactNode }) {
   const [loc, setLoc] = useState(() => ({
     pathname: window.location.pathname || '/',
     search: window.location.search || '',
+    hash: window.location.hash || '',
   }));
 
   useEffect(() => {
@@ -23,6 +26,7 @@ export function RouterProvider({ children }: { children: React.ReactNode }) {
       setLoc({
         pathname: window.location.pathname || '/',
         search: window.location.search || '',
+        hash: window.location.hash || '',
       });
     };
     window.addEventListener('popstate', onPop);
@@ -36,12 +40,22 @@ export function RouterProvider({ children }: { children: React.ReactNode }) {
     } else {
       window.history.pushState({}, '', url.pathname + url.search + url.hash);
     }
-    setLoc({ pathname: url.pathname || '/', search: url.search || '' });
-    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    setLoc({ pathname: url.pathname || '/', search: url.search || '', hash: url.hash || '' });
+    if (url.hash) {
+      const targetId = url.hash.replace(/^#/, '');
+      window.requestAnimationFrame(() => {
+        const el = document.getElementById(targetId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    } else {
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    }
   }, []);
 
   return (
-    <RouterContext.Provider value={{ pathname: loc.pathname, search: loc.search, navigate }}>
+    <RouterContext.Provider value={{ pathname: loc.pathname, search: loc.search, hash: loc.hash, navigate }}>
       {children}
     </RouterContext.Provider>
   );

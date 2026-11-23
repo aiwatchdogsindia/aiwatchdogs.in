@@ -3,19 +3,26 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useToast } from './Toast';
 
+export interface SponsorPreset {
+  amountInr?: string;
+  tier?: 'citizen_backer' | 'patron' | 'institutional_compute';
+  computeDesc?: string;
+}
+
 interface SponsorModalProps {
   open: boolean;
+  preset?: SponsorPreset | null;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function SponsorModal({ open, onClose, onSuccess }: SponsorModalProps) {
+export function SponsorModal({ open, preset, onClose, onSuccess }: SponsorModalProps) {
   const [name, setName] = useState('');
   const [handleOrOrg, setHandleOrOrg] = useState('');
   const [tier, setTier] = useState<'citizen_backer' | 'patron' | 'institutional_compute'>(
     'citizen_backer',
   );
-  const [amountInr, setAmountInr] = useState('5000');
+  const [amountInr, setAmountInr] = useState('2500');
   const [computeDesc, setComputeDesc] = useState('');
   const [url, setUrl] = useState('');
   const [message, setMessage] = useState('');
@@ -25,12 +32,15 @@ export function SponsorModal({ open, onClose, onSuccess }: SponsorModalProps) {
 
   useEffect(() => {
     if (!open) return;
+    if (preset?.amountInr) setAmountInr(preset.amountInr);
+    if (preset?.tier) setTier(preset.tier);
+    if (preset?.computeDesc !== undefined) setComputeDesc(preset.computeDesc);
     const onEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [open, onClose]);
+  }, [open, preset, onClose]);
 
   if (!open) return null;
 
@@ -88,7 +98,7 @@ export function SponsorModal({ open, onClose, onSuccess }: SponsorModalProps) {
             <div className="section-kicker" style={{ marginBottom: 4 }}>
               Open Public Treasury · Radical Budget Transparency
             </div>
-            <h2 className="font-serif" style={{ margin: 0, fontSize: 24 }}>
+            <h2 className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
               Sponsor Infrastructure or Donate Compute
             </h2>
           </div>
@@ -101,11 +111,11 @@ export function SponsorModal({ open, onClose, onSuccess }: SponsorModalProps) {
           <div
             style={{
               padding: '11px 14px',
-              background: 'var(--ep-verified-bg)',
-              border: '1px solid var(--ep-verified-bd)',
-              borderRadius: 4,
+              background: 'var(--green-bg)',
+              border: '1px solid #C2DEC9',
+              borderRadius: 6,
               fontSize: 12.5,
-              color: 'var(--ep-verified-fg)',
+              color: 'var(--green)',
               display: 'flex',
               gap: 9,
               alignItems: 'flex-start',
@@ -214,9 +224,7 @@ export function SponsorModal({ open, onClose, onSuccess }: SponsorModalProps) {
           </label>
 
           {error && (
-            <div style={{ color: 'var(--ep-disputed-fg)', fontSize: 12.5, fontWeight: 500 }}>
-              {error}
-            </div>
+            <div style={{ color: 'var(--red)', fontSize: 12.5, fontWeight: 500 }}>{error}</div>
           )}
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 6 }}>

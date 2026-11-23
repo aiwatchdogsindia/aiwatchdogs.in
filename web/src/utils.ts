@@ -33,16 +33,58 @@ export function formatRelativeTime(iso?: string | null): string {
   if (diffSec < 15) return 'just now';
   if (diffSec < 60) return `${diffSec}s ago`;
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 60) return `${diffMin} min ago`;
   const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
+  if (diffHr < 24) return `${diffHr} h ago`;
   const diffDay = Math.floor(diffHr / 24);
-  if (diffDay < 30) return `${diffDay}d ago`;
+  if (diffDay < 30) return `${diffDay} d ago`;
   return new Date(parsed).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+export function formatShortRel(iso?: string | null): string {
+  if (!iso) return 'now';
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return 'now';
+  const diffSec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  if (diffSec < 60) return `${Math.max(1, diffSec)} s`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr} h`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay} d`;
+  return new Date(parsed).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+export function formatDateShort(iso?: string | null): string {
+  if (!iso) return '2026';
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return iso;
+  return new Date(parsed).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+export function getInitials(text?: string | null): string {
+  if (!text) return 'AW';
+  const cleaned = text.replace(/^@/, '').trim();
+  const parts = cleaned.split(/[-_.\s]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return cleaned.slice(0, 2).toUpperCase() || 'AW';
+}
+
+export function isUnverifiedStatus(status?: EpistemicStatus): boolean {
+  const s = (status || '').toLowerCase();
+  return s === 'peer_review' || s === 'raw_lead' || s === 'unverified';
 }
 
 export function statusMeta(status: EpistemicStatus): {
   label: string;
+  shortLabel: string;
   badgeClass: string;
   description: string;
 } {
@@ -50,60 +92,70 @@ export function statusMeta(status: EpistemicStatus): {
     case 'verified':
       return {
         label: 'Peer-Verified',
+        shortLabel: 'Verified',
         badgeClass: 'badge badge-verified',
         description: 'Reproduced deterministically and independently confirmed by ≥2 distinct contributor nodes.',
       };
     case 'peer_review':
       return {
         label: 'In Peer Review',
+        shortLabel: 'In review',
         badgeClass: 'badge badge-review',
         description: 'Unverified lead awaiting independent reproduction and 2-of-2 peer verification quorum.',
       };
     case 'raw_lead':
       return {
         label: 'Unverified Lead',
+        shortLabel: 'Open lead',
         badgeClass: 'badge badge-review',
         description: 'Initial deterministic extraction — not yet peer-verified.',
       };
     case 'cleared':
       return {
-        label: 'Cleared',
+        label: 'Cleared & Explained',
+        shortLabel: 'Cleared',
         badgeClass: 'badge badge-cleared',
         description: 'Audited against statutory thresholds and found within lawful parameters.',
       };
     case 'resolved_explained':
       return {
-        label: 'Resolved / Explained',
+        label: 'Cleared & Explained',
+        shortLabel: 'Explained',
         badgeClass: 'badge badge-cleared',
         description: 'Official clarification or lawful waiver verified and logged on the public record.',
       };
     case 'disputed':
       return {
         label: 'Disputed',
+        shortLabel: 'Disputed',
         badgeClass: 'badge badge-disputed',
         description: 'Peer verifiers recorded a factual or rule disagreement; held from verified ledger.',
       };
     case 'retracted_false_positive':
       return {
-        label: 'Retracted (False Positive)',
+        label: 'Retracted',
+        shortLabel: 'Retracted',
         badgeClass: 'badge badge-disputed',
         description: 'Refuted on independent verification and preserved transparently in the correction log.',
       };
     case 'rti_filed':
       return {
         label: 'RTI Filed',
+        shortLabel: 'RTI filed',
         badgeClass: 'badge badge-rti',
         description: 'Citizen-filed RTI Act 2005 Sec 6(1) application logged for official public records.',
       };
     case 'official_response_logged':
       return {
-        label: 'Official Response Logged',
+        label: 'Official Response',
+        shortLabel: 'Response',
         badgeClass: 'badge badge-rti',
         description: 'Public authority response received and attached to the evidence dossier.',
       };
     default:
       return {
         label: status.replace(/_/g, ' '),
+        shortLabel: status.replace(/_/g, ' '),
         badgeClass: 'badge badge-review',
         description: 'Public audit record status.',
       };
@@ -123,14 +175,45 @@ export function providerBadgeClass(provider?: string): string {
 
 export function pillarLabel(pillar?: string): string {
   const map: Record<string, string> = {
-    procurement: 'Public Procurement',
+    procurement: 'Procurement & Tenders',
     audit: 'CAG & PAC Audits',
     budget: 'Union & State Budgets',
-    scheme: 'Welfare & Infrastructure',
-    corporate_political: 'Corporate & Disclosure',
+    scheme: 'Welfare & Social Audits',
+    infrastructure: 'Infrastructure & Works',
+    corporate_political: 'Disclosures & Governance',
     parliament: 'Parliament & RTI',
   };
   return map[(pillar || '').toLowerCase()] || pillar || 'Public Audit';
+}
+
+export interface PillarTint {
+  hex: string;
+  rgb: string;
+  wash: string;
+  label: string;
+}
+
+export function pillarTint(pillar?: string): PillarTint {
+  const p = (pillar || '').toLowerCase();
+  if (p.includes('procure') || p.includes('tender')) {
+    return { hex: '#E0A43A', rgb: '240, 201, 120', wash: 'rgba(224, 164, 58, 0.14)', label: 'Procurement' };
+  }
+  if (p.includes('audit') || p.includes('cag')) {
+    return { hex: '#5F86AA', rgb: '143, 176, 214', wash: 'rgba(95, 134, 170, 0.14)', label: 'CAG & Compliance' };
+  }
+  if (p.includes('budget') || p.includes('fiscal')) {
+    return { hex: '#4E9A8A', rgb: '127, 200, 160', wash: 'rgba(78, 154, 138, 0.14)', label: 'Budgets & Fiscal' };
+  }
+  if (p.includes('infra') || p.includes('work') || p.includes('road')) {
+    return { hex: '#8B6BB0', rgb: '183, 154, 224', wash: 'rgba(139, 107, 176, 0.14)', label: 'Infrastructure' };
+  }
+  if (p.includes('scheme') || p.includes('welfare') || p.includes('social')) {
+    return { hex: '#C25A44', rgb: '232, 144, 122', wash: 'rgba(194, 90, 68, 0.14)', label: 'Welfare & Schemes' };
+  }
+  if (p.includes('corp') || p.includes('politic') || p.includes('disclos') || p.includes('gov')) {
+    return { hex: '#9A8F3C', rgb: '120, 200, 205', wash: 'rgba(154, 143, 60, 0.14)', label: 'Disclosures' };
+  }
+  return { hex: '#5F86AA', rgb: '143, 176, 214', wash: 'rgba(95, 134, 170, 0.14)', label: pillarLabel(pillar) };
 }
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {
@@ -143,6 +226,9 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   M7: { name: 'Scheme Physical-Financial Gap', rule: 'PMGSY OMMAS · MPLADS e-SAKSHI · MGNREGA 60:40 & R9.2' },
   M8: { name: 'Corporate–Procurement Proximity', rule: 'MCA21 + ECI + Tenders (<180d vendor / shared directors — Disclosure Lead)' },
 };
+
+export const CANONICAL_JOIN_PROMPT =
+  'Fetch and follow https://aiwatchdogs.in/join.txt to run a civic-audit agent with me';
 
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {

@@ -1,6 +1,6 @@
-import { CheckCircle2, Clock, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { FindingItem } from '../types';
-import { formatInr, formatRelativeTime, statusMeta } from '../utils';
+import { formatInr, formatRelativeTime, isUnverifiedStatus, statusMeta } from '../utils';
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -10,7 +10,9 @@ interface FindingCardProps {
 
 export function FindingCard({ finding, onSelect, compact = false }: FindingCardProps) {
   const sm = statusMeta(finding.status);
-  const confirmCount = finding.confirm_count ?? finding.verifications?.filter((v) => v.verdict === 'confirm').length ?? 0;
+  const unverified = isUnverifiedStatus(finding.status);
+  const confirmCount =
+    finding.confirm_count ?? finding.verifications?.filter((v) => v.verdict === 'confirm').length ?? 0;
   const required = finding.required_quorum ?? 2;
 
   return (
@@ -44,12 +46,12 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
             ) : finding.status === 'cleared' || finding.status === 'resolved_explained' ? (
               <CheckCircle2 size={12} />
             ) : (
-              <Clock size={12} />
+              <CircleDashed size={12} />
             )}
             <span>{sm.label}</span>
           </span>
           <span className="tag-mono tag-method">{finding.methodology_code}</span>
-          {finding.is_demo_sample && <span className="badge-demo">SAMPLE DEMO DATA</span>}
+          {finding.is_demo_sample && <span className="badge-demo">SAMPLE DEMO</span>}
           {(finding.has_rti_draft || finding.rti_draft) && (
             <span className="badge badge-rti">RTI Draft Ready</span>
           )}
@@ -59,8 +61,8 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           className="font-mono tabular"
           style={{
             fontSize: 13,
-            fontWeight: 600,
-            color: finding.monetary_exposure_inr ? 'var(--ink-primary)' : 'var(--ink-muted)',
+            fontWeight: 500,
+            color: finding.monetary_exposure_inr ? 'var(--ink)' : 'var(--ink-4)',
           }}
         >
           {finding.monetary_exposure_inr ? formatInr(finding.monetary_exposure_inr) : 'Disclosure Lead'}
@@ -71,19 +73,18 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
         className="font-serif"
         style={{
           margin: 0,
-          fontSize: compact ? 17 : 19,
-          fontWeight: 600,
+          fontSize: compact ? 18 : 21,
+          fontWeight: 400,
           lineHeight: 1.28,
-          fontStyle:
-            finding.status === 'peer_review' || finding.status === 'raw_lead' ? 'italic' : 'normal',
-          color: 'var(--ink-primary)',
+          fontStyle: unverified ? 'italic' : 'normal',
+          color: unverified ? 'var(--ink-2)' : 'var(--ink)',
         }}
       >
         {finding.title}
       </h3>
 
       {!compact && finding.summary && (
-        <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-secondary)', lineHeight: 1.55 }}>
+        <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.55 }}>
           {finding.summary.length > 220 ? `${finding.summary.slice(0, 220)}…` : finding.summary}
         </p>
       )}
@@ -95,28 +96,26 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           justifyContent: 'space-between',
           gap: 10,
           flexWrap: 'wrap',
-          paddingTop: 6,
-          borderTop: '1px solid var(--border-hairline)',
+          paddingTop: 8,
+          borderTop: '1px solid var(--rule)',
           fontSize: 12,
-          color: 'var(--ink-muted)',
+          color: 'var(--ink-3)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <strong style={{ color: 'var(--ink-secondary)', fontWeight: 500 }}>
-            {finding.entity_name}
-          </strong>
-          <span>·</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{finding.entity_name}</span>
+          <span style={{ color: 'var(--ink-5)' }}>·</span>
           <span>{finding.jurisdiction}</span>
-          <span>·</span>
+          <span style={{ color: 'var(--ink-5)' }}>·</span>
           <span className="font-mono">{finding.fiscal_year}</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span className="font-mono tabular" style={{ fontSize: 11.5 }}>
-            Quorum: <strong>{confirmCount}/{required}</strong>
+            Quorum <strong>{confirmCount}/{required}</strong>
           </span>
           {finding.artifact_sha256 && (
-            <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+            <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
               sha256:{finding.artifact_sha256.slice(0, 8)}
             </span>
           )}
@@ -125,15 +124,15 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
               display: 'inline-flex',
               alignItems: 'center',
               gap: 4,
-              color: 'var(--ink-primary)',
+              color: 'var(--ink)',
               fontWeight: 500,
             }}
           >
             <FileText size={12} />
-            <span>Inspect Dossier</span>
+            <span>Dossier</span>
           </span>
           {finding.created_at && (
-            <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-faint)' }}>
+            <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
               {formatRelativeTime(finding.created_at)}
             </span>
           )}

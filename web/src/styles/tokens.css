@@ -1,71 +1,179 @@
-/* AI Watchdogs · India — Editorial Broadsheet + Dark Observatory Design Tokens */
+/* AI Watchdogs · India — Exact pequalnp.ds Editorial Broadsheet + Dark Observatory Tokens */
 
 :root {
-  /* Archival Paper Surfaces */
-  --bg-paper: #F6F4EF;
-  --bg-surface: #FFFFFF;
-  --bg-sunk: #ECE8DF;
-  --bg-sunk-hover: #E5E0D5;
+  /* Archival Paper Surface Hierarchy */
+  --paper: #F6F4EF;
+  --raised: #FFFFFF;
+  --sunk: #ECE8DF;
+  --sunk-2: #F1EEE7;
+  --plain: #EFEBE2;
+  --warm: #FBFAF6;
 
-  /* Crisp 1px Hairline Rules */
-  --border-hairline: #E2DED4;
-  --border-strong: #C9C3B5;
-  --border-ink: #1B1A17;
+  /* Crisp 1px Hairline Rules (Zero blurry drop shadows on paper) */
+  --rule: #E2DED4;
+  --rule-soft: #EEEAE2;
+  --rule-strong: #D6D1C5;
+  --rule-verify: #D9D3C6;
 
   /* Ink Hierarchy */
-  --ink-primary: #1B1A17;
-  --ink-secondary: #3E3C35;
-  --ink-muted: #5E5B52;
-  --ink-faint: #847F73;
+  --ink: #1B1A17;
+  --ink-2: #4A463E;
+  --ink-3: #6B665B;
+  --ink-4: #8A857A;
+  --ink-5: #B5AFA2;
+  --ink-6: #C9C3B5;
+  --avatar-wash: #EFE7D6;
+  --avatar-ink: #8A6A1E;
 
-  /* Epistemic Visual Grammar — "Only peer-verified looks like a result" */
-  --ep-verified-fg: #2F6B4F;
-  --ep-verified-bg: #E6F0E9;
-  --ep-verified-bd: #B4D5C1;
+  /* Epistemic & Signal Grammar ("Only Peer-Verified looks like a result") */
+  --green: #2F6B4F;
+  --green-bg: #E6F0E9;
+  --live: #3DAA6E;
+  --green-on-dark: #7BC79A;
 
-  --ep-review-fg: #855814;
-  --ep-review-bg: #FBF4E4;
-  --ep-review-bd: #CCA055;
+  --in-work-ink: #2D5E8A;
+  --in-work-ring: #7FA6C9;
+  --conjecture-ink: #6B665B;
+  --conjecture-stroke: #8A857A;
 
-  --ep-cleared-fg: #3B526B;
-  --ep-cleared-bg: #EBF0F5;
-  --ep-cleared-bd: #C4D2E0;
+  --red: #A2321F;
+  --red-bg: #F7E4E0;
+  --mid: #C2412D;
+  --red-on-dark: #E0705C;
+  --red-edge: #4A2622;
 
-  --ep-disputed-fg: #A2321F;
-  --ep-disputed-bg: #F7E4E0;
-  --ep-disputed-bd: #E2B9B0;
+  --public: #2B6FD6;
+  --public-bg: #E8F0FD;
 
-  --ep-rti-fg: #2B4D9B;
-  --ep-rti-bg: #E8EEFA;
-  --ep-rti-bd: #BCD0F5;
+  /* Transient Ignite & Priority Hard-Link Amber */
+  --accent: #F2B84B;
+  --accent-light: #FFD27A;
+  --accent-core: #FFF4D6;
+  --accent-flash: #FBE7B6;
+  --accent-deep: #8A6A1E;
 
-  --ep-contrib-fg: #2B6FD6;
-  --ep-contrib-bg: #E8F0FD;
-  --ep-contrib-bd: #BBD3F8;
-
-  /* Dark Observatory Canvas (Luminescence lives ONLY here) */
-  --obs-bg: #0A0C10;
+  /* Dark Race & Observatory Surfaces (Luminescence lives ONLY here) */
+  --race-bg: #0B0E15;
+  --obs-bg: #080A0F;
+  --obs-radial: radial-gradient(75% 75% at 40% 50%, #0D1016 0%, #06070A 100%);
   --obs-surface: #11151C;
   --obs-surface-raised: #171D27;
   --obs-border: #232B38;
-  --obs-ink: #F3E9D2;
-  --obs-muted: #9AA4B2;
-  --obs-amber: #F2B84B;
-  --obs-emerald: #4ADE80;
-  --obs-cobalt: #93C5FD;
+  --obs-ink: #EDEAE2;
+  --obs-mist: #C9C3B5;
+  --obs-muted: #8B8F98;
+  --obs-dead: #5E636D;
+  --obs-edge-solid: #3A404B;
+  --obs-edge-open: #2A2F38;
+  --obs-edge-disputed: #4A2622;
   --obs-cream: #F3E9D2;
-  --obs-terracotta: #F87171;
-  --obs-slate: #94A3B8;
+  --obs-amber: #F2B84B;
+  --obs-emerald: #7BC79A;
+  --obs-cobalt: #5B9BFF;
+  --obs-terracotta: #E0705C;
+  --obs-slate: #8B8F98;
+
+  /* Cluster / Pillar Hues (Organism radial seats & Observatory radial haze) */
+  --pillar-procurement: #E0A43A;
+  --pillar-audit: #5F86AA;
+  --pillar-budget: #4E9A8A;
+  --pillar-infra: #8B6BB0;
+  --pillar-scheme: #C25A44;
+  --pillar-disclosure: #9A8F3C;
 
   /* Typography */
   --font-serif: 'Newsreader', 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, Cambria, serif;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 
-  /* Layout */
-  --container-max: 1280px;
-  --radius-xs: 2px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-pill: 999px;
+  /* Edge-to-Edge Banding Geometry & Spacing Scale */
+  --page: 1240px;
+  --gutter: max(24px, calc((100vw - var(--page)) / 2));
+  --s8: 8px;
+  --s16: 16px;
+  --s24: 24px;
+  --s32: 32px;
+  --s40: 40px;
+  --s64: 64px;
+  --s96: 96px;
+  --section: 64px;
+
+  /* Radii Scale */
+  --r-2: 2px;
+  --r-3: 3px;
+  --r-4: 4px;
+  --r-6: 6px;
+  --r-8: 8px;
+  --r-10: 10px;
+  --r-12: 12px;
+  --r-14: 14px;
+  --r-16: 16px;
+  --r-20: 20px;
+  --r-999: 999px;
+
+  /* Floating pill / popover subtle elevation (the ONLY shadows on paper) */
+  --shadow-float: 0 1px 2px rgba(26, 22, 48, 0.04), 0 4px 14px rgba(26, 22, 48, 0.06);
+  --shadow-pop: 0 4px 20px rgba(26, 22, 48, 0.09), 0 1px 3px rgba(26, 22, 48, 0.05);
+
+  /* Backwards-compatible semantic aliases for subpages & drawers */
+  --bg-paper: var(--paper);
+  --bg-surface: var(--raised);
+  --bg-sunk: var(--sunk);
+  --bg-sunk-hover: var(--sunk-2);
+  --border-hairline: var(--rule);
+  --border-strong: var(--rule-strong);
+  --border-ink: var(--ink);
+  --ink-primary: var(--ink);
+  --ink-secondary: var(--ink-2);
+  --ink-muted: var(--ink-3);
+  --ink-faint: var(--ink-4);
+
+  --ep-verified-fg: var(--green);
+  --ep-verified-bg: var(--green-bg);
+  --ep-verified-bd: #B6D3C3;
+
+  --ep-review-fg: var(--conjecture-ink);
+  --ep-review-bg: transparent;
+  --ep-review-bd: var(--conjecture-stroke);
+
+  --ep-cleared-fg: var(--ink-3);
+  --ep-cleared-bg: transparent;
+  --ep-cleared-bd: var(--rule-strong);
+
+  --ep-disputed-fg: var(--red);
+  --ep-disputed-bg: var(--red-bg);
+  --ep-disputed-bd: #E2B8B0;
+
+  --ep-rti-fg: var(--in-work-ink);
+  --ep-rti-bg: #EBF2F8;
+  --ep-rti-bd: var(--in-work-ring);
+
+  --ep-contrib-fg: var(--public);
+  --ep-contrib-bg: var(--public-bg);
+  --ep-contrib-bd: #B8D2F8;
+
+  --container-max: var(--page);
+  --radius-xs: var(--r-2);
+  --radius-sm: var(--r-4);
+  --radius-md: var(--r-6);
+  --radius-pill: var(--r-999);
+}
+
+@media (min-width: 1920px) {
+  :root {
+    --page: 1440px;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 761px) {
+  :root {
+    --gutter: 32px;
+  }
+}
+
+@media (max-width: 760px) {
+  :root {
+    --gutter: 16px;
+    --section: 40px;
+  }
 }

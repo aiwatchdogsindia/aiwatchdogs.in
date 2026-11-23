@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 120" role="img" aria-label="AI Watchdogs · India — Open Civic-Audit Swarm">
+  <title>AI Watchdogs · India — aiwatchdogs.in</title>
+  <!-- Primary Swarm-Shield Emblem (104x104) -->
+  <g transform="translate(6, 8) scale(0.203125)">
+  <!-- Connected 6-Node Civic Swarm-Shield Perimeter (Archival Saffron · Ink · Verified Emerald) -->
+  <g fill="none" stroke-width="19" stroke-linecap="butt">
+    <line x1="87.7" y1="107.2" x2="240.0" y2="53.6" stroke="#C96A1B"/>
+    <line x1="272.0" y1="53.6" x2="424.3" y2="107.2" stroke="#C96A1B"/>
+    <line x1="437.1" y1="126.5" x2="426.9" y2="291.5" stroke="#1B1A17"/>
+    <line x1="85.1" y1="291.5" x2="74.9" y2="126.5" stroke="#1B1A17"/>
+    <path d="M 424.1 320.4 Q 408.0 397.1 271.8 457.2" stroke="#2F6B4F"/>
+    <path d="M 87.9 320.4 Q 104.0 397.1 240.2 457.2" stroke="#2F6B4F"/>
+  </g>
+
+  <!-- 6 Distributed AI Agent Swarm Ring-Nodes (Transparent Open Cores) -->
+  <g fill-rule="evenodd">
+    <path d="M 232.0 48.0 a 24.0,24.0 0 1,0 48.0,0 a 24.0,24.0 0 1,0 -48.0,0 Z M 245.5 48.0 a 10.5,10.5 0 1,1 21.0,0 a 10.5,10.5 0 1,1 -21.0,0 Z" fill="#C96A1B"/>
+    <path d="M 417.5 112.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 429.5 112.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#1B1A17"/>
+    <path d="M 405.5 306.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 417.5 306.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#1B1A17"/>
+    <path d="M 232.0 464.0 a 24.0,24.0 0 1,0 48.0,0 a 24.0,24.0 0 1,0 -48.0,0 Z M 245.5 464.0 a 10.5,10.5 0 1,1 21.0,0 a 10.5,10.5 0 1,1 -21.0,0 Z" fill="#2F6B4F"/>
+    <path d="M 65.5 306.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 77.5 306.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#1B1A17"/>
+    <path d="M 53.5 112.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 65.5 112.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#1B1A17"/>
+  </g>
+
+  <!-- Sculpted Vigilant Watchdog Eye -->
+  <path d="M 108.0 248.0 C 176.1 122.7, 335.9 122.7, 404.0 248.0 C 335.9 373.3, 176.1 373.3, 108.0 248.0 Z M 132.0 248.0 C 185.3 152.0, 326.7 152.0, 380.0 248.0 C 326.7 344.0, 185.3 344.0, 132.0 248.0 Z" fill="#1B1A17" fill-rule="evenodd"/>
+
+  <!-- Ashoka-Chakra Consensus Iris (8 Tapered Spokes + Open Verification Hub) -->
+  <g>
+    <circle cx="256.0" cy="248.0" r="53.0" fill="none" stroke="#1E3A8A" stroke-width="12.5"/>
+    <path d="M 272.0 245.1 L 291.4 243.2 L 305.5 245.2 L 305.5 250.8 L 291.4 252.8 L 272.0 250.9 Z" fill="#1E3A8A"/>
+    <path d="M 269.4 257.3 L 284.4 269.7 L 293.0 281.0 L 289.0 285.0 L 277.7 276.4 L 265.3 261.4 Z" fill="#1E3A8A"/>
+    <path d="M 258.9 264.0 L 260.8 283.4 L 258.8 297.5 L 253.2 297.5 L 251.2 283.4 L 253.1 264.0 Z" fill="#1E3A8A"/>
+    <path d="M 246.7 261.4 L 234.3 276.4 L 223.0 285.0 L 219.0 281.0 L 227.6 269.7 L 242.6 257.3 Z" fill="#1E3A8A"/>
+    <path d="M 240.0 250.9 L 220.6 252.8 L 206.5 250.8 L 206.5 245.2 L 220.6 243.2 L 240.0 245.1 Z" fill="#1E3A8A"/>
+    <path d="M 242.6 238.7 L 227.6 226.3 L 219.0 215.0 L 223.0 211.0 L 234.3 219.6 L 246.7 234.6 Z" fill="#1E3A8A"/>
+    <path d="M 253.1 232.0 L 251.2 212.6 L 253.2 198.5 L 258.8 198.5 L 260.8 212.6 L 258.9 232.0 Z" fill="#1E3A8A"/>
+    <path d="M 265.3 234.6 L 277.7 219.6 L 289.0 211.0 L 293.0 215.0 L 284.4 226.3 L 269.4 238.7 Z" fill="#1E3A8A"/>
+    <path d="M 238.5 248.0 a 17.5,17.5 0 1,0 35.0,0 a 17.5,17.5 0 1,0 -35.0,0 Z M 248.8 248.0 a 7.2,7.2 0 1,1 14.4,0 a 7.2,7.2 0 1,1 -14.4,0 Z" fill="#1E3A8A" fill-rule="evenodd"/>
+  </g>
+  </g>
+
+  <!-- Archival Broadsheet Hairline Divider -->
+  <line x1="126" y1="22" x2="126" y2="98" stroke="#D5CFC2" stroke-width="1.5"/>
+
+  <!-- Primary Editorial Masthead Wordmark -->
+  <text x="148" y="59"
+        font-family="'Newsreader', 'Noto Serif', 'Iowan Old Style', Georgia, Cambria, serif"
+        font-size="42"
+        font-weight="600"
+        letter-spacing="-0.6"
+        fill="#1B1A17">AI Watchdogs<tspan fill="#C96A1B" dx="9">·</tspan><tspan dx="9">India</tspan></text>
+
+  <!-- Secondary Institutional Sub-line (Legible Monospace Dateline) -->
+  <circle cx="152.5" cy="87.5" r="4.0" fill="#2F6B4F"/>
+  <text x="166" y="92.5"
+        font-family="'JetBrains Mono', 'JetBrainsMono NF', 'Liberation Mono', ui-monospace, SFMono-Regular, monospace"
+        font-size="14.5"
+        font-weight="500"
+        letter-spacing="0.95"
+        fill="#5E5B52">AIWATCHDOGS.IN · OPEN CIVIC-AUDIT SWARM</text>
+</svg>

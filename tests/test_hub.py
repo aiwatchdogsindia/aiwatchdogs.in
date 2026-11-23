@@ -506,3 +506,181 @@ def test_spa_fallback_and_unknown_api_404(tmp_path: Path) -> None:
         missing_api = tc.get("/api/does-not-exist")
         assert missing_api.status_code == 404
     application.state.db.close()
+
+
+def test_dashboard_parity_additive_fields_head_missions_and_graph(client: TestClient) -> None:
+    # 1. /api/head additive fields
+    head = client.get("/api/head")
+    assert head.status_code == 200
+    hd = head.json()
+
+    assert isinstance(hd["started_at"], str) and hd["started_at"].endswith("Z")
+    assert hd["started_at"] <= hd["generated_at"]
+
+    just_in = hd["just_in"]
+    assert just_in is not None
+    assert {
+        "id",
+        "title",
+        "methodology_code",
+        "entity_name",
+        "monetary_exposure_inr_cr",
+        "verified_at",
+        "is_demo_sample",
+    }.issubset(just_in.keys())
+    assert just_in["id"] == "fnd-demo-m7-01"  # newest seeded verified finding (52m ago)
+    assert just_in["is_demo_sample"] is True
+
+    recent_verifs = hd["recent_verifications"]
+    assert 1 <= len(recent_verifs) <= 6
+    v0 = recent_verifs[0]
+    assert {
+        "id",
+        "finding_id",
+        "finding_title",
+        "methodology_code",
+        "verifier_handle",
+        "model_id",
+        "model",
+        "verdict",
+        "created_at",
+    }.issubset(v0.keys())
+
+    sponsors_recent = hd["sponsors_recent"]
+    assert 1 <= len(sponsors_recent) <= 12
+    assert len(sponsors_recent) == 10  # 10 seeded sponsors
+    s0 = sponsors_recent[0]
+    assert {
+        "id",
+        "name",
+        "tier",
+        "amount_inr",
+        "compute_grant",
+        "note",
+        "website_url",
+        "is_demo",
+        "created_at",
+    }.issubset(s0.keys())
+    # Ordered by created_at DESC (spn-10 was 1 day ago, spn-01 was 12 days ago)
+    assert s0["id"] == "spn-10"
+    assert s0["is_demo"] is True
+
+    record_events = hd["record_events"]
+    assert 1 <= len(record_events) <= 20
+    valid_kinds = {"verified", "peer_review", "cleared", "disputed", "rti"}
+    seen_kinds = set()
+    for ev in record_events:
+        assert {
+            "id",
+            "ts",
+            "kind",
+            "tag",
+            "title",
+            "actor",
+            "methodology_code",
+            "finding_id",
+            "monetary_exposure_inr_cr",
+            "is_demo_sample",
+        }.issubset(ev.keys())
+        assert ev["kind"] in valid_kinds
+        seen_kinds.add(ev["kind"])
+    assert {"verified", "peer_review", "cleared", "rti"}.issubset(seen_kinds)
+    # Chronological descending order
+    timestamps = [ev["ts"] for ev in record_events]
+    assert timestamps == sorted(timestamps, reverse=True)
+
+    # 2. Mission rungs in both /api/head and /api/missions
+    valid_rung_states = {"verified", "hard", "peer_review", "cleared", "queued", "disputed"}
+    missions_resp = client.get("/api/missions")
+    assert missions_resp.status_code == 200
+    for mission_list in (hd["missions"], missions_resp.json()["missions"]):
+        assert len(mission_list) == 8
+        for m in mission_list:
+            assert isinstance(m["rungs"], list)
+            assert 1 <= len(m["rungs"]) <= 24
+            for rung in m["rungs"]:
+                assert {"id", "state", "label", "kind"}.issubset(rung.keys())
+                assert rung["state"] in valid_rung_states
+                assert rung["kind"] in {"finding", "task"}
+                if rung["kind"] == "finding":
+                    assert rung["finding_id"] == rung["id"]
+
+    # 3. /api/graph meta fields for Observatory Map clustering & community rings
+    graph = client.get("/api/graph").json()
+    mission_nodes = [n for n in graph["nodes"] if n["type"] == "mission"]
+    finding_nodes = [n for n in graph["nodes"] if n["type"] == "finding"]
+    assert len(mission_nodes) == 8
+    assert len(finding_nodes) == 12
+    for mn in mission_nodes:
+        assert {"slug", "pillar", "methodology_code", "progress_pct"}.issubset(mn["meta"].keys())
+        assert mn["meta"]["pillar"] == mn["pillar"]
+    for fn in finding_nodes:
+        assert {
+            "mission_slug",
+            "submitted_by",
+            "is_community",
+            "monetary_exposure_inr_cr",
+            "methodology_code",
+            "is_demo_sample",
+        }.issubset(fn["meta"].keys())
+        # All seeded findings come from seed agents -> is_community False
+        assert fn["meta"]["is_community"] is False
+
+    # 4. External/community contributor submission flips is_community=True in /api/graph
+    ext_agent = _register_agent(client, "citizen-node-99", provider="ollama", model="qwen2.5:14b")
+    claim = client.post(
+        "/api/desk/next",
+        headers={"X-Agent-Token": ext_agent["api_token"]},
+        json={"handle": "citizen-node-99", "mode": "investigate", "preferred_mission": "gem-split-tendering-threshold"},
+    )
+    assert claim.status_code == 200
+    submit = client.post(
+        "/api/desk/submit",
+        headers={"X-Agent-Token": ext_agent["api_token"]},
+        json={
+            "lease_id": claim.json()["lease_id"],
+            "outcome": "finding",
+            "finding": {
+                "title": "Public Record Anomaly: Community-surfaced GeM threshold cluster",
+                "summary": "Deterministic scan flagged 4 awards near the Rs 10L GeM bidding limit.",
+                "methodology_code": "M2",
+                "entity_name": "Community Sample Hospital",
+                "jurisdiction": "State:Sample",
+                "fiscal_year": "FY2024-25",
+                "monetary_exposure_inr": 3900000,
+                "severity": "high",
+                "anomaly_metrics": {"cluster_po_count": 4},
+                "rule_triggered": "GFR-2017-R149",
+                "citations": [{"row_id": "PO-10..13"}],
+                "benign_explanations": [
+                    "Independent hospital departments may issue separate urgent requisitions within GFR rules."
+                ],
+                "suggested_authority": "State Directorate of Health Services",
+            },
+        },
+    )
+    assert submit.status_code == 200
+    new_fid = submit.json()["finding_id"]
+
+    graph_after = client.get("/api/graph").json()
+    comm_node = next(n for n in graph_after["nodes"] if n["id"] == f"finding:{new_fid}")
+    assert comm_node["meta"]["submitted_by"] == "citizen-node-99"
+    assert comm_node["meta"]["is_community"] is True
+    assert comm_node["meta"]["mission_slug"] == "gem-split-tendering-threshold"
+    assert comm_node["meta"]["monetary_exposure_inr_cr"] == pytest.approx(0.39)
+
+
+def test_head_and_graph_graceful_on_empty_unseeded_db(tmp_path: Path) -> None:
+    application = create_app(db_path=tmp_path / "empty.db", seed=False)
+    with TestClient(application) as tc:
+        hd = tc.get("/api/head").json()
+        assert hd["started_at"] == hd["generated_at"]
+        assert hd["just_in"] is None
+        assert hd["recent_verifications"] == []
+        assert hd["sponsors_recent"] == []
+        assert hd["record_events"] == []
+        assert hd["missions"] == []
+
+        gdata = tc.get("/api/graph").json()
+        assert gdata == {"nodes": [], "edges": []}
+    application.state.db.close()

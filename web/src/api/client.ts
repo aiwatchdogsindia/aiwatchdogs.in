@@ -5,11 +5,14 @@ import type {
   FindingItem,
   GraphData,
   HeadData,
+  JustInItem,
   LedgerEntry,
   LiveData,
   MissionItem,
+  MissionRung,
   PeerVerification,
   PublicSource,
+  RecordEvent,
   RtiDraft,
   SponsorItem,
   WhisperItem,
@@ -71,6 +74,9 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentRecord {
     mode: raw.mode ? String(raw.mode) : 'auto',
     region: raw.region ? String(raw.region) : 'IN',
     status: raw.status ? String(raw.status) : 'active',
+    is_active: raw.is_active !== undefined ? Boolean(raw.is_active) : raw.status === 'active',
+    heartbeat_age_seconds:
+      raw.heartbeat_age_seconds !== undefined ? Number(raw.heartbeat_age_seconds) : undefined,
     last_heartbeat: String(raw.last_heartbeat_at || raw.last_heartbeat || raw.joined_at || ''),
     joined_at: String(raw.joined_at || ''),
     tasks_completed: Number(raw.tasks_completed ?? 0),
@@ -91,6 +97,7 @@ export function normalizeVerification(raw: Record<string, unknown>): PeerVerific
     verifier_handle: String(raw.verifier_handle || raw.contributor_id || raw.handle || 'peer-node'),
     provider: raw.provider ? String(raw.provider) : undefined,
     model_id: String(raw.model_id || raw.model || 'deterministic-v1'),
+    model: raw.model ? String(raw.model) : raw.model_id ? String(raw.model_id) : undefined,
     verdict: String(raw.verdict || 'confirm'),
     checks: {
       provenance_ok: checks.provenance_ok !== undefined ? Boolean(checks.provenance_ok) : true,
@@ -101,6 +108,9 @@ export function normalizeVerification(raw: Record<string, unknown>): PeerVerific
     confidence: Number(raw.confidence ?? 0.9),
     notes: raw.notes ? String(raw.notes) : '',
     created_at: raw.created_at ? String(raw.created_at) : undefined,
+    finding_title: raw.finding_title ? String(raw.finding_title) : undefined,
+    methodology_code: raw.methodology_code ? String(raw.methodology_code) : undefined,
+    finding_status: raw.finding_status ? String(raw.finding_status) : undefined,
   };
 }
 
@@ -181,6 +191,16 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
   };
 }
 
+export function normalizeRung(raw: Record<string, unknown>): MissionRung {
+  return {
+    id: (raw.id ?? '') as string | number,
+    state: String(raw.state || 'queued'),
+    label: String(raw.label || ''),
+    kind: String(raw.kind || 'task'),
+    finding_id: (raw.finding_id ?? undefined) as string | number | undefined,
+  };
+}
+
 export function normalizeMission(raw: Record<string, unknown>): MissionItem {
   const monetaryInr = Number(raw.monetary_audited_inr ?? 0);
   const monetaryCr =
@@ -199,15 +219,18 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     jurisdiction: String(raw.jurisdiction || 'Union'),
     statutory_anchors: asArray<string>(raw.statutory_anchors ?? raw.statutory_anchors_json),
     data_mode: String(raw.data_mode || 'demo_sample'),
+    is_demo_sample: raw.is_demo_sample !== undefined ? Boolean(raw.is_demo_sample) : String(raw.data_mode || '') === 'demo_sample',
     status: String(raw.status || 'active'),
     priority: Number(raw.priority ?? 1),
     total_tasks: Number(raw.total_tasks ?? 0),
     completed_tasks: Number(raw.completed_tasks ?? 0),
     queued_tasks: raw.queued_tasks !== undefined ? Number(raw.queued_tasks) : undefined,
+    progress_pct: raw.progress_pct !== undefined ? Number(raw.progress_pct) : undefined,
     verified_findings_count: Number(raw.verified_findings_count ?? 0),
     peer_review_count: raw.peer_review_count !== undefined ? Number(raw.peer_review_count) : undefined,
     cleared_count: Number(raw.cleared_count ?? 0),
     monetary_audited_inr_cr: monetaryCr,
+    rungs: raw.rungs ? asArray<Record<string, unknown>>(raw.rungs).map(normalizeRung) : undefined,
     sources: raw.sources ? asArray<Record<string, unknown>>(raw.sources).map(normalizeSource) : undefined,
     findings: raw.findings ? asArray<Record<string, unknown>>(raw.findings).map(normalizeFinding) : undefined,
     tasks: raw.tasks
@@ -244,6 +267,8 @@ export function normalizeWhisper(raw: Record<string, unknown>): WhisperItem {
   return {
     id: raw.id as string | number | undefined,
     agent_handle: String(raw.agent_handle || raw.handle || raw.agent || 'swarm-node'),
+    provider: raw.provider ? String(raw.provider) : undefined,
+    model: raw.model ? String(raw.model) : undefined,
     event_type: raw.event_type ? String(raw.event_type) : String(raw.type || 'whisper'),
     message: String(raw.message || raw.text || raw.whisper || ''),
     mission_slug: (raw.mission_slug || null) as string | null,
@@ -253,19 +278,25 @@ export function normalizeWhisper(raw: Record<string, unknown>): WhisperItem {
 }
 
 export function normalizeSponsor(raw: Record<string, unknown>): SponsorItem {
+  const computeLabel = raw.compute_credits_desc ?? raw.compute_grant;
   return {
     id: raw.id as string | number | undefined,
     name: String(raw.name || 'Anonymous Backer'),
     handle: (raw.handle_or_org || raw.handle || null) as string | null,
     tier: String(raw.tier || 'citizen_backer'),
     contribution_type: String(
-      raw.contribution_type || (raw.compute_credits_desc ? 'compute_grant' : 'financial'),
+      raw.contribution_type || (computeLabel ? 'compute_grant' : 'financial'),
     ),
     amount_inr: Number(raw.amount_inr ?? 0),
-    amount_label: raw.compute_credits_desc ? String(raw.compute_credits_desc) : undefined,
-    url: (raw.url || null) as string | null,
+    amount_label: computeLabel ? String(computeLabel) : undefined,
+    url: (raw.url || raw.website_url || null) as string | null,
     note: (raw.message || raw.note || null) as string | null,
-    is_demo_sample: raw.is_demo_entry !== undefined ? Boolean(raw.is_demo_entry) : Boolean(raw.is_demo_sample),
+    is_demo_sample:
+      raw.is_demo_entry !== undefined
+        ? Boolean(raw.is_demo_entry)
+        : raw.is_demo !== undefined
+          ? Boolean(raw.is_demo)
+          : Boolean(raw.is_demo_sample),
     created_at: raw.created_at ? String(raw.created_at) : undefined,
   };
 }
@@ -286,6 +317,37 @@ export function normalizeLedgerEntry(raw: Record<string, unknown>): LedgerEntry 
   };
 }
 
+function normalizeJustIn(raw: unknown): JustInItem | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (!r.id && !r.title) return null;
+  return {
+    id: (r.id ?? '') as string | number,
+    title: String(r.title || ''),
+    methodology_code: String(r.methodology_code || 'M1'),
+    entity_name: String(r.entity_name || ''),
+    monetary_exposure_inr_cr: Number(r.monetary_exposure_inr_cr ?? 0),
+    verified_at: String(r.verified_at || ''),
+    is_demo_sample: Boolean(r.is_demo_sample),
+  };
+}
+
+function normalizeRecordEvent(raw: Record<string, unknown>): RecordEvent {
+  return {
+    id: String(raw.id || ''),
+    ts: String(raw.ts || ''),
+    kind: String(raw.kind || 'peer_review'),
+    tag: String(raw.tag || 'Record'),
+    title: String(raw.title || ''),
+    actor: raw.actor ? String(raw.actor) : null,
+    methodology_code: raw.methodology_code ? String(raw.methodology_code) : undefined,
+    finding_id: (raw.finding_id ?? null) as string | number | null,
+    monetary_exposure_inr_cr:
+      raw.monetary_exposure_inr_cr !== undefined ? Number(raw.monetary_exposure_inr_cr) : undefined,
+    is_demo_sample: Boolean(raw.is_demo_sample),
+  };
+}
+
 export const api = {
   async getHead(): Promise<HeadData> {
     const raw = await fetchJson<Record<string, unknown>>('/api/head');
@@ -293,10 +355,12 @@ export const api = {
     const disp = asRecord(raw.disposition);
     return {
       generated_at: String(raw.generated_at || new Date().toISOString()),
+      started_at: raw.started_at ? String(raw.started_at) : undefined,
       orchestrator_brief: String(
         raw.orchestrator_brief ||
           'Distributed deterministic audit swarm scanning Indian public procurement, CAG audit paragraphs, Union/State fiscal pacing, and welfare schemes under strict neutrality and 2-of-2 independent verification.',
       ),
+      independence_pledge: raw.independence_pledge ? String(raw.independence_pledge) : undefined,
       stats: {
         public_spend_audited_inr_cr: Number(stats.public_spend_audited_inr_cr ?? 0),
         tasks_completed: Number(stats.tasks_completed ?? 0),
@@ -315,8 +379,10 @@ export const api = {
         cleared_records: Number(disp.cleared_records ?? stats.findings_cleared ?? 0),
         disputed: Number(disp.disputed ?? 0),
       },
+      just_in: normalizeJustIn(raw.just_in),
       just_joined: asArray<Record<string, unknown>>(raw.just_joined).map((j) => ({
         handle: String(j.handle || ''),
+        display_name: j.display_name ? String(j.display_name) : undefined,
         provider: String(j.provider || ''),
         model: String(j.model || ''),
         joined_at: String(j.joined_at || ''),
@@ -324,9 +390,12 @@ export const api = {
       active_agents: asArray<Record<string, unknown>>(raw.active_agents).map(normalizeAgent),
       missions: asArray<Record<string, unknown>>(raw.missions).map(normalizeMission),
       recent_findings: asArray<Record<string, unknown>>(raw.recent_findings).map(normalizeFinding),
+      recent_verifications: asArray<Record<string, unknown>>(raw.recent_verifications).map(normalizeVerification),
       whispers: asArray<Record<string, unknown>>(raw.whispers).map(normalizeWhisper),
+      record_events: asArray<Record<string, unknown>>(raw.record_events).map(normalizeRecordEvent),
       top_contributors: asArray<Record<string, unknown>>(raw.top_contributors).map(normalizeAgent),
       sponsors_featured: asArray<Record<string, unknown>>(raw.sponsors_featured).map(normalizeSponsor),
+      sponsors_recent: asArray<Record<string, unknown>>(raw.sponsors_recent).map(normalizeSponsor),
     };
   },
 
@@ -405,10 +474,7 @@ export const api = {
     return {
       agents: asArray<Record<string, unknown>>(raw.agents).map(normalizeAgent),
       whispers: asArray<Record<string, unknown>>(raw.whispers).map(normalizeWhisper),
-      recent_verifications: asArray<Record<string, unknown>>(raw.recent_verifications).map((v) => ({
-        ...normalizeVerification(v),
-        finding_title: v.finding_title ? String(v.finding_title) : undefined,
-      })),
+      recent_verifications: asArray<Record<string, unknown>>(raw.recent_verifications).map(normalizeVerification),
       model_breakdown: asArray<Record<string, unknown>>(raw.model_breakdown).map((m) => ({
         provider: String(m.provider || 'rule-engine'),
         model: String(m.model || 'default'),
@@ -437,10 +503,7 @@ export const api = {
       ).map(normalizeFinding),
       verifications: asArray<Record<string, unknown>>(
         raw.verifications ?? raw.peer_verifications,
-      ).map((v) => ({
-        ...normalizeVerification(v),
-        finding_title: v.finding_title ? String(v.finding_title) : undefined,
-      })),
+      ).map(normalizeVerification),
       recent_whispers: asArray<Record<string, unknown>>(raw.recent_whispers ?? raw.whispers).map(
         normalizeWhisper,
       ),

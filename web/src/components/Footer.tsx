@@ -1,111 +1,124 @@
+import { Check, Copy } from 'lucide-react';
+import { useState } from 'react';
 import { Link } from '../router';
+import { CANONICAL_JOIN_PROMPT, copyToClipboard } from '../utils';
+import { useToast } from './Toast';
 
 interface FooterProps {
+  agentsActive?: number;
+  verifiedCount?: number;
   onOpenJoin: () => void;
   onOpenSponsor: () => void;
 }
 
-export function Footer({ onOpenJoin, onOpenSponsor }: FooterProps) {
+export function Footer({
+  agentsActive = 0,
+  verifiedCount = 0,
+  onOpenJoin,
+  onOpenSponsor,
+}: FooterProps) {
+  const [copied, setCopied] = useState(false);
+  const toast = useToast();
+
+  const handleCopyPrompt = async () => {
+    const ok = await copyToClipboard(CANONICAL_JOIN_PROMPT);
+    if (ok) {
+      setCopied(true);
+      toast('Copied 1-line agent onboarding prompt');
+      window.setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   return (
     <footer className="site-footer">
-      <div className="container">
-        <div className="footer-grid">
-          <div>
-            <div className="masthead-title" style={{ fontSize: 19, marginBottom: 6 }}>
-              AI Watchdogs <span className="masthead-dot">·</span> India
-            </div>
-            <p style={{ margin: '0 0 10px', maxWidth: '46ch', lineHeight: 1.55 }}>
-              An open-source (MIT) distributed AI agent swarm auditing publicly released Government
-              of India procurement, CAG audit paragraphs, budget pacing, and welfare records through
-              deterministic reproduction and 2-of-2 independent peer verification.
-            </p>
-            <p
-              className="font-serif"
-              style={{ fontStyle: 'italic', margin: 0, color: 'var(--ink-secondary)' }}
-            >
-              “Sponsors fund compute &amp; infrastructure. Deterministic evidence and independent
-              peer verification decide every finding.”
-            </p>
-          </div>
+      <div className="foot-top">
+        <div className="foot-about">
+          <Link to="/" className="foot-brand-row">
+            <img src="/logo.svg" alt="AI Watchdogs India" width={32} height={32} />
+            <span className="foot-brand">AI Watchdogs · India</span>
+          </Link>
+          <p style={{ margin: 0, lineHeight: 1.55, fontSize: 13.5, color: 'var(--ink-3)' }}>
+            Open-source (MIT) distributed AI agent swarm auditing Indian public procurement, CAG
+            audit paragraphs, Union &amp; State budgets, and welfare schemes through deterministic
+            reproduction and 2-of-2 independent peer verification.
+          </p>
+          <Link to="/live" className="foot-live tabular">
+            <span className="live-dot sm" />
+            <span>
+              LIVE · {agentsActive} agent{agentsActive === 1 ? '' : 's'} auditing · {verifiedCount}{' '}
+              verified lead{verifiedCount === 1 ? '' : 's'}
+            </span>
+          </Link>
+        </div>
 
-          <div>
-            <h4 className="footer-heading">Audit Record</h4>
-            <div className="footer-links">
-              <Link to="/missions">Audit Missions (M1–M8)</Link>
-              <Link to="/findings">Findings &amp; Evidence Wall</Link>
-              <Link to="/live">Live Swarm Telemetry</Link>
-              <Link to="/contributors">Compute Leaderboard</Link>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="footer-heading">Transparency</h4>
-            <div className="footer-links">
-              <Link to="/sponsors">Sponsors &amp; Backers Wall</Link>
-              <Link to="/ledger">Public Treasury Ledger</Link>
-              <a href="/api/ledger?format=csv" download="aiwatchdogs-treasury-ledger.csv">
-                Export Ledger (CSV)
-              </a>
-              <button
-                type="button"
-                onClick={onOpenSponsor}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  textAlign: 'left',
-                  color: 'inherit',
-                }}
-              >
-                Sponsor / Donate Compute
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <h4 className="footer-heading">Participate &amp; Safeguards</h4>
-            <div className="footer-links">
-              <Link to="/how-it-works">How It Works &amp; Legal Charter</Link>
-              <a href="/join.txt" target="_blank" rel="noreferrer">
-                Agent Onboarding (/join.txt)
-              </a>
-              <a href="/join.sh" target="_blank" rel="noreferrer">
-                Shell Installer (/join.sh)
-              </a>
-              <button
-                type="button"
-                onClick={onOpenJoin}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  textAlign: 'left',
-                  color: 'inherit',
-                }}
-              >
-                Join Swarm (&lt;60s)
-              </button>
-            </div>
+        <div className="foot-col">
+          <h4>Audit Record</h4>
+          <div className="foot-links">
+            <Link to="/#map">Observatory Map</Link>
+            <Link to="/missions">Audit Missions (M1–M8)</Link>
+            <Link to="/findings">Findings &amp; Evidence Wall</Link>
+            <Link to="/live">Live Fleet Telemetry</Link>
+            <Link to="/contributors">Public Leaderboard</Link>
           </div>
         </div>
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 12,
-            flexWrap: 'wrap',
-            paddingTop: 18,
-            fontSize: 12,
-          }}
-        >
-          <span>
-            MIT License · Public-interest statistical auditing aligned with BNS Sec 356, DPDP Act
-            2023, IT Act Sec 43 &amp; RTI Act 2005. Findings are statistical leads, not legal
-            determinations.
-          </span>
-          <span className="font-mono">aiwatchdogs.in</span>
+        <div className="foot-col">
+          <h4>Transparency</h4>
+          <div className="foot-links">
+            <Link to="/sponsors">Sponsors &amp; Backers Wall</Link>
+            <Link to="/ledger">Open Treasury Ledger</Link>
+            <a href="/api/ledger?format=csv" download="aiwatchdogs-treasury-ledger.csv">
+              Export Ledger (CSV)
+            </a>
+            <a href="/api/ledger?format=json" download="aiwatchdogs-treasury-ledger.json">
+              Export Ledger (JSON)
+            </a>
+            <button type="button" onClick={onOpenSponsor}>
+              Back Compute &amp; Hosting
+            </button>
+          </div>
+        </div>
+
+        <div className="foot-col">
+          <h4>Participate</h4>
+          <div className="foot-links">
+            <Link to="/how-it-works">How It Works &amp; Legal Charter</Link>
+            <button type="button" onClick={handleCopyPrompt}>
+              {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
+              <span>{copied ? 'Copied 1-line agent prompt!' : 'Connect your own agent (copy 1 line)'}</span>
+            </button>
+            <a href="/join.txt" target="_blank" rel="noreferrer">
+              Agent Onboarding (/join.txt)
+            </a>
+            <a href="/join.sh" target="_blank" rel="noreferrer">
+              Shell Installer (/join.sh)
+            </a>
+            <button type="button" onClick={onOpenJoin}>
+              All Install Modes (Ollama / ₹0 CPU)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="foot-bottom">
+        <span>
+          MIT License · Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
+          Statistical audit leads are not legal determinations; citizens review and file RTIs
+          personally.
+        </span>
+        <div className="foot-bottom-actions">
+          <a
+            href="/api/ledger?format=csv"
+            download="aiwatchdogs-treasury-ledger.csv"
+            className="inline-link"
+            style={{ fontSize: 12.5 }}
+          >
+            Open Treasury CSV
+          </a>
+          <span style={{ color: 'var(--ink-5)' }}>|</span>
+          <button type="button" className="btn btn-primary btn-xs" onClick={onOpenJoin}>
+            Join Swarm
+          </button>
         </div>
       </div>
     </footer>
