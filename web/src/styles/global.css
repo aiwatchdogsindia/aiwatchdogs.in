@@ -5035,3 +5035,25 @@ code.font-mono {
   grid-template-columns: 24px 34px minmax(0, 1fr);
   background: transparent;
 }
+
+/* Coding-agent marks, overlapping like a stack of chips */
+.agent-logo-stack {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.agent-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 1px solid #E6E3DC;
+  color: #1B1A17;
+  box-shadow: 0 0 0 2px #FFFFFF;
+}
+
+.agent-logo + .agent-logo {
+  margin-left: -3px;
+}

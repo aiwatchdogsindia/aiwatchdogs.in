@@ -1,6 +1,7 @@
 import { Check, Copy, Radio } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
+import { AgentLogoStack } from '../components/AgentLogos';
 import { HeroEyebrowRow } from '../components/EyebrowBar';
 import { LiveOrganism } from '../components/LiveOrganism';
 import { CommunityShowcase } from '../components/SocialLinks';
@@ -672,6 +673,7 @@ export function HomePage({
               </span>
             </div>
             <button type="button" className="join-cta" onClick={handleCopyOneLine}>
+              <AgentLogoStack />
               <span>{copiedYours ? 'Copied!' : 'Join the effort: copy one line'}</span>
               <span className="join-cta-icon" aria-hidden="true">
                 {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
