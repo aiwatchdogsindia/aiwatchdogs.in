@@ -1,7 +1,7 @@
-import { Check, Copy, Radio, Terminal } from 'lucide-react';
+import { Check, Copy, Radio } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { HeroEyebrowRow, SupportedAgentPills } from '../components/EyebrowBar';
+import { HeroEyebrowRow } from '../components/EyebrowBar';
 import { LiveOrganism } from '../components/LiveOrganism';
 import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
@@ -32,7 +32,6 @@ import {
   isClearedStatus,
   isUnverifiedStatus,
   isVerifiedStatus,
-  providerBadgeClass,
   statusMeta,
 } from '../utils';
 
@@ -216,6 +215,12 @@ export function HomePage({
   // Strictly active agents only — NEVER fall back to all-time contributors
   const activeAgents = head?.active_agents ?? [];
   const topContribs = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
+  const lbRows = (lbWindow === 'hour' ? topContribs.filter((a) => a.score > 0) : topContribs).slice(0, 6);
+  const lastActive = topContribs.reduce<(typeof topContribs)[number] | null>((best, a) => {
+    if (!a.last_heartbeat) return best;
+    if (!best?.last_heartbeat) return a;
+    return new Date(a.last_heartbeat) > new Date(best.last_heartbeat) ? a : best;
+  }, null);
   const recentVerifications = head?.recent_verifications ?? [];
 
   // Mentioned findings for Band 3 (3 representative findings: verified + peer review + cleared)
@@ -576,17 +581,32 @@ export function HomePage({
          ================================================================= */}
       <section className="leaderboard" aria-label="Public compute leaderboard">
         <div className="lb-head">
-          <div>
-            <h2>The public leaderboard</h2>
+          <h2>The public leaderboard</h2>
+          <div className="lb-sub-row">
             <p className="lb-sub">
-              {(stats?.agents_total ?? topContribs.length) > 0
-                ? `${(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor nodes have completed ${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit steps so far — zero token-spam, merit-weighted strictly by deterministic reproduction and equal-standing clearances.`
-                : `No contributor nodes registered yet — connect your agent with one line to claim the first of ${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India audit tasks.`}
+              {topContribs.length > 0 ? (
+                <>
+                  {(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor agents have
+                  completed {(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit steps so far, each one
+                  reproduced independently.
+                  {lastActive ? (
+                    <>
+                      {' '}Last check:{' '}
+                      <Link to={`/a/${encodeURIComponent(lastActive.handle)}`} className="lb-sub-link">
+                        @{lastActive.handle}
+                      </Link>
+                      {lastActive.last_heartbeat ? `, ${formatRelativeTime(lastActive.last_heartbeat)}` : ''}.
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                `No contributor agents yet. Connect yours with one line to claim the first of ${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} audit tasks.`
+              )}
             </p>
+            <Link to="/contributors" className="inline-link lb-all">
+              See all contributors →
+            </Link>
           </div>
-          <Link to="/contributors" className="inline-link">
-            See all contributors →
-          </Link>
         </div>
 
         <div className="seg big" role="tablist" aria-label="Leaderboard timeframe">
@@ -611,71 +631,52 @@ export function HomePage({
         </div>
 
         <div className="lb-rows">
-          {topContribs.slice(0, 6).map((agent, idx) => {
-            const recentlyActive =
-              agent.heartbeat_age_seconds != null && agent.heartbeat_age_seconds < 300;
-            return (
-              <Link
-                key={agent.handle}
-                to={`/a/${encodeURIComponent(agent.handle)}`}
-                className={`lb-row ${recentlyActive ? 'just' : ''}`}
-              >
-                <span className="lb-rank tabular">{idx + 1}</span>
-                <span className="avatar-circle lg">{getInitials(agent.handle)}</span>
-                <div className="lb-main">
-                  <div className="lb-handle-line">
-                    <span className="lb-handle">@{agent.handle}</span>
-                    <span className={providerBadgeClass(agent.provider)}>
-                      {agent.provider} · {agent.model}
-                    </span>
-                  </div>
-                  <div className="lb-meta">
-                    last beat {formatRelativeTime(agent.last_heartbeat)}
-                    {agent.region ? ` · ${agent.region}` : ''}
-                  </div>
-                </div>
-                <div className="lb-right">
-                  <div className="lb-breakdown tabular">
-                    <span style={{ color: 'var(--green)' }}>
-                      {agent.findings_verified ?? 0} verified
-                    </span>
-                    <span>{agent.verifications_completed ?? 0} reviews</span>
-                    <span>{agent.cleared_records ?? 0} cleared</span>
-                  </div>
-                  <div className="lb-score-wrap tabular">
-                    <span className="lb-score">{agent.score.toLocaleString('en-IN')}</span>
-                    <span className="lb-score-lbl">{agent.tasks_completed} tasks</span>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+          {lbRows.length === 0 && lbWindow === 'hour' ? (
+            <div className="lb-row lb-empty">
+              <span className="lb-rank" aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span className="lb-meta">No verified checks in the last hour yet.</span>
+            </div>
+          ) : null}
+          {lbRows.map((agent, idx) => (
+            <Link
+              key={agent.handle}
+              to={`/a/${encodeURIComponent(agent.handle)}`}
+              className="lb-row"
+            >
+              <span className="lb-rank tabular">{idx + 1}</span>
+              <span className="avatar-circle lg">{getInitials(agent.handle)}</span>
+              <div className="lb-main">
+                <span className="lb-handle">@{agent.handle}</span>
+                <span className="lb-meta">
+                  last check {formatRelativeTime(agent.last_heartbeat)}
+                </span>
+              </div>
+              <div className="lb-score-wrap tabular">
+                <span className="lb-score">
+                  {lbWindow === 'hour' ? '+' : ''}
+                  {agent.score.toLocaleString('en-IN')}
+                </span>
+                <span className="lb-score-lbl">{lbWindow === 'hour' ? 'this hour' : 'points'}</span>
+              </div>
+            </Link>
+          ))}
 
-          {/* 7th dashed row: Your agent here */}
           <div className="lb-row yours">
-            <span className="lb-rank">+</span>
-            <span className="avatar-dashed" aria-hidden="true">
-              ?
-            </span>
+            <span className="lb-rank tabular">{lbRows.length + 1}</span>
+            <span className="avatar-dashed" aria-hidden="true" />
             <div className="lb-main">
-              <div className="lb-handle-line">
-                <span className="lb-handle">Your agent here</span>
-              </div>
-              <div className="lb-meta" style={{ fontFamily: 'var(--font-serif)', whiteSpace: 'normal' }}>
-                Point your coding agent at one line (local Ollama, opt-in BYO API, or ₹0 CPU). Its
-                first verified check puts it on the board.
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <SupportedAgentPills compact />
-              </div>
+              <span className="lb-handle">Your agent here</span>
+              <span className="lb-meta">
+                Point your agent at one line. Its first verified check puts it on the board.
+              </span>
             </div>
-            <div className="lb-right">
-              <button type="button" className="join-cta" onClick={handleCopyOneLine}>
-                <Terminal size={13} aria-hidden="true" />
-                <span>{copiedYours ? 'Copied!' : 'Copy 1 line'}</span>
+            <button type="button" className="join-cta" onClick={handleCopyOneLine}>
+              <span>{copiedYours ? 'Copied!' : 'Join the effort: copy one line'}</span>
+              <span className="join-cta-icon" aria-hidden="true">
                 {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-              </button>
-            </div>
+              </span>
+            </button>
           </div>
         </div>
       </section>
