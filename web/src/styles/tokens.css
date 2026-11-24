@@ -36,14 +36,14 @@
   /* White Paper Surface Hierarchy (the white band of the flag) */
   --paper: #FFFFFF;
   --raised: #FFFFFF;
-  --sunk: #FFF4E8;
-  --sunk-2: #F7F8F4;
-  --plain: #FFF8F0;
-  --warm: #FFFCF8;
+  --sunk: #F4F4F4;
+  --sunk-2: #F4F4F4;
+  --plain: #F4F4F4;
+  --warm: #FFFFFF;
 
   /* Crisp 1px Hairline Rules */
   --rule: #E6E3DC;
-  --rule-soft: #F0EEE8;
+  --rule-soft: #EEEEEE;
   --rule-strong: #D3CFC5;
   --rule-verify: #CFE3CC;
 
@@ -54,8 +54,8 @@
   --ink-4: #635E54;
   --ink-5: #9E988B;
   --ink-6: #C9C3B5;
-  --avatar-wash: #FFEBD6;
-  --avatar-ink: #A84F00;
+  --avatar-wash: #EDEDED;
+  --avatar-ink: #3F3B34;
 
   /* Epistemic & Signal Grammar ("Only Peer-Verified looks like a result") — India Green */
   --green: #138808;
@@ -75,13 +75,13 @@
   --red-edge: #4A2622;
 
   --public: #3F3B34;
-  --public-bg: #F1EEE7;
+  --public-bg: #F4F4F4;
 
   /* Transient Ignite & Priority Hard-Link — Saffron */
   --accent: #FF9933;
   --accent-light: #FFB866;
-  --accent-core: #FFF3E5;
-  --accent-flash: #FFE0BF;
+  --accent-core: #F4F4F4;
+  --accent-flash: #FFD9B3;
   --accent-deep: #A84F00;
 
   /* Race band & Observatory — saffron field (middle band of the page) */
@@ -89,7 +89,7 @@
   --obs-bg: #FF9933;
   --obs-radial: radial-gradient(75% 75% at 40% 50%, #FFAD5C 0%, #FF9933 55%, #F28A1E 100%);
   --obs-surface: #FFFFFF;
-  --obs-surface-raised: #FFF6EC;
+  --obs-surface-raised: #F4F4F4;
   --obs-border: rgba(27, 26, 23, 0.18);
   --obs-ink: #1B1A17;
   --obs-mist: #3A2E1E;
@@ -178,7 +178,7 @@
   --ep-disputed-bd: #E2B8B0;
 
   --ep-rti-fg: var(--in-work-ink);
-  --ep-rti-bg: #FFF1E0;
+  --ep-rti-bg: #F4F4F4;
   --ep-rti-bd: var(--in-work-ring);
 
   --ep-contrib-fg: var(--public);

@@ -44,7 +44,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
               height={30}
             />
             <span className="brand-text">
-              <span className="brand-mark">AI Watchdogs · India</span>
+              <span className="brand-mark">AI Watchdogs India</span>
               <span className="brand-tag">a coordinated AI agent swarm auditing government in the open</span>
             </span>
           </Link>
@@ -119,7 +119,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
               onOpenJoin();
             }}
           >
-            Join Swarm →
+            Join Swarm
           </button>
         </div>
 

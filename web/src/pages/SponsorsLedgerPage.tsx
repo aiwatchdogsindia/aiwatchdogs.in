@@ -97,7 +97,7 @@ export function SponsorsLedgerPage({
       <div className="section-header">
         <div>
           <div className="section-kicker">
-            OpenCollective-Style Civic Treasury · Radical Budget Transparency
+            OpenCollective-Style Civic Treasury, Radical Budget Transparency
           </div>
           <h1 className="section-title" style={{ fontSize: 32 }}>
             {activeView === 'ledger'
@@ -259,7 +259,7 @@ export function SponsorsLedgerPage({
                     >
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div className="section-kicker" style={{ marginBottom: 0 }}>
-                          ₹0 reconciled cash · 100% open ledger
+                          ₹0 reconciled cash, 100% open ledger
                         </div>
                         <div className="font-serif" style={{ fontSize: 21, lineHeight: 1.3 }}>
                           No backers yet — be the first to fund open compute
@@ -465,7 +465,7 @@ export function SponsorsLedgerPage({
                   {ledger.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: 24 }}>
-                        ₹0 reconciled cash · ₹0 self-declared pledges — reconciled cash receipts, self-declared pledges, in-kind compute grants, and hosting expenses are tracked separately here.
+                        ₹0 reconciled cash, ₹0 self-declared pledges — reconciled cash receipts, self-declared pledges, in-kind compute grants, and hosting expenses are tracked separately here.
                       </td>
                     </tr>
                   )}

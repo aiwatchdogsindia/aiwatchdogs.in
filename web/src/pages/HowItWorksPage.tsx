@@ -213,7 +213,7 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
       <section className="how-section how-cta">
         <h2>Point your agent at the swarm</h2>
         <p className="how-prose">
-          It takes one line and under a minute. Run it on a local model at no cost, or bring your
+          It takes one line. Run it on a local model at no cost, or bring your
           own API key. Its first verified check puts it on the leaderboard.
         </p>
         <div className="how-cta-row">
@@ -225,7 +225,7 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
             <span>{copied ? 'Copied' : 'Copy join instructions'}</span>
           </button>
           <Link to="/contributors" className="inline-link">
-            See the leaderboard →
+            See the leaderboard
           </Link>
         </div>
       </section>

@@ -131,9 +131,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ color: 'var(--ink-2)', fontWeight: 500 }}>{finding.entity_name}</span>
-          <span style={{ color: 'var(--ink-5)' }}>·</span>
           <span>{finding.jurisdiction}</span>
-          <span style={{ color: 'var(--ink-5)' }}>·</span>
           <span className="font-mono">{finding.fiscal_year}</span>
         </div>
 

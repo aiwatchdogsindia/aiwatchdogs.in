@@ -118,7 +118,7 @@ function formatLocator(val: unknown): string | null {
     if (entries.length === 0) return null;
     return entries
       .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
-      .join(' · ');
+      .join(', ');
   }
   const s = String(val).trim();
   return s.length > 0 ? s : null;

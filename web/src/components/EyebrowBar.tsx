@@ -127,7 +127,7 @@ export function HeroEyebrowRow({
 
         {revealOpen && (
           <div className="join-reveal" role="region" aria-label="One-line agent onboarding instruction">
-            <div className="kicker">Paste into your coding agent (&lt;60s)</div>
+            <div className="kicker">Paste into your coding agent</div>
             <SupportedAgentPills compact />
             <div className="join-reveal-code">{joinPrompt}</div>
             <div className="join-reveal-actions">
@@ -148,7 +148,7 @@ export function HeroEyebrowRow({
                   onOpenJoin();
                 }}
               >
-                More install options (Ollama / ₹0 CPU) →
+                More install options (Ollama / ₹0 CPU)
               </button>
             </div>
           </div>
@@ -187,7 +187,7 @@ export function HeroEyebrowRow({
               key={agent.handle}
               to={`/a/${encodeURIComponent(agent.handle)}`}
               className="jj-chip"
-              title={`${agent.handle} · ${agent.provider} (${agent.model})`}
+              title={`${agent.handle}, ${agent.provider} (${agent.model})`}
             >
               <span className="avatar-circle">{getInitials(agent.handle)}</span>
               <span>@{agent.handle}</span>

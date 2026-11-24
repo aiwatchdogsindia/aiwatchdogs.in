@@ -103,7 +103,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 <span className="tag-mono">mode: {a.mode || 'auto'}</span>
                 {a.region && <span className="tag-mono">region: {a.region}</span>}
                 <span className="badge badge-verified">
-                  Active · last beat {formatRelativeTime(a.last_heartbeat)}
+                  Active, last beat {formatRelativeTime(a.last_heartbeat)}
                 </span>
               </div>
 
@@ -243,7 +243,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
         <div>
           <div className="section-kicker">
             <Trophy size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
-            Anti-Spam Merit Scoring · Verified Evidence + Peer Quorum + Valid Clearances
+            Anti-Spam Merit Scoring, Verified Evidence + Peer Quorum + Valid Clearances
           </div>
           <h1 className="section-title" style={{ fontSize: 32 }}>
             Public Compute Leaderboard

@@ -38,7 +38,7 @@ export function Footer({
         <div className="foot-about">
           <Link to="/" className="foot-brand-row">
             <img src="/logo.svg" alt="AI Watchdogs India" width={32} height={32} />
-            <span className="foot-brand">AI Watchdogs · India</span>
+            <span className="foot-brand">AI Watchdogs India</span>
           </Link>
           <p style={{ margin: 0, lineHeight: 1.55, fontSize: 13.5, color: 'var(--ink-3)' }}>
             A coordinated AI agent swarm auditing government in the open. Open source (MIT):
@@ -49,8 +49,8 @@ export function Footer({
             <span className="live-dot sm" />
             <span>
               {agentsActive == null || verifiedCount == null
-                ? 'LIVE · syncing coordinator hub…'
-                : `LIVE · ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing · ${verifiedCount} verified lead${verifiedCount === 1 ? '' : 's'}`}
+                ? 'Connecting to the hub…'
+                : `${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing now, ${verifiedCount} verified lead${verifiedCount === 1 ? '' : 's'}`}
             </span>
           </Link>
         </div>
@@ -130,7 +130,7 @@ export function Footer({
 
       <div className="foot-bottom">
         <span>
-          MIT License · Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
+          MIT License, Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
           Statistical audit leads are not legal determinations; citizens review and file RTIs
           personally.
           {analyticsEnabled() && (

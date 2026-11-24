@@ -342,12 +342,12 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                             <span>
                               <strong>{c.correction_type ? c.correction_type.replace(/_/g, ' ') : 'Editorial review'}</strong>
                               {c.previous_status && c.new_status
-                                ? ` · ${c.previous_status} → ${c.new_status}`
+                                ? `, ${c.previous_status} to ${c.new_status}`
                                 : ''}
                             </span>
                             <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
                               {c.reviewer ? `Reviewed by ${c.reviewer}` : 'Editorial desk'}
-                              {c.created_at ? ` · ${formatDateShort(c.created_at)}` : ''}
+                              {c.created_at ? `, ${formatDateShort(c.created_at)}` : ''}
                             </span>
                           </div>
                           <p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.55, color: 'var(--ink)' }}>
@@ -399,7 +399,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       <div>
                         <div className="kicker" style={{ fontSize: 10.5 }}>Jurisdiction / Period</div>
                         <div style={{ fontSize: 14, marginTop: 3 }}>
-                          {finding.jurisdiction} · <span className="font-mono">{fiscalDisplay}</span>
+                          {finding.jurisdiction}, <span className="font-mono">{fiscalDisplay}</span>
                         </div>
                       </div>
                       <div>
@@ -416,7 +416,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         <div className="kicker" style={{ fontSize: 10.5 }}>Severity / Quorum</div>
                         <div className="font-mono tabular" style={{ fontSize: 14, marginTop: 3 }}>
                           <span className={`sev-${finding.severity}`}>{finding.severity.toUpperCase()}</span>
-                          {' · '}
+                          {', '}
                           <strong>{confirmCount}/{requiredQuorum}</strong>
                         </div>
                       </div>
@@ -553,7 +553,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           <dt>Civic Mirror / Catalog</dt>
                           <dd>
                             {prov?.mirror_name && <span>{prov.mirror_name}</span>}
-                            {prov?.mirror_name && mirrorUrl && ' · '}
+                            {prov?.mirror_name && mirrorUrl && ', '}
                             {mirrorUrl && (
                               <a
                                 href={mirrorUrl}
@@ -647,7 +647,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         <dt>Byte Size &amp; Fetch Time</dt>
                         <dd className="tabular">
                           <span>{formatBytes(prov?.byte_size)}</span>
-                          {' · '}
+                          {', '}
                           <span>
                             {prov?.fetched_at ? formatDateShort(prov.fetched_at) : 'Fetch time unrecorded'}
                           </span>
@@ -698,7 +698,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                 cit.row_id != null ? `Row ${cit.row_id}` : null,
                               ]
                                 .filter(Boolean)
-                                .join(' · ') || 'Source record excerpt'}
+                                .join(', ') || 'Source record excerpt'}
                             </div>
                             {cit.excerpt && (
                               <div style={{ color: 'var(--ink-primary)', fontStyle: 'italic' }}>
@@ -714,7 +714,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                   {/* Mandatory Benign Explanations Box (BNS Sec 356 Fairness) */}
                   <div
                     style={{
-                      background: '#FFFAF3',
+                      background: '#FFFFFF',
                       border: '1px solid var(--ep-review-bd)',
                       borderLeft: '3px solid var(--ep-review-fg)',
                       borderRadius: 4,
@@ -733,7 +733,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       }}
                     >
                       <Scale size={14} />
-                      <span>Mandatory Benign / Lawful Explanations (Journalistic Fairness · BNS Sec 356)</span>
+                      <span>Mandatory Benign / Lawful Explanations (Journalistic Fairness, BNS Sec 356)</span>
                     </div>
                     <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink-3)' }}>
                       Statistical divergence in public records is an audit lead — never an allegation of
@@ -784,7 +784,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                               {' '}via {codingAgentLabel(finding.submitted_coding_agent, finding.submitted_coding_agent_model)}
                             </span>
                           ) : null}{' '}
-                          · Computational reproduction confirms bytes &amp; math; editorial review confirms source meaning.
+                          Computational reproduction confirms bytes &amp; math; editorial review confirms source meaning.
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -898,7 +898,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                     >
                       <div>
                         <div className="section-kicker" style={{ color: 'var(--ep-rti-fg)', marginBottom: 3 }}>
-                          Lawful Citizen Action · RTI Act 2005 Section 6(1) &amp; Section 2(f)
+                          Lawful Citizen Action, RTI Act 2005 Section 6(1) &amp; Section 2(f)
                         </div>
                         <h3 className="font-serif" style={{ margin: 0, fontSize: 20 }}>
                           Public Records Request Draft
@@ -983,7 +983,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           }}
                         >
                           <div>
-                            <strong>Authority:</strong> {rtiDraft.public_authority} ·{' '}
+                            <strong>Authority:</strong> {rtiDraft.public_authority},{' '}
                             <strong>PIO/CPIO:</strong> {rtiDraft.cpio_designation}
                           </div>
                           <div style={{ display: 'flex', gap: 7 }}>
@@ -1104,7 +1104,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               {finding.created_at && (
                 <div className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'right' }}>
                   Logged {formatRelativeTime(finding.created_at)}
-                  {finding.verified_at ? ` · Peer-Verified ${formatRelativeTime(finding.verified_at)}` : ''}
+                  {finding.verified_at ? `, Peer-Verified ${formatRelativeTime(finding.verified_at)}` : ''}
                 </div>
               )}
             </>

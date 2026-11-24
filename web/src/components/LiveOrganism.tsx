@@ -103,8 +103,8 @@ export function LiveOrganism({
 
       const pillar = matchedMission?.pillar || PILLAR_CYCLE[idx % PILLAR_CYCLE.length];
       const missionLabel = matchedMission
-        ? `${matchedMission.methodology_code} · ${matchedMission.title}`
-        : `${agent.provider} · ${agent.model}`;
+        ? `${matchedMission.methodology_code}, ${matchedMission.title}`
+        : `${agent.provider}, ${agent.model}`;
       const tint = pillarTint(pillar);
       const activityFactor = Math.max(1, Math.min(8, agent.tasks_completed || 1));
       const durSec = Math.max(2.6, 6.2 - activityFactor * 0.42);
@@ -315,14 +315,13 @@ export function LiveOrganism({
             title={latestVerif.finding_title || 'Inspect latest peer-verified dossier'}
           >
             <span>{latestVerif.verdict === 'confirm' ? 'VERIFIED' : 'DISPUTED'}</span>
-            <span>·</span>
             <span>{latestVerif.methodology_code || 'AUDIT'}</span>
-            {latestVerif.created_at && <span>· {formatShortRel(latestVerif.created_at)}</span>}
+            {latestVerif.created_at && <span>{formatShortRel(latestVerif.created_at)}</span>}
           </button>
         ) : (
           <span className="gate-verdict">
             {totalQueuedTasks > 0
-              ? `${totalQueuedTasks} official tasks ready · 2-of-2 quorum active`
+              ? `${totalQueuedTasks} official tasks ready, 2-of-2 quorum active`
               : '2-of-2 quorum gate active'}
           </span>
         )}
@@ -339,7 +338,7 @@ export function LiveOrganism({
           <div className="org-seat-top">
             <span className="org-seat-id">
               <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
-              <span>{slot.mission.methodology_code} · Open slot</span>
+              <span>{slot.mission.methodology_code}, Open slot</span>
             </span>
             <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
               {slot.queued}q
@@ -348,7 +347,7 @@ export function LiveOrganism({
           <div className="org-seat-pillar">{slot.mission.title}</div>
           <div className="org-seat-act">
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--ink-4)' }}>
-              {slot.mission.jurisdiction} · ready to claim
+              {slot.mission.jurisdiction}, ready to claim
             </span>
           </div>
         </Link>
@@ -378,7 +377,7 @@ export function LiveOrganism({
             <div className="org-seat-act">
               <span className={`live-dot sm ${s.agent.is_active === false ? 'offline' : ''}`} />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {s.latestWhisper?.message || `${s.agent.provider} · ${s.agent.model}`}
+                {s.latestWhisper?.message || `${s.agent.provider}, ${s.agent.model}`}
               </span>
             </div>
           </button>
@@ -422,7 +421,7 @@ export function LiveOrganism({
             <div className="org-seat-top">
               <span className="org-seat-id">
                 <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
-                <span>{slot.mission.methodology_code} · Open slot</span>
+                <span>{slot.mission.methodology_code}, Open slot</span>
               </span>
               <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
                 {slot.queued} queued
@@ -431,7 +430,7 @@ export function LiveOrganism({
             <div className="org-seat-pillar">{slot.mission.title}</div>
             <div className="org-seat-act">
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {slot.mission.jurisdiction} · ready to claim
+                {slot.mission.jurisdiction}, ready to claim
               </span>
             </div>
           </Link>
@@ -458,8 +457,8 @@ export function LiveOrganism({
             </button>
           </div>
           <div className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-            {selectedSeat.agent.provider} · {selectedSeat.agent.model} ·{' '}
-            {selectedSeat.agent.tasks_completed} tasks · score{' '}
+            {selectedSeat.agent.provider}, {selectedSeat.agent.model},{' '}
+            {selectedSeat.agent.tasks_completed} tasks, score{' '}
             {selectedSeat.agent.score.toLocaleString('en-IN')}
           </div>
           {selectedWhispers.length > 0 ? (
@@ -481,14 +480,14 @@ export function LiveOrganism({
             className="inline-link"
             style={{ fontSize: 12.5, alignSelf: 'flex-start' }}
           >
-            Inspect contributor profile →
+            Inspect contributor profile
           </Link>
         </div>
       )}
 
       {/* Bottom-right +N more nodes pill */}
       <Link to="/live" className="org-more-pill">
-        {extraCount > 0 ? `+${extraCount} more nodes →` : 'Full live fleet →'}
+        {extraCount > 0 ? `+${extraCount} more nodes` : 'Full live fleet'}
       </Link>
     </div>
   );

@@ -99,7 +99,7 @@ export function SponsorModal({ open, preset, onClose, onSuccess }: SponsorModalP
         <div className="overlay-header">
           <div>
             <div className="section-kicker" style={{ marginBottom: 4 }}>
-              Open Public Treasury · Self-Declared Pledge Ledger
+              Open Public Treasury, Self-Declared Pledge Ledger
             </div>
             <h2 id="sponsor-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
               Pledge Infrastructure Support or Compute

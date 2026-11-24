@@ -1295,7 +1295,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFCF8 Warm Band)
+   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFFFF Warm Band)
    ========================================================================= */
 .status-note {
   background: var(--warm);
@@ -2706,7 +2706,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   10. BAND 8 — NUMBERS STRIP (#FFF4E8 Sunk Band)
+   10. BAND 8 — NUMBERS STRIP (#F4F4F4 Sunk Band)
    ========================================================================= */
 .numbers {
   background: var(--sunk);
@@ -3144,7 +3144,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   13. BAND 11 — RECENT BACKERS MARQUEE (#F7F8F4)
+   13. BAND 11 — RECENT BACKERS MARQUEE (#F4F4F4)
    ========================================================================= */
 .today {
   background: var(--sunk-2);
@@ -3406,7 +3406,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   14. ARCHIVAL FOOTER (#F7F8F4)
+   14. ARCHIVAL FOOTER (#F4F4F4)
    ========================================================================= */
 .site-footer {
   position: relative;
@@ -4076,7 +4076,7 @@ code.font-mono {
 }
 
 .offline-banner {
-  background: #FFF1E0;
+  background: #F4F4F4;
   border-bottom: 1px solid #FFB866;
   color: #8A4200;
   padding: 9px var(--gutter);
@@ -4459,7 +4459,7 @@ code.font-mono {
 }
 
 .dossier-corrections {
-  background: #FFF6EC;
+  background: #F4F4F4;
   border: 1px solid #FFCB94;
   border-left: 3px solid var(--accent-deep);
   border-radius: var(--r-6);
@@ -4670,7 +4670,7 @@ code.font-mono {
   --accent-deep: #6B3300;
   --red-on-dark: #8A1C0C;
   --green-on-dark: #0B5A04;
-  --avatar-wash: #FFE0BF;
+  --avatar-wash: #FFD9B3;
   background: var(--flag-saffron);
   color: var(--ink);
 }
@@ -4723,7 +4723,7 @@ code.font-mono {
   --paper: #FFFFFF;
   --raised: #FFFFFF;
   --warm: #FFFFFF;
-  --sunk-2: #F7F8F4;
+  --sunk-2: #F4F4F4;
   --rule: #E6E3DC;
   --rule-strong: #D3CFC5;
   --ink: #1B1A17;
@@ -5506,4 +5506,219 @@ code.font-mono {
 .via-agent-tag {
   background: var(--accent-core);
   color: var(--accent-deep);
+}
+
+/* =========================================================================
+   UNSLOP — remove generic AI-design tells
+   ========================================================================= */
+
+/* No pulsing / decorative status dots; the text already says what is live. */
+.live-dot,
+.pulse-dot,
+.hero-counters-dot {
+  display: none !important;
+}
+
+/* No breathing, flashing or marquee motion. */
+.just-in.arriving,
+.arrive,
+.gate-disc.pulsing::after,
+.today-track {
+  animation: none !important;
+}
+
+/* No glows. */
+.rung-dot.verified,
+.rung-dot.hard,
+.rung-dot.disputed {
+  box-shadow: none;
+}
+
+.map-search-box,
+.map-minimap-wrap,
+.map-legend,
+.map-zoom,
+.map-sheet,
+.map-tooltip {
+  backdrop-filter: none !important;
+}
+
+/* No coloured left borders: status is carried by the badge. */
+.finding-card.status-verified,
+.finding-card.status-resolved_explained,
+.finding-card.status-retracted_false_positive,
+.finding-card.status-official_response_logged,
+.dossier-quarantine,
+.dossier-corrections {
+  border-left: 1px solid var(--rule);
+}
+
+/* Headlines are set upright; italic stays only where it means "unverified". */
+.hero-q em,
+.hero-a,
+.backed-pitch,
+.return-card.grave .return-card-title,
+.sponsor-note,
+.foot-brand {
+  font-style: normal;
+}
+
+/* Labels read as plain small text, not tracked uppercase eyebrows. */
+.kicker,
+.section-kicker,
+.whispers-eyebrow .kicker,
+.how-eyebrow,
+.foot-col-title,
+.foot-heading,
+.sponsors-label,
+.just-in-kicker {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 13px !important;
+}
+
+.foot-col h4 {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 14px !important;
+  font-weight: 600;
+}
+
+.status-note-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* Fewer boxes: content sits on the page, separated by rules. */
+.how-card {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--rule-strong);
+  border-radius: 0;
+  padding: 14px 0 0;
+}
+
+.how-cards {
+  gap: 24px;
+}
+
+.how-facts {
+  gap: 22px;
+}
+
+.how-cta {
+  border-radius: 0;
+}
+
+.returns {
+  gap: 28px;
+}
+
+.return-card,
+.return-card.since,
+.return-card.frontier,
+.return-card.grave {
+  background: none !important;
+  border: 0 !important;
+  border-top: 2px solid var(--ink) !important;
+  border-radius: 0 !important;
+  padding: 14px 0 0 !important;
+  color: var(--ink) !important;
+}
+
+.return-card .return-card-title,
+.record .return-card.frontier .return-card-title {
+  color: var(--ink) !important;
+}
+
+.mentioned-card {
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 12px 0 0;
+}
+
+.project-list {
+  gap: 0;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.project-card {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 22px 0;
+}
+
+.project-card:hover {
+  border-color: var(--rule-strong);
+}
+
+.project-card:hover .project-title {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Community links: one plain list instead of four icon cards. */
+.community-grid {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 10px 32px !important;
+  grid-template-columns: none !important;
+}
+
+.community-card {
+  background: none !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  min-height: 0 !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: baseline;
+  gap: 8px;
+  --ink: inherit;
+}
+
+.community-card .community-icon-box,
+.community-card .community-card-desc,
+.community-card .community-card-foot,
+.community-card .community-card-arrow {
+  display: none !important;
+}
+
+.community-card .community-card-top,
+.community-card .community-desc,
+.community-card .community-cta,
+.community-card .community-arrow {
+  display: none !important;
+}
+
+.community-card .community-card-body {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.community-card .community-name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: #FFFFFF;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.community-card .community-handle {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.sse-mini {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
 }

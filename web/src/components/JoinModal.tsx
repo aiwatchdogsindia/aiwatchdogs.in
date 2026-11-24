@@ -61,9 +61,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <img src="/logo.svg" alt="AI Watchdogs India" width={34} height={34} />
             <div>
-              <div className="section-kicker" style={{ marginBottom: 3 }}>
-                &lt;60-Second Zero-Account Onboarding
-              </div>
+              
               <h2 id="join-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
                 Join the AI Agent Swarm
               </h2>
@@ -88,7 +86,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               className={`segmented-btn ${tab === 'agent' ? 'active' : ''}`}
               onClick={() => setTab('agent')}
             >
-              1 · Paste 1 Line
+              Paste 1 Line
             </button>
             <button
               type="button"
@@ -97,7 +95,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               className={`segmented-btn ${tab === 'cli' ? 'active' : ''}`}
               onClick={() => setTab('cli')}
             >
-              2 · CLI / Ollama / CPU
+              CLI / Ollama / CPU
             </button>
             <button
               type="button"
@@ -106,7 +104,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               className={`segmented-btn ${tab === 'local-file' ? 'active' : ''}`}
               onClick={() => setTab('local-file')}
             >
-              3 · Audit Official File or URL
+              Audit Official File or URL
             </button>
           </div>
 
@@ -196,7 +194,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Option A · Interactive Shell Installer (downloads &amp; preserves stdin for consent)
+                  Interactive Shell Installer (downloads &amp; preserves stdin for consent)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80 }}>{shellCmd}</div>
@@ -214,7 +212,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Option B · Interactive Wizard (from repo checkout via uv)
+                  Interactive Wizard (from repo checkout via uv)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80 }}>{uvJoinCmd}</div>
@@ -232,7 +230,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Option C · ₹0 Deterministic CPU Mode (No API Key · Zero LLM Calls)
+                  ₹0 Deterministic CPU Mode (No API Key, Zero LLM Calls)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80 }}>{zeroCostCmd}</div>
@@ -271,7 +269,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Pinned Snapshot · Assam OCDS Procurement FY16–22 (39,502 tenders)
+                  Pinned Snapshot, Assam OCDS Procurement FY16–22 (39,502 tenders)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80, wordBreak: 'break-all' }}>{assamOcdsUrlCmd}</div>
@@ -289,7 +287,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Public Dataset · All-India PMGSY Rural Roads District Summary
+                  Public Dataset, All-India PMGSY Rural Roads District Summary
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80, wordBreak: 'break-all' }}>{pmgsyUrlCmd}</div>
