@@ -1,5 +1,6 @@
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+import { analyticsEnabled } from '../lib/analytics';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link } from '../router';
 import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
@@ -132,6 +133,22 @@ export function Footer({
           MIT License · Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
           Statistical audit leads are not legal determinations; citizens review and file RTIs
           personally.
+          {analyticsEnabled() && (
+            <>
+              {' '}
+              We use Google Analytics to count visits and see which pages are read; it sets cookies
+              and does not store your IP address.{' '}
+              <a
+                href="https://policies.google.com/technologies/partner-sites"
+                target="_blank"
+                rel="noreferrer"
+                className="foot-analytics-link"
+              >
+                How Google uses this data
+              </a>
+              .
+            </>
+          )}
         </span>
         <div className="foot-bottom-actions">
           <a

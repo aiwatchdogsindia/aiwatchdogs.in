@@ -8,6 +8,7 @@ import type { SponsorPreset } from './components/SponsorModal';
 import { ToastProvider } from './components/Toast';
 import { sseEventToWhisper, useSwarmStream, type SseEventPacket } from './hooks/useSwarmStream';
 import { HomePage } from './pages/HomePage';
+import { initAnalytics } from './lib/analytics';
 import { RouterProvider, useRouter } from './router';
 import type { HeadData, WhisperItem } from './types';
 import { isVerifiedStatus } from './utils';
@@ -76,6 +77,12 @@ function PageFallback() {
 function AppShell() {
   const { pathname, search } = useRouter();
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
+
+  // Google Analytics (no-op unless VITE_GA_MEASUREMENT_ID is set). Page views, including
+  // in-app navigations, are counted by GA4 Enhanced Measurement.
+  useEffect(() => {
+    initAnalytics();
+  }, []);
   const needsLiveUpdates = cleanPath === '/' || cleanPath === '/live';
 
   const [head, setHead] = useState<HeadData | null>(null);
