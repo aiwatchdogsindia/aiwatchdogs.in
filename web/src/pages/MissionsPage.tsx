@@ -209,7 +209,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   </span>
                   <span className="kpi-label">
                     {detail.unique_coverage_inr_cr != null
-                      ? detail.amount_unit_note || 'Deduplicated Mission Coverage'
+                      ? detail.amount_unit_note || 'Deduplicated project coverage'
                       : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
                   </span>
                 </div>

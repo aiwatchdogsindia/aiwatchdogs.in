@@ -808,7 +808,7 @@ export function HomePage({
                   <Link
                     to={`/projects/${encodeURIComponent(m.slug)}`}
                     className="lane-star"
-                    title={`Open ${m.methodology_code} mission brief`}
+                    title={`Open project: ${m.title}`}
                     aria-label={`Open ${m.title}`}
                   />
                 </div>

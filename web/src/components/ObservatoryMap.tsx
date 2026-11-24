@@ -1056,8 +1056,8 @@ export function ObservatoryMap({
           </div>
           <h2>
             {verifiedCount > 0 || agentsActive > 0
-              ? `${verifiedCount} peer-verified lead${verifiedCount === 1 ? '' : 's'}. ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing ${missionsCount} public-spending fronts.`
-              : `${missionsCount} live Government of India audit fronts. ${nodes.length} official datasets & portals mapped.`}
+              ? `${verifiedCount} peer-verified lead${verifiedCount === 1 ? '' : 's'} and ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing across ${missionsCount} ${missionsCount === 1 ? 'project' : 'projects'}.`
+              : `${missionsCount} ${missionsCount === 1 ? 'project' : 'projects'} and ${nodes.length} official datasets mapped.`}
           </h2>
           <div className="map-head-sub">
             <span className="live-pulse" style={{ color: 'var(--green-on-dark)' }}>

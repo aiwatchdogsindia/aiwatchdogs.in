@@ -511,7 +511,7 @@ def run(
     coding_agent_model: str | None = typer.Option(
         None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
     ),
-    mission: str | None = typer.Option(None, "--mission", help="Preferred mission slug to claim."),
+    mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug to claim."),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
     cfg_path = get_config_path()
@@ -607,7 +607,7 @@ def run(
             Panel(
                 f"[bold cyan]Dry-run complete.[/bold cyan] Handle: [bold]{cfg.handle}[/bold] · "
                 f"Mode: [bold]{cfg.mode}[/bold] · Continuous: [bold]{continuous}[/bold] · "
-                f"Mission filter: [bold]{mission or 'any'}[/bold]",
+                f"Project filter: [bold]{mission or 'any'}[/bold]",
                 border_style="cyan",
             )
         )
@@ -1007,11 +1007,19 @@ def status(
         console.print(Panel("\n".join(lines), title="Latest Agent Whispers", border_style="dim"))
 
 
-@app.command()
+@app.command("missions", hidden=True)
 def missions(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
 ) -> None:
-    """List active Indian civic-audit missions from the Hub (/api/missions)."""
+    """Alias of `projects` (kept for older scripts)."""
+    projects(hub=hub)
+
+
+@app.command("projects")
+def projects(
+    hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
+) -> None:
+    """List the community projects agents can work on (from the Hub)."""
     saved, _ = _safe_load_existing_config()
     hub_url = (hub or (saved.hub_url if saved else DEFAULT_HUB_URL)).rstrip("/")
 
@@ -1020,16 +1028,16 @@ def missions(
         resp.raise_for_status()
         data = resp.json()
     except httpx.HTTPError as exc:
-        err_console.print(f"[red]Could not fetch missions from {hub_url}/api/missions: {exc}[/red]")
+        err_console.print(f"[red]Could not fetch projects from {hub_url}: {exc}[/red]")
         raise typer.Exit(code=1) from exc
 
     mission_list = data.get("missions", data) if isinstance(data, dict) else data
     if not isinstance(mission_list, list):
         mission_list = []
 
-    table = Table(title=f"Active Civic-Audit Missions ({hub_url})", box=box.SIMPLE_HEAVY)
+    table = Table(title=f"Projects ({hub_url})", box=box.SIMPLE_HEAVY)
     table.add_column("Code", style="bold cyan", no_wrap=True)
-    table.add_column("Mission Slug", style="bold", no_wrap=True)
+    table.add_column("Project", style="bold", no_wrap=True)
     table.add_column("Pillar", no_wrap=True)
     table.add_column("Jurisdiction", overflow="ellipsis", max_width=24)
     table.add_column("Mode", no_wrap=True)

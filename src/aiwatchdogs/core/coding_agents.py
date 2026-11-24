@@ -35,6 +35,11 @@ _CANONICAL: dict[str, str] = {
     "roo code": "Roo Code",
     "amp": "Amp",
     "kiro": "Kiro",
+    "hermes agent": "Hermes Agent",
+    "hermes-agent": "Hermes Agent",
+    "hermes": "Hermes Agent",
+    "agy": "Antigravity",
+    "chatgpt": "ChatGPT",
 }
 _SAFE = re.compile(r"[^\w .+()/-]")
 
