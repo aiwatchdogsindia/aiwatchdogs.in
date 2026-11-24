@@ -136,7 +136,7 @@ code.font-mono {
   position: relative;
   display: inline-block;
   flex-shrink: 0;
-  box-shadow: 0 0 0 0 rgba(61, 170, 110, 0.5);
+  box-shadow: 0 0 0 0 rgba(31, 163, 25, 0.5);
   animation: breatheDot 2.4s ease-in-out infinite;
 }
 
@@ -149,7 +149,7 @@ code.font-mono {
 .live-dot.amber,
 .pulse-dot.amber {
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(242, 184, 75, 0.5);
+  box-shadow: 0 0 0 0 rgba(255, 153, 51, 0.5);
 }
 
 .live-dot.offline,
@@ -161,10 +161,10 @@ code.font-mono {
 
 @keyframes breatheDot {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(61, 170, 110, 0.5);
+    box-shadow: 0 0 0 0 rgba(31, 163, 25, 0.5);
   }
   60% {
-    box-shadow: 0 0 0 6px rgba(61, 170, 110, 0);
+    box-shadow: 0 0 0 6px rgba(31, 163, 25, 0);
   }
 }
 
@@ -178,7 +178,7 @@ code.font-mono {
 }
 
 @keyframes justInPulse {
-  0% { background-color: #4A3A12; }
+  0% { background-color: #7A3D00; }
   100% { background-color: var(--ink); }
 }
 
@@ -190,6 +190,7 @@ code.font-mono {
    1. SITE HEADER (68px Broadsheet Masthead)
    ========================================================================= */
 .site-header {
+  position: relative;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
   padding: 16px var(--gutter);
@@ -197,6 +198,24 @@ code.font-mono {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+/* Tiranga band — saffron / white / green, stacked like the flag */
+.site-header::before,
+.site-footer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 9px;
+  background: var(--tricolor-band);
+  box-shadow: inset 0 -1px 0 rgba(10, 15, 60, 0.06);
+  pointer-events: none;
+}
+
+.site-header {
+  padding-top: 25px;
 }
 
 .site-header-row {
@@ -280,6 +299,7 @@ code.font-mono {
 .site-nav-link:hover {
   color: var(--ink);
   text-decoration: underline;
+  text-decoration-color: var(--flag-saffron);
   text-underline-offset: 4px;
   text-decoration-thickness: 1px;
 }
@@ -288,8 +308,9 @@ code.font-mono {
   color: var(--ink);
   font-weight: 500;
   text-decoration: underline;
+  text-decoration-color: var(--flag-saffron);
+  text-decoration-thickness: 2px;
   text-underline-offset: 4px;
-  text-decoration-thickness: 1px;
 }
 
 .header-right {
@@ -512,13 +533,13 @@ code.font-mono {
 }
 
 .btn-primary {
-  background: var(--ink);
+  background: var(--flag-navy);
   color: var(--paper);
-  border-color: var(--ink);
+  border-color: var(--flag-navy);
 }
 
 .btn-primary:hover {
-  background: #2E2C27;
+  background: #1A1A9E;
 }
 
 .btn-secondary {
@@ -549,7 +570,7 @@ code.font-mono {
 }
 
 .btn-emerald:hover {
-  background: #24553E;
+  background: #0E6A06;
 }
 
 .btn-rti {
@@ -559,7 +580,7 @@ code.font-mono {
 }
 
 .btn-rti:hover {
-  background: #DCE8F4;
+  background: #DFE2F8;
   border-color: var(--in-work-ink);
 }
 
@@ -590,12 +611,12 @@ code.font-mono {
 .chip-verified {
   color: var(--green);
   background: var(--green-bg);
-  border: 1px solid #C2DEC9;
+  border: 1px solid #BFE3BA;
   font-style: normal;
   font-weight: 400;
 }
 
-/* In Peer Review / Unverified Lead: HOLLOW transparent bg, 1px dashed #8A857A, ITALIC */
+/* In Peer Review / Unverified Lead: HOLLOW transparent bg, 1px dashed #6D7090, ITALIC */
 .badge-review,
 .chip-review {
   color: var(--conjecture-ink);
@@ -629,7 +650,7 @@ code.font-mono {
 .badge-rti,
 .chip-rti {
   color: var(--in-work-ink);
-  background: #EBF2F8;
+  background: #EDEEFA;
   border: 1px solid var(--in-work-ring);
   font-style: normal;
   font-weight: 400;
@@ -668,7 +689,7 @@ code.font-mono {
   border-radius: var(--r-999);
   background: var(--public-bg);
   color: var(--public);
-  border: 1px solid #C5DCFA;
+  border: 1px solid #C2C7F2;
   white-space: nowrap;
 }
 
@@ -719,7 +740,7 @@ code.font-mono {
   gap: 10px;
   min-height: 36px;
   padding: 3px 4px 3px 14px;
-  background: #FEFEFE;
+  background: #FFFFFF;
   border: 1px solid #E5E5EA;
   border-radius: var(--r-999);
   box-shadow: var(--shadow-float);
@@ -792,7 +813,7 @@ code.font-mono {
 }
 
 .join-copy-icon.copied {
-  color: #00A846;
+  color: #138808;
 }
 
 /* Floating .join-reveal popover (no layout shift!) */
@@ -1270,7 +1291,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FBFAF6 Warm Band)
+   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFCF8 Warm Band)
    ========================================================================= */
 .status-note {
   background: var(--warm);
@@ -1724,7 +1745,7 @@ code.font-mono {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  border: 1.5px solid rgba(61, 170, 110, 0.55);
+  border: 1.5px solid rgba(31, 163, 25, 0.55);
   animation: gatePulse 2.6s ease-out infinite;
 }
 
@@ -1776,7 +1797,7 @@ code.font-mono {
 }
 
 .gate-verdict.confirm {
-  border-color: #B6D3C3;
+  border-color: #B4DDAF;
   color: var(--green);
   background: var(--green-bg);
 }
@@ -1858,7 +1879,7 @@ code.font-mono {
 
 .org-seat.open-slot {
   border-style: dashed;
-  background: rgba(251, 250, 246, 0.88);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .org-seat.open-slot:hover {
@@ -1961,7 +1982,7 @@ code.font-mono {
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  border: 1px solid #B6D3C3;
+  border: 1px solid #B4DDAF;
   background: var(--green-bg);
   color: var(--green);
   border-radius: var(--r-999);
@@ -2024,7 +2045,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   8. BAND 6 — "THE FRONTS" DARK RACE BAND (#0B0E15)
+   8. BAND 6 — "THE FRONTS" DARK RACE BAND (#060A2E)
    ========================================================================= */
 .race {
   background: var(--race-bg);
@@ -2180,15 +2201,15 @@ code.font-mono {
 .rung-dot.verified {
   background: var(--obs-cream);
   border: none;
-  box-shadow: 0 0 7px rgba(243, 233, 210, 0.65);
+  box-shadow: 0 0 7px rgba(255, 255, 255, 0.65);
 }
 
 .rung-dot.hard {
   width: 13px;
   height: 13px;
-  background: rgba(242, 184, 75, 0.16);
+  background: rgba(255, 153, 51, 0.16);
   border: 1.75px solid var(--accent);
-  box-shadow: 0 0 10px rgba(242, 184, 75, 0.55);
+  box-shadow: 0 0 10px rgba(255, 153, 51, 0.55);
 }
 
 .rung-dot.peer_review {
@@ -2202,7 +2223,7 @@ code.font-mono {
   width: 8px;
   height: 8px;
   background: var(--obs-dead);
-  border: 1px solid #7C828E;
+  border: 1px solid #8C90AE;
 }
 
 .rung-dot.disputed {
@@ -2381,7 +2402,7 @@ code.font-mono {
 .map-search-input {
   width: 100%;
   height: 40px;
-  background: rgba(6, 7, 10, 0.78);
+  background: rgba(3, 5, 26, 0.78);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: var(--r-8);
@@ -2413,7 +2434,7 @@ code.font-mono {
 
 .map-search-results {
   margin-top: 6px;
-  background: rgba(11, 14, 21, 0.96);
+  background: rgba(6, 10, 46, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--r-10);
   max-height: 280px;
@@ -2441,7 +2462,7 @@ code.font-mono {
 }
 
 .map-search-item:hover {
-  background: rgba(242, 184, 75, 0.12);
+  background: rgba(255, 153, 51, 0.12);
 }
 
 /* Clickable Cluster Program Pills (stacked cleanly inside .map-head-inner) */
@@ -2461,7 +2482,7 @@ code.font-mono {
   gap: 7px;
   padding: 4px 10px;
   border-radius: var(--r-999);
-  background: rgba(11, 14, 21, 0.72);
+  background: rgba(6, 10, 46, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.13);
   color: var(--obs-mist);
   font-family: var(--font-mono);
@@ -2473,7 +2494,7 @@ code.font-mono {
 .map-program:hover,
 .map-program.active {
   border-color: var(--accent);
-  background: rgba(242, 184, 75, 0.12);
+  background: rgba(255, 153, 51, 0.12);
   color: var(--obs-ink);
 }
 
@@ -2499,7 +2520,7 @@ code.font-mono {
   width: 150px;
   height: 94px;
   border-radius: var(--r-8);
-  background: rgba(10, 12, 18, 0.88);
+  background: rgba(6, 10, 46, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
   flex-shrink: 0;
@@ -2536,7 +2557,7 @@ code.font-mono {
   z-index: 11;
   display: flex;
   flex-direction: column;
-  background: rgba(13, 16, 22, 0.92);
+  background: rgba(10, 16, 64, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--r-10);
   overflow: hidden;
@@ -2575,8 +2596,8 @@ code.font-mono {
   z-index: 12;
   padding: 6px 14px;
   border-radius: var(--r-999);
-  background: rgba(13, 16, 22, 0.9);
-  border: 1px solid rgba(242, 184, 75, 0.35);
+  background: rgba(10, 16, 64, 0.9);
+  border: 1px solid rgba(255, 153, 51, 0.35);
   color: var(--accent-light);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2589,7 +2610,7 @@ code.font-mono {
   z-index: 13;
   pointer-events: none;
   max-width: 270px;
-  background: rgba(11, 14, 21, 0.94);
+  background: rgba(6, 10, 46, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--r-10);
   padding: 10px 12px;
@@ -2682,7 +2703,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   10. BAND 8 — NUMBERS STRIP (#ECE8DF Sunk Band)
+   10. BAND 8 — NUMBERS STRIP (#FFF4E8 Sunk Band)
    ========================================================================= */
 .numbers {
   background: var(--sunk);
@@ -3107,7 +3128,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   13. BAND 11 — RECENT BACKERS MARQUEE (#F1EEE7)
+   13. BAND 11 — RECENT BACKERS MARQUEE (#F7F8F4)
    ========================================================================= */
 .today {
   background: var(--sunk-2);
@@ -3369,12 +3390,13 @@ code.font-mono {
 }
 
 /* =========================================================================
-   14. ARCHIVAL FOOTER (#F1EEE7)
+   14. ARCHIVAL FOOTER (#F7F8F4)
    ========================================================================= */
 .site-footer {
+  position: relative;
   background: var(--sunk-2);
   border-top: 1px solid var(--rule-verify);
-  padding: 56px var(--gutter) 0;
+  padding: 65px var(--gutter) 0;
   font-size: 14px;
   color: var(--ink-3);
 }
@@ -3416,7 +3438,7 @@ code.font-mono {
   border-radius: var(--r-999);
   background: var(--green-bg);
   color: var(--green);
-  border: 1px solid #C2DEC9;
+  border: 1px solid #BFE3BA;
   font-family: var(--font-serif);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
@@ -3915,7 +3937,7 @@ code.font-mono {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(20, 19, 16, 0.56);
+  background: rgba(10, 15, 60, 0.56);
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
@@ -4016,7 +4038,7 @@ code.font-mono {
   border-radius: var(--r-8);
   background: var(--ink);
   color: var(--paper);
-  border: 1px solid #3D3A33;
+  border: 1px solid #2A2F5A;
   font-size: 13px;
   font-weight: 500;
   box-shadow: var(--shadow-pop);
@@ -4038,9 +4060,9 @@ code.font-mono {
 }
 
 .offline-banner {
-  background: #FBF4E4;
-  border-bottom: 1px solid #D6B066;
-  color: #6B4A10;
+  background: #FFF1E0;
+  border-bottom: 1px solid #FFB866;
+  color: #8A4200;
   padding: 9px var(--gutter);
   font-size: 12.5px;
 }
@@ -4135,8 +4157,12 @@ code.font-mono {
     padding: 0 16px;
   }
   .site-header {
-    padding: 12px var(--gutter);
+    padding: 18px var(--gutter) 12px;
     min-height: 60px;
+  }
+  .site-header::before,
+  .site-footer::before {
+    height: 6px;
   }
   .brand-logo {
     width: 26px;
@@ -4417,8 +4443,8 @@ code.font-mono {
 }
 
 .dossier-corrections {
-  background: #FBF6EC;
-  border: 1px solid #D8C299;
+  background: #FFF6EC;
+  border: 1px solid #FFCB94;
   border-left: 3px solid var(--accent-deep);
   border-radius: var(--r-6);
   padding: 15px 18px;
@@ -4533,7 +4559,7 @@ code.font-mono {
 
 .map-search-item.active,
 .map-search-item:focus-visible {
-  background: rgba(242, 184, 75, 0.18);
+  background: rgba(255, 153, 51, 0.18);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
@@ -4556,7 +4582,7 @@ code.font-mono {
   min-height: 38px;
   padding: 6px 10px;
   border-radius: var(--r-6);
-  background: rgba(11, 14, 21, 0.9);
+  background: rgba(6, 10, 46, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.24);
   color: var(--obs-ink);
   font-size: 13px;

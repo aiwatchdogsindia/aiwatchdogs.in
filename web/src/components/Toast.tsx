@@ -25,7 +25,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className="toast">
-            <Check size={14} color="#4ADE80" />
+            <Check size={14} color="#5FD35A" />
             <span>{t.message}</span>
           </div>
         ))}

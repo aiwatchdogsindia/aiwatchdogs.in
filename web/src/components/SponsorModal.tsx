@@ -115,7 +115,7 @@ export function SponsorModal({ open, preset, onClose, onSuccess }: SponsorModalP
             style={{
               padding: '11px 14px',
               background: 'var(--green-bg)',
-              border: '1px solid #C2DEC9',
+              border: '1px solid #BFE3BA',
               borderRadius: 6,
               fontSize: 13,
               color: 'var(--green)',
