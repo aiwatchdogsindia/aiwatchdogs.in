@@ -210,7 +210,7 @@ code.font-mono {
   top: 0;
   height: 9px;
   background: var(--tricolor-band);
-  box-shadow: inset 0 -1px 0 rgba(10, 15, 60, 0.06);
+  box-shadow: inset 0 -1px 0 rgba(27, 26, 23, 0.08);
   pointer-events: none;
 }
 
@@ -536,13 +536,14 @@ code.font-mono {
 }
 
 .btn-primary {
-  background: var(--flag-navy);
-  color: var(--paper);
-  border-color: var(--flag-navy);
+  background: var(--chakra, var(--flag-navy));
+  color: var(--on-chakra, #FFFFFF);
+  border-color: var(--chakra, var(--flag-navy));
 }
 
 .btn-primary:hover {
-  background: #1A1A9E;
+  background: var(--chakra-hover, #1A1A9E);
+  border-color: var(--chakra-hover, #1A1A9E);
 }
 
 .btn-secondary {
@@ -1481,8 +1482,8 @@ code.font-mono {
 }
 
 .seg-btn.active {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--chakra, var(--flag-navy));
+  color: var(--on-chakra, #FFFFFF);
 }
 
 .lb-rows {
@@ -2048,7 +2049,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   8. BAND 6 — "THE FRONTS" DARK RACE BAND (#060A2E)
+   8. BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
    ========================================================================= */
 .race {
   background: var(--race-bg);
@@ -2226,7 +2227,7 @@ code.font-mono {
   width: 8px;
   height: 8px;
   background: var(--obs-dead);
-  border: 1px solid #8C90AE;
+  border: 1px solid #CFE8CA;
 }
 
 .rung-dot.disputed {
@@ -2261,7 +2262,7 @@ code.font-mono {
 
 .lane-stat {
   text-align: right;
-  color: var(--accent);
+  color: var(--obs-mist);
   font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -2405,7 +2406,7 @@ code.font-mono {
 .map-search-input {
   width: 100%;
   height: 40px;
-  background: rgba(3, 5, 26, 0.78);
+  background: rgba(5, 52, 2, 0.78);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: var(--r-8);
@@ -2437,7 +2438,7 @@ code.font-mono {
 
 .map-search-results {
   margin-top: 6px;
-  background: rgba(6, 10, 46, 0.96);
+  background: rgba(7, 70, 3, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--r-10);
   max-height: 280px;
@@ -2485,7 +2486,7 @@ code.font-mono {
   gap: 7px;
   padding: 4px 10px;
   border-radius: var(--r-999);
-  background: rgba(6, 10, 46, 0.72);
+  background: rgba(7, 70, 3, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.13);
   color: var(--obs-mist);
   font-family: var(--font-mono);
@@ -2523,7 +2524,7 @@ code.font-mono {
   width: 150px;
   height: 94px;
   border-radius: var(--r-8);
-  background: rgba(6, 10, 46, 0.88);
+  background: rgba(7, 70, 3, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
   flex-shrink: 0;
@@ -2560,7 +2561,7 @@ code.font-mono {
   z-index: 11;
   display: flex;
   flex-direction: column;
-  background: rgba(10, 16, 64, 0.92);
+  background: rgba(9, 84, 5, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--r-10);
   overflow: hidden;
@@ -2599,7 +2600,7 @@ code.font-mono {
   z-index: 12;
   padding: 6px 14px;
   border-radius: var(--r-999);
-  background: rgba(10, 16, 64, 0.9);
+  background: rgba(9, 84, 5, 0.9);
   border: 1px solid rgba(255, 153, 51, 0.35);
   color: var(--accent-light);
   font-family: var(--font-mono);
@@ -2613,7 +2614,7 @@ code.font-mono {
   z-index: 13;
   pointer-events: none;
   max-width: 270px;
-  background: rgba(6, 10, 46, 0.94);
+  background: rgba(7, 70, 3, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--r-10);
   padding: 10px 12px;
@@ -2802,9 +2803,10 @@ code.font-mono {
 }
 
 .return-card.frontier {
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: var(--paper);
+  /* Ashoka Chakra navy: the one dark card in the white zone */
+  background: var(--flag-navy);
+  border: 1px solid var(--flag-navy);
+  color: #FFFFFF;
 }
 
 .return-card.grave {
@@ -3125,9 +3127,9 @@ code.font-mono {
 }
 
 .amount-chip.active {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
+  background: var(--chakra, var(--flag-navy));
+  color: var(--on-chakra, #FFFFFF);
+  border-color: var(--chakra, var(--flag-navy));
 }
 
 /* =========================================================================
@@ -3940,7 +3942,7 @@ code.font-mono {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(10, 15, 60, 0.56);
+  background: rgba(27, 26, 23, 0.56);
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
@@ -4585,7 +4587,7 @@ code.font-mono {
   min-height: 38px;
   padding: 6px 10px;
   border-radius: var(--r-6);
-  background: rgba(6, 10, 46, 0.9);
+  background: rgba(7, 70, 3, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.24);
   color: var(--obs-ink);
   font-size: 13px;
@@ -4618,4 +4620,144 @@ code.font-mono {
   .just-in.arriving {
     animation: none !important;
   }
+}
+
+
+/* =========================================================================
+   TIRANGA ZONES — page bands carry the flag colours in flag proportion
+   (saffron ~33% · white ~31.5% · green ~33% · navy ~1.8%, measured on the
+   home page). Each zone re-scopes the surface/ink tokens, so cards, rules,
+   buttons and text inside it follow automatically.
+   ========================================================================= */
+
+/* Saffron zone — dark ink on saffron; cards stay white */
+.hero,
+.backed-by,
+.status-note,
+.leaderboard,
+.home-live,
+.numbers,
+.container > .section-header:first-child,
+.page-zone-saffron {
+  --paper: var(--flag-saffron);
+  --warm: var(--flag-saffron);
+  --sunk: #F28A1E;
+  --sunk-2: #FFAA55;
+  --plain: #FFAA55;
+  --rule: rgba(27, 26, 23, 0.18);
+  --rule-soft: rgba(27, 26, 23, 0.10);
+  --rule-strong: rgba(27, 26, 23, 0.32);
+  --rule-verify: rgba(27, 26, 23, 0.22);
+  --ink: #1B1A17;
+  --ink-2: #2A2620;
+  --ink-3: #3A2E1E;
+  --ink-4: #45351F;
+  --ink-5: #6E4A1C;
+  --ink-6: #8C5A1E;
+  --accent: #1B1A17;
+  --accent-deep: #6B3300;
+  --avatar-wash: #FFE0BF;
+  background: var(--flag-saffron);
+  color: var(--ink);
+}
+
+/* Green zone — white ink on India green; cards a shade deeper */
+.race,
+.map,
+.community-band,
+.sponsors,
+.site-footer,
+.page-zone-green {
+  --paper: var(--flag-green-deep);
+  --warm: var(--flag-green-deep);
+  --raised: var(--flag-green-card);
+  --sunk: var(--flag-green-card);
+  --sunk-2: #0A5704;
+  --plain: var(--flag-green-card);
+  --rule: rgba(255, 255, 255, 0.26);
+  --rule-soft: rgba(255, 255, 255, 0.14);
+  --rule-strong: rgba(255, 255, 255, 0.45);
+  --rule-verify: rgba(255, 255, 255, 0.30);
+  --ink: #FFFFFF;
+  --ink-2: #F3FAF1;
+  --ink-3: #DCEFD8;
+  --ink-4: #CFE8CA;
+  --ink-5: #9FD196;
+  --ink-6: #7FBF75;
+  --green: #C8F5BE;
+  --green-bg: rgba(255, 255, 255, 0.14);
+  --live: #9BF08F;
+  --ep-verified-bd: rgba(255, 255, 255, 0.36);
+  --red: #FFC2B6;
+  --red-bg: rgba(255, 194, 182, 0.14);
+  --accent-deep: #FFD7A8;
+  --avatar-wash: rgba(255, 255, 255, 0.16);
+  --avatar-ink: #FFFFFF;
+  --chakra: #FFFFFF;
+  --on-chakra: var(--flag-green-deep);
+  --chakra-hover: #E8F5E6;
+  background: var(--flag-green-deep);
+  color: var(--ink);
+}
+
+/* The tricolour band already separates header/footer; drop the extra hairline */
+.site-footer {
+  border-top: 0;
+}
+
+/* Numbers strip: saffron band with chakra-navy figures */
+.numbers .count-item dt {
+  color: var(--flag-navy);
+}
+
+/* Community cards sit as white cards on the green band */
+.community-card {
+  --paper: #FFFFFF;
+  --raised: #FFFFFF;
+  --warm: #FFFFFF;
+  --sunk-2: #F7F8F4;
+  --rule: #E6E3DC;
+  --rule-strong: #D3CFC5;
+  --ink: #1B1A17;
+  --ink-2: #3F3B34;
+  --ink-3: #575249;
+  --ink-4: #635E54;
+  --ink-5: #9E988B;
+  color: var(--ink);
+}
+
+/* Footer legal strip: the chakra-navy accent (~1% of the page, like the chakra on the flag) */
+.site-footer .foot-bottom {
+  --ink: #FFFFFF;
+  --ink-2: #F2F2FA;
+  --ink-3: #DADBF0;
+  --ink-4: #D0D2EC;
+  --rule: rgba(255, 255, 255, 0.28);
+  --chakra: #FFFFFF;
+  --on-chakra: var(--flag-navy);
+  --chakra-hover: #E6E7F7;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 22px var(--gutter);
+  border-top: 0;
+  background: var(--flag-navy);
+  color: var(--ink-4);
+}
+
+/* Keep the tricolour emblem legible on the green footer */
+.foot-brand-row img {
+  background: #FFFFFF;
+  border-radius: 8px;
+  padding: 3px;
+  box-sizing: content-box;
+}
+
+/* Subpage title blocks: full-bleed saffron band (flag order: saffron title,
+   white content, green footer, navy legal strip) */
+.container > .section-header:first-child {
+  position: relative;
+  margin-top: -28px;
+  padding-block: 40px 36px;
+  margin-bottom: 28px;
+  box-shadow: 0 0 0 100vmax var(--flag-saffron);
+  clip-path: inset(0 -100vmax);
 }

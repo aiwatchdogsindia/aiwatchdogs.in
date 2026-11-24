@@ -841,7 +841,7 @@ export function HomePage({
       </section>
 
       {/* =================================================================
-          BAND 6 — "THE FRONTS" DARK RACE BAND (#060A2E)
+          BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
          ================================================================= */}
       <section className="race" aria-label="The Fronts: 8 Indian civic-audit missions">
         <div className="race-head">

@@ -18,11 +18,16 @@
 
 :root {
   /* ===== Tiranga (Indian Tricolour) Brand Palette =====
-     Saffron (courage) · White (truth) · India Green (growth) · Ashoka Chakra Navy (law) */
+     Saffron (courage) · White (truth) · India Green (growth) · Ashoka Chakra Navy (law)
+     Proportions follow the flag: saffron ~33%, white ~31.5%, green ~33%, navy ~1.8%
+     (the chakra). Saffron and green are carried by whole page zones (see the
+     "TIRANGA ZONES" block at the end of global.css); navy is an accent only. */
   --flag-saffron: #FF9933;
   --flag-white: #FFFFFF;
   --flag-green: #138808;
   --flag-navy: #000080;
+  --flag-green-deep: #0F7306;   /* same hue as India green, deep enough for AA white text */
+  --flag-green-card: #0C6305;
   --tricolor-band: linear-gradient(180deg,
     var(--flag-saffron) 0 33.333%,
     var(--flag-white) 33.333% 66.666%,
@@ -42,13 +47,13 @@
   --rule-strong: #D3CFC5;
   --rule-verify: #CFE3CC;
 
-  /* Ink Hierarchy — Ashoka Chakra navy-black (WCAG AA >= 4.5:1 on paper, warm, and sunk) */
-  --ink: #0A0F3C;
-  --ink-2: #2A2F5A;
-  --ink-3: #464A6E;
-  --ink-4: #585B7A;
-  --ink-5: #9497AE;
-  --ink-6: #C6C8D6;
+  /* Ink Hierarchy — neutral near-black (WCAG AA >= 4.5:1 on paper, warm, and sunk) */
+  --ink: #1B1A17;
+  --ink-2: #3F3B34;
+  --ink-3: #575249;
+  --ink-4: #635E54;
+  --ink-5: #9E988B;
+  --ink-6: #C9C3B5;
   --avatar-wash: #FFEBD6;
   --avatar-ink: #A84F00;
 
@@ -60,8 +65,8 @@
 
   --in-work-ink: #000080;
   --in-work-ring: #8087D0;
-  --conjecture-ink: #464A6E;
-  --conjecture-stroke: #6D7090;
+  --conjecture-ink: #575249;
+  --conjecture-stroke: #756F64;
 
   --red: #A2321F;
   --red-bg: #F7E4E0;
@@ -79,26 +84,26 @@
   --accent-flash: #FFE0BF;
   --accent-deep: #A84F00;
 
-  /* Dark Race & Observatory Surfaces — Ashoka Chakra night navy */
-  --race-bg: #060A2E;
-  --obs-bg: #040722;
-  --obs-radial: radial-gradient(75% 75% at 40% 50%, #0A1040 0%, #03051A 100%);
-  --obs-surface: #0C1238;
-  --obs-surface-raised: #131A4A;
-  --obs-border: #222A5E;
-  --obs-ink: #F4F5FA;
-  --obs-mist: #C6C8D6;
-  --obs-muted: #8C90AE;
-  --obs-dead: #5C6088;
-  --obs-edge-solid: #353C6E;
-  --obs-edge-open: #262C58;
-  --obs-edge-disputed: #4A2622;
+  /* Race band & Observatory — India green field (was navy; navy is now accent-only) */
+  --race-bg: #0F7306;
+  --obs-bg: #0A5A04;
+  --obs-radial: radial-gradient(75% 75% at 40% 50%, #138808 0%, #0A5A04 60%, #074603 100%);
+  --obs-surface: #0C6305;
+  --obs-surface-raised: #107A07;
+  --obs-border: rgba(255, 255, 255, 0.22);
+  --obs-ink: #FFFFFF;
+  --obs-mist: #E2F2DE;
+  --obs-muted: #CFE8CA;
+  --obs-dead: #8FC287;
+  --obs-edge-solid: rgba(255, 255, 255, 0.42);
+  --obs-edge-open: rgba(255, 255, 255, 0.22);
+  --obs-edge-disputed: #FFB4A6;
   --obs-cream: #FFFFFF;
   --obs-amber: #FF9933;
-  --obs-emerald: #5FD35A;
-  --obs-cobalt: #7C86FF;
-  --obs-terracotta: #E0705C;
-  --obs-slate: #8C90AE;
+  --obs-emerald: #C8F5BE;
+  --obs-cobalt: #000080;
+  --obs-terracotta: #FFB4A6;
+  --obs-slate: #CFE8CA;
 
   /* Cluster / Pillar Hues — drawn from the tricolour */
   --pillar-procurement: #FF9933;
@@ -140,8 +145,8 @@
   --r-999: 999px;
 
   /* Floating pill / popover subtle elevation (the ONLY shadows on paper) */
-  --shadow-float: 0 1px 2px rgba(10, 15, 60, 0.04), 0 4px 14px rgba(10, 15, 60, 0.06);
-  --shadow-pop: 0 4px 20px rgba(10, 15, 60, 0.09), 0 1px 3px rgba(10, 15, 60, 0.05);
+  --shadow-float: 0 1px 2px rgba(27, 26, 23, 0.05), 0 4px 14px rgba(27, 26, 23, 0.08);
+  --shadow-pop: 0 4px 20px rgba(27, 26, 23, 0.10), 0 1px 3px rgba(27, 26, 23, 0.06);
 
   /* Backwards-compatible semantic aliases for subpages & drawers */
   --bg-paper: var(--paper);
