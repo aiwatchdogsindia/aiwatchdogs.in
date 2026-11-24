@@ -39,11 +39,12 @@ export function SponsorsLedgerPage({
   refreshTick,
 }: SponsorsLedgerPageProps) {
   const [sponsors, setSponsors] = useState<SponsorItem[]>([]);
-  const [sponsorsTotal, setSponsorsTotal] = useState(0);
+  const [pledgedTotal, setPledgedTotal] = useState(0);
   const [ledger, setLedger] = useState<LedgerEntry[]>([]);
-  const [inflow, setInflow] = useState(0);
+  const [reconciledCash, setReconciledCash] = useState(0);
+  const [inKindCompute, setInKindCompute] = useState(0);
   const [outflow, setOutflow] = useState(0);
-  const [balance, setBalance] = useState(0);
+  const [netCashBalance, setNetCashBalance] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -55,11 +56,12 @@ export function SponsorsLedgerPage({
       .then(([sp, ld]) => {
         if (cancelled) return;
         setSponsors(sp.sponsors);
-        setSponsorsTotal(sp.total_inr);
+        setPledgedTotal(Math.max(sp.pledged_total_inr, ld.summary.pledged_total_inr));
         setLedger(ld.entries);
-        setInflow(ld.total_inflow_inr);
-        setOutflow(ld.total_outflow_inr);
-        setBalance(ld.balance_inr);
+        setReconciledCash(ld.summary.reconciled_cash_inr);
+        setInKindCompute(Math.max(sp.in_kind_compute_inr, ld.summary.in_kind_compute_inr));
+        setOutflow(ld.summary.total_outflow_inr);
+        setNetCashBalance(ld.summary.net_cash_balance_inr);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load treasury');
@@ -170,27 +172,29 @@ export function SponsorsLedgerPage({
         </div>
       </div>
 
-      {/* Treasury KPI Summary Strip */}
-      <div className="kpi-strip cols-4" style={{ marginBottom: 28 }}>
+      {/* Treasury KPI Summary Strip — Strictly separates Reconciled Cash, Pledges & In-Kind Compute */}
+      <div className="kpi-strip cols-5" style={{ marginBottom: 28 }}>
         <div className="kpi-cell">
-          <span className="kpi-value emerald">{formatInrExact(inflow)}</span>
-          <span className="kpi-label">Total Inflows &amp; Compute Grants</span>
+          <span className="kpi-value emerald">{loading ? '—' : formatInrExact(reconciledCash)}</span>
+          <span className="kpi-label">Reconciled Cash Received (Verified Receipts)</span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-value">{formatInrExact(outflow)}</span>
+          <span className="kpi-value">{loading ? '—' : formatInrExact(outflow)}</span>
           <span className="kpi-label">Verified Hosting &amp; Infra Outflows</span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-value indigo">{formatInrExact(balance)}</span>
-          <span className="kpi-label">Net Public Treasury Balance</span>
+          <span className="kpi-value indigo">{loading ? '—' : formatInrExact(netCashBalance)}</span>
+          <span className="kpi-label">Net Reconciled Cash Balance</span>
         </div>
         <div className="kpi-cell">
-          <span className="kpi-value">{formatInrExact(sponsorsTotal)}</span>
+          <span className="kpi-value slate">{loading ? '—' : formatInrExact(pledgedTotal)}</span>
           <span className="kpi-label">
-            {sponsorsTotal > 0
-              ? `Total Ranked Backer Pledges (${sponsors.length})`
-              : '₹0 raised so far · 100% open ledger'}
+            Self-Declared Pledges (Unreconciled)
           </span>
+        </div>
+        <div className="kpi-cell">
+          <span className="kpi-value slate">{loading ? '—' : formatInrExact(inKindCompute)}</span>
+          <span className="kpi-label">In-Kind Compute / API Credits</span>
         </div>
       </div>
 
@@ -255,7 +259,7 @@ export function SponsorsLedgerPage({
                     >
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div className="section-kicker" style={{ marginBottom: 0 }}>
-                          ₹0 raised so far · 100% open ledger
+                          ₹0 reconciled cash · 100% open ledger
                         </div>
                         <div className="font-serif" style={{ fontSize: 21, lineHeight: 1.3 }}>
                           No backers yet — be the first to fund open compute
@@ -389,24 +393,56 @@ export function SponsorsLedgerPage({
                 </thead>
                 <tbody>
                   {ledger.map((row, idx) => {
-                    const isIn = row.direction === 'inflow';
+                    const status = (row.settlement_status || 'pledged').toLowerCase();
+                    const isOutflow = row.direction === 'outflow' || status === 'verified_outflow';
+                    const isInKind =
+                      !isOutflow &&
+                      (status === 'in_kind' ||
+                        status === 'in_kind_committed' ||
+                        status === 'in_kind_fulfilled' ||
+                        row.direction === 'in_kind' ||
+                        row.category === 'compute_grant' ||
+                        Boolean(row.compute_credits_desc));
+                    const isReconciledIn =
+                      !isOutflow &&
+                      !isInKind &&
+                      (status === 'received' || status === 'reconciled') &&
+                      row.direction === 'inflow';
+                    const badgeClass = isReconciledIn
+                      ? 'badge badge-verified'
+                      : isOutflow
+                        ? 'badge badge-cleared'
+                        : isInKind
+                          ? 'badge badge-rti'
+                          : 'badge badge-review';
+                    const statusLabel = isReconciledIn
+                      ? 'reconciled cash'
+                      : isOutflow
+                        ? row.category.replace(/_/g, ' ')
+                        : isInKind
+                          ? 'in-kind compute'
+                          : 'self-declared pledge';
                     return (
                       <tr key={row.id ?? idx}>
                         <td className="font-mono" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                           {row.entry_date}
                         </td>
                         <td>
-                          <span className={isIn ? 'badge badge-verified' : 'badge badge-cleared'}>
-                            {isIn ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
-                            <span>{row.category.replace(/_/g, ' ')}</span>
+                          <span className={badgeClass}>
+                            {isReconciledIn ? (
+                              <ArrowDownLeft size={11} />
+                            ) : isOutflow ? (
+                              <ArrowUpRight size={11} />
+                            ) : null}
+                            <span>{statusLabel}</span>
                           </span>
                         </td>
                         <td style={{ fontWeight: 600 }}>{row.counterparty}</td>
                         <td style={{ fontSize: 13, color: 'var(--ink-secondary)' }}>
                           <div>{row.description}</div>
                           {row.compute_credits_desc && (
-                            <div className="font-mono" style={{ fontSize: 11, color: 'var(--ep-rti-fg)', marginTop: 2 }}>
-                              Credits: {row.compute_credits_desc}
+                            <div className="font-mono" style={{ fontSize: 11.5, color: 'var(--ep-rti-fg)', marginTop: 2 }}>
+                              In-kind credits: {row.compute_credits_desc}
                             </div>
                           )}
                         </td>
@@ -417,10 +453,10 @@ export function SponsorsLedgerPage({
                           className="num"
                           style={{
                             fontWeight: 600,
-                            color: isIn ? 'var(--ep-verified-fg)' : 'var(--ink-primary)',
+                            color: isReconciledIn ? 'var(--ep-verified-fg)' : 'var(--ink-primary)',
                           }}
                         >
-                          {isIn ? '+' : '-'}
+                          {isReconciledIn ? '+' : isOutflow ? '-' : ''}
                           {formatInrExact(row.amount_inr)}
                         </td>
                       </tr>
@@ -429,7 +465,7 @@ export function SponsorsLedgerPage({
                   {ledger.length === 0 && (
                     <tr>
                       <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-muted)', padding: 24 }}>
-                        ₹0 raised so far · 100% open ledger — inflows, compute credit grants, and hosting expenses will appear here automatically.
+                        ₹0 reconciled cash · ₹0 self-declared pledges — reconciled cash receipts, self-declared pledges, in-kind compute grants, and hosting expenses are tracked separately here.
                       </td>
                     </tr>
                   )}

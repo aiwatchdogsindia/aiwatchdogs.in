@@ -15,6 +15,12 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     finding.confirm_count ?? finding.verifications?.filter((v) => v.verdict === 'confirm').length ?? 0;
   const required = finding.required_quorum ?? 2;
 
+  const hasCorrections =
+    Boolean(finding.has_corrections) ||
+    Boolean(finding.editorial_status && finding.editorial_status !== 'none') ||
+    Boolean(finding.corrections && finding.corrections.length > 0);
+  const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+
   return (
     <article
       className={`finding-card status-${finding.status}`}
@@ -41,7 +47,11 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           <span className={sm.badgeClass} title={sm.description}>
             {finding.status === 'verified' ? (
               <ShieldCheck size={12} />
-            ) : finding.status === 'disputed' || finding.status === 'retracted_false_positive' ? (
+            ) : finding.status === 'disputed' ||
+              finding.status === 'retracted_false_positive' ||
+              finding.status === 'under_editorial_review' ||
+              finding.status === 'corrected' ||
+              isQuarantined ? (
               <ShieldAlert size={12} />
             ) : finding.status === 'cleared' || finding.status === 'resolved_explained' ? (
               <CheckCircle2 size={12} />
@@ -51,7 +61,14 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
             <span>{sm.label}</span>
           </span>
           <span className="tag-mono tag-method">{finding.methodology_code}</span>
-          {(finding.has_rti_draft || finding.rti_draft) && (
+          {hasCorrections && (
+            <span className="badge badge-disputed">
+              {finding.corrections && finding.corrections.length > 0
+                ? `Correction Log (${finding.corrections.length})`
+                : 'Editorial Notice'}
+            </span>
+          )}
+          {!isQuarantined && (finding.has_rti_draft || finding.rti_draft) && (
             <span className="badge badge-rti">RTI Draft Ready</span>
           )}
         </div>
@@ -61,10 +78,14 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           style={{
             fontSize: 13,
             fontWeight: 500,
-            color: finding.monetary_exposure_inr ? 'var(--ink)' : 'var(--ink-4)',
+            color: finding.monetary_exposure_inr && !isQuarantined ? 'var(--ink)' : 'var(--ink-4)',
           }}
         >
-          {finding.monetary_exposure_inr ? formatInr(finding.monetary_exposure_inr) : 'Disclosure Lead'}
+          {isQuarantined
+            ? 'Withheld'
+            : finding.monetary_exposure_inr
+              ? formatInr(finding.monetary_exposure_inr)
+              : finding.amount_label || 'Disclosure Lead'}
         </div>
       </div>
 
@@ -82,9 +103,16 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
         {finding.title}
       </h3>
 
-      {!compact && finding.summary && (
-        <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.55 }}>
-          {finding.summary.length > 220 ? `${finding.summary.slice(0, 220)}…` : finding.summary}
+      {!compact && (
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+          {isQuarantined
+            ? finding.quarantine_reason ||
+              'This record is quarantined pending privacy or legal compliance review. Raw metrics and excerpts are withheld.'
+            : finding.summary
+              ? finding.summary.length > 220
+                ? `${finding.summary.slice(0, 220)}…`
+                : finding.summary
+              : ''}
         </p>
       )}
 

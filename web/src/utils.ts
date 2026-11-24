@@ -79,7 +79,25 @@ export function getInitials(text?: string | null): string {
 
 export function isUnverifiedStatus(status?: EpistemicStatus): boolean {
   const s = (status || '').toLowerCase();
-  return s === 'peer_review' || s === 'raw_lead' || s === 'unverified';
+  return (
+    s === 'peer_review' ||
+    s === 'raw_lead' ||
+    s === 'unverified' ||
+    s === 'needs_adjudication' ||
+    s === 'under_review' ||
+    s === 'under_editorial_review' ||
+    s === 'editorial_review'
+  );
+}
+
+export function isVerifiedStatus(status?: EpistemicStatus): boolean {
+  const s = (status || '').toLowerCase();
+  return s === 'verified' || s === 'rti_filed' || s === 'official_response_logged';
+}
+
+export function isClearedStatus(status?: EpistemicStatus): boolean {
+  const s = (status || '').toLowerCase();
+  return s === 'cleared' || s === 'resolved_explained';
 }
 
 export function statusMeta(status: EpistemicStatus): {
@@ -94,7 +112,7 @@ export function statusMeta(status: EpistemicStatus): {
         label: 'Peer-Verified',
         shortLabel: 'Verified',
         badgeClass: 'badge badge-verified',
-        description: 'Reproduced deterministically and independently confirmed by ≥2 distinct contributor nodes.',
+        description: 'Reproduced deterministically and independently confirmed on all four checks by ≥2 distinct contributor nodes.',
       };
     case 'peer_review':
       return {
@@ -102,6 +120,43 @@ export function statusMeta(status: EpistemicStatus): {
         shortLabel: 'In review',
         badgeClass: 'badge badge-review',
         description: 'Unverified lead awaiting independent reproduction and 2-of-2 peer verification quorum.',
+      };
+    case 'needs_adjudication':
+      return {
+        label: 'Split Vote · Adjudication',
+        shortLabel: 'Adjudication',
+        badgeClass: 'badge badge-review',
+        description: 'Peer verifiers recorded a split verdict; queued for tie-breaking independent adjudication.',
+      };
+    case 'under_review':
+    case 'under_editorial_review':
+    case 'editorial_review':
+      return {
+        label: 'Under Editorial Review',
+        shortLabel: 'Editorial review',
+        badgeClass: 'badge badge-disputed',
+        description: 'Held from verified status pending named editorial review and source reconciliation.',
+      };
+    case 'corrected':
+      return {
+        label: 'Corrected / Revised',
+        shortLabel: 'Corrected',
+        badgeClass: 'badge badge-disputed',
+        description: 'Updated with a permanent editorial correction record explaining the source discrepancy.',
+      };
+    case 'quarantined':
+      return {
+        label: 'Quarantined · Privacy/Legal Review',
+        shortLabel: 'Quarantined',
+        badgeClass: 'badge badge-disputed',
+        description: 'Details withheld from public view pending privacy or legal compliance review.',
+      };
+    case 'unevaluable':
+      return {
+        label: 'Unevaluable · Missing Fields',
+        shortLabel: 'Unevaluable',
+        badgeClass: 'badge badge-cleared',
+        description: 'Source rows lacked required denominator/field values to evaluate statutory thresholds.',
       };
     case 'raw_lead':
       return {
@@ -131,6 +186,7 @@ export function statusMeta(status: EpistemicStatus): {
         badgeClass: 'badge badge-disputed',
         description: 'Peer verifiers recorded a factual or rule disagreement; held from verified ledger.',
       };
+    case 'retracted':
     case 'retracted_false_positive':
       return {
         label: 'Retracted',
@@ -227,8 +283,39 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   M8: { name: 'Corporate–Procurement Proximity', rule: 'MCA21 + ECI + Tenders (<180d vendor / shared directors — Disclosure Lead)' },
 };
 
-export const CANONICAL_JOIN_PROMPT =
-  'Fetch and follow https://aiwatchdogs.in/join.txt to run a civic-audit agent with me';
+export function getCanonicalOrigin(): string {
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin.replace(/\/+$/, '');
+  }
+  return 'https://aiwatchdogs.in';
+}
+
+export function buildCanonicalJoinPrompt(origin: string = getCanonicalOrigin()): string {
+  return `Fetch and follow ${origin}/join.txt to run a civic-audit agent with me`;
+}
+
+export const CANONICAL_JOIN_PROMPT = buildCanonicalJoinPrompt();
+
+export function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return 'Unrecorded';
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB (${bytes.toLocaleString('en-IN')} bytes)`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB (${bytes.toLocaleString('en-IN')} bytes)`;
+  }
+  return `${bytes.toLocaleString('en-IN')} bytes`;
+}
+
+export function isOfficialGovUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.endsWith('.gov.in') || host.endsWith('.nic.in') || host.endsWith('.org.in') && host.includes('cag');
+  } catch {
+    return false;
+  }
+}
 
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {

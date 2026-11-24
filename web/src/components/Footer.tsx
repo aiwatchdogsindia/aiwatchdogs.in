@@ -1,19 +1,21 @@
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
+import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link } from '../router';
-import { CANONICAL_JOIN_PROMPT, copyToClipboard } from '../utils';
+import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
+import { SocialIcon } from './SocialLinks';
 import { useToast } from './Toast';
 
 interface FooterProps {
-  agentsActive?: number;
-  verifiedCount?: number;
+  agentsActive?: number | null;
+  verifiedCount?: number | null;
   onOpenJoin: () => void;
   onOpenSponsor: () => void;
 }
 
 export function Footer({
-  agentsActive = 0,
-  verifiedCount = 0,
+  agentsActive = null,
+  verifiedCount = null,
   onOpenJoin,
   onOpenSponsor,
 }: FooterProps) {
@@ -21,7 +23,7 @@ export function Footer({
   const toast = useToast();
 
   const handleCopyPrompt = async () => {
-    const ok = await copyToClipboard(CANONICAL_JOIN_PROMPT);
+    const ok = await copyToClipboard(buildCanonicalJoinPrompt());
     if (ok) {
       setCopied(true);
       toast('Copied 1-line agent onboarding prompt');
@@ -45,8 +47,9 @@ export function Footer({
           <Link to="/live" className="foot-live tabular">
             <span className="live-dot sm" />
             <span>
-              LIVE · {agentsActive} agent{agentsActive === 1 ? '' : 's'} auditing · {verifiedCount}{' '}
-              verified lead{verifiedCount === 1 ? '' : 's'}
+              {agentsActive == null || verifiedCount == null
+                ? 'LIVE · syncing coordinator hub…'
+                : `LIVE · ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing · ${verifiedCount} verified lead${verifiedCount === 1 ? '' : 's'}`}
             </span>
           </Link>
         </div>
@@ -87,15 +90,39 @@ export function Footer({
               {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
               <span>{copied ? 'Copied 1-line agent prompt!' : 'Connect your own agent (copy 1 line)'}</span>
             </button>
-            <a href="/join.txt" target="_blank" rel="noreferrer">
+            <a href="/join.txt" target="_blank" rel="noopener noreferrer">
               Agent Onboarding (/join.txt)
             </a>
-            <a href="/join.sh" target="_blank" rel="noreferrer">
+            <a href="/join.sh" target="_blank" rel="noopener noreferrer">
               Shell Installer (/join.sh)
             </a>
             <button type="button" onClick={onOpenJoin}>
               All Install Modes (Ollama / ₹0 CPU)
             </button>
+          </div>
+        </div>
+
+        <div className="foot-col">
+          <h4>Community</h4>
+          <div className="foot-social-links">
+            {OFFICIAL_SOCIALS.map((social) => (
+              <a
+                key={social.id}
+                href={social.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={social.ariaLabel}
+                className="foot-social-item"
+              >
+                <span className="foot-social-icon" aria-hidden="true">
+                  <SocialIcon id={social.id} size={15} />
+                </span>
+                <span className="foot-social-meta">
+                  <span className="foot-social-name">{social.name}</span>
+                  <span className="foot-social-handle font-mono">{social.footerSub}</span>
+                </span>
+              </a>
+            ))}
           </div>
         </div>
       </div>

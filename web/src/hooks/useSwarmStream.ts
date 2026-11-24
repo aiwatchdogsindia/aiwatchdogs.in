@@ -4,6 +4,7 @@ import type { WhisperItem } from '../types';
 export type SseStatus = 'connecting' | 'live' | 'reconnecting' | 'offline';
 
 export interface SseEventPacket {
+  id?: number;
   type: string;
   timestamp: string;
   data: Record<string, unknown>;
@@ -17,17 +18,34 @@ const SSE_EVENTS = [
   'finding_submitted',
   'verification_recorded',
   'finding_verified',
+  'finding_corrected',
+  'finding_quarantined',
   'rti_drafted',
   'sponsor_added',
 ];
 
-export function useSwarmStream(onEvent?: (evt: SseEventPacket) => void) {
-  const [status, setStatus] = useState<SseStatus>('connecting');
+export function useSwarmStream(
+  onEvent?: (evt: SseEventPacket) => void,
+  options: { enabled?: boolean; sinceId?: number } = {},
+) {
+  const { enabled = true, sinceId } = options;
+  const [status, setStatus] = useState<SseStatus>(enabled ? 'connecting' : 'offline');
   const [lastEventAt, setLastEventAt] = useState<string | null>(null);
   const callbackRef = useRef(onEvent);
   callbackRef.current = onEvent;
+  const lastEventIdRef = useRef<number>(sinceId ?? 0);
 
   useEffect(() => {
+    if (sinceId && sinceId > lastEventIdRef.current) {
+      lastEventIdRef.current = sinceId;
+    }
+  }, [sinceId]);
+
+  useEffect(() => {
+    if (!enabled) {
+      setStatus('offline');
+      return;
+    }
     if (typeof EventSource === 'undefined') {
       setStatus('offline');
       return;
@@ -39,9 +57,10 @@ export function useSwarmStream(onEvent?: (evt: SseEventPacket) => void) {
     let attempts = 0;
 
     const connect = () => {
-      if (closed) return;
+      if (closed || document.visibilityState === 'hidden') return;
       setStatus(attempts === 0 ? 'connecting' : 'reconnecting');
-      es = new EventSource('/api/stream');
+      const qs = lastEventIdRef.current > 0 ? `?since_id=${lastEventIdRef.current}` : '';
+      es = new EventSource(`/api/stream${qs}`);
 
       es.onopen = () => {
         attempts = 0;
@@ -56,9 +75,14 @@ export function useSwarmStream(onEvent?: (evt: SseEventPacket) => void) {
         } catch {
           parsed = { message: ev.data };
         }
+        const rawId = ev.lastEventId || parsed.event_id || parsed.seq_id || parsed.id;
+        const numId = rawId != null && /^\d+$/.test(String(rawId)) ? Number(rawId) : undefined;
+        if (numId != null && numId > lastEventIdRef.current) {
+          lastEventIdRef.current = numId;
+        }
         const ts = String(parsed.timestamp || new Date().toISOString());
         setLastEventAt(ts);
-        callbackRef.current?.({ type, timestamp: ts, data: parsed });
+        callbackRef.current?.({ id: numId, type, timestamp: ts, data: parsed });
       };
 
       for (const evtName of SSE_EVENTS) {
@@ -79,14 +103,31 @@ export function useSwarmStream(onEvent?: (evt: SseEventPacket) => void) {
       };
     };
 
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        if (es) {
+          es.close();
+          es = null;
+        }
+      } else if (!closed && !es) {
+        connect();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
     connect();
 
     return () => {
       closed = true;
+      document.removeEventListener('visibilitychange', handleVisibility);
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (es) es.close();
     };
-  }, []);
+  }, [enabled]);
 
   return { status, lastEventAt };
 }
@@ -112,16 +153,22 @@ export function sseEventToWhisper(evt: SseEventPacket): WhisperItem | null {
         msg = `Submitted audit lead for peer review: "${String(d.title || d.finding_id || 'New lead')}"`;
         break;
       case 'verification_recorded':
-        msg = `Recorded peer verdict (${String(d.verdict || 'confirm')}) on finding #${String(d.finding_id || '')}`;
+        msg = `Recorded peer verdict (${String(d.verdict || 'unrecorded')}) on finding #${String(d.finding_id || '')}`;
         break;
       case 'finding_verified':
         msg = `Quorum reached — promoted "${String(d.title || d.finding_id || 'Finding')}" to Peer-Verified ledger`;
+        break;
+      case 'finding_corrected':
+        msg = `Editorial correction recorded on finding #${String(d.finding_id || '')}`;
+        break;
+      case 'finding_quarantined':
+        msg = `Finding #${String(d.finding_id || '')} placed in privacy/legal review quarantine`;
         break;
       case 'rti_drafted':
         msg = `Generated RTI Act 2005 Sec 6(1) draft (${String(d.word_count || '≤500')} words)`;
         break;
       case 'sponsor_added':
-        msg = `New compute/treasury pledge recorded from ${String(d.name || 'supporter')}`;
+        msg = `New transparent pledge recorded from ${String(d.name || 'supporter')}`;
         break;
       default:
         return null;
@@ -129,7 +176,8 @@ export function sseEventToWhisper(evt: SseEventPacket): WhisperItem | null {
   }
 
   return {
-    id: `sse-${evt.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
+    id: evt.id != null ? evt.id : `sse-${evt.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
+    event_id: evt.id,
     agent_handle: handle,
     event_type: evt.type,
     message: msg,

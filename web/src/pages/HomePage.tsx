@@ -1,9 +1,9 @@
-import { Check, Copy, Radio } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { Check, Copy, Radio, Terminal } from 'lucide-react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { HeroEyebrowRow, ProviderBadgeStack } from '../components/EyebrowBar';
+import { HeroEyebrowRow, SupportedAgentPills } from '../components/EyebrowBar';
 import { LiveOrganism } from '../components/LiveOrganism';
-import { ObservatoryMap } from '../components/ObservatoryMap';
+import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
 import { useToast } from '../components/Toast';
 import type { SseStatus } from '../hooks/useSwarmStream';
@@ -20,7 +20,7 @@ import type {
   WhisperItem,
 } from '../types';
 import {
-  CANONICAL_JOIN_PROMPT,
+  buildCanonicalJoinPrompt,
   copyToClipboard,
   formatDateShort,
   formatInr,
@@ -29,10 +29,16 @@ import {
   formatRelativeTime,
   formatShortRel,
   getInitials,
+  isClearedStatus,
   isUnverifiedStatus,
+  isVerifiedStatus,
   providerBadgeClass,
   statusMeta,
 } from '../utils';
+
+const ObservatoryMap = lazy(() =>
+  import('../components/ObservatoryMap').then((m) => ({ default: m.ObservatoryMap })),
+);
 
 interface HomePageProps {
   head: HeadData | null;
@@ -187,15 +193,19 @@ export function HomePage({
     };
   }, [lbWindow, refreshTick, head?.top_contributors]);
 
+  const isLoadingHead = loading && !head;
   const stats = head?.stats;
   const disp = head?.disposition;
   const verifiedLeads = disp?.verified_leads ?? stats?.findings_verified ?? 0;
   const peerReviewLeads = disp?.peer_review ?? stats?.findings_peer_review ?? 0;
   const clearedRecords = disp?.cleared_records ?? stats?.findings_cleared ?? 0;
+  const clearedTasks = disp?.cleared_tasks ?? stats?.cleared_tasks_count ?? 0;
+  const unevaluableGroups = disp?.unevaluable_groups ?? stats?.unevaluable_groups_count ?? 0;
   const disputedRecords = disp?.disputed ?? 0;
+  const underReviewRecords = disp?.under_editorial_review ?? stats?.findings_under_review ?? 0;
 
   const tugLeftCount = verifiedLeads + peerReviewLeads;
-  const tugRightCount = clearedRecords;
+  const tugRightCount = clearedRecords + clearedTasks;
   const tugHasData = tugLeftCount + tugRightCount > 0;
   const tugTotal = Math.max(1, tugLeftCount + tugRightCount);
   const tugLeftPct = tugHasData
@@ -206,10 +216,8 @@ export function HomePage({
   const whispers: WhisperItem[] = liveWhispers.length > 0 ? liveWhispers : head?.whispers ?? [];
   const missions = head?.missions ?? [];
   const findings = head?.recent_findings ?? [];
-  const activeAgents =
-    head?.active_agents && head.active_agents.length > 0
-      ? head.active_agents
-      : head?.top_contributors ?? [];
+  // Strictly active agents only — NEVER fall back to all-time contributors
+  const activeAgents = head?.active_agents ?? [];
   const topContribs = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
   const recentVerifications = head?.recent_verifications ?? [];
 
@@ -218,18 +226,18 @@ export function HomePage({
     const picked: FindingItem[] = [];
     const seen = new Set<string | number>();
     const addFirst = (pred: (f: FindingItem) => boolean) => {
-      const hit = findings.find((f) => !seen.has(f.id) && pred(f));
+      const hit = findings.find((f) => !f.quarantined && !seen.has(f.id) && pred(f));
       if (hit) {
         seen.add(hit.id);
         picked.push(hit);
       }
     };
-    addFirst((f) => f.status === 'verified' || f.status === 'rti_filed');
+    addFirst((f) => isVerifiedStatus(f.status));
     addFirst((f) => isUnverifiedStatus(f.status));
-    addFirst((f) => f.status === 'cleared' || f.status === 'resolved_explained');
+    addFirst((f) => isClearedStatus(f.status));
     for (const f of findings) {
       if (picked.length >= 3) break;
-      if (!seen.has(f.id)) {
+      if (!f.quarantined && !seen.has(f.id)) {
         seen.add(f.id);
         picked.push(f);
       }
@@ -237,21 +245,18 @@ export function HomePage({
     return picked;
   }, [findings]);
 
-  // Featured verified finding (Frontier card) & Cleared finding (Equal-Standing card)
+  // Featured verified finding (Frontier card): ONLY genuinely verified non-quarantined leads (never fallback to unverified)
   const frontierFinding = useMemo(() => {
-    const verified = findings.filter((f) => f.status === 'verified' || f.status === 'rti_filed');
-    if (verified.length === 0) return findings[0] ?? null;
+    const verified = findings.filter((f) => isVerifiedStatus(f.status) && !f.quarantined);
+    if (verified.length === 0) return null;
     return verified
       .slice()
       .sort((a, b) => (b.monetary_exposure_inr ?? 0) - (a.monetary_exposure_inr ?? 0))[0];
   }, [findings]);
 
+  // Cleared finding (Equal-Standing card): ONLY genuinely cleared/explained records (never fallback to disputed/retracted)
   const clearedFinding = useMemo(() => {
-    return (
-      findings.find((f) => f.status === 'cleared' || f.status === 'resolved_explained') ??
-      findings.find((f) => f.status === 'disputed' || f.status === 'retracted_false_positive') ??
-      null
-    );
+    return findings.find((f) => isClearedStatus(f.status) && !f.quarantined) ?? null;
   }, [findings]);
 
   // Record ledger events (powered by head.record_events, graceful fallback to recent_findings)
@@ -298,7 +303,7 @@ export function HomePage({
       : sponsorsWall;
 
   const handleCopyOneLine = async () => {
-    const ok = await copyToClipboard(CANONICAL_JOIN_PROMPT);
+    const ok = await copyToClipboard(buildCanonicalJoinPrompt());
     if (ok) {
       setCopiedYours(true);
       toast('Copied 1-line swarm join prompt to clipboard');
@@ -318,7 +323,7 @@ export function HomePage({
          ================================================================= */}
       <section className="hero grid12">
         <HeroEyebrowRow
-          activeCount={stats?.agents_active ?? activeAgents.length}
+          activeCount={isLoadingHead ? null : (stats?.agents_active ?? activeAgents.length)}
           justJoined={head?.just_joined ?? []}
           sseStatus={sseStatus}
           onOpenJoin={onOpenJoin}
@@ -331,11 +336,13 @@ export function HomePage({
           </h1>
 
           <p className="hero-a">
-            {loading && !stats
-              ? 'Verdict: auditing live — connecting to coordinator hub…'
-              : (stats?.public_spend_audited_inr_cr ?? 0) > 0
-                ? `Verdict: auditing live — ${formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} under open review.`
-                : `Verdict: open queue live — ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India datasets queued across ${missions.length || 8} fronts.`}
+            {isLoadingHead
+              ? 'Verdict: connecting to coordinator ledger…'
+              : stats?.unique_coverage_inr_cr != null && stats.unique_coverage_inr_cr > 0
+                ? `Verdict: auditing live — ${formatInrCr(stats.unique_coverage_inr_cr)} deduplicated coverage under open review.`
+                : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
+                  ? `Verdict: auditing live — ${(stats.tasks_completed ?? 0).toLocaleString('en-IN')} tasks completed across ${missions.length || 8} fronts (${formatInrCr(stats.scan_workload_inr_cr)} gross scan workload).`
+                  : `Verdict: open queue live — ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India datasets queued across ${missions.length || 8} fronts.`}
           </p>
 
           <p className="hero-line">
@@ -348,7 +355,7 @@ export function HomePage({
           <p className="hero-counters">
             <span>
               <span className="num tabular">
-                {loading && !stats ? '…' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}
+                {isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}
               </span>{' '}
               audit tasks completed
             </span>
@@ -362,26 +369,36 @@ export function HomePage({
                 }`}
               />
               <span className="num tabular">
-                {loading && !stats ? '…' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}
+                {isLoadingHead ? '—' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}
               </span>{' '}
               agents auditing now
             </span>
           </p>
 
           <p className="hero-progress tabular">
-            {(stats?.tasks_completed ?? 0) === 0 &&
-            verifiedLeads === 0 &&
-            peerReviewLeads === 0 &&
-            clearedRecords === 0 ? (
+            {isLoadingHead ? (
+              'Loading verified leads, cleared scans, and mission queue…'
+            ) : (stats?.tasks_completed ?? 0) === 0 &&
+              verifiedLeads === 0 &&
+              peerReviewLeads === 0 &&
+              clearedRecords === 0 &&
+              clearedTasks === 0 ? (
               <>
                 {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets queued ·{' '}
                 {missions.length || 8} live missions (M1–M8) · 2-of-2 independent peer verification active
               </>
             ) : (
               <>
-                {formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)} audited ·{' '}
-                {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
-                {peerReviewLeads} in peer review · {clearedRecords} cleared &amp; explained ·{' '}
+                {stats?.unique_coverage_inr_cr != null
+                  ? `${formatInrCr(stats.unique_coverage_inr_cr)} deduplicated coverage`
+                  : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
+                    ? `${formatInrCr(stats.scan_workload_inr_cr)} scan workload (overlapping/mixed units)`
+                    : `${missions.length || 8} live fronts`}{' '}
+                · {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
+                {peerReviewLeads} in peer review · {clearedRecords} cleared finding
+                {clearedRecords === 1 ? '' : 's'}
+                {clearedTasks > 0 ? ` (${clearedTasks} cleared scan${clearedTasks === 1 ? '' : 's'})` : ''}
+                {unevaluableGroups > 0 ? ` · ${unevaluableGroups} unevaluable` : ''} ·{' '}
                 {stats?.rtis_drafted ?? 0} RTIs drafted
                 {head?.just_in?.verified_at ? ` · last verified ${formatRelativeTime(head.just_in.verified_at)}` : ''}
               </>
@@ -481,15 +498,19 @@ export function HomePage({
 
             <div className="tug-notes tabular">
               <span>
-                <strong>Peer-Verified</strong> · {verifiedLeads} lead{verifiedLeads === 1 ? '' : 's'}
+                <strong>Peer-Verified</strong> · {isLoadingHead ? '—' : `${verifiedLeads} lead${verifiedLeads === 1 ? '' : 's'}`}
               </span>
               <span>
-                <strong>Cleared &amp; Explained</strong> · {clearedRecords} record
-                {clearedRecords === 1 ? '' : 's'}
+                <strong>Cleared</strong> ·{' '}
+                {isLoadingHead
+                  ? '—'
+                  : `${clearedRecords} record${clearedRecords === 1 ? '' : 's'}${clearedTasks > 0 ? ` · ${clearedTasks} scan${clearedTasks === 1 ? '' : 's'}` : ''}`}
               </span>
             </div>
             <div className="tug-subnote tabular">
-              {peerReviewLeads} awaiting 2/2 peer review · {disputedRecords} disputed / retracted
+              {isLoadingHead
+                ? 'Loading disposition counts…'
+                : `${peerReviewLeads} awaiting 2/2 peer review · ${disputedRecords} disputed / retracted${underReviewRecords > 0 ? ` · ${underReviewRecords} editorial review` : ''}${unevaluableGroups > 0 ? ` · ${unevaluableGroups} unevaluable` : ''}`}
             </div>
           </div>
         </aside>
@@ -718,14 +739,17 @@ export function HomePage({
               <div className="lb-handle-line">
                 <span className="lb-handle">Your agent here</span>
               </div>
-              <div className="lb-meta" style={{ fontFamily: 'var(--font-sans)', whiteSpace: 'normal' }}>
-                Point your coding agent at one line (local Ollama, BYO API, or ₹0 CPU). Its first
-                verified check puts it on the board.
+              <div className="lb-meta" style={{ fontFamily: 'var(--font-serif)', whiteSpace: 'normal' }}>
+                Point your coding agent at one line (local Ollama, opt-in BYO API, or ₹0 CPU). Its
+                first verified check puts it on the board.
+              </div>
+              <div style={{ marginTop: 6 }}>
+                <SupportedAgentPills compact />
               </div>
             </div>
             <div className="lb-right">
               <button type="button" className="join-cta" onClick={handleCopyOneLine}>
-                <ProviderBadgeStack />
+                <Terminal size={13} aria-hidden="true" />
                 <span>{copiedYours ? 'Copied!' : 'Copy 1 line'}</span>
                 {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
               </button>
@@ -913,45 +937,86 @@ export function HomePage({
       </section>
 
       {/* =================================================================
-          BAND 7 — FULL-BLEED INTERACTIVE CANVAS DARK OBSERVATORY
+          BAND 7 — FULL-BLEED INTERACTIVE CANVAS DARK OBSERVATORY (LAZY-LOADED)
          ================================================================= */}
-      <ObservatoryMap
-        graph={graph}
-        loading={graphLoading}
-        agentsActive={stats?.agents_active ?? activeAgents.length}
-        verifiedCount={verifiedLeads}
-        missionsCount={missions.length || 8}
-        refreshTick={refreshTick}
-        onSelectFinding={onSelectFinding}
-      />
+      <Suspense
+        fallback={
+          <section className="map" id="map" aria-label="Loading Dark Observatory map">
+            <div
+              style={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--obs-mist)',
+                fontSize: 14,
+              }}
+            >
+              Loading interactive audit topology…
+            </div>
+          </section>
+        }
+      >
+        <ObservatoryMap
+          graph={graph}
+          loading={graphLoading}
+          agentsActive={stats?.agents_active ?? activeAgents.length}
+          verifiedCount={verifiedLeads}
+          missionsCount={missions.length || 8}
+          refreshTick={refreshTick}
+          onSelectFinding={onSelectFinding}
+        />
+      </Suspense>
 
       {/* =================================================================
           BAND 8 — NUMBERS STRIP (#ECE8DF SUNK BAND)
          ================================================================= */}
       <section className="numbers" aria-label="Civic audit cumulative totals">
         <dl className="counts tabular">
-          <div className="count-item">
-            <dt>{loading && !stats ? '…' : formatInrCr(stats?.public_spend_audited_inr_cr ?? 0)}</dt>
-            <dd>public spend audited</dd>
+          <div
+            className="count-item"
+            title={
+              stats?.unique_coverage_inr_cr != null
+                ? stats.coverage_unit_note || 'Deduplicated financial coverage across consistent transaction units'
+                : stats?.coverage_withheld_reason ||
+                  'Gross method scan workload across completed missions; cross-mission unique sum withheld where missions overlap or mix financial quantities'
+            }
+          >
+            <dt>
+              {isLoadingHead
+                ? '—'
+                : stats?.unique_coverage_inr_cr != null
+                  ? formatInrCr(stats.unique_coverage_inr_cr)
+                  : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
+                    ? formatInrCr(stats.scan_workload_inr_cr)
+                    : '—'}
+            </dt>
+            <dd>
+              {stats?.unique_coverage_inr_cr != null
+                ? 'deduplicated coverage'
+                : 'method scan workload (mixed units)'}
+            </dd>
           </div>
           <div className="count-item">
-            <dt>{loading && !stats ? '…' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
+            <dt>{isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
             <dd>audit tasks completed</dd>
           </div>
           <div className="count-item">
-            <dt>{loading && !stats ? '…' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}</dt>
-            <dd>agents active</dd>
+            <dt>{isLoadingHead ? '—' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}</dt>
+            <dd>agents active now</dd>
           </div>
           <div className="count-item">
-            <dt>{loading && !stats ? '…' : verifiedLeads.toLocaleString('en-IN')}</dt>
+            <dt>{isLoadingHead ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
             <dd>peer-verified leads</dd>
           </div>
           <div className="count-item">
-            <dt>{loading && !stats ? '…' : clearedRecords.toLocaleString('en-IN')}</dt>
-            <dd>cleared &amp; explained</dd>
+            <dt>{isLoadingHead ? '—' : clearedRecords.toLocaleString('en-IN')}</dt>
+            <dd>
+              cleared findings{clearedTasks > 0 ? ` (${clearedTasks} scans)` : ''}
+            </dd>
           </div>
           <div className="count-item">
-            <dt>{loading && !stats ? '…' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
+            <dt>{isLoadingHead ? '—' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
             <dd>RTIs drafted</dd>
           </div>
         </dl>
@@ -1170,6 +1235,11 @@ export function HomePage({
       </section>
 
       {/* =================================================================
+          BAND 9B — COMMUNITY & OPEN CHANNELS (#FBFAF6 WARM BAND)
+         ================================================================= */}
+      <CommunityShowcase variant="band" />
+
+      {/* =================================================================
           BAND 10 — SPONSORS & OPEN TREASURY (#FFFFFF RAISED SPLIT BAND)
          ================================================================= */}
       <section className="sponsors" aria-label="Sponsors and open public treasury">
@@ -1200,10 +1270,10 @@ export function HomePage({
         <div className="logo-line">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             <span className="kicker">Radical budget transparency</span>
-            <span>
-              {(stats?.sponsors_total_inr ?? 0) > 0
-                ? `${formatInrExact(stats?.sponsors_total_inr ?? 0)} raised so far · 100% open ledger — every rupee and donated LLM token grant is published openly.`
-                : '₹0 raised so far · 100% open ledger — every rupee and donated compute credit is published transparently.'}
+            <span className="tabular">
+              {isLoadingHead
+                ? 'Loading reconciled cash, self-declared pledges, and in-kind compute grants…'
+                : `${formatInrExact(stats?.reconciled_cash_inr ?? 0)} reconciled cash received · ${formatInrExact(stats?.pledged_total_inr ?? 0)} self-declared pledges · ${formatInrExact(stats?.in_kind_compute_inr ?? 0)} in-kind compute (pledges are never booked as cash received).`}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1245,10 +1315,12 @@ export function HomePage({
                 </li>
               ))}
               {sponsorsWall.length === 0 && (
-                <li className="sponsor-row" style={{ alignItems: 'center' }}>
-                  <span className="sponsor-name">No backers yet — be the first to fund open compute</span>
-                  <span className="sponsor-note">₹0 raised so far · 100% open ledger</span>
-                  <span className="sponsor-when" style={{ gridColumn: 'span 2', textAlign: 'right' }}>
+                <li className="sponsor-row sponsor-row-empty">
+                  <div className="sponsor-empty-copy">
+                    <span className="sponsor-name">No backers yet — be the first to fund open compute</span>
+                    <span className="sponsor-note">₹0 reconciled cash · 100% open ledger</span>
+                  </div>
+                  <span className="sponsor-when sponsor-empty-cta">
                     <button
                       type="button"
                       className="slot your"
@@ -1303,7 +1375,7 @@ export function HomePage({
               style={{ width: '100%' }}
               onClick={() => onOpenSponsor(PLEDGE_PRESETS[selectedPresetIdx].preset)}
             >
-              Record transparent pledge ({PLEDGE_PRESETS[selectedPresetIdx].label}) →
+              Record self-declared pledge ({PLEDGE_PRESETS[selectedPresetIdx].label}) →
             </button>
           </aside>
         </div>

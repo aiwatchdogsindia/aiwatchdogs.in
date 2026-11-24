@@ -1,6 +1,8 @@
 import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
+import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
+import { SocialIcon, SocialIconRow } from './SocialLinks';
 
 interface HeaderProps {
   onOpenJoin: () => void;
@@ -61,6 +63,8 @@ export function Header({ onOpenJoin }: HeaderProps) {
         </nav>
 
         <div className="header-right">
+          <SocialIconRow />
+          <span className="header-divider" aria-hidden="true" />
           <Link
             to="/sponsors"
             className="btn btn-primary btn-sm"
@@ -117,6 +121,28 @@ export function Header({ onOpenJoin }: HeaderProps) {
           >
             Join Swarm →
           </button>
+        </div>
+
+        <div className="mobile-nav-socials">
+          <div className="kicker" style={{ marginBottom: 8 }}>
+            Community &amp; Socials
+          </div>
+          <div className="mobile-social-grid">
+            {OFFICIAL_SOCIALS.map((social) => (
+              <a
+                key={social.id}
+                href={social.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={social.ariaLabel}
+                className="mobile-social-link"
+                onClick={() => setMobileOpen(false)}
+              >
+                <SocialIcon id={social.id} size={15} />
+                <span>{social.name}</span>
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </header>

@@ -98,6 +98,18 @@ export function ObservatoryMap({
 
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [activeMatchIdx, setActiveMatchIdx] = useState(0);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const requestDrawRef = useRef<() => void>(() => {});
+  const inViewRef = useRef<boolean>(true);
+  const tabVisibleRef = useRef<boolean>(
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
+  const reducedMotionRef = useRef<boolean>(
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false,
+  );
   const [activeClusterKey, setActiveClusterKey] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<{ wn: WorldNode; sx: number; sy: number } | null>(null);
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -366,9 +378,16 @@ export function ObservatoryMap({
   }, [fitAll]);
 
   const flyTo = useCallback((wx: number, wy: number, zoom: number) => {
+    const clampedZoom = Math.max(0.45, Math.min(3.2, zoom));
     camRef.current.targetX = wx;
     camRef.current.targetY = wy;
-    camRef.current.targetZoom = Math.max(0.45, Math.min(3.2, zoom));
+    camRef.current.targetZoom = clampedZoom;
+    if (reducedMotionRef.current) {
+      camRef.current.x = wx;
+      camRef.current.y = wy;
+      camRef.current.zoom = clampedZoom;
+    }
+    requestDrawRef.current();
   }, []);
 
   const focusNode = useCallback(
@@ -483,7 +502,8 @@ export function ObservatoryMap({
     [screenToWorld, world.worldNodes],
   );
 
-  // Main 60fps HTML5 Canvas Render Loop + Minimap Render
+  // Main HTML5 Canvas Render Loop + Minimap Render
+  // Pauses cleanly when offscreen (IntersectionObserver), tab hidden (visibilitychange), or prefers-reduced-motion.
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -494,21 +514,35 @@ export function ObservatoryMap({
     const cyanGlow = createGlowSprite('rgba(191,232,255,0.9)', 'rgba(127,209,255,0.28)', 36);
 
     let rafId = 0;
+    let disposed = false;
+
+    const shouldLoop = () =>
+      !disposed && inViewRef.current && tabVisibleRef.current && !reducedMotionRef.current;
 
     const draw = (now: number) => {
+      rafId = 0;
+      if (disposed) return;
+
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = wrap.clientWidth;
       const h = wrap.clientHeight;
+      if (w <= 0 || h <= 0) return;
       if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
         canvas.width = Math.floor(w * dpr);
         canvas.height = Math.floor(h * dpr);
       }
 
-      // Smooth camera interpolation
+      // Smooth camera interpolation (snaps cleanly under prefers-reduced-motion)
       const cam = camRef.current;
-      cam.x += (cam.targetX - cam.x) * 0.14;
-      cam.y += (cam.targetY - cam.y) * 0.14;
-      cam.zoom += (cam.targetZoom - cam.zoom) * 0.14;
+      if (reducedMotionRef.current) {
+        cam.x = cam.targetX;
+        cam.y = cam.targetY;
+        cam.zoom = cam.targetZoom;
+      } else {
+        cam.x += (cam.targetX - cam.x) * 0.14;
+        cam.y += (cam.targetY - cam.y) * 0.14;
+        cam.zoom += (cam.targetZoom - cam.zoom) * 0.14;
+      }
 
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
@@ -553,14 +587,14 @@ export function ObservatoryMap({
 
         // Cluster label below cloud
         ctx.save();
-        ctx.font = `600 ${Math.max(8.5, 10 / Math.sqrt(cam.zoom))}px Inter, sans-serif`;
-        ctx.fillStyle = `rgba(${cl.tint.rgb}, 0.85)`;
+        ctx.font = `400 ${Math.max(10, 11.5 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
+        ctx.fillStyle = `rgba(${cl.tint.rgb}, 0.88)`;
         ctx.textAlign = 'center';
         const shortLabel = `${cl.shortCode} · ${cl.label.length > 26 ? `${cl.label.slice(0, 25)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + 16 / Math.sqrt(cam.zoom));
 
-        ctx.font = `400 ${Math.max(8, 9.5 / Math.sqrt(cam.zoom))}px "JetBrains Mono", monospace`;
-        ctx.fillStyle = 'rgba(201,195,181,0.58)';
+        ctx.font = `400 ${Math.max(9.5, 11 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
+        ctx.fillStyle = 'rgba(201,195,181,0.62)';
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
             ? `${cl.verifiedCount} verified · ${cl.reviewCount} in review`
@@ -757,8 +791,8 @@ export function ObservatoryMap({
         // Zoomed-in crisp node labels
         if (cam.zoom >= 1.32 || isPinned || isHov) {
           ctx.save();
-          ctx.font = `${isPinned || isHov ? '500' : '400'} ${11 / Math.sqrt(cam.zoom)}px "JetBrains Mono", monospace`;
-          ctx.fillStyle = isPinned || isHov ? '#FFFFFF' : 'rgba(237,234,226,0.78)';
+          ctx.font = `400 ${12.5 / Math.sqrt(cam.zoom)}px "Geist Serif", Georgia, serif`;
+          ctx.fillStyle = isPinned || isHov ? '#FFFFFF' : 'rgba(237,234,226,0.82)';
           ctx.textAlign = 'left';
           const lbl = wn.node.label.length > 28 ? `${wn.node.label.slice(0, 27)}…` : wn.node.label;
           ctx.fillText(lbl, wn.x + r + 7, wn.y + 3.5 / Math.sqrt(cam.zoom));
@@ -815,11 +849,81 @@ export function ObservatoryMap({
         }
       }
 
+      if (shouldLoop()) {
+        rafId = window.requestAnimationFrame(draw);
+      }
+    };
+
+    const scheduleDraw = () => {
+      if (disposed || rafId !== 0) return;
+      if (!inViewRef.current || !tabVisibleRef.current) return;
       rafId = window.requestAnimationFrame(draw);
     };
 
-    rafId = window.requestAnimationFrame(draw);
-    return () => window.cancelAnimationFrame(rafId);
+    requestDrawRef.current = scheduleDraw;
+
+    // Pause animation when scrolled offscreen
+    let io: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver(
+        ([entry]) => {
+          inViewRef.current = Boolean(entry?.isIntersecting);
+          wrap.dataset.mapPaused = shouldLoop() ? 'false' : 'true';
+          if (inViewRef.current && tabVisibleRef.current) {
+            scheduleDraw();
+          } else if (rafId !== 0) {
+            window.cancelAnimationFrame(rafId);
+            rafId = 0;
+          }
+        },
+        { threshold: 0.01 },
+      );
+      io.observe(wrap);
+    }
+
+    const onVisibility = () => {
+      tabVisibleRef.current = document.visibilityState !== 'hidden';
+      wrap.dataset.mapPaused = shouldLoop() ? 'false' : 'true';
+      if (tabVisibleRef.current && inViewRef.current) {
+        scheduleDraw();
+      } else if (rafId !== 0) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    const mq =
+      typeof window.matchMedia === 'function'
+        ? window.matchMedia('(prefers-reduced-motion: reduce)')
+        : null;
+    const onMotionChange = () => {
+      reducedMotionRef.current = Boolean(mq?.matches);
+      wrap.dataset.mapPaused = shouldLoop() ? 'false' : 'true';
+      if (rafId !== 0) {
+        window.cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      scheduleDraw();
+    };
+    mq?.addEventListener?.('change', onMotionChange);
+
+    const onResize = () => scheduleDraw();
+    window.addEventListener('resize', onResize);
+    document.fonts?.ready.then(() => scheduleDraw()).catch(() => {});
+
+    wrap.dataset.mapPaused = shouldLoop() ? 'false' : 'true';
+    scheduleDraw();
+
+    return () => {
+      disposed = true;
+      requestDrawRef.current = () => {};
+      if (rafId !== 0) window.cancelAnimationFrame(rafId);
+      io?.disconnect();
+      document.removeEventListener('visibilitychange', onVisibility);
+      mq?.removeEventListener?.('change', onMotionChange);
+      window.removeEventListener('resize', onResize);
+    };
   }, [edges, world]);
 
   // Pointer & Wheel Handlers
@@ -850,11 +954,13 @@ export function ObservatoryMap({
       camRef.current.targetY = dragRef.current.camStartY - dy / camRef.current.zoom;
       setHoveredNode(null);
       hoveredIdRef.current = null;
+      requestDrawRef.current();
       return;
     }
 
     const hit = hitTest(sx, sy);
     hoveredIdRef.current = hit?.node.id ?? null;
+    requestDrawRef.current();
     if (hit) {
       const pos = worldToScreen(hit.x, hit.y);
       setHoveredNode({ wn: hit, sx: pos.sx, sy: pos.sy });
@@ -874,6 +980,7 @@ export function ObservatoryMap({
         focusNode(hit);
       } else {
         setPinnedId(null);
+        requestDrawRef.current();
       }
     }
   };
@@ -883,6 +990,7 @@ export function ObservatoryMap({
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.18 : 0.85;
       camRef.current.targetZoom = Math.max(0.45, Math.min(3.2, camRef.current.targetZoom * factor));
+      requestDrawRef.current();
     } else if (!wheelHintShownRef.current) {
       wheelHintShownRef.current = true;
       setWheelHintVisible(true);
@@ -1026,28 +1134,120 @@ export function ObservatoryMap({
               ))}
             </div>
           )}
+
+          {/* Operable Mobile Mission Selector (shown <= 760px when desktop cluster pills & minimap hide) */}
+          {world.clusters.length > 0 && (
+            <div className="map-mobile-missions">
+              <label htmlFor="map-mobile-cluster-select" className="map-mobile-label">
+                Jump to audit mission:
+              </label>
+              <select
+                id="map-mobile-cluster-select"
+                className="map-mobile-select"
+                value={activeClusterKey || ''}
+                onChange={(e) => {
+                  const key = e.target.value;
+                  if (!key) {
+                    fitAll(false);
+                    return;
+                  }
+                  const found = world.clusters.find((c) => c.key === key);
+                  if (found) focusCluster(found);
+                }}
+              >
+                <option value="">All mapped fronts ({world.clusters.length})</option>
+                {world.clusters.map((cl) => (
+                  <option key={cl.key} value={cl.key}>
+                    {cl.shortCode} · {cl.label} ({cl.totalCount} nodes)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Top-Right `/` Combobox Search */}
-      <div className="map-search">
+      {/* Top-Right `/` Accessible Combobox Search */}
+      <div
+        className="map-search"
+        ref={searchWrapRef}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+            setSearchFocused(false);
+          }
+        }}
+      >
         <div className="map-search-box">
-          <Search size={14} className="map-search-icon" />
+          <Search size={14} className="map-search-icon" aria-hidden="true" />
           <input
             ref={searchInputRef}
             type="text"
+            role="combobox"
+            aria-expanded={searchFocused && searchMatches.length > 0}
+            aria-controls="map-search-listbox"
+            aria-autocomplete="list"
+            aria-activedescendant={
+              searchFocused && searchMatches[activeMatchIdx]
+                ? `map-search-opt-${activeMatchIdx}`
+                : undefined
+            }
             className="map-search-input"
-            placeholder="Find ministry, mission, finding, or .gov.in portal…"
+            placeholder="Find ministry, mission, finding, or source…"
             value={search}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => window.setTimeout(() => setSearchFocused(false), 180)}
-            onChange={(e) => setSearch(e.target.value)}
+            onFocus={() => {
+              setSearchFocused(true);
+              setActiveMatchIdx(0);
+            }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setSearchFocused(true);
+              setActiveMatchIdx(0);
+            }}
+            onKeyDown={(e) => {
+              if (!searchFocused && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                setSearchFocused(true);
+                setActiveMatchIdx(0);
+                e.preventDefault();
+                return;
+              }
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (searchMatches.length > 0) {
+                  setActiveMatchIdx((idx) => (idx + 1) % searchMatches.length);
+                }
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (searchMatches.length > 0) {
+                  setActiveMatchIdx((idx) => (idx - 1 + searchMatches.length) % searchMatches.length);
+                }
+              } else if (e.key === 'Home' && searchMatches.length > 0) {
+                e.preventDefault();
+                setActiveMatchIdx(0);
+              } else if (e.key === 'End' && searchMatches.length > 0) {
+                e.preventDefault();
+                setActiveMatchIdx(searchMatches.length - 1);
+              } else if (e.key === 'Enter') {
+                const chosen = searchMatches[activeMatchIdx] ?? searchMatches[0];
+                if (chosen) {
+                  e.preventDefault();
+                  focusNode(chosen);
+                  setSearchFocused(false);
+                }
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setSearchFocused(false);
+              }
+            }}
             aria-label="Search observatory nodes"
           />
           {search ? (
             <button
               type="button"
-              onClick={() => setSearch('')}
+              onClick={() => {
+                setSearch('');
+                setActiveMatchIdx(0);
+                searchInputRef.current?.focus();
+              }}
               style={{
                 position: 'absolute',
                 right: 9,
@@ -1061,44 +1261,55 @@ export function ObservatoryMap({
               <X size={13} />
             </button>
           ) : (
-            <span className="map-search-kbd">/</span>
+            <span className="map-search-kbd" aria-hidden="true">/</span>
           )}
         </div>
 
         {searchFocused && searchMatches.length > 0 && (
-          <div className="map-search-results" role="listbox">
-            {searchMatches.map((wn) => (
-              <button
-                key={wn.node.id}
-                type="button"
-                className="map-search-item"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  focusNode(wn);
-                  setSearchFocused(false);
-                }}
-              >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {wn.node.label}
-                </span>
-                <span
-                  className="font-mono"
-                  style={{
-                    fontSize: 10,
-                    textTransform: 'uppercase',
-                    color:
-                      wn.kind === 'verified'
-                        ? '#F3E9D2'
-                        : wn.kind === 'mission'
-                          ? '#F2B84B'
-                          : '#8B8F98',
-                    flexShrink: 0,
+          <div
+            id="map-search-listbox"
+            className="map-search-results"
+            role="listbox"
+            aria-label="Matching observatory nodes"
+          >
+            {searchMatches.map((wn, idx) => {
+              const isHighlighted = idx === activeMatchIdx;
+              return (
+                <button
+                  key={wn.node.id}
+                  id={`map-search-opt-${idx}`}
+                  type="button"
+                  role="option"
+                  aria-selected={isHighlighted}
+                  className={`map-search-item ${isHighlighted ? 'active' : ''}`}
+                  onMouseEnter={() => setActiveMatchIdx(idx)}
+                  onClick={() => {
+                    focusNode(wn);
+                    setSearchFocused(false);
                   }}
                 >
-                  {wn.node.status || wn.node.type}
-                </span>
-              </button>
-            ))}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {wn.node.label}
+                  </span>
+                  <span
+                    className="font-mono"
+                    style={{
+                      fontSize: 10.5,
+                      textTransform: 'uppercase',
+                      color:
+                        wn.kind === 'verified'
+                          ? '#F3E9D2'
+                          : wn.kind === 'mission'
+                            ? '#F2B84B'
+                            : '#B8BDC8',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {wn.node.status || wn.node.type}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1372,6 +1583,7 @@ export function ObservatoryMap({
           type="button"
           onClick={() => {
             camRef.current.targetZoom = Math.min(3.2, camRef.current.targetZoom * 1.28);
+            requestDrawRef.current();
           }}
           aria-label="Zoom in"
           title="Zoom in"
@@ -1382,6 +1594,7 @@ export function ObservatoryMap({
           type="button"
           onClick={() => {
             camRef.current.targetZoom = Math.max(0.45, camRef.current.targetZoom / 1.28);
+            requestDrawRef.current();
           }}
           aria-label="Zoom out"
           title="Zoom out"
@@ -1393,6 +1606,7 @@ export function ObservatoryMap({
           onClick={() => {
             setPinnedId(null);
             fitAll(false);
+            requestDrawRef.current();
           }}
           aria-label="Reset camera"
           title="Reset camera (Esc)"

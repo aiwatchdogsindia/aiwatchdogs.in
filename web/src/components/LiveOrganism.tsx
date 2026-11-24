@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import type { AgentRecord, MissionItem, PeerVerification, WhisperItem } from '../types';
 import { formatRelativeTime, formatShortRel, pillarTint } from '../utils';
@@ -35,6 +35,43 @@ export function LiveOrganism({
   onSelectFinding,
 }: LiveOrganismProps) {
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [inView, setInView] = useState(true);
+  const [tabVisible, setTabVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
+  const [reducedMotion, setReducedMotion] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false,
+  );
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const obs = new IntersectionObserver(
+      ([entry]) => setInView(Boolean(entry?.isIntersecting)),
+      { threshold: 0.01 },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const onVis = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onChange = () => setReducedMotion(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+
+  const animateActive = inView && tabVisible && !reducedMotion;
 
   const W = 780;
   const H = 540;
@@ -150,7 +187,12 @@ export function LiveOrganism({
   const extraCount = Math.max(0, agents.length - seats.length);
 
   return (
-    <div className="live-graph org" aria-label="Live distributed civic-audit swarm organism">
+    <div
+      ref={containerRef}
+      className={`live-graph org ${animateActive ? '' : 'paused'}`}
+      data-animating={animateActive ? 'true' : 'false'}
+      aria-label="Live distributed civic-audit swarm organism"
+    >
       {/* SVG Orbital Spokes, Pillar Radial Washes & Animated Motion Packets */}
       <svg
         className="org-svg"
@@ -235,19 +277,22 @@ export function LiveOrganism({
                 strokeWidth="1.15"
                 opacity="0.9"
               />
-              {/* Outbound finding / verification packet toward Quorum */}
-              <circle r="3.4" fill={s.tint.hex} opacity="0.9">
-                <animateMotion dur={`${s.durSec.toFixed(2)}s`} repeatCount="indefinite" path={spokeD} />
-              </circle>
-              {/* Return task / quorum acknowledgement pulse */}
-              <circle r="2.3" fill="#2F6B4F" opacity="0.65">
-                <animateMotion
-                  dur={`${(s.durSec * 1.35).toFixed(2)}s`}
-                  begin={`${(idx * 0.55).toFixed(2)}s`}
-                  repeatCount="indefinite"
-                  path={revD}
-                />
-              </circle>
+              {/* Outbound finding / verification packet toward Quorum (paused offscreen/hidden/reduced-motion) */}
+              {animateActive && (
+                <>
+                  <circle r="3.4" fill={s.tint.hex} opacity="0.9">
+                    <animateMotion dur={`${s.durSec.toFixed(2)}s`} repeatCount="indefinite" path={spokeD} />
+                  </circle>
+                  <circle r="2.3" fill="#2F6B4F" opacity="0.65">
+                    <animateMotion
+                      dur={`${(s.durSec * 1.35).toFixed(2)}s`}
+                      begin={`${(idx * 0.55).toFixed(2)}s`}
+                      repeatCount="indefinite"
+                      path={revD}
+                    />
+                  </circle>
+                </>
+              )}
             </g>
           );
         })}
@@ -255,7 +300,7 @@ export function LiveOrganism({
 
       {/* Center QUORUM 2-OF-2 Verification Gate */}
       <div className="judge-card gate">
-        <div className={`gate-disc ${latestVerif ? 'pulsing' : ''}`}>
+        <div className={`gate-disc ${latestVerif && animateActive ? 'pulsing' : ''}`}>
           <div className="gate-core">
             <span>QUORUM</span>
             <span>2-OF-2</span>

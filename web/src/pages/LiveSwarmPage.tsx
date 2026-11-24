@@ -82,8 +82,10 @@ export function LiveSwarmPage({
           />
           <div className="font-mono" style={{ fontSize: 12 }}>
             <strong>{sseStatus === 'live' ? 'SSE Stream Connected' : sseStatus.toUpperCase()}</strong>
-            <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-              {agents.length} contributor nodes registered
+            <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+              {loading && !live
+                ? 'Loading active fleet…'
+                : `${agents.filter((a) => a.is_active !== false).length} active now · ${agents.length} total nodes`}
             </div>
           </div>
         </div>
@@ -262,7 +264,9 @@ export function LiveSwarmPage({
                         {v.verdict}
                       </span>
                     </td>
-                    <td className="num">{Math.round(v.confidence * 100)}%</td>
+                    <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
+                      {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
+                    </td>
                     <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
                       {formatRelativeTime(v.created_at)}
                     </td>

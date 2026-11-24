@@ -45,18 +45,18 @@
 
   <!-- Primary Editorial Masthead Wordmark -->
   <text x="148" y="59"
-        font-family="'Newsreader', 'Noto Serif', 'Iowan Old Style', Georgia, Cambria, serif"
+        font-family="'Geist Serif', 'Times New Roman', Times, Georgia, serif"
         font-size="42"
-        font-weight="600"
+        font-weight="400"
         letter-spacing="-0.6"
         fill="#1B1A17">AI Watchdogs<tspan fill="#C96A1B" dx="9">·</tspan><tspan dx="9">India</tspan></text>
 
-  <!-- Secondary Institutional Sub-line (Legible Monospace Dateline) -->
+  <!-- Secondary Institutional Sub-line -->
   <circle cx="152.5" cy="87.5" r="4.0" fill="#2F6B4F"/>
   <text x="166" y="92.5"
-        font-family="'JetBrains Mono', 'JetBrainsMono NF', 'Liberation Mono', ui-monospace, SFMono-Regular, monospace"
+        font-family="'Geist Serif', 'Times New Roman', Times, Georgia, serif"
         font-size="14.5"
-        font-weight="500"
-        letter-spacing="0.95"
+        font-weight="400"
+        letter-spacing="1.4"
         fill="#5E5B52">AIWATCHDOGS.IN · OPEN CIVIC-AUDIT SWARM</text>
 </svg>

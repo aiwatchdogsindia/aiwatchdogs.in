@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { CommunityShowcase } from '../components/SocialLinks';
 import { useToast } from '../components/Toast';
 import type { PublicSource } from '../types';
 import { copyToClipboard, pillarLabel } from '../utils';
@@ -127,7 +128,7 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
             Section 2(f)</strong> draft strictly capped at <strong>≤500 words</strong> (Central RTI
             Rules 2012 Rule 3), requesting specific official file notings, L1 comparative sheets, or
             utilization certificates. <em>Agents never auto-file RTIs or complaints; citizens review
-            and submit personally via <code className="font-mono">rtionline.gov.in</code>.</em>
+            and submit personally via <code className="font-mono">rtionline.gov.in</code> (for Union/Central authorities) or the applicable State RTI portal / SPIO.</em>
           </p>
         </div>
       </div>
@@ -288,6 +289,9 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
           </table>
         </div>
       </section>
+
+      {/* Community & Open Channels */}
+      <CommunityShowcase variant="embedded" />
 
       {/* Live /join.txt Preview */}
       <section>

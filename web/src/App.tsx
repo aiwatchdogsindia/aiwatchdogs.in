@@ -1,31 +1,91 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api/client';
-import { FindingDrawer } from './components/FindingDrawer';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
-import { JoinModal } from './components/JoinModal';
 import { JustInBar } from './components/JustInBar';
-import { SponsorModal, type SponsorPreset } from './components/SponsorModal';
+import type { SponsorPreset } from './components/SponsorModal';
 import { ToastProvider } from './components/Toast';
 import { sseEventToWhisper, useSwarmStream, type SseEventPacket } from './hooks/useSwarmStream';
-import { ContributorsPage } from './pages/ContributorsPage';
-import { FindingsPage } from './pages/FindingsPage';
 import { HomePage } from './pages/HomePage';
-import { HowItWorksPage } from './pages/HowItWorksPage';
-import { LiveSwarmPage } from './pages/LiveSwarmPage';
-import { MissionsPage } from './pages/MissionsPage';
-import { SponsorsLedgerPage } from './pages/SponsorsLedgerPage';
 import { RouterProvider, useRouter } from './router';
 import type { HeadData, WhisperItem } from './types';
+import { isVerifiedStatus } from './utils';
+
+// Code-split secondary pages and heavy interactive overlays to keep initial JS lean
+const MissionsPage = lazy(() =>
+  import('./pages/MissionsPage').then((m) => ({ default: m.MissionsPage })),
+);
+const FindingsPage = lazy(() =>
+  import('./pages/FindingsPage').then((m) => ({ default: m.FindingsPage })),
+);
+const LiveSwarmPage = lazy(() =>
+  import('./pages/LiveSwarmPage').then((m) => ({ default: m.LiveSwarmPage })),
+);
+const ContributorsPage = lazy(() =>
+  import('./pages/ContributorsPage').then((m) => ({ default: m.ContributorsPage })),
+);
+const SponsorsLedgerPage = lazy(() =>
+  import('./pages/SponsorsLedgerPage').then((m) => ({ default: m.SponsorsLedgerPage })),
+);
+const HowItWorksPage = lazy(() =>
+  import('./pages/HowItWorksPage').then((m) => ({ default: m.HowItWorksPage })),
+);
+const FindingDrawer = lazy(() =>
+  import('./components/FindingDrawer').then((m) => ({ default: m.FindingDrawer })),
+);
+const JoinModal = lazy(() =>
+  import('./components/JoinModal').then((m) => ({ default: m.JoinModal })),
+);
+const SponsorModal = lazy(() =>
+  import('./components/SponsorModal').then((m) => ({ default: m.SponsorModal })),
+);
+
+function mergeWhispersNewestFirst(existing: WhisperItem[], incoming: WhisperItem[], limit = 40): WhisperItem[] {
+  const byKey = new Map<string, WhisperItem>();
+  const keyOf = (w: WhisperItem) =>
+    w.event_id != null
+      ? `eid:${w.event_id}`
+      : w.id != null && typeof w.id === 'number'
+        ? `id:${w.id}`
+        : `${w.agent_handle}|${w.message}|${w.created_at}`;
+
+  for (const w of existing) byKey.set(keyOf(w), w);
+  for (const w of incoming) byKey.set(keyOf(w), w);
+
+  return Array.from(byKey.values())
+    .sort((a, b) => {
+      if (a.event_id != null && b.event_id != null && a.event_id !== b.event_id) {
+        return b.event_id - a.event_id;
+      }
+      const ta = Date.parse(a.created_at || '') || 0;
+      const tb = Date.parse(b.created_at || '') || 0;
+      return tb - ta;
+    })
+    .slice(0, limit);
+}
+
+function PageFallback() {
+  return (
+    <div className="container" style={{ paddingTop: 32, paddingBottom: 48 }}>
+      <div className="state-banner">Loading view…</div>
+    </div>
+  );
+}
 
 function AppShell() {
   const { pathname, search } = useRouter();
+  const cleanPath = pathname.replace(/\/+$/, '') || '/';
+  const needsLiveUpdates = cleanPath === '/' || cleanPath === '/live';
+
   const [head, setHead] = useState<HeadData | null>(null);
   const [headLoading, setHeadLoading] = useState(true);
   const [headError, setHeadError] = useState<string | null>(null);
   const [liveWhispers, setLiveWhispers] = useState<WhisperItem[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [latestEventId, setLatestEventId] = useState<number>(0);
+  const latestEventIdRef = useRef<number>(0);
+  const eventsSupportedRef = useRef<boolean>(false);
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [sponsorOpen, setSponsorOpen] = useState(false);
@@ -37,47 +97,89 @@ function AppShell() {
     setSponsorOpen(true);
   }, []);
 
+  const recordLatestEventId = useCallback((candidate?: number) => {
+    if (candidate != null && candidate > latestEventIdRef.current) {
+      latestEventIdRef.current = candidate;
+      setLatestEventId(candidate);
+    }
+  }, []);
+
   const fetchHead = useCallback(async () => {
     try {
       const data = await api.getHead();
       setHead(data);
       setHeadError(null);
-      setLiveWhispers((prev) => {
-        if (prev.length === 0) return data.whispers;
-        const existing = new Set(prev.map((w) => `${w.agent_handle}|${w.message}|${w.created_at}`));
-        const merged = [...prev];
-        for (const w of data.whispers) {
-          const key = `${w.agent_handle}|${w.message}|${w.created_at}`;
-          if (!existing.has(key)) merged.push(w);
+      if (data.latest_event_id != null) {
+        eventsSupportedRef.current = true;
+        recordLatestEventId(data.latest_event_id);
+      }
+      for (const w of data.whispers) {
+        if (w.event_id != null && eventsSupportedRef.current) {
+          recordLatestEventId(w.event_id);
         }
-        return merged.slice(0, 40);
-      });
+      }
+      setLiveWhispers((prev) => mergeWhispersNewestFirst(prev, data.whispers, 40));
     } catch (err) {
       setHeadError(err instanceof Error ? err.message : 'Hub unreachable');
     } finally {
       setHeadLoading(false);
     }
-  }, []);
+  }, [recordLatestEventId]);
 
+  const pollIncrementalEvents = useCallback(async () => {
+    if (document.visibilityState === 'hidden') return;
+    if (!eventsSupportedRef.current) {
+      await fetchHead();
+      return;
+    }
+    try {
+      const { events, latest_event_id } = await api.getEvents(latestEventIdRef.current);
+      if (latest_event_id != null) recordLatestEventId(latest_event_id);
+      if (events.length > 0) {
+        setLiveWhispers((prev) => mergeWhispersNewestFirst(prev, events, 40));
+        await fetchHead();
+        setRefreshTick((t) => t + 1);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.toLowerCase() : '';
+      if (msg.includes('404') || msg.includes('not found')) {
+        eventsSupportedRef.current = false;
+      }
+      // Fallback to snapshot refresh if /api/events unavailable
+      await fetchHead();
+    }
+  }, [fetchHead, recordLatestEventId]);
+
+  // Initial head load once on mount
   useEffect(() => {
     fetchHead();
-    const interval = window.setInterval(fetchHead, 25000);
-    return () => window.clearInterval(interval);
   }, [fetchHead]);
 
-  // Allow opening finding drawer via ?finding=... query parameter
+  // Scope background polling strictly to live-telemetry routes (/ and /live)
+  useEffect(() => {
+    if (!needsLiveUpdates) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      pollIncrementalEvents();
+    }, 25000);
+    return () => window.clearInterval(interval);
+  }, [needsLiveUpdates, pollIncrementalEvents]);
+
+  // Allow opening finding drawer via ?finding=... query parameter (stable dossier URLs)
   useEffect(() => {
     const sp = new URLSearchParams(search);
     const fid = sp.get('finding');
     if (fid) setSelectedFindingId(fid);
   }, [search]);
 
+  // Scope SSE connection strictly to live-telemetry routes (/ and /live)
   const { status: sseStatus } = useSwarmStream(
     useCallback(
       (evt: SseEventPacket) => {
+        if (evt.id != null) recordLatestEventId(evt.id);
         const w = sseEventToWhisper(evt);
         if (w) {
-          setLiveWhispers((prev) => [w, ...prev].slice(0, 40));
+          setLiveWhispers((prev) => mergeWhispersNewestFirst(prev, [w], 40));
         }
         if (
           [
@@ -85,6 +187,8 @@ function AppShell() {
             'finding_submitted',
             'verification_recorded',
             'finding_verified',
+            'finding_corrected',
+            'finding_quarantined',
             'rti_drafted',
             'sponsor_added',
           ].includes(evt.type)
@@ -93,8 +197,9 @@ function AppShell() {
           setRefreshTick((t) => t + 1);
         }
       },
-      [fetchHead],
+      [fetchHead, recordLatestEventId],
     ),
+    { enabled: needsLiveUpdates, sinceId: latestEventId },
   );
 
   const triggerFullRefresh = useCallback(() => {
@@ -102,15 +207,11 @@ function AppShell() {
     setRefreshTick((t) => t + 1);
   }, [fetchHead]);
 
+  // Strictly verified, non-quarantined finding only (never fall back to unverified or disputed)
   const fallbackVerified =
-    head?.recent_findings.find((f) => f.status === 'verified' || f.status === 'rti_filed') ??
-    head?.recent_findings[0] ??
-    null;
+    head?.recent_findings.find((f) => isVerifiedStatus(f.status) && !f.quarantined) ?? null;
 
-  // Route matching
   const renderPage = () => {
-    const cleanPath = pathname.replace(/\/+$/, '') || '/';
-
     if (cleanPath === '/') {
       return (
         <HomePage
@@ -128,81 +229,100 @@ function AppShell() {
 
     if (cleanPath === '/missions') {
       return (
-        <MissionsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        <Suspense fallback={<PageFallback />}>
+          <MissionsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        </Suspense>
       );
     }
 
     if (cleanPath.startsWith('/missions/')) {
       const slug = decodeURIComponent(cleanPath.slice('/missions/'.length));
       return (
-        <MissionsPage
-          slug={slug}
-          onSelectFinding={setSelectedFindingId}
-          refreshTick={refreshTick}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <MissionsPage
+            slug={slug}
+            onSelectFinding={setSelectedFindingId}
+            refreshTick={refreshTick}
+          />
+        </Suspense>
       );
     }
 
     if (cleanPath === '/findings') {
       return (
-        <FindingsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        <Suspense fallback={<PageFallback />}>
+          <FindingsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        </Suspense>
       );
     }
 
     if (cleanPath === '/live') {
       return (
-        <LiveSwarmPage
-          liveWhispers={liveWhispers}
-          missions={head?.missions ?? []}
-          sseStatus={sseStatus}
-          onSelectFinding={setSelectedFindingId}
-          refreshTick={refreshTick}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <LiveSwarmPage
+            liveWhispers={liveWhispers}
+            missions={head?.missions ?? []}
+            sseStatus={sseStatus}
+            onSelectFinding={setSelectedFindingId}
+            refreshTick={refreshTick}
+          />
+        </Suspense>
       );
     }
 
     if (cleanPath === '/contributors') {
       return (
-        <ContributorsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        <Suspense fallback={<PageFallback />}>
+          <ContributorsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        </Suspense>
       );
     }
 
     if (cleanPath.startsWith('/a/')) {
       const handle = decodeURIComponent(cleanPath.slice('/a/'.length));
       return (
-        <ContributorsPage
-          handle={handle}
-          onSelectFinding={setSelectedFindingId}
-          refreshTick={refreshTick}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <ContributorsPage
+            handle={handle}
+            onSelectFinding={setSelectedFindingId}
+            refreshTick={refreshTick}
+          />
+        </Suspense>
       );
     }
 
     if (cleanPath === '/sponsors') {
       return (
-        <SponsorsLedgerPage
-          activeView="sponsors"
-          onOpenSponsor={openSponsor}
-          refreshTick={refreshTick}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <SponsorsLedgerPage
+            activeView="sponsors"
+            onOpenSponsor={openSponsor}
+            refreshTick={refreshTick}
+          />
+        </Suspense>
       );
     }
 
     if (cleanPath === '/ledger') {
       return (
-        <SponsorsLedgerPage
-          activeView="ledger"
-          onOpenSponsor={openSponsor}
-          refreshTick={refreshTick}
-        />
+        <Suspense fallback={<PageFallback />}>
+          <SponsorsLedgerPage
+            activeView="ledger"
+            onOpenSponsor={openSponsor}
+            refreshTick={refreshTick}
+          />
+        </Suspense>
       );
     }
 
     if (cleanPath === '/how-it-works') {
-      return <HowItWorksPage onOpenJoin={() => setJoinOpen(true)} />;
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <HowItWorksPage onOpenJoin={() => setJoinOpen(true)} />
+        </Suspense>
+      );
     }
 
-    // Fallback to Home
     return (
       <HomePage
         head={head}
@@ -260,26 +380,38 @@ function AppShell() {
       <main style={{ flex: 1 }}>{renderPage()}</main>
 
       <Footer
-        agentsActive={head?.stats.agents_active ?? 0}
-        verifiedCount={head?.stats.findings_verified ?? 0}
+        agentsActive={head ? head.stats.agents_active : null}
+        verifiedCount={head ? head.stats.findings_verified : null}
         onOpenJoin={() => setJoinOpen(true)}
         onOpenSponsor={() => openSponsor()}
       />
 
-      <FindingDrawer
-        findingId={selectedFindingId}
-        onClose={() => setSelectedFindingId(null)}
-        onRtiCreated={triggerFullRefresh}
-      />
+      {selectedFindingId != null && (
+        <Suspense fallback={null}>
+          <FindingDrawer
+            findingId={selectedFindingId}
+            onClose={() => setSelectedFindingId(null)}
+            onRtiCreated={triggerFullRefresh}
+          />
+        </Suspense>
+      )}
 
-      <JoinModal open={joinOpen} onClose={() => setJoinOpen(false)} />
+      {joinOpen && (
+        <Suspense fallback={null}>
+          <JoinModal open={joinOpen} onClose={() => setJoinOpen(false)} />
+        </Suspense>
+      )}
 
-      <SponsorModal
-        open={sponsorOpen}
-        preset={sponsorPreset}
-        onClose={() => setSponsorOpen(false)}
-        onSuccess={triggerFullRefresh}
-      />
+      {sponsorOpen && (
+        <Suspense fallback={null}>
+          <SponsorModal
+            open={sponsorOpen}
+            preset={sponsorPreset}
+            onClose={() => setSponsorOpen(false)}
+            onSuccess={triggerFullRefresh}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

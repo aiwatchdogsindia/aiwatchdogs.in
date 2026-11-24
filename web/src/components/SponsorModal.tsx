@@ -1,6 +1,7 @@
 import { HeartHandshake, ShieldCheck, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import { useToast } from './Toast';
 
 export interface SponsorPreset {
@@ -28,19 +29,17 @@ export function SponsorModal({ open, preset, onClose, onSuccess }: SponsorModalP
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const toast = useToast();
+
+  useDialogFocus(open, panelRef, onClose);
 
   useEffect(() => {
     if (!open) return;
     if (preset?.amountInr) setAmountInr(preset.amountInr);
     if (preset?.tier) setTier(preset.tier);
     if (preset?.computeDesc !== undefined) setComputeDesc(preset.computeDesc);
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onEsc);
-    return () => window.removeEventListener('keydown', onEsc);
-  }, [open, preset, onClose]);
+  }, [open, preset]);
 
   if (!open) return null;
 
@@ -85,24 +84,28 @@ export function SponsorModal({ open, preset, onClose, onSuccess }: SponsorModalP
   return (
     <div
       className="overlay-backdrop centered"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Sponsor or Donate Compute"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="modal-panel">
+      <div
+        ref={panelRef}
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sponsor-modal-title"
+        tabIndex={-1}
+      >
         <div className="overlay-header">
           <div>
             <div className="section-kicker" style={{ marginBottom: 4 }}>
-              Open Public Treasury · Radical Budget Transparency
+              Open Public Treasury · Self-Declared Pledge Ledger
             </div>
-            <h2 className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
-              Sponsor Infrastructure or Donate Compute
+            <h2 id="sponsor-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
+              Pledge Infrastructure Support or Compute
             </h2>
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close sponsor dialog">
             <X size={16} />
           </button>
         </div>
@@ -114,18 +117,19 @@ export function SponsorModal({ open, preset, onClose, onSuccess }: SponsorModalP
               background: 'var(--green-bg)',
               border: '1px solid #C2DEC9',
               borderRadius: 6,
-              fontSize: 12.5,
+              fontSize: 13,
               color: 'var(--green)',
               display: 'flex',
               gap: 9,
               alignItems: 'flex-start',
             }}
           >
-            <ShieldCheck size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <ShieldCheck size={16} style={{ flexShrink: 0, marginTop: 2 }} />
             <span>
-              <strong>Editorial Independence Firewall:</strong> Sponsors fund hosting, OCR compute,
-              and public archival storage only. Sponsors never influence which ministries, vendors,
-              or findings are audited or published.
+              <strong>Editorial Independence &amp; Honest Accounting:</strong> This form records a
+              public <strong>self-declared pledge</strong> (or in-kind compute offer) — it does{' '}
+              <em>not</em> book into Reconciled Cash Received until verified settlement. Sponsors
+              never influence which ministries, vendors, or findings are audited or published.
             </span>
           </div>
 

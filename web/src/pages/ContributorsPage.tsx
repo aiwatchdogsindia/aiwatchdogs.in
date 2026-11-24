@@ -205,7 +205,9 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                           <td className="font-mono" style={{ fontSize: 11.5 }}>
                             {v.model_id}
                           </td>
-                          <td className="num">{Math.round(v.confidence * 100)}%</td>
+                          <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
+                            {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
+                          </td>
                           <td style={{ fontSize: 12.5, color: 'var(--ink-secondary)' }}>
                             {v.notes || 'Reproduced deterministically'}
                           </td>

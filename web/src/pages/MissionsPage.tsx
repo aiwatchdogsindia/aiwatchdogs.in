@@ -129,16 +129,29 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   <span className="kpi-label">Peer-Verified Leads</span>
                 </div>
                 <div className="kpi-cell">
-                  <span className="kpi-value slate">{detail.cleared_count ?? 0}</span>
-                  <span className="kpi-label">Cleared Records</span>
+                  <span className="kpi-value slate">
+                    {detail.cleared_count ?? 0}
+                    {detail.cleared_tasks_count != null && detail.cleared_tasks_count > 0
+                      ? ` / ${detail.cleared_tasks_count} scans`
+                      : ''}
+                  </span>
+                  <span className="kpi-label">
+                    Cleared Findings{detail.unevaluable_groups_count ? ` (${detail.unevaluable_groups_count} unevaluable)` : ''}
+                  </span>
                 </div>
                 <div className="kpi-cell">
                   <span className="kpi-value">
-                    {detail.monetary_audited_inr_cr != null
-                      ? formatInrCr(detail.monetary_audited_inr_cr)
-                      : 'Active'}
+                    {detail.unique_coverage_inr_cr != null
+                      ? formatInrCr(detail.unique_coverage_inr_cr)
+                      : detail.scan_workload_inr_cr != null && detail.scan_workload_inr_cr > 0
+                        ? formatInrCr(detail.scan_workload_inr_cr)
+                        : 'Active'}
                   </span>
-                  <span className="kpi-label">Public Spend Audited</span>
+                  <span className="kpi-label">
+                    {detail.unique_coverage_inr_cr != null
+                      ? detail.amount_unit_note || 'Deduplicated Mission Coverage'
+                      : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
+                  </span>
                 </div>
               </div>
             </div>
