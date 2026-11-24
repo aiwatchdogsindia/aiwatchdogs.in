@@ -1,4 +1,4 @@
-/* AI Watchdogs · India — Editorial Broadsheet + Dark Observatory Tokens (Vercel Geist Serif) */
+/* AI Watchdogs · India — Tiranga Tricolour Broadsheet + Navy Observatory Tokens (Vercel Geist Serif) */
 
 @font-face {
   font-family: 'Geist Serif';
@@ -17,38 +17,54 @@
 }
 
 :root {
-  /* Archival Paper Surface Hierarchy */
-  --paper: #F6F4EF;
+  /* ===== Tiranga (Indian Tricolour) Brand Palette =====
+     Saffron (courage) · White (truth) · India Green (growth) · Ashoka Chakra Navy (law)
+     Proportions follow the flag: saffron ~33%, white ~31.5%, green ~33%, navy ~1.8%
+     (the chakra). Saffron and green are carried by whole page zones (see the
+     "TIRANGA ZONES" block at the end of global.css); navy is an accent only. */
+  --flag-saffron: #FF9933;
+  --flag-white: #FFFFFF;
+  --flag-green: #138808;
+  --flag-navy: #000080;
+  --flag-green-deep: #0F7306;   /* same hue as India green, deep enough for AA white text */
+  --flag-green-card: #0C6305;
+  --tricolor-band: linear-gradient(180deg,
+    var(--flag-saffron) 0 33.333%,
+    var(--flag-white) 33.333% 66.666%,
+    var(--flag-green) 66.666% 100%);
+
+  /* White Paper Surface Hierarchy (the white band of the flag) */
+  --paper: #FFFFFF;
   --raised: #FFFFFF;
-  --sunk: #ECE8DF;
-  --sunk-2: #F1EEE7;
-  --plain: #EFEBE2;
-  --warm: #FBFAF6;
+  --sunk: #FFF4E8;
+  --sunk-2: #F7F8F4;
+  --plain: #FFF8F0;
+  --warm: #FFFCF8;
 
-  /* Crisp 1px Hairline Rules (Zero blurry drop shadows on paper) */
-  --rule: #E2DED4;
-  --rule-soft: #EEEAE2;
-  --rule-strong: #D6D1C5;
-  --rule-verify: #D9D3C6;
+  /* Crisp 1px Hairline Rules */
+  --rule: #E6E3DC;
+  --rule-soft: #F0EEE8;
+  --rule-strong: #D3CFC5;
+  --rule-verify: #CFE3CC;
 
-  /* Ink Hierarchy (WCAG AA >= 4.5:1 on paper, warm, and sunk surfaces) */
+  /* Ink Hierarchy — neutral near-black (WCAG AA >= 4.5:1 on paper, warm, and sunk) */
   --ink: #1B1A17;
   --ink-2: #3F3B34;
   --ink-3: #575249;
   --ink-4: #635E54;
   --ink-5: #9E988B;
   --ink-6: #C9C3B5;
-  --avatar-wash: #EFE7D6;
-  --avatar-ink: #7A5C17;
+  --avatar-wash: #FFEBD6;
+  --avatar-ink: #A84F00;
 
-  /* Epistemic & Signal Grammar ("Only Peer-Verified looks like a result") */
-  --green: #24573F;
-  --green-bg: #E6F0E9;
-  --live: #3DAA6E;
-  --green-on-dark: #7BC79A;
+  /* Epistemic & Signal Grammar ("Only Peer-Verified looks like a result") — India Green */
+  --green: #138808;
+  --green-bg: #E8F5E6;
+  --live: #1FA319;
+  --green-on-dark: #5FD35A;
 
-  --in-work-ink: #244F75;
-  --in-work-ring: #7FA6C9;
+  --in-work-ink: #000080;
+  --in-work-ring: #8087D0;
   --conjecture-ink: #575249;
   --conjecture-stroke: #756F64;
 
@@ -58,44 +74,44 @@
   --red-on-dark: #E0705C;
   --red-edge: #4A2622;
 
-  --public: #2B6FD6;
-  --public-bg: #E8F0FD;
+  --public: #1F2FB0;
+  --public-bg: #EAECFB;
 
-  /* Transient Ignite & Priority Hard-Link Amber */
-  --accent: #F2B84B;
-  --accent-light: #FFD27A;
-  --accent-core: #FFF4D6;
-  --accent-flash: #FBE7B6;
-  --accent-deep: #8A6A1E;
+  /* Transient Ignite & Priority Hard-Link — Saffron */
+  --accent: #FF9933;
+  --accent-light: #FFB866;
+  --accent-core: #FFF3E5;
+  --accent-flash: #FFE0BF;
+  --accent-deep: #A84F00;
 
-  /* Dark Race & Observatory Surfaces (Luminescence lives ONLY here) */
-  --race-bg: #0B0E15;
-  --obs-bg: #080A0F;
-  --obs-radial: radial-gradient(75% 75% at 40% 50%, #0D1016 0%, #06070A 100%);
-  --obs-surface: #11151C;
-  --obs-surface-raised: #171D27;
-  --obs-border: #232B38;
-  --obs-ink: #EDEAE2;
-  --obs-mist: #C9C3B5;
-  --obs-muted: #8B8F98;
-  --obs-dead: #5E636D;
-  --obs-edge-solid: #3A404B;
-  --obs-edge-open: #2A2F38;
-  --obs-edge-disputed: #4A2622;
-  --obs-cream: #F3E9D2;
-  --obs-amber: #F2B84B;
-  --obs-emerald: #7BC79A;
-  --obs-cobalt: #5B9BFF;
-  --obs-terracotta: #E0705C;
-  --obs-slate: #8B8F98;
+  /* Race band & Observatory — India green field (was navy; navy is now accent-only) */
+  --race-bg: #0F7306;
+  --obs-bg: #0A5A04;
+  --obs-radial: radial-gradient(75% 75% at 40% 50%, #138808 0%, #0A5A04 60%, #074603 100%);
+  --obs-surface: #0C6305;
+  --obs-surface-raised: #107A07;
+  --obs-border: rgba(255, 255, 255, 0.22);
+  --obs-ink: #FFFFFF;
+  --obs-mist: #E2F2DE;
+  --obs-muted: #CFE8CA;
+  --obs-dead: #8FC287;
+  --obs-edge-solid: rgba(255, 255, 255, 0.42);
+  --obs-edge-open: rgba(255, 255, 255, 0.22);
+  --obs-edge-disputed: #FFB4A6;
+  --obs-cream: #FFFFFF;
+  --obs-amber: #FF9933;
+  --obs-emerald: #C8F5BE;
+  --obs-cobalt: #000080;
+  --obs-terracotta: #FFB4A6;
+  --obs-slate: #CFE8CA;
 
-  /* Cluster / Pillar Hues (Organism radial seats & Observatory radial haze) */
-  --pillar-procurement: #E0A43A;
-  --pillar-audit: #5F86AA;
-  --pillar-budget: #4E9A8A;
-  --pillar-infra: #8B6BB0;
-  --pillar-scheme: #C25A44;
-  --pillar-disclosure: #9A8F3C;
+  /* Cluster / Pillar Hues — drawn from the tricolour */
+  --pillar-procurement: #FF9933;
+  --pillar-audit: #3B47B8;
+  --pillar-budget: #138808;
+  --pillar-infra: #6C76D6;
+  --pillar-scheme: #E06A10;
+  --pillar-disclosure: #4FA83E;
 
   /* Typography — Vercel Geist Serif across the entire website; Geist Mono strictly for raw code/terminal blocks */
   --font-serif: 'Geist Serif', 'Times New Roman', Times, Georgia, serif;
@@ -129,8 +145,8 @@
   --r-999: 999px;
 
   /* Floating pill / popover subtle elevation (the ONLY shadows on paper) */
-  --shadow-float: 0 1px 2px rgba(26, 22, 48, 0.04), 0 4px 14px rgba(26, 22, 48, 0.06);
-  --shadow-pop: 0 4px 20px rgba(26, 22, 48, 0.09), 0 1px 3px rgba(26, 22, 48, 0.05);
+  --shadow-float: 0 1px 2px rgba(27, 26, 23, 0.05), 0 4px 14px rgba(27, 26, 23, 0.08);
+  --shadow-pop: 0 4px 20px rgba(27, 26, 23, 0.10), 0 1px 3px rgba(27, 26, 23, 0.06);
 
   /* Backwards-compatible semantic aliases for subpages & drawers */
   --bg-paper: var(--paper);
@@ -147,7 +163,7 @@
 
   --ep-verified-fg: var(--green);
   --ep-verified-bg: var(--green-bg);
-  --ep-verified-bd: #B6D3C3;
+  --ep-verified-bd: #B4DDAF;
 
   --ep-review-fg: var(--conjecture-ink);
   --ep-review-bg: transparent;
@@ -162,12 +178,12 @@
   --ep-disputed-bd: #E2B8B0;
 
   --ep-rti-fg: var(--in-work-ink);
-  --ep-rti-bg: #EBF2F8;
+  --ep-rti-bg: #EDEEFA;
   --ep-rti-bd: var(--in-work-ring);
 
   --ep-contrib-fg: var(--public);
   --ep-contrib-bg: var(--public-bg);
-  --ep-contrib-bd: #B8D2F8;
+  --ep-contrib-bd: #BCC2F2;
 
   --container-max: var(--page);
   --radius-xs: var(--r-2);

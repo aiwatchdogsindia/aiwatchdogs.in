@@ -252,24 +252,24 @@ export interface PillarTint {
 export function pillarTint(pillar?: string): PillarTint {
   const p = (pillar || '').toLowerCase();
   if (p.includes('procure') || p.includes('tender')) {
-    return { hex: '#E0A43A', rgb: '240, 201, 120', wash: 'rgba(224, 164, 58, 0.14)', label: 'Procurement' };
+    return { hex: '#FF9933', rgb: '255, 153, 51', wash: 'rgba(255, 153, 51, 0.14)', label: 'Procurement' };
   }
   if (p.includes('audit') || p.includes('cag')) {
-    return { hex: '#5F86AA', rgb: '143, 176, 214', wash: 'rgba(95, 134, 170, 0.14)', label: 'CAG & Compliance' };
+    return { hex: '#3B47B8', rgb: '124, 134, 255', wash: 'rgba(59, 71, 184, 0.12)', label: 'CAG & Compliance' };
   }
   if (p.includes('budget') || p.includes('fiscal')) {
-    return { hex: '#4E9A8A', rgb: '127, 200, 160', wash: 'rgba(78, 154, 138, 0.14)', label: 'Budgets & Fiscal' };
+    return { hex: '#138808', rgb: '95, 211, 90', wash: 'rgba(19, 136, 8, 0.12)', label: 'Budgets & Fiscal' };
   }
   if (p.includes('infra') || p.includes('work') || p.includes('road')) {
-    return { hex: '#8B6BB0', rgb: '183, 154, 224', wash: 'rgba(139, 107, 176, 0.14)', label: 'Infrastructure' };
+    return { hex: '#6C76D6', rgb: '160, 168, 240', wash: 'rgba(108, 118, 214, 0.12)', label: 'Infrastructure' };
   }
   if (p.includes('scheme') || p.includes('welfare') || p.includes('social')) {
-    return { hex: '#C25A44', rgb: '232, 144, 122', wash: 'rgba(194, 90, 68, 0.14)', label: 'Welfare & Schemes' };
+    return { hex: '#E06A10', rgb: '255, 184, 102', wash: 'rgba(224, 106, 16, 0.12)', label: 'Welfare & Schemes' };
   }
   if (p.includes('corp') || p.includes('politic') || p.includes('disclos') || p.includes('gov')) {
-    return { hex: '#9A8F3C', rgb: '120, 200, 205', wash: 'rgba(154, 143, 60, 0.14)', label: 'Disclosures' };
+    return { hex: '#4FA83E', rgb: '150, 225, 130', wash: 'rgba(79, 168, 62, 0.12)', label: 'Disclosures' };
   }
-  return { hex: '#5F86AA', rgb: '143, 176, 214', wash: 'rgba(95, 134, 170, 0.14)', label: pillarLabel(pillar) };
+  return { hex: '#3B47B8', rgb: '124, 134, 255', wash: 'rgba(59, 71, 184, 0.12)', label: pillarLabel(pillar) };
 }
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {

@@ -564,7 +564,7 @@ export function HomePage({
       </div>
 
       {/* =================================================================
-          BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FBFAF6 WARM BAND)
+          BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFCF8 WARM BAND)
          ================================================================= */}
       <section className="status-note grid12" aria-label="Desk Coordinator strategy brief">
         <div className="status-note-in cols-1-8">
@@ -841,7 +841,7 @@ export function HomePage({
       </section>
 
       {/* =================================================================
-          BAND 6 — "THE FRONTS" DARK RACE BAND (#0B0E15)
+          BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
          ================================================================= */}
       <section className="race" aria-label="The Fronts: 8 Indian civic-audit missions">
         <div className="race-head">
@@ -969,7 +969,7 @@ export function HomePage({
       </Suspense>
 
       {/* =================================================================
-          BAND 8 — NUMBERS STRIP (#ECE8DF SUNK BAND)
+          BAND 8 — NUMBERS STRIP (#FFF4E8 SUNK BAND)
          ================================================================= */}
       <section className="numbers" aria-label="Civic audit cumulative totals">
         <dl className="counts tabular">
@@ -1235,7 +1235,7 @@ export function HomePage({
       </section>
 
       {/* =================================================================
-          BAND 9B — COMMUNITY & OPEN CHANNELS (#FBFAF6 WARM BAND)
+          BAND 9B — COMMUNITY & OPEN CHANNELS (#FFFCF8 WARM BAND)
          ================================================================= */}
       <CommunityShowcase variant="band" />
 
@@ -1382,7 +1382,7 @@ export function HomePage({
       </section>
 
       {/* =================================================================
-          BAND 11 — RECENT BACKERS MARQUEE (#F1EEE7)
+          BAND 11 — RECENT BACKERS MARQUEE (#F7F8F4)
          ================================================================= */}
       {sponsorsWall.length > 0 && (
         <div className="today" role="region" aria-label="Recent backers marquee">

@@ -136,7 +136,7 @@ code.font-mono {
   position: relative;
   display: inline-block;
   flex-shrink: 0;
-  box-shadow: 0 0 0 0 rgba(61, 170, 110, 0.5);
+  box-shadow: 0 0 0 0 rgba(31, 163, 25, 0.5);
   animation: breatheDot 2.4s ease-in-out infinite;
 }
 
@@ -149,7 +149,7 @@ code.font-mono {
 .live-dot.amber,
 .pulse-dot.amber {
   background: var(--accent);
-  box-shadow: 0 0 0 0 rgba(242, 184, 75, 0.5);
+  box-shadow: 0 0 0 0 rgba(255, 153, 51, 0.5);
 }
 
 .live-dot.offline,
@@ -161,10 +161,10 @@ code.font-mono {
 
 @keyframes breatheDot {
   0%, 100% {
-    box-shadow: 0 0 0 0 rgba(61, 170, 110, 0.5);
+    box-shadow: 0 0 0 0 rgba(31, 163, 25, 0.5);
   }
   60% {
-    box-shadow: 0 0 0 6px rgba(61, 170, 110, 0);
+    box-shadow: 0 0 0 6px rgba(31, 163, 25, 0);
   }
 }
 
@@ -178,8 +178,8 @@ code.font-mono {
 }
 
 @keyframes justInPulse {
-  0% { background-color: #4A3A12; }
-  100% { background-color: var(--ink); }
+  0% { background-color: var(--accent-flash); }
+  100% { background-color: var(--flag-white); }
 }
 
 .just-in.arriving {
@@ -190,6 +190,7 @@ code.font-mono {
    1. SITE HEADER (68px Broadsheet Masthead)
    ========================================================================= */
 .site-header {
+  position: relative;
   background: var(--paper);
   border-bottom: 1px solid var(--rule);
   padding: 16px var(--gutter);
@@ -197,6 +198,24 @@ code.font-mono {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+/* Tiranga band — saffron / white / green, stacked like the flag */
+.site-header::before,
+.site-footer::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 9px;
+  background: var(--tricolor-band);
+  box-shadow: inset 0 -1px 0 rgba(27, 26, 23, 0.08);
+  pointer-events: none;
+}
+
+.site-header {
+  padding-top: 25px;
 }
 
 .site-header-row {
@@ -280,6 +299,7 @@ code.font-mono {
 .site-nav-link:hover {
   color: var(--ink);
   text-decoration: underline;
+  text-decoration-color: var(--flag-saffron);
   text-underline-offset: 4px;
   text-decoration-thickness: 1px;
 }
@@ -288,8 +308,9 @@ code.font-mono {
   color: var(--ink);
   font-weight: 500;
   text-decoration: underline;
+  text-decoration-color: var(--flag-saffron);
+  text-decoration-thickness: 2px;
   text-underline-offset: 4px;
-  text-decoration-thickness: 1px;
 }
 
 .header-right {
@@ -409,15 +430,18 @@ code.font-mono {
 }
 
 /* =========================================================================
-   2. JUST-IN BAR (Full-Bleed Dark Ticker Strip Directly Under Header)
+   2. JUST-IN BAR (Full-Bleed Tiranga Ticker Strip Directly Under Header)
+   Saffron stripe on top, white field with navy text, green stripe below.
    ========================================================================= */
 .just-in {
   margin: 0;
   width: 100%;
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--flag-white);
+  color: var(--ink);
+  border-top: 5px solid var(--flag-saffron);
+  border-bottom: 5px solid var(--flag-green);
   padding: 8px var(--gutter);
-  min-height: 37px;
+  min-height: 47px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -434,7 +458,7 @@ code.font-mono {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  color: var(--accent);
+  color: var(--green);
   font-family: var(--font-serif);
   font-size: 11.5px;
   font-weight: 400;
@@ -445,7 +469,7 @@ code.font-mono {
 }
 
 .just-in-title {
-  color: var(--paper);
+  color: var(--flag-navy);
   font-weight: 400;
   max-width: min(56ch, 46vw);
   white-space: nowrap;
@@ -457,7 +481,7 @@ code.font-mono {
   font-family: var(--font-serif);
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
-  color: var(--ink-6);
+  color: var(--ink-3);
   white-space: nowrap;
 }
 
@@ -465,7 +489,7 @@ code.font-mono {
   background: none;
   border: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--accent-deep);
   font-size: 13.5px;
   font-weight: 400;
   text-decoration: underline;
@@ -474,7 +498,7 @@ code.font-mono {
 }
 
 .just-in-cta:hover {
-  color: var(--accent-light);
+  color: var(--flag-navy);
 }
 
 /* =========================================================================
@@ -512,13 +536,14 @@ code.font-mono {
 }
 
 .btn-primary {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
+  background: var(--chakra, var(--flag-navy));
+  color: var(--on-chakra, #FFFFFF);
+  border-color: var(--chakra, var(--flag-navy));
 }
 
 .btn-primary:hover {
-  background: #2E2C27;
+  background: var(--chakra-hover, #1A1A9E);
+  border-color: var(--chakra-hover, #1A1A9E);
 }
 
 .btn-secondary {
@@ -549,7 +574,7 @@ code.font-mono {
 }
 
 .btn-emerald:hover {
-  background: #24553E;
+  background: #0E6A06;
 }
 
 .btn-rti {
@@ -559,7 +584,7 @@ code.font-mono {
 }
 
 .btn-rti:hover {
-  background: #DCE8F4;
+  background: #DFE2F8;
   border-color: var(--in-work-ink);
 }
 
@@ -590,12 +615,12 @@ code.font-mono {
 .chip-verified {
   color: var(--green);
   background: var(--green-bg);
-  border: 1px solid #C2DEC9;
+  border: 1px solid #BFE3BA;
   font-style: normal;
   font-weight: 400;
 }
 
-/* In Peer Review / Unverified Lead: HOLLOW transparent bg, 1px dashed #8A857A, ITALIC */
+/* In Peer Review / Unverified Lead: HOLLOW transparent bg, 1px dashed #6D7090, ITALIC */
 .badge-review,
 .chip-review {
   color: var(--conjecture-ink);
@@ -629,7 +654,7 @@ code.font-mono {
 .badge-rti,
 .chip-rti {
   color: var(--in-work-ink);
-  background: #EBF2F8;
+  background: #EDEEFA;
   border: 1px solid var(--in-work-ring);
   font-style: normal;
   font-weight: 400;
@@ -668,7 +693,7 @@ code.font-mono {
   border-radius: var(--r-999);
   background: var(--public-bg);
   color: var(--public);
-  border: 1px solid #C5DCFA;
+  border: 1px solid #C2C7F2;
   white-space: nowrap;
 }
 
@@ -719,7 +744,7 @@ code.font-mono {
   gap: 10px;
   min-height: 36px;
   padding: 3px 4px 3px 14px;
-  background: #FEFEFE;
+  background: #FFFFFF;
   border: 1px solid #E5E5EA;
   border-radius: var(--r-999);
   box-shadow: var(--shadow-float);
@@ -792,7 +817,7 @@ code.font-mono {
 }
 
 .join-copy-icon.copied {
-  color: #00A846;
+  color: #138808;
 }
 
 /* Floating .join-reveal popover (no layout shift!) */
@@ -1270,7 +1295,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FBFAF6 Warm Band)
+   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFCF8 Warm Band)
    ========================================================================= */
 .status-note {
   background: var(--warm);
@@ -1457,8 +1482,8 @@ code.font-mono {
 }
 
 .seg-btn.active {
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--chakra, var(--flag-navy));
+  color: var(--on-chakra, #FFFFFF);
 }
 
 .lb-rows {
@@ -1724,7 +1749,7 @@ code.font-mono {
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  border: 1.5px solid rgba(61, 170, 110, 0.55);
+  border: 1.5px solid rgba(31, 163, 25, 0.55);
   animation: gatePulse 2.6s ease-out infinite;
 }
 
@@ -1776,7 +1801,7 @@ code.font-mono {
 }
 
 .gate-verdict.confirm {
-  border-color: #B6D3C3;
+  border-color: #B4DDAF;
   color: var(--green);
   background: var(--green-bg);
 }
@@ -1858,7 +1883,7 @@ code.font-mono {
 
 .org-seat.open-slot {
   border-style: dashed;
-  background: rgba(251, 250, 246, 0.88);
+  background: rgba(255, 255, 255, 0.88);
 }
 
 .org-seat.open-slot:hover {
@@ -1961,7 +1986,7 @@ code.font-mono {
   align-items: center;
   gap: 6px;
   padding: 3px 10px;
-  border: 1px solid #B6D3C3;
+  border: 1px solid #B4DDAF;
   background: var(--green-bg);
   color: var(--green);
   border-radius: var(--r-999);
@@ -2024,7 +2049,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   8. BAND 6 — "THE FRONTS" DARK RACE BAND (#0B0E15)
+   8. BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
    ========================================================================= */
 .race {
   background: var(--race-bg);
@@ -2180,15 +2205,15 @@ code.font-mono {
 .rung-dot.verified {
   background: var(--obs-cream);
   border: none;
-  box-shadow: 0 0 7px rgba(243, 233, 210, 0.65);
+  box-shadow: 0 0 7px rgba(255, 255, 255, 0.65);
 }
 
 .rung-dot.hard {
   width: 13px;
   height: 13px;
-  background: rgba(242, 184, 75, 0.16);
+  background: rgba(255, 153, 51, 0.16);
   border: 1.75px solid var(--accent);
-  box-shadow: 0 0 10px rgba(242, 184, 75, 0.55);
+  box-shadow: 0 0 10px rgba(255, 153, 51, 0.55);
 }
 
 .rung-dot.peer_review {
@@ -2202,7 +2227,7 @@ code.font-mono {
   width: 8px;
   height: 8px;
   background: var(--obs-dead);
-  border: 1px solid #7C828E;
+  border: 1px solid #CFE8CA;
 }
 
 .rung-dot.disputed {
@@ -2237,7 +2262,7 @@ code.font-mono {
 
 .lane-stat {
   text-align: right;
-  color: var(--accent);
+  color: var(--obs-mist);
   font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
@@ -2381,7 +2406,7 @@ code.font-mono {
 .map-search-input {
   width: 100%;
   height: 40px;
-  background: rgba(6, 7, 10, 0.78);
+  background: rgba(5, 52, 2, 0.78);
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.24);
   border-radius: var(--r-8);
@@ -2413,7 +2438,7 @@ code.font-mono {
 
 .map-search-results {
   margin-top: 6px;
-  background: rgba(11, 14, 21, 0.96);
+  background: rgba(7, 70, 3, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--r-10);
   max-height: 280px;
@@ -2441,7 +2466,7 @@ code.font-mono {
 }
 
 .map-search-item:hover {
-  background: rgba(242, 184, 75, 0.12);
+  background: rgba(255, 153, 51, 0.12);
 }
 
 /* Clickable Cluster Program Pills (stacked cleanly inside .map-head-inner) */
@@ -2461,7 +2486,7 @@ code.font-mono {
   gap: 7px;
   padding: 4px 10px;
   border-radius: var(--r-999);
-  background: rgba(11, 14, 21, 0.72);
+  background: rgba(7, 70, 3, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.13);
   color: var(--obs-mist);
   font-family: var(--font-mono);
@@ -2473,7 +2498,7 @@ code.font-mono {
 .map-program:hover,
 .map-program.active {
   border-color: var(--accent);
-  background: rgba(242, 184, 75, 0.12);
+  background: rgba(255, 153, 51, 0.12);
   color: var(--obs-ink);
 }
 
@@ -2499,7 +2524,7 @@ code.font-mono {
   width: 150px;
   height: 94px;
   border-radius: var(--r-8);
-  background: rgba(10, 12, 18, 0.88);
+  background: rgba(7, 70, 3, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
   flex-shrink: 0;
@@ -2536,7 +2561,7 @@ code.font-mono {
   z-index: 11;
   display: flex;
   flex-direction: column;
-  background: rgba(13, 16, 22, 0.92);
+  background: rgba(9, 84, 5, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--r-10);
   overflow: hidden;
@@ -2575,8 +2600,8 @@ code.font-mono {
   z-index: 12;
   padding: 6px 14px;
   border-radius: var(--r-999);
-  background: rgba(13, 16, 22, 0.9);
-  border: 1px solid rgba(242, 184, 75, 0.35);
+  background: rgba(9, 84, 5, 0.9);
+  border: 1px solid rgba(255, 153, 51, 0.35);
   color: var(--accent-light);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -2589,7 +2614,7 @@ code.font-mono {
   z-index: 13;
   pointer-events: none;
   max-width: 270px;
-  background: rgba(11, 14, 21, 0.94);
+  background: rgba(7, 70, 3, 0.94);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: var(--r-10);
   padding: 10px 12px;
@@ -2682,7 +2707,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   10. BAND 8 — NUMBERS STRIP (#ECE8DF Sunk Band)
+   10. BAND 8 — NUMBERS STRIP (#FFF4E8 Sunk Band)
    ========================================================================= */
 .numbers {
   background: var(--sunk);
@@ -2778,9 +2803,10 @@ code.font-mono {
 }
 
 .return-card.frontier {
-  background: var(--ink);
-  border: 1px solid var(--ink);
-  color: var(--paper);
+  /* Ashoka Chakra navy: the one dark card in the white zone */
+  background: var(--flag-navy);
+  border: 1px solid var(--flag-navy);
+  color: #FFFFFF;
 }
 
 .return-card.grave {
@@ -3101,13 +3127,13 @@ code.font-mono {
 }
 
 .amount-chip.active {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
+  background: var(--chakra, var(--flag-navy));
+  color: var(--on-chakra, #FFFFFF);
+  border-color: var(--chakra, var(--flag-navy));
 }
 
 /* =========================================================================
-   13. BAND 11 — RECENT BACKERS MARQUEE (#F1EEE7)
+   13. BAND 11 — RECENT BACKERS MARQUEE (#F7F8F4)
    ========================================================================= */
 .today {
   background: var(--sunk-2);
@@ -3369,12 +3395,13 @@ code.font-mono {
 }
 
 /* =========================================================================
-   14. ARCHIVAL FOOTER (#F1EEE7)
+   14. ARCHIVAL FOOTER (#F7F8F4)
    ========================================================================= */
 .site-footer {
+  position: relative;
   background: var(--sunk-2);
   border-top: 1px solid var(--rule-verify);
-  padding: 56px var(--gutter) 0;
+  padding: 65px var(--gutter) 0;
   font-size: 14px;
   color: var(--ink-3);
 }
@@ -3416,7 +3443,7 @@ code.font-mono {
   border-radius: var(--r-999);
   background: var(--green-bg);
   color: var(--green);
-  border: 1px solid #C2DEC9;
+  border: 1px solid #BFE3BA;
   font-family: var(--font-serif);
   font-variant-numeric: tabular-nums;
   font-size: 12px;
@@ -3915,7 +3942,7 @@ code.font-mono {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(20, 19, 16, 0.56);
+  background: rgba(27, 26, 23, 0.56);
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
@@ -4016,7 +4043,7 @@ code.font-mono {
   border-radius: var(--r-8);
   background: var(--ink);
   color: var(--paper);
-  border: 1px solid #3D3A33;
+  border: 1px solid #2A2F5A;
   font-size: 13px;
   font-weight: 500;
   box-shadow: var(--shadow-pop);
@@ -4038,9 +4065,9 @@ code.font-mono {
 }
 
 .offline-banner {
-  background: #FBF4E4;
-  border-bottom: 1px solid #D6B066;
-  color: #6B4A10;
+  background: #FFF1E0;
+  border-bottom: 1px solid #FFB866;
+  color: #8A4200;
   padding: 9px var(--gutter);
   font-size: 12.5px;
 }
@@ -4135,8 +4162,12 @@ code.font-mono {
     padding: 0 16px;
   }
   .site-header {
-    padding: 12px var(--gutter);
+    padding: 18px var(--gutter) 12px;
     min-height: 60px;
+  }
+  .site-header::before,
+  .site-footer::before {
+    height: 6px;
   }
   .brand-logo {
     width: 26px;
@@ -4417,8 +4448,8 @@ code.font-mono {
 }
 
 .dossier-corrections {
-  background: #FBF6EC;
-  border: 1px solid #D8C299;
+  background: #FFF6EC;
+  border: 1px solid #FFCB94;
   border-left: 3px solid var(--accent-deep);
   border-radius: var(--r-6);
   padding: 15px 18px;
@@ -4533,7 +4564,7 @@ code.font-mono {
 
 .map-search-item.active,
 .map-search-item:focus-visible {
-  background: rgba(242, 184, 75, 0.18);
+  background: rgba(255, 153, 51, 0.18);
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
@@ -4556,7 +4587,7 @@ code.font-mono {
   min-height: 38px;
   padding: 6px 10px;
   border-radius: var(--r-6);
-  background: rgba(11, 14, 21, 0.9);
+  background: rgba(7, 70, 3, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.24);
   color: var(--obs-ink);
   font-size: 13px;
@@ -4589,4 +4620,144 @@ code.font-mono {
   .just-in.arriving {
     animation: none !important;
   }
+}
+
+
+/* =========================================================================
+   TIRANGA ZONES — page bands carry the flag colours in flag proportion
+   (saffron ~33% · white ~31.5% · green ~33% · navy ~1.8%, measured on the
+   home page). Each zone re-scopes the surface/ink tokens, so cards, rules,
+   buttons and text inside it follow automatically.
+   ========================================================================= */
+
+/* Saffron zone — dark ink on saffron; cards stay white */
+.hero,
+.backed-by,
+.status-note,
+.leaderboard,
+.home-live,
+.numbers,
+.container > .section-header:first-child,
+.page-zone-saffron {
+  --paper: var(--flag-saffron);
+  --warm: var(--flag-saffron);
+  --sunk: #F28A1E;
+  --sunk-2: #FFAA55;
+  --plain: #FFAA55;
+  --rule: rgba(27, 26, 23, 0.18);
+  --rule-soft: rgba(27, 26, 23, 0.10);
+  --rule-strong: rgba(27, 26, 23, 0.32);
+  --rule-verify: rgba(27, 26, 23, 0.22);
+  --ink: #1B1A17;
+  --ink-2: #2A2620;
+  --ink-3: #3A2E1E;
+  --ink-4: #45351F;
+  --ink-5: #6E4A1C;
+  --ink-6: #8C5A1E;
+  --accent: #1B1A17;
+  --accent-deep: #6B3300;
+  --avatar-wash: #FFE0BF;
+  background: var(--flag-saffron);
+  color: var(--ink);
+}
+
+/* Green zone — white ink on India green; cards a shade deeper */
+.race,
+.map,
+.community-band,
+.sponsors,
+.site-footer,
+.page-zone-green {
+  --paper: var(--flag-green-deep);
+  --warm: var(--flag-green-deep);
+  --raised: var(--flag-green-card);
+  --sunk: var(--flag-green-card);
+  --sunk-2: #0A5704;
+  --plain: var(--flag-green-card);
+  --rule: rgba(255, 255, 255, 0.26);
+  --rule-soft: rgba(255, 255, 255, 0.14);
+  --rule-strong: rgba(255, 255, 255, 0.45);
+  --rule-verify: rgba(255, 255, 255, 0.30);
+  --ink: #FFFFFF;
+  --ink-2: #F3FAF1;
+  --ink-3: #DCEFD8;
+  --ink-4: #CFE8CA;
+  --ink-5: #9FD196;
+  --ink-6: #7FBF75;
+  --green: #C8F5BE;
+  --green-bg: rgba(255, 255, 255, 0.14);
+  --live: #9BF08F;
+  --ep-verified-bd: rgba(255, 255, 255, 0.36);
+  --red: #FFC2B6;
+  --red-bg: rgba(255, 194, 182, 0.14);
+  --accent-deep: #FFD7A8;
+  --avatar-wash: rgba(255, 255, 255, 0.16);
+  --avatar-ink: #FFFFFF;
+  --chakra: #FFFFFF;
+  --on-chakra: var(--flag-green-deep);
+  --chakra-hover: #E8F5E6;
+  background: var(--flag-green-deep);
+  color: var(--ink);
+}
+
+/* The tricolour band already separates header/footer; drop the extra hairline */
+.site-footer {
+  border-top: 0;
+}
+
+/* Numbers strip: saffron band with chakra-navy figures */
+.numbers .count-item dt {
+  color: var(--flag-navy);
+}
+
+/* Community cards sit as white cards on the green band */
+.community-card {
+  --paper: #FFFFFF;
+  --raised: #FFFFFF;
+  --warm: #FFFFFF;
+  --sunk-2: #F7F8F4;
+  --rule: #E6E3DC;
+  --rule-strong: #D3CFC5;
+  --ink: #1B1A17;
+  --ink-2: #3F3B34;
+  --ink-3: #575249;
+  --ink-4: #635E54;
+  --ink-5: #9E988B;
+  color: var(--ink);
+}
+
+/* Footer legal strip: the chakra-navy accent (~1% of the page, like the chakra on the flag) */
+.site-footer .foot-bottom {
+  --ink: #FFFFFF;
+  --ink-2: #F2F2FA;
+  --ink-3: #DADBF0;
+  --ink-4: #D0D2EC;
+  --rule: rgba(255, 255, 255, 0.28);
+  --chakra: #FFFFFF;
+  --on-chakra: var(--flag-navy);
+  --chakra-hover: #E6E7F7;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 22px var(--gutter);
+  border-top: 0;
+  background: var(--flag-navy);
+  color: var(--ink-4);
+}
+
+/* Keep the tricolour emblem legible on the green footer */
+.foot-brand-row img {
+  background: #FFFFFF;
+  border-radius: 8px;
+  padding: 3px;
+  box-sizing: content-box;
+}
+
+/* Subpage title blocks: full-bleed saffron band (flag order: saffron title,
+   white content, green footer, navy legal strip) */
+.container > .section-header:first-child {
+  position: relative;
+  margin-top: -28px;
+  padding-block: 40px 36px;
+  margin-bottom: 28px;
+  box-shadow: 0 0 0 100vmax var(--flag-saffron);
+  clip-path: inset(0 -100vmax);
 }

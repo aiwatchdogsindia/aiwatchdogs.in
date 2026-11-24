@@ -713,7 +713,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                   {/* Mandatory Benign Explanations Box (BNS Sec 356 Fairness) */}
                   <div
                     style={{
-                      background: '#FBF8F1',
+                      background: '#FFFAF3',
                       border: '1px solid var(--ep-review-bd)',
                       borderLeft: '3px solid var(--ep-review-fg)',
                       borderRadius: 4,
