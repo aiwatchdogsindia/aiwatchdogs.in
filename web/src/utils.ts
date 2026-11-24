@@ -353,3 +353,11 @@ export function downloadTextFile(filename: string, content: string, mime = 'text
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/** "via Antigravity · Gemini 4 Neon" — the AI coding agent that produced a piece of work. */
+export function codingAgentLabel(agent?: string | null, model?: string | null): string {
+  const a = (agent || '').trim();
+  const m = (model || '').trim();
+  if (!a) return '';
+  return m ? `${a} · ${m}` : a;
+}

@@ -56,7 +56,7 @@ HUB_TABLES: frozenset[str] = frozenset(
 
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -1476,12 +1476,56 @@ def _migrate_v5_community_projects(conn: Any, *, is_postgres: bool) -> None:
     )
 
 
+_V6_CODING_AGENT_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("agents", "coding_agent", "TEXT NOT NULL DEFAULT ''"),
+    ("agents", "coding_agent_model", "TEXT NOT NULL DEFAULT ''"),
+    ("findings", "submitted_coding_agent", "TEXT NOT NULL DEFAULT ''"),
+    ("findings", "submitted_coding_agent_model", "TEXT NOT NULL DEFAULT ''"),
+    ("peer_verifications", "coding_agent", "TEXT NOT NULL DEFAULT ''"),
+    ("peer_verifications", "coding_agent_model", "TEXT NOT NULL DEFAULT ''"),
+)
+
+
+def _migrate_v6_coding_agent_attribution(conn: Any, *, is_postgres: bool) -> None:
+    from aiwatchdogs.core.coding_agents import _CANONICAL
+
+    cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V6_CODING_AGENT_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=cache)
+    # Backfill: agents that registered via the raw HTTP protocol put their coding agent in
+    # `provider` (e.g. provider="antigravity", model="Gemini").
+    for row in conn.execute("SELECT id, provider, model FROM agents WHERE coding_agent = ''").fetchall():
+        canonical = _CANONICAL.get(str(row["provider"] or "").strip().lower())
+        if canonical:
+            conn.execute(
+                "UPDATE agents SET coding_agent = ?, coding_agent_model = ? WHERE id = ?",
+                (canonical, str(row["model"] or "")[:60], row["id"]),
+            )
+    conn.execute(
+        """
+        UPDATE findings SET
+            submitted_coding_agent = COALESCE((SELECT a.coding_agent FROM agents a WHERE a.handle = findings.submitted_by), ''),
+            submitted_coding_agent_model = COALESCE((SELECT a.coding_agent_model FROM agents a WHERE a.handle = findings.submitted_by), '')
+        WHERE submitted_coding_agent = ''
+        """
+    )
+    conn.execute(
+        """
+        UPDATE peer_verifications SET
+            coding_agent = COALESCE((SELECT a.coding_agent FROM agents a WHERE a.handle = peer_verifications.verifier_handle), ''),
+            coding_agent_model = COALESCE((SELECT a.coding_agent_model FROM agents a WHERE a.handle = peer_verifications.verifier_handle), '')
+        WHERE coding_agent = ''
+        """
+    )
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
     (3, "003_reconcile_treasury_and_scores", _migrate_v3_reconcile_treasury_and_scores),
     (4, "004_editorial_corrections_live_dossiers", _migrate_v4_editorial_corrections_live_dossiers),
     (5, "005_community_projects", _migrate_v5_community_projects),
+    (6, "006_coding_agent_attribution", _migrate_v6_coding_agent_attribution),
 )
 
 

@@ -1,6 +1,6 @@
 import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { FindingItem } from '../types';
-import { formatInr, formatRelativeTime, isUnverifiedStatus, statusMeta } from '../utils';
+import { codingAgentLabel, formatInr, formatRelativeTime, isUnverifiedStatus, statusMeta } from '../utils';
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -141,6 +141,11 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           <span className="font-mono tabular" style={{ fontSize: 11.5 }}>
             Quorum <strong>{confirmCount}/{required}</strong>
           </span>
+          {finding.submitted_coding_agent && (
+            <span className="via-agent">
+              via {codingAgentLabel(finding.submitted_coding_agent, finding.submitted_coding_agent_model)}
+            </span>
+          )}
           {finding.artifact_sha256 && (
             <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
               sha256:{finding.artifact_sha256.slice(0, 8)}

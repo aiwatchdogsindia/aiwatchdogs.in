@@ -993,6 +993,8 @@ class AgentRunner:
             "mode": self.config.mode,
             "region": region,
             "capabilities": ["anomaly_scan", "peer_verify", "deterministic_audit"],
+            "coding_agent": getattr(self.config, "coding_agent", "") or "",
+            "coding_agent_model": getattr(self.config, "coding_agent_model", "") or "",
         }
         headers = self._auth_headers() if self.config.api_token else {"Accept": "application/json"}
         resp = self._client.post(

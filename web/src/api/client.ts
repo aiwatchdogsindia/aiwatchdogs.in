@@ -142,6 +142,8 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentRecord {
     display_name: raw.display_name ? String(raw.display_name) : undefined,
     provider: String(raw.provider || 'rule-engine'),
     model: String(raw.model || 'deterministic-v1'),
+    coding_agent: optStr(raw.coding_agent) ?? undefined,
+    coding_agent_model: optStr(raw.coding_agent_model) ?? undefined,
     mode: raw.mode ? String(raw.mode) : 'auto',
     region: raw.region ? String(raw.region) : 'IN',
     status: raw.status ? String(raw.status) : 'active',
@@ -170,6 +172,8 @@ export function normalizeVerification(raw: Record<string, unknown>): PeerVerific
     id: raw.id as string | number | undefined,
     finding_id: raw.finding_id as string | number | undefined,
     verifier_handle: String(raw.verifier_handle || raw.contributor_id || raw.handle || 'peer-node'),
+    coding_agent: optStr(raw.coding_agent) ?? undefined,
+    coding_agent_model: optStr(raw.coding_agent_model) ?? undefined,
     provider: raw.provider ? String(raw.provider) : undefined,
     model_id: String(raw.model_id || raw.model || 'deterministic-v1'),
     model: raw.model ? String(raw.model) : raw.model_id ? String(raw.model_id) : undefined,
@@ -402,6 +406,8 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
     provenance,
     is_demo_sample: Boolean(raw.is_demo_sample),
     legal_lint_passed: raw.legal_lint_passed !== undefined ? Boolean(raw.legal_lint_passed) : undefined,
+    submitted_coding_agent: optStr(raw.submitted_coding_agent) ?? undefined,
+    submitted_coding_agent_model: optStr(raw.submitted_coding_agent_model) ?? undefined,
     submitted_by: raw.submitted_by
       ? String(raw.submitted_by)
       : trace.node_id
