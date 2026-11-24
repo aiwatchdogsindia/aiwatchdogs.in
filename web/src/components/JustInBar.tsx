@@ -61,7 +61,7 @@ export function JustInBar({
       <div
         className="just-in"
         role="region"
-        aria-label="Open Government of India audit queue"
+        aria-label="Open audit queue"
       >
         <span className="just-in-kicker">
           <span className="live-dot sm" aria-hidden="true" />
@@ -69,8 +69,8 @@ export function JustInBar({
         </span>
 
         <span className="just-in-title">
-          {queuedTasks} official Government of India dataset{queuedTasks === 1 ? '' : 's'} queued
-          across {missionsCount || 8} live civic-audit fronts (M1–M8)
+          {queuedTasks} official dataset{queuedTasks === 1 ? '' : 's'} queued across {missionsCount}{' '}
+          community {missionsCount === 1 ? 'project' : 'projects'}
         </span>
 
         <span className="just-in-meta">2-of-2 quorum active</span>

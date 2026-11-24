@@ -5,19 +5,54 @@
   "outputDirectory": "web/dist",
   "functions": {
     "api/index.py": {
-      "includeFiles": "src/**",
+      "includeFiles": "{src,projects}/**",
       "maxDuration": 60
     }
   },
   "rewrites": [
-    { "source": "/missions", "destination": "/index.html" },
-    { "source": "/missions/(.*)", "destination": "/index.html" },
-    { "source": "/findings", "destination": "/index.html" },
-    { "source": "/live", "destination": "/index.html" },
-    { "source": "/contributors", "destination": "/index.html" },
-    { "source": "/a/(.*)", "destination": "/index.html" },
-    { "source": "/sponsors", "destination": "/index.html" },
-    { "source": "/ledger", "destination": "/index.html" },
-    { "source": "/how-it-works", "destination": "/index.html" }
+    {
+      "source": "/projects/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/projects",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/missions",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/missions/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/findings",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/live",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/contributors",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/a/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sponsors",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/ledger",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/how-it-works",
+      "destination": "/index.html"
+    }
   ]
 }

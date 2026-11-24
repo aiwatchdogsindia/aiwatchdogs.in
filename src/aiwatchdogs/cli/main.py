@@ -1075,5 +1075,56 @@ def whoami() -> None:
     )
 
 
+
+project_app = typer.Typer(help="Enlist and check community audit projects (files under projects/).")
+app.add_typer(project_app, name="project")
+
+
+@project_app.command("validate")
+def project_validate(
+    paths: list[str] = typer.Argument(
+        None, help="Project JSON files to check. Defaults to every file in projects/."
+    ),
+) -> None:
+    """Check project files before opening a pull request (CI runs the same check)."""
+    from pathlib import Path
+
+    from aiwatchdogs.projects import default_projects_dir, load_project_files, validate_project
+
+    results: list[tuple[str, list[str]]] = []
+    if paths:
+        for raw in paths:
+            path = Path(raw)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                results.append((str(path), [f"Could not read JSON: {exc}"]))
+                continue
+            results.append((str(path), validate_project(data, filename_stem=path.stem)))
+        # Cross-file checks (duplicate slugs / task ids) against everything in projects/.
+        by_name = {pf.path.name: pf.errors for pf in load_project_files(default_projects_dir())}
+        results = [
+            (name, errs + [e for e in by_name.get(Path(name).name, []) if "already used" in e and e not in errs])
+            for name, errs in results
+        ]
+    else:
+        results = [(str(pf.path), pf.errors) for pf in load_project_files(default_projects_dir())]
+
+    if not results:
+        console.print("[yellow]No project files found.[/yellow]")
+        raise typer.Exit(code=1)
+    failed = False
+    for name, errs in results:
+        if errs:
+            failed = True
+            console.print(f"[bold red]✗ {name}[/bold red]")
+            for e in errs:
+                console.print(f"   • {e}")
+        else:
+            console.print(f"[bold green]✓ {name}[/bold green]")
+    if failed:
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()

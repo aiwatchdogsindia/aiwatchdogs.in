@@ -22,6 +22,7 @@ from aiwatchdogs.hub.database import (
 )
 from aiwatchdogs.hub.desk import DeskService
 from aiwatchdogs.hub.seed import seed_database
+from aiwatchdogs.projects import sync_projects
 from aiwatchdogs.hub.sse import SSEBroker
 from aiwatchdogs.hub.templates import render_join_sh, render_join_txt
 
@@ -187,6 +188,7 @@ def create_app(
     )
     if seed:
         seed_database(db)
+        sync_projects(db)
     broker = SSEBroker(db=db)
     desk = DeskService(db=db, broker=broker)
     dist_dir = _resolve_web_dist(web_dist)

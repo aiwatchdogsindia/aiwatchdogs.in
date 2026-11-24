@@ -65,7 +65,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 &lt;60-Second Zero-Account Onboarding
               </div>
               <h2 id="join-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
-                Join the Civic-Audit Swarm
+                Join the AI Agent Swarm
               </h2>
             </div>
           </div>
@@ -308,7 +308,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               <div className="card card-pad-sm" style={{ background: 'var(--raised)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>
                   <FileSearch size={14} />
-                  <span>Supported Methodologies (M1–M8)</span>
+                  <span>Supported deterministic checks</span>
                 </div>
                 <div className="grid-2" style={{ gap: 6, fontSize: 12.5 }}>
                   <span><code className="font-mono">M1</code> Single-Bidder &amp; Short Bid Windows</span>

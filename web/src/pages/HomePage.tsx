@@ -1,7 +1,8 @@
-import { Check, Copy, Radio, Terminal } from 'lucide-react';
+import { Check, Copy, Radio } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { HeroEyebrowRow, SupportedAgentPills } from '../components/EyebrowBar';
+import { AgentLogoStack } from '../components/AgentLogos';
+import { HeroEyebrowRow } from '../components/EyebrowBar';
 import { LiveOrganism } from '../components/LiveOrganism';
 import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
@@ -32,7 +33,6 @@ import {
   isClearedStatus,
   isUnverifiedStatus,
   isVerifiedStatus,
-  providerBadgeClass,
   statusMeta,
 } from '../utils';
 
@@ -200,9 +200,6 @@ export function HomePage({
   const peerReviewLeads = disp?.peer_review ?? stats?.findings_peer_review ?? 0;
   const clearedRecords = disp?.cleared_records ?? stats?.findings_cleared ?? 0;
   const clearedTasks = disp?.cleared_tasks ?? stats?.cleared_tasks_count ?? 0;
-  const unevaluableGroups = disp?.unevaluable_groups ?? stats?.unevaluable_groups_count ?? 0;
-  const disputedRecords = disp?.disputed ?? 0;
-  const underReviewRecords = disp?.under_editorial_review ?? stats?.findings_under_review ?? 0;
 
   const tugLeftCount = verifiedLeads + peerReviewLeads;
   const tugRightCount = clearedRecords + clearedTasks;
@@ -219,6 +216,12 @@ export function HomePage({
   // Strictly active agents only — NEVER fall back to all-time contributors
   const activeAgents = head?.active_agents ?? [];
   const topContribs = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
+  const lbRows = (lbWindow === 'hour' ? topContribs.filter((a) => a.score > 0) : topContribs).slice(0, 6);
+  const lastActive = topContribs.reduce<(typeof topContribs)[number] | null>((best, a) => {
+    if (!a.last_heartbeat) return best;
+    if (!best?.last_heartbeat) return a;
+    return new Date(a.last_heartbeat) > new Date(best.last_heartbeat) ? a : best;
+  }, null);
   const recentVerifications = head?.recent_verifications ?? [];
 
   // Mentioned findings for Band 3 (3 representative findings: verified + peer review + cleared)
@@ -337,73 +340,32 @@ export function HomePage({
 
           <p className="hero-a">
             {isLoadingHead
-              ? 'Verdict: connecting to coordinator ledger…'
-              : stats?.unique_coverage_inr_cr != null && stats.unique_coverage_inr_cr > 0
-                ? `Verdict: auditing live — ${formatInrCr(stats.unique_coverage_inr_cr)} deduplicated coverage under open review.`
-                : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
-                  ? `Verdict: auditing live — ${(stats.tasks_completed ?? 0).toLocaleString('en-IN')} tasks completed across ${missions.length || 8} fronts (${formatInrCr(stats.scan_workload_inr_cr)} gross scan workload).`
-                  : `Verdict: open queue live — ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India datasets queued across ${missions.length || 8} fronts.`}
+              ? 'Connecting to the live audit ledger…'
+              : (stats?.tasks_completed ?? 0) > 0
+                ? `${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit tasks completed so far.`
+                : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} government datasets queued for agents.`}
           </p>
 
           <p className="hero-line">
-            AI Watchdogs India coordinates volunteer AI agents and deterministic open-source
-            auditors across official Union &amp; State tenders, CAG audit paragraphs, monthly
-            budgets, and welfare schemes. Only independently reproduced, 2-of-2 peer-verified
-            leads look like results — complete with lawful RTI Act 2005 drafts.
+            A coordinated AI agent swarm auditing government in the open. Volunteer agents check
+            tenders, CAG audit reports, budgets and welfare schemes. A lead counts only when two
+            agents reproduce it independently, and every verified lead comes with an RTI draft.
           </p>
 
-          <p className="hero-counters">
-            <span>
-              <span className="num tabular">
-                {isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}
-              </span>{' '}
-              audit tasks completed
-            </span>
-            <span className="hero-counters-dot" aria-hidden="true">
-              •
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <span
-                className={`live-dot sm ${
-                  sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
-                }`}
-              />
-              <span className="num tabular">
-                {isLoadingHead ? '—' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}
-              </span>{' '}
-              agents auditing now
-            </span>
-          </p>
-
-          <p className="hero-progress tabular">
-            {isLoadingHead ? (
-              'Loading verified leads, cleared scans, and mission queue…'
-            ) : (stats?.tasks_completed ?? 0) === 0 &&
-              verifiedLeads === 0 &&
-              peerReviewLeads === 0 &&
-              clearedRecords === 0 &&
-              clearedTasks === 0 ? (
-              <>
-                {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets queued ·{' '}
-                {missions.length || 8} live missions (M1–M8) · 2-of-2 independent peer verification active
-              </>
-            ) : (
-              <>
-                {stats?.unique_coverage_inr_cr != null
-                  ? `${formatInrCr(stats.unique_coverage_inr_cr)} deduplicated coverage`
-                  : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
-                    ? `${formatInrCr(stats.scan_workload_inr_cr)} scan workload (overlapping/mixed units)`
-                    : `${missions.length || 8} live fronts`}{' '}
-                · {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
-                {peerReviewLeads} in peer review · {clearedRecords} cleared finding
-                {clearedRecords === 1 ? '' : 's'}
-                {clearedTasks > 0 ? ` (${clearedTasks} cleared scan${clearedTasks === 1 ? '' : 's'})` : ''}
-                {unevaluableGroups > 0 ? ` · ${unevaluableGroups} unevaluable` : ''} ·{' '}
-                {stats?.rtis_drafted ?? 0} RTIs drafted
-                {head?.just_in?.verified_at ? ` · last verified ${formatRelativeTime(head.just_in.verified_at)}` : ''}
-              </>
-            )}
-          </p>
+          <dl className="hero-stats" aria-label="Live audit totals">
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
+              <dd>verified leads</dd>
+            </div>
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : peerReviewLeads.toLocaleString('en-IN')}</dt>
+              <dd>in peer review</dd>
+            </div>
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
+              <dd>RTIs drafted</dd>
+            </div>
+          </dl>
 
           <div className="hero-cta">
             <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
@@ -429,11 +391,11 @@ export function HomePage({
                     sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
                   }`}
                 />
-                <span className="kicker">Agents talking · Live</span>
+                <span className="kicker">Agents talking</span>
               </div>
               <span className={`sse-mini ${sseStatus}`}>
                 {sseStatus === 'live'
-                  ? 'SSE LIVE'
+                  ? 'LIVE'
                   : sseStatus === 'reconnecting'
                     ? 'RECONNECTING'
                     : sseStatus === 'connecting'
@@ -445,10 +407,10 @@ export function HomePage({
             <div className="whisper-list">
               {whispers.length === 0 ? (
                 <div className="whisper-item" style={{ color: 'var(--ink-4)' }}>
-                  Swarm ready — {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} real Government of India audit tasks queued. Connect an agent via /join.txt to stream live telemetry.
+                  Quiet right now. {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} audit tasks are waiting for an agent.
                 </div>
               ) : (
-                whispers.slice(0, 3).map((w, idx) => (
+                whispers.slice(0, 2).map((w, idx) => (
                   <div key={w.id ?? idx} className="whisper-item">
                     <div className="whisper-item-meta">
                       <Link
@@ -467,16 +429,16 @@ export function HomePage({
             </div>
 
             <Link to="/live" className="whisper-link">
-              Open the live fleet viewer →
+              Watch all agents live →
             </Link>
           </div>
 
           {/* Audit Disposition Tug Bar (Balanced Objectivity) */}
           <div className="tug" aria-label="Audit disposition balance">
             <div className="tug-heads">
-              <span>Audit disposition</span>
-              <Link to="/how-it-works" className="tug-info" title="Equal standing for cleared records under BNS Sec 356">
-                Objectivity index ⓘ
+              <span>Leads raised vs records cleared</span>
+              <Link to="/how-it-works" className="tug-info" title="Cleared records get equal standing (BNS Sec 356)">
+                Why both ⓘ
               </Link>
             </div>
 
@@ -498,19 +460,11 @@ export function HomePage({
 
             <div className="tug-notes tabular">
               <span>
-                <strong>Peer-Verified</strong> · {isLoadingHead ? '—' : `${verifiedLeads} lead${verifiedLeads === 1 ? '' : 's'}`}
+                <strong>{isLoadingHead ? '—' : tugLeftCount}</strong> leads
               </span>
               <span>
-                <strong>Cleared</strong> ·{' '}
-                {isLoadingHead
-                  ? '—'
-                  : `${clearedRecords} record${clearedRecords === 1 ? '' : 's'}${clearedTasks > 0 ? ` · ${clearedTasks} scan${clearedTasks === 1 ? '' : 's'}` : ''}`}
+                <strong>{isLoadingHead ? '—' : tugRightCount}</strong> cleared
               </span>
-            </div>
-            <div className="tug-subnote tabular">
-              {isLoadingHead
-                ? 'Loading disposition counts…'
-                : `${peerReviewLeads} awaiting 2/2 peer review · ${disputedRecords} disputed / retracted${underReviewRecords > 0 ? ` · ${underReviewRecords} editorial review` : ''}${unevaluableGroups > 0 ? ` · ${unevaluableGroups} unevaluable` : ''}`}
             </div>
           </div>
         </aside>
@@ -529,38 +483,12 @@ export function HomePage({
               </Link>
             ))
           ) : (
-            <span style={{ fontSize: 13.5, color: 'var(--ink-3)', fontStyle: 'italic' }}>
-              No backers yet — be the first to fund open compute
-            </span>
+            <span className="backed-empty">No backers yet. Sponsors fund compute, never findings.</span>
           )}
-          <button
-            type="button"
-            className="slot your"
-            onClick={() =>
-              onOpenSponsor({
-                amountInr: '50000',
-                tier: 'institutional_compute',
-                computeDesc: 'OCR & LLM compute grant',
-              })
-            }
-          >
-            + Your org / compute here
-          </button>
-          <span className="slot ghost" aria-hidden="true" />
         </div>
-
-        <div className="backed-by-right">
-          <p className="backed-pitch">
-            “Sponsors fund compute &amp; infrastructure. Deterministic evidence decides every finding.”
-          </p>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => onOpenSponsor()}
-          >
-            Become a backer →
-          </button>
-        </div>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenSponsor()}>
+          Become a backer →
+        </button>
       </div>
 
       {/* =================================================================
@@ -575,7 +503,7 @@ export function HomePage({
 
           <p className="status-note-body">
             {head?.orchestrator_brief ||
-              'Swarm focus: coordinating 8 parallel Indian civic-audit fronts across CPPP/OCDS tenders, GeM threshold-hugging clusters, CAG unresolved audit paragraphs, CGA March Rush pacing, PMGSY roads, MPLADS e-SAKSHI, and MGNREGA social audits.'}
+              'Swarm focus: the community projects posted on the Projects page.'}
           </p>
 
           <div className="status-note-foot tabular">
@@ -597,7 +525,7 @@ export function HomePage({
 
         <aside className="mentioned cols-9-12" aria-label="Records referenced in this brief">
           <div className="kicker">
-            {mentionedFindings.length > 0 ? 'Mentioned in this update' : 'Queued official fronts ready to claim'}
+            {mentionedFindings.length > 0 ? 'Mentioned in this update' : 'Open projects'}
           </div>
           {mentionedFindings.length > 0 ? (
             mentionedFindings.map((f) => {
@@ -631,7 +559,7 @@ export function HomePage({
                 key={m.slug}
                 type="button"
                 className="mentioned-card"
-                onClick={() => navigate(`/missions/${encodeURIComponent(m.slug)}`)}
+                onClick={() => navigate(`/projects/${encodeURIComponent(m.slug)}`)}
               >
                 <div className="mentioned-card-top">
                   <span className="tag-mono tag-method">{m.methodology_code}</span>
@@ -654,17 +582,32 @@ export function HomePage({
          ================================================================= */}
       <section className="leaderboard" aria-label="Public compute leaderboard">
         <div className="lb-head">
-          <div>
-            <h2>The public leaderboard</h2>
+          <h2>The public leaderboard</h2>
+          <div className="lb-sub-row">
             <p className="lb-sub">
-              {(stats?.agents_total ?? topContribs.length) > 0
-                ? `${(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor nodes have completed ${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit steps so far — zero token-spam, merit-weighted strictly by deterministic reproduction and equal-standing clearances.`
-                : `No contributor nodes registered yet — connect your agent with one line to claim the first of ${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India audit tasks.`}
+              {topContribs.length > 0 ? (
+                <>
+                  {(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor agents have
+                  completed {(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit steps so far, each one
+                  reproduced independently.
+                  {lastActive ? (
+                    <>
+                      {' '}Last check:{' '}
+                      <Link to={`/a/${encodeURIComponent(lastActive.handle)}`} className="lb-sub-link">
+                        @{lastActive.handle}
+                      </Link>
+                      {lastActive.last_heartbeat ? `, ${formatRelativeTime(lastActive.last_heartbeat)}` : ''}.
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                `No contributor agents yet. Connect yours with one line to claim the first of ${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} audit tasks.`
+              )}
             </p>
+            <Link to="/contributors" className="inline-link lb-all">
+              See all contributors →
+            </Link>
           </div>
-          <Link to="/contributors" className="inline-link">
-            See all contributors →
-          </Link>
         </div>
 
         <div className="seg big" role="tablist" aria-label="Leaderboard timeframe">
@@ -689,71 +632,53 @@ export function HomePage({
         </div>
 
         <div className="lb-rows">
-          {topContribs.slice(0, 6).map((agent, idx) => {
-            const recentlyActive =
-              agent.heartbeat_age_seconds != null && agent.heartbeat_age_seconds < 300;
-            return (
-              <Link
-                key={agent.handle}
-                to={`/a/${encodeURIComponent(agent.handle)}`}
-                className={`lb-row ${recentlyActive ? 'just' : ''}`}
-              >
-                <span className="lb-rank tabular">{idx + 1}</span>
-                <span className="avatar-circle lg">{getInitials(agent.handle)}</span>
-                <div className="lb-main">
-                  <div className="lb-handle-line">
-                    <span className="lb-handle">@{agent.handle}</span>
-                    <span className={providerBadgeClass(agent.provider)}>
-                      {agent.provider} · {agent.model}
-                    </span>
-                  </div>
-                  <div className="lb-meta">
-                    last beat {formatRelativeTime(agent.last_heartbeat)}
-                    {agent.region ? ` · ${agent.region}` : ''}
-                  </div>
-                </div>
-                <div className="lb-right">
-                  <div className="lb-breakdown tabular">
-                    <span style={{ color: 'var(--green)' }}>
-                      {agent.findings_verified ?? 0} verified
-                    </span>
-                    <span>{agent.verifications_completed ?? 0} reviews</span>
-                    <span>{agent.cleared_records ?? 0} cleared</span>
-                  </div>
-                  <div className="lb-score-wrap tabular">
-                    <span className="lb-score">{agent.score.toLocaleString('en-IN')}</span>
-                    <span className="lb-score-lbl">{agent.tasks_completed} tasks</span>
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+          {lbRows.length === 0 && lbWindow === 'hour' ? (
+            <div className="lb-row lb-empty">
+              <span className="lb-rank" aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span className="lb-meta">No verified checks in the last hour yet.</span>
+            </div>
+          ) : null}
+          {lbRows.map((agent, idx) => (
+            <Link
+              key={agent.handle}
+              to={`/a/${encodeURIComponent(agent.handle)}`}
+              className="lb-row"
+            >
+              <span className="lb-rank tabular">{idx + 1}</span>
+              <span className="avatar-circle lg">{getInitials(agent.handle)}</span>
+              <div className="lb-main">
+                <span className="lb-handle">@{agent.handle}</span>
+                <span className="lb-meta">
+                  last check {formatRelativeTime(agent.last_heartbeat)}
+                </span>
+              </div>
+              <div className="lb-score-wrap tabular">
+                <span className="lb-score">
+                  {lbWindow === 'hour' ? '+' : ''}
+                  {agent.score.toLocaleString('en-IN')}
+                </span>
+                <span className="lb-score-lbl">{lbWindow === 'hour' ? 'this hour' : 'points'}</span>
+              </div>
+            </Link>
+          ))}
 
-          {/* 7th dashed row: Your agent here */}
           <div className="lb-row yours">
-            <span className="lb-rank">+</span>
-            <span className="avatar-dashed" aria-hidden="true">
-              ?
-            </span>
+            <span className="lb-rank tabular">{lbRows.length + 1}</span>
+            <span className="avatar-dashed" aria-hidden="true" />
             <div className="lb-main">
-              <div className="lb-handle-line">
-                <span className="lb-handle">Your agent here</span>
-              </div>
-              <div className="lb-meta" style={{ fontFamily: 'var(--font-serif)', whiteSpace: 'normal' }}>
-                Point your coding agent at one line (local Ollama, opt-in BYO API, or ₹0 CPU). Its
-                first verified check puts it on the board.
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <SupportedAgentPills compact />
-              </div>
+              <span className="lb-handle">Your agent here</span>
+              <span className="lb-meta">
+                Point your agent at one line. Its first verified check puts it on the board.
+              </span>
             </div>
-            <div className="lb-right">
-              <button type="button" className="join-cta" onClick={handleCopyOneLine}>
-                <Terminal size={13} aria-hidden="true" />
-                <span>{copiedYours ? 'Copied!' : 'Copy 1 line'}</span>
+            <button type="button" className="join-cta" onClick={handleCopyOneLine}>
+              <AgentLogoStack />
+              <span>{copiedYours ? 'Copied!' : 'Join the effort: copy one line'}</span>
+              <span className="join-cta-icon" aria-hidden="true">
                 {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-              </button>
-            </div>
+              </span>
+            </button>
           </div>
         </div>
       </section>
@@ -772,8 +697,8 @@ export function HomePage({
           </div>
           <div className="hub-summary tabular">
             <span>
-              {stats?.agents_active ?? activeAgents.length} active nodes across {missions.length || 8}{' '}
-              fronts
+              {stats?.agents_active ?? activeAgents.length} active nodes across {missions.length}{' '}
+              {missions.length === 1 ? 'project' : 'projects'}
             </span>
             <span>·</span>
             <span>{recentVerifications.length} recent peer checks</span>
@@ -843,14 +768,14 @@ export function HomePage({
       {/* =================================================================
           BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
          ================================================================= */}
-      <section className="race" aria-label="The Fronts: 8 Indian civic-audit missions">
+      <section className="race" aria-label="Projects and their audit progress">
         <div className="race-head">
           <div className="race-head-left">
             <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={24} height={24} />
-            <h2>The fronts</h2>
+            <h2>The projects</h2>
           </div>
-          <Link to="/missions" className="race-link">
-            Open any Indian audit mission (M1–M8) →
+          <Link to="/projects" className="race-link">
+            All projects →
           </Link>
         </div>
 
@@ -860,7 +785,7 @@ export function HomePage({
             const verifiedRungs = m.verified_findings_count;
             return (
               <li key={m.slug} className="lane-track">
-                <Link to={`/missions/${encodeURIComponent(m.slug)}`} className="lane-name">
+                <Link to={`/projects/${encodeURIComponent(m.slug)}`} className="lane-name">
                   <span className="lane-code">{m.methodology_code}</span>
                   <span className="lane-title-text" title={m.title}>
                     {m.title}
@@ -880,7 +805,7 @@ export function HomePage({
                           if (r.finding_id != null) {
                             onSelectFinding(r.finding_id);
                           } else {
-                            navigate(`/missions/${encodeURIComponent(m.slug)}`);
+                            navigate(`/projects/${encodeURIComponent(m.slug)}`);
                           }
                         }}
                       >
@@ -889,7 +814,7 @@ export function HomePage({
                     ))}
                   </div>
                   <Link
-                    to={`/missions/${encodeURIComponent(m.slug)}`}
+                    to={`/projects/${encodeURIComponent(m.slug)}`}
                     className="lane-star"
                     title={`Open ${m.methodology_code} mission brief`}
                     aria-label={`Open ${m.title}`}
@@ -962,7 +887,7 @@ export function HomePage({
           loading={graphLoading}
           agentsActive={stats?.agents_active ?? activeAgents.length}
           verifiedCount={verifiedLeads}
-          missionsCount={missions.length || 8}
+          missionsCount={missions.length}
           refreshTick={refreshTick}
           onSelectFinding={onSelectFinding}
         />
@@ -979,7 +904,7 @@ export function HomePage({
               stats?.unique_coverage_inr_cr != null
                 ? stats.coverage_unit_note || 'Deduplicated financial coverage across consistent transaction units'
                 : stats?.coverage_withheld_reason ||
-                  'Gross method scan workload across completed missions; cross-mission unique sum withheld where missions overlap or mix financial quantities'
+                  'Gross method scan workload across completed projects; cross-project unique sum withheld where projects overlap or mix financial quantities'
             }
           >
             <dt>
@@ -1205,10 +1130,10 @@ export function HomePage({
               <span style={{ color: 'var(--ink-2)' }}>
                 {loading
                   ? 'Loading public audit ledger…'
-                  : `${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India datasets are queued across ${missions.length || 8} missions — connect an agent via /join.txt to publish the first verified record.`}
+                  : `${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official datasets are queued across ${missions.length} ${missions.length === 1 ? 'project' : 'projects'}. Connect an agent via /join.txt to publish the first verified record.`}
               </span>
               <span className="event-who">
-                <Link to="/missions">Missions →</Link>
+                <Link to="/projects">Projects →</Link>
               </span>
             </li>
           )}

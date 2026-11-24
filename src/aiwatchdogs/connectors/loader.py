@@ -32,7 +32,9 @@ from pypdf import PdfReader
 from aiwatchdogs.core.models import LoadedDataset
 from aiwatchdogs.core.safety import compute_sha256, scrub_pii
 
-USER_AGENT = "AIWatchdogs-India-OpenAudit/0.1 (+https://aiwatchdogs.in; lawful-public-audit)"
+# Identifies the project honestly. The contact is written as a bare domain: some government
+# web firewalls (e.g. indiabudget.gov.in) reject any User-Agent that embeds an "https://" URL.
+USER_AGENT = "AIWatchdogs-India-OpenAudit/0.1 (aiwatchdogs.in; lawful-public-audit)"
 
 DEFAULT_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
 DEFAULT_MAX_DECOMPRESSED_BYTES = 250 * 1024 * 1024  # 250 MiB

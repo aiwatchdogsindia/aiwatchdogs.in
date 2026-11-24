@@ -2024,7 +2024,7 @@ def test_legacy_v0_to_v4_migration_idempotency_and_four_live_dossier_corrections
     # Open with new Database + seed_database -> runs migrations v1..v4 + versioned seed upsert!
     db = Database(db_path=legacy_db_path)
     try:
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 4
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 5
         assert seed_database(db) is True
         # Second run is completely idempotent!
         db.init_schema()

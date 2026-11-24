@@ -1,4 +1,4 @@
-"""Registry and dispatcher for all 8 deterministic Indian civic-audit engines (M1-M8)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from aiwatchdogs.connectors import loader as connector_loader
 from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
-from aiwatchdogs.engines import fiscal, procurement, proximity, schemes
+from aiwatchdogs.engines import fiscal, police, procurement, proximity, schemes
 
 ENGINE_VERSION = "2.0.0"
 
@@ -26,6 +26,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "M6": "M6-2026.11-v2",
     "M7": "M7-2026.11-v2",
     "M8": "M8-2026.11-v2",
+    "P1": "P1-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -175,6 +176,20 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://raw.githubusercontent.com/saisantoshv3/electoral_bonds/aa8b9e022d29f762fd174fa9371ad2e02a85e777/data/final.csv",
         "module": "aiwatchdogs.engines.proximity",
     },
+    "P1": {
+        "code": "P1",
+        "name": "Police Budget-Head Variance (official budget documents)",
+        "pillar": "budget",
+        "ruleset_version": RULESET_VERSIONS["P1"],
+        "statutory_anchors": ["Article-202-203-Constitution", "GFR-2017-R62", "MH-2055-4055-LMMH"],
+        "description": (
+            "Reads police budget heads (Major Heads 2055 / 4055) from checksummed official budget PDFs at "
+            "task-specified pages and printed lines, then compares Actuals, Budget Estimates and Revised "
+            "Estimates against stated thresholds. Every figure is cited with page and printed line."
+        ),
+        "reference_dataset_url": "https://www.indiabudget.gov.in/budget2025-26/doc/eb/sbe51.pdf",
+        "module": "aiwatchdogs.engines.police",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -186,6 +201,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "M6": (fiscal.run_m6_cag_paras, fiscal),
     "M7": (schemes.run_m7_welfare_schemes, schemes),
     "M8": (proximity.run_m8_corporate_proximity, proximity),
+    "P1": (police.run_p1_police_budget_heads, police),
 }
 
 
