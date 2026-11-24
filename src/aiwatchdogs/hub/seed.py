@@ -20,7 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from aiwatchdogs.hub.database import PG_SEED_ADVISORY_LOCK_KEY, Database, dumps_json
+from aiwatchdogs.hub.database import (
+    PG_SEED_ADVISORY_LOCK_KEY,
+    Database,
+    dumps_json,
+    legacy_missions_kept_active,
+)
 
 SEED_VERSION = 2
 
@@ -1301,6 +1306,13 @@ def seed_database(db: Database, repo_root: Path | None = None) -> bool:
                 "UPDATE missions SET total_tasks = ? WHERE id = ? AND total_tasks < ?",
                 (actual_total, mid, actual_total),
             )
+
+        # The original eight missions are archived in favour of community-posted projects
+        # (see aiwatchdogs.projects). Keep them archived even on a freshly seeded database.
+        if not legacy_missions_kept_active():
+            legacy_ids = [m["id"] for m in SEED_MISSIONS]
+            placeholders = ",".join("?" for _ in legacy_ids)
+            conn.execute(f"UPDATE missions SET status = 'archived' WHERE id IN ({placeholders})", legacy_ids)
 
         conn.execute(
             """

@@ -1033,7 +1033,7 @@ export function ObservatoryMap({
       onSelectFinding(fid);
     } else if (wn.kind === 'mission') {
       const slug = String(meta.slug || wn.node.id.replace(/^mission:/, ''));
-      navigate(`/missions/${encodeURIComponent(slug)}`);
+      navigate(`/projects/${encodeURIComponent(slug)}`);
     } else if (wn.kind === 'source' && (meta.base_url || meta.url)) {
       window.open(String(meta.base_url || meta.url), '_blank', 'noopener,noreferrer');
     }
@@ -1119,7 +1119,7 @@ export function ObservatoryMap({
 
           {/* Clickable Cluster Program Pills (.map-program) stacked cleanly inside .map-head-inner */}
           {world.clusters.length > 0 && (
-            <div className="map-programs" role="group" aria-label="Jump to audit mission cluster">
+            <div className="map-programs" role="group" aria-label="Jump to project cluster">
               {world.clusters.map((cl) => (
                 <button
                   key={cl.key}
@@ -1155,7 +1155,7 @@ export function ObservatoryMap({
                   if (found) focusCluster(found);
                 }}
               >
-                <option value="">All mapped fronts ({world.clusters.length})</option>
+                <option value="">All mapped projects ({world.clusters.length})</option>
                 {world.clusters.map((cl) => (
                   <option key={cl.key} value={cl.key}>
                     {cl.shortCode} · {cl.label} ({cl.totalCount} nodes)
@@ -1192,7 +1192,7 @@ export function ObservatoryMap({
                 : undefined
             }
             className="map-search-input"
-            placeholder="Find ministry, mission, finding, or source…"
+            placeholder="Find ministry, project, finding, or source…"
             value={search}
             onFocus={() => {
               setSearchFocused(true);
@@ -1483,7 +1483,7 @@ export function ObservatoryMap({
                 style={{ width: '100%' }}
                 onClick={() => openNodePrimaryAction(pinnedWn)}
               >
-                <span>Open Audit Mission Brief</span>
+                <span>Open project</span>
                 <ArrowUpRight size={15} />
               </button>
             )}

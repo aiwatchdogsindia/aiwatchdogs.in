@@ -169,6 +169,23 @@ export interface MissionItem {
   sources?: PublicSource[];
   findings?: FindingItem[];
   tasks?: MissionTask[];
+  is_community_project?: boolean;
+  posted_by?: ProjectPoster;
+  project_sources?: ProjectSource[];
+  project_scope?: { scope: string[]; out_of_scope: string[] };
+  enlisted_pr_url?: string;
+}
+
+export interface ProjectPoster {
+  name: string;
+  handle: string;
+  url: string;
+}
+
+export interface ProjectSource {
+  name: string;
+  publisher?: string;
+  url: string;
 }
 
 export interface MissionTask {

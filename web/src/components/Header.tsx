@@ -10,7 +10,7 @@ interface HeaderProps {
 
 const NAV_ITEMS = [
   { to: '/#map', label: 'Map', key: 'map' },
-  { to: '/missions', label: 'Missions', key: 'missions' },
+  { to: '/projects', label: 'Projects', key: 'projects' },
   { to: '/findings', label: 'Findings', key: 'findings' },
   { to: '/live', label: 'Live', key: 'live' },
   { to: '/contributors', label: 'Contributors', key: 'contributors' },

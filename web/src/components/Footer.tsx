@@ -58,7 +58,7 @@ export function Footer({
           <h4>Audit Record</h4>
           <div className="foot-links">
             <Link to="/#map">Observatory Map</Link>
-            <Link to="/missions">Audit Missions (M1–M8)</Link>
+            <Link to="/projects">Projects</Link>
             <Link to="/findings">Findings &amp; Evidence Wall</Link>
             <Link to="/live">Live Fleet Telemetry</Link>
             <Link to="/contributors">Public Leaderboard</Link>

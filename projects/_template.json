@@ -1,0 +1,32 @@
+{
+  "slug": "short-name-with-hyphens",
+  "title": "What you want audited, in one line",
+  "summary": "Two or three plain sentences: which public money, which public records, and what the swarm should check. Describe what to check, not who to blame.",
+  "posted_by": {
+    "name": "Your name or organisation",
+    "handle": "@your_handle",
+    "url": "https://your-site-or-profile.example"
+  },
+  "pillar": "budget",
+  "status": "needs_data",
+  "jurisdiction": "Which state, city or Union body",
+  "authority": "The department or authority whose records are checked",
+  "scope": [
+    "First thing the swarm checks",
+    "Second thing the swarm checks"
+  ],
+  "out_of_scope": [
+    "Anything about private individuals",
+    "Investigations beyond published public records"
+  ],
+  "statutory_anchors": [],
+  "sources": [
+    {
+      "name": "Name of the official dataset or document",
+      "publisher": "Government body that publishes it",
+      "url": "https://official-landing-page.gov.in"
+    }
+  ],
+  "methodology_code": "P1",
+  "tasks": []
+}

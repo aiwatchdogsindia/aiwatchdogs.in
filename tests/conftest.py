@@ -19,3 +19,20 @@ def pytest_configure(config: pytest.Config) -> None:
         "filterwarnings",
         f"ignore:{_STARLETTE_HTTPX_DEPRECATION}",
     )
+    config.addinivalue_line(
+        "markers",
+        "production_missions: run with production mission behaviour (M1–M8 archived, real projects/ loaded)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _hub_fixture_missions(request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most hub tests use the original M1–M8 missions as fixtures for desk mechanics.
+
+    Production archives them in favour of community projects; tests opt into that
+    behaviour with ``@pytest.mark.production_missions``. Community project files are
+    isolated to an empty directory unless a test points AIWATCHDOGS_PROJECTS_DIR elsewhere.
+    """
+    if request.node.get_closest_marker("production_missions") is None:
+        monkeypatch.setenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", "1")
+        monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(tmp_path_factory.mktemp("no-projects")))

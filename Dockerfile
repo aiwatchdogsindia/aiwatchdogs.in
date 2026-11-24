@@ -28,6 +28,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ ./src/
+COPY projects/ ./projects/
 
 RUN uv sync --no-dev --frozen
 

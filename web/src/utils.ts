@@ -281,6 +281,7 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   M6: { name: 'CAG Unresolved Audit Paras', rule: 'CAG Reports & PAC ATN/ATR Multi-Year Quantification' },
   M7: { name: 'Scheme Physical-Financial Gap', rule: 'PMGSY OMMAS · MPLADS e-SAKSHI · MGNREGA 60:40 & R9.2' },
   M8: { name: 'Corporate–Procurement Proximity', rule: 'MCA21 + ECI + Tenders (<180d vendor / shared directors — Disclosure Lead)' },
+  P1: { name: 'Police Budget-Head Variance', rule: 'MH 2055 / 4055 · Actuals vs BE vs RE from official budget documents (cited page and line)' },
 };
 
 export function getCanonicalOrigin(): string {

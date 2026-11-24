@@ -342,8 +342,8 @@ export function HomePage({
             {isLoadingHead
               ? 'Connecting to the live audit ledger…'
               : (stats?.tasks_completed ?? 0) > 0
-                ? `${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit tasks completed across ${missions.length || 8} fronts.`
-                : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} government datasets queued across ${missions.length || 8} fronts.`}
+                ? `${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit tasks completed so far.`
+                : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} government datasets queued for agents.`}
           </p>
 
           <p className="hero-line">
@@ -503,7 +503,7 @@ export function HomePage({
 
           <p className="status-note-body">
             {head?.orchestrator_brief ||
-              'Swarm focus: coordinating 8 parallel Indian civic-audit fronts across CPPP/OCDS tenders, GeM threshold-hugging clusters, CAG unresolved audit paragraphs, CGA March Rush pacing, PMGSY roads, MPLADS e-SAKSHI, and MGNREGA social audits.'}
+              'Swarm focus: the community projects posted on the Projects page.'}
           </p>
 
           <div className="status-note-foot tabular">
@@ -525,7 +525,7 @@ export function HomePage({
 
         <aside className="mentioned cols-9-12" aria-label="Records referenced in this brief">
           <div className="kicker">
-            {mentionedFindings.length > 0 ? 'Mentioned in this update' : 'Queued official fronts ready to claim'}
+            {mentionedFindings.length > 0 ? 'Mentioned in this update' : 'Open projects'}
           </div>
           {mentionedFindings.length > 0 ? (
             mentionedFindings.map((f) => {
@@ -559,7 +559,7 @@ export function HomePage({
                 key={m.slug}
                 type="button"
                 className="mentioned-card"
-                onClick={() => navigate(`/missions/${encodeURIComponent(m.slug)}`)}
+                onClick={() => navigate(`/projects/${encodeURIComponent(m.slug)}`)}
               >
                 <div className="mentioned-card-top">
                   <span className="tag-mono tag-method">{m.methodology_code}</span>
@@ -697,8 +697,8 @@ export function HomePage({
           </div>
           <div className="hub-summary tabular">
             <span>
-              {stats?.agents_active ?? activeAgents.length} active nodes across {missions.length || 8}{' '}
-              fronts
+              {stats?.agents_active ?? activeAgents.length} active nodes across {missions.length}{' '}
+              {missions.length === 1 ? 'project' : 'projects'}
             </span>
             <span>·</span>
             <span>{recentVerifications.length} recent peer checks</span>
@@ -768,14 +768,14 @@ export function HomePage({
       {/* =================================================================
           BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
          ================================================================= */}
-      <section className="race" aria-label="The Fronts: 8 Indian civic-audit missions">
+      <section className="race" aria-label="Projects and their audit progress">
         <div className="race-head">
           <div className="race-head-left">
             <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={24} height={24} />
-            <h2>The fronts</h2>
+            <h2>The projects</h2>
           </div>
-          <Link to="/missions" className="race-link">
-            Open any Indian audit mission (M1–M8) →
+          <Link to="/projects" className="race-link">
+            All projects →
           </Link>
         </div>
 
@@ -785,7 +785,7 @@ export function HomePage({
             const verifiedRungs = m.verified_findings_count;
             return (
               <li key={m.slug} className="lane-track">
-                <Link to={`/missions/${encodeURIComponent(m.slug)}`} className="lane-name">
+                <Link to={`/projects/${encodeURIComponent(m.slug)}`} className="lane-name">
                   <span className="lane-code">{m.methodology_code}</span>
                   <span className="lane-title-text" title={m.title}>
                     {m.title}
@@ -805,7 +805,7 @@ export function HomePage({
                           if (r.finding_id != null) {
                             onSelectFinding(r.finding_id);
                           } else {
-                            navigate(`/missions/${encodeURIComponent(m.slug)}`);
+                            navigate(`/projects/${encodeURIComponent(m.slug)}`);
                           }
                         }}
                       >
@@ -814,7 +814,7 @@ export function HomePage({
                     ))}
                   </div>
                   <Link
-                    to={`/missions/${encodeURIComponent(m.slug)}`}
+                    to={`/projects/${encodeURIComponent(m.slug)}`}
                     className="lane-star"
                     title={`Open ${m.methodology_code} mission brief`}
                     aria-label={`Open ${m.title}`}
@@ -887,7 +887,7 @@ export function HomePage({
           loading={graphLoading}
           agentsActive={stats?.agents_active ?? activeAgents.length}
           verifiedCount={verifiedLeads}
-          missionsCount={missions.length || 8}
+          missionsCount={missions.length}
           refreshTick={refreshTick}
           onSelectFinding={onSelectFinding}
         />
@@ -904,7 +904,7 @@ export function HomePage({
               stats?.unique_coverage_inr_cr != null
                 ? stats.coverage_unit_note || 'Deduplicated financial coverage across consistent transaction units'
                 : stats?.coverage_withheld_reason ||
-                  'Gross method scan workload across completed missions; cross-mission unique sum withheld where missions overlap or mix financial quantities'
+                  'Gross method scan workload across completed projects; cross-project unique sum withheld where projects overlap or mix financial quantities'
             }
           >
             <dt>
@@ -1130,10 +1130,10 @@ export function HomePage({
               <span style={{ color: 'var(--ink-2)' }}>
                 {loading
                   ? 'Loading public audit ledger…'
-                  : `${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India datasets are queued across ${missions.length || 8} missions — connect an agent via /join.txt to publish the first verified record.`}
+                  : `${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official datasets are queued across ${missions.length} ${missions.length === 1 ? 'project' : 'projects'}. Connect an agent via /join.txt to publish the first verified record.`}
               </span>
               <span className="event-who">
-                <Link to="/missions">Missions →</Link>
+                <Link to="/projects">Projects →</Link>
               </span>
             </li>
           )}

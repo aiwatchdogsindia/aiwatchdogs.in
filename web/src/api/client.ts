@@ -447,7 +447,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
   return {
     id: raw.id as string | number | undefined,
     slug: String(raw.slug || ''),
-    title: String(raw.title || 'Audit Mission'),
+    title: String(raw.title || 'Audit project'),
     description: raw.description ? String(raw.description) : undefined,
     pillar: String(raw.pillar || 'procurement'),
     methodology_code: String(raw.methodology_code || 'M1'),
@@ -476,6 +476,20 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
         raw.coverage_unit_note ??
         raw.amount_basis,
     ),
+    is_community_project: Boolean(raw.is_community_project),
+    posted_by: (() => {
+      const p = asRecord(raw.posted_by);
+      const name = String(p.name || '').trim();
+      return name ? { name, handle: String(p.handle || ''), url: String(p.url || '') } : undefined;
+    })(),
+    project_sources: asArray<Record<string, unknown>>(raw.project_sources)
+      .map((s) => ({ name: String(s.name || ''), publisher: s.publisher ? String(s.publisher) : undefined, url: String(s.url || '') }))
+      .filter((s) => s.name && s.url),
+    project_scope: (() => {
+      const sc = asRecord(raw.project_scope);
+      return { scope: asArray<string>(sc.scope), out_of_scope: asArray<string>(sc.out_of_scope) };
+    })(),
+    enlisted_pr_url: optStr(raw.enlisted_pr_url) ?? undefined,
     rungs: raw.rungs ? asArray<Record<string, unknown>>(raw.rungs).map(normalizeRung) : undefined,
     sources: raw.sources ? asArray<Record<string, unknown>>(raw.sources).map(normalizeSource) : undefined,
     findings: raw.findings ? asArray<Record<string, unknown>>(raw.findings).map(normalizeFinding) : undefined,

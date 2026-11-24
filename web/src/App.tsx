@@ -227,7 +227,7 @@ function AppShell() {
       );
     }
 
-    if (cleanPath === '/missions') {
+    if (cleanPath === '/projects' || cleanPath === '/missions') {
       return (
         <Suspense fallback={<PageFallback />}>
           <MissionsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
@@ -235,8 +235,8 @@ function AppShell() {
       );
     }
 
-    if (cleanPath.startsWith('/missions/')) {
-      const slug = decodeURIComponent(cleanPath.slice('/missions/'.length));
+    if (cleanPath.startsWith('/projects/') || cleanPath.startsWith('/missions/')) {
+      const slug = decodeURIComponent(cleanPath.replace(/^\/(projects|missions)\//, ''));
       return (
         <Suspense fallback={<PageFallback />}>
           <MissionsPage

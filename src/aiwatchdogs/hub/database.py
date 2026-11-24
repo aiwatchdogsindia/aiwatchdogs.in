@@ -56,7 +56,7 @@ HUB_TABLES: frozenset[str] = frozenset(
 
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
-LATEST_SCHEMA_VERSION = 4
+LATEST_SCHEMA_VERSION = 5
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -1442,11 +1442,46 @@ def _migrate_v4_editorial_corrections_live_dossiers(conn: Any, *, is_postgres: b
         )
 
 
+_V5_PROJECT_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("missions", "posted_by_name", "TEXT NOT NULL DEFAULT ''"),
+    ("missions", "posted_by_handle", "TEXT NOT NULL DEFAULT ''"),
+    ("missions", "posted_by_url", "TEXT NOT NULL DEFAULT ''"),
+    ("missions", "project_sources_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ("missions", "project_scope_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("missions", "enlisted_pr_url", "TEXT NOT NULL DEFAULT ''"),
+    ("missions", "is_community_project", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+# The original eight hub-authored missions are archived (not deleted) when the hub
+# moves to community-posted projects. Their findings, RTI drafts and peer
+# verifications stay on the public record; they simply stop receiving new scans.
+LEGACY_MISSION_IDS: tuple[str, ...] = tuple(f"mission-m{i}" for i in range(1, 9))
+
+
+def legacy_missions_kept_active() -> bool:
+    """Test/fork escape hatch: keep M1–M8 live (the hub's own test suite uses them as fixtures)."""
+    return os.environ.get("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _migrate_v5_community_projects(conn: Any, *, is_postgres: bool) -> None:
+    cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V5_PROJECT_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=cache)
+    if legacy_missions_kept_active():
+        return
+    placeholders = ",".join("?" for _ in LEGACY_MISSION_IDS)
+    conn.execute(
+        f"UPDATE missions SET status = 'archived' WHERE id IN ({placeholders})",
+        LEGACY_MISSION_IDS,
+    )
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
     (3, "003_reconcile_treasury_and_scores", _migrate_v3_reconcile_treasury_and_scores),
     (4, "004_editorial_corrections_live_dossiers", _migrate_v4_editorial_corrections_live_dossiers),
+    (5, "005_community_projects", _migrate_v5_community_projects),
 )
 
 

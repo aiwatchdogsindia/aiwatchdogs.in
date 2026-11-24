@@ -4775,13 +4775,28 @@ code.font-mono {
 .brand-text {
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: 1px;
+}
+
+/* Wordmark reads as a heading: upright, semi-bold, tight tracking */
+.brand-mark {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 21px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 .brand-tag {
   font-size: 12.5px;
-  line-height: 1.2;
+  line-height: 1.25;
+  letter-spacing: 0;
   white-space: normal;
+}
+
+.brand-logo {
+  width: 32px;
+  height: 32px;
 }
 
 .hero {
@@ -5276,5 +5291,202 @@ code.font-mono {
   }
   .how-cta {
     padding: 22px;
+  }
+}
+
+.foot-brand {
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* =========================================================================
+   PROJECTS — enlist box and community project cards
+   ========================================================================= */
+.enlist-box {
+  margin: 4px 0 28px;
+  padding: 24px;
+  border-radius: var(--r-8);
+  background: var(--flag-saffron);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  --ink: #1B1A17;
+  --ink-2: #2A2620;
+  --ink-3: #3A2E1E;
+  --paper: var(--flag-saffron);
+  color: var(--ink);
+}
+
+.enlist-copy h2 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.enlist-copy p {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.enlist-prompt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 16px;
+  background: #FFFFFF;
+  border-radius: var(--r-6);
+  border: 1px solid rgba(27, 26, 23, 0.16);
+  min-width: 0;
+}
+
+.enlist-prompt code {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-code);
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1B1A17;
+  overflow-wrap: anywhere;
+}
+
+.enlist-prompt .btn {
+  flex-shrink: 0;
+  --chakra: #1B1A17;
+  --on-chakra: #FFFFFF;
+}
+
+.enlist-alt {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.enlist-alt a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 22px;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-6);
+  transition: border-color 0.15s ease;
+}
+
+.project-card:hover {
+  border-color: var(--rule-strong);
+}
+
+.project-card-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.project-status {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: var(--r-999);
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--ep-verified-bd);
+}
+
+.project-status.needs_data,
+.project-status.paused {
+  background: var(--accent-core);
+  color: var(--accent-deep);
+  border-color: var(--accent-light);
+}
+
+.project-title {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.project-summary {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+.project-card-foot {
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px 20px;
+  flex-wrap: wrap;
+  font-size: 13.5px;
+  color: var(--ink-4);
+}
+
+.project-poster strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.project-detail-poster {
+  margin: 0 0 16px;
+  font-size: 14.5px;
+  color: var(--ink-3);
+}
+
+.project-detail-poster a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.project-detail-scope {
+  margin: 0 0 16px;
+}
+
+.project-detail-scope h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.project-detail-scope ul {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 14.5px;
+  color: var(--ink-2);
+}
+
+.project-detail-scope a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .enlist-prompt {
+    flex-direction: column;
+    align-items: stretch;
   }
 }

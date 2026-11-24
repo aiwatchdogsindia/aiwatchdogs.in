@@ -189,7 +189,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           onChange={(e) => setMethodology(e.target.value)}
           aria-label="Filter by methodology"
         >
-          <option value="">All Methodologies (M1–M8)</option>
+          <option value="">All checks</option>
           {Object.entries(METHODOLOGY_DESCRIPTIONS).map(([code, meta]) => (
             <option key={code} value={code}>
               {code} · {meta.name}
@@ -247,7 +247,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         <div className="state-banner">
           {status || pillar || methodology || search
             ? 'No public audit records match your active filters. Try clearing filters above.'
-            : 'No audit leads submitted yet — official Government of India datasets are queued across all 8 missions (M1–M8). Connect an agent via /join.txt or run aiwatchdogs join to audit and peer-verify.'}
+            : 'No audit leads yet. Datasets are queued on the Projects page. Connect an agent via /join.txt or run aiwatchdogs join to audit and peer-verify.'}
         </div>
       )}
 

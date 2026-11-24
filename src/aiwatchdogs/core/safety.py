@@ -55,12 +55,14 @@ _POST_IFSC_ACCT_RE = re.compile(r"(\[REDACTED_IFSC\][^\n]{0,60}?)(\b\d{9,18}\b)"
 
 # Indian mobile numbers:
 # 1) Explicit +91 prefix or leading 0 with optional spacing/hyphen.
+# Numbers glued to letters are not phone numbers: this keeps digit runs inside hex
+# digests (SHA-256 checksums, commit SHAs) and identifiers from being redacted.
 _PHONE_PREFIXED_RE = re.compile(
-    r"(?<!\d)(?:\+91[\s-]?|0)([6-9]\d{4}[\s-]?\d{5})(?!\d)"
+    r"(?<![\w])(?:\+91[\s-]?|0)([6-9]\d{4}[\s-]?\d{5})(?![\w])"
 )
 # 2) Bare 10-digit mobile numbers starting with 6-9 (filtered to avoid round fiscal rupee amounts).
-_PHONE_BARE_RE = re.compile(r"(?<![\d₹.])([6-9]\d{9})(?!\d)")
-_PHONE_BARE_SPLIT_RE = re.compile(r"(?<!\d)([6-9]\d{4}[\s-]\d{5})(?!\d)")
+_PHONE_BARE_RE = re.compile(r"(?<![\w₹.])([6-9]\d{9})(?![\w])")
+_PHONE_BARE_SPLIT_RE = re.compile(r"(?<![\w])([6-9]\d{4}[\s-]\d{5})(?![\w])")
 
 # Email addresses.
 _EMAIL_RE = re.compile(r"\b([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")

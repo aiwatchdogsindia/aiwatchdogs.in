@@ -332,7 +332,7 @@ export function LiveOrganism({
       {openMissionSlots.map((slot) => (
         <Link
           key={slot.mission.slug}
-          to={`/missions/${encodeURIComponent(slot.mission.slug)}`}
+          to={`/projects/${encodeURIComponent(slot.mission.slug)}`}
           className="org-seat open-slot"
           style={{ left: `${slot.pctX}%`, top: `${slot.pctY}%` }}
         >
@@ -415,7 +415,7 @@ export function LiveOrganism({
         {openMissionSlots.map((slot) => (
           <Link
             key={`mob-open-${slot.mission.slug}`}
-            to={`/missions/${encodeURIComponent(slot.mission.slug)}`}
+            to={`/projects/${encodeURIComponent(slot.mission.slug)}`}
             className="org-mobile-chip"
             style={{ borderStyle: 'dashed' }}
           >

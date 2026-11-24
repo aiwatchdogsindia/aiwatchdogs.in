@@ -321,6 +321,15 @@ class DeskService:
             ),
             "rungs": list(rungs) if rungs is not None else [],
             "created_at": row["created_at"],
+            "is_community_project": bool(int(_row_get(row, "is_community_project", 0) or 0)),
+            "posted_by": {
+                "name": str(_row_get(row, "posted_by_name", "") or ""),
+                "handle": str(_row_get(row, "posted_by_handle", "") or ""),
+                "url": str(_row_get(row, "posted_by_url", "") or ""),
+            },
+            "project_sources": loads_json(_row_get(row, "project_sources_json", "[]") or "[]", []),
+            "project_scope": loads_json(_row_get(row, "project_scope_json", "{}") or "{}", {}),
+            "enlisted_pr_url": str(_row_get(row, "enlisted_pr_url", "") or ""),
         }
 
     @staticmethod
@@ -1222,8 +1231,13 @@ class DeskService:
                     "SELECT COUNT(*) AS c FROM tasks WHERE status IN ('completed', 'settled')"
                 ).fetchone()["c"]
             )
+            # Only work an agent can actually claim: queued scans on live projects + pending peer checks.
             tasks_queued = int(
-                conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status = 'queued'").fetchone()["c"]
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM tasks WHERE status = 'queued' AND ("
+                    "task_type = 'peer_verify' OR mission_id IN "
+                    "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
+                ).fetchone()["c"]
             )
             status_counts = {
                 str(r["status"]): int(r["c"])
@@ -1246,20 +1260,21 @@ class DeskService:
             latest_event_row = conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM events").fetchone()
             latest_event_id = int(latest_event_row["max_id"]) if latest_event_row else 0
 
+        n_projects = len(missions)
+        projects_label = "project" if n_projects == 1 else "projects"
+        project_names = ", ".join(str(m["title"]) for m in missions[:3])
         if verified_cnt == 0 and peer_review_cnt == 0:
             orchestrator_brief = (
-                f"Live Government of India Audit Queue: {tasks_queued} pinned official datasets "
-                f"(Assam & HP OCDS, AP Monthly Treasury, Assam OBDS, CGA Monthly Accounts, CAG 2025–26 PDFs, "
-                f"PMGSY, MGNREGA, SC Electoral Bonds × MCA CSR) ready across {len(missions)} active missions "
-                f"({len(active_agents)} active contributor nodes). Every finding requires SHA-256 provenance, "
-                "neutral BNS Sec 356 framing, benign explanations, and independent 2-of-2 peer verification."
+                f"{tasks_queued} official datasets are queued across {n_projects} community-posted "
+                f"{projects_label}" + (f" ({project_names})" if project_names else "") + ". "
+                f"{len(active_agents)} contributor agents are active. Every lead needs SHA-256 provenance, "
+                "neutral wording and two independent agents agreeing."
             )
         else:
             orchestrator_brief = (
-                f"Swarm focus: {verified_cnt} verified leads, {peer_review_cnt} leads awaiting 2-of-2 peer "
-                f"verification, {cleared_scans_cnt} cleared scans ({cleared_findings_cnt} cleared findings), "
-                f"and {tasks_queued} queued Government of India audit tasks across {len(missions)} live missions "
-                f"({len(active_agents)} active contributor nodes)."
+                f"Swarm focus: {verified_cnt} verified leads, {peer_review_cnt} awaiting peer verification, "
+                f"{cleared_findings_cnt} cleared findings, and {tasks_queued} queued tasks across "
+                f"{n_projects} community-posted {projects_label} ({len(active_agents)} active contributor agents)."
             )
 
         return {
@@ -1568,7 +1583,11 @@ class DeskService:
             ).fetchall()
         }
         rungs_map = self._build_mission_rungs(conn)
-        rows = conn.execute("SELECT * FROM missions ORDER BY priority ASC, id ASC").fetchall()
+        # Archived missions (the original M1–M8 and removed projects) keep their public record
+        # but are not listed, mapped or offered new scans.
+        rows = conn.execute(
+            "SELECT * FROM missions WHERE status != 'archived' ORDER BY priority ASC, id ASC"
+        ).fetchall()
         mission_unique_inr, coverage_summary = self._compute_coverage_summary(conn, rows)
         missions = [
             self._serialize_mission(
@@ -2321,7 +2340,10 @@ class DeskService:
                     )
                     add_edge(m_node_id, s_node_id, "ingests_from")
 
+        active_mission_ids = {m["id"] for m in missions}
         for f_row in finding_rows:
+            if _row_get(f_row, "mission_id") not in active_mission_ids:
+                continue  # findings of archived missions stay on the record, off the live map
             f = self._serialize_finding(f_row)
             f_node_id = f"finding:{f['id']}"
             submitted_by = str(f["submitted_by"] or "").strip()
@@ -2963,6 +2985,12 @@ class DeskService:
                     f"(target_finding_id IS NULL OR target_finding_id NOT IN ({placeholders}))"
                 )
                 params.extend(sorted_inelig)
+
+            # New scans only for live projects; peer verification of existing leads may still finish.
+            clauses.append(
+                "(task_type = 'peer_verify' OR mission_id IN "
+                "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
+            )
 
             if eff_mode == "verify":
                 clauses.append("task_type = 'peer_verify'")
@@ -3783,6 +3811,12 @@ class DeskService:
             "benign_explanations": benign_clean,
             "is_demo_sample": bool(is_demo),
         }
+        # Verifiers must re-run the engine with the same server-side configuration the original
+        # task carried (e.g. P1 page/line specs from a reviewed project file). This comes from the
+        # hub's own task record, never from the submitting agent.
+        server_ctx = task_payload.get("context")
+        if isinstance(server_ctx, dict) and server_ctx:
+            pv_payload["context"] = server_ctx
         for slot, pv_id in enumerate(pv_task_ids, start=1):
             conn.execute(
                 """
