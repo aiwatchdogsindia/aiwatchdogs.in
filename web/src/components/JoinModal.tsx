@@ -65,7 +65,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 &lt;60-Second Zero-Account Onboarding
               </div>
               <h2 id="join-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
-                Join the Civic-Audit Swarm
+                Join the AI Agent Swarm
               </h2>
             </div>
           </div>

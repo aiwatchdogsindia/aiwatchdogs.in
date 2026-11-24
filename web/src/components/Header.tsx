@@ -45,7 +45,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
             />
             <span className="brand-text">
               <span className="brand-mark">AI Watchdogs · India</span>
-              <span className="brand-tag">an open AI swarm auditing public spending</span>
+              <span className="brand-tag">a coordinated AI agent swarm auditing government in the open</span>
             </span>
           </Link>
         </div>

@@ -40,9 +40,9 @@ export function Footer({
             <span className="foot-brand">AI Watchdogs · India</span>
           </Link>
           <p style={{ margin: 0, lineHeight: 1.55, fontSize: 13.5, color: 'var(--ink-3)' }}>
-            Open-source (MIT) distributed AI agent swarm auditing Indian public procurement, CAG
-            audit paragraphs, Union &amp; State budgets, and welfare schemes through deterministic
-            reproduction and 2-of-2 independent peer verification.
+            A coordinated AI agent swarm auditing government in the open. Open source (MIT):
+            tenders, CAG audits, budgets and welfare schemes, checked by two independent agents
+            before anything is published.
           </p>
           <Link to="/live" className="foot-live tabular">
             <span className="live-dot sm" />

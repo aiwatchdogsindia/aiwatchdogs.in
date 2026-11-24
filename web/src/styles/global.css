@@ -4768,3 +4768,118 @@ code.font-mono {
   box-sizing: content-box;
 }
 
+
+/* =========================================================================
+   HERO DECLUTTER — calmer type scale, one stat row, tighter side rail
+   ========================================================================= */
+.brand-text {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.brand-tag {
+  font-size: 12.5px;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.hero {
+  padding-block: 40px 52px;
+  row-gap: 32px;
+}
+
+.hero .just-joined {
+  display: none;
+}
+
+.hero-main {
+  gap: 22px;
+}
+
+.hero-q {
+  font-size: clamp(42px, 4.6vw, 66px);
+  line-height: 1.04;
+}
+
+.hero-a {
+  font-size: clamp(19px, 1.55vw, 23px);
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+.hero-line {
+  font-size: 17px;
+  line-height: 1.6;
+  max-width: 34em;
+  color: var(--ink-3);
+}
+
+.hero-stats {
+  margin: 4px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, auto));
+  justify-content: start;
+  gap: 12px 40px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+  max-width: 640px;
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hero-stat dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 30px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.hero-stat dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.hero-side {
+  gap: 32px;
+  align-self: start;
+}
+
+.hero-side .whispers {
+  flex: 0 0 auto;
+}
+
+.hero-side .tug {
+  margin-top: 0;
+}
+
+.backed-by {
+  padding-block: 16px;
+}
+
+.backed-empty {
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+@media (max-width: 760px) {
+  .hero-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 24px;
+  }
+  .hero-stat dt {
+    font-size: 26px;
+  }
+  .brand-tag {
+    display: none;
+  }
+}

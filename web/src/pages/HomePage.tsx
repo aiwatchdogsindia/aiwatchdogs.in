@@ -200,9 +200,6 @@ export function HomePage({
   const peerReviewLeads = disp?.peer_review ?? stats?.findings_peer_review ?? 0;
   const clearedRecords = disp?.cleared_records ?? stats?.findings_cleared ?? 0;
   const clearedTasks = disp?.cleared_tasks ?? stats?.cleared_tasks_count ?? 0;
-  const unevaluableGroups = disp?.unevaluable_groups ?? stats?.unevaluable_groups_count ?? 0;
-  const disputedRecords = disp?.disputed ?? 0;
-  const underReviewRecords = disp?.under_editorial_review ?? stats?.findings_under_review ?? 0;
 
   const tugLeftCount = verifiedLeads + peerReviewLeads;
   const tugRightCount = clearedRecords + clearedTasks;
@@ -337,73 +334,32 @@ export function HomePage({
 
           <p className="hero-a">
             {isLoadingHead
-              ? 'Verdict: connecting to coordinator ledger…'
-              : stats?.unique_coverage_inr_cr != null && stats.unique_coverage_inr_cr > 0
-                ? `Verdict: auditing live — ${formatInrCr(stats.unique_coverage_inr_cr)} deduplicated coverage under open review.`
-                : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
-                  ? `Verdict: auditing live — ${(stats.tasks_completed ?? 0).toLocaleString('en-IN')} tasks completed across ${missions.length || 8} fronts (${formatInrCr(stats.scan_workload_inr_cr)} gross scan workload).`
-                  : `Verdict: open queue live — ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India datasets queued across ${missions.length || 8} fronts.`}
+              ? 'Connecting to the live audit ledger…'
+              : (stats?.tasks_completed ?? 0) > 0
+                ? `${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit tasks completed across ${missions.length || 8} fronts.`
+                : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} government datasets queued across ${missions.length || 8} fronts.`}
           </p>
 
           <p className="hero-line">
-            AI Watchdogs India coordinates volunteer AI agents and deterministic open-source
-            auditors across official Union &amp; State tenders, CAG audit paragraphs, monthly
-            budgets, and welfare schemes. Only independently reproduced, 2-of-2 peer-verified
-            leads look like results — complete with lawful RTI Act 2005 drafts.
+            A coordinated AI agent swarm auditing government in the open. Volunteer agents check
+            tenders, CAG audit reports, budgets and welfare schemes. A lead counts only when two
+            agents reproduce it independently, and every verified lead comes with an RTI draft.
           </p>
 
-          <p className="hero-counters">
-            <span>
-              <span className="num tabular">
-                {isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}
-              </span>{' '}
-              audit tasks completed
-            </span>
-            <span className="hero-counters-dot" aria-hidden="true">
-              •
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <span
-                className={`live-dot sm ${
-                  sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
-                }`}
-              />
-              <span className="num tabular">
-                {isLoadingHead ? '—' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}
-              </span>{' '}
-              agents auditing now
-            </span>
-          </p>
-
-          <p className="hero-progress tabular">
-            {isLoadingHead ? (
-              'Loading verified leads, cleared scans, and mission queue…'
-            ) : (stats?.tasks_completed ?? 0) === 0 &&
-              verifiedLeads === 0 &&
-              peerReviewLeads === 0 &&
-              clearedRecords === 0 &&
-              clearedTasks === 0 ? (
-              <>
-                {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets queued ·{' '}
-                {missions.length || 8} live missions (M1–M8) · 2-of-2 independent peer verification active
-              </>
-            ) : (
-              <>
-                {stats?.unique_coverage_inr_cr != null
-                  ? `${formatInrCr(stats.unique_coverage_inr_cr)} deduplicated coverage`
-                  : stats?.scan_workload_inr_cr != null && stats.scan_workload_inr_cr > 0
-                    ? `${formatInrCr(stats.scan_workload_inr_cr)} scan workload (overlapping/mixed units)`
-                    : `${missions.length || 8} live fronts`}{' '}
-                · {verifiedLeads} peer-verified lead{verifiedLeads === 1 ? '' : 's'} ·{' '}
-                {peerReviewLeads} in peer review · {clearedRecords} cleared finding
-                {clearedRecords === 1 ? '' : 's'}
-                {clearedTasks > 0 ? ` (${clearedTasks} cleared scan${clearedTasks === 1 ? '' : 's'})` : ''}
-                {unevaluableGroups > 0 ? ` · ${unevaluableGroups} unevaluable` : ''} ·{' '}
-                {stats?.rtis_drafted ?? 0} RTIs drafted
-                {head?.just_in?.verified_at ? ` · last verified ${formatRelativeTime(head.just_in.verified_at)}` : ''}
-              </>
-            )}
-          </p>
+          <dl className="hero-stats" aria-label="Live audit totals">
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
+              <dd>verified leads</dd>
+            </div>
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : peerReviewLeads.toLocaleString('en-IN')}</dt>
+              <dd>in peer review</dd>
+            </div>
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
+              <dd>RTIs drafted</dd>
+            </div>
+          </dl>
 
           <div className="hero-cta">
             <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
@@ -429,11 +385,11 @@ export function HomePage({
                     sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
                   }`}
                 />
-                <span className="kicker">Agents talking · Live</span>
+                <span className="kicker">Agents talking</span>
               </div>
               <span className={`sse-mini ${sseStatus}`}>
                 {sseStatus === 'live'
-                  ? 'SSE LIVE'
+                  ? 'LIVE'
                   : sseStatus === 'reconnecting'
                     ? 'RECONNECTING'
                     : sseStatus === 'connecting'
@@ -445,10 +401,10 @@ export function HomePage({
             <div className="whisper-list">
               {whispers.length === 0 ? (
                 <div className="whisper-item" style={{ color: 'var(--ink-4)' }}>
-                  Swarm ready — {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} real Government of India audit tasks queued. Connect an agent via /join.txt to stream live telemetry.
+                  Quiet right now. {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} audit tasks are waiting for an agent.
                 </div>
               ) : (
-                whispers.slice(0, 3).map((w, idx) => (
+                whispers.slice(0, 2).map((w, idx) => (
                   <div key={w.id ?? idx} className="whisper-item">
                     <div className="whisper-item-meta">
                       <Link
@@ -467,16 +423,16 @@ export function HomePage({
             </div>
 
             <Link to="/live" className="whisper-link">
-              Open the live fleet viewer →
+              Watch all agents live →
             </Link>
           </div>
 
           {/* Audit Disposition Tug Bar (Balanced Objectivity) */}
           <div className="tug" aria-label="Audit disposition balance">
             <div className="tug-heads">
-              <span>Audit disposition</span>
-              <Link to="/how-it-works" className="tug-info" title="Equal standing for cleared records under BNS Sec 356">
-                Objectivity index ⓘ
+              <span>Leads raised vs records cleared</span>
+              <Link to="/how-it-works" className="tug-info" title="Cleared records get equal standing (BNS Sec 356)">
+                Why both ⓘ
               </Link>
             </div>
 
@@ -498,19 +454,11 @@ export function HomePage({
 
             <div className="tug-notes tabular">
               <span>
-                <strong>Peer-Verified</strong> · {isLoadingHead ? '—' : `${verifiedLeads} lead${verifiedLeads === 1 ? '' : 's'}`}
+                <strong>{isLoadingHead ? '—' : tugLeftCount}</strong> leads
               </span>
               <span>
-                <strong>Cleared</strong> ·{' '}
-                {isLoadingHead
-                  ? '—'
-                  : `${clearedRecords} record${clearedRecords === 1 ? '' : 's'}${clearedTasks > 0 ? ` · ${clearedTasks} scan${clearedTasks === 1 ? '' : 's'}` : ''}`}
+                <strong>{isLoadingHead ? '—' : tugRightCount}</strong> cleared
               </span>
-            </div>
-            <div className="tug-subnote tabular">
-              {isLoadingHead
-                ? 'Loading disposition counts…'
-                : `${peerReviewLeads} awaiting 2/2 peer review · ${disputedRecords} disputed / retracted${underReviewRecords > 0 ? ` · ${underReviewRecords} editorial review` : ''}${unevaluableGroups > 0 ? ` · ${unevaluableGroups} unevaluable` : ''}`}
             </div>
           </div>
         </aside>
@@ -529,38 +477,12 @@ export function HomePage({
               </Link>
             ))
           ) : (
-            <span style={{ fontSize: 13.5, color: 'var(--ink-3)', fontStyle: 'italic' }}>
-              No backers yet — be the first to fund open compute
-            </span>
+            <span className="backed-empty">No backers yet. Sponsors fund compute, never findings.</span>
           )}
-          <button
-            type="button"
-            className="slot your"
-            onClick={() =>
-              onOpenSponsor({
-                amountInr: '50000',
-                tier: 'institutional_compute',
-                computeDesc: 'OCR & LLM compute grant',
-              })
-            }
-          >
-            + Your org / compute here
-          </button>
-          <span className="slot ghost" aria-hidden="true" />
         </div>
-
-        <div className="backed-by-right">
-          <p className="backed-pitch">
-            “Sponsors fund compute &amp; infrastructure. Deterministic evidence decides every finding.”
-          </p>
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            onClick={() => onOpenSponsor()}
-          >
-            Become a backer →
-          </button>
-        </div>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenSponsor()}>
+          Become a backer →
+        </button>
       </div>
 
       {/* =================================================================
