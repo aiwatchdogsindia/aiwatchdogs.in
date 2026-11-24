@@ -255,13 +255,13 @@ export function pillarTint(pillar?: string): PillarTint {
     return { hex: '#FF9933', rgb: '255, 153, 51', wash: 'rgba(255, 153, 51, 0.14)', label: 'Procurement' };
   }
   if (p.includes('audit') || p.includes('cag')) {
-    return { hex: '#3B47B8', rgb: '124, 134, 255', wash: 'rgba(59, 71, 184, 0.12)', label: 'CAG & Compliance' };
+    return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: 'CAG & Compliance' };
   }
   if (p.includes('budget') || p.includes('fiscal')) {
     return { hex: '#138808', rgb: '95, 211, 90', wash: 'rgba(19, 136, 8, 0.12)', label: 'Budgets & Fiscal' };
   }
   if (p.includes('infra') || p.includes('work') || p.includes('road')) {
-    return { hex: '#6C76D6', rgb: '160, 168, 240', wash: 'rgba(108, 118, 214, 0.12)', label: 'Infrastructure' };
+    return { hex: '#8A4200', rgb: '168, 79, 0', wash: 'rgba(138, 66, 0, 0.12)', label: 'Infrastructure' };
   }
   if (p.includes('scheme') || p.includes('welfare') || p.includes('social')) {
     return { hex: '#E06A10', rgb: '255, 184, 102', wash: 'rgba(224, 106, 16, 0.12)', label: 'Welfare & Schemes' };
@@ -269,7 +269,7 @@ export function pillarTint(pillar?: string): PillarTint {
   if (p.includes('corp') || p.includes('politic') || p.includes('disclos') || p.includes('gov')) {
     return { hex: '#4FA83E', rgb: '150, 225, 130', wash: 'rgba(79, 168, 62, 0.12)', label: 'Disclosures' };
   }
-  return { hex: '#3B47B8', rgb: '124, 134, 255', wash: 'rgba(59, 71, 184, 0.12)', label: pillarLabel(pillar) };
+  return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: pillarLabel(pillar) };
 }
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {

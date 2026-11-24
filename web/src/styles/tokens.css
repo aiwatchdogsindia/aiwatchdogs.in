@@ -19,9 +19,9 @@
 :root {
   /* ===== Tiranga (Indian Tricolour) Brand Palette =====
      Saffron (courage) · White (truth) · India Green (growth) · Ashoka Chakra Navy (law)
-     Proportions follow the flag: saffron ~33%, white ~31.5%, green ~33%, navy ~1.8%
-     (the chakra). Saffron and green are carried by whole page zones (see the
-     "TIRANGA ZONES" block at the end of global.css); navy is an accent only. */
+     Page order top to bottom: white, saffron, green, then a navy footer.
+     Bands are carried by whole page zones (see the "TIRANGA ZONES" block at
+     the end of global.css). Navy appears only in the footer and the emblem. */
   --flag-saffron: #FF9933;
   --flag-white: #FFFFFF;
   --flag-green: #138808;
@@ -63,8 +63,8 @@
   --live: #1FA319;
   --green-on-dark: #5FD35A;
 
-  --in-work-ink: #000080;
-  --in-work-ring: #8087D0;
+  --in-work-ink: #8A4200;
+  --in-work-ring: #FFB866;
   --conjecture-ink: #575249;
   --conjecture-stroke: #756F64;
 
@@ -74,8 +74,8 @@
   --red-on-dark: #E0705C;
   --red-edge: #4A2622;
 
-  --public: #1F2FB0;
-  --public-bg: #EAECFB;
+  --public: #3F3B34;
+  --public-bg: #F1EEE7;
 
   /* Transient Ignite & Priority Hard-Link — Saffron */
   --accent: #FF9933;
@@ -84,32 +84,32 @@
   --accent-flash: #FFE0BF;
   --accent-deep: #A84F00;
 
-  /* Race band & Observatory — India green field (was navy; navy is now accent-only) */
-  --race-bg: #0F7306;
-  --obs-bg: #0A5A04;
-  --obs-radial: radial-gradient(75% 75% at 40% 50%, #138808 0%, #0A5A04 60%, #074603 100%);
-  --obs-surface: #0C6305;
-  --obs-surface-raised: #107A07;
-  --obs-border: rgba(255, 255, 255, 0.22);
-  --obs-ink: #FFFFFF;
-  --obs-mist: #E2F2DE;
-  --obs-muted: #CFE8CA;
-  --obs-dead: #8FC287;
-  --obs-edge-solid: rgba(255, 255, 255, 0.42);
-  --obs-edge-open: rgba(255, 255, 255, 0.22);
-  --obs-edge-disputed: #FFB4A6;
+  /* Race band & Observatory — saffron field (middle band of the page) */
+  --race-bg: #FF9933;
+  --obs-bg: #FF9933;
+  --obs-radial: radial-gradient(75% 75% at 40% 50%, #FFAD5C 0%, #FF9933 55%, #F28A1E 100%);
+  --obs-surface: #FFFFFF;
+  --obs-surface-raised: #FFF6EC;
+  --obs-border: rgba(27, 26, 23, 0.18);
+  --obs-ink: #1B1A17;
+  --obs-mist: #3A2E1E;
+  --obs-muted: #45351F;
+  --obs-dead: #6E4A1C;
+  --obs-edge-solid: rgba(27, 26, 23, 0.42);
+  --obs-edge-open: rgba(27, 26, 23, 0.2);
+  --obs-edge-disputed: #8A1C0C;
   --obs-cream: #FFFFFF;
-  --obs-amber: #FF9933;
-  --obs-emerald: #C8F5BE;
-  --obs-cobalt: #000080;
-  --obs-terracotta: #FFB4A6;
-  --obs-slate: #CFE8CA;
+  --obs-amber: #1B1A17;
+  --obs-emerald: #0F7306;
+  --obs-cobalt: #1B1A17;
+  --obs-terracotta: #8A1C0C;
+  --obs-slate: #45351F;
 
   /* Cluster / Pillar Hues — drawn from the tricolour */
   --pillar-procurement: #FF9933;
-  --pillar-audit: #3B47B8;
+  --pillar-audit: #1B1A17;
   --pillar-budget: #138808;
-  --pillar-infra: #6C76D6;
+  --pillar-infra: #8A4200;
   --pillar-scheme: #E06A10;
   --pillar-disclosure: #4FA83E;
 
@@ -178,12 +178,12 @@
   --ep-disputed-bd: #E2B8B0;
 
   --ep-rti-fg: var(--in-work-ink);
-  --ep-rti-bg: #EDEEFA;
+  --ep-rti-bg: #FFF1E0;
   --ep-rti-bd: var(--in-work-ring);
 
   --ep-contrib-fg: var(--public);
   --ep-contrib-bg: var(--public-bg);
-  --ep-contrib-bd: #BCC2F2;
+  --ep-contrib-bd: #D3CFC5;
 
   --container-max: var(--page);
   --radius-xs: var(--r-2);

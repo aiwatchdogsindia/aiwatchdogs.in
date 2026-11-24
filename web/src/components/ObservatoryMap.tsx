@@ -588,13 +588,13 @@ export function ObservatoryMap({
         // Cluster label below cloud
         ctx.save();
         ctx.font = `400 ${Math.max(10, 11.5 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = `rgba(${cl.tint.rgb}, 0.88)`;
+        ctx.fillStyle = 'rgba(27, 26, 23, 0.86)';
         ctx.textAlign = 'center';
         const shortLabel = `${cl.shortCode} · ${cl.label.length > 26 ? `${cl.label.slice(0, 25)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + 16 / Math.sqrt(cam.zoom));
 
         ctx.font = `400 ${Math.max(9.5, 11 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(220,239,216,0.62)';
+        ctx.fillStyle = 'rgba(27, 26, 23, 0.62)';
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
             ? `${cl.verifiedCount} verified · ${cl.reviewCount} in review`
@@ -625,18 +625,18 @@ export function ObservatoryMap({
         ctx.quadraticCurveTo(cx, cy, t.x, t.y);
 
         if (isInc) {
-          ctx.strokeStyle = 'rgba(255, 153, 51, 0.86)';
+          ctx.strokeStyle = 'rgba(27, 26, 23, 0.72)';
           ctx.lineWidth = 1.9 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'disputed' || t.kind === 'disputed') {
           ctx.strokeStyle = '#4A2622';
           ctx.setLineDash([3, 4]);
           ctx.lineWidth = 1.1 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'review' || t.kind === 'review') {
-          ctx.strokeStyle = '#2E7A26';
+          ctx.strokeStyle = 'rgba(27, 26, 23, 0.22)';
           ctx.setLineDash([2, 5]);
           ctx.lineWidth = 1 / Math.sqrt(cam.zoom);
         } else {
-          ctx.strokeStyle = crossCluster ? 'rgba(220,239,216,0.14)' : '#5A9A52';
+          ctx.strokeStyle = crossCluster ? 'rgba(27,26,23,0.12)' : 'rgba(27,26,23,0.38)';
           ctx.lineWidth = (crossCluster ? 1 : 1.25) / Math.sqrt(cam.zoom);
         }
         ctx.stroke();
@@ -659,18 +659,18 @@ export function ObservatoryMap({
             if (rp > 0 && rp < 1) {
               ctx.beginPath();
               ctx.arc(wn.x, wn.y, r + rp * 44, 0, Math.PI * 2);
-              ctx.strokeStyle = `rgba(255, 153, 51, ${(1 - rp) * 0.7})`;
+              ctx.strokeStyle = `rgba(27, 26, 23, ${(1 - rp) * 0.6})`;
               ctx.lineWidth = 1.6 / cam.zoom;
               ctx.stroke();
             }
           }
         }
 
-        // Community public contributor outer cobalt ring (#000080)
+        // Community public contributor outer ink ring
         if (wn.isCommunity) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 3.6, 0, Math.PI * 2);
-          ctx.strokeStyle = '#000080';
+          ctx.strokeStyle = '#1B1A17';
           ctx.lineWidth = 2.4 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
@@ -688,10 +688,10 @@ export function ObservatoryMap({
           ctx.save();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#053402';
+          ctx.fillStyle = '#F28A1E';
           ctx.fill();
           ctx.setLineDash([2.2, 2.2]);
-          ctx.strokeStyle = '#CFE8CA';
+          ctx.strokeStyle = '#3A2E1E';
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.restore();
@@ -703,21 +703,21 @@ export function ObservatoryMap({
           const cy = wn.y + Math.sin(phase) * orbR;
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, orbR, phase - 1.15, phase);
-          ctx.strokeStyle = 'rgba(255, 184, 102, 0.55)';
+          ctx.strokeStyle = 'rgba(27, 26, 23, 0.5)';
           ctx.lineWidth = 1.4;
           ctx.stroke();
           ctx.drawImage(cyanGlow, cx - 7, cy - 7, 14, 14);
           ctx.beginPath();
           ctx.arc(cx, cy, 1.9, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFE0BF';
+          ctx.fillStyle = '#FFFFFF';
           ctx.fill();
         } else if (wn.kind === 'disputed') {
           // Disputed: #053402 fill + #C2412D ring + internal × cross
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#053402';
+          ctx.fillStyle = '#F28A1E';
           ctx.fill();
-          ctx.strokeStyle = '#C2412D';
+          ctx.strokeStyle = '#8A1C0C';
           ctx.lineWidth = 1.6;
           ctx.stroke();
           const d = r * 0.48;
@@ -726,44 +726,44 @@ export function ObservatoryMap({
           ctx.lineTo(wn.x + d, wn.y + d);
           ctx.moveTo(wn.x + d, wn.y - d);
           ctx.lineTo(wn.x - d, wn.y + d);
-          ctx.strokeStyle = '#E0705C';
+          ctx.strokeStyle = '#8A1C0C';
           ctx.lineWidth = 1.4;
           ctx.stroke();
         } else if (wn.kind === 'cleared') {
           // Cleared & Explained: #053402 fill + #8FC287 ring + horizontal stop bar −
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#053402';
+          ctx.fillStyle = '#F28A1E';
           ctx.fill();
-          ctx.strokeStyle = '#8FC287';
+          ctx.strokeStyle = '#0F7306';
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(wn.x - r * 0.52, wn.y);
           ctx.lineTo(wn.x + r * 0.52, wn.y);
-          ctx.strokeStyle = '#CFE8CA';
+          ctx.strokeStyle = '#3A2E1E';
           ctx.lineWidth = 1.5;
           ctx.stroke();
         } else if (wn.kind === 'mission') {
           // Mission core node: warm amber outline
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#0C6305';
+          ctx.fillStyle = '#1B1A17';
           ctx.fill();
-          ctx.strokeStyle = '#FF9933';
+          ctx.strokeStyle = '#FFFFFF';
           ctx.lineWidth = 1.8;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, 2.4, 0, Math.PI * 2);
-          ctx.fillStyle = '#FF9933';
+          ctx.fillStyle = '#FFFFFF';
           ctx.fill();
         } else if (wn.kind === 'source') {
           // Official .gov.in source: quiet cobalt diamond
           ctx.save();
           ctx.translate(wn.x, wn.y);
           ctx.rotate(Math.PI / 4);
-          ctx.fillStyle = '#0A5A04';
-          ctx.strokeStyle = '#8087D0';
+          ctx.fillStyle = '#F28A1E';
+          ctx.strokeStyle = '#3A2E1E';
           ctx.lineWidth = 1.3;
           ctx.fillRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
           ctx.strokeRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
@@ -772,9 +772,9 @@ export function ObservatoryMap({
           // Ministry / jurisdiction anchor
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#0C6305';
+          ctx.fillStyle = '#FFF6EC';
           ctx.fill();
-          ctx.strokeStyle = '#DCEFD8';
+          ctx.strokeStyle = '#1B1A17';
           ctx.lineWidth = 1.25;
           ctx.stroke();
         }
@@ -783,7 +783,7 @@ export function ObservatoryMap({
         if (isPinned || isHov) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 5.5, 0, Math.PI * 2);
-          ctx.strokeStyle = isPinned ? '#FF9933' : 'rgba(255,255,255,0.65)';
+          ctx.strokeStyle = isPinned ? '#1B1A17' : 'rgba(255,255,255,0.75)';
           ctx.lineWidth = 1.5 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
@@ -792,7 +792,7 @@ export function ObservatoryMap({
         if (cam.zoom >= 1.32 || isPinned || isHov) {
           ctx.save();
           ctx.font = `400 ${12.5 / Math.sqrt(cam.zoom)}px "Geist Serif", Georgia, serif`;
-          ctx.fillStyle = isPinned || isHov ? '#FFFFFF' : 'rgba(255,255,255,0.82)';
+          ctx.fillStyle = isPinned || isHov ? '#1B1A17' : 'rgba(27,26,23,0.82)';
           ctx.textAlign = 'left';
           const lbl = wn.node.label.length > 28 ? `${wn.node.label.slice(0, 27)}…` : wn.node.label;
           ctx.fillText(lbl, wn.x + r + 7, wn.y + 3.5 / Math.sqrt(cam.zoom));
@@ -826,12 +826,12 @@ export function ObservatoryMap({
           for (const wn of world.worldNodes) {
             mctx.fillStyle =
               wn.kind === 'verified'
-                ? '#FFFFFF'
+                ? '#0F7306'
                 : wn.kind === 'mission'
                   ? '#FF9933'
                   : wn.kind === 'disputed'
-                    ? '#E0705C'
-                    : '#8FC287';
+                    ? '#8A1C0C'
+                    : '#6E4A1C';
             mctx.fillRect(toMx(wn.x) - 1, toMy(wn.y) - 1, 2.2, 2.2);
           }
 
@@ -840,8 +840,8 @@ export function ObservatoryMap({
           const vy1 = toMy(cam.y - h / (2 * cam.zoom));
           const vx2 = toMx(cam.x + w / (2 * cam.zoom));
           const vy2 = toMy(cam.y + h / (2 * cam.zoom));
-          mctx.strokeStyle = 'rgba(255, 153, 51, 0.85)';
-          mctx.fillStyle = 'rgba(255, 153, 51, 0.1)';
+          mctx.strokeStyle = 'rgba(27, 26, 23, 0.8)';
+          mctx.fillStyle = 'rgba(27, 26, 23, 0.08)';
           mctx.lineWidth = 1;
           mctx.fillRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
           mctx.strokeRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
@@ -1298,10 +1298,10 @@ export function ObservatoryMap({
                       textTransform: 'uppercase',
                       color:
                         wn.kind === 'verified'
-                          ? '#FFFFFF'
+                          ? '#0F7306'
                           : wn.kind === 'mission'
-                            ? '#FF9933'
-                            : '#DCEFD8',
+                            ? '#8A4200'
+                            : '#45351F',
                       flexShrink: 0,
                     }}
                   >
@@ -1332,7 +1332,7 @@ export function ObservatoryMap({
           </div>
           <div className="map-card-title">{hoveredNode.wn.node.label}</div>
           {hoveredNode.wn.node.value_inr_cr != null && hoveredNode.wn.node.value_inr_cr > 0 && (
-            <div className="font-mono tabular" style={{ fontSize: 11, color: '#5FD35A', marginTop: 4 }}>
+            <div className="font-mono tabular" style={{ fontSize: 11, color: '#0F7306', marginTop: 4 }}>
               {formatInrCr(hoveredNode.wn.node.value_inr_cr)}
             </div>
           )}
@@ -1532,13 +1532,13 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.25px dashed #CFE8CA',
+                border: '1.25px dashed #3A2E1E',
               }}
             />
             <span>in review</span>
           </span>
           <span className="map-leg-item">
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#FFB866' }} />
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1B1A17' }} />
             <span>agent comet</span>
           </span>
           <span className="map-leg-item">
@@ -1547,7 +1547,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #C2412D',
+                border: '1.4px solid #8A1C0C',
               }}
             />
             <span>disputed ×</span>
@@ -1558,7 +1558,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #8FC287',
+                border: '1.4px solid #0F7306',
               }}
             />
             <span>cleared −</span>
@@ -1569,7 +1569,7 @@ export function ObservatoryMap({
                 width: 9,
                 height: 9,
                 borderRadius: '50%',
-                border: '2px solid #000080',
+                border: '2px solid #1B1A17',
               }}
             />
             <span>community node</span>
