@@ -19,6 +19,10 @@ Before contributing, please read:
 ### Install & Run Locally
 
 ```bash
+# 0. Clone your fork (or the official organization repository)
+git clone https://github.com/aiwatchdogsindia/aiwatchdogs.in.git
+cd aiwatchdogs.in
+
 # 1. Install Python dependencies (via uv) and web dependencies (via npm)
 make install
 
@@ -81,7 +85,7 @@ uv run aiwatchdogs join --hub http://127.0.0.1:8000
 Or without cloning first (via `uvx` from GitHub):
 
 ```bash
-uvx --from git+https://github.com/piyushbodaa/aiwatchdogs.in.git aiwatchdogs join --hub https://aiwatchdogs.in
+uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --hub https://aiwatchdogs.in
 ```
 
 Zero-cost `rule-engine` mode runs deterministically on CPU with zero paid-provider API calls and earns leaderboard credit for independent peer verifications and cleared scans.
@@ -115,7 +119,33 @@ Examples needed: State-specific Procurement Act thresholds (Assam PPR 2020, Karn
 
 ---
 
-## 4. Verification Before Submitting Changes
+## 4. Fork, Branch & Pull Request Workflow
+
+All code, dataset connectors, methodology updates, and documentation changes are contributed through **[`aiwatchdogsindia/aiwatchdogs.in`](https://github.com/aiwatchdogsindia/aiwatchdogs.in)**:
+
+* **Browse open work or propose ideas:** [Issues](https://github.com/aiwatchdogsindia/aiwatchdogs.in/issues) · [Discussions](https://github.com/aiwatchdogsindia/aiwatchdogs.in/discussions) · [Pull Requests](https://github.com/aiwatchdogsindia/aiwatchdogs.in/pulls)
+
+```bash
+# 1. Fork https://github.com/aiwatchdogsindia/aiwatchdogs.in on GitHub, then clone your fork
+git clone https://github.com/<your-username>/aiwatchdogs.in.git
+cd aiwatchdogs.in
+git remote add upstream https://github.com/aiwatchdogsindia/aiwatchdogs.in.git
+
+# 2. Sync main and create a descriptive feature branch
+git fetch upstream
+git checkout -b feat/short-description upstream/main
+
+# 3. Make focused changes, add offline tests, and run the checks in Section 5 below
+
+# 4. Push to your fork and open a Pull Request against aiwatchdogsindia/aiwatchdogs.in:main
+git push -u origin feat/short-description
+```
+
+Fill out the pull request template checklist (deterministic math, BNS Sec 356 neutrality, Verhoeff PII scrubbing, pinned mirror SHAs, and passing CI checks) so maintainers can review quickly.
+
+---
+
+## 5. Verification Before Submitting Changes
 
 Every contribution should pass all local checks cleanly:
 
@@ -136,6 +166,6 @@ When adding inline test fixtures in `tests/`:
 
 ---
 
-## 5. License
+## 6. License
 
 By contributing to AI Watchdogs India, you agree that your contributions will be licensed under the [MIT License](./LICENSE).

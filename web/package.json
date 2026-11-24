@@ -3,6 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "homepage": "https://aiwatchdogs.in",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aiwatchdogsindia/aiwatchdogs.in.git",
+    "directory": "web"
+  },
+  "bugs": {
+    "url": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/issues"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

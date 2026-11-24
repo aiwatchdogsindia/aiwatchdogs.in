@@ -4,6 +4,7 @@
 >
 > An open-source, strictly non-partisan distributed AI agent swarm auditing public tenders, CAG audit reports, Union & State budgets, and welfare scheme records across India — verified by deterministic Python math, independent 2-of-2 peer quorum, and human-in-the-loop RTI Act 2005 drafts.
 
+[![CI](https://github.com/aiwatchdogsindia/aiwatchdogs.in/actions/workflows/ci.yml/badge.svg)](https://github.com/aiwatchdogsindia/aiwatchdogs.in/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2F6B4F.svg)](./LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B%20%7C%20uv-1B1A17.svg)](./pyproject.toml)
 [![Node 26 + Vite](https://img.shields.io/badge/Web-React%20%2B%20TypeScript%20%2B%20Vite-2B6FD6.svg)](./web/package.json)
@@ -81,6 +82,10 @@ uv run aiwatchdogs audit-file ./cag_union_report.pdf --methodology M6 --rti
 **Toolchain:** Python 3.11+ (tested on 3.14) with **`uv`**, and Node 22+ (tested on 26) with **`npm`**.
 
 ```bash
+# 0. Clone the official organization repository
+git clone https://github.com/aiwatchdogsindia/aiwatchdogs.in.git
+cd aiwatchdogs.in
+
 # 1. Install Python and frontend dependencies
 make install
 
@@ -232,6 +237,18 @@ AI Watchdogs India publishes every rupee, compute-credit grant, and infrastructu
 * **Onboarding & Health:** `GET /join.txt`, `GET /join.sh`, `GET /health`
 * **Public Read Plane:** `GET /api/head`, `GET /api/stream` *(SSE)*, `GET /api/missions`, `GET /api/missions/{slug}`, `GET /api/findings`, `GET /api/findings/{id}`, `POST /api/findings/{id}/rti-draft`, `GET /api/graph`, `GET /api/live`, `GET /api/contributors`, `GET /api/contributors/{handle}`, `GET /api/sponsors`, `POST /api/sponsors/pledge`, `GET /api/ledger?format=json|csv`, `GET /api/sources`
 * **Desk Coordination Plane:** `POST /api/agents/register`, `POST /api/desk/next`, `POST /api/desk/beat`, `POST /api/desk/release`, `POST /api/desk/submit`
+
+---
+
+## Community & Contributing
+
+AI Watchdogs India is maintained in the open under the **[`aiwatchdogsindia`](https://github.com/aiwatchdogsindia)** GitHub organization. Everyone is welcome to run a ₹0 CPU audit node, add an Indian public data connector, refine deterministic audit rules, or improve the editorial dashboard.
+
+* **Repository & Pull Requests:** [github.com/aiwatchdogsindia/aiwatchdogs.in](https://github.com/aiwatchdogsindia/aiwatchdogs.in)
+* **Contributor Guide:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (fork/branch/PR workflow, local setup, connector & methodology checklists)
+* **Issue Tracker:** [Open Issues](https://github.com/aiwatchdogsindia/aiwatchdogs.in/issues) (bug reports, dataset connector requests, methodology proposals)
+* **Discussions:** [GitHub Discussions](https://github.com/aiwatchdogsindia/aiwatchdogs.in/discussions) (methodology design, dataset vetting, civic-audit Q&A)
+* **Discord Community:** [discord.gg/8K33UYGWY4](https://discord.gg/8K33UYGWY4)
 
 ---
 

@@ -1,0 +1,71 @@
+name: Bug Report
+description: Report a defect in the Coordinator Hub, contributor CLI, deterministic engines, data loader, or web dashboard.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug!
+
+        **Privacy & Security Notice:** Do **NOT** paste raw personal identifying information (Aadhaar, PAN, bank account numbers, personal phone numbers/emails) or security exploits into a public issue.
+        - For **live PII exposure (`[PII-URGENT]`)** or **security/quorum vulnerabilities (`[SECURITY]`)**, email **security@aiwatchdogs.in** privately per [`SECURITY.md`](https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/SECURITY.md).
+        - For **Right of Reply / factual corrections** on a published finding, email **corrections@aiwatchdogs.in** per [`LEGAL_AND_ETHICS.md`](https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/LEGAL_AND_ETHICS.md).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      options:
+        - Deterministic Audit Engines (M1–M8)
+        - Data Connectors & Loader (connectors/loader.py)
+        - Contributor CLI (aiwatchdogs join / run / audit-file)
+        - Coordinator Hub API / Desk / Quorum (hub/)
+        - RTI Act 2005 Draft Generator (core/rti.py)
+        - Safety / PII Scrubber / Neutrality Linter (core/safety.py)
+        - Web Dashboard (web/)
+        - Docker / Deployment / CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the unexpected behavior clearly and neutrally.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Include the exact command, endpoint, or synthetic/redacted input needed to reproduce the issue.
+      placeholder: |
+        1. Run `uv run aiwatchdogs ...`
+        2. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, uv version, Node version (if web), or browser.
+      placeholder: "Ubuntu 24.04 / Python 3.14 / uv 0.13.x / Node 26"
+
+  - type: checkboxes
+    id: safety_confirm
+    attributes:
+      label: Pre-submission Checks
+      options:
+        - label: I confirm this report contains no raw personal identifying information (Aadhaar, PAN, bank details, personal phones/emails) and no undisclosed security vulnerability.
+          required: true

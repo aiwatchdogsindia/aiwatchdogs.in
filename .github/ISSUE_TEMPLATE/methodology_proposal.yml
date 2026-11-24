@@ -1,0 +1,62 @@
+name: Audit Methodology Proposal
+description: Propose a new deterministic public-spending audit methodology or refine an existing M1–M8 rule.
+title: "[Methodology]: "
+labels: ["methodology", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a deterministic audit rule for `src/aiwatchdogs/engines/`.
+        **Golden Rule ([`METHODOLOGY.md`](https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/METHODOLOGY.md)):** Every numeric red-flag calculation MUST execute inside a deterministic, version-hashed pure-Python rule engine reproducible on a ₹0 CPU-only machine.
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Proposal Scope
+      options:
+        - Refine an existing methodology (M1–M8)
+        - Add state-specific procurement / fiscal rules (e.g. KTPP, RTPP, TN Transparency in Tenders, APPR)
+        - Propose a brand-new methodology (M9+)
+    validations:
+      required: true
+
+  - type: textarea
+    id: statutory_anchor
+    attributes:
+      label: Indian Statutory / Regulatory Anchor
+      description: Cite the exact statute, GFR 2017 rule (with effective date / amendment if applicable), State Procurement Act section, CVC circular, CAG guideline, or scheme norm.
+      placeholder: "e.g. Karnataka Transparency in Public Procurements (KTPP) Act, 1999 — Section ... / Rule ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: deterministic_math
+    attributes:
+      label: Deterministic Formula, Thresholds & Edge Cases
+      description: Specify exact inputs, thresholds, `as_of_date` handling, and how missing/unrecorded fields should be classified (`unevaluable` vs. `cleared`).
+    validations:
+      required: true
+
+  - type: textarea
+    id: benign_explanations
+    attributes:
+      label: Lawful Benign Explanations (BNS Sec 356 Neutrality)
+      description: List realistic, lawful reasons a compliant department could trigger this statistical threshold (required on every `AuditLeadCandidate`).
+    validations:
+      required: true
+
+  - type: textarea
+    id: rti_records
+    attributes:
+      label: Specific Public Records Requested in RTI Act 2005 Sec 6(1) Draft
+      description: Which existing Section 2(f) records (e.g. comparative statements, sanction orders, Measurement Books, Utilization Certificates) should a human citizen verify, and is the custodian Central or State?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reference_datasets
+    attributes:
+      label: Public Datasets & Offline Test Fixtures
+      description: Which live public datasets can this rule evaluate, and what synthetic triggering + baseline clean cases should be tested in `tests/`?
+    validations:
+      required: true

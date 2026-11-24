@@ -1,0 +1,89 @@
+name: Dataset Connector Proposal
+description: Propose a new official Government of India or open civic mirror dataset connector (Tier 1, Tier 2, or Tier 3 local-export).
+title: "[Connector]: "
+labels: ["connector", "datasets"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a new public dataset source for `src/aiwatchdogs/connectors/`.
+        Please review our 3-tier legality matrix in [`METHODOLOGY.md`](https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/METHODOLOGY.md) and **IT Act 2000 Section 43** Zero Bypass Policy in [`LEGAL_AND_ETHICS.md`](https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/LEGAL_AND_ETHICS.md).
+
+        **Zero Bypass Rule:** We never accept CAPTCHA solvers, credentialed scrapers, or paywall workarounds. CAPTCHA-gated portals belong in **Tier 3** (human-downloaded local files via `aiwatchdogs audit-file`).
+
+  - type: input
+    id: dataset_name
+    attributes:
+      label: Dataset & Official Publisher
+      description: Name of the dataset and the official public authority / portal publishing it.
+      placeholder: "e.g. Karnataka e-Procurement OCDS Tenders — Government of Karnataka"
+    validations:
+      required: true
+
+  - type: input
+    id: landing_page
+    attributes:
+      label: Official Source Landing Page (.gov.in / .nic.in)
+      description: Canonical public authority portal URL for attribution (`source_landing_page`).
+      placeholder: "https://..."
+    validations:
+      required: true
+
+  - type: input
+    id: retrieval_url
+    attributes:
+      label: Direct Download / Pinned Mirror URL (if applicable)
+      description: Direct HTTPS open API / bulk file URL or pinned commit-SHA civic mirror URL (`retrieval_url`).
+      placeholder: "https://..."
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Legal Ingestion Tier (IT Act Sec 43)
+      description: See METHODOLOGY.md Section 1 for Tier definitions.
+      options:
+        - "Tier 1 — Automated direct open API / bulk open files (zero CAPTCHA, zero auth wall)"
+        - "Tier 2 — Polite rate-limited public dashboard / official MIS export (no login, honors robots.txt)"
+        - "Tier 3 — Human-downloaded official export only (CAPTCHA/login portal; local `aiwatchdogs audit-file`)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: format
+    attributes:
+      label: Data Format
+      options:
+        - CSV
+        - OCDS JSON / JSON ZIP
+        - XLSX / XLS
+        - Official PDF (e.g. CAG report)
+        - REST / CKAN JSON API
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: methodologies
+    attributes:
+      label: Target Audit Methodologies & Schema Notes
+      description: Which methodologies (`M1`–`M8` or proposed new rule) can run on this dataset? List key columns/fields and any known missing-field quirks.
+    validations:
+      required: true
+
+  - type: textarea
+    id: privacy_license
+    attributes:
+      label: License, robots.txt & Privacy / PII Review
+      description: Confirm open/public status, whether citizen PII (e.g. beneficiary names, Aadhaar, PAN, phones) may appear in the raw file, and how aggregation/scrubbing should handle it under DPDP Act 2023.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: compliance
+    attributes:
+      label: Connector Compliance Checks
+      options:
+        - label: Confirmed zero CAPTCHA bypass and zero authentication bypass (IT Act 2000 Sec 43).
+          required: true
+        - label: If using an external civic mirror, I understand retrieval URLs must be pinned to an immutable commit SHA and verified via SHA-256.
+          required: true

@@ -2276,7 +2276,7 @@ def test_durable_events_sse_replay_findings_pagination_event_scores_and_join_sh(
             # 4. /join.sh POSIX syntax (`sh -n`), /dev/tty consent reopen, and pinned git uvx install
             join_sh = client.get("/join.sh").text
             assert "exec </dev/tty" in join_sh
-            assert "git+https://github.com/piyushbodaa/aiwatchdogs.in.git" in join_sh
+            assert "git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git" in join_sh
             assert "uvx aiwatchdogs" not in join_sh
             sh_check = subprocess.run(["sh", "-n"], input=join_sh, text=True, capture_output=True, check=False)
             assert sh_check.returncode == 0, sh_check.stderr

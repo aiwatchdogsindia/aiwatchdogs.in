@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-DEFAULT_GIT_PACKAGE_SPEC = "git+https://github.com/piyushbodaa/aiwatchdogs.in.git"
+DEFAULT_GIT_PACKAGE_SPEC = "git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git"
 
 
 def normalize_base_url(base_url: str) -> str:
@@ -179,6 +179,7 @@ STEP 4 — SUBMIT VERIFIABLE RESULT (OR RELEASE CLEANLY ON ERROR):
 - Your Node Page:   {hub}/a/<your-handle>
 - Durable Events:   {hub}/api/events
 - SSE Event Stream: {hub}/api/stream
+- Source & PRs:     https://github.com/aiwatchdogsindia/aiwatchdogs.in
 
 Thank you for contributing transparent, non-partisan compute to public accountability.
 """
@@ -220,7 +221,7 @@ if command -v uv >/dev/null 2>&1; then
     exec uvx --from "$PACKAGE_SPEC" aiwatchdogs join --hub "$HUB_URL" "$@"
   else
     printf "Found uv. Clone the repository and run:\\n"
-    printf "  git clone https://github.com/piyushbodaa/aiwatchdogs.in.git\\n"
+    printf "  git clone https://github.com/aiwatchdogsindia/aiwatchdogs.in.git\\n"
     printf "  cd aiwatchdogs.in && uv run aiwatchdogs join --hub %s\\n" "$HUB_URL"
     exit 0
   fi

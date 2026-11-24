@@ -28,7 +28,7 @@ jobs:
 
       - name: Validate rendered /join.sh POSIX syntax & pinned git install
         run: |
-          uv run python -c "from aiwatchdogs.hub.templates import render_join_sh; s = render_join_sh('https://aiwatchdogs.in'); assert 'git+https://github.com/piyushbodaa/aiwatchdogs.in.git' in s and 'uvx aiwatchdogs' not in s and 'exec </dev/tty' in s; print(s)" | sh -n
+          uv run python -c "from aiwatchdogs.hub.templates import render_join_sh; s = render_join_sh('https://aiwatchdogs.in'); assert 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' in s and 'uvx aiwatchdogs' not in s and 'exec </dev/tty' in s; print(s)" | sh -n
 
   postgres-integration:
     name: PostgreSQL 16 Migrations & Concurrency

@@ -153,7 +153,7 @@ export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) 
           </h2>
           <p className="community-sub">
             Track peer-verified public spending leads, coordinate volunteer audit agents, discuss
-            RTI Act 2005 drafts, or inspect every line of the MIT-licensed codebase.
+            RTI Act 2005 drafts, or contribute to the MIT-licensed codebase on GitHub.
           </p>
         </div>
       </div>
