@@ -273,7 +273,7 @@ class DeskService:
         workload_inr = float(row["monetary_audited_inr"] or 0.0)
         uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
         qty_type = str(_row_get(row, "financial_quantity_type", "") or "")
-        qty_label = FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported mission figure")
+        qty_label = FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported project figure")
         cleared_scans = int(row["cleared_count"] or 0)
         cleared_findings = int(
             cleared_findings_count

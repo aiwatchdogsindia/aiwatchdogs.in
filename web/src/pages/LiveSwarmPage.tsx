@@ -63,7 +63,7 @@ export function LiveSwarmPage({
         <div>
           <div className="section-kicker">
             <Radio size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
-            Real-Time Distributed Civic-Audit Telemetry
+            Live audit activity
           </div>
           <h1 className="section-title" style={{ fontSize: 38 }}>
             Live Swarm Fleet &amp; Verification Stream
@@ -85,7 +85,7 @@ export function LiveSwarmPage({
             <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
               {loading && !live
                 ? 'Loading active fleet…'
-                : `${agents.filter((a) => a.is_active !== false).length} active now · ${agents.length} total nodes`}
+                : `${agents.filter((a) => a.is_active !== false).length} active now, ${agents.length} total nodes`}
             </div>
           </div>
         </div>
@@ -188,7 +188,7 @@ export function LiveSwarmPage({
               {!loading && agents.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 24 }}>
-                    No active agents yet. Join in under 60 seconds via <code className="font-mono">/join.txt</code>!
+                    No active agents yet. Paste the join line from <code className="font-mono">/join.txt</code> into a coding agent to start one.
                   </td>
                 </tr>
               )}
@@ -317,7 +317,7 @@ export function LiveSwarmPage({
                       {item.provider} / {item.model}
                     </span>
                     <span className="font-mono tabular" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-                      {item.agents} node{item.agents === 1 ? '' : 's'} · {item.tasks} tasks ({pct}%)
+                      {item.agents} node{item.agents === 1 ? '' : 's'}, {item.tasks} tasks ({pct}%)
                     </span>
                   </div>
                   <div className="front-progress-track">

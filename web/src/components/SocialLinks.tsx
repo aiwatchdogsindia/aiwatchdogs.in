@@ -98,7 +98,7 @@ export function SocialIconRow({
           target="_blank"
           rel="noopener noreferrer"
           aria-label={social.ariaLabel}
-          title={`${social.name} · ${social.handle}`}
+          title={`${social.name}, ${social.handle}`}
           className={linkClassName}
         >
           <SocialIcon id={social.id} size={iconSize} />
@@ -145,9 +145,6 @@ export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) 
     >
       <div className="community-head">
         <div>
-          <div className={variant === 'band' ? 'kicker' : 'section-kicker'}>
-            Community &amp; Open Channels
-          </div>
           <h2 className={variant === 'band' ? 'community-title' : 'section-title'} style={variant === 'embedded' ? { fontSize: 25 } : undefined}>
             Follow verified dispatches &amp; build in the open
           </h2>
@@ -183,7 +180,7 @@ export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) 
 
             <div className="community-cta">
               <span>{social.cta}</span>
-              <span aria-hidden="true">→</span>
+              
             </div>
           </a>
         ))}

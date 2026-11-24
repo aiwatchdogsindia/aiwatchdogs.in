@@ -109,10 +109,10 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   ) : (
                     <strong>{detail.posted_by.name}</strong>
                   )}
-                  {detail.posted_by.handle ? ` · ${detail.posted_by.handle}` : ''}
+                  {detail.posted_by.handle ? `, ${detail.posted_by.handle}` : ''}
                   {detail.enlisted_pr_url ? (
                     <>
-                      {' · '}
+                      {', '}
                       <a href={detail.enlisted_pr_url} target="_blank" rel="noreferrer">
                         enlisting pull request
                       </a>
@@ -151,7 +151,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                         <a href={src.url} target="_blank" rel="noreferrer">
                           {src.name}
                         </a>
-                        {src.publisher ? ` · ${src.publisher}` : ''}
+                        {src.publisher ? `, ${src.publisher}` : ''}
                       </li>
                     ))}
                   </ul>
@@ -209,7 +209,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   </span>
                   <span className="kpi-label">
                     {detail.unique_coverage_inr_cr != null
-                      ? detail.amount_unit_note || 'Deduplicated Mission Coverage'
+                      ? detail.amount_unit_note || 'Deduplicated project coverage'
                       : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
                   </span>
                 </div>
@@ -357,7 +357,6 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
       <div className="section-header">
         <div>
-          <div className="section-kicker">Posted by people, audited by the swarm</div>
           <h1 className="section-title" style={{ fontSize: 32 }}>
             Projects
           </h1>
@@ -423,7 +422,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   )}
                   <span className="project-progress tabular">
                     {m.total_tasks > 0
-                      ? `${m.completed_tasks}/${m.total_tasks} tasks · ${pct}% · ${m.verified_findings_count} verified`
+                      ? `${m.completed_tasks}/${m.total_tasks} tasks, ${pct}%, ${m.verified_findings_count} verified`
                       : 'Waiting for datasets'}
                   </span>
                 </div>

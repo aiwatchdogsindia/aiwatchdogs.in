@@ -77,7 +77,7 @@ export function JustInBar({
 
         {onOpenJoin && (
           <button type="button" className="just-in-cta" onClick={onOpenJoin}>
-            Claim a task →
+            Claim a task
           </button>
         )}
       </div>
@@ -118,7 +118,7 @@ export function JustInBar({
         className="just-in-cta"
         onClick={() => onSelectFinding(item.id)}
       >
-        Inspect dossier →
+        Inspect dossier
       </button>
     </div>
   );

@@ -64,22 +64,6 @@ function classifyNodeKind(node: GraphNode): WorldNode['kind'] {
   return 'review';
 }
 
-function createGlowSprite(innerColor: string, midColor: string, size = 64): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = size;
-  c.height = size;
-  const ctx = c.getContext('2d');
-  if (ctx) {
-    const r = size / 2;
-    const g = ctx.createRadialGradient(r, r, 0, r, r, r);
-    g.addColorStop(0, innerColor);
-    g.addColorStop(0.35, midColor);
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  }
-  return c;
-}
 
 export function ObservatoryMap({
   graph,
@@ -509,9 +493,6 @@ export function ObservatoryMap({
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
 
-    const creamGlow = createGlowSprite('rgba(255,255,255,0.85)', 'rgba(255,255,255,0.22)', 64);
-    const amberGlow = createGlowSprite('rgba(255,243,229,0.95)', 'rgba(255,153,51,0.38)', 72);
-    const cyanGlow = createGlowSprite('rgba(255,224,191,0.9)', 'rgba(255,184,102,0.28)', 36);
 
     let rafId = 0;
     let disposed = false;
@@ -550,14 +531,6 @@ export function ObservatoryMap({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, w, h);
 
-      // Subtle starfield dust (deterministic, calm)
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      for (let i = 0; i < 36; i++) {
-        const px = ((i * 197.3) % 1) * w;
-        const py = ((i * 311.7) % 1) * h;
-        ctx.fillRect(px, py, 1.2, 1.2);
-      }
-
       // Transform into world coordinates
       ctx.translate(w / 2, h / 2);
       ctx.scale(cam.zoom, cam.zoom);
@@ -567,15 +540,6 @@ export function ObservatoryMap({
 
       // 1. Cluster radial hazes & dashed perimeter clouds
       for (const cl of world.clusters) {
-        const g = ctx.createRadialGradient(cl.cx, cl.cy, 8, cl.cx, cl.cy, cl.radius * 1.28);
-        g.addColorStop(0, `rgba(${cl.tint.rgb}, 0.11)`);
-        g.addColorStop(0.65, `rgba(${cl.tint.rgb}, 0.04)`);
-        g.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(cl.cx, cl.cy, cl.radius * 1.28, 0, Math.PI * 2);
-        ctx.fill();
-
         ctx.save();
         ctx.setLineDash([3 / cam.zoom, 5 / cam.zoom]);
         ctx.strokeStyle = `rgba(${cl.tint.rgb}, 0.24)`;
@@ -590,15 +554,15 @@ export function ObservatoryMap({
         ctx.font = `400 ${Math.max(10, 11.5 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
         ctx.fillStyle = 'rgba(27, 26, 23, 0.86)';
         ctx.textAlign = 'center';
-        const shortLabel = `${cl.shortCode} · ${cl.label.length > 26 ? `${cl.label.slice(0, 25)}…` : cl.label}`.toUpperCase();
+        const shortLabel = `${cl.shortCode}, ${cl.label.length > 26 ? `${cl.label.slice(0, 25)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + 16 / Math.sqrt(cam.zoom));
 
         ctx.font = `400 ${Math.max(9.5, 11 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
         ctx.fillStyle = 'rgba(27, 26, 23, 0.62)';
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
-            ? `${cl.verifiedCount} verified · ${cl.reviewCount} in review`
-            : `${cl.sourceCount > 0 ? `${cl.sourceCount} official source${cl.sourceCount === 1 ? '' : 's'}` : `${cl.totalCount} mapped`} · ready to audit`;
+            ? `${cl.verifiedCount} verified, ${cl.reviewCount} in review`
+            : `${cl.sourceCount > 0 ? `${cl.sourceCount} official source${cl.sourceCount === 1 ? '' : 's'}` : `${cl.totalCount} mapped`}, ready to audit`;
         ctx.fillText(clSub, cl.cx, cl.cy + cl.radius + 30 / Math.sqrt(cam.zoom));
         ctx.restore();
       }
@@ -653,7 +617,6 @@ export function ObservatoryMap({
         // Ignite SSE golden ripple if active
         if (igniteRef.current.nodeId === wn.node.id && now - igniteRef.current.startedAt < 2600) {
           const p = (now - igniteRef.current.startedAt) / 2600;
-          ctx.drawImage(amberGlow, wn.x - 36, wn.y - 36, 72, 72);
           for (let ring = 0; ring < 2; ring++) {
             const rp = Math.max(0, p - ring * 0.22);
             if (rp > 0 && rp < 1) {
@@ -677,8 +640,6 @@ export function ObservatoryMap({
 
         // Verified node: warm-cream #FFFFFF solid dot + pre-rendered radial glow (ONLY resting glow!)
         if (wn.kind === 'verified') {
-          const glowSize = r * 6.5;
-          ctx.drawImage(creamGlow, wn.x - glowSize / 2, wn.y - glowSize / 2, glowSize, glowSize);
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
           ctx.fillStyle = '#FFFFFF';
@@ -696,7 +657,7 @@ export function ObservatoryMap({
           ctx.stroke();
           ctx.restore();
 
-          // Orbiting cyan agent-at-work comet (#FFE0BF core + #FFB866 tail)
+          // Orbiting cyan agent-at-work comet (#FFD9B3 core + #FFB866 tail)
           const phase = tSec * 1.45 + fnv1a(wn.node.id) * Math.PI * 2;
           const orbR = r + 5.2;
           const cx = wn.x + Math.cos(phase) * orbR;
@@ -706,7 +667,6 @@ export function ObservatoryMap({
           ctx.strokeStyle = 'rgba(27, 26, 23, 0.5)';
           ctx.lineWidth = 1.4;
           ctx.stroke();
-          ctx.drawImage(cyanGlow, cx - 7, cy - 7, 14, 14);
           ctx.beginPath();
           ctx.arc(cx, cy, 1.9, 0, Math.PI * 2);
           ctx.fillStyle = '#FFFFFF';
@@ -772,7 +732,7 @@ export function ObservatoryMap({
           // Ministry / jurisdiction anchor
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFF6EC';
+          ctx.fillStyle = '#F4F4F4';
           ctx.fill();
           ctx.strokeStyle = '#1B1A17';
           ctx.lineWidth = 1.25;
@@ -1091,18 +1051,18 @@ export function ObservatoryMap({
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <img src="/logo-dark.svg" alt="" width={24} height={24} style={{ opacity: 0.92 }} />
             <span className="kicker" style={{ color: 'var(--obs-mist)' }}>
-              THE DARK OBSERVATORY
+              Observatory map
             </span>
           </div>
           <h2>
             {verifiedCount > 0 || agentsActive > 0
-              ? `${verifiedCount} peer-verified lead${verifiedCount === 1 ? '' : 's'}. ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing ${missionsCount} public-spending fronts.`
-              : `${missionsCount} live Government of India audit fronts. ${nodes.length} official datasets & portals mapped.`}
+              ? `${verifiedCount} peer-verified lead${verifiedCount === 1 ? '' : 's'} and ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing across ${missionsCount} ${missionsCount === 1 ? 'project' : 'projects'}.`
+              : `${missionsCount} ${missionsCount === 1 ? 'project' : 'projects'} and ${nodes.length} official datasets mapped.`}
           </h2>
           <div className="map-head-sub">
             <span className="live-pulse" style={{ color: 'var(--green-on-dark)' }}>
               <span className="live-dot sm" />
-              <span>{nodes.length} mapped nodes · {edges.length} provenance links</span>
+              <span>{nodes.length} mapped nodes, {edges.length} provenance links</span>
             </span>
             {activeClusterObj && (
               <span className="map-crumb">
@@ -1111,7 +1071,7 @@ export function ObservatoryMap({
                 </button>
                 <span>/</span>
                 <span>
-                  {activeClusterObj.shortCode} · {activeClusterObj.label.slice(0, 26)}
+                  {activeClusterObj.shortCode}, {activeClusterObj.label.slice(0, 26)}
                 </span>
               </span>
             )}
@@ -1158,7 +1118,7 @@ export function ObservatoryMap({
                 <option value="">All mapped projects ({world.clusters.length})</option>
                 {world.clusters.map((cl) => (
                   <option key={cl.key} value={cl.key}>
-                    {cl.shortCode} · {cl.label} ({cl.totalCount} nodes)
+                    {cl.shortCode}, {cl.label} ({cl.totalCount} nodes)
                   </option>
                 ))}
               </select>
@@ -1328,7 +1288,7 @@ export function ObservatoryMap({
         >
           <div className="map-card-meta">
             <span>{hoveredNode.wn.node.type}</span>
-            {hoveredNode.wn.node.status && <span>· {hoveredNode.wn.node.status.replace(/_/g, ' ')}</span>}
+            {hoveredNode.wn.node.status && <span>{hoveredNode.wn.node.status.replace(/_/g, ' ')}</span>}
           </div>
           <div className="map-card-title">{hoveredNode.wn.node.label}</div>
           {hoveredNode.wn.node.value_inr_cr != null && hoveredNode.wn.node.value_inr_cr > 0 && (
@@ -1401,16 +1361,16 @@ export function ObservatoryMap({
           <div className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <span>{pillarLabel(pinnedWn.pillar)}</span>
             {Boolean(pinnedWn.node.meta?.entity_name) && (
-              <span>· {String(pinnedWn.node.meta?.entity_name)}</span>
+              <span>{String(pinnedWn.node.meta?.entity_name)}</span>
             )}
             {Boolean(pinnedWn.node.meta?.authority) && (
-              <span>· {String(pinnedWn.node.meta?.authority)}</span>
+              <span>{String(pinnedWn.node.meta?.authority)}</span>
             )}
             {Boolean(pinnedWn.node.meta?.jurisdiction) && (
-              <span>· {String(pinnedWn.node.meta?.jurisdiction)}</span>
+              <span>{String(pinnedWn.node.meta?.jurisdiction)}</span>
             )}
             {Boolean(pinnedWn.node.meta?.submitted_by) && (
-              <span>· @{String(pinnedWn.node.meta?.submitted_by)}</span>
+              <span>@{String(pinnedWn.node.meta?.submitted_by)}</span>
             )}
           </div>
 
@@ -1617,7 +1577,7 @@ export function ObservatoryMap({
 
       {wheelHintVisible && (
         <div className="map-wheel-hint">
-          Hold Ctrl / ⌘ + scroll to zoom · drag to pan · press / to search
+          Hold Ctrl / ⌘ + scroll to zoom, drag to pan, press / to search
         </div>
       )}
     </section>

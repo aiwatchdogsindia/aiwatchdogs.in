@@ -98,7 +98,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
     <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
       <div className="section-header">
         <div>
-          <div className="section-kicker">Public Evidence Wall · Deterministic &amp; Neutral</div>
+          <div className="section-kicker">Public Evidence Wall, Deterministic &amp; Neutral</div>
           <h1 className="section-title" style={{ fontSize: 32 }}>
             Findings &amp; Evidence Ledger
           </h1>
@@ -126,7 +126,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           EPISTEMIC KEY:
         </span>
         <span className="badge badge-verified">Peer-Verified (2/2 Solid)</span>
-        <span className="badge badge-review">In Peer Review (Dashed · Unverified)</span>
+        <span className="badge badge-review">In Peer Review (Dashed, Unverified)</span>
         <span className="badge badge-cleared">Cleared / Explained</span>
         <span className="badge badge-disputed">Editorial Review / Corrected / Disputed</span>
         <span className="badge badge-rti">RTI Filed / Draft Ready</span>
@@ -192,7 +192,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           <option value="">All checks</option>
           {Object.entries(METHODOLOGY_DESCRIPTIONS).map(([code, meta]) => (
             <option key={code} value={code}>
-              {code} · {meta.name}
+              {code}, {meta.name}
             </option>
           ))}
         </select>

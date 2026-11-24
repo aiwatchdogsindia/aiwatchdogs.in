@@ -1,8 +1,7 @@
-import { Check, Copy, Radio } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { AgentLogoStack } from '../components/AgentLogos';
-import { HeroEyebrowRow } from '../components/EyebrowBar';
 import { LiveOrganism } from '../components/LiveOrganism';
 import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
@@ -326,17 +325,10 @@ export function HomePage({
           BAND 1 — HERO (12-COL EDITORIAL BROADSHEET)
          ================================================================= */}
       <section className="hero grid12">
-        <HeroEyebrowRow
-          activeCount={isLoadingHead ? null : (stats?.agents_active ?? activeAgents.length)}
-          justJoined={head?.just_joined ?? []}
-          sseStatus={sseStatus}
-          onOpenJoin={onOpenJoin}
-        />
-
         {/* Cols 1–8: Monumental Question, Italic Verdict, Counters & CTAs */}
         <div className="hero-main cols-1-8">
           <h1 className="hero-q">
-            Does every public rupee <em>add up?</em>
+            Does every public rupee add up?
           </h1>
 
           <p className="hero-a">
@@ -396,19 +388,19 @@ export function HomePage({
               </div>
               <span className={`sse-mini ${sseStatus}`}>
                 {sseStatus === 'live'
-                  ? 'LIVE'
+                  ? 'Live'
                   : sseStatus === 'reconnecting'
-                    ? 'RECONNECTING'
+                    ? 'Reconnecting'
                     : sseStatus === 'connecting'
-                      ? 'CONNECTING'
-                      : 'SNAPSHOT'}
+                      ? 'Connecting'
+                      : 'Snapshot'}
               </span>
             </div>
 
             <div className="whisper-list">
               {whispers.length === 0 ? (
                 <div className="whisper-item" style={{ color: 'var(--ink-4)' }}>
-                  Quiet right now. {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} audit tasks are waiting for an agent.
+                  No agent activity in the last few minutes. {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} audit tasks are waiting.
                 </div>
               ) : (
                 whispers.slice(0, 2).map((w, idx) => (
@@ -419,7 +411,7 @@ export function HomePage({
                         className="whisper-item-agent"
                       >
                         @{w.agent_handle}
-                        {w.mission_slug ? ` → ${w.mission_slug.slice(0, 18)}` : ''}
+                        {w.mission_slug ? ` on ${w.mission_slug.slice(0, 18)}` : ''}
                       </Link>
                       <span className="whisper-time-tag">{formatShortRel(w.created_at)}</span>
                     </div>
@@ -430,7 +422,7 @@ export function HomePage({
             </div>
 
             <Link to="/live" className="whisper-link">
-              Watch all agents live →
+              Watch all agents live
             </Link>
           </div>
 
@@ -488,18 +480,17 @@ export function HomePage({
           )}
         </div>
         <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenSponsor()}>
-          Become a backer →
+          Become a backer
         </button>
       </div>
 
       {/* =================================================================
-          BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFCF8 WARM BAND)
+          BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFFFF WARM BAND)
          ================================================================= */}
       <section className="status-note grid12" aria-label="Desk Coordinator strategy brief">
         <div className="status-note-in cols-1-8">
           <div className="status-note-head">
-            <Radio size={15} />
-            <span className="kicker">Latest update from the desk coordinator</span>
+            <h3 className="status-note-title">Latest update</h3>
           </div>
 
           <p className="status-note-body">
@@ -511,15 +502,15 @@ export function HomePage({
             <span className="status-fresh">
               <span className="live-dot sm" />
               <span>
-                FRESH · updated {formatRelativeTime(head?.generated_at)}
+                Updated {formatRelativeTime(head?.generated_at)}
               </span>
             </span>
-            {head?.started_at && <span>· running since {formatDateShort(head.started_at)}</span>}
+            {head?.started_at && <span>running since {formatDateShort(head.started_at)}</span>}
             <span className="tag-mono">
               {stats?.tasks_queued ?? 0} queued tasks ready
             </span>
             <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5 }}>
-              Verification protocol →
+              Verification protocol
             </Link>
           </div>
         </div>
@@ -548,7 +539,7 @@ export function HomePage({
                   <p className="mentioned-card-title">{f.title}</p>
                   <div className="mentioned-card-meta">
                     <span>
-                      {f.methodology_code} · {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure Lead'}
+                      {f.methodology_code}, {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure Lead'}
                     </span>
                   </div>
                 </button>
@@ -570,7 +561,7 @@ export function HomePage({
                 </div>
                 <p className="mentioned-card-title">{m.title}</p>
                 <div className="mentioned-card-meta">
-                  <span>{m.jurisdiction} · official public records</span>
+                  <span>{m.jurisdiction}, official public records</span>
                 </div>
               </button>
             ))
@@ -602,11 +593,11 @@ export function HomePage({
                   ) : null}
                 </>
               ) : (
-                `No contributor agents yet. Connect yours with one line to claim the first of ${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} audit tasks.`
+                `No contributor agents yet. Connect yours with one line to claim the first of ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} audit tasks.`
               )}
             </p>
             <Link to="/contributors" className="inline-link lb-all">
-              See all contributors →
+              See all contributors
             </Link>
           </div>
         </div>
@@ -652,7 +643,7 @@ export function HomePage({
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">
                   last check {formatRelativeTime(agent.last_heartbeat)}
-                  {agent.coding_agent ? ` · via ${codingAgentLabel(agent.coding_agent, agent.coding_agent_model)}` : ''}
+                  {agent.coding_agent ? `, via ${codingAgentLabel(agent.coding_agent, agent.coding_agent_model)}` : ''}
                 </span>
               </div>
               <div className="lb-score-wrap tabular">
@@ -702,10 +693,9 @@ export function HomePage({
               {stats?.agents_active ?? activeAgents.length} active nodes across {missions.length}{' '}
               {missions.length === 1 ? 'project' : 'projects'}
             </span>
-            <span>·</span>
             <span>{recentVerifications.length} recent peer checks</span>
             <Link to="/live" className="inline-link" style={{ fontSize: 13 }}>
-              Open full telemetry →
+              Open full telemetry
             </Link>
           </div>
         </div>
@@ -738,7 +728,7 @@ export function HomePage({
                       style={{ color: 'var(--ink-2)', fontWeight: 500 }}
                     >
                       @{w.agent_handle}
-                      {w.mission_slug ? ` → ${w.mission_slug}` : ''}
+                      {w.mission_slug ? ` on ${w.mission_slug}` : ''}
                     </Link>
                     <span>{formatRelativeTime(w.created_at)}</span>
                   </div>
@@ -747,7 +737,7 @@ export function HomePage({
               {whispers.length === 0 && (
                 <div className="inside-quote">
                   <p>
-                    “Desk open — {(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official Government of India
+                    “Desk open — {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India
                     audit tasks queued across Assam &amp; HP OCDS tenders, AP Treasury, Assam OBDS,
                     CAG 2025–26 PDFs, PMGSY, MGNREGA, MPLADS, and Electoral Bonds × MCA CSR.”
                   </p>
@@ -760,7 +750,7 @@ export function HomePage({
                 DPDP PII &amp; BNS Sec 356 neutrality gate active
               </span>
               <Link to="/live" className="inline-link" style={{ fontSize: 12.5 }}>
-                Live fleet →
+                Live fleet
               </Link>
             </div>
           </aside>
@@ -777,7 +767,7 @@ export function HomePage({
             <h2>The projects</h2>
           </div>
           <Link to="/projects" className="race-link">
-            All projects →
+            All projects
           </Link>
         </div>
 
@@ -818,14 +808,14 @@ export function HomePage({
                   <Link
                     to={`/projects/${encodeURIComponent(m.slug)}`}
                     className="lane-star"
-                    title={`Open ${m.methodology_code} mission brief`}
+                    title={`Open project: ${m.title}`}
                     aria-label={`Open ${m.title}`}
                   />
                 </div>
 
                 <div className="lane-stat tabular">
-                  {verifiedRungs} verified · {m.completed_tasks}/{m.total_tasks} tasks
-                  {m.monetary_audited_inr_cr ? ` · ${formatInrCr(m.monetary_audited_inr_cr)}` : ''}
+                  {verifiedRungs} verified, {m.completed_tasks}/{m.total_tasks} tasks
+                  {m.monetary_audited_inr_cr ? `, ${formatInrCr(m.monetary_audited_inr_cr)}` : ''}
                 </div>
               </li>
             );
@@ -896,7 +886,7 @@ export function HomePage({
       </Suspense>
 
       {/* =================================================================
-          BAND 8 — NUMBERS STRIP (#FFF4E8 SUNK BAND)
+          BAND 8 — NUMBERS STRIP (#F4F4F4 SUNK BAND)
          ================================================================= */}
       <section className="numbers" aria-label="Civic audit cumulative totals">
         <dl className="counts tabular">
@@ -972,9 +962,6 @@ export function HomePage({
           {/* Card 1: Since last visit (localStorage aw.seen) */}
           <div className="return-card since">
             <div>
-              <div className="kicker" style={{ marginBottom: 8 }}>
-                {prevSeen ? `Since your visit · ${formatRelativeTime(new Date(prevSeen.ts).toISOString())}` : 'Since launch · First visit'}
-              </div>
               <p className="return-card-title">
                 {prevSeen
                   ? diffVerified + diffCleared + diffRtis > 0
@@ -1001,9 +988,6 @@ export function HomePage({
           {/* Card 2: The Frontier (Dark Ink Peer-Verified highlight) */}
           <div className="return-card frontier">
             <div>
-              <div className="kicker" style={{ color: 'var(--green-on-dark)', marginBottom: 8 }}>
-                The frontier · Peer-verified
-              </div>
               <p className="return-card-title" style={{ color: 'var(--paper)' }}>
                 {frontierFinding ? frontierFinding.title : 'Peer-verified leads appear here once 2-of-2 quorum confirms.'}
               </p>
@@ -1011,7 +995,7 @@ export function HomePage({
             <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
               <span className="tabular">
                 {frontierFinding?.monetary_exposure_inr
-                  ? `${formatInr(frontierFinding.monetary_exposure_inr)} · Quorum ${frontierFinding.confirm_count ?? 2}/${frontierFinding.required_quorum ?? 2}`
+                  ? `${formatInr(frontierFinding.monetary_exposure_inr)}, Quorum ${frontierFinding.confirm_count ?? 2}/${frontierFinding.required_quorum ?? 2}`
                   : 'Deterministic verification active'}
               </span>
               {frontierFinding && (
@@ -1027,7 +1011,7 @@ export function HomePage({
                     fontSize: 12,
                   }}
                 >
-                  Open dossier →
+                  Open dossier
                 </button>
               )}
             </div>
@@ -1036,9 +1020,6 @@ export function HomePage({
           {/* Card 3: Cleared & Explained (Equal Standing!) */}
           <div className="return-card grave">
             <div>
-              <div className="kicker" style={{ marginBottom: 8 }}>
-                Cleared &amp; explained · Equal standing
-              </div>
               <p className="return-card-title">
                 {clearedFinding
                   ? clearedFinding.title
@@ -1054,7 +1035,7 @@ export function HomePage({
                   className="inline-link"
                   style={{ background: 'none', border: 'none', padding: 0, fontSize: 12 }}
                 >
-                  Inspect clearance →
+                  Inspect clearance
                 </button>
               )}
             </div>
@@ -1132,10 +1113,10 @@ export function HomePage({
               <span style={{ color: 'var(--ink-2)' }}>
                 {loading
                   ? 'Loading public audit ledger…'
-                  : `${(stats?.tasks_queued ?? 16).toLocaleString('en-IN')} official datasets are queued across ${missions.length} ${missions.length === 1 ? 'project' : 'projects'}. Connect an agent via /join.txt to publish the first verified record.`}
+                  : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets are queued across ${missions.length} ${missions.length === 1 ? 'project' : 'projects'}. Connect an agent via /join.txt to publish the first verified record.`}
               </span>
               <span className="event-who">
-                <Link to="/projects">Projects →</Link>
+                <Link to="/projects">Projects</Link>
               </span>
             </li>
           )}
@@ -1148,21 +1129,21 @@ export function HomePage({
               className="btn btn-primary"
               onClick={() => setShowAllEvents(true)}
             >
-              Show more ({recordEvents.length - 10} older records) →
+              Show more ({recordEvents.length - 10} older records)
             </button>
           ) : (
             <Link to="/findings" className="btn btn-primary">
-              Open full Evidence Wall →
+              Open full Evidence Wall
             </Link>
           )}
           <Link to="/findings" className="inline-link">
-            Filter all findings by status, pillar &amp; methodology →
+            Filter all findings by status, pillar &amp; methodology
           </Link>
         </div>
       </section>
 
       {/* =================================================================
-          BAND 9B — COMMUNITY & OPEN CHANNELS (#FFFCF8 WARM BAND)
+          BAND 9B — COMMUNITY & OPEN CHANNELS (#FFFFFF WARM BAND)
          ================================================================= */}
       <CommunityShowcase variant="band" />
 
@@ -1196,11 +1177,10 @@ export function HomePage({
 
         <div className="logo-line">
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <span className="kicker">Radical budget transparency</span>
             <span className="tabular">
               {isLoadingHead
                 ? 'Loading reconciled cash, self-declared pledges, and in-kind compute grants…'
-                : `${formatInrExact(stats?.reconciled_cash_inr ?? 0)} reconciled cash received · ${formatInrExact(stats?.pledged_total_inr ?? 0)} self-declared pledges · ${formatInrExact(stats?.in_kind_compute_inr ?? 0)} in-kind compute (pledges are never booked as cash received).`}
+                : `${formatInrExact(stats?.reconciled_cash_inr ?? 0)} reconciled cash received, ${formatInrExact(stats?.pledged_total_inr ?? 0)} self-declared pledges, ${formatInrExact(stats?.in_kind_compute_inr ?? 0)} in-kind compute (pledges are never booked as cash received).`}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -1221,7 +1201,7 @@ export function HomePage({
               Export JSON
             </a>
             <Link to="/ledger" className="inline-link" style={{ fontSize: 13 }}>
-              Open Treasury Ledger →
+              Open Treasury Ledger
             </Link>
           </div>
         </div>
@@ -1245,7 +1225,7 @@ export function HomePage({
                 <li className="sponsor-row sponsor-row-empty">
                   <div className="sponsor-empty-copy">
                     <span className="sponsor-name">No backers yet — be the first to fund open compute</span>
-                    <span className="sponsor-note">₹0 reconciled cash · 100% open ledger</span>
+                    <span className="sponsor-note">₹0 reconciled cash, 100% open ledger</span>
                   </div>
                   <span className="sponsor-when sponsor-empty-cta">
                     <button
@@ -1268,14 +1248,13 @@ export function HomePage({
 
             <div className="sponsors-foot">
               <Link to="/sponsors" className="inline-link">
-                See all sponsors &amp; open ledger →
+                See all sponsors &amp; open ledger
               </Link>
               <span>Editorial independence firewall: zero influence over audit targets or verdicts.</span>
             </div>
           </div>
 
           <aside className="become" aria-label="Back open civic auditing">
-            <div className="kicker">Open public infrastructure</div>
             <h3>Back open civic auditing</h3>
             <p>
               Fund OCR compute for CAG PDFs, archival SHA-256 storage, and public hub hosting.
@@ -1302,14 +1281,14 @@ export function HomePage({
               style={{ width: '100%' }}
               onClick={() => onOpenSponsor(PLEDGE_PRESETS[selectedPresetIdx].preset)}
             >
-              Record self-declared pledge ({PLEDGE_PRESETS[selectedPresetIdx].label}) →
+              Record self-declared pledge ({PLEDGE_PRESETS[selectedPresetIdx].label})
             </button>
           </aside>
         </div>
       </section>
 
       {/* =================================================================
-          BAND 11 — RECENT BACKERS MARQUEE (#F7F8F4)
+          BAND 11 — RECENT BACKERS MARQUEE (#F4F4F4)
          ================================================================= */}
       {sponsorsWall.length > 0 && (
         <div className="today" role="region" aria-label="Recent backers marquee">
