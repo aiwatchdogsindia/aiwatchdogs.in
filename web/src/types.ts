@@ -118,6 +118,9 @@ export interface MissionRung {
 }
 
 export interface AgentRecord {
+  coding_agent?: string;
+  coding_agent_model?: string;
+
   id?: string | number;
   handle: string;
   display_name?: string;
@@ -255,6 +258,9 @@ export interface ReproductionSummary {
 }
 
 export interface PeerVerification {
+  coding_agent?: string;
+  coding_agent_model?: string;
+
   id?: string | number;
   finding_id?: string | number;
   verifier_handle: string;
@@ -311,6 +317,9 @@ export interface RtiDraft {
 }
 
 export interface FindingItem {
+  submitted_coding_agent?: string;
+  submitted_coding_agent_model?: string;
+
   id: string | number;
   mission_id?: string | number;
   mission_slug?: string;

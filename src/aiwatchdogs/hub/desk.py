@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 
 from aiwatchdogs.core.rti import generate_rti_draft
+from aiwatchdogs.core.coding_agents import normalize_coding_agent, normalize_coding_agent_model
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
@@ -354,6 +355,8 @@ class DeskService:
             "display_name": row["display_name"],
             "provider": row["provider"],
             "model": row["model"],
+            "coding_agent": str(_row_get(row, "coding_agent", "") or ""),
+            "coding_agent_model": str(_row_get(row, "coding_agent_model", "") or ""),
             "mode": row["mode"],
             "region": row["region"],
             "capabilities": loads_json(row["capabilities_json"], []),
@@ -506,6 +509,8 @@ class DeskService:
             "benign_explanations": benign if isinstance(benign, list) else [],
             "suggested_authority": row["suggested_authority"],
             "submitted_by": row["submitted_by"],
+            "submitted_coding_agent": str(_row_get(row, "submitted_coding_agent", "") or ""),
+            "submitted_coding_agent_model": str(_row_get(row, "submitted_coding_agent_model", "") or ""),
             "agent_trace": agent_trace if isinstance(agent_trace, dict) else {},
             "legal_lint_passed": bool(row["legal_lint_passed"]),
             "pii_scrubbed": bool(row["pii_scrubbed"]),
@@ -540,6 +545,8 @@ class DeskService:
             "verifier_node_id": row["verifier_node_id"],
             "contributor_id": row["contributor_id"],
             "verifier_handle": row["verifier_handle"],
+            "coding_agent": str(_row_get(row, "coding_agent", "") or ""),
+            "coding_agent_model": str(_row_get(row, "coding_agent_model", "") or ""),
             "provider": row["provider"],
             "model_id": row["model_id"],
             "review_type": str(_row_get(row, "review_type", "computational_reproduction") or "computational_reproduction"),
@@ -2835,6 +2842,15 @@ class DeskService:
             mode = "auto"
         region = str(payload.get("region") or "IN").strip()
         capabilities = payload.get("capabilities") or ["deterministic_audit", "peer_verify"]
+        coding_agent = normalize_coding_agent(payload.get("coding_agent"))
+        coding_agent_model = normalize_coding_agent_model(payload.get("coding_agent_model"))
+        if not coding_agent:
+            # Raw-HTTP registrations often name the coding agent as the provider.
+            from aiwatchdogs.core.coding_agents import _CANONICAL
+
+            coding_agent = _CANONICAL.get(provider, "")
+            if coding_agent and not coding_agent_model:
+                coding_agent_model = normalize_coding_agent_model(model)
         now = utc_now_iso()
         profile_url = f"{base_url.rstrip('/')}/a/{raw_handle}"
         envelopes: list[dict[str, Any]] = []
@@ -2847,7 +2863,9 @@ class DeskService:
                         """
                         UPDATE agents
                         SET display_name = ?, provider = ?, model = ?, mode = ?, region = ?,
-                            capabilities_json = ?, status = 'active', last_heartbeat_at = ?
+                            capabilities_json = ?, status = 'active', last_heartbeat_at = ?,
+                            coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
+                            coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
                         WHERE id = ?
                         """,
                         (
@@ -2858,6 +2876,10 @@ class DeskService:
                             region,
                             dumps_json(capabilities),
                             now,
+                            coding_agent,
+                            coding_agent,
+                            coding_agent_model,
+                            coding_agent_model,
                             existing["id"],
                         ),
                     )
@@ -2880,8 +2902,9 @@ class DeskService:
                 """
                 INSERT INTO agents (
                     id, handle, display_name, provider, model, mode, region,
-                    capabilities_json, api_token_hash, status, joined_at, last_heartbeat_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+                    capabilities_json, api_token_hash, status, joined_at, last_heartbeat_at,
+                    coding_agent, coding_agent_model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
                 """,
                 (
                     agent_id,
@@ -2895,6 +2918,8 @@ class DeskService:
                     token_hash,
                     now,
                     now,
+                    coding_agent,
+                    coding_agent_model,
                 ),
             )
             whisper = self._insert_whisper(
@@ -3774,6 +3799,16 @@ class DeskService:
             ),
         )
 
+        # Record which coding agent produced this lead (public attribution).
+        conn.execute(
+            "UPDATE findings SET submitted_coding_agent = ?, submitted_coding_agent_model = ? WHERE id = ?",
+            (
+                str(_row_get(agent, "coding_agent", "") or ""),
+                str(_row_get(agent, "coding_agent_model", "") or ""),
+                finding_id,
+            ),
+        )
+
         # Auto-create 2 independent peer_verify tasks with full bound manifest
         pv_payload = {
             "finding_id": finding_id,
@@ -4082,6 +4117,14 @@ class DeskService:
                 status_code=409,
                 detail="Duplicate verification prohibited by uniqueness constraint.",
             ) from exc
+        conn.execute(
+            "UPDATE peer_verifications SET coding_agent = ?, coding_agent_model = ? WHERE id = ?",
+            (
+                str(_row_get(agent, "coding_agent", "") or ""),
+                str(_row_get(agent, "coding_agent_model", "") or ""),
+                pv_id,
+            ),
+        )
 
         # Recompute quorum across ALL independent verifications for this finding under finding lock
         all_votes = conn.execute(

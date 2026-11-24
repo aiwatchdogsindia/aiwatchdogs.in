@@ -55,6 +55,8 @@ class AgentConfig(BaseModel):
     max_usd: float = Field(default=0.0, ge=0.0)
     daily_max_usd: float | None = Field(default=None, ge=0.0)
     allow_paid_provider: bool = False
+    coding_agent: str = ""
+    coding_agent_model: str = ""
 
     @property
     def normalized_hub_url(self) -> str:

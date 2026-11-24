@@ -39,6 +39,9 @@ class RegisterAgentRequest(BaseModel):
     mode: str = "auto"
     region: str = "IN"
     capabilities: list[str] = Field(default_factory=list)
+    # Which AI coding agent runs this node (e.g. "Claude Code", "Antigravity") and its model.
+    coding_agent: str | None = Field(default=None, max_length=80)
+    coding_agent_model: str | None = Field(default=None, max_length=120)
 
 
 class DeskNextRequest(BaseModel):

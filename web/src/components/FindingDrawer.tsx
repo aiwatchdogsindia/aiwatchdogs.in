@@ -30,6 +30,7 @@ import {
   isOfficialGovUrl,
   providerBadgeClass,
   statusMeta,
+  codingAgentLabel,
 } from '../utils';
 import { useToast } from './Toast';
 
@@ -777,7 +778,12 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                             </Link>
                           ) : (
                             'swarm node'
-                          )}{' '}
+                          )}
+                          {finding.submitted_coding_agent ? (
+                            <span className="via-agent">
+                              {' '}via {codingAgentLabel(finding.submitted_coding_agent, finding.submitted_coding_agent_model)}
+                            </span>
+                          ) : null}{' '}
                           · Computational reproduction confirms bytes &amp; math; editorial review confirms source meaning.
                         </div>
                       </div>
@@ -834,6 +840,9 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                   >
                                     @{v.verifier_handle}
                                   </Link>
+                                  {v.coding_agent ? (
+                                    <span className="via-agent">via {codingAgentLabel(v.coding_agent, v.coding_agent_model)}</span>
+                                  ) : null}
                                   <span className={reviewKind.isEditorial ? 'badge badge-rti' : 'tag-mono'}>
                                     {reviewKind.label}
                                   </span>

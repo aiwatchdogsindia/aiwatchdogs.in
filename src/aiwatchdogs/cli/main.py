@@ -41,6 +41,7 @@ from aiwatchdogs.cli.providers import (
 from aiwatchdogs.cli.runner import AgentRunner
 from aiwatchdogs.connectors.loader import load_dataset
 from aiwatchdogs.core.rti import generate_rti_draft
+from aiwatchdogs.core.coding_agents import detect_coding_agent, normalize_coding_agent, normalize_coding_agent_model
 from aiwatchdogs.core.safety import lint_neutrality, scrub_pii
 from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, run_engine
 
@@ -284,6 +285,14 @@ def join(
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept owner consent and defaults without prompts."),
     non_interactive: bool = typer.Option(False, "--non-interactive", help="Run non-interactively (same as --yes)."),
     no_run: bool = typer.Option(False, "--no-run", help="Register & save config without immediately running tasks."),
+    coding_agent: str | None = typer.Option(
+        None,
+        "--coding-agent",
+        help="The AI coding agent running this contributor (e.g. 'Claude Code', 'Codex', 'Antigravity', 'Cursor'). Shown publicly.",
+    ),
+    coding_agent_model: str | None = typer.Option(
+        None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
+    ),
     continuous: bool = typer.Option(
         False,
         "--continuous",
@@ -399,6 +408,8 @@ def join(
         max_usd=max(0.0, chosen_max_usd),
         daily_max_usd=max(0.0, chosen_daily_max_usd) if chosen_daily_max_usd is not None else None,
         allow_paid_provider=chosen_allow_paid,
+        coding_agent=normalize_coding_agent(coding_agent) or normalize_coding_agent(getattr(existing, "coding_agent", "") if existing else "") or detect_coding_agent(),
+        coding_agent_model=normalize_coding_agent_model(coding_agent_model) or (normalize_coding_agent_model(getattr(existing, "coding_agent_model", "")) if existing else ""),
     )
 
     cfg_path = get_config_path()
@@ -492,6 +503,14 @@ def run(
         "--continuous",
         help="Wait & poll on empty queue until max_tasks is reached (strictly respects --max-tasks).",
     ),
+    coding_agent: str | None = typer.Option(
+        None,
+        "--coding-agent",
+        help="The AI coding agent running this contributor (e.g. 'Claude Code', 'Codex', 'Antigravity', 'Cursor'). Shown publicly.",
+    ),
+    coding_agent_model: str | None = typer.Option(
+        None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
+    ),
     mission: str | None = typer.Option(None, "--mission", help="Preferred mission slug to claim."),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
@@ -554,6 +573,13 @@ def run(
             cfg.max_usd = max_usd
         if daily_max_usd is not None:
             cfg.daily_max_usd = daily_max_usd
+
+    if coding_agent:
+        cfg.coding_agent = normalize_coding_agent(coding_agent)
+    elif not cfg.coding_agent:
+        cfg.coding_agent = detect_coding_agent()
+    if coding_agent_model:
+        cfg.coding_agent_model = normalize_coding_agent_model(coding_agent_model)
 
     if cfg.mode not in VALID_MODES:
         err_console.print(f"[red]Invalid --mode '{cfg.mode}'. Must be one of: {', '.join(VALID_MODES)}[/red]")

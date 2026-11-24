@@ -34,6 +34,7 @@ import {
   isUnverifiedStatus,
   isVerifiedStatus,
   statusMeta,
+  codingAgentLabel,
 } from '../utils';
 
 const ObservatoryMap = lazy(() =>
@@ -651,6 +652,7 @@ export function HomePage({
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">
                   last check {formatRelativeTime(agent.last_heartbeat)}
+                  {agent.coding_agent ? ` · via ${codingAgentLabel(agent.coding_agent, agent.coding_agent_model)}` : ''}
                 </span>
               </div>
               <div className="lb-score-wrap tabular">
