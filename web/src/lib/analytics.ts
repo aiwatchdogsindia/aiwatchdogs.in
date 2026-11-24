@@ -1,7 +1,8 @@
 /*
  * Google Analytics 4, loaded only when VITE_GA_MEASUREMENT_ID is set at build time
  * (Vercel → Project → Settings → Environment Variables, e.g. G-XXXXXXXXXX).
- * The site is a single-page app, so page views are sent on every in-app navigation.
+ * Page views (including in-app navigations) are counted by GA4 Enhanced Measurement;
+ * keep "Page changes based on browser history events" enabled on the web stream.
  */
 
 declare global {
@@ -29,24 +30,14 @@ export function initAnalytics(): void {
     window.dataLayer!.push(arguments);
   };
   window.gtag('js', new Date());
-  // Page views are sent manually on route changes (see trackPageView).
-  window.gtag('config', MEASUREMENT_ID, { send_page_view: false });
+  // GA4 sends the first page view itself, and its Enhanced Measurement ("page changes
+  // based on browser history events", on by default) counts every in-app navigation.
+  // Sending our own page_view as well would count each page twice, so we don't.
+  window.gtag('config', MEASUREMENT_ID);
   const script = document.createElement('script');
   script.async = true;
   script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(MEASUREMENT_ID)}`;
   document.head.appendChild(script);
-}
-
-let lastPath = '';
-
-export function trackPageView(path: string): void {
-  if (!analyticsEnabled() || !window.gtag || path === lastPath) return;
-  lastPath = path;
-  window.gtag('event', 'page_view', {
-    page_path: path,
-    page_location: window.location.origin + path,
-    page_title: document.title,
-  });
 }
 
 export function trackEvent(name: string, params: Record<string, string | number | boolean> = {}): void {
