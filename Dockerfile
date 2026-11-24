@@ -1,18 +1,18 @@
-# Stage 1: Build the React + TypeScript + Vite dashboard
-FROM node:26-slim AS web-builder
+# Stage 1: Build the React + TypeScript + Vite dashboard (pinned Node version)
+FROM node:26.13.1-slim AS web-builder
 
 WORKDIR /app/web
 
-COPY web/package.json web/package-lock.json* ./
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
 
 COPY web/ ./
 RUN npm run build
 
-# Stage 2: Python 3.14 + uv runtime serving API + built web/dist on port 8000
-FROM python:3.14-slim AS runtime
+# Stage 2: Pinned Python 3.14 + pinned uv runtime serving API + built web/dist on port 8000
+FROM python:3.14.7-slim AS runtime
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
@@ -26,11 +26,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     HOST=0.0.0.0 \
     PORT=8000
 
-COPY pyproject.toml uv.lock* README.md LICENSE ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ ./src/
-COPY datasets/ ./datasets/
 
-RUN if [ -f uv.lock ]; then uv sync --no-dev --frozen; else uv sync --no-dev; fi
+RUN uv sync --no-dev --frozen
 
 COPY --from=web-builder /app/web/dist ./web/dist
 
@@ -43,6 +42,6 @@ USER aiwatchdogs
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)" || exit 1
+    CMD python3 -c "import json, sys, urllib.request; r = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3); d = json.loads(r.read().decode()); sys.exit(0 if r.status == 200 and d.get('db_ok') is True and d.get('status') == 'ok' else 1)"
 
 CMD ["uv", "run", "--no-sync", "aiwatchdogs-hub"]

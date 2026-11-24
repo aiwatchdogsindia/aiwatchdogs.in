@@ -1,25 +1,69 @@
-"""Desk coordination logic, quorum verification, neutrality enforcement, and read queries."""
+"""Desk coordination logic, strict peer quorum, quarantine, treasury, coverage, and read queries."""
 
 from __future__ import annotations
 
 import csv
 import io
+import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import HTTPException, status
 
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
-from aiwatchdogs.hub.seed import INDEPENDENCE_PLEDGE
+from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 LEASE_MINUTES = 45
-VALID_VERDICTS = frozenset({"confirm", "dispute", "reject_false_positive", "flag_pii_or_legal"})
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_RETRY_BASE_SECONDS = 30
+
+VALID_VERDICTS: frozenset[str] = frozenset(
+    {"confirm", "dispute", "needs_review", "reject_false_positive", "flag_pii_or_legal"}
+)
+VALID_REVIEW_TYPES: frozenset[str] = frozenset(
+    {"computational_reproduction", "editorial_review", "adjudication"}
+)
+CANONICAL_CHECKS: tuple[str, ...] = (
+    "bytes_digest",
+    "deterministic_reproduction",
+    "metric_tolerance",
+    "neutrality_privacy",
+)
+_LEGACY_CHECK_TO_CANONICAL: dict[str, str] = {
+    "provenance_ok": "bytes_digest",
+    "math_reproduced": "deterministic_reproduction",
+    "rule_valid": "metric_tolerance",
+    "legal_pii_ok": "neutrality_privacy",
+}
+VALID_CHECK_STATES: frozenset[str] = frozenset({"pass", "fail", "unrecorded"})
+
+# Published transparent scoring weights used to derive both all-time and hourly leaderboards
+# strictly from timestamped rows in ``score_events`` (zero hybrid double-counting).
+SCORE_WEIGHTS: dict[str, int] = {
+    "finding_submitted": 10,
+    "finding_verified_author_bonus": 20,
+    "peer_verification": 15,
+    "cleared_scan": 10,
+}
+
+QUARANTINE_NOTICE = (
+    "This record has been quarantined pending human privacy and legal review. "
+    "Raw narrative, metrics, citations, and traces are withheld."
+)
+
+_SHARED_DATASET_NOTES: dict[str, str] = {
+    "assam-ocds-single-bid": "Shares the 39,502-row Assam OCDS FY 2016–22 tender-estimate CSV with M2; deduplicated in coverage totals.",
+    "assam-gfr-split-tendering": "Shares the 39,502-row Assam OCDS FY 2016–22 tender-estimate CSV with M1; deduplicated in coverage totals.",
+    "ocds-vendor-concentration": "Shares the 43,669-release Assam OCDS JSON package with M4; deduplicated in coverage totals.",
+    "ocds-cost-escalation-watch": "Shares the 43,669-release Assam OCDS JSON package with M3; deduplicated in coverage totals.",
+}
 
 
 def _parse_iso(ts: str | None) -> datetime | None:
@@ -36,8 +80,133 @@ def _future_iso(minutes: int = LEASE_MINUTES) -> str:
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _future_iso_seconds(seconds: int) -> str:
+    dt = datetime.now(timezone.utc) + timedelta(seconds=max(0, int(seconds)))
+    return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
 def _inr_to_cr(amount: float | int | None) -> float:
     return round(float(amount or 0.0) / 10_000_000.0, 2)
+
+
+def _scrub_recursive(value: Any) -> tuple[Any, list[str]]:
+    """Recursively scrub PII from strings, nested containers, and dict keys."""
+    redactions: list[str] = []
+
+    def _add(tags: list[str]) -> None:
+        for t in tags:
+            if t not in redactions:
+                redactions.append(t)
+
+    def _walk(item: Any, depth: int = 0) -> Any:
+        if depth > 24:
+            return item
+        if isinstance(item, str):
+            cleaned, tags = scrub_pii(item)
+            _add(tags)
+            return cleaned
+        if isinstance(item, list):
+            return [_walk(v, depth + 1) for v in item]
+        if isinstance(item, tuple):
+            return [_walk(v, depth + 1) for v in item]
+        if isinstance(item, dict):
+            out: dict[Any, Any] = {}
+            for k, v in item.items():
+                if isinstance(k, str):
+                    clean_k, ktags = scrub_pii(k)
+                    _add(ktags)
+                else:
+                    clean_k = k
+                out[clean_k] = _walk(v, depth + 1)
+            return out
+        return item
+
+    # Delegate primitives/lists/dicts cleanly while guaranteeing key scrubbing too
+    cleaned_val = _walk(value)
+    if isinstance(value, (dict, list)):
+        _, extra = scrub_pii_in_obj(cleaned_val)
+        _add(extra)
+    return cleaned_val, redactions
+
+
+def _normalize_check_state(raw_val: Any, *, field_name: str, strict: bool) -> str:
+    if raw_val is None:
+        return "unrecorded"
+    if isinstance(raw_val, bool):
+        return "pass" if raw_val else "fail"
+    if isinstance(raw_val, str):
+        norm = raw_val.strip().lower()
+        if norm in VALID_CHECK_STATES:
+            return norm
+        if norm in {"true", "ok", "passed"}:
+            return "pass"
+        if norm in {"false", "failed"}:
+            return "fail"
+        if norm in {"", "unknown", "none", "null", "n/a"}:
+            return "unrecorded"
+    if strict:
+        raise HTTPException(
+            status_code=422,
+            detail=f"checks.{field_name} must be 'pass', 'fail', or 'unrecorded'",
+        )
+    return "unrecorded"
+
+
+def _normalize_checks(raw_checks: Any, *, strict: bool = False) -> dict[str, str]:
+    """Normalize verification checks to the 4 canonical tri-state keys.
+
+    Missing checks ALWAYS normalize to ``"unrecorded"`` — never ``"pass"``.
+    """
+    result: dict[str, str] = {key: "unrecorded" for key in CANONICAL_CHECKS}
+    if not isinstance(raw_checks, dict):
+        if strict and raw_checks is not None:
+            raise HTTPException(status_code=422, detail="verification.checks must be an object")
+        return result
+
+    # Map legacy keys first so canonical keys take precedence if both supplied
+    for legacy_key, canon_key in _LEGACY_CHECK_TO_CANONICAL.items():
+        if legacy_key in raw_checks:
+            result[canon_key] = _normalize_check_state(
+                raw_checks[legacy_key], field_name=legacy_key, strict=strict
+            )
+
+    for canon_key in CANONICAL_CHECKS:
+        if canon_key in raw_checks:
+            result[canon_key] = _normalize_check_state(
+                raw_checks[canon_key], field_name=canon_key, strict=strict
+            )
+
+    return result
+
+
+def _all_checks_passed(checks: dict[str, str]) -> bool:
+    return all(checks.get(k) == "pass" for k in CANONICAL_CHECKS)
+
+
+def _is_quarantined_row(row: Any) -> bool:
+    try:
+        q = bool(row["quarantined"])
+    except (KeyError, IndexError):
+        q = False
+    return q or str(row["status"] or "") == "quarantined"
+
+
+def _row_get(row: Any, key: str, default: Any = None) -> Any:
+    try:
+        val = row[key]
+        return default if val is None else val
+    except (KeyError, IndexError):
+        return default
+
+
+def _domain_of(url: str | None) -> str:
+    if not url:
+        return ""
+    try:
+        host = (urlparse(url).hostname or "").lower()
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return ""
 
 
 class DeskService:
@@ -60,6 +229,10 @@ class DeskService:
             "pillar": row["pillar"],
             "authority": row["authority"],
             "base_url": row["base_url"],
+            "official_publisher": _row_get(row, "official_publisher", "") or row["authority"],
+            "source_landing_page": _row_get(row, "source_landing_page", "") or row["base_url"],
+            "mirror_name": _row_get(row, "mirror_name", ""),
+            "retrieval_url": _row_get(row, "retrieval_url", "") or row["base_url"],
             "ingestion_tier": row["ingestion_tier"],
             "connector_type": row["connector_type"],
             "data_contents": row["data_contents"],
@@ -70,16 +243,43 @@ class DeskService:
         }
 
     @staticmethod
+    def _serialize_correction(row: Any) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "finding_id": row["finding_id"],
+            "correction_type": row["correction_type"],
+            "previous_status": row["previous_status"],
+            "new_status": row["new_status"],
+            "summary": row["summary"],
+            "details": row["details"],
+            "source_evidence_url": row["source_evidence_url"],
+            "reviewed_by": row["reviewed_by"],
+            "created_at": row["created_at"],
+        }
+
+    @staticmethod
     def _serialize_mission(
         row: Any,
         queued_tasks: int = 0,
         peer_review_count: int = 0,
         rungs: list[dict[str, Any]] | None = None,
+        unique_coverage_inr: float | None = None,
+        cleared_findings_count: int | None = None,
     ) -> dict[str, Any]:
         total = int(row["total_tasks"] or 0)
         completed = int(row["completed_tasks"] or 0)
         progress_pct = round((completed / total) * 100.0, 1) if total > 0 else 0.0
-        monetary = float(row["monetary_audited_inr"] or 0.0)
+        workload_inr = float(row["monetary_audited_inr"] or 0.0)
+        uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
+        qty_type = str(_row_get(row, "financial_quantity_type", "") or "")
+        qty_label = FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported mission figure")
+        cleared_scans = int(row["cleared_count"] or 0)
+        cleared_findings = int(
+            cleared_findings_count
+            if cleared_findings_count is not None
+            else _row_get(row, "cleared_findings_count", 0)
+        )
+        unevaluable = int(_row_get(row, "unevaluable_count", 0))
         return {
             "id": row["id"],
             "slug": row["slug"],
@@ -102,19 +302,42 @@ class DeskService:
             "progress_pct": progress_pct,
             "verified_findings_count": int(row["verified_findings_count"] or 0),
             "peer_review_count": peer_review_count,
-            "cleared_count": int(row["cleared_count"] or 0),
-            "monetary_audited_inr": monetary,
-            "monetary_audited_inr_cr": _inr_to_cr(monetary),
+            "cleared_count": cleared_scans,
+            "cleared_scans_count": cleared_scans,
+            "cleared_findings_count": cleared_findings,
+            "unevaluable_count": unevaluable,
+            "monetary_audited_inr": workload_inr,
+            "monetary_audited_inr_cr": _inr_to_cr(workload_inr),
+            "scan_workload_inr": workload_inr,
+            "scan_workload_inr_cr": _inr_to_cr(workload_inr),
+            "unique_coverage_inr": uniq_inr,
+            "unique_coverage_inr_cr": _inr_to_cr(uniq_inr),
+            "monetary_unit": str(_row_get(row, "monetary_unit", "inr") or "inr"),
+            "financial_quantity_type": qty_type,
+            "financial_quantity_label": qty_label,
+            "coverage_note": _SHARED_DATASET_NOTES.get(
+                row["slug"],
+                f"Unit: {qty_label}. Deduplicated by unique dataset key.",
+            ),
             "rungs": list(rungs) if rungs is not None else [],
             "created_at": row["created_at"],
         }
 
     @staticmethod
-    def _serialize_agent(row: Any, window_score: int | None = None) -> dict[str, Any]:
+    def _serialize_agent(
+        row: Any,
+        *,
+        window_score: int | None = None,
+        all_time_score: int | None = None,
+        hourly_event_score: int | None = None,
+    ) -> dict[str, Any]:
         last_hb = _parse_iso(row["last_heartbeat_at"])
         now = datetime.now(timezone.utc)
         age_sec = int((now - last_hb).total_seconds()) if last_hb else 999999
         is_online = age_sec <= 3600
+        comp_score = int(all_time_score if all_time_score is not None else (row["compute_score"] or 0))
+        hr_score = int(hourly_event_score if hourly_event_score is not None else 0)
+        eff_score = int(window_score if window_score is not None else comp_score)
         return {
             "id": row["id"],
             "agent_id": row["id"],
@@ -133,10 +356,10 @@ class DeskService:
             "findings_verified": int(row["findings_verified"] or 0),
             "verifications_done": int(row["verifications_done"] or 0),
             "cleared_submitted": int(row["cleared_submitted"] or 0),
-            "compute_score": int(row["compute_score"] or 0),
-            "score": int(window_score if window_score is not None else (row["compute_score"] or 0)),
-            "window_score": int(window_score if window_score is not None else (row["compute_score"] or 0)),
-            "hourly_score": int(row["hourly_score"] or 0),
+            "compute_score": comp_score,
+            "score": eff_score,
+            "window_score": eff_score,
+            "hourly_score": hr_score,
             "current_task_id": row["current_task_id"],
             "joined_at": row["joined_at"],
             "last_heartbeat_at": row["last_heartbeat_at"],
@@ -144,8 +367,100 @@ class DeskService:
         }
 
     @staticmethod
-    def _serialize_finding(row: Any, has_rti_draft: bool = False) -> dict[str, Any]:
+    def _serialize_quarantined_finding(
+        row: Any,
+        *,
+        corrections: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        corr_list = list(corrections) if corrections is not None else []
+        latest = corr_list[-1] if corr_list else None
+        return {
+            "id": row["id"],
+            "mission_id": row["mission_id"],
+            "mission_slug": row["mission_slug"],
+            "pillar": row["pillar"],
+            "task_id": None,
+            "artifact_id": None,
+            "source_id": None,
+            "title": "Record quarantined pending privacy/legal review",
+            "summary": QUARANTINE_NOTICE,
+            "editorial_interpretation": "",
+            "methodology_code": row["methodology_code"],
+            "entity_name": "[Withheld pending privacy/legal review]",
+            "jurisdiction": row["jurisdiction"],
+            "fiscal_year": row["fiscal_year"],
+            "fiscal_year_start": None,
+            "fiscal_year_end": None,
+            "monetary_exposure_inr": None,
+            "monetary_exposure_inr_cr": None,
+            "severity": "withheld",
+            "anomaly_metrics": {},
+            "rule_triggered": "",
+            "engine_version": "",
+            "ruleset_version": "",
+            "as_of_date": None,
+            "source_locator": {},
+            "source_url": "",
+            "artifact_sha256": None,
+            "secondary_sha256": None,
+            "dataset_path": "",
+            "provenance": {},
+            "is_demo_sample": bool(row["is_demo_sample"]),
+            "citations": [],
+            "benign_explanations": [],
+            "suggested_authority": "",
+            "submitted_by": None,
+            "agent_trace": {},
+            "legal_lint_passed": False,
+            "pii_scrubbed": False,
+            "status": "quarantined",
+            "editorial_status": "quarantined",
+            "quarantined": True,
+            "quarantine_notice": QUARANTINE_NOTICE,
+            "verification_score": 0.0,
+            "confirm_count": 0,
+            "dispute_count": int(row["dispute_count"] or 0),
+            "required_quorum": int(row["required_quorum"] or 2),
+            "has_rti_draft": False,
+            "correction_count": len(corr_list),
+            "has_corrections": len(corr_list) > 0,
+            "latest_correction": latest,
+            "created_at": row["created_at"],
+            "verified_at": None,
+        }
+
+    @classmethod
+    def _serialize_finding(
+        cls,
+        row: Any,
+        *,
+        has_rti_draft: bool = False,
+        corrections: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        if _is_quarantined_row(row):
+            return cls._serialize_quarantined_finding(row, corrections=corrections)
+
         exposure = float(row["monetary_exposure_inr"] or 0.0)
+        raw_sha = str(row["artifact_sha256"] or "").strip()
+        artifact_sha256: str | None = raw_sha if raw_sha else None
+        raw_sec_sha = str(_row_get(row, "secondary_sha256", "") or "").strip()
+        secondary_sha256: str | None = raw_sec_sha if raw_sec_sha else None
+
+        # Defensive recursive PII scrubbing on nested objects
+        anomaly_metrics, _ = _scrub_recursive(loads_json(row["anomaly_metrics_json"], {}))
+        agent_trace, _ = _scrub_recursive(loads_json(row["agent_trace_json"], {}))
+        citations, _ = _scrub_recursive(loads_json(row["citations_json"], []))
+        benign, _ = _scrub_recursive(loads_json(row["benign_explanations_json"], []))
+        source_locator, _ = _scrub_recursive(loads_json(_row_get(row, "source_locator_json", "{}"), {}))
+        provenance = loads_json(_row_get(row, "provenance_json", "{}"), {})
+        if not isinstance(provenance, dict):
+            provenance = {}
+        editorial_interp, _ = scrub_pii(str(_row_get(row, "editorial_interpretation", "") or ""))
+
+        corr_list = list(corrections) if corrections is not None else []
+        latest_corr = corr_list[-1] if corr_list else None
+        editorial_status = str(_row_get(row, "editorial_status", "none") or "none")
+
         return {
             "id": row["id"],
             "mission_id": row["mission_id"],
@@ -153,40 +468,63 @@ class DeskService:
             "pillar": row["pillar"],
             "task_id": row["task_id"],
             "artifact_id": row["artifact_id"],
+            "source_id": _row_get(row, "source_id", None),
             "title": row["title"],
             "summary": row["summary"],
+            "editorial_interpretation": editorial_interp,
             "methodology_code": row["methodology_code"],
             "entity_name": row["entity_name"],
             "jurisdiction": row["jurisdiction"],
             "fiscal_year": row["fiscal_year"],
+            "fiscal_year_start": _row_get(row, "fiscal_year_start", None),
+            "fiscal_year_end": _row_get(row, "fiscal_year_end", None),
             "monetary_exposure_inr": exposure,
             "monetary_exposure_inr_cr": _inr_to_cr(exposure),
             "severity": row["severity"],
-            "anomaly_metrics": loads_json(row["anomaly_metrics_json"], {}),
+            "anomaly_metrics": anomaly_metrics if isinstance(anomaly_metrics, dict) else {},
             "rule_triggered": row["rule_triggered"],
+            "engine_version": str(_row_get(row, "engine_version", "") or ""),
+            "ruleset_version": str(_row_get(row, "ruleset_version", "") or ""),
+            "as_of_date": _row_get(row, "as_of_date", None),
+            "source_locator": source_locator,
             "source_url": row["source_url"],
-            "artifact_sha256": row["artifact_sha256"],
+            "artifact_sha256": artifact_sha256,
+            "secondary_sha256": secondary_sha256,
             "dataset_path": row["dataset_path"],
+            "provenance": provenance,
             "is_demo_sample": bool(row["is_demo_sample"]),
-            "citations": loads_json(row["citations_json"], []),
-            "benign_explanations": loads_json(row["benign_explanations_json"], []),
+            "citations": citations if isinstance(citations, list) else [],
+            "benign_explanations": benign if isinstance(benign, list) else [],
             "suggested_authority": row["suggested_authority"],
             "submitted_by": row["submitted_by"],
-            "agent_trace": loads_json(row["agent_trace_json"], {}),
+            "agent_trace": agent_trace if isinstance(agent_trace, dict) else {},
             "legal_lint_passed": bool(row["legal_lint_passed"]),
             "pii_scrubbed": bool(row["pii_scrubbed"]),
             "status": row["status"],
+            "editorial_status": editorial_status,
+            "quarantined": False,
+            "quarantine_notice": None,
             "verification_score": float(row["verification_score"] or 0.0),
             "confirm_count": int(row["confirm_count"] or 0),
             "dispute_count": int(row["dispute_count"] or 0),
             "required_quorum": int(row["required_quorum"] or 2),
             "has_rti_draft": has_rti_draft,
+            "correction_count": len(corr_list),
+            "has_corrections": len(corr_list) > 0,
+            "latest_correction": latest_corr,
             "created_at": row["created_at"],
             "verified_at": row["verified_at"],
         }
 
     @staticmethod
     def _serialize_verification(row: Any) -> dict[str, Any]:
+        raw_checks = loads_json(row["checks_json"], {})
+        checks = _normalize_checks(raw_checks, strict=False)
+        repro, _ = _scrub_recursive(loads_json(row["reproduced_metrics_json"], {}))
+        manifest, _ = _scrub_recursive(loads_json(_row_get(row, "manifest_json", "{}"), {}))
+        manifest_dict = manifest if isinstance(manifest, dict) else {}
+        raw_conf = row["confidence"]
+        confidence: float | None = float(raw_conf) if raw_conf is not None else None
         return {
             "id": row["id"],
             "finding_id": row["finding_id"],
@@ -195,31 +533,51 @@ class DeskService:
             "verifier_handle": row["verifier_handle"],
             "provider": row["provider"],
             "model_id": row["model_id"],
+            "review_type": str(_row_get(row, "review_type", "computational_reproduction") or "computational_reproduction"),
             "verdict": row["verdict"],
-            "checks": loads_json(row["checks_json"], {}),
-            "reproduced_metrics": loads_json(row["reproduced_metrics_json"], {}),
-            "confidence": float(row["confidence"] or 0.0),
+            "checks": checks,
+            "all_checks_passed": _all_checks_passed(checks),
+            "reproduced_metrics": repro if isinstance(repro, dict) else {},
+            "manifest": manifest_dict,
+            "source_locator": manifest_dict.get("source_locator"),
+            "engine_version": manifest_dict.get("engine_version"),
+            "ruleset_version": manifest_dict.get("ruleset_version"),
+            "as_of_date": manifest_dict.get("as_of_date"),
+            "confidence": confidence,
             "notes": row["notes"],
             "created_at": row["created_at"],
         }
 
     @staticmethod
-    def _serialize_rti(row: Any) -> dict[str, Any]:
+    def _serialize_rti(row: Any, *, is_preview: bool = False, persisted: bool = True) -> dict[str, Any]:
+        fee_note = str(_row_get(row, "fee_note", "") or "")
         return {
             "id": row["id"],
             "finding_id": row["finding_id"],
+            "version": int(_row_get(row, "version", 1) or 1),
             "public_authority": row["public_authority"],
             "cpio_designation": row["cpio_designation"],
-            "rti_portal_url": row["rti_portal_url"],
+            "rti_portal_url": row["rti_portal_url"] or "",
+            "jurisdiction_level": str(_row_get(row, "jurisdiction_level", "central") or "central"),
+            "state_name": _row_get(row, "state_name", None),
+            "filing_channel": str(_row_get(row, "filing_channel", "central_online_portal") or "central_online_portal"),
+            "fee_note": fee_note,
+            "fee_rules": fee_note,
+            "central_portal_warning": str(_row_get(row, "central_portal_warning", "") or ""),
+            "human_filing_required": True,
             "statutory_sections": loads_json(row["statutory_sections_json"], []),
             "subject": row["subject"],
             "body_text": row["body_text"],
             "word_count": int(row["word_count"]),
             "requested_records": loads_json(row["requested_records_json"], []),
             "status": row["status"],
+            "editorial_notice": str(_row_get(row, "editorial_notice", "") or ""),
+            "is_preview": is_preview,
+            "persisted": persisted,
             "filed_date": row["filed_date"],
             "due_date_30d": row["due_date_30d"],
             "created_at": row["created_at"],
+            "updated_at": _row_get(row, "updated_at", None),
         }
 
     @staticmethod
@@ -238,13 +596,18 @@ class DeskService:
 
     @staticmethod
     def _serialize_sponsor(row: Any) -> dict[str, Any]:
+        pledge_status = str(_row_get(row, "pledge_status", "pledged") or "pledged")
         return {
             "id": row["id"],
             "name": row["name"],
             "handle_or_org": row["handle_or_org"],
             "tier": row["tier"],
             "amount_inr": float(row["amount_inr"] or 0.0),
+            "in_kind_value_inr": float(_row_get(row, "in_kind_value_inr", 0.0) or 0.0),
             "compute_credits_desc": row["compute_credits_desc"],
+            "pledge_status": pledge_status,
+            "settlement_status": pledge_status,
+            "reconciled_receipt_ref": _row_get(row, "reconciled_receipt_ref", None),
             "url": row["url"],
             "message": row["message"],
             "featured": bool(row["featured"]),
@@ -256,21 +619,129 @@ class DeskService:
     def _serialize_ledger(row: Any) -> dict[str, Any]:
         amt = float(row["amount_inr"] or 0.0)
         direction = row["direction"]
+        settlement_status = str(_row_get(row, "settlement_status", "pledged") or "pledged")
+        reconciled_ref = _row_get(row, "reconciled_receipt_ref", None)
+        is_cash_received = direction == "inflow" and settlement_status == "received" and bool(reconciled_ref)
+        if direction == "outflow":
+            signed = -amt
+        elif is_cash_received:
+            signed = amt
+        else:
+            signed = 0.0
         return {
             "id": row["id"],
             "entry_date": row["entry_date"],
             "entry_type": row["entry_type"],
             "direction": direction,
+            "settlement_status": settlement_status,
             "category": row["category"],
             "counterparty": row["counterparty"],
             "description": row["description"],
             "amount_inr": amt,
-            "signed_amount_inr": amt if direction == "inflow" else -amt,
+            "signed_amount_inr": signed,
             "compute_credit_units": row["compute_credit_units"],
             "receipt_ref": row["receipt_ref"],
+            "reconciled_receipt_ref": reconciled_ref,
+            "reconciled_at": _row_get(row, "reconciled_at", None),
+            "sponsor_id": _row_get(row, "sponsor_id", None),
             "is_demo_entry": bool(row["is_demo_entry"]),
             "created_at": row["created_at"],
         }
+
+    # ------------------------------------------------------------------
+    # Internal write helpers
+    # ------------------------------------------------------------------
+
+    def _emit_durable_event(
+        self,
+        conn: Any,
+        envelopes: list[dict[str, Any]],
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        env = self.broker.persist_event(conn, event_type, payload, created_at=now)
+        envelopes.append(env)
+        return env
+
+    def _broadcast_envelopes(self, envelopes: list[dict[str, Any]]) -> None:
+        for env in envelopes:
+            self.broker.publish_envelope(env)
+
+    def _record_score_event(
+        self,
+        conn: Any,
+        *,
+        agent_id: str | None,
+        agent_handle: str,
+        event_type: str,
+        ref_id: str | None,
+        now: str,
+    ) -> int:
+        points = int(SCORE_WEIGHTS[event_type])
+        se_id = f"se-{secrets.token_hex(6)}"
+        conn.execute(
+            """
+            INSERT INTO score_events (id, agent_id, agent_handle, event_type, points, ref_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (se_id, agent_id, agent_handle, event_type, points, ref_id, now),
+        )
+        total_row = conn.execute(
+            "SELECT COALESCE(SUM(points), 0) AS total_pts FROM score_events WHERE agent_handle = ?",
+            (agent_handle,),
+        ).fetchone()
+        new_total = int(total_row["total_pts"]) if total_row else points
+        conn.execute(
+            "UPDATE agents SET compute_score = ? WHERE handle = ?",
+            (new_total, agent_handle),
+        )
+        return points
+
+    def _fetch_score_maps(self, conn: Any) -> tuple[dict[str, int], dict[str, int]]:
+        cutoff = (
+            (datetime.now(timezone.utc) - timedelta(hours=1))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        all_time: dict[str, int] = {
+            str(r["agent_handle"]): int(r["pts"] or 0)
+            for r in conn.execute(
+                "SELECT agent_handle, COALESCE(SUM(points), 0) AS pts FROM score_events GROUP BY agent_handle"
+            ).fetchall()
+        }
+        hourly: dict[str, int] = {
+            str(r["agent_handle"]): int(r["pts"] or 0)
+            for r in conn.execute(
+                "SELECT agent_handle, COALESCE(SUM(points), 0) AS pts FROM score_events "
+                "WHERE created_at >= ? GROUP BY agent_handle",
+                (cutoff,),
+            ).fetchall()
+        }
+        return all_time, hourly
+
+    def _fetch_corrections_map(
+        self, conn: Any, finding_ids: list[str] | None = None
+    ) -> dict[str, list[dict[str, Any]]]:
+        if finding_ids is not None:
+            if not finding_ids:
+                return {}
+            placeholders = ",".join("?" for _ in finding_ids)
+            rows = conn.execute(
+                f"SELECT * FROM finding_corrections WHERE finding_id IN ({placeholders}) "
+                "ORDER BY created_at ASC, id ASC",
+                finding_ids,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM finding_corrections ORDER BY created_at ASC, id ASC"
+            ).fetchall()
+        out: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            out.setdefault(str(r["finding_id"]), []).append(self._serialize_correction(r))
+        return out
 
     def _insert_whisper(
         self,
@@ -312,19 +783,30 @@ class DeskService:
         now = utc_now_iso()
         lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
         expired = conn.execute(
-            f"SELECT id, claimed_by_agent_id FROM tasks "
+            f"SELECT id, claimed_by_agent_id, retry_count, max_retries FROM tasks "
             f"WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < ?{lock_clause}",
             (now,),
         ).fetchall()
+        base_delay = int(os.environ.get("AIWATCHDOGS_RETRY_BASE_SECONDS", str(DEFAULT_RETRY_BASE_SECONDS)))
         for row in expired:
+            next_retry = int(_row_get(row, "retry_count", 0) or 0) + 1
+            max_retries = int(_row_get(row, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
+            if next_retry >= max_retries:
+                next_status = "needs_adjudication"
+                avail_at: str | None = None
+            else:
+                next_status = "queued"
+                delay = min(900, max(0, base_delay) * (2 ** max(0, next_retry - 1)))
+                avail_at = _future_iso_seconds(delay) if delay > 0 else now
             conn.execute(
                 """
                 UPDATE tasks
-                SET status = 'queued', claimed_by_agent_id = NULL, claimed_by_handle = NULL,
-                    lease_id = NULL, lease_expires_at = NULL, progress_pct = 0, updated_at = ?
+                SET status = ?, claimed_by_agent_id = NULL, claimed_by_handle = NULL,
+                    lease_id = NULL, lease_expires_at = NULL, progress_pct = 0,
+                    retry_count = ?, available_at = ?, updated_at = ?
                 WHERE id = ? AND status = 'claimed'
                 """,
-                (now, row["id"]),
+                (next_status, next_retry, avail_at, now, row["id"]),
             )
             if row["claimed_by_agent_id"]:
                 conn.execute(
@@ -339,7 +821,7 @@ class DeskService:
         token: str | None,
         required: bool = True,
     ) -> Any | None:
-        if not token:
+        if not token or not token.strip():
             if required:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -355,6 +837,229 @@ class DeskService:
             )
         return agent
 
+    def _resolve_source_id(
+        self,
+        conn: Any,
+        *,
+        requested_source_id: str | None,
+        source_landing_page: str | None,
+        source_url: str | None,
+        dataset_url: str | None,
+    ) -> str | None:
+        """Resolve an accurate public_sources.id without blindly picking mission.source_ids[0]."""
+        if requested_source_id:
+            row = conn.execute(
+                "SELECT id FROM public_sources WHERE id = ?", (str(requested_source_id).strip(),)
+            ).fetchone()
+            if row is not None:
+                return str(row["id"])
+
+        candidate_domains = {
+            d
+            for d in (_domain_of(source_landing_page), _domain_of(source_url), _domain_of(dataset_url))
+            if d
+        }
+        if not candidate_domains:
+            return None
+
+        src_rows = conn.execute(
+            "SELECT id, base_url, source_landing_page, retrieval_url FROM public_sources"
+        ).fetchall()
+        for r in src_rows:
+            src_domains = {
+                d
+                for d in (
+                    _domain_of(r["base_url"]),
+                    _domain_of(_row_get(r, "source_landing_page", "")),
+                    _domain_of(_row_get(r, "retrieval_url", "")),
+                )
+                if d
+            }
+            if candidate_domains & src_domains:
+                return str(r["id"])
+        return None
+
+    def _compute_coverage_summary(
+        self,
+        conn: Any,
+        mission_rows: list[Any],
+    ) -> tuple[dict[str, float], dict[str, Any]]:
+        """Compute method scan workload separately from deduplicated coverage by financial unit.
+
+        Never double-counts shared files across missions (e.g. M1 + M2 Assam OCDS CSV) and
+        withholds cross-unit aggregate totals when incomparable financial quantities exist.
+        """
+        mission_by_id = {str(r["id"]): r for r in mission_rows}
+
+        # Map each mission -> {dataset_key: max_inr} from completed/settled anomaly_scan tasks
+        mission_datasets: dict[str, dict[str, float]] = {str(r["id"]): {} for r in mission_rows}
+        # Map each quantity_type -> {dataset_key: max_inr}, workload_inr, missions
+        qty_datasets: dict[str, dict[str, float]] = {}
+        qty_workload: dict[str, float] = {}
+        qty_missions: dict[str, set[str]] = {}
+
+        task_rows = conn.execute(
+            """
+            SELECT id, mission_id, mission_slug, task_type, dataset_key,
+                   financial_quantity_type, monetary_audited_inr, payload_json
+            FROM tasks
+            WHERE status IN ('completed', 'settled')
+              AND task_type IN ('anomaly_scan', 'ingest_parse')
+              AND COALESCE(monetary_audited_inr, 0) > 0
+            """
+        ).fetchall()
+
+        missions_with_task_amounts: set[str] = set()
+        for t in task_rows:
+            mid = str(t["mission_id"])
+            m_row = mission_by_id.get(mid)
+            if m_row is None:
+                continue
+            amt = float(t["monetary_audited_inr"] or 0.0)
+            if amt <= 0:
+                continue
+            missions_with_task_amounts.add(mid)
+            payload = loads_json(t["payload_json"], {})
+            dkey = str(
+                _row_get(t, "dataset_key", "")
+                or (payload.get("dataset_key") if isinstance(payload, dict) else "")
+                or (payload.get("dataset_url") if isinstance(payload, dict) else "")
+                or t["id"]
+            ).strip()
+            qtype = str(
+                _row_get(t, "financial_quantity_type", "")
+                or _row_get(m_row, "financial_quantity_type", "")
+                or "unspecified"
+            ).strip()
+
+            prev_m = mission_datasets[mid].get(dkey, 0.0)
+            if amt > prev_m:
+                mission_datasets[mid][dkey] = amt
+
+            qmap = qty_datasets.setdefault(qtype, {})
+            if amt > qmap.get(dkey, 0.0):
+                qmap[dkey] = amt
+            qty_workload[qtype] = qty_workload.get(qtype, 0.0) + amt
+            qty_missions.setdefault(qtype, set()).add(str(m_row["slug"]))
+
+        # Account for upgraded legacy missions that have monetary_audited_inr > 0 without task-level rows
+        for m_row in mission_rows:
+            mid = str(m_row["id"])
+            m_amt = float(m_row["monetary_audited_inr"] or 0.0)
+            if m_amt <= 0 or mid in missions_with_task_amounts:
+                continue
+            qtype = str(_row_get(m_row, "financial_quantity_type", "") or "unspecified").strip()
+            # Deduplicate known overlapping Assam missions even on legacy upgraded rows
+            if m_row["slug"] in ("assam-ocds-single-bid", "assam-gfr-split-tendering"):
+                dkey = "assam-ocds-v2-fy2016-22"
+            elif m_row["slug"] in ("ocds-vendor-concentration", "ocds-cost-escalation-watch"):
+                dkey = "assam-ocds-full-fy2016-23"
+            else:
+                dkey = f"mission:{m_row['slug']}"
+            mission_datasets[mid][dkey] = max(mission_datasets[mid].get(dkey, 0.0), m_amt)
+            qmap = qty_datasets.setdefault(qtype, {})
+            qmap[dkey] = max(qmap.get(dkey, 0.0), m_amt)
+            qty_workload[qtype] = qty_workload.get(qtype, 0.0) + m_amt
+            qty_missions.setdefault(qtype, set()).add(str(m_row["slug"]))
+
+        mission_unique_inr: dict[str, float] = {
+            mid: round(sum(dmap.values()), 2) for mid, dmap in mission_datasets.items()
+        }
+        total_scan_workload_inr = sum(float(r["monetary_audited_inr"] or 0.0) for r in mission_rows)
+
+        breakdown: list[dict[str, Any]] = []
+        for qtype in sorted(qty_datasets.keys()):
+            dmap = qty_datasets[qtype]
+            dedup_inr = round(sum(dmap.values()), 2)
+            if dedup_inr <= 0:
+                continue
+            breakdown.append(
+                {
+                    "quantity_type": qtype,
+                    "label": FINANCIAL_QUANTITY_LABELS.get(qtype, qtype),
+                    "unique_datasets": len(dmap),
+                    "deduplicated_inr": dedup_inr,
+                    "deduplicated_inr_cr": _inr_to_cr(dedup_inr),
+                    "scan_workload_inr_cr": _inr_to_cr(qty_workload.get(qtype, dedup_inr)),
+                    "missions": sorted(qty_missions.get(qtype, set())),
+                }
+            )
+
+        if len(breakdown) == 0:
+            unique_coverage_inr_cr: float | None = 0.0
+            withheld = False
+            reason: str | None = None
+        elif len(breakdown) == 1:
+            unique_coverage_inr_cr = float(breakdown[0]["deduplicated_inr_cr"])
+            withheld = False
+            reason = None
+        else:
+            unique_coverage_inr_cr = None
+            withheld = True
+            reason = (
+                "Aggregate unique public spend is withheld because completed scans span incomparable "
+                "financial quantities (e.g. tender estimates, awarded contracts, budget/treasury "
+                "expenditure, CAG report figures, scheme outlays, and electoral bond disclosures). "
+                "Inspect coverage_by_quantity_type for deduplicated per-unit totals."
+            )
+
+        summary = {
+            "scan_workload_inr_cr": _inr_to_cr(total_scan_workload_inr),
+            "unique_coverage_inr_cr": unique_coverage_inr_cr,
+            "unique_coverage_withheld": withheld,
+            "unique_coverage_reason": reason,
+            "coverage_by_quantity_type": breakdown,
+        }
+        return mission_unique_inr, summary
+
+    def _compute_treasury_summary(self, entries: list[dict[str, Any]]) -> dict[str, Any]:
+        pledged_inr = round(
+            sum(
+                e["amount_inr"]
+                for e in entries
+                if e["direction"] == "inflow"
+                and e["settlement_status"] == "pledged"
+                and e["entry_type"] != "compute_grant"
+            ),
+            2,
+        )
+        received_cash_inr = round(
+            sum(
+                e["amount_inr"]
+                for e in entries
+                if e["direction"] == "inflow"
+                and e["settlement_status"] == "received"
+                and bool(e.get("reconciled_receipt_ref"))
+            ),
+            2,
+        )
+        in_kind_compute_entries = [
+            e
+            for e in entries
+            if e["entry_type"] == "compute_grant"
+            or e["settlement_status"] in ("in_kind_committed", "in_kind_fulfilled")
+        ]
+        in_kind_compute_inr = round(sum(e["amount_inr"] for e in in_kind_compute_entries), 2)
+        total_outflow_inr = round(
+            sum(e["amount_inr"] for e in entries if e["direction"] == "outflow"),
+            2,
+        )
+        net_cash_balance_inr = round(received_cash_inr - total_outflow_inr, 2)
+        return {
+            "pledged_inr": pledged_inr,
+            "total_pledged_inr": pledged_inr,
+            "received_cash_inr": received_cash_inr,
+            "in_kind_compute_inr": in_kind_compute_inr,
+            "in_kind_compute_entries": len(in_kind_compute_entries),
+            "total_inflow_inr": received_cash_inr,
+            "total_outflow_inr": total_outflow_inr,
+            "net_cash_balance_inr": net_cash_balance_inr,
+            "net_balance_inr": net_cash_balance_inr,
+            "balance_inr": net_cash_balance_inr,
+            "compute_grants_inr": in_kind_compute_inr,
+            "entry_count": len(entries),
+        }
+
     # ------------------------------------------------------------------
     # Public Read Plane
     # ------------------------------------------------------------------
@@ -362,10 +1067,12 @@ class DeskService:
     def get_head(self) -> dict[str, Any]:
         generated_at = utc_now_iso()
         with self.db.read() as conn:
-            missions = self._fetch_missions(conn)
+            missions, coverage_summary = self._fetch_missions_with_coverage(conn)
             rti_finding_ids = {
                 r["finding_id"]
-                for r in conn.execute("SELECT finding_id FROM rti_drafts").fetchall()
+                for r in conn.execute(
+                    "SELECT finding_id FROM rti_drafts WHERE status NOT IN ('quarantined')"
+                ).fetchall()
             }
 
             min_agent_row = conn.execute("SELECT MIN(joined_at) AS min_ts FROM agents").fetchone()
@@ -380,8 +1087,17 @@ class DeskService:
                     started_candidates.append((parsed, ts_val))
             started_at = min(started_candidates, key=lambda item: item[0])[1] if started_candidates else generated_at
 
+            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
             all_agents = conn.execute("SELECT * FROM agents ORDER BY compute_score DESC, joined_at DESC").fetchall()
-            serialized_agents = [self._serialize_agent(r) for r in all_agents]
+            serialized_agents = [
+                self._serialize_agent(
+                    r,
+                    all_time_score=all_time_scores.get(r["handle"], int(r["compute_score"] or 0)),
+                    hourly_event_score=hourly_scores.get(r["handle"], 0),
+                )
+                for r in all_agents
+            ]
+            serialized_agents.sort(key=lambda a: (a["compute_score"], a["tasks_completed"]), reverse=True)
             active_agents = [a for a in serialized_agents if a["is_active"]]
 
             just_joined_rows = conn.execute(
@@ -403,7 +1119,7 @@ class DeskService:
                 SELECT id, title, methodology_code, entity_name, monetary_exposure_inr,
                        verified_at, created_at, is_demo_sample
                 FROM findings
-                WHERE status IN ('verified', 'rti_filed')
+                WHERE status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0
                 ORDER BY COALESCE(verified_at, created_at) DESC, id ASC
                 LIMIT 1
                 """
@@ -425,19 +1141,27 @@ class DeskService:
             recent_finding_rows = conn.execute(
                 """
                 SELECT * FROM findings
+                WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined'
                 ORDER BY
                     CASE status
                         WHEN 'verified' THEN 0
                         WHEN 'peer_review' THEN 1
                         WHEN 'cleared' THEN 2
-                        ELSE 3
+                        WHEN 'under_review' THEN 3
+                        ELSE 4
                     END,
                     COALESCE(verified_at, created_at) DESC
                 LIMIT 12
                 """
             ).fetchall()
+            recent_fids = [str(r["id"]) for r in recent_finding_rows]
+            corr_map = self._fetch_corrections_map(conn, recent_fids)
             recent_findings = [
-                self._serialize_finding(r, has_rti_draft=(r["id"] in rti_finding_ids))
+                self._serialize_finding(
+                    r,
+                    has_rti_draft=(r["id"] in rti_finding_ids),
+                    corrections=corr_map.get(str(r["id"]), []),
+                )
                 for r in recent_finding_rows
             ]
 
@@ -446,6 +1170,7 @@ class DeskService:
                 SELECT pv.*, f.title AS finding_title, f.methodology_code, f.status AS finding_status
                 FROM peer_verifications pv
                 JOIN findings f ON f.id = pv.finding_id
+                WHERE COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
                 ORDER BY pv.created_at DESC, pv.id ASC
                 LIMIT 6
                 """
@@ -485,30 +1210,45 @@ class DeskService:
                 for r in recent_sponsor_rows
             ]
 
+            ledger_rows = conn.execute("SELECT * FROM treasury_ledger").fetchall()
+            treasury_summary = self._compute_treasury_summary(
+                [self._serialize_ledger(r) for r in ledger_rows]
+            )
+
             record_events = self._build_record_events(conn, limit=20)
 
-            # Aggregate stats
-            spend_inr = sum(m["monetary_audited_inr"] for m in missions)
-            tasks_completed = conn.execute(
-                "SELECT COUNT(*) AS c FROM tasks WHERE status IN ('completed', 'settled')"
-            ).fetchone()["c"]
-            tasks_queued = conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status = 'queued'").fetchone()["c"]
+            tasks_completed = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM tasks WHERE status IN ('completed', 'settled')"
+                ).fetchone()["c"]
+            )
+            tasks_queued = int(
+                conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE status = 'queued'").fetchone()["c"]
+            )
             status_counts = {
-                r["status"]: r["c"]
+                str(r["status"]): int(r["c"])
                 for r in conn.execute("SELECT status, COUNT(*) AS c FROM findings GROUP BY status").fetchall()
             }
+            quarantined_cnt = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM findings WHERE COALESCE(quarantined, 0) = 1 OR status = 'quarantined'"
+                ).fetchone()["c"]
+            )
             verified_cnt = status_counts.get("verified", 0) + status_counts.get("rti_filed", 0)
             peer_review_cnt = status_counts.get("peer_review", 0) + status_counts.get("raw_lead", 0)
-            cleared_cnt = status_counts.get("cleared", 0) + status_counts.get("resolved_explained", 0)
-            disputed_cnt = status_counts.get("disputed", 0) + status_counts.get("retracted_false_positive", 0)
+            cleared_findings_cnt = status_counts.get("cleared", 0) + status_counts.get("resolved_explained", 0)
+            disputed_cnt = status_counts.get("disputed", 0)
+            under_review_cnt = status_counts.get("under_review", 0)
+            retracted_cnt = status_counts.get("retracted", 0) + status_counts.get("retracted_false_positive", 0)
+            cleared_scans_cnt = sum(int(m["cleared_scans_count"]) for m in missions)
+            unevaluable_groups_cnt = sum(int(m["unevaluable_count"]) for m in missions)
             rtis_drafted = len(rti_finding_ids)
-            sponsors_total = float(
-                conn.execute("SELECT COALESCE(SUM(amount_inr), 0) AS s FROM sponsors").fetchone()["s"] or 0.0
-            )
+            latest_event_row = conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM events").fetchone()
+            latest_event_id = int(latest_event_row["max_id"]) if latest_event_row else 0
 
         if verified_cnt == 0 and peer_review_cnt == 0:
             orchestrator_brief = (
-                f"Live Government of India Audit Queue: {tasks_queued} verified official datasets "
+                f"Live Government of India Audit Queue: {tasks_queued} pinned official datasets "
                 f"(Assam & HP OCDS, AP Monthly Treasury, Assam OBDS, CGA Monthly Accounts, CAG 2025–26 PDFs, "
                 f"PMGSY, MGNREGA, SC Electoral Bonds × MCA CSR) ready across {len(missions)} active missions "
                 f"({len(active_agents)} active contributor nodes). Every finding requires SHA-256 provenance, "
@@ -517,10 +1257,9 @@ class DeskService:
         else:
             orchestrator_brief = (
                 f"Swarm focus: {verified_cnt} verified leads, {peer_review_cnt} leads awaiting 2-of-2 peer "
-                f"verification, and {tasks_queued} queued Government of India audit tasks across "
-                f"{len(missions)} live missions ({len(active_agents)} active contributor nodes; "
-                f"{cleared_cnt} cleared records). Every lead requires SHA-256 provenance, neutral BNS Sec 356 "
-                "wording, and benign explanations."
+                f"verification, {cleared_scans_cnt} cleared scans ({cleared_findings_cnt} cleared findings), "
+                f"and {tasks_queued} queued Government of India audit tasks across {len(missions)} live missions "
+                f"({len(active_agents)} active contributor nodes)."
             )
 
         return {
@@ -528,23 +1267,44 @@ class DeskService:
             "started_at": started_at,
             "orchestrator_brief": orchestrator_brief,
             "independence_pledge": INDEPENDENCE_PLEDGE,
+            "score_weights": dict(SCORE_WEIGHTS),
+            "latest_event_id": latest_event_id,
             "stats": {
-                "public_spend_audited_inr_cr": _inr_to_cr(spend_inr),
-                "tasks_completed": int(tasks_completed),
-                "tasks_queued": int(tasks_queued),
+                "public_spend_audited_inr_cr": coverage_summary["unique_coverage_inr_cr"],
+                "scan_workload_inr_cr": coverage_summary["scan_workload_inr_cr"],
+                "unique_coverage_inr_cr": coverage_summary["unique_coverage_inr_cr"],
+                "unique_coverage_withheld": coverage_summary["unique_coverage_withheld"],
+                "unique_coverage_reason": coverage_summary["unique_coverage_reason"],
+                "coverage_by_quantity_type": coverage_summary["coverage_by_quantity_type"],
+                "tasks_completed": tasks_completed,
+                "tasks_queued": tasks_queued,
                 "agents_active": len(active_agents),
                 "agents_total": len(serialized_agents),
-                "findings_verified": int(verified_cnt),
-                "findings_peer_review": int(peer_review_cnt),
-                "findings_cleared": int(cleared_cnt),
-                "rtis_drafted": int(rtis_drafted),
-                "sponsors_total_inr": round(sponsors_total, 2),
+                "findings_verified": verified_cnt,
+                "findings_peer_review": peer_review_cnt,
+                "findings_cleared": cleared_findings_cnt,
+                "cleared_scans": cleared_scans_cnt,
+                "unevaluable_groups": unevaluable_groups_cnt,
+                "findings_disputed": disputed_cnt,
+                "findings_under_review": under_review_cnt,
+                "findings_retracted": retracted_cnt,
+                "findings_quarantined": quarantined_cnt,
+                "rtis_drafted": rtis_drafted,
+                "treasury_pledged_inr": treasury_summary["pledged_inr"],
+                "treasury_received_cash_inr": treasury_summary["received_cash_inr"],
+                "treasury_in_kind_compute_inr": treasury_summary["in_kind_compute_inr"],
+                "sponsors_total_inr": treasury_summary["received_cash_inr"],
             },
             "disposition": {
-                "verified_leads": int(verified_cnt),
-                "peer_review": int(peer_review_cnt),
-                "cleared_records": int(cleared_cnt),
-                "disputed": int(disputed_cnt),
+                "verified_leads": verified_cnt,
+                "peer_review": peer_review_cnt,
+                "cleared_records": cleared_findings_cnt,
+                "cleared_scans": cleared_scans_cnt,
+                "unevaluable_groups": unevaluable_groups_cnt,
+                "disputed": disputed_cnt,
+                "under_review": under_review_cnt,
+                "retracted": retracted_cnt,
+                "quarantined": quarantined_cnt,
             },
             "just_in": just_in,
             "just_joined": just_joined,
@@ -573,6 +1333,7 @@ class DeskService:
             SELECT id, title, status, methodology_code, submitted_by,
                    monetary_exposure_inr, is_demo_sample, created_at, verified_at
             FROM findings
+            WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined'
             ORDER BY COALESCE(verified_at, created_at) DESC
             LIMIT ?
             """,
@@ -586,7 +1347,13 @@ class DeskService:
             elif st in ("cleared", "resolved_explained"):
                 kind, tag, tie_rank = "cleared", "Cleared", 3
                 ts = r["verified_at"] or r["created_at"]
-            elif st in ("disputed", "retracted_false_positive"):
+            elif st in ("retracted", "retracted_false_positive"):
+                kind, tag, tie_rank = "retracted", "Retracted", 2
+                ts = r["verified_at"] or r["created_at"]
+            elif st == "under_review":
+                kind, tag, tie_rank = "under_review", "Editorial review", 2
+                ts = r["verified_at"] or r["created_at"]
+            elif st == "disputed":
                 kind, tag, tie_rank = "disputed", "Disputed", 2
                 ts = r["verified_at"] or r["created_at"]
             else:
@@ -616,13 +1383,14 @@ class DeskService:
                    f.monetary_exposure_inr, f.is_demo_sample
             FROM peer_verifications pv
             JOIN findings f ON f.id = pv.finding_id
+            WHERE COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
             ORDER BY pv.created_at DESC
             LIMIT ?
             """,
             (limit,),
         ).fetchall()
         for r in verif_rows:
-            verdict = str(r["verdict"] or "confirm")
+            verdict = str(r["verdict"] or "")
             if verdict == "confirm":
                 kind, tag, tie_rank = "peer_review", "Peer check", 1
                 title = f"Peer check confirmed: {r['finding_title']}"
@@ -653,6 +1421,8 @@ class DeskService:
                    f.monetary_exposure_inr, f.is_demo_sample
             FROM rti_drafts rd
             JOIN findings f ON f.id = rd.finding_id
+            WHERE COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
+              AND rd.status != 'quarantined'
             ORDER BY rd.created_at DESC
             LIMIT ?
             """,
@@ -699,7 +1469,7 @@ class DeskService:
 
         if mission_id is not None:
             f_rows = conn.execute(
-                "SELECT id, mission_id, title, status, created_at FROM findings WHERE mission_id = ?",
+                "SELECT id, mission_id, title, status, quarantined, created_at FROM findings WHERE mission_id = ?",
                 (mission_id,),
             ).fetchall()
             t_rows = conn.execute(
@@ -708,19 +1478,21 @@ class DeskService:
             ).fetchall()
         else:
             f_rows = conn.execute(
-                "SELECT id, mission_id, title, status, created_at FROM findings"
+                "SELECT id, mission_id, title, status, quarantined, created_at FROM findings"
             ).fetchall()
             t_rows = conn.execute(
                 "SELECT id, mission_id, title, task_type, status, target_finding_id, created_at FROM tasks"
             ).fetchall()
 
         for r in f_rows:
+            if _is_quarantined_row(r):
+                continue
             st = str(r["status"] or "")
             if st in ("verified", "rti_filed"):
                 rung_state = "verified"
             elif st in ("cleared", "resolved_explained"):
                 rung_state = "cleared"
-            elif st in ("disputed", "retracted_false_positive"):
+            elif st in ("disputed", "retracted", "retracted_false_positive", "under_review"):
                 rung_state = "disputed"
             else:
                 rung_state = "peer_review"
@@ -741,7 +1513,7 @@ class DeskService:
                 rung_state = "verified"
             elif st == "claimed" or (st == "queued" and ttype == "peer_verify"):
                 rung_state = "hard"
-            elif st == "failed":
+            elif st in ("failed", "needs_adjudication"):
                 rung_state = "disputed"
             else:
                 rung_state = "queued"
@@ -760,7 +1532,6 @@ class DeskService:
         for mid, items in grouped.items():
             items.sort(key=lambda item: (item[0], item[1], item[2]))
             if len(items) > max_rungs:
-                # Preserve frontier (non-verified) items & findings while capping total at max_rungs
                 frontier = [it for it in items if it[3]["state"] != "verified"]
                 verified_items = [it for it in items if it[3]["state"] == "verified"]
                 keep_frontier = frontier[: min(len(frontier), max_rungs // 2)]
@@ -771,35 +1542,59 @@ class DeskService:
             result[mid] = [it[3] for it in items]
         return result
 
-    def _fetch_missions(self, conn: Any) -> list[dict[str, Any]]:
+    def _fetch_missions_with_coverage(
+        self, conn: Any
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         queued_map = {
-            r["mission_id"]: r["c"]
+            r["mission_id"]: int(r["c"])
             for r in conn.execute(
                 "SELECT mission_id, COUNT(*) AS c FROM tasks WHERE status = 'queued' GROUP BY mission_id"
             ).fetchall()
         }
         pr_map = {
-            r["mission_id"]: r["c"]
+            r["mission_id"]: int(r["c"])
             for r in conn.execute(
-                "SELECT mission_id, COUNT(*) AS c FROM findings WHERE status IN ('peer_review', 'raw_lead') GROUP BY mission_id"
+                "SELECT mission_id, COUNT(*) AS c FROM findings "
+                "WHERE status IN ('peer_review', 'raw_lead') AND COALESCE(quarantined, 0) = 0 "
+                "GROUP BY mission_id"
+            ).fetchall()
+        }
+        cleared_findings_map = {
+            r["mission_id"]: int(r["c"])
+            for r in conn.execute(
+                "SELECT mission_id, COUNT(*) AS c FROM findings "
+                "WHERE status IN ('cleared', 'resolved_explained') AND COALESCE(quarantined, 0) = 0 "
+                "GROUP BY mission_id"
             ).fetchall()
         }
         rungs_map = self._build_mission_rungs(conn)
         rows = conn.execute("SELECT * FROM missions ORDER BY priority ASC, id ASC").fetchall()
-        return [
+        mission_unique_inr, coverage_summary = self._compute_coverage_summary(conn, rows)
+        missions = [
             self._serialize_mission(
                 r,
                 queued_tasks=queued_map.get(r["id"], 0),
                 peer_review_count=pr_map.get(r["id"], 0),
                 rungs=rungs_map.get(r["id"], []),
+                unique_coverage_inr=mission_unique_inr.get(str(r["id"]), 0.0),
+                cleared_findings_count=cleared_findings_map.get(r["id"], 0),
             )
             for r in rows
         ]
+        return missions, coverage_summary
+
+    def _fetch_missions(self, conn: Any) -> list[dict[str, Any]]:
+        missions, _ = self._fetch_missions_with_coverage(conn)
+        return missions
 
     def list_missions(self) -> dict[str, Any]:
         with self.db.read() as conn:
-            missions = self._fetch_missions(conn)
-        return {"missions": missions, "total": len(missions)}
+            missions, coverage_summary = self._fetch_missions_with_coverage(conn)
+        return {
+            "missions": missions,
+            "total": len(missions),
+            "coverage_summary": coverage_summary,
+        }
 
     def get_mission_detail(self, slug: str) -> dict[str, Any]:
         with self.db.read() as conn:
@@ -807,15 +1602,35 @@ class DeskService:
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Mission '{slug}' not found")
             mid = row["id"]
-            queued_cnt = conn.execute(
-                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND status = 'queued'", (mid,)
-            ).fetchone()["c"]
-            pr_cnt = conn.execute(
-                "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? AND status IN ('peer_review', 'raw_lead')",
-                (mid,),
-            ).fetchone()["c"]
+            queued_cnt = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND status = 'queued'", (mid,)
+                ).fetchone()["c"]
+            )
+            pr_cnt = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? "
+                    "AND status IN ('peer_review', 'raw_lead') AND COALESCE(quarantined, 0) = 0",
+                    (mid,),
+                ).fetchone()["c"]
+            )
+            cf_cnt = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? "
+                    "AND status IN ('cleared', 'resolved_explained') AND COALESCE(quarantined, 0) = 0",
+                    (mid,),
+                ).fetchone()["c"]
+            )
             rungs = self._build_mission_rungs(conn, mission_id=mid).get(mid, [])
-            mission = self._serialize_mission(row, queued_tasks=queued_cnt, peer_review_count=pr_cnt, rungs=rungs)
+            mission_unique_inr, _ = self._compute_coverage_summary(conn, [row])
+            mission = self._serialize_mission(
+                row,
+                queued_tasks=queued_cnt,
+                peer_review_count=pr_cnt,
+                rungs=rungs,
+                unique_coverage_inr=mission_unique_inr.get(str(mid), 0.0),
+                cleared_findings_count=cf_cnt,
+            )
 
             source_ids = mission["source_ids"]
             sources: list[dict[str, Any]] = []
@@ -826,15 +1641,29 @@ class DeskService:
                 ).fetchall()
                 sources = [self._serialize_source(r) for r in s_rows]
 
-            rti_ids = {r["finding_id"] for r in conn.execute("SELECT finding_id FROM rti_drafts").fetchall()}
+            rti_ids = {
+                r["finding_id"]
+                for r in conn.execute("SELECT finding_id FROM rti_drafts WHERE status != 'quarantined'").fetchall()
+            }
             f_rows = conn.execute(
-                "SELECT * FROM findings WHERE mission_id = ? ORDER BY COALESCE(verified_at, created_at) DESC",
+                "SELECT * FROM findings WHERE mission_id = ? "
+                "AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
+                "ORDER BY COALESCE(verified_at, created_at) DESC",
                 (mid,),
             ).fetchall()
-            findings = [self._serialize_finding(r, has_rti_draft=(r["id"] in rti_ids)) for r in f_rows]
+            corr_map = self._fetch_corrections_map(conn, [str(r["id"]) for r in f_rows])
+            findings = [
+                self._serialize_finding(
+                    r,
+                    has_rti_draft=(r["id"] in rti_ids),
+                    corrections=corr_map.get(str(r["id"]), []),
+                )
+                for r in f_rows
+            ]
 
             t_rows = conn.execute(
-                "SELECT * FROM tasks WHERE mission_id = ? ORDER BY CASE status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, updated_at DESC LIMIT 30",
+                "SELECT * FROM tasks WHERE mission_id = ? "
+                "ORDER BY CASE status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, updated_at DESC LIMIT 30",
                 (mid,),
             ).fetchall()
             tasks = []
@@ -849,8 +1678,14 @@ class DeskService:
                         "status": t["status"],
                         "claimed_by_handle": t["claimed_by_handle"],
                         "progress_pct": t["progress_pct"],
+                        "retry_count": int(_row_get(t, "retry_count", 0) or 0),
+                        "available_at": _row_get(t, "available_at", None),
                         "target_finding_id": t["target_finding_id"],
                         "dataset_url": t_payload.get("dataset_url"),
+                        "retrieval_url": t_payload.get("retrieval_url") or t_payload.get("dataset_url"),
+                        "official_publisher": t_payload.get("official_publisher"),
+                        "source_landing_page": t_payload.get("source_landing_page") or t_payload.get("source_url"),
+                        "mirror_name": t_payload.get("mirror_name"),
                         "source_url": t_payload.get("source_url"),
                         "expected_sha256": t_payload.get("expected_sha256"),
                         "created_at": t["created_at"],
@@ -871,11 +1706,30 @@ class DeskService:
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, Any]:
+        eff_limit = max(1, min(int(limit), 500))
+        eff_offset = max(0, int(offset))
         clauses: list[str] = []
         params: list[Any] = []
+
         if status_filter and status_filter != "all":
-            clauses.append("status = ?")
-            params.append(status_filter)
+            if status_filter == "quarantined":
+                clauses.append("(COALESCE(quarantined, 0) = 1 OR status = 'quarantined')")
+            elif status_filter == "corrected":
+                clauses.append(
+                    "COALESCE(quarantined, 0) = 0 AND status != 'quarantined' AND ("
+                    "status = 'corrected' OR editorial_status IN ('corrected', 'retracted') "
+                    "OR EXISTS (SELECT 1 FROM finding_corrections fc WHERE fc.finding_id = findings.id))"
+                )
+            elif status_filter == "retracted":
+                clauses.append(
+                    "status IN ('retracted', 'retracted_false_positive') AND COALESCE(quarantined, 0) = 0"
+                )
+            else:
+                clauses.append("status = ? AND COALESCE(quarantined, 0) = 0")
+                params.append(status_filter)
+        else:
+            clauses.append("COALESCE(quarantined, 0) = 0 AND status != 'quarantined'")
+
         if pillar and pillar != "all":
             clauses.append("pillar = ?")
             params.append(pillar)
@@ -888,15 +1742,19 @@ class DeskService:
         if search and search.strip():
             like = f"%{search.strip()}%"
             clauses.append(
-                "(LOWER(title) LIKE LOWER(?) OR LOWER(summary) LIKE LOWER(?) OR LOWER(entity_name) LIKE LOWER(?) "
-                "OR LOWER(jurisdiction) LIKE LOWER(?) OR LOWER(rule_triggered) LIKE LOWER(?))"
+                "(COALESCE(quarantined, 0) = 0 AND ("
+                "LOWER(title) LIKE LOWER(?) OR LOWER(summary) LIKE LOWER(?) OR LOWER(entity_name) LIKE LOWER(?) "
+                "OR LOWER(jurisdiction) LIKE LOWER(?) OR LOWER(rule_triggered) LIKE LOWER(?)))"
             )
             params.extend([like, like, like, like, like])
 
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.db.read() as conn:
-            total = conn.execute(f"SELECT COUNT(*) AS c FROM findings {where_sql}", params).fetchone()["c"]
-            rti_ids = {r["finding_id"] for r in conn.execute("SELECT finding_id FROM rti_drafts").fetchall()}
+            total = int(conn.execute(f"SELECT COUNT(*) AS c FROM findings {where_sql}", params).fetchone()["c"])
+            rti_ids = {
+                r["finding_id"]
+                for r in conn.execute("SELECT finding_id FROM rti_drafts WHERE status != 'quarantined'").fetchall()
+            }
             rows = conn.execute(
                 f"""
                 SELECT * FROM findings {where_sql}
@@ -905,145 +1763,467 @@ class DeskService:
                         WHEN 'verified' THEN 0
                         WHEN 'peer_review' THEN 1
                         WHEN 'cleared' THEN 2
-                        ELSE 3
+                        WHEN 'under_review' THEN 3
+                        ELSE 4
                     END,
-                    COALESCE(verified_at, created_at) DESC
+                    COALESCE(verified_at, created_at) DESC,
+                    id ASC
                 LIMIT ? OFFSET ?
                 """,
-                [*params, max(1, min(limit, 500)), max(0, offset)],
+                [*params, eff_limit, eff_offset],
             ).fetchall()
-            findings = [self._serialize_finding(r, has_rti_draft=(r["id"] in rti_ids)) for r in rows]
+            corr_map = self._fetch_corrections_map(conn, [str(r["id"]) for r in rows])
+            findings = [
+                self._serialize_finding(
+                    r,
+                    has_rti_draft=(r["id"] in rti_ids),
+                    corrections=corr_map.get(str(r["id"]), []),
+                )
+                for r in rows
+            ]
 
-        return {"findings": findings, "total": int(total)}
+        return {
+            "findings": findings,
+            "total": total,
+            "limit": eff_limit,
+            "offset": eff_offset,
+            "has_more": (eff_offset + len(findings)) < total,
+        }
 
     def get_finding_detail(self, finding_id: str) -> dict[str, Any]:
         with self.db.read() as conn:
             row = conn.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
-            verif_rows = conn.execute(
-                "SELECT * FROM peer_verifications WHERE finding_id = ? ORDER BY created_at ASC",
+            corr_rows = conn.execute(
+                "SELECT * FROM finding_corrections WHERE finding_id = ? ORDER BY created_at ASC, id ASC",
                 (finding_id,),
             ).fetchall()
-            rti_row = conn.execute("SELECT * FROM rti_drafts WHERE finding_id = ?", (finding_id,)).fetchone()
-            art_row = (
-                conn.execute("SELECT * FROM evidence_artifacts WHERE id = ?", (row["artifact_id"],)).fetchone()
-                if row["artifact_id"]
-                else None
-            )
+            corrections = [self._serialize_correction(c) for c in corr_rows]
             mis_row = conn.execute("SELECT * FROM missions WHERE id = ?", (row["mission_id"],)).fetchone()
-
-            finding = self._serialize_finding(row, has_rti_draft=(rti_row is not None))
-            verifications = [self._serialize_verification(v) for v in verif_rows]
-            rti_draft = self._serialize_rti(rti_row) if rti_row is not None else None
-            artifact = (
-                {
-                    "id": art_row["id"],
-                    "title": art_row["title"],
-                    "canonical_url": art_row["canonical_url"],
-                    "archive_url": art_row["archive_url"],
-                    "local_path": art_row["local_path"],
-                    "file_format": art_row["file_format"],
-                    "sha256": art_row["sha256"],
-                    "byte_size": art_row["byte_size"],
-                    "is_demo_sample": bool(art_row["is_demo_sample"]),
-                    "pii_scrubbed": bool(art_row["pii_scrubbed"]),
-                    "fetched_at": art_row["fetched_at"],
-                }
-                if art_row is not None
-                else None
-            )
             mission_ref = (
                 {"id": mis_row["id"], "slug": mis_row["slug"], "title": mis_row["title"]}
                 if mis_row is not None
                 else None
             )
 
+            # Strict quarantine boundary: NEVER leak raw metrics, trace, text, citations, or artifact
+            if _is_quarantined_row(row):
+                redacted = self._serialize_quarantined_finding(row, corrections=corrections)
+                return {
+                    **redacted,
+                    "corrections": corrections,
+                    "verifications": [],
+                    "reproduction_summary": {
+                        "computational_confirm_count": 0,
+                        "editorial_review_count": 0,
+                        "required_quorum": int(row["required_quorum"] or 2),
+                    },
+                    "rti_draft": None,
+                    "artifact": None,
+                    "mission": mission_ref,
+                }
+
+            verif_rows = conn.execute(
+                "SELECT * FROM peer_verifications WHERE finding_id = ? ORDER BY created_at ASC",
+                (finding_id,),
+            ).fetchall()
+            rti_row = conn.execute(
+                "SELECT * FROM rti_drafts WHERE finding_id = ? AND status != 'quarantined'", (finding_id,)
+            ).fetchone()
+            art_row = (
+                conn.execute("SELECT * FROM evidence_artifacts WHERE id = ?", (row["artifact_id"],)).fetchone()
+                if row["artifact_id"]
+                else None
+            )
+
+            finding = self._serialize_finding(
+                row, has_rti_draft=(rti_row is not None), corrections=corrections
+            )
+            verifications = [self._serialize_verification(v) for v in verif_rows]
+            rti_draft = self._serialize_rti(rti_row) if rti_row is not None else None
+            artifact = None
+            if art_row is not None:
+                art_sha_raw = str(art_row["sha256"] or "").strip()
+                parsed_meta = loads_json(art_row["parsed_metadata_json"], {})
+                if not isinstance(parsed_meta, dict):
+                    parsed_meta = {}
+                artifact = {
+                    "id": art_row["id"],
+                    "source_id": art_row["source_id"],
+                    "title": art_row["title"],
+                    "official_publisher": _row_get(art_row, "official_publisher", "")
+                    or parsed_meta.get("official_publisher", ""),
+                    "source_landing_page": _row_get(art_row, "source_landing_page", "")
+                    or parsed_meta.get("source_landing_page")
+                    or parsed_meta.get("source_url", ""),
+                    "mirror_name": _row_get(art_row, "mirror_name", "")
+                    or parsed_meta.get("mirror_name", ""),
+                    "mirror_catalog_url": parsed_meta.get("mirror_catalog_url", ""),
+                    "retrieval_url": _row_get(art_row, "retrieval_url", "") or art_row["canonical_url"],
+                    "canonical_url": art_row["canonical_url"],
+                    "archive_url": art_row["archive_url"],
+                    "secondary_url": _row_get(art_row, "secondary_url", None)
+                    or parsed_meta.get("secondary_url"),
+                    "secondary_sha256": _row_get(art_row, "secondary_sha256", None)
+                    or parsed_meta.get("secondary_sha256"),
+                    "local_path": art_row["local_path"],
+                    "file_format": art_row["file_format"],
+                    "sha256": art_sha_raw if art_sha_raw else None,
+                    "byte_size": int(art_row["byte_size"] or 0),
+                    "is_demo_sample": bool(art_row["is_demo_sample"]),
+                    "pii_scrubbed": bool(art_row["pii_scrubbed"]),
+                    "fetched_at": art_row["fetched_at"],
+                }
+
+            comp_confirms = sum(
+                1
+                for v in verifications
+                if v["review_type"] in ("computational_reproduction", "adjudication")
+                and v["verdict"] == "confirm"
+                and v["all_checks_passed"]
+                and bool(v["reproduced_metrics"])
+            )
+            editorial_reviews = sum(
+                1 for v in verifications if v["review_type"] == "editorial_review"
+            ) + len(corrections)
+
         return {
             **finding,
+            "corrections": corrections,
             "verifications": verifications,
+            "reproduction_summary": {
+                "computational_confirm_count": comp_confirms,
+                "editorial_review_count": editorial_reviews,
+                "required_quorum": int(row["required_quorum"] or 2),
+            },
             "rti_draft": rti_draft,
             "artifact": artifact,
             "mission": mission_ref,
         }
 
-    def create_or_get_rti_draft(
-        self, finding_id: str, public_authority: str | None = None
+    def record_editorial_correction(
+        self,
+        finding_id: str,
+        *,
+        correction_type: str,
+        new_status: str,
+        editorial_status: str,
+        summary: str,
+        details: str = "",
+        source_evidence_url: str | None = None,
+        reviewed_by: str = "editorial-review",
+        rti_editorial_notice: str | None = None,
     ) -> dict[str, Any]:
+        """Record a transparent editorial correction notice and update finding/RTI disposition."""
+        envelopes: list[dict[str, Any]] = []
+        now = utc_now_iso()
+        cor_id = f"cor-{secrets.token_hex(6)}"
+
         with self.db.transaction() as conn:
             row = conn.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
+            prev_status = str(row["status"] or "")
+            clean_summary, _ = scrub_pii(summary.strip())
+            clean_details, _ = scrub_pii(details.strip())
 
-            existing = conn.execute("SELECT * FROM rti_drafts WHERE finding_id = ?", (finding_id,)).fetchone()
-            if existing is not None and not public_authority:
-                return self._serialize_rti(existing)
+            conn.execute(
+                """
+                INSERT INTO finding_corrections (
+                    id, finding_id, correction_type, previous_status, new_status,
+                    summary, details, source_evidence_url, reviewed_by, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    cor_id,
+                    finding_id,
+                    correction_type,
+                    prev_status,
+                    new_status,
+                    clean_summary,
+                    clean_details,
+                    source_evidence_url,
+                    reviewed_by,
+                    now,
+                ),
+            )
+            is_quarantine = 1 if new_status == "quarantined" else int(_row_get(row, "quarantined", 0))
+            conn.execute(
+                """
+                UPDATE findings
+                SET status = ?, editorial_status = ?, quarantined = ?
+                WHERE id = ?
+                """,
+                (new_status, editorial_status, is_quarantine, finding_id),
+            )
 
-            finding_dict = self._serialize_finding(row)
-            draft = generate_rti_draft(finding_dict, public_authority=public_authority)
-            now = utc_now_iso()
-            draft_id = existing["id"] if existing is not None else f"rti-{finding_id}"
+            # Recompute mission verified count accurately
+            cnt_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM findings
+                WHERE mission_id = ? AND status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0
+                """,
+                (row["mission_id"],),
+            ).fetchone()
+            conn.execute(
+                "UPDATE missions SET verified_findings_count = ? WHERE id = ?",
+                (int(cnt_row["c"]) if cnt_row else 0, row["mission_id"]),
+            )
 
-            if existing is not None:
+            # Update shared RTI draft & append version snapshot if present
+            rti_row = conn.execute("SELECT * FROM rti_drafts WHERE finding_id = ?", (finding_id,)).fetchone()
+            if rti_row is not None:
+                rti_status = "quarantined" if is_quarantine else "editorial_hold"
+                notice = rti_editorial_notice or f"EDITORIAL NOTICE: {clean_summary}"
+                next_ver = int(_row_get(rti_row, "version", 1) or 1) + 1
                 conn.execute(
                     """
                     UPDATE rti_drafts
-                    SET public_authority = ?, cpio_designation = ?, rti_portal_url = ?,
-                        statutory_sections_json = ?, subject = ?, body_text = ?,
-                        word_count = ?, requested_records_json = ?
+                    SET status = ?, editorial_notice = ?, version = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (
-                        draft["public_authority"],
-                        draft["cpio_designation"],
-                        draft["rti_portal_url"],
-                        dumps_json(draft["statutory_sections"]),
-                        draft["subject"],
-                        draft["body_text"],
-                        draft["word_count"],
-                        dumps_json(draft["requested_records"]),
-                        draft_id,
-                    ),
+                    (rti_status, notice, next_ver, now, rti_row["id"]),
                 )
-            else:
                 conn.execute(
                     """
-                    INSERT INTO rti_drafts (
-                        id, finding_id, public_authority, cpio_designation,
-                        rti_portal_url, statutory_sections_json, subject, body_text,
-                        word_count, requested_records_json, status, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                    INSERT INTO rti_draft_versions (
+                        id, rti_draft_id, finding_id, version, public_authority, cpio_designation,
+                        rti_portal_url, jurisdiction_level, filing_channel, subject, body_text,
+                        word_count, requested_records_json, status, editorial_notice, change_note, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        draft_id,
+                        f"rtiv-{secrets.token_hex(6)}",
+                        rti_row["id"],
                         finding_id,
-                        draft["public_authority"],
-                        draft["cpio_designation"],
-                        draft["rti_portal_url"],
-                        dumps_json(draft["statutory_sections"]),
-                        draft["subject"],
-                        draft["body_text"],
-                        draft["word_count"],
-                        dumps_json(draft["requested_records"]),
+                        next_ver,
+                        rti_row["public_authority"],
+                        rti_row["cpio_designation"],
+                        rti_row["rti_portal_url"] or "",
+                        _row_get(rti_row, "jurisdiction_level", "central"),
+                        _row_get(rti_row, "filing_channel", "central_online_portal"),
+                        rti_row["subject"],
+                        rti_row["body_text"],
+                        int(rti_row["word_count"] or 0),
+                        rti_row["requested_records_json"] or "[]",
+                        rti_status,
+                        notice,
+                        clean_summary,
                         now,
                     ),
                 )
-            saved = conn.execute("SELECT * FROM rti_drafts WHERE id = ?", (draft_id,)).fetchone()
-            result = self._serialize_rti(saved)
 
-        self.broker.publish(
-            "rti_drafted",
-            {
-                "finding_id": finding_id,
-                "rti_draft_id": result["id"],
-                "public_authority": result["public_authority"],
-                "word_count": result["word_count"],
-            },
-        )
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "finding_corrected",
+                {
+                    "finding_id": finding_id,
+                    "correction_id": cor_id,
+                    "correction_type": correction_type,
+                    "previous_status": prev_status,
+                    "new_status": new_status,
+                    "editorial_status": editorial_status,
+                },
+                now=now,
+            )
+            saved = conn.execute("SELECT * FROM finding_corrections WHERE id = ?", (cor_id,)).fetchone()
+            result = self._serialize_correction(saved)
+
+        self._broadcast_envelopes(envelopes)
+        return result
+
+    @staticmethod
+    def _build_rti_preview_response(
+        finding_id: str,
+        draft: dict[str, Any],
+        *,
+        status_label: str,
+        editorial_notice: str = "",
+    ) -> dict[str, Any]:
+        fee_note = str(draft.get("fee_rules") or draft.get("fee_note") or "")
+        return {
+            "id": f"preview-rti-{finding_id}",
+            "finding_id": finding_id,
+            "version": 0,
+            "public_authority": draft["public_authority"],
+            "cpio_designation": draft["cpio_designation"],
+            "rti_portal_url": draft.get("rti_portal_url") or "",
+            "jurisdiction_level": draft.get("jurisdiction_level", "central"),
+            "state_name": draft.get("state_name"),
+            "filing_channel": draft.get("filing_channel", "central_online_portal"),
+            "fee_note": fee_note,
+            "fee_rules": fee_note,
+            "central_portal_warning": str(draft.get("central_portal_warning") or ""),
+            "human_filing_required": True,
+            "statutory_sections": list(draft.get("statutory_sections") or []),
+            "subject": draft["subject"],
+            "body_text": draft["body_text"],
+            "word_count": int(draft["word_count"]),
+            "requested_records": list(draft.get("requested_records") or []),
+            "status": status_label,
+            "editorial_notice": editorial_notice,
+            "is_preview": True,
+            "persisted": False,
+            "filed_date": None,
+            "due_date_30d": None,
+            "created_at": utc_now_iso(),
+            "updated_at": None,
+        }
+
+    def create_or_get_rti_draft(
+        self,
+        finding_id: str,
+        public_authority: str | None = None,
+        *,
+        preview: bool | None = None,
+    ) -> dict[str, Any]:
+        """Return shared versioned RTI draft for verified findings, or personal non-mutating preview.
+
+        - Quarantined findings return HTTP 403.
+        - Unverified, under-review, or retracted findings NEVER mutate or create a shared
+          ``rti_drafts`` row; they return a clearly badged personal preview (or existing
+          editorial-hold draft when no custom override is requested).
+        - Supplying a custom ``public_authority`` (or ``preview=True``) returns a personal
+          non-mutating preview instead of silently overwriting the shared published draft.
+        """
+        custom_authority = (public_authority or "").strip() or None
+        envelopes: list[dict[str, Any]] = []
+
+        with self.db.transaction() as conn:
+            row = conn.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
+            if _is_quarantined_row(row):
+                raise HTTPException(
+                    status_code=403,
+                    detail="RTI draft unavailable: finding is quarantined pending privacy/legal review.",
+                )
+
+            existing = conn.execute("SELECT * FROM rti_drafts WHERE finding_id = ?", (finding_id,)).fetchone()
+            finding_status = str(row["status"] or "")
+            is_verified = finding_status in ("verified", "rti_filed")
+
+            # Unverified / corrected / retracted findings: never create or mutate shared drafts
+            if not is_verified:
+                if existing is not None and not custom_authority and preview is not True:
+                    return self._serialize_rti(existing, is_preview=False, persisted=True)
+                finding_dict = self._serialize_finding(row)
+                draft = generate_rti_draft(finding_dict, public_authority=custom_authority)
+                notice = (
+                    f"Personal preview only (finding status: {finding_status}). "
+                    "Shared RTI drafts are published only for independently 2-of-2 verified leads."
+                )
+                if existing is not None and _row_get(existing, "editorial_notice", ""):
+                    notice = str(existing["editorial_notice"])
+                return self._build_rti_preview_response(
+                    finding_id,
+                    draft,
+                    status_label="preview_unverified" if finding_status == "peer_review" else "preview_editorial_hold",
+                    editorial_notice=notice,
+                )
+
+            # Verified finding with custom authority or explicit preview -> personal non-mutating preview!
+            if custom_authority or preview is True:
+                finding_dict = self._serialize_finding(row)
+                draft = generate_rti_draft(finding_dict, public_authority=custom_authority)
+                return self._build_rti_preview_response(
+                    finding_id,
+                    draft,
+                    status_label="personal_preview",
+                    editorial_notice="",
+                )
+
+            # Verified finding, default authority -> return existing shared draft or create v1
+            if existing is not None:
+                return self._serialize_rti(existing, is_preview=False, persisted=True)
+
+            finding_dict = self._serialize_finding(row)
+            draft = generate_rti_draft(finding_dict)
+            now = utc_now_iso()
+            draft_id = f"rti-{finding_id}"
+            fee_note = str(draft.get("fee_rules") or draft.get("fee_note") or "")
+            jlevel = str(draft.get("jurisdiction_level") or "central")
+            sname = draft.get("state_name")
+            fchan = str(draft.get("filing_channel") or "central_online_portal")
+            cwarn = str(draft.get("central_portal_warning") or "")
+
+            conn.execute(
+                """
+                INSERT INTO rti_drafts (
+                    id, finding_id, version, public_authority, cpio_designation,
+                    rti_portal_url, jurisdiction_level, state_name, filing_channel,
+                    fee_note, central_portal_warning, statutory_sections_json,
+                    subject, body_text, word_count, requested_records_json,
+                    status, editorial_notice, created_at, updated_at
+                ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?)
+                """,
+                (
+                    draft_id,
+                    finding_id,
+                    draft["public_authority"],
+                    draft["cpio_designation"],
+                    draft.get("rti_portal_url") or "",
+                    jlevel,
+                    sname,
+                    fchan,
+                    fee_note,
+                    cwarn,
+                    dumps_json(draft["statutory_sections"]),
+                    draft["subject"],
+                    draft["body_text"],
+                    draft["word_count"],
+                    dumps_json(draft["requested_records"]),
+                    now,
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                INSERT INTO rti_draft_versions (
+                    id, rti_draft_id, finding_id, version, public_authority, cpio_designation,
+                    rti_portal_url, jurisdiction_level, filing_channel, subject, body_text,
+                    word_count, requested_records_json, status, editorial_notice, change_note, created_at
+                ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', 'Initial verified RTI draft', ?)
+                """,
+                (
+                    f"rtiv-{secrets.token_hex(6)}",
+                    draft_id,
+                    finding_id,
+                    draft["public_authority"],
+                    draft["cpio_designation"],
+                    draft.get("rti_portal_url") or "",
+                    jlevel,
+                    fchan,
+                    draft["subject"],
+                    draft["body_text"],
+                    draft["word_count"],
+                    dumps_json(draft["requested_records"]),
+                    now,
+                ),
+            )
+            saved = conn.execute("SELECT * FROM rti_drafts WHERE id = ?", (draft_id,)).fetchone()
+            result = self._serialize_rti(saved, is_preview=False, persisted=True)
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "rti_drafted",
+                {
+                    "finding_id": finding_id,
+                    "rti_draft_id": result["id"],
+                    "public_authority": result["public_authority"],
+                    "word_count": result["word_count"],
+                    "version": result["version"],
+                },
+                now=now,
+            )
+
+        self._broadcast_envelopes(envelopes)
         return result
 
     def get_graph(self) -> dict[str, Any]:
-        """Build structured Observatory graph: Authorities -> Missions -> Findings -> Official Sources."""
+        """Build structured Observatory graph: Authorities -> Missions -> Findings -> Verified Sources."""
         nodes: list[dict[str, Any]] = []
         edges: list[dict[str, Any]] = []
         seen_nodes: set[str] = set()
@@ -1067,14 +2247,17 @@ class DeskService:
                 for r in conn.execute("SELECT * FROM public_sources").fetchall()
             }
             finding_rows = conn.execute(
-                "SELECT * FROM findings ORDER BY COALESCE(verified_at, created_at) DESC LIMIT 40"
+                "SELECT * FROM findings WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
+                "ORDER BY COALESCE(verified_at, created_at) DESC LIMIT 40"
             ).fetchall()
+            artifact_sources: dict[str, str | None] = {
+                str(r["id"]): r["source_id"]
+                for r in conn.execute("SELECT id, source_id FROM evidence_artifacts").fetchall()
+            }
 
         authority_map: dict[str, str] = {}
-        mission_by_id: dict[str, dict[str, Any]] = {}
 
         for m in missions:
-            mission_by_id[m["id"]] = m
             auth_label = m["ministry_or_authority"]
             auth_id = authority_map.get(auth_label)
             if not auth_id:
@@ -1087,7 +2270,7 @@ class DeskService:
                         "label": auth_label,
                         "status": "active",
                         "pillar": m["pillar"],
-                        "value_inr_cr": m["monetary_audited_inr_cr"],
+                        "value_inr_cr": m["unique_coverage_inr_cr"],
                         "meta": {"jurisdiction": m["jurisdiction"]},
                     }
                 )
@@ -1100,7 +2283,7 @@ class DeskService:
                     "label": m["title"],
                     "status": m["status"],
                     "pillar": m["pillar"],
-                    "value_inr_cr": m["monetary_audited_inr_cr"],
+                    "value_inr_cr": m["unique_coverage_inr_cr"],
                     "meta": {
                         "slug": m["slug"],
                         "pillar": m["pillar"],
@@ -1108,6 +2291,7 @@ class DeskService:
                         "progress_pct": m["progress_pct"],
                         "verified_findings_count": m["verified_findings_count"],
                         "is_demo_sample": m["is_demo_sample"],
+                        "financial_quantity_type": m["financial_quantity_type"],
                     },
                 }
             )
@@ -1127,6 +2311,9 @@ class DeskService:
                             "value_inr_cr": 0.0,
                             "meta": {
                                 "base_url": src["base_url"],
+                                "official_publisher": src["official_publisher"],
+                                "source_landing_page": src["source_landing_page"],
+                                "mirror_name": src["mirror_name"],
                                 "ingestion_tier": src["ingestion_tier"],
                                 "connector_type": src["connector_type"],
                             },
@@ -1157,27 +2344,68 @@ class DeskService:
                         "entity_name": f["entity_name"],
                         "severity": f["severity"],
                         "confirm_count": f["confirm_count"],
+                        "editorial_status": f["editorial_status"],
                         "is_demo_sample": f["is_demo_sample"],
                     },
                 }
             )
             add_edge(f"mission:{f['mission_slug']}", f_node_id, "surfaced")
 
-            # Link finding to primary mission source node
-            mis = mission_by_id.get(f["mission_id"])
-            if mis and mis["source_ids"]:
-                primary_src = sources_by_id.get(mis["source_ids"][0])
-                if primary_src:
-                    add_edge(f_node_id, f"source:{primary_src['slug']}", "evidenced_by")
+            # Link finding ONLY to its verified evidence source(s) — never blindly mission.source_ids[0]
+            linked_source_ids: list[str] = []
+            direct_sid = f.get("source_id")
+            if direct_sid and direct_sid in sources_by_id:
+                linked_source_ids.append(str(direct_sid))
+            art_id = f.get("artifact_id")
+            if art_id:
+                art_sid = artifact_sources.get(str(art_id))
+                if art_sid and art_sid in sources_by_id and art_sid not in linked_source_ids:
+                    linked_source_ids.append(str(art_sid))
+            prov = f.get("provenance") if isinstance(f.get("provenance"), dict) else {}
+            sec_sid = prov.get("secondary_source_id")
+            if sec_sid and sec_sid in sources_by_id and sec_sid not in linked_source_ids:
+                linked_source_ids.append(str(sec_sid))
+
+            for sid in linked_source_ids:
+                src = sources_by_id[sid]
+                s_node_id = f"source:{src['slug']}"
+                add_node(
+                    {
+                        "id": s_node_id,
+                        "type": "source",
+                        "label": src["name"],
+                        "status": f"tier_{src['ingestion_tier']}",
+                        "pillar": src["pillar"],
+                        "value_inr_cr": 0.0,
+                        "meta": {
+                            "base_url": src["base_url"],
+                            "official_publisher": src["official_publisher"],
+                            "source_landing_page": src["source_landing_page"],
+                            "mirror_name": src["mirror_name"],
+                            "ingestion_tier": src["ingestion_tier"],
+                            "connector_type": src["connector_type"],
+                        },
+                    }
+                )
+                add_edge(f_node_id, s_node_id, "evidenced_by")
 
         return {"nodes": nodes, "edges": edges}
 
     def get_live(self) -> dict[str, Any]:
         with self.db.read() as conn:
+            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
             agent_rows = conn.execute(
                 "SELECT * FROM agents ORDER BY last_heartbeat_at DESC, compute_score DESC"
             ).fetchall()
-            agents = [self._serialize_agent(r) for r in agent_rows]
+            agents = [
+                self._serialize_agent(
+                    r,
+                    all_time_score=all_time_scores.get(r["handle"], int(r["compute_score"] or 0)),
+                    hourly_event_score=hourly_scores.get(r["handle"], 0),
+                )
+                for r in agent_rows
+            ]
+            active_agents = [a for a in agents if a["is_active"]]
 
             whisper_rows = conn.execute(
                 "SELECT * FROM whispers ORDER BY created_at DESC LIMIT 40"
@@ -1189,6 +2417,7 @@ class DeskService:
                 SELECT pv.*, f.title AS finding_title, f.methodology_code, f.status AS finding_status
                 FROM peer_verifications pv
                 JOIN findings f ON f.id = pv.finding_id
+                WHERE COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
                 ORDER BY pv.created_at DESC
                 LIMIT 20
                 """
@@ -1225,50 +2454,70 @@ class DeskService:
                 }
                 for r in breakdown_rows
             ]
+            latest_ev = conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM events").fetchone()
+            latest_event_id = int(latest_ev["max_id"]) if latest_ev else 0
 
         return {
             "agents": agents,
+            "active_agents": active_agents,
             "whispers": whispers,
             "recent_verifications": recent_verifications,
             "model_breakdown": model_breakdown,
-            "active_count": sum(1 for a in agents if a["is_active"]),
+            "active_count": len(active_agents),
             "total_count": len(agents),
             "sse_subscribers": self.broker.subscriber_count,
+            "latest_event_id": latest_event_id,
+        }
+
+    def list_events(
+        self,
+        *,
+        since_id: int = 0,
+        limit: int = 100,
+        event_type: str | None = None,
+    ) -> dict[str, Any]:
+        eff_since = max(0, int(since_id))
+        eff_limit = max(1, min(int(limit), 500))
+        fetched = self.broker.fetch_events_since(
+            eff_since, limit=eff_limit + 1, event_type=event_type
+        )
+        has_more = len(fetched) > eff_limit
+        events = fetched[:eff_limit]
+        last_event_id = int(events[-1]["id"]) if events else self.broker.latest_event_id()
+        return {
+            "events": events,
+            "last_event_id": last_event_id,
+            "since_id": eff_since,
+            "has_more": has_more,
         }
 
     def list_contributors(self, window: str = "all") -> dict[str, Any]:
         window_norm = "hour" if window == "hour" else "all"
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         with self.db.read() as conn:
             rows = conn.execute("SELECT * FROM agents").fetchall()
-            # Dynamic hourly bonus from recent tasks & verifications in last 60 minutes
-            recent_verif_counts = {
-                r["verifier_handle"]: r["c"]
-                for r in conn.execute(
-                    "SELECT verifier_handle, COUNT(*) AS c FROM peer_verifications WHERE created_at >= ? GROUP BY verifier_handle",
-                    (cutoff,),
-                ).fetchall()
-            }
-            recent_finding_counts = {
-                r["submitted_by"]: r["c"]
-                for r in conn.execute(
-                    "SELECT submitted_by, COUNT(*) AS c FROM findings WHERE created_at >= ? GROUP BY submitted_by",
-                    (cutoff,),
-                ).fetchall()
-            }
+            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
             contributors: list[dict[str, Any]] = []
             for r in rows:
-                handle = r["handle"]
-                dyn_hour = (
-                    int(r["hourly_score"] or 0)
-                    + recent_verif_counts.get(handle, 0) * 15
-                    + recent_finding_counts.get(handle, 0) * 10
+                handle = str(r["handle"])
+                all_score = all_time_scores.get(handle, int(r["compute_score"] or 0))
+                hour_score = hourly_scores.get(handle, 0)
+                score = hour_score if window_norm == "hour" else all_score
+                contributors.append(
+                    self._serialize_agent(
+                        r,
+                        window_score=score,
+                        all_time_score=all_score,
+                        hourly_event_score=hour_score,
+                    )
                 )
-                score = dyn_hour if window_norm == "hour" else int(r["compute_score"] or 0)
-                contributors.append(self._serialize_agent(r, window_score=score))
 
         contributors.sort(key=lambda c: (c["window_score"], c["tasks_completed"]), reverse=True)
-        return {"window": window_norm, "contributors": contributors, "total": len(contributors)}
+        return {
+            "window": window_norm,
+            "contributors": contributors,
+            "total": len(contributors),
+            "score_weights": dict(SCORE_WEIGHTS),
+        }
 
     def get_contributor_profile(self, handle: str) -> dict[str, Any]:
         norm_handle = handle.strip().lower()
@@ -1276,14 +2525,32 @@ class DeskService:
             row = conn.execute("SELECT * FROM agents WHERE handle = ?", (norm_handle,)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Contributor '{handle}' not found")
-            agent = self._serialize_agent(row)
+            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
+            agent = self._serialize_agent(
+                row,
+                all_time_score=all_time_scores.get(norm_handle, int(row["compute_score"] or 0)),
+                hourly_event_score=hourly_scores.get(norm_handle, 0),
+            )
 
-            rti_ids = {r["finding_id"] for r in conn.execute("SELECT finding_id FROM rti_drafts").fetchall()}
+            rti_ids = {
+                r["finding_id"]
+                for r in conn.execute("SELECT finding_id FROM rti_drafts WHERE status != 'quarantined'").fetchall()
+            }
             f_rows = conn.execute(
-                "SELECT * FROM findings WHERE submitted_by = ? ORDER BY created_at DESC LIMIT 25",
+                "SELECT * FROM findings WHERE submitted_by = ? "
+                "AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
+                "ORDER BY created_at DESC LIMIT 25",
                 (norm_handle,),
             ).fetchall()
-            submitted_findings = [self._serialize_finding(r, has_rti_draft=(r["id"] in rti_ids)) for r in f_rows]
+            corr_map = self._fetch_corrections_map(conn, [str(r["id"]) for r in f_rows])
+            submitted_findings = [
+                self._serialize_finding(
+                    r,
+                    has_rti_draft=(r["id"] in rti_ids),
+                    corrections=corr_map.get(str(r["id"]), []),
+                )
+                for r in f_rows
+            ]
 
             v_rows = conn.execute(
                 """
@@ -1291,6 +2558,7 @@ class DeskService:
                 FROM peer_verifications pv
                 JOIN findings f ON f.id = pv.finding_id
                 WHERE pv.verifier_handle = ?
+                  AND COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
                 ORDER BY pv.created_at DESC LIMIT 25
                 """,
                 (norm_handle,),
@@ -1315,6 +2583,7 @@ class DeskService:
             **agent,
             "agent": agent,
             "contributor": agent,
+            "score_weights": dict(SCORE_WEIGHTS),
             "submitted_findings": submitted_findings,
             "verifications": verifications,
             "recent_whispers": recent_whispers,
@@ -1322,18 +2591,39 @@ class DeskService:
 
     def list_sponsors(self) -> dict[str, Any]:
         with self.db.read() as conn:
-            rows = conn.execute("SELECT * FROM sponsors ORDER BY featured DESC, amount_inr DESC, created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM sponsors ORDER BY featured DESC, amount_inr DESC, created_at DESC"
+            ).fetchall()
             sponsors = [self._serialize_sponsor(r) for r in rows]
 
         featured = [s for s in sponsors if s["featured"]]
         institutional = [s for s in sponsors if s["tier"] in ("institutional_compute", "founding_grant", "patron")]
         citizen_backers = [s for s in sponsors if s["tier"] == "citizen_backer"]
-        total_pledged = round(sum(s["amount_inr"] for s in sponsors), 2)
+        total_pledged = round(
+            sum(s["amount_inr"] for s in sponsors if s["pledge_status"] == "pledged"), 2
+        )
+        received_cash = round(
+            sum(
+                s["amount_inr"]
+                for s in sponsors
+                if s["pledge_status"] == "received" and bool(s.get("reconciled_receipt_ref"))
+            ),
+            2,
+        )
+        in_kind_compute = round(
+            sum(
+                s["in_kind_value_inr"] or (s["amount_inr"] if s["pledge_status"].startswith("in_kind") else 0.0)
+                for s in sponsors
+            ),
+            2,
+        )
 
         return {
             "independence_pledge": INDEPENDENCE_PLEDGE,
             "total_pledged_inr": total_pledged,
-            "total_inr": total_pledged,
+            "received_cash_inr": received_cash,
+            "in_kind_compute_inr": in_kind_compute,
+            "total_inr": received_cash,
             "sponsors": sponsors,
             "featured": featured,
             "institutional": institutional,
@@ -1347,8 +2637,11 @@ class DeskService:
         amount_inr = float(payload.get("amount_inr") or 0.0)
         if amount_inr < 0:
             raise HTTPException(status_code=422, detail="amount_inr must be non-negative")
+        in_kind_val = float(payload.get("in_kind_value_inr") or 0.0)
+        if in_kind_val < 0:
+            raise HTTPException(status_code=422, detail="in_kind_value_inr must be non-negative")
         credits_desc, _ = scrub_pii(str(payload.get("compute_credits_desc") or "").strip())
-        if amount_inr == 0 and not credits_desc:
+        if amount_inr == 0 and not credits_desc and in_kind_val == 0:
             raise HTTPException(status_code=422, detail="Provide either amount_inr > 0 or compute_credits_desc")
 
         tier = str(payload.get("tier") or ("institutional_compute" if amount_inr >= 50000 else "citizen_backer")).strip()
@@ -1363,37 +2656,58 @@ class DeskService:
         lid = f"led-{secrets.token_hex(6)}"
         now = utc_now_iso()
         today = datetime.now(timezone.utc).date().isoformat()
-        rcpt = f"RCPT-LIVE-{secrets.token_hex(4).upper()}"
-        entry_type = "compute_grant" if credits_desc and amount_inr == 0 else "inflow_inr"
+        # Self-declared pledge reference (NEVER a reconciled cash receipt!)
+        pledge_ref = f"PLEDGE-{secrets.token_hex(4).upper()}"
+        is_in_kind = bool(credits_desc) and amount_inr == 0
+        entry_type = "compute_grant" if is_in_kind else "pledge_inr"
+        settlement_status = "in_kind_committed" if is_in_kind else "pledged"
+        pledge_status = "in_kind_committed" if is_in_kind else "pledged"
+        envelopes: list[dict[str, Any]] = []
 
         with self.db.transaction() as conn:
             conn.execute(
                 """
                 INSERT INTO sponsors (
-                    id, name, handle_or_org, tier, amount_inr, compute_credits_desc,
+                    id, name, handle_or_org, tier, amount_inr, in_kind_value_inr,
+                    compute_credits_desc, pledge_status, reconciled_receipt_ref,
                     url, message, featured, is_demo_entry, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 0, ?)
                 """,
-                (sid, name, handle_or_org or None, tier, amount_inr, credits_desc, url, message, featured, now),
+                (
+                    sid,
+                    name,
+                    handle_or_org or None,
+                    tier,
+                    amount_inr,
+                    in_kind_val,
+                    credits_desc,
+                    pledge_status,
+                    url,
+                    message,
+                    featured,
+                    now,
+                ),
             )
             conn.execute(
                 """
                 INSERT INTO treasury_ledger (
-                    id, entry_date, entry_type, direction, category, counterparty,
-                    description, amount_inr, compute_credit_units, receipt_ref,
-                    is_demo_entry, created_at
-                ) VALUES (?, ?, ?, 'inflow', ?, ?, ?, ?, ?, ?, 0, ?)
+                    id, entry_date, entry_type, direction, settlement_status, category,
+                    counterparty, description, amount_inr, compute_credit_units, receipt_ref,
+                    reconciled_receipt_ref, reconciled_at, sponsor_id, is_demo_entry, created_at
+                ) VALUES (?, ?, ?, 'inflow', ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, 0, ?)
                 """,
                 (
                     lid,
                     today,
                     entry_type,
-                    "Compute Grant" if entry_type == "compute_grant" else "Sponsor Pledge",
+                    settlement_status,
+                    "In-Kind Compute Pledge" if is_in_kind else "Sponsor Pledge (Unreconciled)",
                     name,
-                    message or f"Public open-source pledge ({tier})",
-                    amount_inr,
+                    message or f"Self-declared open-source pledge ({tier}; awaiting receipt reconciliation)",
+                    in_kind_val if is_in_kind else amount_inr,
                     credits_desc,
-                    rcpt,
+                    pledge_ref,
+                    sid,
                     now,
                 ),
             )
@@ -1401,17 +2715,22 @@ class DeskService:
             led_row = conn.execute("SELECT * FROM treasury_ledger WHERE id = ?", (lid,)).fetchone()
             sponsor = self._serialize_sponsor(sp_row)
             ledger_entry = self._serialize_ledger(led_row)
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "sponsor_added",
+                {
+                    "sponsor_id": sponsor["id"],
+                    "name": sponsor["name"],
+                    "tier": sponsor["tier"],
+                    "amount_inr": sponsor["amount_inr"],
+                    "pledge_status": sponsor["pledge_status"],
+                    "compute_credits_desc": sponsor["compute_credits_desc"],
+                },
+                now=now,
+            )
 
-        self.broker.publish(
-            "sponsor_added",
-            {
-                "sponsor_id": sponsor["id"],
-                "name": sponsor["name"],
-                "tier": sponsor["tier"],
-                "amount_inr": sponsor["amount_inr"],
-                "compute_credits_desc": sponsor["compute_credits_desc"],
-            },
-        )
+        self._broadcast_envelopes(envelopes)
         return {"sponsor": sponsor, "ledger_entry": ledger_entry}
 
     def get_ledger(self) -> dict[str, Any]:
@@ -1421,22 +2740,10 @@ class DeskService:
             ).fetchall()
             entries = [self._serialize_ledger(r) for r in rows]
 
-        total_inflow = round(sum(e["amount_inr"] for e in entries if e["direction"] == "inflow"), 2)
-        total_outflow = round(sum(e["amount_inr"] for e in entries if e["direction"] == "outflow"), 2)
-        compute_grants = round(
-            sum(e["amount_inr"] for e in entries if e["entry_type"] == "compute_grant"), 2
-        )
-        net_balance = round(total_inflow - total_outflow, 2)
+        summary = self._compute_treasury_summary(entries)
         return {
             "independence_pledge": INDEPENDENCE_PLEDGE,
-            "summary": {
-                "total_inflow_inr": total_inflow,
-                "total_outflow_inr": total_outflow,
-                "net_balance_inr": net_balance,
-                "balance_inr": net_balance,
-                "compute_grants_inr": compute_grants,
-                "entry_count": len(entries),
-            },
+            "summary": summary,
             "entries": entries,
         }
 
@@ -1448,6 +2755,7 @@ class DeskService:
             "entry_date",
             "entry_type",
             "direction",
+            "settlement_status",
             "category",
             "counterparty",
             "description",
@@ -1455,6 +2763,8 @@ class DeskService:
             "signed_amount_inr",
             "compute_credit_units",
             "receipt_ref",
+            "reconciled_receipt_ref",
+            "reconciled_at",
             "is_demo_entry",
         ]
         writer = csv.DictWriter(buf, fieldnames=fieldnames)
@@ -1505,6 +2815,7 @@ class DeskService:
         capabilities = payload.get("capabilities") or ["deterministic_audit", "peer_verify"]
         now = utc_now_iso()
         profile_url = f"{base_url.rstrip('/')}/a/{raw_handle}"
+        envelopes: list[dict[str, Any]] = []
 
         with self.db.transaction() as conn:
             existing = conn.execute("SELECT * FROM agents WHERE handle = ?", (raw_handle,)).fetchone()
@@ -1572,19 +2883,23 @@ class DeskService:
                 event_type="agent_joined",
                 message=f"Joined the swarm ({provider}/{model}, mode={mode}). Ready to audit public records.",
             )
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "agent_joined",
+                {
+                    "agent_id": agent_id,
+                    "handle": raw_handle,
+                    "provider": provider,
+                    "model": model,
+                    "mode": mode,
+                    "profile_url": profile_url,
+                },
+                now=now,
+            )
+            self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
 
-        self.broker.publish(
-            "agent_joined",
-            {
-                "agent_id": agent_id,
-                "handle": raw_handle,
-                "provider": provider,
-                "model": model,
-                "mode": mode,
-                "profile_url": profile_url,
-            },
-        )
-        self.broker.publish("whisper", whisper)
+        self._broadcast_envelopes(envelopes)
         return {
             "agent_id": agent_id,
             "handle": raw_handle,
@@ -1601,6 +2916,7 @@ class DeskService:
         mode: str | None = None,
         preferred_mission: str | None = None,
     ) -> dict[str, Any] | None:
+        envelopes: list[dict[str, Any]] = []
         with self.db.transaction() as conn:
             agent = self._authenticate_agent(conn, token, required=True)
             assert agent is not None
@@ -1609,7 +2925,7 @@ class DeskService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Handle does not match X-Agent-Token owner",
                 )
-            agent_handle = agent["handle"]
+            agent_handle = str(agent["handle"])
             eff_mode = (mode or agent["mode"] or "auto").strip().lower()
 
             self._reclaim_expired_leases(conn)
@@ -1617,22 +2933,37 @@ class DeskService:
             # Collect findings this agent already submitted, verified, or holds an active lease on
             ineligible_findings: set[str] = set()
             for r in conn.execute(
-                "SELECT id FROM findings WHERE submitted_by = ?", (agent_handle,)
+                "SELECT id FROM findings WHERE submitted_by = ? OR COALESCE(quarantined, 0) = 1 OR status = 'quarantined'",
+                (agent_handle,),
             ).fetchall():
-                ineligible_findings.add(r["id"])
+                ineligible_findings.add(str(r["id"]))
             for r in conn.execute(
                 "SELECT finding_id FROM peer_verifications WHERE contributor_id = ? OR verifier_handle = ?",
                 (agent_handle, agent_handle),
             ).fetchall():
-                ineligible_findings.add(r["finding_id"])
+                ineligible_findings.add(str(r["finding_id"]))
             for r in conn.execute(
                 "SELECT target_finding_id FROM tasks WHERE status = 'claimed' AND claimed_by_handle = ? AND target_finding_id IS NOT NULL",
                 (agent_handle,),
             ).fetchall():
-                ineligible_findings.add(r["target_finding_id"])
+                ineligible_findings.add(str(r["target_finding_id"]))
 
-            clauses = ["status = 'queued'"]
-            params: list[Any] = []
+            now = utc_now_iso()
+            clauses = [
+                "status = 'queued'",
+                "(available_at IS NULL OR available_at <= ?)",
+                "excluded_handles_json NOT LIKE ?",
+            ]
+            params: list[Any] = [now, f'%"{agent_handle}"%']
+
+            if ineligible_findings:
+                sorted_inelig = sorted(ineligible_findings)
+                placeholders = ",".join("?" for _ in sorted_inelig)
+                clauses.append(
+                    f"(target_finding_id IS NULL OR target_finding_id NOT IN ({placeholders}))"
+                )
+                params.extend(sorted_inelig)
+
             if eff_mode == "verify":
                 clauses.append("task_type = 'peer_verify'")
             elif eff_mode == "investigate":
@@ -1641,98 +2972,145 @@ class DeskService:
                 clauses.append("mission_slug = ?")
                 params.append(preferred_mission.strip())
 
-            # Prioritize peer_verify in auto mode so leads reach 2-of-2 quorum rapidly.
-            # On Postgres, FOR UPDATE SKIP LOCKED prevents concurrent serverless instances
-            # from double-claiming or blocking on the same task row, and keeping task updates
-            # strictly before agent updates guarantees consistent table lock ordering.
+            # Atomic single-row claim: on Postgres lock at most 1 eligible row (FOR UPDATE SKIP LOCKED LIMIT 1)
+            # instead of locking the entire queued table.
             lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
-            candidates = conn.execute(
+            cand = conn.execute(
                 f"""
                 SELECT * FROM tasks
                 WHERE {' AND '.join(clauses)}
                 ORDER BY
                     CASE task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
+                    COALESCE(available_at, created_at) ASC,
                     created_at ASC,
                     id ASC
-                {lock_clause}
+                LIMIT 1{lock_clause}
                 """,
                 params,
-            ).fetchall()
+            ).fetchone()
 
-            now = utc_now_iso()
-            lease_id = f"lease-{secrets.token_hex(8)}"
-            lease_expires = _future_iso(LEASE_MINUTES)
-            chosen: Any | None = None
-
-            for cand in candidates:
-                excluded = set(loads_json(cand["excluded_handles_json"], []))
-                if agent_handle in excluded:
-                    continue
-                target_fid = cand["target_finding_id"]
-                if target_fid and target_fid in ineligible_findings:
-                    continue
-                cur = conn.execute(
-                    """
-                    UPDATE tasks
-                    SET status = 'claimed', claimed_by_agent_id = ?, claimed_by_handle = ?,
-                        lease_id = ?, lease_expires_at = ?, progress_pct = 5,
-                        attempt_count = attempt_count + 1, updated_at = ?
-                    WHERE id = ? AND status = 'queued'
-                    """,
-                    (agent["id"], agent_handle, lease_id, lease_expires, now, cand["id"]),
-                )
-                if cur.rowcount == 1:
-                    chosen = cand
-                    break
-
-            if chosen is None:
+            if cand is None:
                 conn.execute(
                     "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
                     (now, agent["id"]),
                 )
                 return None
 
+            # Defense-in-depth exclusion verification
+            excluded = set(loads_json(cand["excluded_handles_json"], []))
+            if agent_handle in excluded or (
+                cand["target_finding_id"] and str(cand["target_finding_id"]) in ineligible_findings
+            ):
+                conn.execute(
+                    "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                    (now, agent["id"]),
+                )
+                return None
+
+            lease_id = f"lease-{secrets.token_hex(8)}"
+            lease_expires = _future_iso(LEASE_MINUTES)
+            cur = conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'claimed', claimed_by_agent_id = ?, claimed_by_handle = ?,
+                    lease_id = ?, lease_expires_at = ?, progress_pct = 5,
+                    attempt_count = attempt_count + 1, updated_at = ?
+                WHERE id = ? AND status = 'queued'
+                """,
+                (agent["id"], agent_handle, lease_id, lease_expires, now, cand["id"]),
+            )
+            if cur.rowcount != 1:
+                return None
+
             conn.execute(
                 "UPDATE agents SET current_task_id = ?, last_heartbeat_at = ?, status = 'active' WHERE id = ?",
-                (chosen["id"], now, agent["id"]),
+                (cand["id"], now, agent["id"]),
             )
             whisper = self._insert_whisper(
                 conn,
                 agent_handle=agent_handle,
                 provider=agent["provider"],
                 model=agent["model"],
-                mission_slug=chosen["mission_slug"],
-                finding_id=chosen["target_finding_id"],
+                mission_slug=cand["mission_slug"],
+                finding_id=cand["target_finding_id"],
                 event_type="task_claimed",
-                message=f"Claimed {chosen['task_type']} task ({chosen['methodology_code']}): {chosen['title'][:110]}",
+                message=f"Claimed {cand['task_type']} task ({cand['methodology_code']}): {cand['title'][:110]}",
             )
-            task_payload = loads_json(chosen["payload_json"], {})
+            task_payload = loads_json(cand["payload_json"], {})
             response = {
                 "lease_id": lease_id,
                 "lease_expires_at": lease_expires,
                 "task": {
-                    "id": chosen["id"],
-                    "task_type": chosen["task_type"],
-                    "mission_slug": chosen["mission_slug"],
-                    "methodology_code": chosen["methodology_code"],
-                    "title": chosen["title"],
-                    "instructions": chosen["instructions"],
+                    "id": cand["id"],
+                    "task_type": cand["task_type"],
+                    "mission_slug": cand["mission_slug"],
+                    "methodology_code": cand["methodology_code"],
+                    "title": cand["title"],
+                    "instructions": cand["instructions"],
+                    "target_finding_id": cand["target_finding_id"],
                     "payload": task_payload,
                 },
             }
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "task_claimed",
+                {
+                    "agent_handle": agent_handle,
+                    "task_id": response["task"]["id"],
+                    "task_type": response["task"]["task_type"],
+                    "mission_slug": response["task"]["mission_slug"],
+                    "methodology_code": response["task"]["methodology_code"],
+                },
+                now=now,
+            )
+            self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
 
-        self.broker.publish(
-            "task_claimed",
-            {
-                "agent_handle": agent_handle,
-                "task_id": response["task"]["id"],
-                "task_type": response["task"]["task_type"],
-                "mission_slug": response["task"]["mission_slug"],
-                "methodology_code": response["task"]["methodology_code"],
-            },
-        )
-        self.broker.publish("whisper", whisper)
+        self._broadcast_envelopes(envelopes)
         return response
+
+    def _lock_and_verify_lease(
+        self,
+        conn: Any,
+        *,
+        lease_id: str,
+        token: str | None,
+        now: str,
+        allow_settled_idempotency_key: str | None = None,
+    ) -> tuple[Any, Any, dict[str, Any] | None]:
+        """Enforce authenticated contributor + active unexpired lease ownership atomically."""
+        authed = self._authenticate_agent(conn, token, required=True)
+        assert authed is not None
+
+        lock_clause = " FOR UPDATE" if self.db.is_postgres else ""
+        task = conn.execute(
+            f"SELECT * FROM tasks WHERE lease_id = ?{lock_clause}", (lease_id,)
+        ).fetchone()
+        if task is None:
+            raise HTTPException(status_code=404, detail="Lease not found")
+
+        if authed["id"] != task["claimed_by_agent_id"]:
+            raise HTTPException(status_code=403, detail="Lease belongs to another agent")
+
+        if task["status"] in ("completed", "settled"):
+            if (
+                allow_settled_idempotency_key
+                and _row_get(task, "settlement_idempotency_key", None) == allow_settled_idempotency_key
+                and _row_get(task, "settlement_response_json", None)
+            ):
+                cached = loads_json(task["settlement_response_json"], None)
+                if isinstance(cached, dict):
+                    return authed, task, {**cached, "idempotent_replay": True}
+            raise HTTPException(status_code=410, detail="Task already settled; stop and claim next")
+
+        if task["status"] != "claimed":
+            raise HTTPException(status_code=410, detail="Lease is no longer active")
+
+        exp = task["lease_expires_at"]
+        if exp and str(exp) < now:
+            raise HTTPException(status_code=410, detail="Lease has expired; stop and claim next")
+
+        return authed, task, None
 
     def heartbeat(
         self,
@@ -1742,46 +3120,41 @@ class DeskService:
         whisper_text: str | None = None,
         progress_pct: int | None = None,
     ) -> dict[str, Any]:
-        whisper_obj: dict[str, Any] | None = None
+        envelopes: list[dict[str, Any]] = []
+        now = utc_now_iso()
         with self.db.transaction() as conn:
-            authed = self._authenticate_agent(conn, token, required=False)
-            task = conn.execute("SELECT * FROM tasks WHERE lease_id = ?", (lease_id,)).fetchone()
-            if task is None:
-                raise HTTPException(status_code=404, detail="Lease not found")
-            if task["status"] in ("completed", "settled", "failed"):
-                raise HTTPException(status_code=410, detail="Task already settled; stop and claim next")
-            if task["status"] != "claimed":
-                raise HTTPException(status_code=410, detail="Lease is no longer active")
-            if authed is not None and authed["id"] != task["claimed_by_agent_id"]:
-                raise HTTPException(status_code=403, detail="Lease belongs to another agent")
-
-            now = utc_now_iso()
+            authed, task, _ = self._lock_and_verify_lease(conn, lease_id=lease_id, token=token, now=now)
             new_exp = _future_iso(LEASE_MINUTES)
             pct = max(0, min(100, int(progress_pct))) if progress_pct is not None else int(task["progress_pct"] or 0)
-            conn.execute(
-                "UPDATE tasks SET lease_expires_at = ?, progress_pct = ?, updated_at = ? WHERE id = ?",
-                (new_exp, pct, now, task["id"]),
+            cur = conn.execute(
+                """
+                UPDATE tasks
+                SET lease_expires_at = ?, progress_pct = ?, updated_at = ?
+                WHERE id = ? AND lease_id = ? AND claimed_by_agent_id = ? AND status = 'claimed'
+                """,
+                (new_exp, pct, now, task["id"], lease_id, authed["id"]),
             )
-            agent = conn.execute("SELECT * FROM agents WHERE id = ?", (task["claimed_by_agent_id"],)).fetchone()
-            if agent is not None:
-                conn.execute(
-                    "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
-                    (now, agent["id"]),
-                )
-                if whisper_text and whisper_text.strip():
-                    whisper_obj = self._insert_whisper(
-                        conn,
-                        agent_handle=agent["handle"],
-                        provider=agent["provider"],
-                        model=agent["model"],
-                        mission_slug=task["mission_slug"],
-                        finding_id=task["target_finding_id"],
-                        event_type="whisper",
-                        message=whisper_text.strip(),
-                    )
+            if cur.rowcount != 1:
+                raise HTTPException(status_code=410, detail="Lease is no longer active")
 
-        if whisper_obj is not None:
-            self.broker.publish("whisper", whisper_obj)
+            conn.execute(
+                "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                (now, authed["id"]),
+            )
+            if whisper_text and whisper_text.strip():
+                whisper_obj = self._insert_whisper(
+                    conn,
+                    agent_handle=authed["handle"],
+                    provider=authed["provider"],
+                    model=authed["model"],
+                    mission_slug=task["mission_slug"],
+                    finding_id=task["target_finding_id"],
+                    event_type="whisper",
+                    message=whisper_text.strip(),
+                )
+                self._emit_durable_event(conn, envelopes, "whisper", whisper_obj, now=now)
+
+        self._broadcast_envelopes(envelopes)
         return {"status": "active", "lease_expires_at": new_exp, "progress_pct": pct}
 
     def release_task(
@@ -1792,41 +3165,86 @@ class DeskService:
         notes: str | None = None,
         token: str | None = None,
     ) -> dict[str, Any]:
-        with self.db.transaction() as conn:
-            authed = self._authenticate_agent(conn, token, required=False)
-            task = conn.execute("SELECT * FROM tasks WHERE lease_id = ?", (lease_id,)).fetchone()
-            if task is None:
-                raise HTTPException(status_code=404, detail="Lease not found")
-            if task["status"] in ("completed", "settled"):
-                raise HTTPException(status_code=410, detail="Task already settled")
-            if authed is not None and authed["id"] != task["claimed_by_agent_id"]:
-                raise HTTPException(status_code=403, detail="Lease belongs to another agent")
+        now = utc_now_iso()
+        base_delay = int(os.environ.get("AIWATCHDOGS_RETRY_BASE_SECONDS", str(DEFAULT_RETRY_BASE_SECONDS)))
+        envelopes: list[dict[str, Any]] = []
 
-            now = utc_now_iso()
+        with self.db.transaction() as conn:
+            authed, task, _ = self._lock_and_verify_lease(conn, lease_id=lease_id, token=token, now=now)
             clean_notes, _ = scrub_pii(notes or "")
-            conn.execute(
+            new_retry = int(_row_get(task, "retry_count", 0) or 0) + 1
+            max_retries = int(_row_get(task, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
+
+            if reason == "permanent_error":
+                next_status = "failed"
+                available_at: str | None = None
+            elif new_retry >= max_retries:
+                next_status = "needs_adjudication"
+                available_at = None
+            else:
+                next_status = "queued"
+                delay_sec = min(900, max(0, base_delay) * (2 ** max(0, new_retry - 1)))
+                available_at = _future_iso_seconds(delay_sec) if delay_sec > 0 else now
+
+            cur = conn.execute(
                 """
                 UPDATE tasks
-                SET status = 'queued', claimed_by_agent_id = NULL, claimed_by_handle = NULL,
+                SET status = ?, claimed_by_agent_id = NULL, claimed_by_handle = NULL,
                     lease_id = NULL, lease_expires_at = NULL, progress_pct = 0,
-                    output_json = ?, updated_at = ?
-                WHERE id = ?
+                    retry_count = ?, available_at = ?, output_json = ?, updated_at = ?
+                WHERE id = ? AND lease_id = ? AND claimed_by_agent_id = ? AND status = 'claimed'
                 """,
-                (dumps_json({"released_reason": reason, "notes": clean_notes}), now, task["id"]),
+                (
+                    next_status,
+                    new_retry,
+                    available_at,
+                    dumps_json({"released_reason": reason, "notes": clean_notes, "retry_count": new_retry}),
+                    now,
+                    task["id"],
+                    lease_id,
+                    authed["id"],
+                ),
             )
-            if task["claimed_by_agent_id"]:
-                conn.execute(
-                    "UPDATE agents SET current_task_id = NULL, last_heartbeat_at = ? WHERE id = ?",
-                    (now, task["claimed_by_agent_id"]),
-                )
-            task_id = task["id"]
+            if cur.rowcount != 1:
+                raise HTTPException(status_code=410, detail="Lease is no longer active")
 
-        return {"status": "released", "task_id": task_id, "reason": reason}
+            conn.execute(
+                "UPDATE agents SET current_task_id = NULL, last_heartbeat_at = ? WHERE id = ?",
+                (now, authed["id"]),
+            )
+            task_id = str(task["id"])
+            if next_status in ("needs_adjudication", "failed"):
+                self._emit_durable_event(
+                    conn,
+                    envelopes,
+                    "task_escalated",
+                    {
+                        "task_id": task_id,
+                        "status": next_status,
+                        "reason": reason,
+                        "retry_count": new_retry,
+                        "max_retries": max_retries,
+                    },
+                    now=now,
+                )
+
+        self._broadcast_envelopes(envelopes)
+        return {
+            "status": "released" if next_status == "queued" else next_status,
+            "task_status": next_status,
+            "task_id": task_id,
+            "reason": reason,
+            "retry_count": new_retry,
+            "max_retries": max_retries,
+            "available_at": available_at,
+        }
 
     def submit_task(
         self,
         payload: dict[str, Any],
         token: str | None = None,
+        *,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         lease_id = str(payload.get("lease_id") or "").strip()
         outcome = str(payload.get("outcome") or "").strip().lower()
@@ -1835,104 +3253,184 @@ class DeskService:
                 status_code=422,
                 detail="outcome must be one of 'finding', 'cleared', or 'verification'",
             )
-
-        events_to_publish: list[tuple[str, dict[str, Any]]] = []
+        eff_idem = (idempotency_key or str(payload.get("idempotency_key") or "")).strip() or None
+        envelopes: list[dict[str, Any]] = []
+        now = utc_now_iso()
 
         with self.db.transaction() as conn:
-            authed = self._authenticate_agent(conn, token, required=False)
-            task = conn.execute("SELECT * FROM tasks WHERE lease_id = ?", (lease_id,)).fetchone()
-            if task is None:
-                raise HTTPException(status_code=404, detail="Lease not found")
-            if task["status"] in ("completed", "settled"):
-                raise HTTPException(status_code=410, detail="Task already settled")
-            if task["status"] != "claimed":
-                raise HTTPException(status_code=410, detail="Lease is no longer active")
-            if authed is not None and authed["id"] != task["claimed_by_agent_id"]:
-                raise HTTPException(status_code=403, detail="Lease belongs to another agent")
+            agent, task, replay = self._lock_and_verify_lease(
+                conn,
+                lease_id=lease_id,
+                token=token,
+                now=now,
+                allow_settled_idempotency_key=eff_idem,
+            )
+            if replay is not None:
+                return replay
 
-            agent = conn.execute("SELECT * FROM agents WHERE id = ?", (task["claimed_by_agent_id"],)).fetchone()
-            if agent is None:
-                raise HTTPException(status_code=404, detail="Claiming agent not found")
+            # Server-authoritative task type enforcement
+            assigned_type = str(task["task_type"] or "").strip().lower()
+            if assigned_type == "peer_verify" and outcome != "verification":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Assigned lease is a peer_verify task; outcome must be 'verification'.",
+                )
+            if assigned_type in ("anomaly_scan", "ingest_parse") and outcome == "verification":
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Assigned lease is a {assigned_type} task; outcome must be 'finding' or 'cleared'.",
+                )
 
             mission = conn.execute("SELECT * FROM missions WHERE id = ?", (task["mission_id"],)).fetchone()
             if mission is None:
                 raise HTTPException(status_code=404, detail="Mission not found")
 
-            now = utc_now_iso()
             whisper_text = str(payload.get("whisper") or "").strip()
-            metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+            raw_metrics = payload.get("metrics") if isinstance(payload.get("metrics"), dict) else {}
+            metrics, _ = _scrub_recursive(raw_metrics)
+            if not isinstance(metrics, dict):
+                metrics = {}
 
             if outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
                     task=task,
+                    lease_id=lease_id,
                     agent=agent,
                     mission=mission,
                     finding_in=payload.get("finding"),
                     whisper_text=whisper_text,
                     metrics=metrics,
+                    idempotency_key=eff_idem,
                     now=now,
-                    events=events_to_publish,
+                    envelopes=envelopes,
                 )
             elif outcome == "verification":
                 result = self._handle_submit_verification(
                     conn=conn,
                     task=task,
+                    lease_id=lease_id,
                     agent=agent,
                     mission=mission,
                     verif_in=payload.get("verification"),
                     whisper_text=whisper_text,
+                    idempotency_key=eff_idem,
                     now=now,
-                    events=events_to_publish,
+                    envelopes=envelopes,
                 )
             else:
                 result = self._handle_submit_cleared(
                     conn=conn,
                     task=task,
+                    lease_id=lease_id,
                     agent=agent,
                     mission=mission,
                     whisper_text=whisper_text,
                     metrics=metrics,
+                    idempotency_key=eff_idem,
                     now=now,
-                    events=events_to_publish,
+                    envelopes=envelopes,
                 )
 
-        for ev_type, ev_payload in events_to_publish:
-            self.broker.publish(ev_type, ev_payload)
+        self._broadcast_envelopes(envelopes)
         return result
+
+    def _settle_task_atomically(
+        self,
+        conn: Any,
+        *,
+        task_id: str,
+        lease_id: str,
+        agent_id: str,
+        output_obj: dict[str, Any],
+        idempotency_key: str | None,
+        response_obj: dict[str, Any],
+        monetary_audited_inr: float,
+        now: str,
+    ) -> None:
+        cur = conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'completed', progress_pct = 100, output_json = ?,
+                settlement_idempotency_key = ?, settlement_response_json = ?,
+                monetary_audited_inr = ?, updated_at = ?, completed_at = ?
+            WHERE id = ? AND lease_id = ? AND claimed_by_agent_id = ? AND status = 'claimed'
+            """,
+            (
+                dumps_json(output_obj),
+                idempotency_key,
+                dumps_json(response_obj),
+                float(monetary_audited_inr),
+                now,
+                now,
+                task_id,
+                lease_id,
+                agent_id,
+            ),
+        )
+        if cur.rowcount != 1:
+            raise HTTPException(
+                status_code=410,
+                detail="Task was already settled or lease ownership changed concurrently.",
+            )
 
     def _handle_submit_finding(
         self,
         *,
         conn: Any,
         task: Any,
+        lease_id: str,
         agent: Any,
         mission: Any,
         finding_in: Any,
         whisper_text: str,
         metrics: dict[str, Any],
+        idempotency_key: str | None,
         now: str,
-        events: list[tuple[str, dict[str, Any]]],
+        envelopes: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not isinstance(finding_in, dict):
             raise HTTPException(status_code=422, detail="'finding' object is required when outcome='finding'")
 
         task_payload = loads_json(task["payload_json"], {})
+        if not isinstance(task_payload, dict):
+            task_payload = {}
+
         raw_title = str(finding_in.get("title") or "").strip()
         raw_summary = str(finding_in.get("summary") or "").strip()
         raw_benign = finding_in.get("benign_explanations")
         benign_list = [str(x).strip() for x in raw_benign] if isinstance(raw_benign, list) else []
 
-        # 1. PII scrubbing (DPDP Act 2023)
+        # 1. Recursive PII scrubbing across ALL text & nested metrics/trace/citations/locators
         title, red_title = scrub_pii(raw_title)
         summary, red_sum = scrub_pii(raw_summary)
         entity_name, red_ent = scrub_pii(str(finding_in.get("entity_name") or mission["ministry_or_authority"]).strip())
-        benign_clean, red_ben = scrub_pii_in_obj(benign_list)
-        citations_clean, red_cit = scrub_pii_in_obj(finding_in.get("citations") or [])
-        all_redactions = sorted(set(red_title + red_sum + red_ent + red_ben + red_cit))
+        suggested_authority, red_auth = scrub_pii(
+            str(finding_in.get("suggested_authority") or mission["ministry_or_authority"]).strip()
+        )
+        raw_editorial = finding_in.get("editorial_interpretation")
+        if isinstance(raw_editorial, dict):
+            raw_editorial_text = str(raw_editorial.get("text") or "").strip()
+        else:
+            raw_editorial_text = str(raw_editorial or "").strip()
+        editorial_interp, red_interp = scrub_pii(raw_editorial_text)
+        benign_clean, red_ben = _scrub_recursive(benign_list)
+        citations_clean, red_cit = _scrub_recursive(finding_in.get("citations") or [])
+        raw_anomaly = finding_in.get("anomaly_metrics") if isinstance(finding_in.get("anomaly_metrics"), dict) else {}
+        anomaly_metrics, red_met = _scrub_recursive(raw_anomaly)
+        raw_trace = finding_in.get("agent_trace") if isinstance(finding_in.get("agent_trace"), dict) else {}
+        trace_clean, red_trc = _scrub_recursive(raw_trace)
+        raw_locator = finding_in.get("source_locator")
+        locator_clean, red_loc = _scrub_recursive(
+            raw_locator if isinstance(raw_locator, (dict, str)) else {}
+        )
+        all_redactions = sorted(
+            set(red_title + red_sum + red_ent + red_auth + red_interp + red_ben + red_cit + red_met + red_trc + red_loc)
+        )
 
         # 2. Neutrality & journalistic fairness linting (BNS Sec 356)
-        lint_result = lint_neutrality(title, summary, benign_clean)
+        benign_for_lint = benign_clean if isinstance(benign_clean, list) else []
+        lint_result = lint_neutrality(title, summary, benign_for_lint)
         if not lint_result.passed:
             raise HTTPException(
                 status_code=422,
@@ -1941,42 +3439,120 @@ class DeskService:
                     "violations": lint_result.violations,
                 },
             )
+        if editorial_interp:
+            ed_lint = lint_neutrality(title, editorial_interp, benign_for_lint)
+            if not ed_lint.passed:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "message": "Editorial interpretation rejected by automated legal neutrality guardrails (BNS Sec 356).",
+                        "violations": ed_lint.violations,
+                    },
+                )
 
         finding_id = f"fnd-{secrets.token_hex(6)}"
         method_code = str(finding_in.get("methodology_code") or task["methodology_code"]).upper().strip()
         jurisdiction = str(finding_in.get("jurisdiction") or mission["jurisdiction"]).strip()
-        fiscal_year = str(finding_in.get("fiscal_year") or "FY2024-25").strip()
+        fiscal_year = str(finding_in.get("fiscal_year") or task_payload.get("fiscal_year") or "FY2024-25").strip()
+        fiscal_year_start = str(finding_in.get("fiscal_year_start") or "").strip() or None
+        fiscal_year_end = str(finding_in.get("fiscal_year_end") or "").strip() or None
         exposure_inr = float(finding_in.get("monetary_exposure_inr") or 0.0)
         severity = str(finding_in.get("severity") or "medium").lower().strip()
         if severity not in {"low", "medium", "high", "critical"}:
             severity = "medium"
-        anomaly_metrics = finding_in.get("anomaly_metrics") if isinstance(finding_in.get("anomaly_metrics"), dict) else {}
         rule_triggered = str(finding_in.get("rule_triggered") or f"{method_code}-Deterministic-Rule").strip()
-        dataset_url = str(finding_in.get("dataset_url") or task_payload.get("dataset_url") or "").strip()
-        source_url = str(
+        engine_version = str(
+            finding_in.get("engine_version")
+            or (trace_clean.get("engine_version") if isinstance(trace_clean, dict) else "")
+            or ""
+        ).strip()
+        ruleset_version = str(
+            finding_in.get("ruleset_version")
+            or (trace_clean.get("ruleset_version") if isinstance(trace_clean, dict) else "")
+            or ""
+        ).strip()
+        as_of_date = str(
+            finding_in.get("as_of_date")
+            or task_payload.get("as_of_date")
+            or (trace_clean.get("as_of_date") if isinstance(trace_clean, dict) else "")
+            or ""
+        ).strip() or None
+
+        # Separated provenance fields (never conflate civic mirror catalog with official publisher)
+        retrieval_url = str(
+            finding_in.get("retrieval_url")
+            or finding_in.get("dataset_url")
+            or task_payload.get("retrieval_url")
+            or task_payload.get("dataset_url")
+            or ""
+        ).strip()
+        source_landing_page = str(
+            finding_in.get("source_landing_page")
+            or task_payload.get("source_landing_page")
+            or finding_in.get("source_url")
+            or task_payload.get("source_url")
+            or ""
+        ).strip()
+        official_publisher = str(
+            finding_in.get("official_publisher")
+            or task_payload.get("official_publisher")
+            or mission["ministry_or_authority"]
+        ).strip()
+        mirror_name = str(
+            finding_in.get("mirror_name") or task_payload.get("mirror_name") or ""
+        ).strip()
+        mirror_catalog_url = str(
+            finding_in.get("mirror_catalog_url") or task_payload.get("mirror_catalog_url") or ""
+        ).strip()
+        archive_url = str(
+            finding_in.get("archive_url") or task_payload.get("archive_url") or ""
+        ).strip() or None
+        source_url = source_landing_page or str(
             finding_in.get("source_url")
             or finding_in.get("canonical_url")
             or task_payload.get("source_url")
-            or dataset_url
+            or retrieval_url
             or ""
         ).strip()
         dataset_path = str(
             finding_in.get("dataset_path")
-            or dataset_url
+            or retrieval_url
             or task_payload.get("dataset_path")
             or mission["sample_dataset_path"]
             or ""
         ).strip()
-        artifact_sha256 = str(
+
+        # NEVER fabricate a synthetic SHA-256 from finding metadata when unrecorded!
+        raw_sha = str(
             finding_in.get("artifact_sha256")
             or task_payload.get("expected_sha256")
             or task_payload.get("artifact_sha256")
-            or compute_sha256(f"{finding_id}:{title}:{dataset_path}")
+            or ""
         ).strip()
-        requested_artifact_id = finding_in.get("artifact_id") or task_payload.get("artifact_id")
+        artifact_sha256: str | None = raw_sha if raw_sha else None
+
+        secondary_url = str(
+            finding_in.get("secondary_url") or task_payload.get("secondary_url") or ""
+        ).strip() or None
+        secondary_sha256 = str(
+            finding_in.get("secondary_sha256") or task_payload.get("secondary_sha256") or ""
+        ).strip() or None
+
+        byte_size = int(finding_in.get("byte_size") or metrics.get("byte_size") or 0)
+        fetched_at = str(finding_in.get("fetched_at") or metrics.get("fetched_at") or now).strip()
         is_demo = 1 if finding_in.get("is_demo_sample", task_payload.get("is_demo_sample", False)) else 0
 
-        # Ensure artifact_id references a valid evidence_artifacts row (FK-safe on Postgres & SQLite)
+        # Resolve exact source_id without blindly choosing mission.source_ids[0]
+        resolved_source_id = self._resolve_source_id(
+            conn,
+            requested_source_id=finding_in.get("source_id") or task_payload.get("source_id"),
+            source_landing_page=source_landing_page,
+            source_url=source_url,
+            dataset_url=retrieval_url,
+        )
+
+        # Preserve full artifact record
+        requested_artifact_id = finding_in.get("artifact_id") or task_payload.get("artifact_id")
         artifact_id: str | None = None
         if requested_artifact_id:
             existing_art = conn.execute(
@@ -1986,18 +3562,9 @@ class DeskService:
             if existing_art is not None:
                 artifact_id = existing_art["id"]
 
-        if artifact_id is None and (dataset_url or source_url or artifact_sha256):
+        if artifact_id is None and (retrieval_url or source_url or artifact_sha256):
             artifact_id = f"art-{finding_id}"
-            mission_sources = loads_json(mission["source_ids_json"], [])
-            primary_source_id: str | None = None
-            if mission_sources:
-                src_check = conn.execute(
-                    "SELECT id FROM public_sources WHERE id = ?",
-                    (str(mission_sources[0]),),
-                ).fetchone()
-                if src_check is not None:
-                    primary_source_id = src_check["id"]
-            canonical_ref = dataset_url or source_url or dataset_path
+            canonical_ref = retrieval_url or source_url or dataset_path
             lower_ref = canonical_ref.lower()
             if lower_ref.endswith(".pdf"):
                 fmt = "pdf"
@@ -2020,62 +3587,120 @@ class DeskService:
                 """
                 INSERT OR IGNORE INTO evidence_artifacts (
                     id, source_id, mission_id, title, canonical_url, archive_url,
-                    local_path, file_format, sha256, byte_size, is_demo_sample,
-                    pii_scrubbed, fetched_at, parsed_metadata_json
-                ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 1, ?, ?)
+                    official_publisher, source_landing_page, mirror_name, retrieval_url,
+                    secondary_url, secondary_sha256, local_path, file_format, sha256,
+                    byte_size, is_demo_sample, pii_scrubbed, fetched_at, parsed_metadata_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
                 """,
                 (
                     artifact_id,
-                    primary_source_id,
+                    resolved_source_id,
                     mission["id"],
                     art_title,
                     canonical_ref,
+                    archive_url,
+                    official_publisher,
+                    source_landing_page,
+                    mirror_name,
+                    retrieval_url or canonical_ref,
+                    secondary_url,
+                    secondary_sha256,
                     dataset_path or None,
                     fmt,
                     artifact_sha256,
-                    int(metrics.get("byte_size") or 0),
+                    byte_size,
                     is_demo,
-                    now,
+                    fetched_at,
                     dumps_json(
                         {
+                            "official_publisher": official_publisher,
+                            "source_landing_page": source_landing_page,
+                            "mirror_name": mirror_name,
+                            "mirror_catalog_url": mirror_catalog_url,
+                            "retrieval_url": retrieval_url or canonical_ref,
                             "source_url": source_url,
-                            "dataset_url": dataset_url,
-                            "secondary_url": task_payload.get("secondary_url"),
+                            "dataset_url": retrieval_url,
+                            "secondary_url": secondary_url,
+                            "secondary_sha256": secondary_sha256,
+                            "secondary_source_id": task_payload.get("secondary_source_id"),
                             "methodology_code": method_code,
                         }
                     ),
                 ),
             )
 
-        suggested_authority = str(finding_in.get("suggested_authority") or mission["ministry_or_authority"]).strip()
-        agent_trace = finding_in.get("agent_trace") if isinstance(finding_in.get("agent_trace"), dict) else {}
-        agent_trace = {
+        provenance_obj = {
+            "official_publisher": official_publisher,
+            "source_landing_page": source_landing_page,
+            "mirror_name": mirror_name,
+            "mirror_catalog_url": mirror_catalog_url,
+            "retrieval_url": retrieval_url or source_url,
+            "archive_url": archive_url,
+            "sha256": artifact_sha256,
+            "byte_size": byte_size,
+            "fetched_at": fetched_at,
+            "secondary_url": secondary_url,
+            "secondary_sha256": secondary_sha256,
+            "secondary_source_id": task_payload.get("secondary_source_id"),
+        }
+
+        agent_trace: dict[str, Any] = {
             "node_handle": agent["handle"],
             "provider": agent["provider"],
             "model_id": agent["model"],
-            **agent_trace,
+            **(trace_clean if isinstance(trace_clean, dict) else {}),
         }
+
+        # Atomic settlement guard FIRST before creating finding/tasks/counters
+        audited_delta = float(metrics.get("monetary_audited_inr") or exposure_inr or 0.0)
+        pv_task_ids = [f"tsk-pv-{finding_id}-1", f"tsk-pv-{finding_id}-2"]
+        response_obj = {
+            "status": "accepted",
+            "outcome": "finding",
+            "finding_id": finding_id,
+            "finding_status": "peer_review",
+            "peer_verify_tasks_created": len(pv_task_ids),
+            "peer_verify_task_ids": pv_task_ids,
+            "pii_redactions": all_redactions,
+        }
+        self._settle_task_atomically(
+            conn,
+            task_id=str(task["id"]),
+            lease_id=lease_id,
+            agent_id=str(agent["id"]),
+            output_obj={"outcome": "finding", "finding_id": finding_id},
+            idempotency_key=idempotency_key,
+            response_obj=response_obj,
+            monetary_audited_inr=audited_delta,
+            now=now,
+        )
 
         conn.execute(
             """
             INSERT INTO findings (
-                id, mission_id, mission_slug, pillar, task_id, artifact_id,
-                title, summary, methodology_code, entity_name, jurisdiction,
-                fiscal_year, monetary_exposure_inr, severity, anomaly_metrics_json,
-                rule_triggered, source_url, artifact_sha256, dataset_path,
-                is_demo_sample, citations_json, benign_explanations_json,
+                id, mission_id, mission_slug, pillar, task_id, artifact_id, source_id,
+                title, summary, editorial_interpretation, methodology_code, entity_name,
+                jurisdiction, fiscal_year, fiscal_year_start, fiscal_year_end,
+                monetary_exposure_inr, severity, anomaly_metrics_json, rule_triggered,
+                engine_version, ruleset_version, as_of_date, source_locator_json,
+                provenance_json, source_url, artifact_sha256, secondary_sha256,
+                dataset_path, is_demo_sample, citations_json, benign_explanations_json,
                 suggested_authority, submitted_by, submitted_by_agent_id,
                 agent_trace_json, legal_lint_passed, pii_scrubbed, status,
+                editorial_status, quarantined, quarantine_reason,
                 verification_score, confirm_count, dispute_count, required_quorum,
                 created_at, verified_at
             ) VALUES (
-                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
-                ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?,
                 ?, ?, ?,
                 ?, 1, 1, 'peer_review',
+                'none', 0, '',
                 0.0, 0, 0, 2,
                 ?, NULL
             )
@@ -2087,18 +3712,28 @@ class DeskService:
                 mission["pillar"],
                 task["id"],
                 artifact_id,
+                resolved_source_id,
                 title,
                 summary,
+                editorial_interp,
                 method_code,
                 entity_name,
                 jurisdiction,
                 fiscal_year,
+                fiscal_year_start,
+                fiscal_year_end,
                 exposure_inr,
                 severity,
                 dumps_json(anomaly_metrics),
                 rule_triggered,
+                engine_version,
+                ruleset_version,
+                as_of_date,
+                dumps_json(locator_clean),
+                dumps_json(provenance_obj),
                 source_url,
                 artifact_sha256,
+                secondary_sha256,
                 dataset_path,
                 is_demo,
                 dumps_json(citations_clean),
@@ -2111,18 +3746,52 @@ class DeskService:
             ),
         )
 
-        # Auto-create 2 independent peer_verify tasks
-        pv_task_ids: list[str] = []
-        for slot in (1, 2):
-            pv_id = f"tsk-pv-{finding_id}-{slot}"
-            pv_task_ids.append(pv_id)
+        # Auto-create 2 independent peer_verify tasks with full bound manifest
+        pv_payload = {
+            "finding_id": finding_id,
+            "submitted_by": agent["handle"],
+            "review_type": "computational_reproduction",
+            "methodology_code": method_code,
+            "dataset_url": retrieval_url,
+            "retrieval_url": retrieval_url,
+            "secondary_url": secondary_url,
+            "secondary_sha256": secondary_sha256,
+            "dataset_path": dataset_path,
+            "source_url": source_url,
+            "source_landing_page": source_landing_page,
+            "official_publisher": official_publisher,
+            "mirror_name": mirror_name,
+            "canonical_url": retrieval_url or source_url,
+            "artifact_id": artifact_id,
+            "artifact_sha256": artifact_sha256,
+            "expected_sha256": task_payload.get("expected_sha256") or artifact_sha256,
+            "engine_version": engine_version,
+            "ruleset_version": ruleset_version,
+            "as_of_date": as_of_date,
+            "source_locator": locator_clean,
+            "title": title,
+            "summary": summary,
+            "entity_name": entity_name,
+            "jurisdiction": jurisdiction,
+            "fiscal_year": fiscal_year,
+            "fiscal_year_start": fiscal_year_start,
+            "fiscal_year_end": fiscal_year_end,
+            "monetary_exposure_inr": exposure_inr,
+            "anomaly_metrics": anomaly_metrics,
+            "rule_triggered": rule_triggered,
+            "citations": citations_clean,
+            "benign_explanations": benign_clean,
+            "is_demo_sample": bool(is_demo),
+        }
+        for slot, pv_id in enumerate(pv_task_ids, start=1):
             conn.execute(
                 """
                 INSERT INTO tasks (
                     id, mission_id, mission_slug, methodology_code, task_type,
                     title, instructions, payload_json, target_finding_id,
-                    excluded_handles_json, status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', ?, ?)
+                    excluded_handles_json, status, dataset_key, financial_quantity_type,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
                 """,
                 (
                     pv_id,
@@ -2131,76 +3800,50 @@ class DeskService:
                     method_code,
                     f"Peer Verify ({slot}/2): {title[:96]}",
                     (
-                        "Independently load the referenced source dataset, verify SHA-256 provenance, "
-                        "re-run deterministic calculations, validate neutrality/PII rules, and submit verdict."
+                        "Independently load the pinned source dataset, verify primary & secondary SHA-256 "
+                        "digests, re-run deterministic calculations with the bound engine/ruleset/as-of date, "
+                        "validate neutrality & zero-PII, and submit explicit pass/fail/unrecorded checks."
                     ),
-                    dumps_json(
-                        {
-                            "finding_id": finding_id,
-                            "submitted_by": agent["handle"],
-                            "methodology_code": method_code,
-                            "dataset_url": dataset_url,
-                            "secondary_url": task_payload.get("secondary_url"),
-                            "secondary_sha256": task_payload.get("secondary_sha256"),
-                            "dataset_path": dataset_path,
-                            "source_url": source_url,
-                            "canonical_url": source_url,
-                            "artifact_id": artifact_id,
-                            "artifact_sha256": artifact_sha256,
-                            "expected_sha256": task_payload.get("expected_sha256") or artifact_sha256,
-                            "title": title,
-                            "summary": summary,
-                            "entity_name": entity_name,
-                            "jurisdiction": jurisdiction,
-                            "fiscal_year": fiscal_year,
-                            "monetary_exposure_inr": exposure_inr,
-                            "anomaly_metrics": anomaly_metrics,
-                            "rule_triggered": rule_triggered,
-                            "citations": citations_clean,
-                            "benign_explanations": benign_clean,
-                            "is_demo_sample": bool(is_demo),
-                        }
-                    ),
+                    dumps_json(pv_payload),
                     finding_id,
                     dumps_json([agent["handle"]]),
+                    _row_get(task, "dataset_key", ""),
+                    _row_get(task, "financial_quantity_type", ""),
                     now,
                     now,
                 ),
             )
 
-        # Mark originating task completed and update counters
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status = 'completed', progress_pct = 100, output_json = ?,
-                updated_at = ?, completed_at = ?
-            WHERE id = ?
-            """,
-            (dumps_json({"outcome": "finding", "finding_id": finding_id}), now, now, task["id"]),
-        )
-        audited_delta = float(metrics.get("monetary_audited_inr") or exposure_inr or 0.0)
+        uneval_delta = max(0, int(metrics.get("unevaluable_count") or 0))
         conn.execute(
             """
             UPDATE missions
             SET completed_tasks = completed_tasks + 1,
                 total_tasks = total_tasks + 2,
+                unevaluable_count = unevaluable_count + ?,
                 monetary_audited_inr = monetary_audited_inr + ?
             WHERE id = ?
             """,
-            (audited_delta, mission["id"]),
+            (uneval_delta, audited_delta, mission["id"]),
         )
         conn.execute(
             """
             UPDATE agents
             SET tasks_completed = tasks_completed + 1,
                 findings_submitted = findings_submitted + 1,
-                compute_score = compute_score + 5,
-                hourly_score = hourly_score + 5,
                 current_task_id = NULL,
                 last_heartbeat_at = ?
             WHERE id = ?
             """,
             (now, agent["id"]),
+        )
+        self._record_score_event(
+            conn,
+            agent_id=str(agent["id"]),
+            agent_handle=str(agent["handle"]),
+            event_type="finding_submitted",
+            ref_id=finding_id,
+            now=now,
         )
 
         whisper = self._insert_whisper(
@@ -2213,43 +3856,36 @@ class DeskService:
             event_type="finding_submitted",
             message=whisper_text or f"Submitted neutral {method_code} lead '{title[:85]}' for 2-of-2 peer verification.",
         )
-
-        events.append(
-            (
-                "finding_submitted",
-                {
-                    "finding_id": finding_id,
-                    "mission_slug": mission["slug"],
-                    "methodology_code": method_code,
-                    "title": title,
-                    "submitted_by": agent["handle"],
-                    "status": "peer_review",
-                },
-            )
+        self._emit_durable_event(
+            conn,
+            envelopes,
+            "finding_submitted",
+            {
+                "finding_id": finding_id,
+                "mission_slug": mission["slug"],
+                "methodology_code": method_code,
+                "title": title,
+                "submitted_by": agent["handle"],
+                "status": "peer_review",
+            },
+            now=now,
         )
-        events.append(("whisper", whisper))
-
-        return {
-            "status": "accepted",
-            "outcome": "finding",
-            "finding_id": finding_id,
-            "finding_status": "peer_review",
-            "peer_verify_tasks_created": len(pv_task_ids),
-            "peer_verify_task_ids": pv_task_ids,
-            "pii_redactions": all_redactions,
-        }
+        self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
+        return response_obj
 
     def _handle_submit_verification(
         self,
         *,
         conn: Any,
         task: Any,
+        lease_id: str,
         agent: Any,
         mission: Any,
         verif_in: Any,
         whisper_text: str,
+        idempotency_key: str | None,
         now: str,
-        events: list[tuple[str, dict[str, Any]]],
+        envelopes: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if not isinstance(verif_in, dict):
             raise HTTPException(
@@ -2257,17 +3893,35 @@ class DeskService:
             )
 
         task_payload = loads_json(task["payload_json"], {})
-        finding_id = str(
-            verif_in.get("finding_id") or task["target_finding_id"] or task_payload.get("finding_id") or ""
+        if not isinstance(task_payload, dict):
+            task_payload = {}
+
+        # Server-authoritative finding target: lease assignment decides target finding
+        assigned_finding_id = str(
+            task["target_finding_id"] or task_payload.get("finding_id") or ""
         ).strip()
+        submitted_finding_id = str(verif_in.get("finding_id") or "").strip()
+        if assigned_finding_id and submitted_finding_id and submitted_finding_id != assigned_finding_id:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Verification target mismatch: lease is assigned to finding '{assigned_finding_id}' "
+                    f"and cannot verify '{submitted_finding_id}'."
+                ),
+            )
+        finding_id = assigned_finding_id or submitted_finding_id
         if not finding_id:
             raise HTTPException(status_code=422, detail="verification.finding_id is required")
 
-        finding_row = conn.execute("SELECT * FROM findings WHERE id = ?", (finding_id,)).fetchone()
+        # Serialize vote aggregation on Postgres (FOR UPDATE) & SQLite (BEGIN IMMEDIATE)
+        lock_clause = " FOR UPDATE" if self.db.is_postgres else ""
+        finding_row = conn.execute(
+            f"SELECT * FROM findings WHERE id = ?{lock_clause}", (finding_id,)
+        ).fetchone()
         if finding_row is None:
             raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
 
-        # Enforce strict independence: no self-verification and no duplicate contributor votes
+        # Strict independence: no self-verification and no duplicate contributor votes
         if agent["handle"] == finding_row["submitted_by"]:
             raise HTTPException(
                 status_code=409,
@@ -2283,19 +3937,83 @@ class DeskService:
                 detail="Duplicate verification prohibited: contributor has already verified this finding.",
             )
 
-        verdict = str(verif_in.get("verdict") or "confirm").strip().lower()
+        # Strict explicit verdict (NEVER default omitted verdict to 'confirm'!)
+        raw_verdict = verif_in.get("verdict")
+        if raw_verdict is None or not str(raw_verdict).strip():
+            raise HTTPException(
+                status_code=422,
+                detail=f"verification.verdict is required and must be one of {sorted(VALID_VERDICTS)}",
+            )
+        verdict = str(raw_verdict).strip().lower()
         if verdict not in VALID_VERDICTS:
             raise HTTPException(
                 status_code=422,
                 detail=f"verdict must be one of {sorted(VALID_VERDICTS)}",
             )
 
-        checks = verif_in.get("checks") if isinstance(verif_in.get("checks"), dict) else {}
-        reproduced = (
-            verif_in.get("reproduced_metrics") if isinstance(verif_in.get("reproduced_metrics"), dict) else {}
-        )
-        confidence = max(0.0, min(1.0, float(verif_in.get("confidence", 0.9))))
+        # Strict explicit 4-check normalization (missing checks -> 'unrecorded', NEVER 'pass'!)
+        checks = _normalize_checks(verif_in.get("checks"), strict=True)
+
+        raw_repro = verif_in.get("reproduced_metrics")
+        if raw_repro is not None and not isinstance(raw_repro, dict):
+            raise HTTPException(status_code=422, detail="verification.reproduced_metrics must be an object")
+        reproduced, _ = _scrub_recursive(raw_repro if isinstance(raw_repro, dict) else {})
+        if not isinstance(reproduced, dict):
+            reproduced = {}
+
+        # Optional nullable confidence (NEVER default omitted confidence to 0.9!)
+        raw_conf = verif_in.get("confidence")
+        confidence: float | None = None
+        if raw_conf is not None:
+            try:
+                confidence = max(0.0, min(1.0, float(raw_conf)))
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail="verification.confidence must be numeric") from exc
+
+        review_type = str(
+            verif_in.get("review_type") or task_payload.get("review_type") or "computational_reproduction"
+        ).strip().lower()
+        if review_type not in VALID_REVIEW_TYPES:
+            review_type = "computational_reproduction"
+
+        manifest_raw: dict[str, Any] = {
+            "claim_id": str(verif_in.get("claim_id") or finding_id),
+            "review_type": review_type,
+            "source_locator": verif_in.get("source_locator"),
+            "engine_version": verif_in.get("engine_version"),
+            "ruleset_version": verif_in.get("ruleset_version"),
+            "as_of_date": verif_in.get("as_of_date"),
+            "artifact_sha256": verif_in.get("artifact_sha256") or reproduced.get("artifact_sha256"),
+            "secondary_sha256": verif_in.get("secondary_sha256") or reproduced.get("secondary_sha256"),
+        }
+        manifest_clean, _ = _scrub_recursive({k: v for k, v in manifest_raw.items() if v is not None})
         notes, _ = scrub_pii(str(verif_in.get("notes") or "").strip())
+
+        # Strict confirmation requirements: all 4 checks must explicitly pass + non-empty metrics + matching manifest
+        if verdict == "confirm":
+            missing_or_failed = [k for k in CANONICAL_CHECKS if checks.get(k) != "pass"]
+            if missing_or_failed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "verdict='confirm' requires explicit 'pass' on all four checks "
+                        f"({', '.join(CANONICAL_CHECKS)}); not passed: {', '.join(missing_or_failed)}"
+                    ),
+                )
+            if not reproduced:
+                raise HTTPException(
+                    status_code=422,
+                    detail="verdict='confirm' requires non-empty reproduced_metrics binding the calculation.",
+                )
+            # Reject explicit manifest conflicts with the finding's bound engine/ruleset/digests
+            for mfield in ("engine_version", "ruleset_version", "artifact_sha256", "secondary_sha256"):
+                f_val = str(_row_get(finding_row, mfield, "") or "").strip()
+                v_val = str(manifest_clean.get(mfield) or "").strip() if isinstance(manifest_clean, dict) else ""
+                if f_val and v_val and f_val.lower() != v_val.lower():
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"verdict='confirm' rejected: {mfield} mismatch (finding={f_val!r}, verifier={v_val!r}).",
+                    )
 
         pv_id = f"pv-{secrets.token_hex(6)}"
         try:
@@ -2303,9 +4021,9 @@ class DeskService:
                 """
                 INSERT INTO peer_verifications (
                     id, finding_id, verifier_node_id, contributor_id, verifier_handle,
-                    provider, model_id, verdict, checks_json, reproduced_metrics_json,
-                    confidence, notes, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    provider, model_id, review_type, verdict, checks_json,
+                    reproduced_metrics_json, manifest_json, confidence, notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     pv_id,
@@ -2315,9 +4033,11 @@ class DeskService:
                     agent["handle"],
                     agent["provider"],
                     agent["model"],
+                    review_type,
                     verdict,
                     dumps_json(checks),
                     dumps_json(reproduced),
+                    dumps_json(manifest_clean),
                     confidence,
                     notes,
                     now,
@@ -2329,25 +4049,60 @@ class DeskService:
                 detail="Duplicate verification prohibited by uniqueness constraint.",
             ) from exc
 
-        # Recompute quorum across all independent verifications for this finding
+        # Recompute quorum across ALL independent verifications for this finding under finding lock
         all_votes = conn.execute(
-            "SELECT verdict, confidence FROM peer_verifications WHERE finding_id = ?",
+            """
+            SELECT contributor_id, verdict, checks_json, reproduced_metrics_json, confidence
+            FROM peer_verifications
+            WHERE finding_id = ?
+            """,
             (finding_id,),
         ).fetchall()
-        confirm_count = sum(1 for v in all_votes if v["verdict"] == "confirm")
-        dispute_count = sum(1 for v in all_votes if v["verdict"] != "confirm")
-        has_pii_or_legal_flag = any(v["verdict"] == "flag_pii_or_legal" for v in all_votes)
-        total_votes = len(all_votes)
-        consensus = round(confirm_count / total_votes, 3) if total_votes > 0 else 0.0
 
-        prev_status = finding_row["status"]
+        qualified_confirms = 0
+        dispute_count = 0
+        has_pii_or_legal_flag = False
+        voter_handles: set[str] = {str(finding_row["submitted_by"])}
+
+        for v in all_votes:
+            voter_handles.add(str(v["contributor_id"]))
+            v_verdict = str(v["verdict"] or "")
+            if v_verdict == "flag_pii_or_legal":
+                has_pii_or_legal_flag = True
+                dispute_count += 1
+            elif v_verdict == "confirm":
+                v_checks = _normalize_checks(loads_json(v["checks_json"], {}), strict=False)
+                v_metrics = loads_json(v["reproduced_metrics_json"], {})
+                if _all_checks_passed(v_checks) and isinstance(v_metrics, dict) and len(v_metrics) > 0:
+                    qualified_confirms += 1
+            else:
+                dispute_count += 1
+
+        total_votes = len(all_votes)
+        consensus = round(qualified_confirms / total_votes, 3) if total_votes > 0 else 0.0
+
+        prev_status = str(finding_row["status"] or "")
         new_status = prev_status
+        new_editorial = str(_row_get(finding_row, "editorial_status", "none") or "none")
+        new_quarantined = int(_row_get(finding_row, "quarantined", 0) or 0)
+        new_quarantine_reason = str(_row_get(finding_row, "quarantine_reason", "") or "")
         promoted = False
+        adjudication_queued = False
+        adjudication_task_id: str | None = None
         rti_draft_id: str | None = None
 
         if has_pii_or_legal_flag:
-            new_status = "disputed"
-        elif confirm_count >= 2 and consensus >= 0.75 and (dispute_count == 0 or confirm_count >= 3):
+            new_status = "quarantined"
+            new_editorial = "quarantined"
+            new_quarantined = 1
+            new_quarantine_reason = "Flagged for privacy/legal review pending human adjudication."
+        elif (
+            new_quarantined == 0
+            and prev_status not in ("retracted", "under_review")
+            and qualified_confirms >= 2
+            and consensus >= 0.75
+            and (dispute_count == 0 or qualified_confirms >= 3)
+        ):
             new_status = "verified"
             promoted = prev_status != "verified"
         elif dispute_count >= 2 and consensus < 0.5:
@@ -2355,31 +4110,129 @@ class DeskService:
             new_status = "retracted_false_positive" if all_fp else "disputed"
 
         new_verified_at = now if (new_status == "verified" and not finding_row["verified_at"]) else finding_row["verified_at"]
+
+        # Check for split vote (1 confirm + 1 non-confirm) with no remaining open verification tasks
+        if new_status == "peer_review" and qualified_confirms >= 1 and dispute_count >= 1:
+            open_other = conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM tasks
+                WHERE target_finding_id = ? AND task_type = 'peer_verify'
+                  AND status IN ('queued', 'claimed') AND id != ?
+                """,
+                (finding_id, task["id"]),
+            ).fetchone()
+            if int(open_other["c"] if open_other else 0) == 0:
+                adjudication_task_id = f"tsk-adj-{finding_id}-{total_votes}"
+                adj_payload = {
+                    **task_payload,
+                    "finding_id": finding_id,
+                    "review_type": "adjudication",
+                    "adjudication_reason": "split_vote",
+                    "prior_confirm_count": qualified_confirms,
+                    "prior_dispute_count": dispute_count,
+                }
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO tasks (
+                        id, mission_id, mission_slug, methodology_code, task_type,
+                        title, instructions, payload_json, target_finding_id,
+                        excluded_handles_json, status, dataset_key, financial_quantity_type,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+                    """,
+                    (
+                        adjudication_task_id,
+                        finding_row["mission_id"],
+                        finding_row["mission_slug"],
+                        finding_row["methodology_code"],
+                        f"Adjudication Tie-Breaker: {str(finding_row['title'])[:82]}",
+                        (
+                            "Split peer-verification vote detected (confirm vs dispute). Independently "
+                            "reload the pinned source artifact, verify SHA-256, reproduce exact metrics, "
+                            "and record an explicit tie-breaker adjudication verdict."
+                        ),
+                        dumps_json(adj_payload),
+                        finding_id,
+                        dumps_json(sorted(voter_handles)),
+                        _row_get(task, "dataset_key", ""),
+                        _row_get(task, "financial_quantity_type", ""),
+                        now,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    "UPDATE missions SET total_tasks = total_tasks + 1 WHERE id = ?",
+                    (finding_row["mission_id"],),
+                )
+                adjudication_queued = True
+                self._emit_durable_event(
+                    conn,
+                    envelopes,
+                    "adjudication_queued",
+                    {
+                        "finding_id": finding_id,
+                        "adjudication_task_id": adjudication_task_id,
+                        "confirm_count": qualified_confirms,
+                        "dispute_count": dispute_count,
+                    },
+                    now=now,
+                )
+
+        # Build response and settle current verification lease atomically BEFORE crediting counters
+        if promoted:
+            existing_rti = conn.execute(
+                "SELECT id FROM rti_drafts WHERE finding_id = ?", (finding_id,)
+            ).fetchone()
+            rti_draft_id = str(existing_rti["id"]) if existing_rti is not None else f"rti-{finding_id}"
+
+        response_obj = {
+            "status": "accepted",
+            "outcome": "verification",
+            "verification_id": pv_id,
+            "finding_id": finding_id,
+            "finding_status": new_status,
+            "confirm_count": qualified_confirms,
+            "dispute_count": dispute_count,
+            "verification_score": consensus,
+            "promoted_to_verified": promoted,
+            "quarantined": bool(new_quarantined),
+            "adjudication_queued": adjudication_queued,
+            "adjudication_task_id": adjudication_task_id,
+            "rti_draft_id": rti_draft_id,
+        }
+        self._settle_task_atomically(
+            conn,
+            task_id=str(task["id"]),
+            lease_id=lease_id,
+            agent_id=str(agent["id"]),
+            output_obj={"outcome": "verification", "finding_id": finding_id, "verdict": verdict},
+            idempotency_key=idempotency_key,
+            response_obj=response_obj,
+            monetary_audited_inr=0.0,
+            now=now,
+        )
+
         conn.execute(
             """
             UPDATE findings
             SET confirm_count = ?, dispute_count = ?, verification_score = ?,
-                status = ?, verified_at = ?
-            WHERE id = ?
-            """,
-            (confirm_count, dispute_count, consensus, new_status, new_verified_at, finding_id),
-        )
-
-        # Complete current verification task & credit verifier
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status = 'completed', progress_pct = 100, output_json = ?,
-                updated_at = ?, completed_at = ?
+                status = ?, editorial_status = ?, quarantined = ?, quarantine_reason = ?,
+                verified_at = ?
             WHERE id = ?
             """,
             (
-                dumps_json({"outcome": "verification", "finding_id": finding_id, "verdict": verdict}),
-                now,
-                now,
-                task["id"],
+                qualified_confirms,
+                dispute_count,
+                consensus,
+                new_status,
+                new_editorial,
+                new_quarantined,
+                new_quarantine_reason,
+                new_verified_at,
+                finding_id,
             ),
         )
+
         conn.execute(
             "UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?",
             (mission["id"],),
@@ -2389,13 +4242,19 @@ class DeskService:
             UPDATE agents
             SET tasks_completed = tasks_completed + 1,
                 verifications_done = verifications_done + 1,
-                compute_score = compute_score + 15,
-                hourly_score = hourly_score + 15,
                 current_task_id = NULL,
                 last_heartbeat_at = ?
             WHERE id = ?
             """,
             (now, agent["id"]),
+        )
+        self._record_score_event(
+            conn,
+            agent_id=str(agent["id"]),
+            agent_handle=str(agent["handle"]),
+            event_type="peer_verification",
+            ref_id=pv_id,
+            now=now,
         )
 
         # Exclude this verifier from any remaining queued peer_verify tasks on the same finding
@@ -2412,23 +4271,7 @@ class DeskService:
                     (dumps_json(excl), now, rt["id"]),
                 )
 
-        if promoted:
-            # Increment mission verified count & award original submitter verified bonus
-            conn.execute(
-                "UPDATE missions SET verified_findings_count = verified_findings_count + 1 WHERE id = ?",
-                (finding_row["mission_id"],),
-            )
-            conn.execute(
-                """
-                UPDATE agents
-                SET findings_verified = findings_verified + 1,
-                    compute_score = compute_score + 30,
-                    hourly_score = hourly_score + 30
-                WHERE handle = ?
-                """,
-                (finding_row["submitted_by"],),
-            )
-            # Settle remaining peer_verify tasks for this finding so other workers receive 410 on beat
+        if has_pii_or_legal_flag:
             conn.execute(
                 """
                 UPDATE tasks
@@ -2437,7 +4280,87 @@ class DeskService:
                 """,
                 (now, now, finding_id),
             )
-            # Auto-generate lawful <=500-word RTI Act 2005 Sec 6(1) draft
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO finding_corrections (
+                    id, finding_id, correction_type, previous_status, new_status,
+                    summary, details, source_evidence_url, reviewed_by, created_at
+                ) VALUES (?, ?, 'quarantine', ?, 'quarantined', ?, ?, NULL, ?, ?)
+                """,
+                (
+                    f"cor-quar-{pv_id}",
+                    finding_id,
+                    prev_status,
+                    "Quarantined automatically after independent peer privacy/legal flag.",
+                    "Withheld across public list and detail views pending human privacy/legal adjudication.",
+                    agent["handle"],
+                    now,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE rti_drafts
+                SET status = 'quarantined',
+                    editorial_notice = 'Quarantined pending privacy/legal review.',
+                    updated_at = ?
+                WHERE finding_id = ?
+                """,
+                (now, finding_id),
+            )
+            cnt_row = conn.execute(
+                """
+                SELECT COUNT(*) AS c FROM findings
+                WHERE mission_id = ? AND status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0
+                """,
+                (finding_row["mission_id"],),
+            ).fetchone()
+            conn.execute(
+                "UPDATE missions SET verified_findings_count = ? WHERE id = ?",
+                (int(cnt_row["c"]) if cnt_row else 0, finding_row["mission_id"]),
+            )
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "finding_quarantined",
+                {"finding_id": finding_id, "verification_id": pv_id},
+                now=now,
+            )
+
+        elif new_status in ("disputed", "retracted_false_positive"):
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'settled', updated_at = ?, completed_at = ?
+                WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status IN ('queued', 'claimed')
+                """,
+                (now, now, finding_id),
+            )
+
+        elif promoted:
+            conn.execute(
+                "UPDATE missions SET verified_findings_count = verified_findings_count + 1 WHERE id = ?",
+                (finding_row["mission_id"],),
+            )
+            conn.execute(
+                "UPDATE agents SET findings_verified = findings_verified + 1 WHERE handle = ?",
+                (finding_row["submitted_by"],),
+            )
+            self._record_score_event(
+                conn,
+                agent_id=finding_row["submitted_by_agent_id"],
+                agent_handle=str(finding_row["submitted_by"]),
+                event_type="finding_verified_author_bonus",
+                ref_id=finding_id,
+                now=now,
+            )
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'settled', updated_at = ?, completed_at = ?
+                WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status IN ('queued', 'claimed')
+                """,
+                (now, now, finding_id),
+            )
             existing_rti = conn.execute(
                 "SELECT id FROM rti_drafts WHERE finding_id = ?", (finding_id,)
             ).fetchone()
@@ -2445,21 +4368,58 @@ class DeskService:
                 finding_dict = self._serialize_finding(finding_row)
                 rti = generate_rti_draft(finding_dict)
                 rti_draft_id = f"rti-{finding_id}"
+                fee_note = str(rti.get("fee_rules") or rti.get("fee_note") or "")
+                jlevel = str(rti.get("jurisdiction_level") or "central")
+                sname = rti.get("state_name")
+                fchan = str(rti.get("filing_channel") or "central_online_portal")
+                cwarn = str(rti.get("central_portal_warning") or "")
                 conn.execute(
                     """
                     INSERT INTO rti_drafts (
-                        id, finding_id, public_authority, cpio_designation,
-                        rti_portal_url, statutory_sections_json, subject, body_text,
-                        word_count, requested_records_json, status, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                        id, finding_id, version, public_authority, cpio_designation,
+                        rti_portal_url, jurisdiction_level, state_name, filing_channel,
+                        fee_note, central_portal_warning, statutory_sections_json,
+                        subject, body_text, word_count, requested_records_json,
+                        status, editorial_notice, created_at, updated_at
+                    ) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?)
                     """,
                     (
                         rti_draft_id,
                         finding_id,
                         rti["public_authority"],
                         rti["cpio_designation"],
-                        rti["rti_portal_url"],
+                        rti.get("rti_portal_url") or "",
+                        jlevel,
+                        sname,
+                        fchan,
+                        fee_note,
+                        cwarn,
                         dumps_json(rti["statutory_sections"]),
+                        rti["subject"],
+                        rti["body_text"],
+                        rti["word_count"],
+                        dumps_json(rti["requested_records"]),
+                        now,
+                        now,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO rti_draft_versions (
+                        id, rti_draft_id, finding_id, version, public_authority, cpio_designation,
+                        rti_portal_url, jurisdiction_level, filing_channel, subject, body_text,
+                        word_count, requested_records_json, status, editorial_notice, change_note, created_at
+                    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', 'Auto-generated upon 2-of-2 quorum', ?)
+                    """,
+                    (
+                        f"rtiv-{secrets.token_hex(6)}",
+                        rti_draft_id,
+                        finding_id,
+                        rti["public_authority"],
+                        rti["cpio_designation"],
+                        rti.get("rti_portal_url") or "",
+                        jlevel,
+                        fchan,
                         rti["subject"],
                         rti["body_text"],
                         rti["word_count"],
@@ -2467,124 +4427,145 @@ class DeskService:
                         now,
                     ),
                 )
-                events.append(
-                    (
-                        "rti_drafted",
-                        {
-                            "finding_id": finding_id,
-                            "rti_draft_id": rti_draft_id,
-                            "public_authority": rti["public_authority"],
-                            "word_count": rti["word_count"],
-                        },
-                    )
+                self._emit_durable_event(
+                    conn,
+                    envelopes,
+                    "rti_drafted",
+                    {
+                        "finding_id": finding_id,
+                        "rti_draft_id": rti_draft_id,
+                        "public_authority": rti["public_authority"],
+                        "word_count": rti["word_count"],
+                        "version": 1,
+                    },
+                    now=now,
                 )
-            else:
-                rti_draft_id = existing_rti["id"]
 
+        safe_whisper = (
+            "Recorded privacy/legal quarantine flag; record withheld pending human review."
+            if has_pii_or_legal_flag
+            else (
+                whisper_text
+                or (
+                    f"Quorum reached ({qualified_confirms}/{total_votes}) on {finding_id} — promoted to VERIFIED & RTI draft ready."
+                    if promoted
+                    else f"Recorded independent peer verdict '{verdict}' on {finding_id} ({qualified_confirms} confirm / {dispute_count} dispute)."
+                )
+            )
+        )
         whisper = self._insert_whisper(
             conn,
             agent_handle=agent["handle"],
             provider=agent["provider"],
             model=agent["model"],
             mission_slug=finding_row["mission_slug"],
-            finding_id=finding_id,
+            finding_id=None if has_pii_or_legal_flag else finding_id,
             event_type="finding_verified" if promoted else "verification_recorded",
-            message=whisper_text
-            or (
-                f"Quorum reached ({confirm_count}/{total_votes}) on {finding_id} — promoted to VERIFIED & RTI draft ready."
-                if promoted
-                else f"Recorded independent peer verdict '{verdict}' on {finding_id} ({confirm_count} confirm / {dispute_count} dispute)."
-            ),
+            message=safe_whisper,
         )
-
-        events.append(
-            (
-                "verification_recorded",
-                {
-                    "verification_id": pv_id,
-                    "finding_id": finding_id,
-                    "verifier_handle": agent["handle"],
-                    "verdict": verdict,
-                    "confirm_count": confirm_count,
-                    "dispute_count": dispute_count,
-                    "consensus": consensus,
-                },
-            )
+        self._emit_durable_event(
+            conn,
+            envelopes,
+            "verification_recorded",
+            {
+                "verification_id": pv_id,
+                "finding_id": finding_id,
+                "verifier_handle": agent["handle"],
+                "verdict": verdict,
+                "confirm_count": qualified_confirms,
+                "dispute_count": dispute_count,
+                "consensus": consensus,
+                "quarantined": bool(new_quarantined),
+            },
+            now=now,
         )
         if promoted:
-            events.append(
-                (
-                    "finding_verified",
-                    {
-                        "finding_id": finding_id,
-                        "mission_slug": finding_row["mission_slug"],
-                        "title": finding_row["title"],
-                        "confirm_count": confirm_count,
-                        "verification_score": consensus,
-                        "rti_draft_id": rti_draft_id,
-                    },
-                )
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "finding_verified",
+                {
+                    "finding_id": finding_id,
+                    "mission_slug": finding_row["mission_slug"],
+                    "title": finding_row["title"],
+                    "confirm_count": qualified_confirms,
+                    "verification_score": consensus,
+                    "rti_draft_id": rti_draft_id,
+                },
+                now=now,
             )
-        events.append(("whisper", whisper))
-
-        return {
-            "status": "accepted",
-            "outcome": "verification",
-            "verification_id": pv_id,
-            "finding_id": finding_id,
-            "finding_status": new_status,
-            "confirm_count": confirm_count,
-            "dispute_count": dispute_count,
-            "verification_score": consensus,
-            "promoted_to_verified": promoted,
-            "rti_draft_id": rti_draft_id,
-        }
+        self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
+        return response_obj
 
     def _handle_submit_cleared(
         self,
         *,
         conn: Any,
         task: Any,
+        lease_id: str,
         agent: Any,
         mission: Any,
         whisper_text: str,
         metrics: dict[str, Any],
+        idempotency_key: str | None,
         now: str,
-        events: list[tuple[str, dict[str, Any]]],
+        envelopes: list[dict[str, Any]],
     ) -> dict[str, Any]:
         audited_delta = float(metrics.get("monetary_audited_inr") or 0.0)
-        cleared_records = max(1, int(metrics.get("cleared_count") or 1))
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status = 'completed', progress_pct = 100, output_json = ?,
-                updated_at = ?, completed_at = ?
-            WHERE id = ?
-            """,
-            (dumps_json({"outcome": "cleared", "metrics": metrics}), now, now, task["id"]),
+        cleared_records = max(0, int(metrics.get("cleared_count") or 0))
+        unevaluable_records = max(0, int(metrics.get("unevaluable_count") or 0))
+        new_mission_cleared_scans = int(mission["cleared_count"] or 0) + 1
+
+        response_obj = {
+            "status": "accepted",
+            "outcome": "cleared",
+            "task_id": task["id"],
+            "cleared_records": cleared_records,
+            "unevaluable_records": unevaluable_records,
+            "mission_cleared_count": new_mission_cleared_scans,
+            "mission_cleared_scans_count": new_mission_cleared_scans,
+        }
+        self._settle_task_atomically(
+            conn,
+            task_id=str(task["id"]),
+            lease_id=lease_id,
+            agent_id=str(agent["id"]),
+            output_obj={"outcome": "cleared", "metrics": metrics},
+            idempotency_key=idempotency_key,
+            response_obj=response_obj,
+            monetary_audited_inr=audited_delta,
+            now=now,
         )
+
         conn.execute(
             """
             UPDATE missions
             SET completed_tasks = completed_tasks + 1,
                 cleared_count = cleared_count + 1,
+                unevaluable_count = unevaluable_count + ?,
                 monetary_audited_inr = monetary_audited_inr + ?
             WHERE id = ?
             """,
-            (audited_delta, mission["id"]),
+            (unevaluable_records, audited_delta, mission["id"]),
         )
         conn.execute(
             """
             UPDATE agents
             SET tasks_completed = tasks_completed + 1,
                 cleared_submitted = cleared_submitted + 1,
-                compute_score = compute_score + 10,
-                hourly_score = hourly_score + 10,
                 current_task_id = NULL,
                 last_heartbeat_at = ?
             WHERE id = ?
             """,
             (now, agent["id"]),
+        )
+        self._record_score_event(
+            conn,
+            agent_id=str(agent["id"]),
+            agent_handle=str(agent["handle"]),
+            event_type="cleared_scan",
+            ref_id=str(task["id"]),
+            now=now,
         )
 
         whisper = self._insert_whisper(
@@ -2595,17 +4576,23 @@ class DeskService:
             mission_slug=mission["slug"],
             event_type="cleared",
             message=whisper_text
-            or f"Cleared {cleared_records} public record(s) in {mission['slug']} within statutory thresholds.",
+            or (
+                f"Cleared scan on {mission['slug']}: {cleared_records} evaluable record(s) within thresholds"
+                + (f", {unevaluable_records} unevaluable group(s)." if unevaluable_records else ".")
+            ),
         )
-        events.append(("whisper", whisper))
-
-        updated_mission = conn.execute(
-            "SELECT cleared_count FROM missions WHERE id = ?", (mission["id"],)
-        ).fetchone()
-        return {
-            "status": "accepted",
-            "outcome": "cleared",
-            "task_id": task["id"],
-            "cleared_records": cleared_records,
-            "mission_cleared_count": int(updated_mission["cleared_count"]),
-        }
+        self._emit_durable_event(
+            conn,
+            envelopes,
+            "scan_cleared",
+            {
+                "task_id": task["id"],
+                "mission_slug": mission["slug"],
+                "agent_handle": agent["handle"],
+                "cleared_records": cleared_records,
+                "unevaluable_records": unevaluable_records,
+            },
+            now=now,
+        )
+        self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
+        return response_obj

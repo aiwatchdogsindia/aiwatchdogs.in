@@ -227,23 +227,53 @@ def scrub_pii(text: str) -> tuple[str, list[str]]:
     return cleaned, redactions
 
 
-def scrub_pii_in_obj(value: Any) -> tuple[Any, list[str]]:
-    """Recursively scrub PII from strings inside nested dicts/lists."""
+def scrub_pii_in_obj(value: Any, *, max_depth: int = 32) -> tuple[Any, list[str]]:
+    """Recursively scrub PII from strings inside nested dicts, lists, tuples, and sets.
+
+    Both string values and string dictionary keys containing personal PII are redacted,
+    while normal schema/identifier keys remain untouched. Bounded by ``max_depth`` to
+    prevent runaway recursion on untrusted payloads.
+    """
     redactions: list[str] = []
 
-    def _walk(item: Any) -> Any:
+    def _walk(item: Any, depth: int) -> Any:
+        if depth > max_depth:
+            return "[TRUNCATED_DEPTH]"
         if isinstance(item, str):
             cleaned, tags = scrub_pii(item)
             for tag in tags:
                 _record_redaction(redactions, tag)
             return cleaned
         if isinstance(item, list):
-            return [_walk(v) for v in item]
+            return [_walk(v, depth + 1) for v in item]
+        if isinstance(item, tuple):
+            return tuple(_walk(v, depth + 1) for v in item)
+        if isinstance(item, set):
+            return {_walk(v, depth + 1) for v in item}
         if isinstance(item, dict):
-            return {k: _walk(v) for k, v in item.items()}
+            out: dict[Any, Any] = {}
+            for k, v in item.items():
+                clean_k = k
+                if isinstance(k, str):
+                    candidate_k, k_tags = scrub_pii(k)
+                    if k_tags:
+                        for tag in k_tags:
+                            _record_redaction(redactions, tag)
+                        clean_k = candidate_k
+                out[clean_k] = _walk(v, depth + 1)
+            return out
         return item
 
-    return _walk(value), redactions
+    return _walk(value, 0), redactions
+
+
+redact_pii_recursive = scrub_pii_in_obj
+
+
+def contains_pii(value: Any, *, max_depth: int = 32) -> tuple[bool, list[str]]:
+    """Return ``(has_pii, redaction_categories)`` after recursively inspecting ``value``."""
+    _, tags = scrub_pii_in_obj(value, max_depth=max_depth)
+    return bool(tags), tags
 
 
 def lint_neutrality(

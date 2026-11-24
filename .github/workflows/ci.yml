@@ -8,7 +8,7 @@ on:
 
 jobs:
   python-tests:
-    name: Python 3.14 & Pytest
+    name: Python 3.14, Locked Deps & Pytest
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,14 +20,53 @@ jobs:
           python-version: "3.14"
           enable-cache: true
 
-      - name: Install Python dependencies
-        run: uv sync
+      - name: Verify lockfile consistency & install dependencies
+        run: uv sync --locked
 
-      - name: Run pytest suite
+      - name: Run unit, hub, CLI, and audit regression suite
         run: uv run pytest -v
 
+      - name: Validate rendered /join.sh POSIX syntax & pinned git install
+        run: |
+          uv run python -c "from aiwatchdogs.hub.templates import render_join_sh; s = render_join_sh('https://aiwatchdogs.in'); assert 'git+https://github.com/piyushbodaa/aiwatchdogs.in.git' in s and 'uvx aiwatchdogs' not in s and 'exec </dev/tty' in s; print(s)" | sh -n
+
+  postgres-integration:
+    name: PostgreSQL 16 Migrations & Concurrency
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aiwatchdogs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d aiwatchdogs_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.14
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install locked Python dependencies
+        run: uv sync --locked
+
+      - name: Run real PostgreSQL migration & concurrency tests
+        env:
+          TEST_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/aiwatchdogs_test
+        run: uv run pytest -v tests/test_postgres_integration.py
+
   web-build:
-    name: Web Dashboard Build (Node 26)
+    name: Web Dashboard Typecheck & Build (Node 26)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,5 +82,35 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      - name: Install frontend dependencies and build
-        run: npm ci && npm run build
+      - name: Install frontend dependencies, typecheck, and build
+        run: npm ci && npx tsc --noEmit && npm run build
+
+  container-smoke:
+    name: Docker Build & /health Startup Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Dockerfile pins base images and has no missing datasets/ copy
+        run: |
+          ! grep -E '^FROM .*:latest' Dockerfile
+          ! grep -E 'uv:latest' Dockerfile
+          ! grep -E 'COPY[[:space:]]+datasets/' Dockerfile
+
+      - name: Build production Docker image
+        run: docker build -t aiwatchdogs-hub:ci .
+
+      - name: Boot container and verify /health db_ok & /join.sh
+        run: |
+          docker run -d --name awd-ci-hub -p 18000:8000 aiwatchdogs-hub:ci
+          trap 'docker logs awd-ci-hub || true; docker rm -f awd-ci-hub || true' EXIT
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18000/health | grep -q '"db_ok":true'; then
+              curl -fsS http://127.0.0.1:18000/join.sh | sh -n
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Container failed /health readiness check"
+          exit 1

@@ -206,9 +206,20 @@ def test_seed_idempotency_zero_fake_data_and_real_goi_work_queue(client: TestCli
     assert live["total_count"] == 0
 
     contrib_all = client.get("/api/contributors?window=all").json()
-    assert contrib_all == {"window": "all", "contributors": [], "total": 0}
+    assert contrib_all["window"] == "all"
+    assert contrib_all["contributors"] == []
+    assert contrib_all["total"] == 0
+    assert contrib_all["score_weights"] == {
+        "finding_submitted": 10,
+        "finding_verified_author_bonus": 20,
+        "peer_verification": 15,
+        "cleared_scan": 10,
+    }
     contrib_hour = client.get("/api/contributors?window=hour").json()
-    assert contrib_hour == {"window": "hour", "contributors": [], "total": 0}
+    assert contrib_hour["window"] == "hour"
+    assert contrib_hour["contributors"] == []
+    assert contrib_hour["total"] == 0
+    assert contrib_hour["score_weights"] == contrib_all["score_weights"]
 
 
 def test_sponsors_pledge_and_open_treasury_ledger_json_and_csv(client: TestClient) -> None:
@@ -237,19 +248,34 @@ def test_sponsors_pledge_and_open_treasury_ledger_json_and_csv(client: TestClien
     pl = pledge.json()
     assert pl["sponsor"]["name"] == "Citizens for Open Audits Foundation"
     assert pl["sponsor"]["is_demo_entry"] is False
+    assert pl["sponsor"]["pledge_status"] == "pledged"
     assert pl["ledger_entry"]["direction"] == "inflow"
+    assert pl["ledger_entry"]["settlement_status"] == "pledged"
+    assert pl["ledger_entry"]["receipt_ref"].startswith("PLEDGE-")
+    assert pl["ledger_entry"]["reconciled_receipt_ref"] is None
     assert pl["ledger_entry"]["amount_inr"] == 25000.0
+    assert pl["ledger_entry"]["signed_amount_inr"] == 0.0
 
     sponsors_after = client.get("/api/sponsors").json()
     assert sponsors_after["total_pledged_inr"] == pytest.approx(25000.0)
+    assert sponsors_after["received_cash_inr"] == 0.0
     assert len(sponsors_after["sponsors"]) == 1
 
+    # Self-declared unreconciled pledges MUST NOT inflate received cash / net cash balance!
     ledger_json = client.get("/api/ledger?format=json")
     assert ledger_json.status_code == 200
     lj = ledger_json.json()
-    assert lj["summary"]["total_inflow_inr"] == pytest.approx(25000.0)
+    assert lj["summary"]["pledged_inr"] == pytest.approx(25000.0)
+    assert lj["summary"]["received_cash_inr"] == 0.0
+    assert lj["summary"]["total_inflow_inr"] == 0.0
+    assert lj["summary"]["net_cash_balance_inr"] == 0.0
     assert lj["summary"]["total_outflow_inr"] == 0.0
     assert lj["summary"]["entry_count"] == 1
+
+    # /api/treasury alias returns identical separated summary
+    treasury_json = client.get("/api/treasury?format=json")
+    assert treasury_json.status_code == 200
+    assert treasury_json.json()["summary"] == lj["summary"]
 
     ledger_csv = client.get("/api/ledger?format=csv")
     assert ledger_csv.status_code == 200
@@ -554,13 +580,17 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     assert verified_dossier["rti_draft"]["word_count"] <= 500
     assert "Section 6(1)" in verified_dossier["rti_draft"]["body_text"]
 
-    # Explicit POST /api/findings/{id}/rti-draft regeneration works cleanly
+    # Explicit POST /api/findings/{id}/rti-draft with custom authority returns non-mutating personal preview
     rti_regen = client.post(
         f"/api/findings/{finding_id}/rti-draft",
         json={"public_authority": "Finance Department, Government of Assam"},
     )
     assert rti_regen.status_code == 200
     assert rti_regen.json()["public_authority"] == "Finance Department, Government of Assam"
+    assert rti_regen.json()["is_preview"] is True
+    assert rti_regen.json()["persisted"] is False
+    assert rti_regen.json()["jurisdiction_level"] == "state"
+    assert rti_regen.json()["rti_portal_url"] == "https://rtionline.assam.gov.in"
     assert rti_regen.json()["word_count"] <= 500
 
     # Verify /api/head, /api/graph, and /api/contributors reflect real live activity

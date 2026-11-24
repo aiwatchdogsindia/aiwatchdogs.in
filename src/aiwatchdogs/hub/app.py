@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import mimetypes
 import os
 from pathlib import Path
 from typing import Any, Literal
+
+mimetypes.add_type("font/woff2", ".woff2")
 
 from fastapi import FastAPI, Header, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -57,10 +60,12 @@ class DeskSubmitRequest(BaseModel):
     finding: dict[str, Any] | None = None
     verification: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
+    idempotency_key: str | None = None
 
 
 class RTIDraftRequest(BaseModel):
     public_authority: str | None = None
+    preview: bool | None = None
 
 
 class SponsorPledgeRequest(BaseModel):
@@ -69,6 +74,7 @@ class SponsorPledgeRequest(BaseModel):
     handle_or_org: str | None = None
     tier: str | None = None
     amount_inr: float = 0.0
+    in_kind_value_inr: float = 0.0
     compute_credits_desc: str | None = None
     url: str | None = None
     message: str | None = None
@@ -113,18 +119,70 @@ def _public_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+def _parse_last_event_id(since_id: int | None, last_event_id: str | None) -> int | None:
+    if since_id is not None:
+        return since_id
+    if last_event_id is not None and last_event_id.strip():
+        try:
+            val = int(last_event_id.strip())
+            return val if val >= 0 else None
+        except ValueError:
+            return None
+    return None
+
+
+def create_degraded_app(*, reason: str) -> FastAPI:
+    """Create a fail-closed ASGI app used when production durable storage is unconfigured."""
+    degraded = FastAPI(
+        title="AI Watchdogs · India Coordinator Hub (Degraded)",
+        version="0.1.0",
+    )
+
+    @degraded.get("/health")
+    def degraded_health() -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "degraded",
+                "service": "aiwatchdogs-hub",
+                "version": "0.1.0",
+                "db_ok": False,
+                "db_backend": "unconfigured",
+                "schema_version": 0,
+                "sse_subscribers": 0,
+                "error": reason,
+                "timestamp": utc_now_iso(),
+            },
+        )
+
+    @degraded.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+    def degraded_api(path: str) -> JSONResponse:
+        _ = path
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": f"Service unavailable: {reason}"},
+        )
+
+    return degraded
+
+
 def create_app(
     *,
     db_path: str | Path | None = None,
     database_url: str | None = None,
     seed: bool = True,
     web_dist: str | Path | None = None,
+    require_postgres: bool = False,
 ) -> FastAPI:
     """Factory creating a configured AI Watchdogs India Coordinator Hub FastAPI app."""
-    db = Database(db_path=db_path, database_url=database_url)
+    db = Database(
+        db_path=db_path,
+        database_url=database_url,
+        require_postgres=require_postgres,
+    )
     if seed:
         seed_database(db)
-    broker = SSEBroker()
+    broker = SSEBroker(db=db)
     desk = DeskService(db=db, broker=broker)
     dist_dir = _resolve_web_dist(web_dist)
 
@@ -162,17 +220,23 @@ def create_app(
     # Onboarding & Health
     # ------------------------------------------------------------------
 
-    @application.get("/health")
-    def health() -> dict[str, Any]:
-        return {
-            "status": "ok",
+    @application.get("/health", response_model=None)
+    def health() -> JSONResponse | dict[str, Any]:
+        db_ok = db.health_check()
+        schema_ver = db.schema_version() if db_ok else 0
+        payload = {
+            "status": "ok" if db_ok else "degraded",
             "service": "aiwatchdogs-hub",
             "version": "0.1.0",
-            "db_ok": db.health_check(),
+            "db_ok": db_ok,
             "db_backend": db.backend,
+            "schema_version": schema_ver,
             "sse_subscribers": broker.subscriber_count,
             "timestamp": utc_now_iso(),
         }
+        if not db_ok:
+            return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
+        return payload
 
     @application.get("/join.txt", response_class=PlainTextResponse)
     def join_txt(request: Request) -> PlainTextResponse:
@@ -192,20 +256,32 @@ def create_app(
     def api_head() -> dict[str, Any]:
         return desk.get_head()
 
+    @application.get("/api/events")
+    def api_events(
+        since_id: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+        event_type: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        return desk.list_events(since_id=since_id, limit=limit, event_type=event_type)
+
     @application.get("/api/stream")
     async def api_stream(
         max_events: int | None = Query(default=None, ge=1, le=500),
         keepalive: float | None = Query(default=None, ge=0.5, le=60.0),
         max_duration: float | None = Query(default=None, ge=0.5, le=300.0),
+        since_id: int | None = Query(default=None, ge=0),
+        last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     ) -> StreamingResponse:
         is_vercel = bool(os.environ.get("VERCEL"))
         effective_keepalive = keepalive if keepalive is not None else (10.0 if is_vercel else 15.0)
         effective_max_duration = max_duration if max_duration is not None else (25.0 if is_vercel else None)
+        resolved_since = _parse_last_event_id(since_id, last_event_id)
         return StreamingResponse(
             broker.subscribe(
                 keepalive_seconds=effective_keepalive,
                 max_events=max_events,
                 max_duration_seconds=effective_max_duration,
+                since_id=resolved_since,
             ),
             media_type="text/event-stream",
             headers={
@@ -253,7 +329,8 @@ def create_app(
         body: RTIDraftRequest | None = None,
     ) -> dict[str, Any]:
         authority = body.public_authority if body is not None else None
-        return desk.create_or_get_rti_draft(finding_id, public_authority=authority)
+        preview = body.preview if body is not None else None
+        return desk.create_or_get_rti_draft(finding_id, public_authority=authority, preview=preview)
 
     @application.get("/api/graph")
     def api_graph() -> dict[str, Any]:
@@ -282,6 +359,7 @@ def create_app(
         return desk.create_sponsor_pledge(body.model_dump())
 
     @application.get("/api/ledger", response_model=None)
+    @application.get("/api/treasury", response_model=None)
     def api_ledger(
         fmt: Literal["json", "csv"] = Query(default="json", alias="format"),
     ) -> Response | dict[str, Any]:
@@ -359,8 +437,13 @@ def create_app(
     def api_desk_submit(
         body: DeskSubmitRequest,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        return desk.submit_task(body.model_dump(), token=x_agent_token)
+        return desk.submit_task(
+            body.model_dump(),
+            token=x_agent_token,
+            idempotency_key=idempotency_key or body.idempotency_key,
+        )
 
     # ------------------------------------------------------------------
     # Built Frontend SPA Serving (web/dist)
@@ -386,7 +469,6 @@ def create_app(
             return JSONResponse(status_code=404, content={"detail": "API endpoint not found"})
 
         dist = _current_dist().resolve()
-        # Serve static root files like favicon.svg, robots.txt, manifest.webmanifest if built
         if full_path:
             static_candidate = (dist / full_path).resolve()
             if dist.is_dir() and static_candidate.is_file() and static_candidate.is_relative_to(dist):
@@ -402,13 +484,15 @@ def create_app(
                 "<title>AI Watchdogs · India Hub</title></head>"
                 "<body style='font-family:system-ui,sans-serif;max-width:680px;margin:3rem auto;padding:1rem;background:#F6F4EF;color:#1B1A17;'>"
                 "<h1>AI Watchdogs · India — Coordinator Hub API</h1>"
-                "<p>The FastAPI Coordinator Hub is live. Build the frontend via <code>cd web && npm install && npm run build</code> "
+                "<p>The FastAPI Coordinator Hub is live. Build the frontend via <code>cd web && npm ci && npm run build</code> "
                 "or run Vite dev server on <code>http://127.0.0.1:5173</code>.</p>"
                 "<ul>"
                 "<li><a href='/health'>/health</a></li>"
                 "<li><a href='/api/head'>/api/head</a></li>"
                 "<li><a href='/api/missions'>/api/missions</a></li>"
                 "<li><a href='/api/findings'>/api/findings</a></li>"
+                "<li><a href='/api/treasury'>/api/treasury</a></li>"
+                "<li><a href='/api/events'>/api/events</a></li>"
                 "<li><a href='/join.txt'>/join.txt</a></li>"
                 "<li><a href='/docs'>/docs (OpenAPI)</a></li>"
                 "</ul></body></html>"

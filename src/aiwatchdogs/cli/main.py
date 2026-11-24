@@ -22,14 +22,20 @@ from aiwatchdogs.cli.config import (
     DEFAULT_HUB_URL,
     AgentConfig,
     get_config_path,
+    get_spend_ledger_path,
     load_config,
+    load_daily_spend,
     mask_token,
-    save_config,
+    normalize_hub_origin,
+    resolve_reusable_token,
 )
 from aiwatchdogs.cli.providers import (
     RULE_ENGINE_PROVIDER,
     ProviderInfo,
+    describe_outbound_destinations,
+    detect_best_provider,
     detect_providers,
+    is_paid_provider,
     resolve_provider_config,
 )
 from aiwatchdogs.cli.runner import AgentRunner
@@ -69,12 +75,16 @@ def _format_inr(amount: float) -> str:
 
 def _render_consent_notice(hub_url: str) -> None:
     notice = (
-        "[bold]Owner Consent & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
-        f"• [cyan]Hub:[/cyan] {hub_url} (outbound HTTPS only — no open ports required)\n"
-        "• [cyan]Compute:[/cyan] Runs locally on your machine using your chosen provider "
-        "(offline deterministic CPU mode uses ₹0 API cost; optional local/cloud LLMs obey your caps).\n"
-        "• [cyan]Public Attribution:[/cyan] Your chosen handle, provider/model label, audit metrics, "
-        "and verification votes appear publicly on the swarm ledger.\n"
+        "[bold]Owner Consent, Outbound Network & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
+        f"• [cyan]Coordinator Hub:[/cyan] {hub_url} (outbound HTTPS only — no inbound ports required)\n"
+        "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official & pinned civic public-record artifacts "
+        "(e.g. raw.githubusercontent.com, d1jmc0u14z2tmp.cloudfront.net, cga.nic.in) directly over HTTPS and "
+        "verifies SHA-256 checksums locally (fail-closed on mismatch).\n"
+        "• [cyan]Hard Budget Guardrail:[/cyan] Deterministic CPU mode (rule-engine) and local loopback Ollama "
+        "spend $0.00 / ₹0. Paid cloud LLM APIs are STRICTLY BLOCKED unless you explicitly opt in "
+        "(--allow-paid-provider) AND set a positive hard cap (--max-usd > 0).\n"
+        "• [cyan]Public Attribution:[/cyan] Your chosen handle, provider/model label, deterministic audit metrics, "
+        "and explicit 4-check verification votes appear publicly on the swarm ledger.\n"
         "• [cyan]Indian Legal Guardrails:[/cyan] Strictly lawful public-record analysis under "
         "BNS Sec 356 fair public-interest framing, DPDP Act 2023 PII scrubbing, and IT Act Sec 43 "
         "(zero CAPTCHA/auth bypass). Citizens — never bots — review and file RTI drafts."
@@ -82,15 +92,81 @@ def _render_consent_notice(hub_url: str) -> None:
     console.print(Panel(notice, title="AI Watchdogs India · Join Swarm", border_style="green"))
 
 
+def _render_outbound_destinations(
+    hub_url: str,
+    provider_cfg: ProviderInfo,
+    *,
+    allow_paid_provider: bool,
+    max_usd: float,
+    daily_max_usd: float | None = None,
+    max_tasks: int | None = None,
+    daily_spent_usd: float | None = None,
+    title: str = "Outbound Network Destinations & Hard Budget Guardrails",
+) -> dict[str, Any]:
+    plan = describe_outbound_destinations(
+        hub_url,
+        provider_cfg,
+        allow_paid_provider=allow_paid_provider,
+        max_usd=max_usd,
+        daily_max_usd=daily_max_usd,
+    )
+    table = Table(title=title, box=box.ROUNDED)
+    table.add_column("Category", style="bold cyan", no_wrap=True)
+    table.add_column("Destination", style="bold")
+    table.add_column("Status / Purpose")
+
+    table.add_row(
+        "Hub API",
+        str(plan["hub"]["destination"]),
+        str(plan["hub"]["purpose"]),
+    )
+    for ds in plan["dataset_hosts"]:
+        table.add_row(
+            "Public Dataset",
+            f"https://{ds['host']}",
+            str(ds["purpose"]),
+        )
+
+    llm = plan["llm_provider"]
+    llm_dest = str(llm.get("destination") or "(none — offline deterministic CPU)")
+    llm_status = str(llm.get("status", ""))
+    if llm_status == "blocked_by_guardrail":
+        llm_desc = f"[yellow]{llm['purpose']}[/yellow]"
+    elif llm_status == "opted_in_paid_provider":
+        llm_desc = f"[magenta]{llm['purpose']}[/magenta]"
+    else:
+        llm_desc = f"[green]{llm['purpose']}[/green]"
+    table.add_row("LLM Provider", llm_dest, llm_desc)
+
+    eff_daily = daily_max_usd if daily_max_usd is not None else max_usd
+    guardrail_parts = [
+        f"Mode: {plan['mode_summary']}",
+        f"Paid Opt-In: {'YES' if allow_paid_provider else 'NO (blocked)'}",
+        f"Hard Caps: session=${max_usd:.2f}, daily=${eff_daily:.2f}",
+    ]
+    if daily_spent_usd is not None:
+        guardrail_parts.append(f"Today's Recorded Spend: ${daily_spent_usd:.4f}")
+    if max_tasks is not None:
+        guardrail_parts.append(f"Max Tasks Cap: {max_tasks} (strict in normal & --continuous modes)")
+    table.add_row("Guardrails", "Enforced pre-dispatch", " · ".join(guardrail_parts))
+
+    console.print(table)
+    return plan
+
+
 def _render_providers_table(providers: list[ProviderInfo]) -> None:
     table = Table(title="Detected Audit Providers (<2s scan)", box=box.SIMPLE_HEAVY)
     table.add_column("#", style="bold cyan", width=3)
     table.add_column("Provider", style="bold")
     table.add_column("Model")
-    table.add_column("Cost")
+    table.add_column("Cost / Policy")
     table.add_column("Details")
     for idx, prov in enumerate(providers, start=1):
-        cost_str = "[green]₹0 (Local/Offline)[/green]" if prov.zero_cost else "[yellow]BYO API Key[/yellow]"
+        cost_str = (
+            "[green]₹0 / $0.00 (Local/Offline)[/green]"
+            if not is_paid_provider(prov)
+            else "[yellow]Paid BYO Key (explicit opt-in + --max-usd > 0 required)[/yellow]"
+        )
         table.add_row(str(idx), prov.provider, prov.model, cost_str, prov.label)
     console.print(table)
 
@@ -142,11 +218,28 @@ def _print_run_summary(summary: Any) -> None:
     table.add_row("Findings Submitted", str(summary.findings_submitted))
     table.add_row("Peer Verifications", str(summary.verifications_submitted))
     table.add_row("Cleared Records", str(summary.cleared_submitted))
+    table.add_row("Paid LLM Spend (Session)", f"${float(getattr(summary, 'session_spent_usd', 0.0)):.4f}")
+    budget = getattr(summary, "budget", None) or {}
+    if budget.get("calls_blocked"):
+        table.add_row("Paid LLM Calls Blocked", f"[yellow]{budget['calls_blocked']}[/yellow]")
     if summary.aborted_410:
         table.add_row("Stopped on 410 Gone", str(summary.aborted_410))
     if summary.errors:
         table.add_row("Errors (Released)", f"[red]{summary.errors}[/red]")
     console.print(table)
+
+
+def _safe_load_existing_config() -> tuple[AgentConfig | None, bool]:
+    """Load existing config safely without deleting or overwriting corrupt files."""
+    cfg_path = get_config_path()
+    existed = cfg_path.is_file()
+    if not existed:
+        return None, False
+    try:
+        return load_config(cfg_path), True
+    except ValueError as exc:
+        err_console.print(f"[yellow]Warning: existing config at {cfg_path} could not be parsed ({exc}).[/yellow]")
+        return None, True
 
 
 @app.command()
@@ -165,15 +258,40 @@ def join(
     ),
     model: str | None = typer.Option(None, "--model", help="Optional model name override."),
     mode: str = typer.Option("auto", "--mode", help="Task mode: auto, investigate, or verify."),
-    max_tasks: int = typer.Option(5, "--max-tasks", min=1, help="Maximum tasks to process in this session."),
-    max_usd: float = typer.Option(1.0, "--max-usd", min=0.0, help="Advisory LLM spend cap (USD); ₹0 in rule-engine/local mode."),
+    max_tasks: int = typer.Option(5, "--max-tasks", min=1, help="Hard maximum tasks to claim in this session."),
+    max_usd: float = typer.Option(
+        0.0,
+        "--max-usd",
+        min=0.0,
+        help="Hard session paid-LLM spend cap (USD). Default $0.00 strictly enforces deterministic/local zero-cost mode.",
+    ),
+    daily_max_usd: float | None = typer.Option(
+        None,
+        "--daily-max-usd",
+        min=0.0,
+        help="Optional hard cumulative daily paid-LLM spend cap (USD); defaults to --max-usd.",
+    ),
+    allow_paid_provider: bool = typer.Option(
+        False,
+        "--allow-paid-provider/--no-allow-paid-provider",
+        help="Explicitly opt in to paid cloud LLM API calls for non-authoritative editorial commentary.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview resolved mode, budget guardrails, and outbound destinations without registering or writing config.",
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept owner consent and defaults without prompts."),
     non_interactive: bool = typer.Option(False, "--non-interactive", help="Run non-interactively (same as --yes)."),
     no_run: bool = typer.Option(False, "--no-run", help="Register & save config without immediately running tasks."),
-    continuous: bool = typer.Option(False, "--continuous", help="Keep polling for tasks continuously."),
+    continuous: bool = typer.Option(
+        False,
+        "--continuous",
+        help="Wait & poll on empty queue until --max-tasks is reached (never exceeds --max-tasks).",
+    ),
 ) -> None:
     """<60s onboarding wizard: consent, auto-detect provider, register handle, and start auditing."""
-    auto_accept = yes or non_interactive
+    auto_accept = yes or non_interactive or dry_run
     hub_clean = hub.rstrip("/")
 
     if mode not in VALID_MODES:
@@ -182,11 +300,14 @@ def join(
 
     _render_consent_notice(hub_clean)
 
-    detected = detect_providers(probe_local=True)
+    detected = detect_providers(probe_local=not dry_run)
     _render_providers_table(detected)
 
-    existing = load_config()
+    existing, had_existing_file = _safe_load_existing_config()
     suggested_handle = handle or (existing.handle if existing and existing.handle else _default_handle())
+
+    chosen_allow_paid = allow_paid_provider
+    chosen_daily_max_usd = daily_max_usd
 
     if not auto_accept:
         if not Confirm.ask("Do you consent to run a local civic-audit agent under these rules?", default=True):
@@ -196,24 +317,67 @@ def join(
         chosen_handle = Prompt.ask("Choose your public agent handle", default=suggested_handle).strip()
 
         if provider is None:
+            default_idx = next(
+                (i for i, p in enumerate(detected, start=1) if not is_paid_provider(p)),
+                len(detected),
+            )
             choice_idx = IntPrompt.ask(
                 "Select provider number from table above",
-                default=1,
+                default=default_idx,
             )
             clamped = max(1, min(choice_idx, len(detected)))
             selected_prov = detected[clamped - 1]
         else:
-            selected_prov = resolve_provider_config(provider, model, probe_local=False)
+            selected_prov = resolve_provider_config(
+                provider,
+                model,
+                probe_local=False,
+                allow_paid_provider=chosen_allow_paid,
+            )
 
         chosen_mode = Prompt.ask("Task mode", choices=list(VALID_MODES), default=mode)
-        chosen_max_tasks = IntPrompt.ask("Max tasks per run", default=max_tasks)
-        chosen_max_usd = FloatPrompt.ask("Max advisory LLM spend (USD)", default=max_usd)
+        chosen_max_tasks = IntPrompt.ask("Hard max tasks per run", default=max_tasks)
+
+        if is_paid_provider(selected_prov):
+            if not chosen_allow_paid:
+                chosen_allow_paid = Confirm.ask(
+                    f"Provider '{selected_prov.provider}' is a PAID cloud API. "
+                    "Explicitly opt in to paid LLM editorial commentary?",
+                    default=False,
+                )
+            if chosen_allow_paid:
+                chosen_max_usd = FloatPrompt.ask(
+                    "Hard session paid-LLM spend cap (USD; $0.00 blocks paid calls)",
+                    default=max_usd if max_usd > 0 else 0.50,
+                )
+                if chosen_daily_max_usd is None:
+                    chosen_daily_max_usd = FloatPrompt.ask(
+                        "Hard daily cumulative paid-LLM spend cap (USD)",
+                        default=chosen_max_usd,
+                    )
+            else:
+                chosen_max_usd = 0.0
+                chosen_daily_max_usd = 0.0
+                console.print(
+                    "[yellow]Paid-provider opt-in declined — paid LLM calls are strictly BLOCKED ($0.00 deterministic CPU fallback).[/yellow]"
+                )
+        else:
+            chosen_max_usd = 0.0
+            chosen_daily_max_usd = 0.0
     else:
         chosen_handle = suggested_handle
         if provider is None or provider.lower() == "auto":
-            selected_prov = detected[0] if detected else resolve_provider_config(RULE_ENGINE_PROVIDER)
+            selected_prov = detect_best_provider(
+                probe_local=not dry_run,
+                allow_paid_provider=chosen_allow_paid,
+            )
         else:
-            selected_prov = resolve_provider_config(provider, model, probe_local=False)
+            selected_prov = resolve_provider_config(
+                provider,
+                model,
+                probe_local=False,
+                allow_paid_provider=chosen_allow_paid,
+            )
         chosen_mode = mode
         chosen_max_tasks = max_tasks
         chosen_max_usd = max_usd
@@ -221,32 +385,70 @@ def join(
     if model:
         selected_prov = selected_prov.model_copy(update={"model": model})
 
+    # Reuse stored token ONLY when both normalized hub origin AND handle match!
+    reused_token = resolve_reusable_token(existing, hub_url=hub_clean, handle=chosen_handle)
+
     cfg = AgentConfig(
-        handle=chosen_handle,
+        handle=chosen_handle.strip().lower(),
         hub_url=hub_clean,
-        api_token="",
+        api_token=reused_token,
         provider=selected_prov.provider,
         model=selected_prov.model,
         mode=chosen_mode,
         max_tasks=max(1, chosen_max_tasks),
         max_usd=max(0.0, chosen_max_usd),
+        daily_max_usd=max(0.0, chosen_daily_max_usd) if chosen_daily_max_usd is not None else None,
+        allow_paid_provider=chosen_allow_paid,
     )
 
-    with AgentRunner(cfg, provider_cfg=selected_prov, on_event=_make_event_printer()) as runner:
+    cfg_path = get_config_path()
+    daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
+    _render_outbound_destinations(
+        cfg.normalized_hub_url,
+        selected_prov,
+        allow_paid_provider=cfg.allow_paid_provider,
+        max_usd=cfg.max_usd,
+        daily_max_usd=cfg.effective_daily_max_usd,
+        max_tasks=cfg.max_tasks,
+        daily_spent_usd=daily_spent,
+    )
+
+    if dry_run:
+        console.print(
+            Panel(
+                f"[bold cyan]Dry-run complete.[/bold cyan] No Hub requests were sent and "
+                f"[bold]{cfg_path}[/bold] was not modified.\n"
+                f"Handle: [bold]{cfg.handle}[/bold] · Token reuse: "
+                f"{'matching origin+handle' if reused_token else 'new registration'}",
+                border_style="cyan",
+            )
+        )
+        return
+
+    with AgentRunner(
+        cfg,
+        provider_cfg=selected_prov,
+        on_event=_make_event_printer(),
+        config_path=cfg_path,
+        allow_local_files=False,
+    ) as runner:
         try:
             reg = runner.register(save=True)
         except httpx.HTTPError as exc:
-            # Save config cleanly even if hub is currently offline so user doesn't lose setup.
-            saved_path = save_config(cfg)
+            # CRITICAL: NEVER overwrite or destroy an existing local config/credential on HTTP error!
+            preserve_msg = (
+                f"Existing local credentials at [bold]{cfg_path}[/bold] were preserved untouched."
+                if had_existing_file
+                else "No local config file was written."
+            )
             err_console.print(
-                f"[red]Could not reach Hub at {hub_clean}: {exc}[/red]\n"
-                f"Saved local config to [bold]{saved_path}[/bold] (mode 0600). "
-                "Start your local Hub or retry with `aiwatchdogs run`."
+                f"[red]Registration/reconnection failed against Hub {hub_clean}: {exc}[/red]\n"
+                f"{preserve_msg}"
             )
             raise typer.Exit(code=1) from exc
 
         console.print(
-            f"[bold]Config saved:[/bold] {get_config_path()} (0600) · "
+            f"[bold]Config saved atomically:[/bold] {cfg_path} (0600) · "
             f"[bold]Follow your agent live:[/bold] {reg['profile_url']}"
         )
 
@@ -272,38 +474,74 @@ def run(
     provider: str | None = typer.Option(None, "--provider", help="Override provider (rule-engine, ollama, gemini, etc.)."),
     model: str | None = typer.Option(None, "--model", help="Override model name."),
     mode: str | None = typer.Option(None, "--mode", help="Override mode: auto, investigate, or verify."),
-    max_tasks: int | None = typer.Option(None, "--max-tasks", min=1, help="Max tasks to execute."),
-    max_usd: float | None = typer.Option(None, "--max-usd", min=0.0, help="Advisory USD cap."),
-    continuous: bool = typer.Option(False, "--continuous", help="Run continuously until interrupted."),
+    max_tasks: int | None = typer.Option(None, "--max-tasks", min=1, help="Hard max tasks to claim."),
+    max_usd: float | None = typer.Option(None, "--max-usd", min=0.0, help="Hard session paid-LLM USD cap."),
+    daily_max_usd: float | None = typer.Option(None, "--daily-max-usd", min=0.0, help="Hard daily paid-LLM USD cap."),
+    allow_paid_provider: bool | None = typer.Option(
+        None,
+        "--allow-paid-provider/--no-allow-paid-provider",
+        help="Explicit opt-in for paid cloud LLM editorial commentary.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview resolved mode, hard budget guardrails, and outbound destinations without running tasks.",
+    ),
+    continuous: bool = typer.Option(
+        False,
+        "--continuous",
+        help="Wait & poll on empty queue until max_tasks is reached (strictly respects --max-tasks).",
+    ),
     mission: str | None = typer.Option(None, "--mission", help="Preferred mission slug to claim."),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
-    saved = load_config()
+    cfg_path = get_config_path()
+    saved, had_existing_file = _safe_load_existing_config()
+    identity_changed = False
+
     if saved is None:
-        resolved_prov = resolve_provider_config(provider or RULE_ENGINE_PROVIDER, model, probe_local=False)
+        eff_allow_paid = bool(allow_paid_provider) if allow_paid_provider is not None else False
+        resolved_prov = resolve_provider_config(
+            provider or RULE_ENGINE_PROVIDER,
+            model,
+            probe_local=False,
+            allow_paid_provider=eff_allow_paid,
+        )
         cfg = AgentConfig(
-            handle=handle or _default_handle(),
+            handle=(handle or _default_handle()).strip().lower(),
             hub_url=(hub or DEFAULT_HUB_URL).rstrip("/"),
             api_token="",
             provider=resolved_prov.provider,
             model=resolved_prov.model,
             mode=mode or "auto",
             max_tasks=max_tasks or 5,
-            max_usd=max_usd if max_usd is not None else 1.0,
+            max_usd=max_usd if max_usd is not None else 0.0,
+            daily_max_usd=daily_max_usd,
+            allow_paid_provider=eff_allow_paid,
         )
     else:
         cfg = saved.model_copy()
-        identity_changed = False
-        if handle and handle != cfg.handle:
-            cfg.handle = handle
+        target_handle = (handle or cfg.handle).strip().lower()
+        target_hub = (hub or cfg.hub_url).rstrip("/")
+        if (
+            target_handle != cfg.handle.strip().lower()
+            or normalize_hub_origin(target_hub) != normalize_hub_origin(cfg.hub_url)
+        ):
             identity_changed = True
-        if hub and hub.rstrip("/") != cfg.normalized_hub_url:
-            cfg.hub_url = hub.rstrip("/")
-            identity_changed = True
-        if identity_changed:
-            cfg.api_token = ""
+        cfg.handle = target_handle
+        cfg.hub_url = target_hub
+        # Reuse stored token ONLY when both normalized hub origin AND handle match!
+        cfg.api_token = resolve_reusable_token(saved, hub_url=target_hub, handle=target_handle)
+
+        if allow_paid_provider is not None:
+            cfg.allow_paid_provider = allow_paid_provider
         if provider:
-            resolved_prov = resolve_provider_config(provider, model, probe_local=False)
+            resolved_prov = resolve_provider_config(
+                provider,
+                model,
+                probe_local=False,
+                allow_paid_provider=cfg.allow_paid_provider,
+            )
             cfg.provider = resolved_prov.provider
             cfg.model = resolved_prov.model
         elif model:
@@ -314,19 +552,57 @@ def run(
             cfg.max_tasks = max_tasks
         if max_usd is not None:
             cfg.max_usd = max_usd
+        if daily_max_usd is not None:
+            cfg.daily_max_usd = daily_max_usd
 
     if cfg.mode not in VALID_MODES:
         err_console.print(f"[red]Invalid --mode '{cfg.mode}'. Must be one of: {', '.join(VALID_MODES)}[/red]")
         raise typer.Exit(code=2)
 
-    prov_cfg = resolve_provider_config(cfg.provider, cfg.model, probe_local=False)
+    prov_cfg = resolve_provider_config(
+        cfg.provider,
+        cfg.model,
+        probe_local=False,
+        allow_paid_provider=cfg.allow_paid_provider,
+    )
 
-    with AgentRunner(cfg, provider_cfg=prov_cfg, on_event=_make_event_printer()) as runner:
+    if dry_run:
+        daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
+        _render_outbound_destinations(
+            cfg.normalized_hub_url,
+            prov_cfg,
+            allow_paid_provider=cfg.allow_paid_provider,
+            max_usd=cfg.max_usd,
+            daily_max_usd=cfg.effective_daily_max_usd,
+            max_tasks=cfg.max_tasks,
+            daily_spent_usd=daily_spent,
+        )
+        console.print(
+            Panel(
+                f"[bold cyan]Dry-run complete.[/bold cyan] Handle: [bold]{cfg.handle}[/bold] · "
+                f"Mode: [bold]{cfg.mode}[/bold] · Continuous: [bold]{continuous}[/bold] · "
+                f"Mission filter: [bold]{mission or 'any'}[/bold]",
+                border_style="cyan",
+            )
+        )
+        return
+
+    # Never overwrite an existing saved credential file when running with a temporary different handle/hub
+    save_on_reg = not (had_existing_file and identity_changed)
+
+    with AgentRunner(
+        cfg,
+        provider_cfg=prov_cfg,
+        on_event=_make_event_printer(),
+        config_path=cfg_path,
+        allow_local_files=False,
+    ) as runner:
         try:
             summary = runner.run_loop(
                 max_tasks=cfg.max_tasks,
                 continuous=continuous,
                 preferred_mission=mission,
+                save_on_register=save_on_reg,
             )
         except KeyboardInterrupt:
             console.print("\n[yellow]Runner interrupted cleanly.[/yellow]")
@@ -338,41 +614,57 @@ def run(
     _print_run_summary(summary)
 
 
-@app.command("audit-file")
-def audit_file(
-    path_or_url: str = typer.Argument(
-        ...,
-        help="Local CSV/JSON/OCDS/XLSX/ZIP/PDF/HTML path or official public dataset URL to audit.",
-    ),
-    methodology: str = typer.Option(..., "--methodology", "-m", help="Audit methodology code (M1 through M8)."),
-    secondary_url: str | None = typer.Option(
-        None,
-        "--secondary-url",
-        help="Optional secondary official CSV/JSON URL for cross-registry joins (e.g. M8 Electoral Bonds x MCA CSR).",
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON report to stdout."),
-    rti: bool = typer.Option(False, "--rti", help="Generate lawful RTI Act 2005 Sec 6(1) draft(s) for detected leads."),
-    authority: str | None = typer.Option(None, "--authority", help="Optional Public Authority override for RTI draft."),
+def _run_interactive_audit(
+    path_or_url: str,
+    methodology: str,
+    secondary_url: str | None,
+    as_of_date: str | None,
+    expected_sha256: str | None,
+    secondary_sha256: str | None,
+    as_json: bool,
+    rti: bool,
+    authority: str | None,
 ) -> None:
-    """Standalone civic-audit analyzer for official Government of India files & URLs (zero API key required)."""
+    """Shared interactive local/URL deterministic civic-audit implementation."""
     code = methodology.strip().upper()
     if code not in METHODOLOGY_CATALOG:
         valid = ", ".join(sorted(METHODOLOGY_CATALOG.keys()))
         err_console.print(f"[red]Unknown methodology '{methodology}'. Valid codes: {valid}[/red]")
         raise typer.Exit(code=2)
 
-    load_ctx: dict[str, Any] | None = {"secondary_url": secondary_url} if secondary_url else None
+    load_ctx: dict[str, Any] = {}
+    if secondary_url:
+        load_ctx["secondary_url"] = secondary_url
+    if as_of_date:
+        load_ctx["as_of_date"] = as_of_date
+    if expected_sha256:
+        load_ctx["expected_sha256"] = expected_sha256.strip().lower()
+    if secondary_sha256:
+        load_ctx["secondary_expected_sha256"] = secondary_sha256.strip().lower()
+        load_ctx["secondary_sha256"] = secondary_sha256.strip().lower()
+
     try:
         params = inspect.signature(load_dataset).parameters
-        if "context" in params and load_ctx is not None:
-            dataset = load_dataset(path_or_url, context=load_ctx)
-        else:
-            dataset = load_dataset(path_or_url)
+        kwargs: dict[str, Any] = {}
+        if "context" in params and load_ctx:
+            kwargs["context"] = load_ctx
+        # Local files are explicitly permitted ONLY in interactive CLI audit mode.
+        if "allow_local_files" in params:
+            kwargs["allow_local_files"] = True
+        if "expected_sha256" in params and expected_sha256:
+            kwargs["expected_sha256"] = expected_sha256.strip().lower()
+        if "secondary_expected_sha256" in params and secondary_sha256:
+            kwargs["secondary_expected_sha256"] = secondary_sha256.strip().lower()
+        dataset = load_dataset(path_or_url, **kwargs)
     except Exception as exc:
         err_console.print(f"[red]Failed to load dataset '{path_or_url}': {exc}[/red]")
         raise typer.Exit(code=1) from exc
 
-    result = run_engine(code, dataset.records, context=load_ctx)
+    eng_params = inspect.signature(run_engine).parameters
+    eng_kwargs: dict[str, Any] = {"context": load_ctx or None}
+    if "as_of_date" in eng_params and as_of_date:
+        eng_kwargs["as_of_date"] = as_of_date
+    result = run_engine(code, dataset.records, **eng_kwargs)
 
     processed_leads: list[dict[str, Any]] = []
     rti_drafts: list[dict[str, Any]] = []
@@ -401,14 +693,19 @@ def audit_file(
         "source_ref": dataset.source_ref,
         "format": dataset.format,
         "sha256": dataset.sha256,
+        "secondary_sha256": getattr(dataset, "secondary_sha256", None),
         "byte_size": dataset.byte_size,
         "is_demo_sample": False,
         "pii_redactions": dataset.pii_redactions,
         "methodology_code": result.methodology_code,
         "methodology_name": METHODOLOGY_CATALOG[code].get("name", code),
+        "engine_version": getattr(result, "engine_version", None),
+        "ruleset_version": getattr(result, "ruleset_version", None),
+        "as_of_date": getattr(result, "as_of_date", as_of_date),
         "records_scanned": result.records_scanned,
         "monetary_audited_inr": result.monetary_audited_inr,
         "cleared_count": result.cleared_count,
+        "unevaluable_count": int(getattr(result, "unevaluable_count", 0) or 0),
         "script_hash": result.script_hash,
         "summary": result.summary,
         "leads": processed_leads,
@@ -426,6 +723,7 @@ def audit_file(
         f"[bold]Scanned:[/bold] {result.records_scanned:,} records  ·  "
         f"[bold]Monetary Audited:[/bold] {_format_inr(result.monetary_audited_inr)}  ·  "
         f"[bold]Leads:[/bold] {len(processed_leads)}  ·  "
+        f"[bold]Unevaluable:[/bold] {report['unevaluable_count']}  ·  "
         f"[bold]PII Scrubbed:[/bold] {len(dataset.pii_redactions)}"
     )
     console.print(Panel(header_text, title="AI Watchdogs India · Deterministic Public-Record Audit", border_style="cyan"))
@@ -474,10 +772,15 @@ def audit_file(
 
     if rti and rti_drafts:
         for idx, draft in enumerate(rti_drafts, start=1):
+            channel = draft.get("filing_channel") or draft.get("rti_portal_url") or "Verify jurisdiction RTI channel"
+            jur_level = draft.get("jurisdiction_level") or ""
+            fee_info = draft.get("fee_rules") or draft.get("fee_note") or ""
             rti_body = (
-                f"[bold]Public Authority:[/bold] {draft.get('public_authority')}\n"
-                f"[bold]CPIO:[/bold] {draft.get('cpio_designation')}  ·  "
-                f"[bold]Portal:[/bold] {draft.get('rti_portal_url')}\n"
+                f"[bold]Public Authority:[/bold] {draft.get('public_authority')}"
+                f"{f' ({jur_level})' if jur_level else ''}\n"
+                f"[bold]CPIO/SPIO:[/bold] {draft.get('cpio_designation')}  ·  "
+                f"[bold]Channel / Portal:[/bold] {channel}\n"
+                f"{f'[bold]Fee Rules:[/bold] {fee_info}\n' if fee_info else ''}"
                 f"[bold]Sections:[/bold] {', '.join(draft.get('statutory_sections') or [])}  ·  "
                 f"[bold]Word Count:[/bold] {draft.get('word_count')} / 500\n"
                 f"[bold]Subject:[/bold] {draft.get('subject')}\n\n"
@@ -492,13 +795,130 @@ def audit_file(
             )
 
 
+@app.command("audit-file")
+def audit_file(
+    path_or_url: str = typer.Argument(
+        ...,
+        help="Local CSV/JSON/OCDS/XLSX/ZIP/PDF/HTML path or official public dataset URL to audit.",
+    ),
+    methodology: str = typer.Option(..., "--methodology", "-m", help="Audit methodology code (M1 through M8)."),
+    secondary_url: str | None = typer.Option(
+        None,
+        "--secondary-url",
+        help="Optional secondary official CSV/JSON URL for cross-registry joins (e.g. M8 Electoral Bonds x MCA CSR).",
+    ),
+    as_of_date: str | None = typer.Option(
+        None,
+        "--as-of-date",
+        help="Optional deterministic ISO evaluation date (YYYY-MM-DD) for age-based checks.",
+    ),
+    expected_sha256: str | None = typer.Option(
+        None,
+        "--expected-sha256",
+        help="Optional expected primary SHA-256 digest (fail-closed on mismatch).",
+    ),
+    secondary_sha256: str | None = typer.Option(
+        None,
+        "--secondary-sha256",
+        help="Optional expected secondary SHA-256 digest (fail-closed on mismatch).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON report to stdout."),
+    rti: bool = typer.Option(False, "--rti", help="Generate lawful RTI Act 2005 Sec 6(1) draft(s) for detected leads."),
+    authority: str | None = typer.Option(None, "--authority", help="Optional Public Authority override for RTI draft."),
+) -> None:
+    """Interactive civic-audit analyzer for local files & official Government of India URLs (zero API key required)."""
+    _run_interactive_audit(
+        path_or_url,
+        methodology,
+        secondary_url,
+        as_of_date,
+        expected_sha256,
+        secondary_sha256,
+        as_json,
+        rti,
+        authority,
+    )
+
+
+@app.command("audit")
+def audit(
+    path_or_url: str = typer.Argument(
+        ...,
+        help="Local CSV/JSON/OCDS/XLSX/ZIP/PDF/HTML path or official public dataset URL to audit.",
+    ),
+    methodology: str = typer.Option(..., "--methodology", "-m", help="Audit methodology code (M1 through M8)."),
+    secondary_url: str | None = typer.Option(
+        None,
+        "--secondary-url",
+        help="Optional secondary official CSV/JSON URL for cross-registry joins (e.g. M8 Electoral Bonds x MCA CSR).",
+    ),
+    as_of_date: str | None = typer.Option(
+        None,
+        "--as-of-date",
+        help="Optional deterministic ISO evaluation date (YYYY-MM-DD) for age-based checks.",
+    ),
+    expected_sha256: str | None = typer.Option(
+        None,
+        "--expected-sha256",
+        help="Optional expected primary SHA-256 digest (fail-closed on mismatch).",
+    ),
+    secondary_sha256: str | None = typer.Option(
+        None,
+        "--secondary-sha256",
+        help="Optional expected secondary SHA-256 digest (fail-closed on mismatch).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Output machine-readable JSON report to stdout."),
+    rti: bool = typer.Option(False, "--rti", help="Generate lawful RTI Act 2005 Sec 6(1) draft(s) for detected leads."),
+    authority: str | None = typer.Option(None, "--authority", help="Optional Public Authority override for RTI draft."),
+) -> None:
+    """Interactive civic-audit analyzer (alias of `audit-file`; explicitly allows local files)."""
+    _run_interactive_audit(
+        path_or_url,
+        methodology,
+        secondary_url,
+        as_of_date,
+        expected_sha256,
+        secondary_sha256,
+        as_json,
+        rti,
+        authority,
+    )
+
+
 @app.command()
 def status(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Display local mode, budget guardrails, and outbound destinations without contacting the Hub.",
+    ),
 ) -> None:
-    """Display live swarm metrics and audit disposition from the Hub (/api/head)."""
-    saved = load_config()
+    """Display live swarm metrics from the Hub (/api/head) and local outbound network / budget posture."""
+    cfg_path = get_config_path()
+    saved, _ = _safe_load_existing_config()
     hub_url = (hub or (saved.hub_url if saved else DEFAULT_HUB_URL)).rstrip("/")
+
+    prov_cfg = resolve_provider_config(
+        saved.provider if saved else RULE_ENGINE_PROVIDER,
+        saved.model if saved else None,
+        probe_local=False,
+        allow_paid_provider=saved.allow_paid_provider if saved else False,
+    )
+    daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
+    _render_outbound_destinations(
+        hub_url,
+        prov_cfg,
+        allow_paid_provider=saved.allow_paid_provider if saved else False,
+        max_usd=saved.max_usd if saved else 0.0,
+        daily_max_usd=saved.effective_daily_max_usd if saved else 0.0,
+        max_tasks=saved.max_tasks if saved else 5,
+        daily_spent_usd=daily_spent,
+        title="Local Contributor Outbound Destinations & Budget Posture",
+    )
+
+    if dry_run:
+        return
 
     try:
         resp = httpx.get(f"{hub_url}/api/head", timeout=10.0)
@@ -514,14 +934,41 @@ def status(
     kpi_table = Table(title=f"AI Watchdogs India · Live Swarm Status ({hub_url})", box=box.ROUNDED)
     kpi_table.add_column("Metric", style="bold")
     kpi_table.add_column("Value", justify="right", style="cyan")
-    kpi_table.add_row("Public Spend Audited", f"₹{float(stats.get('public_spend_audited_inr_cr', 0)):,.2f} Cr")
+
+    if "scan_workload_inr_cr" in stats:
+        kpi_table.add_row("Method Scan Workload", f"₹{float(stats.get('scan_workload_inr_cr') or 0):,.2f} Cr")
+    unique_cov = stats.get("unique_coverage_inr_cr")
+    if stats.get("unique_coverage_withheld") or ("unique_coverage_inr_cr" in stats and unique_cov is None):
+        kpi_table.add_row("Public Spend Audited (Unique)", "Withheld (mixed financial units)")
+    else:
+        spend_val = unique_cov if unique_cov is not None else stats.get("public_spend_audited_inr_cr", 0)
+        kpi_table.add_row("Public Spend Audited", f"₹{float(spend_val or 0):,.2f} Cr")
+
     kpi_table.add_row("Agents Active / Total", f"{stats.get('agents_active', 0)} / {stats.get('agents_total', 0)}")
     kpi_table.add_row("Tasks Completed / Queued", f"{stats.get('tasks_completed', 0)} / {stats.get('tasks_queued', 0)}")
-    kpi_table.add_row("Peer-Verified Leads", f"[green]{stats.get('findings_verified', disposition.get('verified_leads', 0))}[/green]")
-    kpi_table.add_row("Leads in Peer Review", f"[yellow]{stats.get('findings_peer_review', disposition.get('peer_review', 0))}[/yellow]")
-    kpi_table.add_row("Cleared / Explained Records", str(stats.get("findings_cleared", disposition.get("cleared_records", 0))))
+    kpi_table.add_row(
+        "Peer-Verified Leads",
+        f"[green]{stats.get('findings_verified', disposition.get('verified_leads', 0))}[/green]",
+    )
+    kpi_table.add_row(
+        "Leads in Peer Review",
+        f"[yellow]{stats.get('findings_peer_review', disposition.get('peer_review', 0))}[/yellow]",
+    )
+    if "cleared_scans" in stats:
+        kpi_table.add_row("Cleared Scans / Cleared Findings", f"{stats.get('cleared_scans', 0)} / {stats.get('findings_cleared', 0)}")
+    else:
+        kpi_table.add_row(
+            "Cleared / Explained Records",
+            str(stats.get("findings_cleared", disposition.get("cleared_records", 0))),
+        )
+    if "unevaluable_groups" in stats:
+        kpi_table.add_row("Unevaluable Groups", str(stats.get("unevaluable_groups", 0)))
     kpi_table.add_row("RTIs Drafted (Sec 6(1))", str(stats.get("rtis_drafted", 0)))
-    kpi_table.add_row("Public Sponsors Total", _format_inr(float(stats.get("sponsors_total_inr", 0))))
+    if "treasury_received_cash_inr" in stats or "treasury_pledged_inr" in stats:
+        kpi_table.add_row("Treasury Cash Received", _format_inr(float(stats.get("treasury_received_cash_inr", 0))))
+        kpi_table.add_row("Treasury Pledged (Unreconciled)", _format_inr(float(stats.get("treasury_pledged_inr", 0))))
+    else:
+        kpi_table.add_row("Public Sponsors Total", _format_inr(float(stats.get("sponsors_total_inr", 0))))
     console.print(kpi_table)
 
     whispers = head.get("whispers") or []
@@ -539,7 +986,7 @@ def missions(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
 ) -> None:
     """List active Indian civic-audit missions from the Hub (/api/missions)."""
-    saved = load_config()
+    saved, _ = _safe_load_existing_config()
     hub_url = (hub or (saved.hub_url if saved else DEFAULT_HUB_URL)).rstrip("/")
 
     try:
@@ -580,7 +1027,7 @@ def missions(
 
 @app.command()
 def whoami() -> None:
-    """Show the currently configured local watchdog handle, provider, hub, and live profile URL."""
+    """Show the currently configured local watchdog handle, provider, budget guardrails, and outbound destinations."""
     cfg_path = get_config_path()
     cfg = load_config(cfg_path)
     if cfg is None:
@@ -595,18 +1042,37 @@ def whoami() -> None:
         raise typer.Exit(code=0)
 
     mode_str = oct(stat.S_IMODE(cfg_path.stat().st_mode))
+    daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
     info = (
         f"[bold]Handle:[/bold] {cfg.handle or '(unset)'}\n"
-        f"[bold]Hub URL:[/bold] {cfg.normalized_hub_url}\n"
+        f"[bold]Hub URL:[/bold] {cfg.normalized_hub_url} (origin: {cfg.normalized_hub_origin})\n"
         f"[bold]Live Profile:[/bold] [underline cyan]{cfg.profile_url}[/underline cyan]\n"
         f"[bold]Provider:[/bold] {cfg.provider}\n"
         f"[bold]Model:[/bold] {cfg.model}\n"
         f"[bold]Mode:[/bold] {cfg.mode}\n"
-        f"[bold]Budget Caps:[/bold] max_tasks={cfg.max_tasks}, max_usd=${cfg.max_usd:.2f}\n"
+        f"[bold]Paid-Provider Opt-In:[/bold] {'enabled' if cfg.allow_paid_provider else 'disabled (strict zero-dollar guardrail)'}\n"
+        f"[bold]Hard Budget Caps:[/bold] max_tasks={cfg.max_tasks}, session=${cfg.max_usd:.2f}, "
+        f"daily=${cfg.effective_daily_max_usd:.2f} (today spent=${daily_spent:.4f})\n"
         f"[bold]API Token:[/bold] {mask_token(cfg.api_token)}\n"
         f"[bold]Config File:[/bold] {cfg_path} (permissions {mode_str})"
     )
     console.print(Panel(info, title="AI Watchdogs India · Current Agent Identity", border_style="cyan"))
+
+    prov_cfg = resolve_provider_config(
+        cfg.provider,
+        cfg.model,
+        probe_local=False,
+        allow_paid_provider=cfg.allow_paid_provider,
+    )
+    _render_outbound_destinations(
+        cfg.normalized_hub_url,
+        prov_cfg,
+        allow_paid_provider=cfg.allow_paid_provider,
+        max_usd=cfg.max_usd,
+        daily_max_usd=cfg.effective_daily_max_usd,
+        max_tasks=cfg.max_tasks,
+        daily_spent_usd=daily_spent,
+    )
 
 
 if __name__ == "__main__":

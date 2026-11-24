@@ -1,12 +1,17 @@
-"""Dual-backend database layer (Neon Postgres + SQLite WAL) for AI Watchdogs India Coordinator Hub.
+"""Dual-backend database layer (Neon Postgres + SQLite WAL) with versioned migrations.
 
 Automatically uses PostgreSQL (via psycopg v3) when ``DATABASE_URL`` or ``POSTGRES_URL``
 is configured in the environment (or passed explicitly), and falls back to thread-safe
 SQLite WAL mode for offline local development and pytest suites.
+
+When running in production (``VERCEL=1`` or ``AIWATCHDOGS_REQUIRE_POSTGRES=1``) without
+an explicit local ``db_path`` override, refuses to silently fall back to ephemeral
+instance-local SQLite unless ``AIWATCHDOGS_ALLOW_EPHEMERAL_SQLITE=1`` is explicitly set.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -15,7 +20,7 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 try:
     import psycopg
@@ -29,21 +34,29 @@ VERCEL_DB_PATH = Path("/tmp/aiwatchdogs.db")
 
 HUB_TABLES: frozenset[str] = frozenset(
     {
+        "schema_migrations",
+        "seed_state",
         "public_sources",
         "missions",
         "agents",
         "evidence_artifacts",
         "tasks",
         "findings",
+        "finding_corrections",
         "peer_verifications",
         "rti_drafts",
+        "rti_draft_versions",
         "whispers",
+        "events",
+        "score_events",
         "sponsors",
         "treasury_ledger",
     }
 )
+
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
+LATEST_SCHEMA_VERSION = 4
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -58,6 +71,19 @@ _PG_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    checksum TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS seed_state (
+    key TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS public_sources (
     id TEXT PRIMARY KEY,
     slug TEXT UNIQUE NOT NULL,
@@ -65,6 +91,10 @@ CREATE TABLE IF NOT EXISTS public_sources (
     pillar TEXT NOT NULL,
     authority TEXT NOT NULL,
     base_url TEXT NOT NULL,
+    official_publisher TEXT NOT NULL DEFAULT '',
+    source_landing_page TEXT NOT NULL DEFAULT '',
+    mirror_name TEXT NOT NULL DEFAULT '',
+    retrieval_url TEXT NOT NULL DEFAULT '',
     ingestion_tier INTEGER NOT NULL CHECK (ingestion_tier IN (1, 2, 3)),
     connector_type TEXT NOT NULL,
     data_contents TEXT NOT NULL DEFAULT '',
@@ -93,7 +123,11 @@ CREATE TABLE IF NOT EXISTS missions (
     completed_tasks INTEGER NOT NULL DEFAULT 0,
     verified_findings_count INTEGER NOT NULL DEFAULT 0,
     cleared_count INTEGER NOT NULL DEFAULT 0,
+    cleared_findings_count INTEGER NOT NULL DEFAULT 0,
+    unevaluable_count INTEGER NOT NULL DEFAULT 0,
     monetary_audited_inr REAL NOT NULL DEFAULT 0.0,
+    monetary_unit TEXT NOT NULL DEFAULT 'inr',
+    financial_quantity_type TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 
@@ -127,9 +161,15 @@ CREATE TABLE IF NOT EXISTS evidence_artifacts (
     title TEXT NOT NULL,
     canonical_url TEXT NOT NULL,
     archive_url TEXT,
+    official_publisher TEXT NOT NULL DEFAULT '',
+    source_landing_page TEXT NOT NULL DEFAULT '',
+    mirror_name TEXT NOT NULL DEFAULT '',
+    retrieval_url TEXT NOT NULL DEFAULT '',
+    secondary_url TEXT,
+    secondary_sha256 TEXT,
     local_path TEXT,
     file_format TEXT NOT NULL,
-    sha256 TEXT NOT NULL,
+    sha256 TEXT,
     byte_size INTEGER NOT NULL DEFAULT 0,
     is_demo_sample INTEGER NOT NULL DEFAULT 0,
     pii_scrubbed INTEGER NOT NULL DEFAULT 1,
@@ -153,9 +193,17 @@ CREATE TABLE IF NOT EXISTS tasks (
     claimed_by_handle TEXT,
     lease_id TEXT UNIQUE,
     lease_expires_at TEXT,
+    available_at TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    max_retries INTEGER NOT NULL DEFAULT 3,
     progress_pct INTEGER NOT NULL DEFAULT 0,
     attempt_count INTEGER NOT NULL DEFAULT 0,
     output_json TEXT,
+    settlement_idempotency_key TEXT,
+    settlement_response_json TEXT,
+    dataset_key TEXT NOT NULL DEFAULT '',
+    financial_quantity_type TEXT NOT NULL DEFAULT '',
+    monetary_audited_inr REAL NOT NULL DEFAULT 0.0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT
@@ -168,18 +216,28 @@ CREATE TABLE IF NOT EXISTS findings (
     pillar TEXT NOT NULL,
     task_id TEXT REFERENCES tasks(id),
     artifact_id TEXT REFERENCES evidence_artifacts(id),
+    source_id TEXT,
     title TEXT NOT NULL,
     summary TEXT NOT NULL,
+    editorial_interpretation TEXT NOT NULL DEFAULT '',
     methodology_code TEXT NOT NULL,
     entity_name TEXT NOT NULL,
     jurisdiction TEXT NOT NULL,
     fiscal_year TEXT NOT NULL,
+    fiscal_year_start TEXT,
+    fiscal_year_end TEXT,
     monetary_exposure_inr REAL NOT NULL DEFAULT 0.0,
     severity TEXT NOT NULL DEFAULT 'medium',
     anomaly_metrics_json TEXT NOT NULL DEFAULT '{}',
     rule_triggered TEXT NOT NULL DEFAULT '',
+    engine_version TEXT NOT NULL DEFAULT '',
+    ruleset_version TEXT NOT NULL DEFAULT '',
+    as_of_date TEXT,
+    source_locator_json TEXT NOT NULL DEFAULT '{}',
+    provenance_json TEXT NOT NULL DEFAULT '{}',
     source_url TEXT NOT NULL DEFAULT '',
-    artifact_sha256 TEXT NOT NULL DEFAULT '',
+    artifact_sha256 TEXT,
+    secondary_sha256 TEXT,
     dataset_path TEXT NOT NULL DEFAULT '',
     is_demo_sample INTEGER NOT NULL DEFAULT 0,
     citations_json TEXT NOT NULL DEFAULT '[]',
@@ -191,12 +249,28 @@ CREATE TABLE IF NOT EXISTS findings (
     legal_lint_passed INTEGER NOT NULL DEFAULT 1,
     pii_scrubbed INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'peer_review',
+    editorial_status TEXT NOT NULL DEFAULT 'none',
+    quarantined INTEGER NOT NULL DEFAULT 0,
+    quarantine_reason TEXT NOT NULL DEFAULT '',
     verification_score REAL NOT NULL DEFAULT 0.0,
     confirm_count INTEGER NOT NULL DEFAULT 0,
     dispute_count INTEGER NOT NULL DEFAULT 0,
     required_quorum INTEGER NOT NULL DEFAULT 2,
     created_at TEXT NOT NULL,
     verified_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS finding_corrections (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL REFERENCES findings(id),
+    correction_type TEXT NOT NULL,
+    previous_status TEXT,
+    new_status TEXT,
+    summary TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    source_evidence_url TEXT,
+    reviewed_by TEXT NOT NULL DEFAULT 'editorial-review',
+    created_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS peer_verifications (
@@ -207,10 +281,12 @@ CREATE TABLE IF NOT EXISTS peer_verifications (
     verifier_handle TEXT NOT NULL,
     provider TEXT NOT NULL DEFAULT '',
     model_id TEXT NOT NULL DEFAULT '',
+    review_type TEXT NOT NULL DEFAULT 'computational_reproduction',
     verdict TEXT NOT NULL,
     checks_json TEXT NOT NULL DEFAULT '{}',
     reproduced_metrics_json TEXT NOT NULL DEFAULT '{}',
-    confidence REAL NOT NULL DEFAULT 0.9,
+    manifest_json TEXT NOT NULL DEFAULT '{}',
+    confidence REAL,
     notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     UNIQUE(finding_id, contributor_id)
@@ -219,18 +295,46 @@ CREATE TABLE IF NOT EXISTS peer_verifications (
 CREATE TABLE IF NOT EXISTS rti_drafts (
     id TEXT PRIMARY KEY,
     finding_id TEXT UNIQUE NOT NULL REFERENCES findings(id),
+    version INTEGER NOT NULL DEFAULT 1,
     public_authority TEXT NOT NULL,
     cpio_designation TEXT NOT NULL,
-    rti_portal_url TEXT NOT NULL DEFAULT 'https://rtionline.gov.in/',
+    rti_portal_url TEXT NOT NULL DEFAULT '',
+    jurisdiction_level TEXT NOT NULL DEFAULT 'central',
+    state_name TEXT,
+    filing_channel TEXT NOT NULL DEFAULT 'central_online_portal',
+    fee_note TEXT NOT NULL DEFAULT '',
+    central_portal_warning TEXT NOT NULL DEFAULT '',
     statutory_sections_json TEXT NOT NULL DEFAULT '["Sec 6(1)", "Sec 2(f)", "Sec 4(1)(b)"]',
     subject TEXT NOT NULL,
     body_text TEXT NOT NULL,
     word_count INTEGER NOT NULL,
     requested_records_json TEXT NOT NULL DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'draft',
+    editorial_notice TEXT NOT NULL DEFAULT '',
     filed_date TEXT,
     due_date_30d TEXT,
     official_reply_artifact_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rti_draft_versions (
+    id TEXT PRIMARY KEY,
+    rti_draft_id TEXT NOT NULL REFERENCES rti_drafts(id),
+    finding_id TEXT NOT NULL REFERENCES findings(id),
+    version INTEGER NOT NULL,
+    public_authority TEXT NOT NULL,
+    cpio_designation TEXT NOT NULL,
+    rti_portal_url TEXT NOT NULL DEFAULT '',
+    jurisdiction_level TEXT NOT NULL DEFAULT 'central',
+    filing_channel TEXT NOT NULL DEFAULT 'central_online_portal',
+    subject TEXT NOT NULL,
+    body_text TEXT NOT NULL,
+    word_count INTEGER NOT NULL,
+    requested_records_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'draft',
+    editorial_notice TEXT NOT NULL DEFAULT '',
+    change_note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
 );
 
@@ -246,13 +350,33 @@ CREATE TABLE IF NOT EXISTS whispers (
     created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS score_events (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT REFERENCES agents(id),
+    agent_handle TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    points INTEGER NOT NULL,
+    ref_id TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sponsors (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     handle_or_org TEXT,
     tier TEXT NOT NULL DEFAULT 'citizen_backer',
     amount_inr REAL NOT NULL DEFAULT 0.0,
+    in_kind_value_inr REAL NOT NULL DEFAULT 0.0,
     compute_credits_desc TEXT NOT NULL DEFAULT '',
+    pledge_status TEXT NOT NULL DEFAULT 'pledged',
+    reconciled_receipt_ref TEXT,
     url TEXT,
     message TEXT NOT NULL DEFAULT '',
     featured INTEGER NOT NULL DEFAULT 0,
@@ -265,12 +389,16 @@ CREATE TABLE IF NOT EXISTS treasury_ledger (
     entry_date TEXT NOT NULL,
     entry_type TEXT NOT NULL,
     direction TEXT NOT NULL CHECK (direction IN ('inflow', 'outflow')),
+    settlement_status TEXT NOT NULL DEFAULT 'pledged',
     category TEXT NOT NULL,
     counterparty TEXT NOT NULL,
     description TEXT NOT NULL,
     amount_inr REAL NOT NULL,
     compute_credit_units TEXT NOT NULL DEFAULT '',
     receipt_ref TEXT NOT NULL,
+    reconciled_receipt_ref TEXT,
+    reconciled_at TEXT,
+    sponsor_id TEXT,
     is_demo_entry INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );
@@ -278,19 +406,154 @@ CREATE TABLE IF NOT EXISTS treasury_ledger (
 CREATE INDEX IF NOT EXISTS idx_tasks_status_type ON tasks(status, task_type);
 CREATE INDEX IF NOT EXISTS idx_tasks_mission_slug ON tasks(mission_slug);
 CREATE INDEX IF NOT EXISTS idx_tasks_target_finding ON tasks(target_finding_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_available_at ON tasks(status, available_at);
 CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);
 CREATE INDEX IF NOT EXISTS idx_findings_mission ON findings(mission_slug);
 CREATE INDEX IF NOT EXISTS idx_findings_pillar ON findings(pillar);
 CREATE INDEX IF NOT EXISTS idx_findings_methodology ON findings(methodology_code);
+CREATE INDEX IF NOT EXISTS idx_findings_quarantined ON findings(quarantined);
+CREATE INDEX IF NOT EXISTS idx_corrections_finding ON finding_corrections(finding_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_peer_verif_finding ON peer_verifications(finding_id);
+CREATE INDEX IF NOT EXISTS idx_rti_versions_finding ON rti_draft_versions(finding_id, version);
 CREATE INDEX IF NOT EXISTS idx_whispers_created ON whispers(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(event_type, id);
+CREATE INDEX IF NOT EXISTS idx_score_events_handle_ts ON score_events(agent_handle, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agents_score ON agents(compute_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_date ON treasury_ledger(entry_date DESC);
 """
 
+# Named editorial corrections for the 4 confirmed defective published dossiers from the
+# 24 November 2026 public audit. Applied idempotently during migration v4 if those IDs exist.
+LIVE_DOSSIER_EDITORIAL_CORRECTIONS: tuple[dict[str, Any], ...] = (
+    {
+        "finding_id": "fnd-2151675fe8f4",
+        "correction_id": "cor-audit-2026-11-24-fnd-2151675fe8f4",
+        "correction_type": "retraction",
+        "new_status": "retracted",
+        "editorial_status": "retracted",
+        "reviewed_by": "editorial-audit-2026-11-24",
+        "summary": (
+            "Retracted from verified: ₹58,47,347 crore is FY 2024–25 14-day Treasury Bill "
+            "repayments (Figure 2.6, printed p. 7), not an unresolved CAG audit impact."
+        ),
+        "details": (
+            "Independent review of CAG Union Report No. 6 of 2026 (SHA-256 "
+            "21ab04ae408b6f413b3e0e334ed1fe6005907a19ffb0db1d8a9bf9a603ab01fa, PDF page 27 / "
+            "printed page 7, Figure 2.6) confirmed that ₹58,47,347 crore represents FY 2024–25 "
+            "repayments of 14-day Treasury Bills. Paragraph 2.4 discusses receipts trends and "
+            "supplies neither the attributed audit impact nor dated evidence of an Action Taken "
+            "Note pending two years. The legacy parser selected a nearby figure and defaulted "
+            "pending age to two years. Shared RTI draft placed on editorial hold."
+        ),
+        "source_evidence_url": (
+            "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2026/"
+            "6of2026UGEng-069ce496f1158e0.22682438.pdf#page=27"
+        ),
+        "rti_editorial_notice": (
+            "EDITORIAL HOLD (2026-11-24): Underlying dossier retracted because ₹58,47,347 crore "
+            "is FY 2024–25 14-day Treasury Bill repayments (Fig. 2.6, printed p. 7), not an "
+            "unresolved CAG audit paragraph impact. Do not file this draft as-is."
+        ),
+    },
+    {
+        "finding_id": "fnd-25c6fbd61b32",
+        "correction_id": "cor-audit-2026-11-24-fnd-25c6fbd61b32",
+        "correction_type": "retraction",
+        "new_status": "retracted",
+        "editorial_status": "corrected",
+        "reviewed_by": "editorial-audit-2026-11-24",
+        "summary": (
+            "Retracted same-day cluster claim: 113 Assam NHM rows share an OCDS release date "
+            "(2023-06-21) and list tender estimates, not same-day contract awards."
+        ),
+        "details": (
+            "Independent review of the checksum-matched Assam OCDS v2 CSV (commit "
+            "1e12e516748130c15398b2501fb092bfa7413941) confirmed that the 113 distinct National "
+            "Health Mission tenders totalling ₹52.93 crore contain tender estimates rather than "
+            "award values and lack tender publication and award dates. The legacy loader mapped "
+            "the shared OCDS release date (21 June 2023) into award_date, creating a false 0-day "
+            "cluster even though the rows span 23 distinct bid-opening dates (20 July 2021 to "
+            "10 April 2023), and applied July 2024 central GFR thresholds to earlier Assam state "
+            "records. Shared RTI draft placed on editorial hold."
+        ),
+        "source_evidence_url": (
+            "https://github.com/CivicDataLab/assam-tenders-data/blob/"
+            "1e12e516748130c15398b2501fb092bfa7413941/data/ProcessedData/ocds-mapped-data/v2/"
+            "ocds_mapped_data_fiscal_year_2016_2022_v2.csv"
+        ),
+        "rti_editorial_notice": (
+            "EDITORIAL HOLD (2026-11-24): Same-day order-splitting claim retracted because the "
+            "shared date 2023-06-21 is an OCDS release date rather than an award date and amounts "
+            "are tender estimates. Do not file this draft as a same-day award cluster."
+        ),
+    },
+    {
+        "finding_id": "fnd-b6d573296cef",
+        "correction_id": "cor-audit-2026-11-24-fnd-b6d573296cef",
+        "correction_type": "editorial_review",
+        "new_status": "under_review",
+        "editorial_status": "under_review",
+        "reviewed_by": "editorial-audit-2026-11-24",
+        "summary": (
+            "Withdrawn from verified for editorial review: Assam Tourism Demand 65 variance "
+            "mixed unrelated agencies/heads and compared different fiscal years."
+        ),
+        "details": (
+            "Independent review of the pinned Assam Budget OBDS FY 2022–23 workbook (commit "
+            "f4965c2d92c02d5ea34319b7d42c78ed1cd03da1) confirmed that rows labelled Tourism "
+            "include unrelated agencies and account heads (e.g. Sheet1 row 12566 Power Department "
+            "major head 4801) and that the importer compared last-audited-year actuals against "
+            "previous-year estimates from different fiscal periods. Withdrawn from verified "
+            "status pending reconciliation to signed grant tables by account, authority, unit, "
+            "and fiscal year. Shared RTI draft placed on editorial hold."
+        ),
+        "source_evidence_url": (
+            "https://github.com/CivicDataLab/Assam-Budget-OBDS/blob/"
+            "f4965c2d92c02d5ea34319b7d42c78ed1cd03da1/Budget%20OBDS/assam_expenditure_22-23.xlsx"
+        ),
+        "rti_editorial_notice": (
+            "EDITORIAL HOLD (2026-11-24): Assam Tourism Demand 65 variance withdrawn pending "
+            "reconciliation of mixed agency/head rows and fiscal-year columns against signed "
+            "Assam grant tables. Do not file this draft with the ₹11,299.26 Cr variance figure."
+        ),
+    },
+    {
+        "finding_id": "fnd-bbc65f1fb61a",
+        "correction_id": "cor-audit-2026-11-24-fnd-bbc65f1fb61a",
+        "correction_type": "correction",
+        "new_status": "under_review",
+        "editorial_status": "corrected",
+        "reviewed_by": "editorial-audit-2026-11-24",
+        "summary": (
+            "Withdrawn from verified / PAC claim corrected: missing PAC explanation was triggered "
+            "using unobserved budget estimates and filing status defaulted to 0/false."
+        ),
+        "details": (
+            "Independent review of the Krishna General Education dossier confirmed that the "
+            "Public Accounts Committee (PAC) missing-explanation alert was computed from "
+            "₹125.70 crore of actual monthly treasury spend where budgeted estimates and PAC "
+            "filing status were unobserved in the source CSV and defaulted to zero/false. The "
+            "Q4 expenditure share may be reviewed independently, while the missing-PAC claim is "
+            "withdrawn pending official grant estimates and filing records. Shared RTI draft "
+            "placed on editorial hold."
+        ),
+        "source_evidence_url": (
+            "https://github.com/CivicDataLab/child-budget-tracker/blob/"
+            "ff03978dbc64fc6eba95fe6ad931b074c52df3c0/data/processed_data/"
+            "andhra_pradesh_child_treasury.csv"
+        ),
+        "rti_editorial_notice": (
+            "EDITORIAL HOLD (2026-11-24): Missing PAC explanation claim withdrawn because "
+            "estimates and filing status were unobserved in the source treasury table. State "
+            "RTI filings for Andhra Pradesh must also be directed to the state SPIO channel, "
+            "not the central rtionline.gov.in portal."
+        ),
+    },
+)
+
 _AUTOINC_RE = re.compile(r"\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b", re.IGNORECASE)
 _INSERT_OR_IGNORE_RE = re.compile(r"^\s*INSERT\s+OR\s+IGNORE\s+INTO\b", re.IGNORECASE)
-_CREATE_TABLE_RE = re.compile(r"^\s*CREATE\s+TABLE\b", re.IGNORECASE)
+_DDL_REAL_RE = re.compile(r"^\s*(?:CREATE|ALTER)\s+TABLE\b", re.IGNORECASE)
 _REAL_TYPE_RE = re.compile(r"\bREAL\b")
 
 
@@ -320,6 +583,15 @@ def is_postgres_url(value: str | Path | None) -> bool:
         return False
     lowered = value.strip().lower()
     return lowered.startswith("postgres://") or lowered.startswith("postgresql://")
+
+
+def is_postgres_required() -> bool:
+    """Return True when production deployment requires durable PostgreSQL storage."""
+    if os.environ.get("AIWATCHDOGS_ALLOW_EPHEMERAL_SQLITE", "").strip().lower() in {"1", "true", "yes"}:
+        return False
+    if os.environ.get("AIWATCHDOGS_REQUIRE_POSTGRES", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    return bool(os.environ.get("VERCEL"))
 
 
 def resolve_database_url(database_url: str | None = None) -> str | None:
@@ -452,7 +724,7 @@ def translate_sql_for_postgres(sql: str, *, parameterized: bool = False) -> str 
         return None
 
     # Handle SQLite DDL dialects
-    if _CREATE_TABLE_RE.match(stripped):
+    if _DDL_REAL_RE.match(stripped):
         stripped = _AUTOINC_RE.sub("SERIAL PRIMARY KEY", stripped)
         stripped = _REAL_TYPE_RE.sub("DOUBLE PRECISION", stripped)
 
@@ -615,6 +887,569 @@ class _PgConnectionAdapter:
             conn.rollback()
 
 
+# ---------------------------------------------------------------------------
+# Versioned Idempotent Migrations (SQLite + PostgreSQL parity)
+# ---------------------------------------------------------------------------
+
+_V2_NEW_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    # public_sources
+    ("public_sources", "official_publisher", "TEXT NOT NULL DEFAULT ''"),
+    ("public_sources", "source_landing_page", "TEXT NOT NULL DEFAULT ''"),
+    ("public_sources", "mirror_name", "TEXT NOT NULL DEFAULT ''"),
+    ("public_sources", "retrieval_url", "TEXT NOT NULL DEFAULT ''"),
+    # missions
+    ("missions", "cleared_findings_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("missions", "unevaluable_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("missions", "monetary_unit", "TEXT NOT NULL DEFAULT 'inr'"),
+    ("missions", "financial_quantity_type", "TEXT NOT NULL DEFAULT ''"),
+    # evidence_artifacts
+    ("evidence_artifacts", "official_publisher", "TEXT NOT NULL DEFAULT ''"),
+    ("evidence_artifacts", "source_landing_page", "TEXT NOT NULL DEFAULT ''"),
+    ("evidence_artifacts", "mirror_name", "TEXT NOT NULL DEFAULT ''"),
+    ("evidence_artifacts", "retrieval_url", "TEXT NOT NULL DEFAULT ''"),
+    ("evidence_artifacts", "secondary_url", "TEXT"),
+    ("evidence_artifacts", "secondary_sha256", "TEXT"),
+    # tasks
+    ("tasks", "available_at", "TEXT"),
+    ("tasks", "retry_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("tasks", "max_retries", "INTEGER NOT NULL DEFAULT 3"),
+    ("tasks", "settlement_idempotency_key", "TEXT"),
+    ("tasks", "settlement_response_json", "TEXT"),
+    ("tasks", "dataset_key", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "financial_quantity_type", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "monetary_audited_inr", "REAL NOT NULL DEFAULT 0.0"),
+    # findings
+    ("findings", "source_id", "TEXT"),
+    ("findings", "editorial_interpretation", "TEXT NOT NULL DEFAULT ''"),
+    ("findings", "fiscal_year_start", "TEXT"),
+    ("findings", "fiscal_year_end", "TEXT"),
+    ("findings", "engine_version", "TEXT NOT NULL DEFAULT ''"),
+    ("findings", "ruleset_version", "TEXT NOT NULL DEFAULT ''"),
+    ("findings", "as_of_date", "TEXT"),
+    ("findings", "source_locator_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("findings", "provenance_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("findings", "secondary_sha256", "TEXT"),
+    ("findings", "editorial_status", "TEXT NOT NULL DEFAULT 'none'"),
+    ("findings", "quarantined", "INTEGER NOT NULL DEFAULT 0"),
+    ("findings", "quarantine_reason", "TEXT NOT NULL DEFAULT ''"),
+    # peer_verifications
+    ("peer_verifications", "review_type", "TEXT NOT NULL DEFAULT 'computational_reproduction'"),
+    ("peer_verifications", "manifest_json", "TEXT NOT NULL DEFAULT '{}'"),
+    # rti_drafts
+    ("rti_drafts", "version", "INTEGER NOT NULL DEFAULT 1"),
+    ("rti_drafts", "jurisdiction_level", "TEXT NOT NULL DEFAULT 'central'"),
+    ("rti_drafts", "state_name", "TEXT"),
+    ("rti_drafts", "filing_channel", "TEXT NOT NULL DEFAULT 'central_online_portal'"),
+    ("rti_drafts", "fee_note", "TEXT NOT NULL DEFAULT ''"),
+    ("rti_drafts", "central_portal_warning", "TEXT NOT NULL DEFAULT ''"),
+    ("rti_drafts", "editorial_notice", "TEXT NOT NULL DEFAULT ''"),
+    ("rti_drafts", "updated_at", "TEXT"),
+    # sponsors
+    ("sponsors", "in_kind_value_inr", "REAL NOT NULL DEFAULT 0.0"),
+    ("sponsors", "pledge_status", "TEXT NOT NULL DEFAULT 'pledged'"),
+    ("sponsors", "reconciled_receipt_ref", "TEXT"),
+    # treasury_ledger
+    ("treasury_ledger", "settlement_status", "TEXT NOT NULL DEFAULT 'pledged'"),
+    ("treasury_ledger", "reconciled_receipt_ref", "TEXT"),
+    ("treasury_ledger", "reconciled_at", "TEXT"),
+    ("treasury_ledger", "sponsor_id", "TEXT"),
+)
+
+_V2_NEW_TABLES_AND_INDEXES_SQL = """
+CREATE TABLE IF NOT EXISTS seed_state (
+    key TEXT PRIMARY KEY,
+    version INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS finding_corrections (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL REFERENCES findings(id),
+    correction_type TEXT NOT NULL,
+    previous_status TEXT,
+    new_status TEXT,
+    summary TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    source_evidence_url TEXT,
+    reviewed_by TEXT NOT NULL DEFAULT 'editorial-review',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rti_draft_versions (
+    id TEXT PRIMARY KEY,
+    rti_draft_id TEXT NOT NULL REFERENCES rti_drafts(id),
+    finding_id TEXT NOT NULL REFERENCES findings(id),
+    version INTEGER NOT NULL,
+    public_authority TEXT NOT NULL,
+    cpio_designation TEXT NOT NULL,
+    rti_portal_url TEXT NOT NULL DEFAULT '',
+    jurisdiction_level TEXT NOT NULL DEFAULT 'central',
+    filing_channel TEXT NOT NULL DEFAULT 'central_online_portal',
+    subject TEXT NOT NULL,
+    body_text TEXT NOT NULL,
+    word_count INTEGER NOT NULL,
+    requested_records_json TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'draft',
+    editorial_notice TEXT NOT NULL DEFAULT '',
+    change_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS score_events (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT REFERENCES agents(id),
+    agent_handle TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    points INTEGER NOT NULL,
+    ref_id TEXT,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_available_at ON tasks(status, available_at);
+CREATE INDEX IF NOT EXISTS idx_findings_quarantined ON findings(quarantined);
+CREATE INDEX IF NOT EXISTS idx_corrections_finding ON finding_corrections(finding_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_rti_versions_finding ON rti_draft_versions(finding_id, version);
+CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(event_type, id);
+CREATE INDEX IF NOT EXISTS idx_score_events_handle_ts ON score_events(agent_handle, created_at DESC);
+"""
+
+
+def _execute_statements(conn: Any, sql_script: str) -> None:
+    for stmt in split_sql_statements(sql_script):
+        conn.execute(stmt)
+
+
+def _get_table_columns(conn: Any, table: str, *, is_postgres: bool) -> set[str]:
+    if is_postgres:
+        rows = conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = ?",
+            (table,),
+        ).fetchall()
+        return {str(r["column_name"]) for r in rows}
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return {str(r["name"]) for r in rows}
+
+
+def _ensure_column(
+    conn: Any,
+    table: str,
+    column: str,
+    col_def: str,
+    *,
+    is_postgres: bool,
+    column_cache: dict[str, set[str]],
+) -> None:
+    cols = column_cache.get(table)
+    if cols is None:
+        cols = _get_table_columns(conn, table, is_postgres=is_postgres)
+        column_cache[table] = cols
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+        cols.add(column)
+
+
+def _migrate_v1_baseline(conn: Any, *, is_postgres: bool) -> None:
+    _ = is_postgres
+    # Create all tables first; indexes referencing v2 columns are created in v2 after
+    # ALTER TABLE adds any missing columns on upgraded pre-v2 databases.
+    for stmt in split_sql_statements(SCHEMA_SQL):
+        if stmt.upper().startswith("CREATE TABLE"):
+            conn.execute(stmt)
+
+
+def _migrate_v2_audit_remediation_schema(conn: Any, *, is_postgres: bool) -> None:
+    for stmt in split_sql_statements(_V2_NEW_TABLES_AND_INDEXES_SQL):
+        if stmt.upper().startswith("CREATE TABLE"):
+            conn.execute(stmt)
+    col_cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V2_NEW_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=col_cache)
+    if is_postgres:
+        # Allow nullable unrecorded confidence & SHA-256 on upgraded PostgreSQL databases
+        for alter_sql in (
+            "ALTER TABLE peer_verifications ALTER COLUMN confidence DROP NOT NULL",
+            "ALTER TABLE peer_verifications ALTER COLUMN confidence DROP DEFAULT",
+            "ALTER TABLE evidence_artifacts ALTER COLUMN sha256 DROP NOT NULL",
+            "ALTER TABLE findings ALTER COLUMN artifact_sha256 DROP NOT NULL",
+        ):
+            conn.execute(alter_sql)
+    else:
+        # On upgraded pre-v2 SQLite DBs, rebuild leaf table peer_verifications if confidence is NOT NULL
+        pv_info = conn.execute("PRAGMA table_info(peer_verifications)").fetchall()
+        conf_col = next((r for r in pv_info if str(r["name"]) == "confidence"), None)
+        if conf_col is not None and int(conf_col["notnull"]) == 1:
+            conn.execute("ALTER TABLE peer_verifications RENAME TO _peer_verifications_legacy")
+            conn.execute(
+                """
+                CREATE TABLE peer_verifications (
+                    id TEXT PRIMARY KEY,
+                    finding_id TEXT NOT NULL REFERENCES findings(id),
+                    verifier_node_id TEXT NOT NULL REFERENCES agents(id),
+                    contributor_id TEXT NOT NULL,
+                    verifier_handle TEXT NOT NULL,
+                    provider TEXT NOT NULL DEFAULT '',
+                    model_id TEXT NOT NULL DEFAULT '',
+                    review_type TEXT NOT NULL DEFAULT 'computational_reproduction',
+                    verdict TEXT NOT NULL,
+                    checks_json TEXT NOT NULL DEFAULT '{}',
+                    reproduced_metrics_json TEXT NOT NULL DEFAULT '{}',
+                    manifest_json TEXT NOT NULL DEFAULT '{}',
+                    confidence REAL,
+                    notes TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(finding_id, contributor_id)
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO peer_verifications (
+                    id, finding_id, verifier_node_id, contributor_id, verifier_handle,
+                    provider, model_id, review_type, verdict, checks_json,
+                    reproduced_metrics_json, manifest_json, confidence, notes, created_at
+                )
+                SELECT
+                    id, finding_id, verifier_node_id, contributor_id, verifier_handle,
+                    provider, model_id, review_type, verdict, checks_json,
+                    reproduced_metrics_json, manifest_json, confidence, notes, created_at
+                FROM _peer_verifications_legacy
+                """
+            )
+            conn.execute("DROP TABLE _peer_verifications_legacy")
+    # Create all indexes now that every table and column is guaranteed to exist
+    for stmt in split_sql_statements(SCHEMA_SQL):
+        if stmt.upper().startswith("CREATE INDEX"):
+            conn.execute(stmt)
+
+
+def _migrate_v3_reconcile_treasury_and_scores(conn: Any, *, is_postgres: bool) -> None:
+    _ = is_postgres
+    # 1. Reconcile legacy treasury/sponsor rows (including rows defaulted to 'pledged' by v2)
+    conn.execute(
+        """
+        UPDATE treasury_ledger
+        SET settlement_status = CASE
+            WHEN direction = 'outflow' THEN 'disbursed'
+            WHEN entry_type = 'compute_grant' THEN 'in_kind_committed'
+            WHEN reconciled_receipt_ref IS NOT NULL AND reconciled_receipt_ref != '' THEN 'received'
+            ELSE 'pledged'
+        END
+        WHERE settlement_status IS NULL
+           OR settlement_status = ''
+           OR (direction = 'outflow' AND settlement_status = 'pledged')
+           OR (entry_type = 'compute_grant' AND settlement_status = 'pledged')
+           OR (direction = 'inflow' AND reconciled_receipt_ref IS NOT NULL AND reconciled_receipt_ref != ''
+               AND settlement_status = 'pledged')
+           OR (direction = 'inflow' AND (reconciled_receipt_ref IS NULL OR reconciled_receipt_ref = '')
+               AND (category = 'Sponsor Pledge' OR receipt_ref LIKE 'RCPT-LIVE-%'))
+        """
+    )
+    conn.execute(
+        """
+        UPDATE sponsors
+        SET pledge_status = CASE
+            WHEN reconciled_receipt_ref IS NOT NULL AND reconciled_receipt_ref != '' THEN 'received'
+            WHEN amount_inr = 0 AND compute_credits_desc != '' THEN 'in_kind_committed'
+            ELSE 'pledged'
+        END
+        WHERE pledge_status IS NULL
+           OR pledge_status = ''
+           OR (reconciled_receipt_ref IS NOT NULL AND reconciled_receipt_ref != '' AND pledge_status = 'pledged')
+           OR (amount_inr = 0 AND compute_credits_desc != '' AND pledge_status = 'pledged')
+        """
+    )
+
+    # 2. Backfill timestamped score_events once from historical activity if score_events is empty
+    se_cnt_row = conn.execute("SELECT COUNT(*) AS c FROM score_events").fetchone()
+    if se_cnt_row and int(se_cnt_row["c"]) > 0:
+        return
+
+    agent_by_handle = {
+        str(r["handle"]): str(r["id"])
+        for r in conn.execute("SELECT id, handle FROM agents").fetchall()
+    }
+    if not agent_by_handle:
+        return
+
+    for f in conn.execute(
+        "SELECT id, submitted_by, submitted_by_agent_id, status, created_at, verified_at FROM findings"
+    ).fetchall():
+        handle = str(f["submitted_by"] or "")
+        if not handle:
+            continue
+        aid = f["submitted_by_agent_id"] or agent_by_handle.get(handle)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO score_events (id, agent_id, agent_handle, event_type, points, ref_id, created_at)
+            VALUES (?, ?, ?, 'finding_submitted', 10, ?, ?)
+            """,
+            (f"se-bf-fnd-{f['id']}", aid, handle, f["id"], f["created_at"]),
+        )
+        if f["status"] in ("verified", "rti_filed"):
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO score_events (id, agent_id, agent_handle, event_type, points, ref_id, created_at)
+                VALUES (?, ?, ?, 'finding_verified_author_bonus', 20, ?, ?)
+                """,
+                (
+                    f"se-bf-ver-{f['id']}",
+                    aid,
+                    handle,
+                    f["id"],
+                    f["verified_at"] or f["created_at"],
+                ),
+            )
+
+    for pv in conn.execute(
+        "SELECT id, verifier_node_id, verifier_handle, created_at FROM peer_verifications"
+    ).fetchall():
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO score_events (id, agent_id, agent_handle, event_type, points, ref_id, created_at)
+            VALUES (?, ?, ?, 'peer_verification', 15, ?, ?)
+            """,
+            (f"se-bf-pv-{pv['id']}", pv["verifier_node_id"], pv["verifier_handle"], pv["id"], pv["created_at"]),
+        )
+
+    for t in conn.execute(
+        "SELECT id, claimed_by_agent_id, claimed_by_handle, output_json, completed_at, updated_at "
+        "FROM tasks WHERE status = 'completed' AND output_json IS NOT NULL"
+    ).fetchall():
+        out = loads_json(t["output_json"], {})
+        if isinstance(out, dict) and out.get("outcome") == "cleared" and t["claimed_by_handle"]:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO score_events (id, agent_id, agent_handle, event_type, points, ref_id, created_at)
+                VALUES (?, ?, ?, 'cleared_scan', 10, ?, ?)
+                """,
+                (
+                    f"se-bf-clr-{t['id']}",
+                    t["claimed_by_agent_id"],
+                    t["claimed_by_handle"],
+                    t["id"],
+                    t["completed_at"] or t["updated_at"],
+                ),
+            )
+
+
+def _migrate_v4_editorial_corrections_live_dossiers(conn: Any, *, is_postgres: bool) -> None:
+    _ = is_postgres
+    from aiwatchdogs.core.rti import generate_rti_draft
+
+    now = utc_now_iso()
+    affected_missions: set[str] = set()
+    correction_by_finding = {item["finding_id"]: item for item in LIVE_DOSSIER_EDITORIAL_CORRECTIONS}
+
+    # 1. Record named editorial corrections and withdraw the 4 defective live dossiers from 'verified'
+    for item in LIVE_DOSSIER_EDITORIAL_CORRECTIONS:
+        fid = item["finding_id"]
+        finding = conn.execute("SELECT * FROM findings WHERE id = ?", (fid,)).fetchone()
+        if finding is None:
+            continue
+
+        prev_status = str(finding["status"] or "")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO finding_corrections (
+                id, finding_id, correction_type, previous_status, new_status,
+                summary, details, source_evidence_url, reviewed_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item["correction_id"],
+                fid,
+                item["correction_type"],
+                prev_status,
+                item["new_status"],
+                item["summary"],
+                item["details"],
+                item["source_evidence_url"],
+                item["reviewed_by"],
+                now,
+            ),
+        )
+        conn.execute(
+            """
+            UPDATE findings
+            SET status = ?, editorial_status = ?
+            WHERE id = ?
+            """,
+            (item["new_status"], item["editorial_status"], fid),
+        )
+        affected_missions.add(str(finding["mission_id"]))
+
+    # 2. Re-resolve ALL existing rti_drafts against their parent finding's jurisdiction/state channel
+    #    (so pre-existing State RTI drafts never stay pinned to Central https://rtionline.gov.in/),
+    #    and apply editorial_hold + editorial_notice for any of the 4 corrected dossiers in one v1->v2 snapshot.
+    existing_rtis = conn.execute(
+        """
+        SELECT rd.*,
+               f.title AS f_title,
+               f.summary AS f_summary,
+               f.methodology_code AS f_methodology_code,
+               f.entity_name AS f_entity_name,
+               f.jurisdiction AS f_jurisdiction,
+               f.fiscal_year AS f_fiscal_year,
+               f.monetary_exposure_inr AS f_monetary_exposure_inr,
+               f.rule_triggered AS f_rule_triggered,
+               f.citations_json AS f_citations_json,
+               f.suggested_authority AS f_suggested_authority
+        FROM rti_drafts rd
+        JOIN findings f ON f.id = rd.finding_id
+        """
+    ).fetchall()
+
+    for rd in existing_rtis:
+        fid = str(rd["finding_id"])
+        finding_dict = {
+            "id": fid,
+            "title": rd["f_title"],
+            "summary": rd["f_summary"],
+            "methodology_code": rd["f_methodology_code"],
+            "entity_name": rd["f_entity_name"],
+            "jurisdiction": rd["f_jurisdiction"],
+            "fiscal_year": rd["f_fiscal_year"],
+            "monetary_exposure_inr": float(rd["f_monetary_exposure_inr"] or 0.0),
+            "rule_triggered": rd["f_rule_triggered"],
+            "citations": loads_json(rd["f_citations_json"], []),
+            "suggested_authority": rd["f_suggested_authority"],
+        }
+        rebuilt = generate_rti_draft(finding_dict, public_authority=rd["public_authority"])
+        new_cpio = str(rebuilt["cpio_designation"])
+        new_portal = str(rebuilt.get("rti_portal_url") or "")
+        new_jlevel = str(rebuilt.get("jurisdiction_level") or "central")
+        new_state = rebuilt.get("state_name")
+        new_channel = str(rebuilt.get("filing_channel") or "central_online_portal")
+        new_fee_note = str(rebuilt.get("fee_rules") or rebuilt.get("fee_note") or "")
+        new_cwarn = str(rebuilt.get("central_portal_warning") or "")
+        new_subject = str(rebuilt["subject"])
+        new_body = str(rebuilt["body_text"])
+        new_wc = int(rebuilt["word_count"])
+        new_records_json = dumps_json(rebuilt.get("requested_records") or [])
+
+        corr_item = correction_by_finding.get(fid)
+        if corr_item is not None:
+            new_status = "editorial_hold"
+            new_notice = corr_item["rti_editorial_notice"]
+            change_note = corr_item["summary"]
+        else:
+            new_status = str(rd["status"] or "draft")
+            new_notice = str(rd["editorial_notice"] or "")
+            change_note = "Reconciled state/central RTI jurisdiction, SPIO/CPIO channel, and filing portal"
+
+        needs_update = (
+            corr_item is not None
+            or (rd["rti_portal_url"] or "") != new_portal
+            or (rd["jurisdiction_level"] or "") != new_jlevel
+            or (rd["filing_channel"] or "") != new_channel
+            or (rd["cpio_designation"] or "") != new_cpio
+            or (rd["fee_note"] or "") != new_fee_note
+            or (rd["central_portal_warning"] or "") != new_cwarn
+            or (rd["body_text"] or "") != new_body
+        )
+        if not needs_update:
+            continue
+
+        next_version = int(rd["version"] or 1) + 1
+        conn.execute(
+            """
+            UPDATE rti_drafts
+            SET cpio_designation = ?,
+                rti_portal_url = ?,
+                jurisdiction_level = ?,
+                state_name = ?,
+                filing_channel = ?,
+                fee_note = ?,
+                central_portal_warning = ?,
+                subject = ?,
+                body_text = ?,
+                word_count = ?,
+                requested_records_json = ?,
+                status = ?,
+                editorial_notice = ?,
+                version = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                new_cpio,
+                new_portal,
+                new_jlevel,
+                new_state,
+                new_channel,
+                new_fee_note,
+                new_cwarn,
+                new_subject,
+                new_body,
+                new_wc,
+                new_records_json,
+                new_status,
+                new_notice,
+                next_version,
+                now,
+                rd["id"],
+            ),
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO rti_draft_versions (
+                id, rti_draft_id, finding_id, version, public_authority, cpio_designation,
+                rti_portal_url, jurisdiction_level, filing_channel, subject, body_text,
+                word_count, requested_records_json, status, editorial_notice, change_note, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"rtiv-audit-2026-11-24-{fid}",
+                rd["id"],
+                fid,
+                next_version,
+                rd["public_authority"],
+                new_cpio,
+                new_portal,
+                new_jlevel,
+                new_channel,
+                new_subject,
+                new_body,
+                new_wc,
+                new_records_json,
+                new_status,
+                new_notice,
+                change_note,
+                now,
+            ),
+        )
+
+    for mid in affected_missions:
+        cnt_row = conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM findings
+            WHERE mission_id = ? AND status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0
+            """,
+            (mid,),
+        ).fetchone()
+        verified_cnt = int(cnt_row["c"]) if cnt_row else 0
+        conn.execute(
+            "UPDATE missions SET verified_findings_count = ? WHERE id = ?",
+            (verified_cnt, mid),
+        )
+
+
+MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
+    (1, "001_initial_schema", _migrate_v1_baseline),
+    (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
+    (3, "003_reconcile_treasury_and_scores", _migrate_v3_reconcile_treasury_and_scores),
+    (4, "004_editorial_corrections_live_dossiers", _migrate_v4_editorial_corrections_live_dossiers),
+)
+
+
 class Database:
     """Thread-safe dual-backend database wrapper (Neon Postgres + SQLite WAL)."""
 
@@ -623,6 +1458,7 @@ class Database:
         db_path: str | Path | None = None,
         *,
         database_url: str | None = None,
+        require_postgres: bool = False,
     ) -> None:
         self._lock = threading.RLock()
         self._tx_depth = 0
@@ -653,6 +1489,12 @@ class Database:
             self._pg_conn = self._open_pg_connection()
             self._pg_adapter = _PgConnectionAdapter(self)
         else:
+            if db_path is None and (require_postgres or is_postgres_required()):
+                raise RuntimeError(
+                    "Durable PostgreSQL storage (DATABASE_URL or POSTGRES_URL) is required in "
+                    "production (VERCEL=1 or AIWATCHDOGS_REQUIRE_POSTGRES=1). Refusing to fall "
+                    "back to ephemeral local SQLite."
+                )
             self.backend = "sqlite"
             self.is_postgres = False
             self.database_url = None
@@ -667,6 +1509,7 @@ class Database:
             str(self.db_path),
             check_same_thread=False,
             timeout=30.0,
+            isolation_level=None,
         )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode = WAL;")
@@ -708,40 +1551,70 @@ class Database:
         self._pg_conn = self._open_pg_connection()
         return self._pg_conn
 
+    def _read_applied_versions_unlocked(self, conn: Any) -> set[int]:
+        try:
+            rows = conn.execute("SELECT version FROM schema_migrations").fetchall()
+            return {int(r["version"]) for r in rows}
+        except Exception:
+            if self.is_postgres and self._pg_adapter is not None:
+                try:
+                    self._pg_adapter.rollback()
+                except Exception:
+                    pass
+            return set()
+
+    def schema_version(self) -> int:
+        """Return highest applied schema migration version."""
+        with self.read() as conn:
+            applied = self._read_applied_versions_unlocked(conn)
+            return max(applied) if applied else 0
+
     def init_schema(self) -> None:
-        """Create all Hub tables and indexes idempotently on SQLite or Postgres.
+        """Apply all pending versioned schema and data migrations idempotently.
 
-        On PostgreSQL, first performs a read-only ``information_schema.tables`` check so
-        warm/cold serverless instances never acquire table-level ``ShareLock`` via
-        ``CREATE INDEX IF NOT EXISTS`` once the schema is already initialized. When
-        bootstrapping a fresh database, serializes DDL under a transaction-scoped
-        advisory lock.
+        Never skips schema upgrades merely because legacy table names exist. Instead checks
+        ``schema_migrations`` cleanly (read-only fast path when already at
+        ``LATEST_SCHEMA_VERSION``), serializes upgrades under a Postgres advisory lock or
+        SQLite write transaction, and applies each unapplied migration in strict order.
         """
+        expected_versions = {ver for ver, _, _ in MIGRATIONS}
         with self._lock:
-            if self.is_postgres:
-                with self.read() as conn:
-                    rows = conn.execute(
-                        "SELECT table_name FROM information_schema.tables "
-                        "WHERE table_schema = current_schema()"
-                    ).fetchall()
-                    existing = {str(r["table_name"]) for r in rows}
-                if HUB_TABLES.issubset(existing):
-                    return
+            # Fast read-only check so warm serverless instances never acquire DDL locks unnecessarily
+            with self.read() as conn:
+                applied = self._read_applied_versions_unlocked(conn)
+            if expected_versions.issubset(applied):
+                return
 
-                with self.transaction() as conn:
+            with self.transaction() as conn:
+                if self.is_postgres:
                     conn.execute(f"SELECT pg_advisory_xact_lock({PG_SCHEMA_ADVISORY_LOCK_KEY})")
-                    rows = conn.execute(
-                        "SELECT table_name FROM information_schema.tables "
-                        "WHERE table_schema = current_schema()"
-                    ).fetchall()
-                    existing = {str(r["table_name"]) for r in rows}
-                    if HUB_TABLES.issubset(existing):
-                        return
-                    conn.executescript(SCHEMA_SQL)
-            else:
-                assert self._conn is not None
-                self._conn.executescript(SCHEMA_SQL)
-                self._conn.commit()
+
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        checksum TEXT NOT NULL,
+                        applied_at TEXT NOT NULL
+                    )
+                    """
+                )
+                applied = {
+                    int(r["version"])
+                    for r in conn.execute("SELECT version FROM schema_migrations").fetchall()
+                }
+                for version, name, migrate_fn in MIGRATIONS:
+                    if version in applied:
+                        continue
+                    migrate_fn(conn, is_postgres=self.is_postgres)
+                    checksum = hashlib.sha256(f"{version}:{name}".encode("utf-8")).hexdigest()[:16]
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO schema_migrations (version, name, checksum, applied_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (version, name, checksum, utc_now_iso()),
+                    )
 
     @contextmanager
     def transaction(self) -> Iterator[Any]:
@@ -760,9 +1633,11 @@ class Database:
                         self._pg_adapter.commit()
                 else:
                     assert self._conn is not None
+                    if is_outer:
+                        self._conn.execute("BEGIN IMMEDIATE")
                     yield self._conn
                     if is_outer:
-                        self._conn.commit()
+                        self._conn.execute("COMMIT")
             except Exception:
                 if is_outer:
                     if self.is_postgres and self._pg_adapter is not None:
@@ -771,7 +1646,11 @@ class Database:
                         except Exception:
                             pass
                     elif self._conn is not None:
-                        self._conn.rollback()
+                        try:
+                            if self._conn.in_transaction:
+                                self._conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
                 raise
             finally:
                 self._tx_depth -= 1

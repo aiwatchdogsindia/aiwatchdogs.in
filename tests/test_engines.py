@@ -295,7 +295,8 @@ def test_aadhaar_prefix_zero_or_one_not_falsely_redacted() -> None:
 
 
 def test_generate_rti_draft_statutory_requirements_and_500_word_cap() -> None:
-    finding = {
+    # 1. State public authority -> MUST route to State RTI portal, never central rtionline.gov.in
+    finding_state = {
         "title": "Procurement Red-Flag Lead: Single-Bidder Concentration — PWD Division",
         "summary": "Public record anomaly " + ("detail " * 600),
         "methodology_code": "M1",
@@ -308,19 +309,45 @@ def test_generate_rti_draft_statutory_requirements_and_500_word_cap() -> None:
         "suggested_authority": "Assam Public Works Department",
     }
 
-    draft = generate_rti_draft(finding)
+    draft = generate_rti_draft(finding_state)
     assert draft["public_authority"] == "Assam Public Works Department"
-    assert draft["rti_portal_url"] == "https://rtionline.gov.in"
+    assert draft["jurisdiction_level"] == "state"
+    assert draft["state_name"] == "Assam"
+    assert draft["rti_portal_url"] == "https://rtionline.assam.gov.in"
+    assert "State Public Information Officer (SPIO)" in draft["cpio_designation"]
+    assert draft["central_portal_warning"] is not None
+    assert draft["human_filing_required"] is True
     assert "Section 6(1)" in draft["statutory_sections"]
     assert "Section 2(f)" in draft["statutory_sections"]
     assert draft["word_count"] <= 500
     assert draft["word_count"] == len(draft["body_text"].split())
-    assert "rtionline.gov.in" in draft["body_text"]
+    assert "rtionline.assam.gov.in" in draft["body_text"]
     assert "Rs. 10" in draft["body_text"]
     assert "Section 7(5)" in draft["body_text"]
     assert "30 days" in draft["body_text"]
     assert len(draft["requested_records"]) >= 3
     assert "why did" not in draft["body_text"].lower()
+
+    # 2. Central public authority -> routes to central https://rtionline.gov.in
+    finding_central = {
+        "title": "Fiscal Pacing Lead: CGA Monthly Accounts Divergence",
+        "summary": "Mid-year utilization variance observed in Union accounts.",
+        "methodology_code": "M5",
+        "entity_name": "Ministry of Road Transport and Highways",
+        "jurisdiction": "Union of India",
+        "fiscal_year": "FY 2024-25",
+        "monetary_exposure_inr": 500_000_000,
+        "rule_triggered": "GFR 2017 Rule 62(3)",
+        "citations": [{"record_id": "CGA-2024-12"}],
+        "suggested_authority": "Ministry of Road Transport and Highways",
+    }
+    central_draft = generate_rti_draft(finding_central)
+    assert central_draft["jurisdiction_level"] == "central"
+    assert central_draft["rti_portal_url"] == "https://rtionline.gov.in"
+    assert central_draft["central_portal_warning"] is None
+    assert central_draft["human_filing_required"] is True
+    assert "rtionline.gov.in" in central_draft["body_text"]
+    assert central_draft["word_count"] <= 500
 
 
 def test_methodology_catalog_contains_m1_through_m8_and_no_sample_dir() -> None:
@@ -345,11 +372,11 @@ def test_m1_and_m2_flat_ocds_csv_with_civicdatalab_dates_and_tender_value_fallba
     csv_content = "\n".join(
         [
             "ocid,tender/id,tender/title,tender/procurementMethod,tenderclassification/description,tender/value/amount,tender/datePublished,tender/tenderPeriod/durationInDays,tender/numberOfTenderers,buyer/name,fiscal_year",
-            "ocds-as-1,2022_HF_1,Hospital Equipment A,Open,Medical Equipment,4800000,05-Apr-2021 10:00 AM,10,1,Health and Family Welfare Assam,2021",
-            "ocds-as-2,2022_HF_2,Hospital Equipment B,Open,Medical Equipment,4750000,19-Apr-2021 11:00 AM,11,1,Health and Family Welfare Assam,2021",
-            "ocds-as-3,2022_HF_3,Hospital Equipment C,Open,Medical Equipment,4900000,05-May-2021 04:00 PM,9,1,Health and Family Welfare Assam,2021",
-            "ocds-as-4,2022_HF_4,Hospital Equipment D,Open,Medical Equipment,4600000,20-May-2021 02:00 PM,30,3,Health and Family Welfare Assam,2021",
-            "ocds-as-5,2022_HF_5,Hospital Equipment E,Open,Medical Equipment,2500000,22-May-2021 02:00 PM,30,4,Health and Family Welfare Assam,2021",
+            "ocds-as-1,2022_HF_1,Hospital Equipment A,Open,Medical Equipment,2400000,05-Apr-2021 10:00 AM,10,1,Health and Family Welfare Assam,2021",
+            "ocds-as-2,2022_HF_2,Hospital Equipment B,Open,Medical Equipment,2350000,19-Apr-2021 11:00 AM,11,1,Health and Family Welfare Assam,2021",
+            "ocds-as-3,2022_HF_3,Hospital Equipment C,Open,Medical Equipment,2450000,05-May-2021 04:00 PM,9,1,Health and Family Welfare Assam,2021",
+            "ocds-as-4,2022_HF_4,Hospital Equipment D,Open,Medical Equipment,2300000,20-May-2021 02:00 PM,30,3,Health and Family Welfare Assam,2021",
+            "ocds-as-5,2022_HF_5,Hospital Equipment E,Open,Medical Equipment,1500000,22-May-2021 02:00 PM,30,4,Health and Family Welfare Assam,2021",
             # Cleared buyer (competitive multi-bidder)
             "ocds-as-6,2022_EDU_1,School Desks 1,Open,Furniture,1200000,10-Jun-2021 10:00 AM,30,5,Elementary Education Assam,2021",
             "ocds-as-7,2022_EDU_2,School Desks 2,Open,Furniture,1100000,15-Jun-2021 10:00 AM,30,4,Elementary Education Assam,2021",
@@ -359,12 +386,14 @@ def test_m1_and_m2_flat_ocds_csv_with_civicdatalab_dates_and_tender_value_fallba
     )
     csv_path.write_text(csv_content, encoding="utf-8")
 
-    ds = load_dataset(str(csv_path))
+    ds = load_dataset(str(csv_path), allow_local_files=True)
     assert ds.is_demo_sample is False
     assert ds.format == "csv"
     assert len(ds.records) == 9
     assert ds.records[0]["buyer_name"] == "Health and Family Welfare Assam"
-    assert ds.records[0]["tender_value_inr"] == 4_800_000.0
+    assert ds.records[0]["tender_value_inr"] == 2_400_000.0
+    assert ds.records[0]["award_value_inr"] is None
+    assert ds.records[0]["award_date"] == ""
     assert ds.records[0]["bid_count"] == 1
 
     m1 = run_engine("M1", ds.records)
@@ -374,14 +403,24 @@ def test_m1_and_m2_flat_ocds_csv_with_civicdatalab_dates_and_tender_value_fallba
     assert m1.leads[0].anomaly_metrics["short_window_single_bid_count"] == 3
     assert m1.leads[0].jurisdiction == "State:Assam"
 
+    # For Assam tender-estimate-only rows, M2 applies Assam APPR 2020 (₹25L) and emits
+    # a non-splitting tender-estimate price-band observation rather than a splitting claim.
     m2 = run_engine("M2", ds.records)
     assert len(m2.leads) == 1
-    assert m2.leads[0].anomaly_metrics["threshold_inr"] == 5_000_000.0
+    assert m2.leads[0].anomaly_metrics["threshold_inr"] == 2_500_000.0
+    assert m2.leads[0].anomaly_metrics["threshold_scope"] == "state_assam_appr_2020_reference"
     assert m2.leads[0].anomaly_metrics["cluster_po_count"] == 4
+    assert m2.leads[0].anomaly_metrics["amount_type"] == "tender_estimate"
+    assert m2.leads[0].anomaly_metrics["splitting_claim_supported"] is False
+    assert m2.leads[0].anomaly_metrics["has_award_evidence"] is False
     assert m2.cleared_count == 5
 
     # Verify filter_buyer + max_rows context hints
-    filtered_ds = load_dataset(str(csv_path), context={"filter_buyer": "Education", "max_rows": 2})
+    filtered_ds = load_dataset(
+        str(csv_path),
+        context={"filter_buyer": "Education", "max_rows": 2},
+        allow_local_files=True,
+    )
     assert len(filtered_ds.records) == 2
     assert all("Education" in r["buyer_name"] for r in filtered_ds.records)
 
@@ -438,7 +477,7 @@ def test_m3_and_m4_civicdatalab_json_zip_unwrapping_and_award_escalation(tmp_pat
             json.dumps({"publisher": {"name": "CivicDataLab Assam"}, "releases": releases}),
         )
 
-    ds = load_dataset(str(zip_path))
+    ds = load_dataset(str(zip_path), allow_local_files=True)
     assert ds.is_demo_sample is False
     assert ds.format == "ocds_json"
     assert len(ds.records) == 6
@@ -493,7 +532,7 @@ def test_xlsx_ocds_tenders_awards_auto_join_and_m4_boq_unit_prices(tmp_path: Pat
         use_inline_strings=False,
     )
 
-    ds = load_dataset(str(xlsx_path))
+    ds = load_dataset(str(xlsx_path), allow_local_files=True)
     assert ds.is_demo_sample is False
     assert ds.format == "xlsx_ocds"
     assert len(ds.records) == 4
@@ -524,9 +563,36 @@ def test_xlsx_ocds_tenders_awards_auto_join_and_m4_boq_unit_prices(tmp_path: Pat
 
 
 def test_m2_two_point_five_lakh_lpc_ceiling() -> None:
-    lpc_records = [
+    # Pre-10 July 2024 Central GFR 2017 Rule 155 LPC ceiling was ₹2.5 Lakh
+    pre_jul2024_records = [
         {
-            "po_id": f"LPC-{i}",
+            "po_id": f"LPC-PRE-{i}",
+            "buyer_name": "Regional Agricultural Station",
+            "item_category": "Lab Glassware",
+            "award_date": f"2024-01-{10 + i * 7:02d}",
+            "award_value_inr": val,
+            "jurisdiction": "Union of India",
+            "fiscal_year": "FY 2023-24",
+        }
+        for i, val in enumerate([232_000, 244_500, 229_000])
+    ]
+    pre_res = run_engine("M2", pre_jul2024_records)
+    assert len(pre_res.leads) == 1
+    assert pre_res.leads[0].anomaly_metrics["threshold_inr"] == 250_000.0
+    assert pre_res.leads[0].anomaly_metrics["threshold_scope"] == "central_union_gfr_pre_2024_07_10"
+    assert pre_res.leads[0].anomaly_metrics["statutory_applicability_verified"] is True
+
+    # Post-10 July 2024 (MoF DoE O.M. F.1/3/2024-PPD) revised LPC ceiling to ₹5 Lakh:
+    # ₹2.3L orders no longer hug the ₹5L ceiling, while ₹4.6L-₹4.9L orders do.
+    post_jul2024_low = [
+        {**r, "po_id": f"LPC-LOW-{i}", "award_date": f"2025-01-{10 + i * 7:02d}", "fiscal_year": "FY 2024-25"}
+        for i, r in enumerate(pre_jul2024_records)
+    ]
+    assert run_engine("M2", post_jul2024_low).leads == []
+
+    post_jul2024_records = [
+        {
+            "po_id": f"LPC-POST-{i}",
             "buyer_name": "Regional Agricultural Station",
             "item_category": "Lab Glassware",
             "award_date": f"2025-01-{10 + i * 7:02d}",
@@ -534,11 +600,13 @@ def test_m2_two_point_five_lakh_lpc_ceiling() -> None:
             "jurisdiction": "Union of India",
             "fiscal_year": "FY 2024-25",
         }
-        for i, val in enumerate([232_000, 244_500, 229_000])
+        for i, val in enumerate([465_000, 488_000, 452_000])
     ]
-    m2_res = run_engine("M2", lpc_records)
-    assert len(m2_res.leads) == 1
-    assert m2_res.leads[0].anomaly_metrics["threshold_inr"] == 250_000.0
+    post_res = run_engine("M2", post_jul2024_records)
+    assert len(post_res.leads) == 1
+    assert post_res.leads[0].anomaly_metrics["threshold_inr"] == 500_000.0
+    assert post_res.leads[0].anomaly_metrics["threshold_scope"] == "central_union_gfr_post_2024_07_10"
+    assert post_res.leads[0].anomaly_metrics["statutory_applicability_verified"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -570,10 +638,11 @@ def test_m5_monthly_treasury_obds_policystack_and_cga_html(tmp_path: Path) -> No
     assert ap_res.leads[0].anomaly_metrics["q4_share_pct"] == pytest.approx(65.0)
     assert ap_res.leads[0].anomaly_metrics["march_share_pct"] == pytest.approx(40.0)
 
-    # (b) Assam OBDS inlineStr XLSX reader + Demand rollup
-    obds_path = tmp_path / "assam_expenditure_22_23.xlsx"
+    # (b) Assam OBDS inlineStr XLSX reader:
+    # Unreconciled rows missing explicit unit/agency/major head MUST be quarantined as unevaluable!
+    obds_unverified_path = tmp_path / "assam_expenditure_unverified_22_23.xlsx"
     _create_minimal_xlsx(
-        obds_path,
+        obds_unverified_path,
         {
             "Sheet1": [
                 [
@@ -593,14 +662,52 @@ def test_m5_monthly_treasury_obds_policystack_and_cga_html(tmp_path: Path) -> No
         },
         use_inline_strings=True,
     )
-    obds_ds = load_dataset(str(obds_path))
-    assert obds_ds.format == "xlsx"
-    assert obds_ds.is_demo_sample is False
+    obds_unv_ds = load_dataset(str(obds_unverified_path), allow_local_files=True)
+    assert obds_unv_ds.format == "xlsx"
+    assert obds_unv_ds.is_demo_sample is False
+    obds_unv_res = run_engine("M5", obds_unv_ds.records)
+    assert obds_unv_res.leads == []
+    assert obds_unv_res.cleared_count == 0
+    assert obds_unv_res.unevaluable_count == 3
+
+    # Properly reconciled Assam OBDS rows with matched agency, major head, and explicit unit
+    obds_path = tmp_path / "assam_expenditure_reconciled_22_23.xlsx"
+    _create_minimal_xlsx(
+        obds_path,
+        {
+            "Sheet1": [
+                [
+                    "state_ut_name_eng",
+                    "demand_grant_no_en",
+                    "demand_grant_desc_en",
+                    "dept_name_en",
+                    "major_head_code",
+                    "major_head_desc_en",
+                    "budget_financial_year",
+                    "budget_amount_unit",
+                    "budget_estimates_previous_financial_year",
+                    "revised_estimates_previous_financial_year",
+                    "actuals_last_audited_year",
+                ],
+                ["Assam", "65", "Tourism", "Tourism Department", "3452", "Tourism", "2022-23", "Lakhs", 10000, 16000, 9500],
+                ["Assam", "65", "Tourism", "Tourism Department", "3452", "Tourism", "2022-23", "Lakhs", 5000, 8000, 4800],
+                ["Assam", "1", "State Legislature", "State Legislature Secretariat", "2011", "State Legislature", "2022-23", "Lakhs", 10000, 10500, 9800],
+            ]
+        },
+        use_inline_strings=True,
+    )
+    obds_ds = load_dataset(str(obds_path), allow_local_files=True)
     obds_res = run_engine("M5", obds_ds.records)
     assert len(obds_res.leads) == 1
     assert obds_res.cleared_count == 1
+    assert obds_res.unevaluable_count == 0
     assert "Tourism" in obds_res.leads[0].entity_name
-    assert obds_res.leads[0].anomaly_metrics["re_vs_be_shift_pct"] == pytest.approx(186.8)
+    assert obds_res.leads[0].fiscal_year == "FY 2021-22"
+    assert obds_res.leads[0].anomaly_metrics["re_vs_be_shift_pct"] == pytest.approx(60.0)
+    # T-2 actuals_last_audited_year is NEVER compared against T-1 BE/RE
+    assert obds_res.leads[0].anomaly_metrics["actual_inr"] is None
+    assert obds_res.leads[0].anomaly_metrics["be_variance_pct"] is None
+    assert obds_res.leads[0].anomaly_metrics["prior_audited_fy"] == "FY 2020-21"
 
     # (c) PolicyStack Union Flagship Schemes
     ps_rows = [
@@ -624,7 +731,7 @@ def test_m5_monthly_treasury_obds_policystack_and_cga_html(tmp_path: Path) -> No
         </table></body></html>""",
         encoding="utf-8",
     )
-    cga_ds = load_dataset(str(cga_html))
+    cga_ds = load_dataset(str(cga_html), allow_local_files=True)
     assert cga_ds.format == "html_table"
     assert len(cga_ds.records) == 3
     cga_res = run_engine("M5", cga_ds.records)
@@ -650,7 +757,7 @@ def test_pdf_loader_and_m6_both_legacy_para_and_real_cag_numbered_sections(tmp_p
             ]
         ],
     )
-    ds_leg = load_dataset(str(legacy_pdf))
+    ds_leg = load_dataset(str(legacy_pdf), allow_local_files=True)
     assert ds_leg.format == "pdf"
     assert ds_leg.is_demo_sample is False
     res_leg = run_engine("M6", ds_leg.records)
@@ -684,7 +791,7 @@ def test_pdf_loader_and_m6_both_legacy_para_and_real_cag_numbered_sections(tmp_p
             ],
         ],
     )
-    ds_real = load_dataset(str(real_cag_pdf))
+    ds_real = load_dataset(str(real_cag_pdf), allow_local_files=True)
     res_real = run_engine("M6", ds_real.records)
     para_ids = [l.anomaly_metrics["para_id"] for l in res_real.leads]
     assert "Para 2.1" in para_ids
@@ -716,7 +823,7 @@ def test_m7_real_pmgsy_semicolon_mgnrega_and_mplads_schemas(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
-    pmgsy_ds = load_dataset(str(pmgsy_csv))
+    pmgsy_ds = load_dataset(str(pmgsy_csv), allow_local_files=True)
     pmgsy_res = run_engine("M7", pmgsy_ds.records)
     assert len(pmgsy_res.leads) == 1
     assert pmgsy_res.cleared_count == 1
@@ -735,7 +842,7 @@ def test_m7_real_pmgsy_semicolon_mgnrega_and_mplads_schemas(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
-    nrega_ds = load_dataset(str(nrega_csv))
+    nrega_ds = load_dataset(str(nrega_csv), allow_local_files=True)
     nrega_res = run_engine("M7", nrega_ds.records)
     assert len(nrega_res.leads) == 1
     assert nrega_res.cleared_count == 1
@@ -755,7 +862,7 @@ def test_m7_real_pmgsy_semicolon_mgnrega_and_mplads_schemas(tmp_path: Path) -> N
         ),
         encoding="utf-8",
     )
-    mplads_ds = load_dataset(str(mplads_csv))
+    mplads_ds = load_dataset(str(mplads_csv), allow_local_files=True)
     mplads_res = run_engine("M7", mplads_ds.records, context={"as_of_date": "2025-12-01"})
     assert len(mplads_res.leads) == 1
     assert mplads_res.cleared_count == 2
@@ -793,14 +900,20 @@ def test_m8_electoral_bonds_x_mca_csr_join_and_classic_flat_shared_din(tmp_path:
         encoding="utf-8",
     )
 
-    ds = load_dataset(str(eb_csv), context={"secondary_path": str(csr_csv)})
+    ds = load_dataset(str(eb_csv), context={"secondary_path": str(csr_csv)}, allow_local_files=True)
     assert ds.is_demo_sample is False
     m8_eb = run_engine("M8", ds.records)
     assert len(m8_eb.leads) == 1
     assert m8_eb.cleared_count == 1
     lead = m8_eb.leads[0]
-    assert lead.anomaly_metrics["cin"] == "L13209MH1965PLC291394"
+    assert lead.anomaly_metrics["cin"] is None
+    assert lead.anomaly_metrics["bond_source_cin"] is None
+    assert lead.anomaly_metrics["matched_csr_cin"] == "L13209MH1965PLC291394"
+    assert lead.anomaly_metrics["join_basis"] == "normalized_name"
+    assert lead.anomaly_metrics["exact_identifier_verified"] is False
+    assert lead.anomaly_metrics["disclosed_bond_value_inr"] == pytest.approx(30_000_000.0)
     assert lead.anomaly_metrics["electoral_disclosure_inr"] == pytest.approx(30_000_000.0)
+    assert lead.anomaly_metrics["amount_type"] == "disclosed_bond_value"
     assert lead.anomaly_metrics["csr_total_crore"] == pytest.approx(14.3)
     assert lead.anomaly_metrics["disclosure_only"] is True
     assert lint_neutrality(lead.title, lead.summary, lead.benign_explanations).passed
@@ -899,17 +1012,21 @@ def test_http_loader_cache_user_agent_and_captcha_refusal(
     monkeypatch.setattr(httpx.Client, "get", _mock_get)
 
     url = "https://openbudgetsindia.org/api/3/action/datastore_search?resource_id=fiscal-1"
-    ds1 = load_dataset(url)
-    assert ds1.format == "ckan_json"
-    assert ds1.is_demo_sample is False
-    assert len(ds1.records) == 1
+    # Default mode: opt-in raw disk cache is OFF (zero raw bytes persisted to disk)
+    ds_nocache = load_dataset(url)
+    assert ds_nocache.format == "ckan_json"
+    assert ds_nocache.is_demo_sample is False
+    assert len(ds_nocache.records) == 1
     assert captured_headers.get("user-agent") == USER_AGENT
     assert call_count["n"] == 1
+    assert not (tmp_path / "http_cache").exists()
 
-    # Second load hits disk cache without another HTTP request
-    ds2 = load_dataset(url)
+    # Opt-in cache write + second load hits disk cache with SHA-256 revalidation
+    ds1 = load_dataset(url, context={"use_cache": True})
+    assert call_count["n"] == 2
+    ds2 = load_dataset(url, context={"use_cache": True})
     assert ds2.sha256 == ds1.sha256
-    assert call_count["n"] == 1
+    assert call_count["n"] == 2
 
     m5_res = run_engine("M5", ds1.records)
     assert len(m5_res.leads) == 1

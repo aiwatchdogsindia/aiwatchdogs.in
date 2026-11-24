@@ -1,10 +1,10 @@
 # Audit Methodology & Deterministic Verification Specification
 
-**Golden Rule:** Large Language Models (LLMs) extract tables, normalize unstructured tender clauses, summarize statutory rules, and propose plausible benign explanations from messy PDFs and HTML. **Every numeric red-flag calculation MUST execute inside a deterministic, version-hashed Python rule engine (`aiwatchdogs.engines`)** so that any independent contributor node running on a ₹0 CPU-only machine can reproduce the exact numbers from the same primary `.gov.in` artifact.
+**Golden Rule:** Large Language Models (LLMs) may optionally summarize statutory rules or propose plausible benign explanations as clearly labeled editorial interpretation. **Every numeric red-flag calculation MUST execute inside a deterministic, version-hashed Python rule engine (`aiwatchdogs.engines`)** so that any independent contributor node running on a ₹0 CPU-only machine can reproduce the exact numbers from the same byte-verified artifact.
 
 ---
 
-## 1. Public Data Ingestion Tiers (IT Act Sec 43 Compliant)
+## 1. Public Data Ingestion, Provenance & Defensive Loading (IT Act Sec 43 & DPDP Act 2023)
 
 All Indian public data connectors in `aiwatchdogs.connectors` follow a strict three-tier legality matrix:
 
@@ -12,157 +12,119 @@ All Indian public data connectors in `aiwatchdogs.connectors` follow a strict th
 |---|---|---|---|
 | **Tier 1** | Automated Direct Open API / Bulk Open Files | Zero CAPTCHA, zero auth wall; polite User-Agent (`AIWatchdogs-India-OpenAudit/0.1`); structured JSON, CSV, XLSX, or official PDF. | **CivicDataLab OCDS India** (`assam-tenders-data`, `himachal-pradesh-health-procurement-OCDS`), **OpenBudgetsIndia** (`openbudgetsindia.org` CKAN API), **data.gov.in** (OGD REST API), **CAG of India** (`cag.gov.in` PDFs), **Union Budget** (`indiabudget.gov.in`), **CGA Monthly Accounts** (`cga.nic.in`), **Digital Sansad** (`sansad.in`), **ECI Electoral Bonds** (`eci.gov.in`). |
 | **Tier 2** | Polite Rate-Limited Public Dashboards / Official Exports | Publicly accessible without login; strictly honors `robots.txt`, conservative rate caps, or official MIS CSV/XLS exports. | **PFMS** (`pfms.nic.in`), **MGNREGA MIS** (`nrega.nic.in`, `mnregaweb4.nic.in`), **PMGSY OMMAS** (`ommas.nic.in`), **MPLADS e-SAKSHI** (`mplads.mospi.gov.in`), **National CSR Portal** (`csr.gov.in`), **MyNeta / ADR** (`myneta.info`), **APMS** (`apms.nic.in`), **eGazette** (`egazette.gov.in`), **CIC** (`cic.gov.in`). |
-| **Tier 3** | Human-Downloaded Official Exports & Open Mirrors ONLY | **Zero automated CAPTCHA solving or authentication bypass.** Agents ingest only user-downloaded official exports (`aiwatchdogs audit-file`) or lawful open OCDS mirrors. | **CPPP** (`eprocure.gov.in`), **State GePNIC Portals** (`mahatenders.gov.in`, `assamtenders.gov.in`, `hptenders.gov.in`), **GeM** (`gem.gov.in`), **MCA21** (`mca.gov.in`). |
+| **Tier 3** | Human-Downloaded Official Exports & Open Mirrors ONLY | **Zero automated CAPTCHA solving or authentication bypass.** Agents ingest only user-downloaded official exports (`aiwatchdogs audit-file` with explicit local-file mode) or lawful open mirrors. | **CPPP** (`eprocure.gov.in`), **State GePNIC Portals** (`mahatenders.gov.in`, `assamtenders.gov.in`, `hptenders.gov.in`), **GeM** (`gem.gov.in`), **MCA21** (`mca.gov.in`). |
 
-Every ingested file produces a `LoadedDataset` containing:
-* `sha256`: Cryptographic digest of raw bytes before parsing.
-* `byte_size` & `format`: Exact file fingerprint (`csv`, `json`, `pdf`).
-* `pii_scrubbed = true`: All extracted text passes through `aiwatchdogs.core.safety.scrub_pii()` prior to storage or submission.
-* `is_demo_sample`: Boolean flag explicitly distinguishing bundled `[SAMPLE DEMO DATASET]` files under `datasets/sample/` from live public ingestions.
+Every ingested artifact produces a `LoadedDataset` enforcing:
+* **Fail-closed SHA-256 verification:** When `expected_sha256` (primary) or `secondary_expected_sha256` (secondary join) is provided, any mismatch raises `DigestMismatchError` immediately — never log-and-continue. Cache hits always revalidate SHA-256 against both metadata and expected digest.
+* **Separated provenance:** Stores `official_publisher`, `source_landing_page`, `mirror_name`, `retrieval_url`, `observed_sha256`, `byte_size`, `fetched_at`, and `source_locator` separately — civic mirror URLs are never labeled as primary `.gov.in` endpoints.
+* **Privacy & raw-cache restrictions:** All parsed records and text pass through recursive DPDP/Aadhaar PII scrubbing (`aiwatchdogs.core.safety.scrub_pii_in_obj`). Raw disk caching is opt-in, uses `0o700`/`0o600` permissions, and refuses to write raw bytes to disk if any PII is detected.
+* **Defensive unattended loading:** `load_dataset()` defaults to `allow_local_files=False` (untrusted task context cannot override it), requires `https://` public hosts (blocking localhost, private/loopback/link-local/metadata IPs), enforces bounded download size (`100 MiB` default), ZIP/XLSX decompression size (`250 MiB`) and ratio (`100×`) limits, XML DTD/ENTITY rejection, and row/page parse caps.
 
 ---
 
 ## 2. Deterministic Audit Methodologies (`M1` – `M8`)
 
-All eight methodologies are registered in `aiwatchdogs.engines.registry.METHODOLOGY_CATALOG` and executed via `run_engine(methodology_code, records, context)`. Every `EngineRunResult` records a SHA-256 `script_hash` of the deterministic engine code, total `records_scanned`, total `monetary_audited_inr`, `cleared_count`, and neutrality-checked `AuditLeadCandidate` objects.
+All eight methodologies are registered in `aiwatchdogs.engines.registry.METHODOLOGY_CATALOG` and executed via `run_engine(methodology_code, records, context, as_of_date=...)`. Every `EngineRunResult` records:
+* `engine_version` (`2.0.0`), `ruleset_version` (`M1-2026.11-v2`..`M8-2026.11-v2`), and explicit `as_of_date` (no implicit `date.today()`).
+* `fingerprint_manifest` and combined `script_hash` hashing the engine module, `connectors/loader.py`, `core/safety.py`, `engines/registry.py`, `ruleset_version`, canonical rule config, and `as_of_date`.
+* Separate `records_scanned`, `cleared_count`, `unevaluable_count`, `monetary_audited_inr`, `amount_type`, and neutrality/PII-checked `AuditLeadCandidate` objects carrying `source_locator`, `fiscal_year_start`, `fiscal_year_end`, `amount_type`, and `ruleset_version`.
 
 ### `M1` — Single-Bidder & Tailored-Spec Concentration
-* **Statutory Anchors:** General Financial Rules (GFR) 2017 Rule 166 (Single Tender Enquiry); Central Vigilance Commission (CVC) Single-Tender Guidelines; OECD Procurement Integrity Red Flags.
+* **Statutory Anchors:** General Financial Rules (GFR) 2017 Rule 166 (Single Tender Enquiry) or equivalent State Procurement Rules; Central Vigilance Commission (CVC) Single-Tender Guidelines; OECD Procurement Integrity Red Flags.
 * **Target Sources:** CivicDataLab OCDS India (Assam, Himachal Pradesh), CPPP / State GePNIC tender exports.
+* **Bidder Coverage & Disposition Rules:**
+  * Strictly separates **positive bidder counts** (`denominator`, `bid_count >= 1`), **literal zero bidder counts** (`zero_bid_count`, `bid_count == 0`), and **blank/missing counts** (`unknown_bid_count`, `bid_count is None`).
+  * Buyer groups with `denominator == 0` (no positive bidder counts) are assigned an explicit **`unevaluable`** disposition (`unevaluable_count`) and are **never** added to `cleared_count`.
+  * Publishes `numerator` (single-bid count), `denominator` (positive bidder counts), `multi_bid_count`, `zero_bid_count`, `unknown_bid_count`, `positive_bid_coverage_pct`, full fiscal-year span (`fiscal_year_start` to `fiscal_year_end`), and `amount_type` (`award_value` vs `tender_estimate`).
 * **Deterministic Triggers:**
-  1. **Buyer Single-Bid Share:** For a procuring entity with competitive tender count `n >= 10` (or grouped sample threshold), flag when `single_bid_awards / total_competitive_tenders > 0.35` (**> 35%**).
-  2. **Repeat Single-Bid Vendor:** Flag when the same supplier wins **`>= 3` single-bid contracts** from the same buyer within a 12-month window.
-  3. **Compressed Bid Window:** Flag open advertised tenders with submission window **`< 14 days`** (compared against standard 14–21 day norms) when paired with a single-bidder outcome or repeated technical disqualifications leaving exactly 1 eligible bidder.
-* **LLM Assist (Optional):** Extracts brand-specific, proprietary, or unusually restrictive eligibility clauses from NIT/RFP PDFs with exact page and paragraph citations.
-* **Mandatory Benign Explanations Considered:** Proprietary OEM equipment covered by a valid GFR Rule 166 Proprietary Article Certificate (PAC), genuine emergency/disaster relief procurement, remote geography with sparse vendor base, or re-tendered bids following prior failed open tenders.
+  1. **Buyer Single-Bid Share:** For a procuring entity with positive-bid competitive tender count `denominator >= min_tenders` (default `4`), flag when `numerator / denominator > 0.35` (**> 35%**).
+  2. **Repeat Single-Bid Vendor:** Flag when the same identified supplier wins **`>= 3` single-bid contracts** from the same buyer.
+  3. **Compressed Bid Window:** Flag when `>= 2` open competitive tenders have submission window **`< 14 days`** paired with a single-bidder outcome.
+* **Mandatory Benign Explanations Considered:** Proprietary OEM equipment covered by a valid GFR Rule 166 / state-rule Proprietary Article Certificate (PAC), genuine emergency/disaster relief procurement, remote geography with sparse vendor base, or re-tendered bids following prior failed open tenders.
 
-### `M2` — Split-Tendering & GFR 2017 Threshold Hugging
-* **Statutory Anchors:** GFR 2017 Rules 149, 154, 155, 161 (including Ministry of Finance PPD July 2024 threshold revisions); CVC Circulars against splitting of demands to evade tendering tiers.
-* **Target Sources:** GeM contract award exports, CPPP / State GePNIC purchase order logs.
-* **Statutory Thresholds Tracked:**
-  * **₹50,000** — GeM Direct Purchase ceiling *(₹25,000 prior to July 2024)*.
-  * **₹2,50,000 (₹2.5 Lakh)** — Non-GeM Local Purchase Committee ceiling.
-  * **₹10,00,000 (₹10 Lakh)** — GeM L1 comparison ceiling vs. mandatory Online Bidding / Reverse Auction *(₹5 Lakh prior to July 2024)*.
-  * **₹50,00,000 (₹50 Lakh)** — Limited Tender Enquiry (LTE) ceiling vs. mandatory Open Advertised Tender *(₹25 Lakh prior to July 2024)*.
-* **Deterministic Trigger:**
-  * Group purchase orders by `(buyer_entity, item_category)` (or `(buyer_entity, vendor)`).
-  * Identify orders whose individual award value sits in the **threshold-hugging band: `85%` to `99.9%` of a statutory threshold `T`** (`0.85 * T <= value < T`).
-  * Flag a **Split-Tendering Lead** when within any **60-day rolling window** (and tracked over 30-day windows):
-    $$\text{count}(\text{threshold-hugging POs}) \ge 3 \quad \text{AND} \quad \sum \text{values} > T$$
-* **Mandatory Benign Explanations Considered:** Phased quarterly budget releases under Cash Management ceilings, geographically separate sub-divisions/hospitals raising independent indents, or distinct non-substitutable technical specifications falling under a broad category label.
+### `M2` — Split-Tendering & Jurisdiction-Aware Threshold Hugging
+* **Statutory Anchors:** GFR 2017 Rules 149, 154, 155, 161 (pre- and post-10 July 2024 MoF DoE O.M. No. F.1/3/2024-PPD); Assam Public Procurement Act, 2017 & Assam Public Procurement Rules, 2020 (subject to Assam Delegation of Financial Powers Rules); CVC Circulars against demand splitting.
+* **Strict Field Separation:**
+  * `release_date` (OCDS export date), `tender_published_date`, `bid_opening_date`, and `award_date` are kept strictly distinct — `release_date` is **never** mapped into `award_date`.
+  * `tender_estimate_inr` and `award_value_inr` are kept strictly distinct — tender estimates are **never** treated as award values.
+* **Jurisdiction & Effective-Date Threshold Schedules (Reconciled with `engines/procurement.py`):**
+
+| Schedule | Applicable Scope & Effective Date | Tracked Threshold Ceilings |
+|---|---|---|
+| **Central GFR 2017 (Pre-Jul 2024)** | Union of India (`2017-03-08` to `2024-07-09`) | **₹25,000** (R149(i)/154 GeM Direct / Without Quotation) · **₹2.5 Lakh** (R155 Local Purchase Committee) · **₹5 Lakh** (R149(ii) GeM L1 vs Online Bidding/RA) · **₹25 Lakh** (R161 Limited vs Open Advertised Tender) |
+| **Central GFR 2017 (Post-Jul 2024)** | Union of India (`2024-07-10`+, MoF DoE O.M. F.1/3/2024-PPD) | **₹50,000** (R149(i)/154 GeM Direct / Without Quotation) · **₹5 Lakh** (R155 Local Purchase Committee) · **₹10 Lakh** (R149(ii) GeM L1 vs Online Bidding/RA) · **₹50 Lakh** (R161 Limited vs Open Advertised Tender) |
+| **Assam APPR 2020 Reference** | `State:Assam` (`2020-07-01`+, Assam Public Procurement Rules 2020 & DFP Rules) | **₹25 Lakh** (Assam e-Procurement / Open Tender reference ceiling; `statutory_applicability_verified=False` until category-specific DFP rule & procurement route are verified) |
+| **Other State Reference** | Other States where state financial ruleset is unencoded | Reference price-band benchmarks explicitly flagged `threshold_scope="reference_benchmark_only_state_rules_unverified"` and `statutory_applicability_verified=False` |
+
+* **Two Strictly Separated Outputs:**
+  1. **Split-Tendering / Order Cluster (`splitting_claim_supported=True`):** Requires genuine **`award_value`** AND genuine **`award_date`/`po_date`** on `>= 3` records priced in **`85%`–`99.9%` of the resolved ceiling `T`** within a rolling **60-day window** whose sum exceeds `T`. Undated groups NEVER enter temporal clustering and NEVER produce `0-day` clusters.
+  2. **Tender-Estimate Price-Band Observation (`splitting_claim_supported=False`):** When source rows supply only `tender_estimate` values without `award_date` / `award_value` (such as Assam OCDS v2 CSV), the engine retains a non-accusatory price-band observation labeled `amount_type="tender_estimate"`, sets `span_days=None` if undated (reporting distinct `bid_opening_date` spans separately if present), caps severity at `low`/`medium`, and explicitly records `governing_instrument`, `threshold_scope`, and `threshold_effective_date`.
+* **Mandatory Benign Explanations Considered:** Phased quarterly budget releases, separate sub-divisions raising independent indents, distinct State DFP thresholds, or tender estimates that were never awarded or were issued across months/years.
 
 ### `M3` — Repeat-Winner Concentration & Collusion Signatures
 * **Statutory Anchors:** Competition Commission of India (CCI) Bid-Rigging & Public Procurement Guidelines; OECD Guidelines for Fighting Bid Rigging.
-* **Target Sources:** OCDS procurement packages, GeM / CPPP multi-bidder evaluation sheets.
+* **Target Sources:** OCDS procurement packages with awarded supplier records, GeM / CPPP multi-bidder evaluation sheets.
 * **Deterministic Triggers:**
-  1. **Herfindahl–Hirschman Index (HHI):** For each `(buyer_entity, category)` market across observed contracts, compute vendor award-value shares $s_i = \frac{\text{award\_value}_i}{\sum_j \text{award\_value}_j}$ and:
-     $$\text{HHI} = \sum_{i=1}^{k} s_i^2$$
-     Flag when **`HHI > 0.35`** (high concentration) or any single vendor holds **market share `> 40%`** across the evaluation window (ideally $\ge 4$ quarters).
-  2. **Narrow Bid-Spread Clustering:** Flag multi-bidder tenders where losing bids cluster tightly within **1%–3% above the L1 bid** repeatedly across a closed 2–4 vendor group, or where ostensible competitors share corporate attributes (registered address, DIN overlap, or sequential GSTIN patterns).
-* **Mandatory Benign Explanations Considered:** Genuine niche technical specialization, long-term rate contracts or framework agreements, thin local supplier ecosystems in specialized districts, or standardized commodity pricing (e.g., fuel, regulated pharma) that naturally compresses bid spreads.
+  1. **Herfindahl–Hirschman Index (HHI):** Over identified suppliers with positive `award_value` in each `(buyer_entity, category)` group (`n >= 4`), compute vendor award shares $s_i$ and $\text{HHI} = \sum s_i^2$. Flag when **`HHI > 0.35`** (`hhi_triggered`).
+  2. **Top-Supplier Share:** Flag when any single identified supplier holds **`> 40%`** of awarded value (`top_supplier_share_triggered`).
+  3. **Narrow Bid-Spread Clustering:** Flag when `>= 3` multi-bidder tenders (and `>= 60%` of observed spreads) show L2–L1 spread `<= 3%` (`narrow_spread_triggered`).
+* **Required Transparency Fields:** Explicitly emits `thresholds_triggered` (`hhi` vs `top_supplier_share` vs `narrow_bid_spread`), full fiscal window (`fiscal_year_start` to `fiscal_year_end`), and the **excluded share** (`excluded_row_count`, `excluded_row_share_pct`, `excluded_estimate_value_inr`) of unawarded or unidentified-supplier rows.
+* **Mandatory Benign Explanations Considered:** Niche technical specialization, multi-year rate contracts or framework agreements, thin regional supplier ecosystems, or standardized catalog/Schedule-of-Rates pricing.
 
-### `M4` — Unit-Price Outlier & Post-Award Cost-Escalation Audit
-* **Statutory Anchors:** GFR 2017 Rule 173 (Transparency, competition, fairness and elimination of arbitrariness); GeM Rate Benchmarking & Reasonability Guidelines; CVC Works & Procurement Manuals.
-* **Target Sources:** GeM award CSVs, State Health & IT Procurement Bills of Quantities (BOQs).
+### `M4` — Unit-Price Outlier, Award-vs-Estimate Variance & Post-Award Cost Escalation
+* **Statutory Anchors:** GFR 2017 Rule 173; GeM Rate Benchmarking & Reasonability Guidelines; CVC Works & Procurement Manuals.
 * **Deterministic Triggers:**
-  1. **Robust Unit-Price Outlier (MAD & Median Ratio):** Normalize by `(item_category / SKU / HSN, unit_of_measure)`. Compute peer median $\tilde{x}$ and Median Absolute Deviation $\text{MAD} = \text{median}(|x_i - \tilde{x}|)$ (with modified Z-score $M_i = 0.6745 \cdot (x_i - \tilde{x}) / \text{MAD}$ when $\text{MAD} > 0$). Flag when:
-     $$\frac{x_i - \tilde{x}}{\text{MAD}} > 2.5 \quad \text{OR} \quad \frac{x_i}{\tilde{x}} > 1.75$$
-  2. **Post-Award Escalation ("Low-Ball & Recover"):** Flag contracts where post-award amendment / variation orders raise final contract value by **`> 20%`** above the awarded L1 contract value:
-     $$\frac{\text{final\_value} - \text{awarded\_value}}{\text{awarded\_value}} > 0.20$$
-* **Mandatory Benign Explanations Considered:** Extended multi-year AMC/warranty bundled into unit rate, high-altitude or remote-district logistics surcharges, higher technical grade/spec within the same category code, or formally approved price-variation clauses (PVC) linked to RBI/WPI indices.
+  1. **Robust Unit-Price Outlier (MAD & Median Ratio):** Normalized by `(item_category, unit)`. Flag when `(x_i - median) / MAD > 2.5` (with `peer_n >= 4` and ratio `> 1.35`) OR `x_i / median > 1.75`.
+  2. **Post-Award Escalation (`is_final_cost_overrun=True`):** Only when explicit `final_value_inr` / `revised_value_inr` exists in the source record and `(final_value - award_value) / award_value > 0.20`.
+  3. **Award vs Tender-Estimate Variance (`is_final_cost_overrun=False`):** When explicit `award_value` exceeds `tender_estimate` by `> 20%` (and `>= ₹1 Lakh`). Explicitly labels `award_value_inr`, `tender_estimate_inr`, `tender_estimate_date`, `award_date`, and `final_cost_date=None`, and never describes this comparison as a final contract cost overrun without completion/disbursement records.
+* **Mandatory Benign Explanations Considered:** Outdated Schedule-of-Rates estimates, bundled multi-year AMC/warranty, high-altitude/remote logistics surcharges, approved scope revisions, or statutory GST/price-variation clauses.
 
-### `M5` — "March Rush" Expenditure Pacing & Budget Variance
-* **Statutory Anchors:** GFR 2017 Rule 62(3); Ministry of Finance (Department of Expenditure) Cash Management System (CMS) Circulars; Public Accounts Committee (PAC) Explanatory Note Threshold (`>= ₹100 Cr`).
-* **Target Sources:** CGA Monthly Accounts (`.xlsx`/`.pdf`), OpenBudgetsIndia CKAN API (`openbudgetsindia.org`), Union Budget Expenditure Profile (`indiabudget.gov.in`).
+### `M5` — "March Rush" Expenditure Pacing & Same-Year Budget Variance
+* **Statutory Anchors:** GFR 2017 Rule 62(3); Ministry of Finance Cash Management System (CMS) Circulars; Public Accounts Committee (PAC) Explanatory Note Threshold (`>= ₹100 Cr`).
+* **Target Sources:** CGA Monthly Accounts, OpenBudgetsIndia / State OBDS workbooks, State Monthly Treasury records, Union Budget Expenditure Profile.
+* **Strict Reconciliation & Unknown Preservation:**
+  * **OBDS Workbook Ingestion:** Requires **matched agency/department, account head (major head), explicit unit (`budget_amount_unit`), and same fiscal period** before computing any variance. Never aggregates conflicting agencies/heads under one Demand label, never guesses blank units, and **never compares `actuals_last_audited_year` (FY `T-2`) against `budget_estimates_previous_financial_year` / `revised_estimates_previous_financial_year` (FY `T-1`)** as same-year actual vs estimate. Unmatched or unit-less OBDS rows go to `unevaluable_count`.
+  * **Preserving Unknowns & PAC Trigger:** Unobserved `be_inr`, `re_inr`, `actual_inr`, `mof_waiver_recorded`, and `pac_explanatory_note_tabled` are preserved strictly as `None` (never defaulted to `0` or `False`). A missing PAC explanatory note (`pac_explanatory_note_missing=True`) is flagged **only** when a comparable same-year budget variance `>= ₹100 Cr` is observed AND `pac_explanatory_note_tabled` is explicitly `False`.
 * **Deterministic Triggers:**
-  1. **Q4 Expenditure Ceiling Breach:** Flag ministries/departments where **Q4 (Jan–Mar) expenditure exceeds `33%`** of Revised Estimate / Annual Allocation:
-     $$\frac{\text{Spend}_{Q4}}{\text{Annual Allocation}} > 0.33$$
-  2. **March Expenditure Ceiling Breach:** Flag ministries/departments where **March expenditure exceeds `15%`** of Annual Allocation:
-     $$\frac{\text{Spend}_{\text{March}}}{\text{Annual Allocation}} > 0.15$$
-  3. **Budget Estimate vs. Actuals Variance:** Flag **`|Actuals - BE| / BE > 0.25`** (**> 25%** savings or excess), highlighting variances **`>= ₹100 Cr`** that require a formal Explanatory Note to the Public Accounts Committee.
-* **Mandatory Benign Explanations Considered:** Official Ministry of Finance CapEx relaxation / CMS waiver circulars, statutory year-end transfers to states/PSUs, supplementary demands for grants passed in Q4, or lump-sum debt/subsidy settlement schedules.
+  1. **Q4 Ceiling Breach:** `Q4 spend / annual outlay > 33%` (where MoF/Finance waiver is not recorded `True`).
+  2. **March Ceiling Breach:** `March spend / annual outlay > 15%`.
+  3. **Same-Year BE/RE vs Actuals Variance:** `|Actual - BE| / BE > 25%`, `|Actual - RE| / RE > 25%`, or `|RE - BE| / BE > 25%` across observed same-year figures.
+* **Mandatory Benign Explanations Considered:** Formal CapEx relaxation / CMS waivers, late-session Supplementary Demands for Grants, statutory year-end transfers, or SNA accounting adjustments.
 
-### `M6` — CAG Unresolved Audit Para & Repeat-Finding Tracker
-* **Statutory Anchors:** Articles 148–151 of the Constitution of India; CAG of India Audit Reports; APMS (Audit Para Monitoring System) & Parliamentary Public Accounts Committee (PAC) Action Taken Reports (ATRs).
-* **Target Sources:** Official CAG Compliance, Performance, Financial & PSU Audit PDFs (`cag.gov.in`), PAC ATRs and Parliament Q&A (`sansad.in`).
-* **Deterministic Triggers:**
-  * Ingests both structured audit para records (JSON/CSV) and extracted text from CAG PDF reports (`pypdf`).
-  * Quantifies financial impact in ₹ Crore across standard CAG typologies (*unfruitful expenditure*, *idle investment*, *excess payment*, *diversion of funds*, *non-recovery / revenue loss*).
-  * Flags **high-value unresolved paras** (pending ATN / overdue recovery across multiple audit cycles) and **repeat systemic findings** recurring across consecutive CAG reports for the same ministry or PSU.
-* **Mandatory Benign Explanations Considered:** Action Taken Note (ATN) submitted to APMS and awaiting CAG vetting, sub-judice litigation/arbitration over contractor recovery, or partial recovery achieved after the audit cut-off date.
+### `M6` — CAG Linked Audit Para & Dated Disposition Tracker
+* **Statutory Anchors:** Articles 148–151 of the Constitution of India; CAG of India Audit Reports; APMS & Parliamentary PAC Action Taken Reports (ATRs).
+* **Strict Extraction & Linkage Discipline:**
+  * **Amount Linkage:** Ingested CAG PDFs require an **explicit heading, sentence, or table-cell linkage** tying a rupee figure to an audit observation typology (`amount_linkage` = `heading_explicit` | `sentence_explicit` | `table_cell_explicit`). Adjacent Figure/Chart blocks and macro fiscal aggregates (e.g., 14-day Treasury Bill repayments, gross borrowings, total receipts) are strictly excluded and never attributed to an observation paragraph. Unlinked amounts remain `None` (`unrecorded`).
+  * **Dated Disposition Evidence:** Never defaults ATN status to `pending` or fabricates `years_pending = 2`. Sets `atn_status = "unrecorded"` and `years_pending = None` unless explicit disposition wording and explicit dated follow-up duration/milestones appear in the cited record (`disposition_evidence_date`). Preserves `pac_atr_filed = None` when unrecorded.
+* **Mandatory Benign Explanations Considered:** ATN uploaded on APMS awaiting CAG vetting, post-cutoff partial recovery or commissioning, sub-judice arbitration, or separate APMS/PAC records needed where report PDFs omit follow-up disposition dates.
 
 ### `M7` — Welfare & Infrastructure Scheme Delivery Verification (`PMGSY`, `MPLADS`, `MGNREGA`)
-* **Statutory Anchors:** PMGSY Programme Guidelines & OMMAS Norms; MPLADS Guidelines (MoSPI e-SAKSHI, ₹5 Cr/yr constituency cap & 1-year completion norm); MGNREGA 2005 Section 17 (Social Audits), Section 22 & Schedule II (60:40 Wage-to-Material Ratio).
-* **Target Sources:** PMGSY OMMAS exports (`ommas.nic.in`), MPLADS e-SAKSHI exports (`mplads.mospi.gov.in`), MGNREGA MIS & R9.2 Social Audit reports (`nrega.nic.in`), `data.gov.in`.
-* **Deterministic Triggers:**
-  1. **PMGSY Rural Roads:** Flag packages with **`financial_progress >= 90%`** AND **`physical_progress_km < 70%`**, or bids **`> 25%` below DPR cost** paired with severe delay / premature Defect Liability Period (DLP) failure.
-  2. **MPLADS Constituency Works:** Flag sanctioned works exceeding **`12 months`** since sanction with **`>= 80%` funds disbursed** that remain incomplete or lack mandatory geotagged stage verification photos.
-  3. **MGNREGA Expenditure & Social Audit:** Flag Gram Panchayats/blocks breaching the statutory **60:40 wage-to-material ratio** (`material_share > 40%`), or holding substantial **unrecovered R9.2 Social Audit misappropriation amounts** with low recovery progress.
-* **Mandatory Benign Explanations Considered:** Monsoon/landslide/forest-clearance delays (PMGSY), utility shifting or land-acquisition holds (MPLADS), state-level aggregate material pooling permitted under MGNREGA guidelines, or lagging MIS data-entry uploads after physical completion.
+* **Statutory Anchors:** PMGSY Programme Guidelines & OMMAS Norms; MPLADS Guidelines (MoSPI e-SAKSHI, 12-month norm); MGNREGA 2005 Section 17 (Social Audits), Section 22 & Schedule II (60:40 Wage-to-Material Ratio).
+* **Deterministic Triggers & Data Honesty:**
+  1. **PMGSY Rural Roads:** Flags `financial_progress >= 90%` AND `physical_progress_km < 70%` **only when physical completion (`completed_km` / `physical_progress_pct`) is actually observed** — missing physical progress is preserved as `None` (routed to `unevaluable_count`, never defaulted to `0`). Explicitly records `aggregate_level` (`district_phase_aggregate` vs `package_work`), `financial_unit`, `physical_unit`, and `is_fallback_identifier` / `identifier_source` when an ID is synthesized from phase + district.
+  2. **MPLADS Constituency Works:** Computes `months_elapsed` strictly from an explicit deterministic **`as_of_date`** (never `date.today()`). Ongoing works lacking both `months_elapsed` and `as_of_date` are marked `unevaluable` rather than evaluated nondeterministically.
+  3. **MGNREGA Expenditure & Social Audit:** Flags `material_share > 40%` (60:40 ratio) or unrecovered R9.2 Social Audit amounts (`>= ₹1 Lakh` and `>= 50%` pending), with explicit financial unit and aggregate-level metadata.
+* **Mandatory Benign Explanations Considered:** OMMAS Measurement Book lag, upfront bridge/cross-drainage expenditure, revised sanctions, forest/land clearance holds, or district-level fiscal-year MGNREGA material pooling.
 
 ### `M8` — Corporate–Electoral–Procurement Proximity Disclosure Lead
-* **Statutory Anchors:** Companies Act 2013 / MCA21 public filings; Election Commission of India (ECI) Electoral Bond disclosures (pursuant to Supreme Court judgment); Representation of the People Act candidate affidavits (ADR / MyNeta); GFR 2017 conflict-of-interest & integrity pact clauses.
-* **Target Sources:** ECI Electoral Bond public datasets, MyNeta/ADR public affidavit datasets, MCA21 public corporate metadata, OCDS/CPPP tender awards.
-* **Deterministic Triggers:**
-  1. **Newly Incorporated High-Value Awardee:** Flag suppliers incorporated **`< 180 days`** prior to tender award winning high-value public contracts (where standard prior-experience turnover norms normally apply).
-  2. **Shared-Director Bidder Overlap:** Flag ostensibly competing bidders on the same tender who share a Director Identification Number (DIN), registered office address, or common controlling entity.
-  3. **Public Disclosure Proximity:** Cross-link registered corporate awardees (by CIN/name) with statutory public ECI/affidavit records.
-* **Strict Framing Rule:** Every `M8` output is strictly labeled a **"Disclosure / Proximity Lead"** — it documents verifiable public-record relationships and **never alleges quid pro quo, bribery, or unlawful influence**.
-* **Mandatory Benign Explanations Considered:** Special Purpose Vehicle (SPV) or joint-venture consortium validly incorporated post-qualification under tender terms, DPIIT-recognized startup exemption under GFR Rule 173(i), or lawful political contributions unrelated to procurement evaluation.
+* **Statutory Anchors:** Companies Act 2013 / MCA21 public filings; Supreme Court WP(C) 880/2017 SBI/ECI Electoral Bond disclosures; GFR conflict-of-interest norms.
+* **Strict Join & Disclosure Honesty:**
+  * **No Fabricated Exact CINs:** The ECI/SBI Electoral Bond file contains purchaser names and **no CIN**. When joined with MCA CSR records, `connectors/loader.py` and `engines/proximity.py` **never copy a CSR record's CIN onto a bond row as an exact CIN match** without a corroborating primary identifier.
+  * Explicitly emits `join_basis: "normalized_name"` (vs `"exact_cin"` only when corroborated), `exact_identifier_verified`, `join_ambiguous`, `join_candidate_count`, `join_candidate_cins`, `bond_source_cin` (`None` when absent), `matched_csr_cin`, separate source company/purchaser names, and describes monetary totals as **`disclosed_bond_value`** (`disclosed_bond_value_inr`, `disclosed_bond_value_crore`, `amount_type="disclosed_bond_value"`).
+  * Explicitly states `procurement_relationship_established: False` for electoral-bond × CSR disclosures (no tender award is present in those inputs).
+  * Also supports procurement-side proximity checks (`< 180` day newly incorporated awardees, shared-DIN/address competing bidders) under strictly neutral **"Disclosure / Proximity Lead"** framing.
+* **Mandatory Benign Explanations Considered:** Lawful corporate political contributions under the then-prevailing scheme, normalized-name linkage requiring corroborating corporate identifiers, SPV/JV consortia, or routine group structures disclosed in conflict-of-interest filings.
 
 ---
 
-## 3. Epistemic Lifecycle & 2-of-2 Peer Verification Quorum
+## 3. Epistemic Lifecycle, 4-Check Quorum & Jurisdiction-Aware RTI Drafts
 
 Every audit finding follows a strict state machine enforced by the Coordinator Hub (`src/aiwatchdogs/hub/desk.py`):
 
-```
-[Dataset + SHA-256]
-        │
-        ▼ (Node A: anomaly_scan + scrub_pii + lint_neutrality)
-   ┌──────────┐    0 anomalies found     ┌─────────────────────┐
-   │ raw_lead │ ───────────────────────► │  cleared (credited) │
-   └────┬─────┘                          └─────────────────────┘
-        │  Auto-enqueues 2 independent peer_verify tasks
-        ▼
-  ┌─────────────┐
-  │ peer_review │  (Displayed with dashed italic badge — NOT verified!)
-  └─────┬───────┘
-        │  Independent Nodes B & C (distinct contributor_id; UNIQUE(finding_id, contributor_id))
-        │  Check: (1) Provenance & SHA-256  (2) Math Reproduction (<=1% tol)
-        │         (3) Statutory Rule Validity  (4) Legal Neutrality & Zero PII
-        ├──── flag_pii_or_legal ──────────────────► [Quarantined Immediately]
-        ├──── reject_false_positive ──────────────► [retracted_false_positive]
-        ├──── dispute (consensus < 0.75) ─────────► [disputed] (requires >=3 confirms)
-        └──── >= 2 confirms & consensus >= 0.75 ──► [verified] (Solid Emerald Badge)
-                                                         │
-                                                         ▼
-                                            [Auto-Generated RTI Act 2005
-                                             Sec 6(1) Draft (<=500 words)]
-                                                         │
-                                                         ▼ (Human-in-the-loop)
-                                      [rti_filed] ─► [official_response_logged]
-                                                         │
-                                                         ▼
-                                             [resolved_explained | escalated]
-```
-
-### Independent Quorum Scoring Rules
-1. **Strict Author Separation:** The Hub rejects (`HTTP 409 Conflict`) any attempt by the submitting contributor to verify their own lead (`verifier_handle == finding.submitted_by`), and enforces a database-level `UNIQUE(finding_id, contributor_id)` constraint so no contributor can vote twice.
-2. **Four Structured Verification Checks (`checks_json`):**
-   * `provenance_ok`: Source file/URL resolves, SHA-256 matches, and cited excerpts exist verbatim.
-   * `math_reproduced`: Re-running the deterministic engine reproduces the reported metric within 1% relative tolerance.
-   * `rule_valid`: The cited GFR/CVC/statutory threshold applies to the fiscal year and entity type.
-   * `legal_pii_ok`: Title/summary pass `lint_neutrality()`, `benign_explanations` is substantive and non-empty, and zero PII appears in any field.
-3. **Consensus Calculation:**
-   * Let $V_{\text{confirm}}$ be the count of `confirm` verdicts and $V_{\text{total}}$ be total peer verdicts (`confirm`, `dispute`, `reject_false_positive`).
-   * Consensus ratio $= V_{\text{confirm}} / V_{\text{total}}$.
-   * **Promotion to `verified`** requires:
-     * Zero `flag_pii_or_legal` verdicts;
-     * `V_confirm >= 2` (or `V_confirm >= 3` if any `dispute` verdict was recorded);
-     * `consensus >= 0.75`;
-     * Passing server-side `lint_neutrality()` and `pii_scrubbed == true`.
-4. **Anti-Spam Contributor Scoring:** Contributors earn equal recognition for **verified findings**, **independent peer verifications**, and **cleared / validly refuted records**. Raw token counts or unverified lead volume are never rewarded, preventing false-positive farming.
+1. **Strict Author Separation & Explicit 4-Check Verification:** Every independent peer vote must emit an explicit `pass`, `fail`, or `unrecorded` state for each of the four checks (`bytes_digest`, `deterministic_reproduction`, `metric_tolerance`, `neutrality_privacy`), an explicit verdict (`confirm`, `dispute`, `needs_review`, `reject_false_positive`, or `flag_pii_or_legal` — never defaulted), and bound manifest metadata (`source_locator`, `engine_version`, `ruleset_version`, `as_of_date`, reproduced metrics).
+2. **Computational Reproduction vs Editorial Review:** Promotion to `verified` requires at least 2 independent contributors recording explicit `pass` on all 4 checks against the exact entity, fiscal period, engine/ruleset version, and full required metric set. Split votes queue adjudication; privacy/legal flags immediately quarantine public visibility; post-publication corrections are preserved transparently as versioned correction history at the dossier's stable URL.
+3. **Jurisdiction-Aware Human-Only RTI Drafts (`core/rti.py`):** `generate_rti_draft()` resolves whether the record holder is a **Central** or **State** public authority (Assam, Andhra Pradesh, Bihar, Himachal Pradesh, Madhya Pradesh, etc.), emitting the appropriate CPIO/SPIO designation, official State or Central portal/filing channel, and statutory fee rules ($\le 500$ words, Section 7(5) BPL exemption, 30-day Section 7(1) timeline). State-authority drafts **never** route citizens to `https://rtionline.gov.in` (which returns state applications without refund). Filing remains strictly human-only.
+4. **Anti-Spam Contributor Scoring:** Contributors earn recognition for verified findings, independent peer verifications, and cleared/refuted records — derived from timestamped events.
 
 ---
 
@@ -172,9 +134,10 @@ Inspired by `pequalnp.com`'s rule *"Only checked looks like a result"*, the web 
 
 | Status | Visual Treatment | Meaning |
 |---|---|---|
-| `verified` | Solid upright emerald pill (`#2F6B4F` on `#E6F0E9`, solid `1px` border) | Deterministic math reproduced & approved by $\ge 2$ independent peer nodes. |
+| `verified` | Solid upright emerald pill (`#2F6B4F` on `#E6F0E9`, solid `1px` border) | Deterministic math reproduced & all 4 checks passed by $\ge 2$ independent peer nodes. |
 | `peer_review` / `raw_lead` | **Dashed** border, *italic* warm stone/amber pill | Preliminary lead awaiting independent peer verification — **not a verified finding**. |
 | `cleared` / `resolved_explained` | Calm slate/blue-gray pill | Audited records showing no threshold breach, or anomaly lawfully explained by official response. |
-| `disputed` / `retracted_false_positive` | Muted terracotta/red pill (`#A2321F` on `#F7E4E0`) | Contested in peer review or retracted after mathematical/factual refutation. |
+| `unevaluable` | Neutral stone pill | Records lacking required source fields (e.g. zero positive bidder counts, missing physical km, unmatched OBDS units/heads) — kept distinct from `cleared`. |
+| `disputed` / `retracted_false_positive` | Muted terracotta/red pill (`#A2321F` on `#F7E4E0`) | Contested in peer review, under editorial correction, or retracted after factual refutation. |
 | `rti_filed` | Civic indigo pill (`#2B4D9B` on `#E8EEFA`) | Citizen-reviewed RTI Act 2005 Sec 6(1) application logged against this lead. |
-| `[SAMPLE DEMO DATA]` | Archival stone badge | Explicitly marks bundled sample datasets vs. live `.gov.in` ingestions. |
+| `[SAMPLE DEMO DATA]` | Archival stone badge | Explicitly marks bundled sample datasets vs. live public ingestions. |

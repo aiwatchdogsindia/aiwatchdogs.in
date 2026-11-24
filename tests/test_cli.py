@@ -95,20 +95,20 @@ def _write_m1_ocds_fixture(path: Path) -> Path:
 
 
 def _write_m2_split_csv_fixture(path: Path, *, multi_buyer: bool = False) -> Path:
-    """Create a realistic GFR 2017 split-tendering CSV fixture for M2."""
+    """Create a realistic post-Jul 2024 Central GFR 2017 split-tendering CSV fixture for M2."""
     rows = [
         "tender_id,buyer_name,vendor_name,item_category,award_date,award_value_inr,jurisdiction,fiscal_year,source_url",
-        "PO-101,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-02,4850000,Assam,FY2024-25,https://assamtenders.gov.in/",
-        "PO-102,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-14,4910000,Assam,FY2024-25,https://assamtenders.gov.in/",
-        "PO-103,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-29,4940000,Assam,FY2024-25,https://assamtenders.gov.in/",
-        "PO-104,NHM Assam Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-09-09,4880000,Assam,FY2024-25,https://assamtenders.gov.in/",
+        "PO-101,Central Medical Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-02,4850000,Union of India,FY2024-25,https://eprocure.gov.in/",
+        "PO-102,Central Medical Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-14,4910000,Union of India,FY2024-25,https://eprocure.gov.in/",
+        "PO-103,Central Medical Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-08-29,4940000,Union of India,FY2024-25,https://eprocure.gov.in/",
+        "PO-104,Central Medical Procurement Cell,NorthEast Diagnostics,Lab Kits,2024-09-09,4880000,Union of India,FY2024-25,https://eprocure.gov.in/",
     ]
     if multi_buyer:
         rows.extend(
             [
-                "PO-201,District PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-03,960000,Assam,FY2024-25,https://assamtenders.gov.in/",
-                "PO-202,District PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-15,980000,Assam,FY2024-25,https://assamtenders.gov.in/",
-                "PO-203,District PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-28,975000,Assam,FY2024-25,https://assamtenders.gov.in/",
+                "PO-201,Central PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-15,960000,Union of India,FY2024-25,https://eprocure.gov.in/",
+                "PO-202,Central PWD Works Division,Gauhati Infra Co,Road Signages,2024-07-24,980000,Union of India,FY2024-25,https://eprocure.gov.in/",
+                "PO-203,Central PWD Works Division,Gauhati Infra Co,Road Signages,2024-08-05,975000,Union of India,FY2024-25,https://eprocure.gov.in/",
             ]
         )
     path.write_text("\n".join(rows) + "\n", encoding="utf-8")
@@ -317,9 +317,14 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
     assert enriched["used_llm"] is True
     assert enriched["enriched_by"] == "ollama/qwen2.5:14b"
     assert enriched["neutrality_passed"] is True
-    assert len(enriched["benign_explanations"]) == 2
+    # Deterministic verified summary is NEVER overwritten; LLM text stays in separate editorial_interpretation
+    assert enriched["summary"] == audit_lead["summary"]
+    assert enriched["editorial_interpretation"]["authoritative"] is False
+    assert "INR 38.40 lakh" in enriched["editorial_interpretation"]["text"]
+    # Verified deterministic benign explanation preserved + 2 distinct LLM explanations merged
+    assert len(enriched["benign_explanations"]) == 3
 
-    # 3. Cloud LLM violating BNS Sec 356 neutrality -> MUST fall back cleanly to deterministic phrasing!
+    # 3. Cloud LLM violating BNS Sec 356 neutrality (with explicit paid opt-in + positive cap) -> deterministic fallback
     def _openai_defamatory(request: httpx.Request) -> httpx.Response:
         bad = {
             "summary": "This department ran an obvious corruption scam and bribe scheme to loot funds.",
@@ -340,6 +345,8 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
             openai_cfg,
             http_client=client,
             env={"OPENAI_API_KEY": "sk-test"},
+            allow_paid_provider=True,
+            max_usd=0.50,
         )
     assert safe_fallback["used_llm"] is False
     assert safe_fallback["fallback_reason"] is not None
@@ -351,7 +358,7 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
         safe_fallback["benign_explanations"],
     ).passed
 
-    # 4. Unavailable LLM -> clean deterministic fallback
+    # 4. Unavailable LLM (with explicit paid opt-in + positive cap) -> clean deterministic fallback
     def _gemini_down(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503, text="Service Unavailable")
 
@@ -368,6 +375,8 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
             gemini_cfg,
             http_client=client,
             env={"GEMINI_API_KEY": "test-key"},
+            allow_paid_provider=True,
+            max_usd=0.50,
         )
     assert down_fallback["used_llm"] is False
     assert down_fallback["fallback_reason"] == "llm_unavailable"
@@ -379,11 +388,11 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
 
 
 @pytest.mark.parametrize(
-    ("builder", "filename", "methodology"),
+    ("builder", "filename", "methodology", "expected_portal"),
     [
-        (_write_m1_ocds_fixture, "assam_ocds_fixture.json", "M1"),
-        (_write_m2_split_csv_fixture, "assam_gfr_split_fixture.csv", "M2"),
-        (_write_m5_march_rush_csv_fixture, "ap_treasury_march_rush.csv", "M5"),
+        (_write_m1_ocds_fixture, "assam_ocds_fixture.json", "M1", "https://rtionline.assam.gov.in"),
+        (_write_m2_split_csv_fixture, "central_gfr_split_fixture.csv", "M2", "https://rtionline.gov.in"),
+        (_write_m5_march_rush_csv_fixture, "ap_treasury_march_rush.csv", "M5", "https://rtionline.ap.gov.in"),
     ],
 )
 def test_audit_file_inline_datasets_json_and_rti(
@@ -391,6 +400,7 @@ def test_audit_file_inline_datasets_json_and_rti(
     builder: Any,
     filename: str,
     methodology: str,
+    expected_portal: str,
 ) -> None:
     dataset_path = builder(tmp_path / filename)
 
@@ -412,7 +422,8 @@ def test_audit_file_inline_datasets_json_and_rti(
     assert len(data["rti_drafts"]) == len(data["leads"])
     for draft in data["rti_drafts"]:
         assert 20 <= draft["word_count"] <= 500
-        assert "rtionline.gov.in" in draft["rti_portal_url"]
+        assert draft["rti_portal_url"] == expected_portal
+        assert draft["human_filing_required"] is True
         assert "Section 6(1)" in draft["statutory_sections"]
 
 
@@ -466,6 +477,7 @@ def test_runner_remote_dataset_url_secondary_url_and_expected_sha256(
     m2_csv = _write_m2_split_csv_fixture(tmp_path / "remote_m2.csv")
     raw_bytes = m2_csv.read_bytes()
     expected_sha = compute_sha256(raw_bytes)
+    expected_sec_sha = compute_sha256(b"secondary-csr-bytes")
     loader_calls: list[dict[str, Any]] = []
 
     from aiwatchdogs.connectors.loader import load_dataset as real_load_dataset
@@ -474,10 +486,28 @@ def test_runner_remote_dataset_url_secondary_url_and_expected_sha256(
         path_or_url: str,
         fmt: str | None = None,
         context: dict[str, Any] | None = None,
+        allow_local_files: bool = False,
+        **kwargs: Any,
     ) -> LoadedDataset:
-        loader_calls.append({"path_or_url": path_or_url, "fmt": fmt, "context": context})
-        loaded = real_load_dataset(str(m2_csv), fmt=fmt)
-        return loaded.model_copy(update={"source_ref": path_or_url, "is_demo_sample": False})
+        loader_calls.append(
+            {
+                "path_or_url": path_or_url,
+                "fmt": fmt,
+                "context": context,
+                "allow_local_files": allow_local_files,
+                "kwargs": kwargs,
+            }
+        )
+        loaded = real_load_dataset(str(m2_csv), fmt=fmt, allow_local_files=True)
+        return loaded.model_copy(
+            update={
+                "source_ref": path_or_url,
+                "retrieval_url": path_or_url,
+                "secondary_sha256": expected_sec_sha,
+                "secondary_digest_verified": True,
+                "is_demo_sample": False,
+            }
+        )
 
     monkeypatch.setattr("aiwatchdogs.cli.runner.load_dataset", _stub_load_dataset)
 
@@ -504,15 +534,16 @@ def test_runner_remote_dataset_url_secondary_url_and_expected_sha256(
                     "task_type": "anomaly_scan",
                     "mission_slug": "assam-gfr-split-tendering",
                     "methodology_code": "M2",
-                    "title": "Assam GFR Rule 161 Split-Tendering Scan",
+                    "title": "Central GFR Rule 161 Split-Tendering Scan",
                     "payload": {
-                        "dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/v2.csv",
-                        "secondary_url": "https://raw.githubusercontent.com/spfrantz/MCA-CSR-Scraper/master/examples/csr_top_100.csv",
-                        "source_url": "https://assamtenders.gov.in/",
+                        "dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/1e12e516748130c15398b2501fb092bfa7413941/v2.csv",
+                        "secondary_url": "https://raw.githubusercontent.com/spfrantz/MCA-CSR-Scraper/dc4b0044265d5628adef739bf7cea5b091acb856/examples/csr_top_100.csv",
+                        "source_url": "https://eprocure.gov.in/",
                         "expected_sha256": expected_sha,
+                        "secondary_expected_sha256": expected_sec_sha,
                         "artifact_title": "Assam OCDS FY16-22",
-                        "jurisdiction": "Assam",
-                        "fiscal_year": "FY2016-22",
+                        "jurisdiction": "Union of India",
+                        "fiscal_year": "FY2024-25",
                         "is_demo_sample": False,
                     },
                 },
@@ -524,6 +555,7 @@ def test_runner_remote_dataset_url_secondary_url_and_expected_sha256(
     assert len(loader_calls) == 1
     assert loader_calls[0]["path_or_url"].startswith("https://raw.githubusercontent.com/")
     assert loader_calls[0]["context"]["secondary_url"].endswith("csr_top_100.csv")
+    assert loader_calls[0]["allow_local_files"] is False
 
     # Verify factual real-time whisper contains dataset title, count, and matched hash
     assert any(
@@ -536,10 +568,12 @@ def test_runner_remote_dataset_url_secondary_url_and_expected_sha256(
     finding = body["finding"]
     assert finding["is_demo_sample"] is False
     assert finding["artifact_sha256"] == expected_sha
-    assert finding["canonical_url"] == "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/v2.csv"
-    assert finding["source_url"] == "https://assamtenders.gov.in/"
+    assert finding["secondary_sha256"] == expected_sec_sha
+    assert finding["canonical_url"].startswith("https://raw.githubusercontent.com/")
+    assert finding["source_url"] == "https://eprocure.gov.in/"
     assert finding["secondary_url"].endswith("csr_top_100.csv")
     assert body["metrics"]["expected_sha256_matched"] is True
+    assert body["metrics"]["secondary_sha256_matched"] is True
     assert body["metrics"]["records_scanned"] == 4
     assert body["metrics"]["monetary_audited_inr"] > 0
 
@@ -552,11 +586,11 @@ def test_runner_peer_verify_multi_lead_matching(tmp_path: Path) -> None:
     from aiwatchdogs.connectors.loader import load_dataset as real_load_dataset
     from aiwatchdogs.engines.registry import run_engine
 
-    loaded = real_load_dataset(str(multi_csv))
+    loaded = real_load_dataset(str(multi_csv), allow_local_files=True)
     eng = run_engine("M2", loaded.records)
     assert len(eng.leads) >= 2
 
-    # Explicitly target the second (smaller exposure) lead to verify entity+rule matching!
+    # Explicitly target the second (smaller exposure) lead to verify strict entity+period+ruleset+metric matching!
     target = min(eng.leads, key=lambda ld: float(ld.monetary_exposure_inr))
 
     submitted: list[dict[str, Any]] = []
@@ -571,7 +605,7 @@ def test_runner_peer_verify_multi_lead_matching(tmp_path: Path) -> None:
 
     cfg = AgentConfig(handle="multi-lead-verifier", hub_url="http://mockhub", api_token="awd_tok")
     with httpx.Client(transport=httpx.MockTransport(_handler), base_url="http://mockhub") as client:
-        runner = AgentRunner(cfg, http_client=client)
+        runner = AgentRunner(cfg, http_client=client, allow_local_files=True)
         res = runner.execute_task(
             {
                 "lease_id": "lease-pv-multi",
@@ -587,6 +621,12 @@ def test_runner_peer_verify_multi_lead_matching(tmp_path: Path) -> None:
                         "title": target.title,
                         "summary": target.summary,
                         "entity_name": target.entity_name,
+                        "fiscal_year": target.fiscal_year,
+                        "fiscal_year_start": target.fiscal_year_start,
+                        "fiscal_year_end": target.fiscal_year_end,
+                        "source_locator": target.source_locator,
+                        "engine_version": eng.engine_version,
+                        "ruleset_version": eng.ruleset_version,
                         "monetary_exposure_inr": float(target.monetary_exposure_inr),
                         "anomaly_metrics": target.anomaly_metrics,
                         "rule_triggered": target.rule_triggered,
@@ -598,10 +638,10 @@ def test_runner_peer_verify_multi_lead_matching(tmp_path: Path) -> None:
 
     assert res["verification"]["verdict"] == "confirm"
     assert res["verification"]["checks"] == {
-        "provenance_ok": True,
-        "math_reproduced": True,
-        "rule_valid": True,
-        "legal_pii_ok": True,
+        "bytes_digest": "pass",
+        "deterministic_reproduction": "pass",
+        "metric_tolerance": "pass",
+        "neutrality_privacy": "pass",
     }
     assert res["verification"]["reproduced_metrics"]["entity_name"] == target.entity_name
     assert len(submitted) == 1
@@ -627,6 +667,7 @@ def _point_mission_task_to_local_fixture(
         ).fetchone()
         assert row is not None, f"Expected queued task for mission {mission_slug}"
         payload = json.loads(row["payload_json"])
+        payload["retrieval_url"] = str(fixture_path)
         payload["dataset_url"] = str(fixture_path)
         payload["dataset_path"] = str(fixture_path)
         payload["expected_sha256"] = sha
@@ -664,6 +705,7 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
             cfg_investigator,
             http_client=asgi_client,
             config_path=inv_cfg_path,
+            allow_local_files=True,
         )
         summary_inv = runner_inv.run_loop(
             max_tasks=1,
@@ -702,6 +744,7 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
                 cfg_ver,
                 http_client=asgi_client,
                 config_path=tmp_path / f"verifier_{idx}.json",
+                allow_local_files=True,
             )
             summary_ver = runner_ver.run_loop(
                 max_tasks=1,
@@ -713,10 +756,10 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
             assert verif_payload["finding_id"] == finding_id
             assert verif_payload["verdict"] == "confirm"
             assert verif_payload["checks"] == {
-                "provenance_ok": True,
-                "math_reproduced": True,
-                "rule_valid": True,
-                "legal_pii_ok": True,
+                "bytes_digest": "pass",
+                "deterministic_reproduction": "pass",
+                "metric_tolerance": "pass",
+                "neutrality_privacy": "pass",
             }
 
         # Confirm Hub promoted the finding to VERIFIED and auto-generated <=500-word RTI draft!
@@ -790,7 +833,7 @@ def test_runner_cleared_410_gone_and_exception_release(tmp_path: Path) -> None:
 
     cfg = AgentConfig(handle="edge-node", hub_url="http://mockhub", api_token="awd_tok")
     with httpx.Client(transport=httpx.MockTransport(_handler_a), base_url="http://mockhub") as client:
-        summary_a = AgentRunner(cfg, http_client=client).run_loop(max_tasks=2)
+        summary_a = AgentRunner(cfg, http_client=client, allow_local_files=True).run_loop(max_tasks=2)
     assert summary_a.cleared_submitted == 1
     assert submitted_bodies[0]["outcome"] == "cleared"
 
@@ -824,7 +867,7 @@ def test_runner_cleared_410_gone_and_exception_release(tmp_path: Path) -> None:
         return httpx.Response(404)
 
     with httpx.Client(transport=httpx.MockTransport(_handler_b), base_url="http://mockhub") as client:
-        summary_b = AgentRunner(cfg, http_client=client).run_loop(max_tasks=1)
+        summary_b = AgentRunner(cfg, http_client=client, allow_local_files=True).run_loop(max_tasks=1)
     assert summary_b.aborted_410 == 1
     assert submit_called_b is False
 
@@ -857,7 +900,7 @@ def test_runner_cleared_410_gone_and_exception_release(tmp_path: Path) -> None:
         return httpx.Response(404)
 
     with httpx.Client(transport=httpx.MockTransport(_handler_c), base_url="http://mockhub") as client:
-        summary_c = AgentRunner(cfg, http_client=client).run_loop(max_tasks=1)
+        summary_c = AgentRunner(cfg, http_client=client, allow_local_files=True).run_loop(max_tasks=1)
     assert summary_c.errors == 1
     assert len(released_bodies) == 1
     assert released_bodies[0]["lease_id"] == "lease-err"
@@ -886,7 +929,7 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
 
     cfg = AgentConfig(handle="strict-verifier", hub_url="http://mockhub", api_token="awd_tok")
     with httpx.Client(transport=httpx.MockTransport(_handler), base_url="http://mockhub") as client:
-        runner = AgentRunner(cfg, http_client=client)
+        runner = AgentRunner(cfg, http_client=client, allow_local_files=True)
 
         # 1. PII / accusatory wording -> flag_pii_or_legal
         res_pii = runner.execute_task(
@@ -911,7 +954,7 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
             }
         )
         assert res_pii["verification"]["verdict"] == "flag_pii_or_legal"
-        assert res_pii["verification"]["checks"]["legal_pii_ok"] is False
+        assert res_pii["verification"]["checks"]["neutrality_privacy"] == "fail"
 
         # 2. Fabricated anomaly on clean dataset -> reject_false_positive
         res_fp = runner.execute_task(
@@ -938,9 +981,9 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
             }
         )
         assert res_fp["verification"]["verdict"] == "reject_false_positive"
-        assert res_fp["verification"]["checks"]["math_reproduced"] is False
+        assert res_fp["verification"]["checks"]["deterministic_reproduction"] == "fail"
 
-        # 3. Real anomaly dataset with wrong SHA-256 -> dispute
+        # 3. Real anomaly dataset with wrong SHA-256 -> fail-closed dispute (bytes_digest="fail")
         res_sha = runner.execute_task(
             {
                 "lease_id": "l-sha",
@@ -955,7 +998,7 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
                         "methodology_code": "M2",
                         "title": "Public Record Anomaly: Threshold cluster",
                         "summary": "Summary of threshold cluster.",
-                        "entity_name": "NHM Assam Procurement Cell",
+                        "entity_name": "Central Medical Procurement Cell",
                         "monetary_exposure_inr": 100.0,
                         "rule_triggered": "GFR-2017-R161",
                         "benign_explanations": ["Lawful urgent indents."],
@@ -964,7 +1007,8 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
             }
         )
         assert res_sha["verification"]["verdict"] == "dispute"
-        assert res_sha["verification"]["checks"]["provenance_ok"] is False
+        assert res_sha["verification"]["checks"]["bytes_digest"] == "fail"
+        assert res_sha["verification"]["checks"]["deterministic_reproduction"] == "unrecorded"
 
     assert len(submitted) == 3
 
@@ -993,6 +1037,8 @@ def test_cli_join_status_missions_against_live_hub(
 
         def _patched_init(self: AgentRunner, config: AgentConfig, **kwargs: Any) -> None:
             kwargs.setdefault("http_client", asgi_client)
+            # Local temp fixture override for offline E2E CLI test (unattended local-file block tested separately)
+            kwargs["allow_local_files"] = True
             orig_init(self, config, **kwargs)
 
         def _patched_get(url: str, **kwargs: Any) -> httpx.Response:

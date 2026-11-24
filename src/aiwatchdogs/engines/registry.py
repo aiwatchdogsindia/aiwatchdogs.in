@@ -3,17 +3,64 @@
 from __future__ import annotations
 
 import inspect
+import json
 from collections.abc import Callable
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from aiwatchdogs.connectors import loader as connector_loader
+from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.engines import fiscal, procurement, proximity, schemes
 
+ENGINE_VERSION = "2.0.0"
+
+RULESET_VERSIONS: dict[str, str] = {
+    "M1": "M1-2026.11-v2",
+    "M2": "M2-2026.11-v2",
+    "M3": "M3-2026.11-v2",
+    "M4": "M4-2026.11-v2",
+    "M5": "M5-2026.11-v2",
+    "M6": "M6-2026.11-v2",
+    "M7": "M7-2026.11-v2",
+    "M8": "M8-2026.11-v2",
+}
+
+# Ephemeral / non-rule context keys excluded from deterministic rule-config hash
+_NON_RULE_CONTEXT_KEYS = frozenset(
+    {
+        "use_cache",
+        "max_download_bytes",
+        "max_decompressed_bytes",
+        "max_compression_ratio",
+        "max_zip_members",
+        "max_parse_rows",
+        "max_pdf_pages",
+        "dataset_url",
+        "source_url",
+        "canonical_url",
+        "artifact_title",
+        "secondary_url",
+        "secondary_dataset_url",
+        "secondary_path",
+        "secondary_records",
+        "expected_sha256",
+        "secondary_expected_sha256",
+        "secondary_sha256",
+        "official_publisher",
+        "source_landing_page",
+        "mirror_name",
+        "retrieval_url",
+        "allow_local_files",
+        "as_of_date",
+    }
+)
+
 EngineCallable = Callable[
     [list[dict[str, Any]], dict[str, Any] | None],
-    tuple[list[AuditLeadCandidate], int, float, str],
+    tuple[Any, ...],
 ]
 
 METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
@@ -21,53 +68,82 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "code": "M1",
         "name": "Single-Bidder & Shortened Bid-Window Concentration",
         "pillar": "procurement",
+        "ruleset_version": RULESET_VERSIONS["M1"],
         "statutory_anchors": ["GFR-2017-R166", "CVC-Single-Tender-Guidelines", "OECD-Procurement-RedFlags"],
-        "description": "Detects public buyers with >35% single-bidder competitive tenders, repeat single-bidder vendors (>=3), or shortened bid windows (<14 days).",
-        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv",
+        "description": (
+            "Detects public buyers with >35% single-bidder competitive tenders among positive bidder counts "
+            "(separating literal zero from blank/unknown counts, reporting full fiscal-year span and amount type, "
+            "and marking zero-positive-bid groups unevaluable), repeat single-bidder vendors (>=3), or shortened bid windows (<14 days)."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/1e12e516748130c15398b2501fb092bfa7413941/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv",
         "module": "aiwatchdogs.engines.procurement",
     },
     "M2": {
         "code": "M2",
-        "name": "Split-Tendering & GFR 2017 Threshold Hugging",
+        "name": "Split-Tendering & Jurisdiction-Aware Threshold Hugging",
         "pillar": "procurement",
-        "statutory_anchors": ["GFR-2017-R149", "GFR-2017-R154", "GFR-2017-R155", "GFR-2017-R161", "CVC-Splitting"],
-        "description": "Detects rolling 60-day clusters of >=3 purchase orders hugging 85%-99.9% of INR 50k, 2.5L, 10L, or 50L ceilings whose sum exceeds the ceiling.",
-        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv",
+        "ruleset_version": RULESET_VERSIONS["M2"],
+        "statutory_anchors": ["GFR-2017-R149", "GFR-2017-R154", "GFR-2017-R155", "GFR-2017-R161", "APPR-2020", "CVC-Splitting"],
+        "description": (
+            "Detects rolling 60-day clusters of >=3 dated awarded POs hugging 85%-99.9% of jurisdiction- and "
+            "effective-date-resolved ceilings summing above the ceiling; separately retains undated tender-estimate "
+            "price-band observations without claiming same-day ordering or statutory splitting."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/1e12e516748130c15398b2501fb092bfa7413941/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv",
         "module": "aiwatchdogs.engines.procurement",
     },
     "M3": {
         "code": "M3",
         "name": "Repeat-Winner Vendor Concentration & Bid-Spread Clustering",
         "pillar": "procurement",
+        "ruleset_version": RULESET_VERSIONS["M3"],
         "statutory_anchors": ["CCI-Bid-Rigging-Indicators", "OECD-Collusion-Guidelines"],
-        "description": "Computes buyer-category Herfindahl-Hirschman Index (HHI > 0.35), top-vendor share (>40%), and narrow L1-L2 bid-spread clustering (<=3%).",
-        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/main/data/ProcessedData/ocds-mapped-data/current/ocds_mapped_data.json.zip",
+        "description": (
+            "Computes buyer-category Herfindahl-Hirschman Index (HHI > 0.35), top-supplier share (>40%), "
+            "and narrow L1-L2 bid-spread clustering (<=3%), explicitly publishing which threshold fired, "
+            "the multi-year fiscal window, and excluded unawarded share."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/1e12e516748130c15398b2501fb092bfa7413941/data/ProcessedData/ocds-mapped-data/current/ocds_mapped_data.json.zip",
         "module": "aiwatchdogs.engines.procurement",
     },
     "M4": {
         "code": "M4",
-        "name": "Unit-Price Outlier & Post-Award Cost Escalation",
+        "name": "Unit-Price Outlier, Award-vs-Estimate Variance & Post-Award Escalation",
         "pillar": "procurement",
+        "ruleset_version": RULESET_VERSIONS["M4"],
         "statutory_anchors": ["GeM-L1-Benchmarking", "CVC-Variation-Orders"],
-        "description": "Flags normalized BOQ item unit prices exceeding peer median by >2.5 MAD (or >1.75x median), post-award variations >20%, and awards exceeding tender estimates by >20%.",
-        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/himachal-pradesh-health-procurement-OCDS/master/HP%20Health%20Procurements(FY%202017-18%20to%202020-21%20July).xlsx",
+        "description": (
+            "Flags normalized BOQ item unit prices exceeding peer median by >2.5 MAD (or >1.75x median), "
+            "post-award variations >20% (where final values exist), and award-vs-estimate variances >20% "
+            "explicitly distinguished from final contract cost overruns."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/himachal-pradesh-health-procurement-OCDS/e28aec0b039ab5c7eba4da758b20c297cd1f83a4/HP%20Health%20Procurements(FY%202017-18%20to%202020-21%20July).xlsx",
         "module": "aiwatchdogs.engines.procurement",
     },
     "M5": {
         "code": "M5",
-        "name": "March Rush Expenditure Pacing & Budget Variance",
+        "name": "March Rush Expenditure Pacing & Same-Year Budget Variance",
         "pillar": "budget",
+        "ruleset_version": RULESET_VERSIONS["M5"],
         "statutory_anchors": ["GFR-2017-R62(3)", "MoF-Cash-Management", "PAC-100Cr-Explanatory-Note"],
-        "description": "Flags ministries, state treasuries, and OBDS demands breaching Q4 >33% or March >15% ceilings and >25% BE/RE vs Actuals variances.",
-        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/child-budget-tracker/develop_0.1/data/processed_data/andhra_pradesh_child_treasury.csv",
+        "description": (
+            "Flags ministries, state treasuries, and matched OBDS grant/account heads breaching Q4 >33% "
+            "or March >15% ceilings and >25% same-year BE/RE vs Actuals variances while preserving unobserved "
+            "estimates and PAC explanatory note filing status as None."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/child-budget-tracker/ff03978dbc64fc6eba95fe6ad931b074c52df3c0/data/processed_data/andhra_pradesh_child_treasury.csv",
         "module": "aiwatchdogs.engines.fiscal",
     },
     "M6": {
         "code": "M6",
-        "name": "CAG Unresolved Audit Para & Repeat-Finding Tracker",
+        "name": "CAG Linked Audit Para & Dated Disposition Tracker",
         "pillar": "audit",
+        "ruleset_version": RULESET_VERSIONS["M6"],
         "statutory_anchors": ["CAG-Audit-Reports", "APMS-ATN-Guidelines", "PAC-ATR"],
-        "description": "Extracts and quantifies high-value unresolved or multi-cycle recurring CAG audit paragraphs from structured tables or official CAG PDF reports.",
+        "description": (
+            "Extracts quantified CAG audit paragraphs requiring explicit heading/sentence/table-cell linkage "
+            "for rupee impacts and dated follow-up evidence for ATN disposition and pending duration."
+        ),
         "reference_dataset_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2025/Report-of-CAG-March-2024-English-for-Approval_02-Feb-069ca6947a16ae2.43363906.pdf",
         "module": "aiwatchdogs.engines.fiscal",
     },
@@ -75,18 +151,28 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "code": "M7",
         "name": "PMGSY, MPLADS & MGNREGA Physical-Financial Verification",
         "pillar": "scheme",
+        "ruleset_version": RULESET_VERSIONS["M7"],
         "statutory_anchors": ["PMGSY-OMMAS", "MPLADS-eSAKSHI", "MGNREGA-Sec22-60-40", "MGNREGA-Sec17-SocialAudit"],
-        "description": "Verifies PMGSY financial vs km gaps, MPLADS >12m delayed/ungeotagged works, and MGNREGA 60:40 ratio breaches & unrecovered R9.2 social audit amounts.",
-        "reference_dataset_url": "https://raw.githubusercontent.com/aditya-kr86/PMGSY_Multiclass_ML/main/data/PMGSY_DATASET.csv",
+        "description": (
+            "Verifies PMGSY financial vs road-km gaps (preserving missing physical progress as None and marking "
+            "aggregate/fallback IDs), deterministic MPLADS works age using explicit as_of_date, and MGNREGA "
+            "60:40 wage-material ratios & R9.2 social audit recovery."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/aditya-kr86/PMGSY_Multiclass_ML/1538fd11fd6e64233bd494c79af55e6811266f34/data/PMGSY_DATASET.csv",
         "module": "aiwatchdogs.engines.schemes",
     },
     "M8": {
         "code": "M8",
         "name": "Corporate-Electoral-Procurement Proximity Disclosure Lead",
         "pillar": "corporate_political",
+        "ruleset_version": RULESET_VERSIONS["M8"],
         "statutory_anchors": ["MCA21-Public-Registry", "ECI-Public-Disclosures", "GFR-Conflict-of-Interest"],
-        "description": "Surfaces neutral governance disclosure leads for <180-day newly incorporated major winners, shared-DIN competing bidders, and SC-disclosed Electoral Bond x MCA CSR overlaps.",
-        "reference_dataset_url": "https://raw.githubusercontent.com/saisantoshv3/electoral_bonds/main/data/final.csv",
+        "description": (
+            "Surfaces neutral governance disclosure leads for <180-day newly incorporated major winners, "
+            "shared-DIN competing bidders, and SC-disclosed Electoral Bond x MCA CSR normalized-name overlaps "
+            "with explicit join_basis, ambiguity metadata, and disclosed_bond_value framing."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/saisantoshv3/electoral_bonds/aa8b9e022d29f762fd174fa9371ad2e02a85e777/data/final.csv",
         "module": "aiwatchdogs.engines.proximity",
     },
 }
@@ -103,31 +189,129 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
 }
 
 
-def get_engine_script_hash(methodology_code: str) -> str:
-    """Compute a deterministic SHA-256 hash of the engine source module."""
-    code = methodology_code.upper().strip()
-    if code not in _ENGINE_DISPATCH:
-        raise ValueError(f"Unknown methodology code: {methodology_code!r}. Expected one of {sorted(_ENGINE_DISPATCH)}.")
-    _, module = _ENGINE_DISPATCH[code]
+def _hash_module(module: Any) -> str:
     source_path = inspect.getsourcefile(module)
     if source_path and Path(source_path).exists():
         return compute_sha256(Path(source_path).read_bytes())
     return compute_sha256(inspect.getsource(module))
 
 
-def _sanitize_and_lint_lead(lead: AuditLeadCandidate) -> AuditLeadCandidate:
-    """Scrub any accidental PII from lead fields and enforce BNS Sec 356 neutrality linting."""
+def _normalize_as_of_date(value: str | date | datetime | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    if not text:
+        return None
+    raw = text.split("T", 1)[0]
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except ValueError:
+            continue
+    return raw
+
+
+def _canonical_rule_config(context: dict[str, Any] | None) -> dict[str, Any]:
+    if not context:
+        return {}
+    out: dict[str, Any] = {}
+    for key in sorted(context.keys()):
+        if key in _NON_RULE_CONTEXT_KEYS:
+            continue
+        val = context[key]
+        if isinstance(val, (str, int, float, bool)) or val is None:
+            out[key] = val
+        elif isinstance(val, (list, dict)):
+            try:
+                json.dumps(val, sort_keys=True)
+                out[key] = val
+            except TypeError:
+                out[key] = str(val)
+    return out
+
+
+def get_engine_fingerprint(
+    methodology_code: str,
+    *,
+    config: dict[str, Any] | None = None,
+    as_of_date: str | date | datetime | None = None,
+) -> dict[str, Any]:
+    """Compute a complete deterministic fingerprint manifest covering engine, loader, safety, ruleset, config, and as_of_date."""
+    code = methodology_code.upper().strip()
+    if code not in _ENGINE_DISPATCH:
+        raise ValueError(
+            f"Unknown methodology code: {methodology_code!r}. Expected one of {sorted(_ENGINE_DISPATCH)}."
+        )
+    _, engine_module = _ENGINE_DISPATCH[code]
+    ruleset_version = RULESET_VERSIONS[code]
+    normalized_as_of = _normalize_as_of_date(
+        as_of_date if as_of_date is not None else (config or {}).get("as_of_date")
+    )
+    rule_cfg = _canonical_rule_config(config)
+    config_hash = compute_sha256(json.dumps(rule_cfg, sort_keys=True, separators=(",", ":")))
+
+    engine_module_sha256 = _hash_module(engine_module)
+    loader_sha256 = _hash_module(connector_loader)
+    core_safety_sha256 = _hash_module(core_safety)
+    registry_sha256 = _hash_module(inspect.getmodule(get_engine_fingerprint))
+
+    manifest_core = {
+        "methodology_code": code,
+        "engine_version": ENGINE_VERSION,
+        "ruleset_version": ruleset_version,
+        "engine_module_sha256": engine_module_sha256,
+        "loader_sha256": loader_sha256,
+        "core_safety_sha256": core_safety_sha256,
+        "registry_sha256": registry_sha256,
+        "config_hash": config_hash,
+        "as_of_date": normalized_as_of,
+    }
+    combined_hash = compute_sha256(
+        json.dumps(manifest_core, sort_keys=True, separators=(",", ":"))
+    )
+    return {
+        **manifest_core,
+        "effective_config": rule_cfg,
+        "combined_hash": combined_hash,
+    }
+
+
+def get_engine_script_hash(
+    methodology_code: str,
+    *,
+    config: dict[str, Any] | None = None,
+    as_of_date: str | date | datetime | None = None,
+) -> str:
+    """Compute the deterministic combined SHA-256 fingerprint for an engine + loader + ruleset + config + as_of_date."""
+    return str(
+        get_engine_fingerprint(methodology_code, config=config, as_of_date=as_of_date)["combined_hash"]
+    )
+
+
+def _sanitize_and_lint_lead(lead: AuditLeadCandidate, ruleset_version: str) -> AuditLeadCandidate:
+    """Recursively scrub any accidental PII from all lead fields and enforce BNS Sec 356 neutrality linting."""
     clean_title, _ = scrub_pii(lead.title)
     clean_summary, _ = scrub_pii(lead.summary)
+    clean_entity, _ = scrub_pii(lead.entity_name)
+    clean_authority, _ = scrub_pii(lead.suggested_authority)
     clean_benign, _ = scrub_pii_in_obj(lead.benign_explanations)
     clean_citations, _ = scrub_pii_in_obj(lead.citations)
+    clean_metrics, _ = scrub_pii_in_obj(lead.anomaly_metrics)
 
     sanitized = lead.model_copy(
         update={
             "title": clean_title,
             "summary": clean_summary,
+            "entity_name": clean_entity,
+            "suggested_authority": clean_authority,
             "benign_explanations": clean_benign,
             "citations": clean_citations,
+            "anomaly_metrics": clean_metrics,
+            "ruleset_version": lead.ruleset_version or ruleset_version,
         }
     )
     lint = lint_neutrality(sanitized.title, sanitized.summary, sanitized.benign_explanations)
@@ -142,16 +326,34 @@ def run_engine(
     methodology_code: str,
     records: list[dict[str, Any]],
     context: dict[str, Any] | None = None,
+    *,
+    as_of_date: str | date | datetime | None = None,
 ) -> EngineRunResult:
-    """Run one deterministic civic-audit engine (M1-M8) and enforce neutrality + PII safety."""
+    """Run one deterministic civic-audit engine (M1-M8) with full fingerprint manifest, neutrality & recursive PII safety."""
     code = methodology_code.upper().strip()
     if code not in _ENGINE_DISPATCH:
-        raise ValueError(f"Unknown methodology code: {methodology_code!r}. Expected one of {sorted(_ENGINE_DISPATCH)}.")
+        raise ValueError(
+            f"Unknown methodology code: {methodology_code!r}. Expected one of {sorted(_ENGINE_DISPATCH)}."
+        )
+
+    effective_ctx = dict(context or {})
+    normalized_as_of = _normalize_as_of_date(
+        as_of_date if as_of_date is not None else effective_ctx.get("as_of_date")
+    )
+    if normalized_as_of is not None:
+        effective_ctx["as_of_date"] = normalized_as_of
 
     engine_fn, _ = _ENGINE_DISPATCH[code]
-    raw_leads, cleared_count, monetary_audited, summary = engine_fn(records, context)
-    verified_leads = [_sanitize_and_lint_lead(lead) for lead in raw_leads]
-    script_hash = get_engine_script_hash(code)
+    raw_result = engine_fn(records, effective_ctx or None)
+    if len(raw_result) == 5:
+        raw_leads, cleared_count, monetary_audited, summary, engine_meta = raw_result
+    else:
+        raw_leads, cleared_count, monetary_audited, summary = raw_result
+        engine_meta = {}
+
+    ruleset_version = RULESET_VERSIONS[code]
+    verified_leads = [_sanitize_and_lint_lead(lead, ruleset_version) for lead in raw_leads]
+    fingerprint = get_engine_fingerprint(code, config=effective_ctx, as_of_date=normalized_as_of)
 
     return EngineRunResult(
         methodology_code=code,
@@ -159,6 +361,12 @@ def run_engine(
         monetary_audited_inr=monetary_audited,
         leads=verified_leads,
         cleared_count=cleared_count,
-        script_hash=script_hash,
+        unevaluable_count=int(engine_meta.get("unevaluable_count", 0)),
+        script_hash=str(fingerprint["combined_hash"]),
         summary=summary,
+        engine_version=ENGINE_VERSION,
+        ruleset_version=ruleset_version,
+        as_of_date=normalized_as_of or engine_meta.get("as_of_date"),
+        fingerprint_manifest=fingerprint,
+        amount_type=engine_meta.get("amount_type"),
     )
