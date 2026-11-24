@@ -5490,3 +5490,9 @@ code.font-mono {
     align-items: stretch;
   }
 }
+
+.foot-analytics-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
