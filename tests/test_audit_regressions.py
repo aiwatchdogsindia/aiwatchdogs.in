@@ -52,7 +52,7 @@ from aiwatchdogs.hub.app import create_app
 from aiwatchdogs.hub.database import LATEST_SCHEMA_VERSION, Database
 from aiwatchdogs.hub.seed import REAL_AUDIT_TASKS, seed_database
 from aiwatchdogs.hub.templates import render_join_sh
-from tests.test_engines import _create_minimal_pdf, _create_minimal_xlsx
+from test_engines import _create_minimal_pdf, _create_minimal_xlsx
 
 cli_runner = CliRunner()
 

@@ -14,7 +14,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from aiwatchdogs.hub.database import Database, utc_now_iso
+from aiwatchdogs.hub.database import (
+    Database,
+    is_postgres_required,
+    resolve_database_url,
+    utc_now_iso,
+)
 from aiwatchdogs.hub.desk import DeskService
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker
@@ -507,7 +512,20 @@ _DEFAULT_APP: FastAPI | None = None
 
 
 def get_default_app() -> FastAPI:
-    """Return the lazily-initialized process-wide default Hub ASGI application."""
+    """Return the lazily-initialized process-wide default Hub ASGI application.
+
+    Fails closed with a degraded 503 ASGI app when running in production
+    (``VERCEL=1`` or ``AIWATCHDOGS_REQUIRE_POSTGRES=1``) without ``DATABASE_URL``
+    or ``POSTGRES_URL`` configured.
+    """
+    if is_postgres_required() and resolve_database_url() is None:
+        return create_degraded_app(
+            reason=(
+                "Durable PostgreSQL storage is required in production "
+                "(DATABASE_URL or POSTGRES_URL is not configured). "
+                "Refusing to fall back to ephemeral instance-local SQLite."
+            )
+        )
     global _DEFAULT_APP
     if _DEFAULT_APP is None:
         _DEFAULT_APP = create_app()
