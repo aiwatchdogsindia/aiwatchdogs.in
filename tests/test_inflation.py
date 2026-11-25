@@ -164,6 +164,7 @@ def test_dataset_download_follows_opaque_cursor(monkeypatch):
         cursor = request.url.params.get("after")
         return httpx.Response(200, json={
             "slug": PROJECT_SLUG,
+            "completed_tasks": 1,
             "reports": [{"task_id": "prj-cpi-rural", "batch": 2 if cursor else 1}],
             "next_after": None if cursor else "opaque:cursor",
         })
@@ -171,3 +172,60 @@ def test_dataset_download_follows_opaque_cursor(monkeypatch):
     monkeypatch.setattr(httpx, "Client", lambda **kw: retained(transport=httpx.MockTransport(handler), **kw))
     assert [row["batch"] for row in _download_dataset()["reports"]] == [1, 2]
     assert query == [{"limit": "20"}, {"limit": "20", "after": "opaque:cursor"}]
+
+
+def test_dataset_download_restarts_when_completion_sorts_before_cursor(monkeypatch):
+    retained = httpx.Client
+    pages = iter([
+        (None, 2, ["middle"], "old:cursor"),
+        ("old:cursor", 3, ["z-last"], None),
+        (None, 3, ["a-first"], "new:cursor"),
+        ("new:cursor", 3, ["middle", "z-last"], None),
+    ])
+
+    def handler(request):
+        after, completed, ids, cursor = next(pages)
+        assert request.url.params.get("after") == after
+        return httpx.Response(200, json={
+            "slug": PROJECT_SLUG, "completed_tasks": completed,
+            "reports": [{"task_id": f"prj-{task_id}", "batch": 1} for task_id in ids],
+            "next_after": cursor,
+        })
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: retained(transport=httpx.MockTransport(handler), **kw))
+    snapshot = _download_dataset()
+    assert snapshot["completed_tasks"] == 3
+    assert [row["task_id"] for row in snapshot["reports"]] == ["prj-a-first", "prj-middle", "prj-z-last"]
+
+
+def test_dataset_download_rejects_incomplete_snapshot_after_three_attempts(monkeypatch):
+    retained = httpx.Client
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={
+            "slug": PROJECT_SLUG, "completed_tasks": 2,
+            "reports": [{"task_id": "prj-cpi-rural", "batch": 1}],
+            "next_after": None,
+        })
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: retained(transport=httpx.MockTransport(handler), **kw))
+    with pytest.raises(ValueError, match="consistent inflation snapshot after three attempts"):
+        _download_dataset()
+    assert len(requests) == 3
+
+
+def test_dataset_download_rejects_duplicate_report_batches(monkeypatch):
+    retained = httpx.Client
+    duplicate = {"task_id": "prj-cpi-rural", "batch": 1}
+
+    def handler(request):
+        return httpx.Response(200, json={
+            "slug": PROJECT_SLUG, "completed_tasks": 1,
+            "reports": [duplicate, duplicate], "next_after": None,
+        })
+
+    monkeypatch.setattr(httpx, "Client", lambda **kw: retained(transport=httpx.MockTransport(handler), **kw))
+    with pytest.raises(ValueError, match="duplicate report batch"):
+        _download_dataset()

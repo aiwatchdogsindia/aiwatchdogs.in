@@ -34,8 +34,8 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
 
         inflation = client.get("/api/missions/independent-india-inflation").json()
         assert len({task["id"] for task in inflation["tasks"]}) == 100
-        police = client.get("/api/missions/metro-police-finances").json()
-        assert police["tasks"]
+        police = client.get("/api/missions/police-finances").json()
+        assert len({task["id"] for task in police["tasks"]}) == 100
 
         runner = AgentRunner(
             AgentConfig(handle="website-volunteer", hub_url="http://testserver", provider="rule-engine",
@@ -51,6 +51,7 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         lease = runner.claim_next(preferred_mission=SLUG)
         assert lease and lease["task"]["methodology_code"] == "W1"
         task = lease["task"]
+        assert lease["role"]["submit_outcomes"] == "observations"
         report_url = f"{public_url}/observations/{task['id']}"
         incomplete = client.post(
             "/api/desk/submit", headers=auth,

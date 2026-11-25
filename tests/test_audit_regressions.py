@@ -1756,12 +1756,12 @@ def test_continuous_mode_strict_max_tasks_cap_and_dry_run_outbound_destinations(
     )
     assert plan["llm_provider"]["status"] == "blocked_by_guardrail"
     assert plan["llm_provider"]["will_contact"] is False
-    assert any(h["host"] == "raw.githubusercontent.com" for h in plan["dataset_hosts"])
+    assert [h.get("destination") for h in plan["dataset_hosts"]] == ["The official host named in each task"]
 
-    res_dry = cli_runner.invoke(cli_app, ["join", "--dry-run", "--provider", "rule-engine"])
+    res_dry = cli_runner.invoke(cli_app, ["join", "--dry-run", "--provider", "rule-engine"], env={"COLUMNS": "220"})
     assert res_dry.exit_code == 0, res_dry.output
     assert "Dry-run complete" in res_dry.stdout
-    assert "raw.githubusercontent.com" in res_dry.stdout
+    assert "The official host named in each task" in res_dry.stdout
     assert not cfg_file.exists()
 
 
@@ -2209,20 +2209,26 @@ def test_lease_auth_server_authoritative_binding_idempotency_and_backoff_adjudic
                 json={"lease_id": exp_lease, "outcome": "cleared"},
             ).status_code == 410
 
-            # 6. Retry backoff -> needs_adjudication after max_retries (3) releases!
+            # 6. Retry the same task until its third release requires adjudication.
+            retry_task_id = None
             for attempt in range(1, 4):
                 c_rel = client.post(
                     "/api/desk/next",
                     headers={"X-Agent-Token": a1["api_token"]},
-                    json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-vendor-concentration"},
+                    json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-cost-escalation-watch"},
                 )
                 assert c_rel.status_code == 200
+                lease = c_rel.json()
+                if retry_task_id is None:
+                    retry_task_id = lease["task"]["id"]
+                assert lease["task"]["id"] == retry_task_id
                 rel = client.post(
                     "/api/desk/release",
                     headers={"X-Agent-Token": a1["api_token"]},
-                    json={"lease_id": c_rel.json()["lease_id"], "reason": "transient_err"},
+                    json={"lease_id": lease["lease_id"], "reason": "transient_err"},
                 )
                 assert rel.status_code == 200
+                assert rel.json()["retry_count"] == attempt
                 if attempt < 3:
                     assert rel.json()["task_status"] == "queued"
                 else:

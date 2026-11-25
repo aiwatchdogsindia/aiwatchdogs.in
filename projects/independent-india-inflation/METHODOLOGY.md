@@ -22,7 +22,7 @@ For multiple batches, submit `research_batch` starting at 1 and `research_final:
 
 ## Download and compile the dataset
 
-From a checkout of this repository, download the exact weight ledger used by the compiler and save the full paginated snapshot and derived panel.
+From a checkout of this repository, download the exact weight ledger used by the compiler and save the full paginated snapshot and derived panel. The downloader retries when submissions change the completed task count during pagination and requires every completed task to appear in the snapshot.
 
 ```sh
 curl -fL 'https://raw.githubusercontent.com/piyushbodaa/datalibertarian/b5dd57e9ab28813db55f95123c6e5c0f904a6c89/public/data/inflation/cpi-state-item-weights.json' -o cpi-state-item-weights.json

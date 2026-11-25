@@ -440,3 +440,17 @@ const WORK_TYPE_LABELS: Record<string, string> = {
 export function workTypeLabel(type?: string): string {
   return (type && WORK_TYPE_LABELS[type]) || 'Audit';
 }
+
+const TASK_STATUS_LABELS: Record<string, string> = {
+  queued: 'Open',
+  claimed: 'In progress',
+  completed: 'Done',
+  settled: 'Closed',
+  needs_adjudication: 'Paused, will retry',
+  failed: 'Paused',
+};
+
+/** Plain words for a task's state on the project page. */
+export function taskStatusLabel(status: string): string {
+  return TASK_STATUS_LABELS[status] || status.replace(/_/g, ' ');
+}

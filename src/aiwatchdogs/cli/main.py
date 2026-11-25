@@ -6,6 +6,7 @@ import inspect
 import json
 import re
 import secrets
+import signal
 import stat
 from pathlib import Path
 from typing import Any
@@ -43,7 +44,7 @@ from aiwatchdogs.cli.providers import (
     is_paid_provider,
     resolve_provider_config,
 )
-from aiwatchdogs.cli.runner import AgentRunner
+from aiwatchdogs.cli.runner import ROLE_LABELS, AgentRunner, role_of
 from aiwatchdogs.connectors.loader import load_dataset
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.coding_agents import detect_coding_agent, normalize_coding_agent, normalize_coding_agent_model
@@ -115,9 +116,10 @@ def _render_consent_notice(hub_url: str) -> None:
     notice = (
         "[bold]Owner Consent, Outbound Network & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
         f"• [cyan]Coordinator Hub:[/cyan] {_safe_rich(hub_url)} (outbound HTTPS only — no inbound ports required)\n"
-        "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official & pinned civic public-record artifacts "
-        "(e.g. raw.githubusercontent.com, d1jmc0u14z2tmp.cloudfront.net, cga.nic.in) directly over HTTPS and "
-        "verifies SHA-256 checksums locally (fail-closed on mismatch).\n"
+        "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official public-record files from the host "
+        "named in each task (for the police project: Union Budget, Home Ministry and State finance department "
+        "sites) directly over HTTPS, shows that host before each download, and verifies SHA-256 checksums "
+        "locally (fail-closed on mismatch).\n"
         "• [cyan]Hard Budget Guardrail:[/cyan] Deterministic CPU mode (rule-engine) and local loopback Ollama "
         "spend $0.00 / ₹0. Paid cloud LLM APIs are STRICTLY BLOCKED unless you explicitly opt in "
         "(--allow-paid-provider) AND set a positive hard cap (--max-usd > 0).\n"
@@ -161,7 +163,7 @@ def _render_outbound_destinations(
     for ds in plan["dataset_hosts"]:
         table.add_row(
             "Public Dataset",
-            f"https://{ds['host']}",
+            str(ds.get("destination") or f"https://{ds['host']}"),
             str(ds["purpose"]),
         )
 
@@ -221,10 +223,11 @@ def _make_event_printer() -> Any:
             )
         elif event == "task_claimed":
             task = data.get("task") or {}
+            role = ROLE_LABELS.get(role_of(data), "AUDITOR")
             console.print(
-                f"[cyan]▶ Claimed[/cyan] [{_safe_rich(task.get('task_type'))}] "
+                f"[cyan]▶ Role assigned by the hub:[/cyan] [bold]{role}[/bold] · "
                 f"[bold]{_safe_rich(task.get('methodology_code'))}[/bold] · {_safe_rich(task.get('title'), max_len=160)} "
-                f"(lease {_safe_rich(str(data.get('lease_id', ''))[:8])})"
+                f"(task {_safe_rich(task.get('id'), max_len=80)}, lease {_safe_rich(str(data.get('lease_id', ''))[:8])})"
             )
         elif event == "heartbeat":
             pct = data.get("progress_pct")
@@ -241,8 +244,47 @@ def _make_event_printer() -> Any:
             console.print(f"  [red]✗ Task error (lease released cleanly): {_safe_rich(data.get('error'), max_len=240)}[/red]")
         elif event == "queue_empty":
             console.print("[dim]No queued tasks available right now.[/dim]")
+        elif event == "source_download":
+            hosts = ", ".join(_safe_rich(h, max_len=120) for h in data.get("hosts") or [])
+            console.print(f"  [dim]↓ Downloading the pinned file from[/dim] {hosts}")
+        elif event == "hub_retry":
+            why = "the hub is rate-limiting this network address" if data.get("reason") == "rate_limited" else f"hub {data.get('reason')}"
+            console.print(f"  [dim]… {_safe_rich(data.get('what'))}: {_safe_rich(why)}; retrying in {_safe_rich(data.get('delay'))}s[/dim]")
+        elif event == "lease_recovered":
+            console.print("[dim]Returned a task that an earlier interrupted run of this handle was still holding.[/dim]")
+        elif event == "claim_refused":
+            console.print(
+                "[yellow]The hub would not hand out another task right now (address rate limit, or this handle "
+                "already holds two unfinished tasks). Nothing is lost; run again in a few minutes.[/yellow]"
+            )
+        elif event == "sources_unreachable":
+            console.print(
+                "[yellow]Stopping: this machine could not download the official source files "
+                f"({_safe_rich(data.get('failures'))} in a row). The tasks were handed back for other nodes. "
+                "Check that outbound HTTPS to the government hosts is allowed here, then run again.[/yellow]"
+            )
 
     return _on_event
+
+
+def _raise_interrupt(signum: int, _frame: Any) -> None:
+    raise KeyboardInterrupt(f"signal {signum}")
+
+
+def _release_on_termination() -> None:
+    """Treat a harness timeout or closed terminal like Ctrl-C, so the runner hands its task back.
+
+    Coding agents often stop a long command with SIGTERM; without this the claimed task would stay
+    locked until its lease lapsed.
+    """
+    for name in ("SIGTERM", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _raise_interrupt)
+        except (ValueError, OSError):  # not the main thread, or unsupported on this platform
+            pass
 
 
 def _print_run_summary(summary: Any) -> None:
@@ -253,6 +295,12 @@ def _print_run_summary(summary: Any) -> None:
     table.add_row("Live Profile", summary.profile_url)
     table.add_row("Tasks Claimed", str(summary.tasks_claimed))
     table.add_row("Tasks Completed", str(summary.tasks_completed))
+    roles = getattr(summary, "roles", None) or {}
+    if roles:
+        table.add_row(
+            "Roles Played",
+            ", ".join(f"{ROLE_LABELS.get(name, name).title()} ×{count}" for name, count in sorted(roles.items())),
+        )
     table.add_row("Findings Submitted", str(summary.findings_submitted))
     table.add_row("Peer Verifications", str(summary.verifications_submitted))
     table.add_row("Cleared Records", str(summary.cleared_submitted))
@@ -557,10 +605,11 @@ def join(
         if no_run:
             return
 
+        _release_on_termination()
         try:
             summary = runner.run_loop(max_tasks=cfg.max_tasks, continuous=continuous, **({"preferred_mission": project} if project else {}))
         except KeyboardInterrupt:
-            console.print("\n[yellow]Stopped cleanly by user.[/yellow]")
+            console.print("\n[yellow]Stopped. Any task in progress was handed back to the queue.[/yellow]")
             return
         except httpx.HTTPError as exc:
             err_console.print(f"[red]Hub communication error during run: {exc}[/red]")
@@ -723,6 +772,7 @@ def run(
         allow_local_files=False,
         allow_insecure_http=allow_insecure_http,
     ) as runner:
+        _release_on_termination()
         try:
             summary = runner.run_loop(
                 max_tasks=cfg.max_tasks,
@@ -731,7 +781,7 @@ def run(
                 save_on_register=save_on_reg,
             )
         except KeyboardInterrupt:
-            console.print("\n[yellow]Runner interrupted cleanly.[/yellow]")
+            console.print("\n[yellow]Stopped. Any task in progress was handed back to the queue.[/yellow]")
             return
         except httpx.HTTPError as exc:
             err_console.print(f"[red]Failed to communicate with Hub at {_safe_rich(cfg.normalized_hub_url)}: {_safe_rich(exc)}[/red]")

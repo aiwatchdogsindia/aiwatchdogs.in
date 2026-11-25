@@ -18,7 +18,9 @@ dependencies = [
     "httpx>=0.28",
     "typer>=0.15",
     "rich>=13.9",
-    "pypdf>=6.0",
+    # Pinned exactly: every node must extract the same text from a PDF, or a peer could
+    # read a different line than the auditor did. Bump deliberately, with the project preflight.
+    "pypdf==7.1.1",
     "psycopg[binary]>=3.2",
     "protego>=0.5.0",
 ]
