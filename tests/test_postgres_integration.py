@@ -577,3 +577,19 @@ def test_postgres_security_hardening_constraints_indexes_and_races(pg_schema_url
         assert len(set(draft_ids)) == 1
     finally:
         db.close()
+
+
+def test_read_only_postgres_refuses_writes() -> None:
+    Database(database_url=TEST_POSTGRES_URL).close()
+    db = Database(database_url=TEST_POSTGRES_URL, read_only=True)
+    try:
+        for _ in range(2):  # still read-only after the first transaction ends
+            with db.read() as conn:
+                assert conn.execute("SELECT 1 AS ok").fetchone()["ok"] == 1
+                with pytest.raises(Exception, match="read-only transaction"):
+                    conn.execute("UPDATE missions SET title = 'x'")
+        db._reconnect_pg()
+        with db.read() as conn, pytest.raises(Exception, match="read-only transaction"):
+            conn.execute("DELETE FROM missions")
+    finally:
+        db.close()

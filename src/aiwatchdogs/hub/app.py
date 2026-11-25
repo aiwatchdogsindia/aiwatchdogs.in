@@ -24,6 +24,7 @@ from aiwatchdogs.core.usage import MAX_TOKENS, UsageReport
 from aiwatchdogs.hub.database import (
     Database,
     is_postgres_required,
+    is_read_only_deployment,
     redact_database_url,
     resolve_database_url,
     utc_now_iso,
@@ -71,6 +72,23 @@ _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 
 class _RequestBodyTooLargeError(Exception):
     """Internal sentinel raised when a streamed request body exceeds MAX_REQUEST_BODY_BYTES."""
+
+
+class ReadOnlyMiddleware:
+    """Refuse every request that could write, for preview deployments on the live database."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") == "http" and scope.get("method") not in {"GET", "HEAD", "OPTIONS"}:
+            response = JSONResponse(
+                status_code=403,
+                content={"detail": "This is a read-only preview. Use https://aiwatchdogs.in."},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 class MaxBodySizeMiddleware:
@@ -441,12 +459,14 @@ def create_app(
     require_postgres: bool = False,
 ) -> FastAPI:
     """Factory creating a configured AI Watchdogs India Coordinator Hub FastAPI app."""
+    read_only = is_read_only_deployment()
     db = Database(
         db_path=db_path,
         database_url=database_url,
         require_postgres=require_postgres,
+        read_only=read_only,
     )
-    if seed:
+    if seed and not read_only:
         seed_database(db)
         sync_projects(db)
     broker = SSEBroker(db=db)
@@ -498,6 +518,9 @@ def create_app(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={"detail": _sanitize_validation_obj(exc.errors())},
         )
+
+    if read_only:
+        application.add_middleware(ReadOnlyMiddleware)
 
     # Middleware order (inner -> outer): MaxBodySize -> CORS -> SecurityHeaders
     application.add_middleware(MaxBodySizeMiddleware, max_bytes=MAX_REQUEST_BODY_BYTES)
