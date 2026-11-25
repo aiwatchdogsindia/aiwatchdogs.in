@@ -64,6 +64,33 @@ _CHANGELOG_ENTRIES: tuple[tuple[str, tuple[tuple[str, int | None], ...]], ...] =
     (
         "25 Nov 2026",
         (
+            (
+                "Added public contributor leaderboards and one-line join prompts to /projects and all three project pages, "
+                'trimmed task tables to 6 rows behind "Show all", and added a pick-any-task one-line runner (task_id in the API and --task-id in the CLI).',
+                28,
+            ),
+            (
+                "Added interactive progress and results charts across projects: hoverable progress rings and donuts, "
+                "a clickable 100-task mosaic, police budget divergence bars, a 7-checkpoint gov.in GIGW compliance chart, "
+                "and a rural/urban state CPI matrix.",
+                28,
+            ),
+            (
+                "Made every public page accessible to both humans and AI agents: View as Agent toggle in the header and footer, "
+                "live .md twin pages and Accept: text/markdown negotiation, /llms.txt, /llms-full.txt, /robots.txt, /sitemap.xml, "
+                "/.well-known discovery cards, a read-only Streamable HTTP /mcp server, and browser WebMCP tools.",
+                28,
+            ),
+            (
+                'Rewrote the Project Brief (/brief) into a one-page guide, fixed spacing in "The swarm", unified plain-English tags '
+                'across the site, and rebuilt "How to read this site".',
+                28,
+            ),
+            (
+                "Fixed the header focus outline and transparent logo seam, realigned the footer, removed Treasury Ledger and CSV/JSON export links, "
+                'shortened the footer blurb, added Telegram (t.me/aiwatchdogsin), and opened Discord to everyone ("Join the AI Watchdogs community").',
+                28,
+            ),
             ("The command-line agent now shows the host it downloads each file from.", 27),
             (
                 "The police project now covers the whole country: 100 checks on official budget papers for "
