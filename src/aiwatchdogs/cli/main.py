@@ -7,6 +7,7 @@ import json
 import re
 import secrets
 import stat
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -21,10 +22,13 @@ from rich.table import Table
 from aiwatchdogs.cli.config import (
     DEFAULT_HUB_URL,
     AgentConfig,
+    AmbiguousConfigError,
+    explicit_config_path,
     get_config_path,
     get_spend_ledger_path,
     load_config,
     load_daily_spend,
+    load_legacy_config_for_handle,
     mask_token,
     normalize_hub_origin,
     resolve_reusable_token,
@@ -265,23 +269,45 @@ def _print_run_summary(summary: Any) -> None:
     if done:
         console.print(
             "Coding agents: report this session's tokens, time and iterations (the check itself is measured for you):\n"
-            f"  aiwatchdogs report-usage {' '.join('--task-id ' + _safe_rich(t) for t in done)} "
+            f"  aiwatchdogs report-usage --handle {_safe_rich(summary.handle)} "
+            f"{' '.join('--task-id ' + _safe_rich(t) for t in done)} "
             "--input-tokens N --cached-input-tokens N --output-tokens N --iterations N --minutes N",
             soft_wrap=True,
         )
 
 
-def _safe_load_existing_config() -> tuple[AgentConfig | None, bool]:
-    """Load existing config safely without deleting or overwriting corrupt files."""
-    cfg_path = get_config_path()
+def _resolve_config_path(handle: str | None = None) -> Path:
+    """Resolve the config path for ``handle``, exiting with a clear message when it is ambiguous."""
+    try:
+        return get_config_path(handle=handle)
+    except AmbiguousConfigError as exc:
+        err_console.print(f"[red]{_safe_rich(exc)}[/red]")
+        raise typer.Exit(code=2) from exc
+    except ValueError as exc:
+        err_console.print(f"[red]{_safe_rich(exc)}[/red]")
+        raise typer.Exit(code=2) from exc
+
+
+def _safe_load_existing_config(handle: str | None = None) -> tuple[AgentConfig | None, bool]:
+    """Load existing config safely without deleting or overwriting corrupt files.
+
+    With a handle whose own file does not exist yet, falls back to reading (never rewriting)
+    the legacy config.json when it belongs to that same handle, so its token is reused.
+    """
+    cfg_path = _resolve_config_path(handle)
     existed = cfg_path.is_file()
     if not existed:
+        if handle and explicit_config_path() is None:
+            return load_legacy_config_for_handle(handle), False
         return None, False
     try:
         return load_config(cfg_path), True
     except ValueError as exc:
         err_console.print(f"[yellow]Warning: existing config at {cfg_path} could not be parsed ({exc}).[/yellow]")
         return None, True
+
+
+_HANDLE_OPTION_HELP = "Which saved agent to use, when several are saved on this machine."
 
 
 @app.command()
@@ -355,7 +381,17 @@ def join(
 
     _render_consent_notice(hub_clean)
 
-    existing, had_existing_file = _safe_load_existing_config()
+    if handle or explicit_config_path() is not None:
+        existing, had_existing_file = _safe_load_existing_config(handle)
+    else:
+        # No handle yet: only suggest one from a single saved identity; never fail on several.
+        try:
+            existing, had_existing_file = None, False
+            _only_path = get_config_path()
+            if _only_path.is_file():
+                existing = load_config(_only_path)
+        except ValueError:
+            existing = None
     suggested_handle = handle or (existing.handle if existing and existing.handle else _default_handle())
 
     chosen_allow_paid = allow_paid_provider
@@ -443,6 +479,10 @@ def join(
     if model:
         selected_prov = selected_prov.model_copy(update={"model": model})
 
+    # Each handle has its own credential file, so joining never overwrites another agent's token.
+    chosen_handle = chosen_handle.strip().lower()
+    existing, had_existing_file = _safe_load_existing_config(chosen_handle)
+
     # Reuse stored token ONLY when both normalized hub origin AND handle match!
     reused_token = resolve_reusable_token(existing, hub_url=hub_clean, handle=chosen_handle)
 
@@ -461,7 +501,7 @@ def join(
         coding_agent_model=normalize_coding_agent_model(coding_agent_model) or (normalize_coding_agent_model(getattr(existing, "coding_agent_model", "")) if existing else ""),
     )
 
-    cfg_path = get_config_path()
+    cfg_path = _resolve_config_path(cfg.handle)
     daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
     _render_outbound_destinations(
         cfg.normalized_hub_url,
@@ -530,7 +570,7 @@ def join(
 
 @app.command()
 def run(
-    handle: str | None = typer.Option(None, "--handle", help="Override saved handle."),
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help="Which saved agent to run (each handle has its own credential file)."),
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Override saved Hub URL."),
     provider: str | None = typer.Option(None, "--provider", help="Override provider (rule-engine, ollama, gemini, etc.)."),
     model: str | None = typer.Option(None, "--model", help="Override model name."),
@@ -569,8 +609,8 @@ def run(
     ),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
-    cfg_path = get_config_path()
-    saved, had_existing_file = _safe_load_existing_config()
+    cfg_path = _resolve_config_path(handle)
+    saved, had_existing_file = _safe_load_existing_config(handle)
     identity_changed = False
 
     if saved is None:
@@ -593,6 +633,7 @@ def run(
             daily_max_usd=daily_max_usd,
             allow_paid_provider=eff_allow_paid,
         )
+        cfg_path = _resolve_config_path(cfg.handle)
     else:
         cfg = saved.model_copy()
         target_handle = (handle or cfg.handle).strip().lower()
@@ -974,6 +1015,7 @@ def audit(
 @app.command()
 def status(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help=_HANDLE_OPTION_HELP),
     dry_run: bool = typer.Option(
         False,
         "--dry-run",
@@ -986,8 +1028,8 @@ def status(
     ),
 ) -> None:
     """Display live swarm metrics from the Hub (/api/head) and local outbound network / budget posture."""
-    cfg_path = get_config_path()
-    saved, _ = _safe_load_existing_config()
+    cfg_path = _resolve_config_path(handle)
+    saved, _ = _safe_load_existing_config(handle)
     hub_url = _validate_hub_or_exit(
         hub or (saved.hub_url if saved else DEFAULT_HUB_URL),
         allow_insecure_http=allow_insecure_http,
@@ -1149,9 +1191,10 @@ def report_usage(
     iterations: int | None = typer.Option(None, "--iterations", min=0, help="Model turns."),
     tool_calls: int | None = typer.Option(None, "--tool-calls", min=0),
     minutes: float | None = typer.Option(None, "--minutes", min=0.0),
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help=_HANDLE_OPTION_HELP),
 ) -> None:
     """Report the tokens, time and iterations your coding agent used on completed tasks."""
-    cfg, _ = _safe_load_existing_config()
+    cfg, _ = _safe_load_existing_config(handle)
     if cfg is None or not cfg.api_token:
         err_console.print("[red]No registered agent found. Run `aiwatchdogs join` first.[/red]")
         raise typer.Exit(code=1)
@@ -1186,9 +1229,11 @@ def report_usage(
 
 
 @app.command()
-def whoami() -> None:
+def whoami(
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help=_HANDLE_OPTION_HELP),
+) -> None:
     """Show the currently configured local watchdog handle, provider, budget guardrails, and outbound destinations."""
-    cfg_path = get_config_path()
+    cfg_path = _resolve_config_path(handle)
     cfg = load_config(cfg_path)
     if cfg is None:
         console.print(

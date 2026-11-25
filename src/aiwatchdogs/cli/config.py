@@ -1,10 +1,16 @@
-"""Persistent contributor agent configuration with atomic 0600 persistence & advisory locking."""
+"""Persistent contributor agent configuration with atomic 0600 persistence & advisory locking.
+
+Each handle keeps its own credential file (``~/.config/aiwatchdogs/agents/<handle>.json``) so
+several agents on one machine never overwrite each other's token. The older single
+``config.json`` is still read, and still used when it is the only identity on the machine.
+"""
 
 from __future__ import annotations
 
 import json
 import logging
 import os
+import re
 import stat
 import tempfile
 from contextlib import contextmanager
@@ -26,6 +32,9 @@ DEFAULT_HUB_URL = "https://aiwatchdogs.in"
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "aiwatchdogs" / "config.json"
 ENV_CONFIG_PATH = "AIWATCHDOGS_CONFIG_PATH"
 ENV_API_TOKEN = "AIWATCHDOGS_API_TOKEN"
+ENV_HANDLE = "AIWATCHDOGS_HANDLE"
+AGENTS_DIRNAME = "agents"
+_HANDLE_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 DEFAULT_SPEND_LEDGER_FILENAME = "spend_ledger.json"
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
@@ -157,19 +166,116 @@ def resolve_reusable_token(
     return ""
 
 
-def get_config_path(override: str | Path | None = None) -> Path:
-    """Resolve the config file path, honoring explicit override or AIWATCHDOGS_CONFIG_PATH."""
+class AmbiguousConfigError(ValueError):
+    """Several saved agent identities exist and no handle was given to choose between them."""
+
+    def __init__(self, handles: list[str]) -> None:
+        self.handles = handles
+        super().__init__(
+            "Several agents are saved on this machine ("
+            + ", ".join(handles)
+            + "). Pass --handle <HANDLE> (or set AIWATCHDOGS_HANDLE) to choose one."
+        )
+
+
+def _clean_handle(handle: str | None) -> str:
+    return str(handle or "").strip().lower()
+
+
+def get_agents_dir() -> Path:
+    """Directory holding one credential file per handle."""
+    return DEFAULT_CONFIG_PATH.parent / AGENTS_DIRNAME
+
+
+def get_handle_config_path(handle: str) -> Path:
+    """Per-handle credential file. Rejects handles that are not safe file names."""
+    cleaned = _clean_handle(handle)
+    if not _HANDLE_FILE_RE.fullmatch(cleaned):
+        raise ValueError(
+            f"Invalid handle {handle!r}: use lowercase letters, digits, hyphens or underscores."
+        )
+    return get_agents_dir() / f"{cleaned}.json"
+
+
+def list_saved_handles() -> list[str]:
+    """Handles that have a per-handle credential file on this machine."""
+    agents_dir = get_agents_dir()
+    if not agents_dir.is_dir():
+        return []
+    return sorted(
+        f.stem
+        for f in agents_dir.glob("*.json")
+        if f.is_file() and not f.is_symlink() and _HANDLE_FILE_RE.fullmatch(f.stem)
+    )
+
+
+def _peek_handle(path: Path) -> str:
+    """Best-effort read of the handle stored in a config file ('' when unreadable)."""
+    try:
+        if path.is_symlink() or not path.is_file():
+            return ""
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return _clean_handle(data.get("handle")) if isinstance(data, dict) else ""
+
+
+def explicit_config_path(override: str | Path | None = None) -> Path | None:
+    """The config path the operator pinned (argument or AIWATCHDOGS_CONFIG_PATH), if any."""
     if override is not None:
         return Path(override).expanduser()
     env_override = os.environ.get(ENV_CONFIG_PATH, "").strip()
     if env_override:
         return Path(env_override).expanduser()
-    return DEFAULT_CONFIG_PATH
+    return None
+
+
+def get_config_path(override: str | Path | None = None, *, handle: str | None = None) -> Path:
+    """Resolve the config file path.
+
+    Order: explicit override, AIWATCHDOGS_CONFIG_PATH, then the per-handle file for ``handle``
+    (or AIWATCHDOGS_HANDLE). With no handle: the single saved identity, whether that is the
+    legacy ``config.json`` or the only per-handle file. Raises ``AmbiguousConfigError`` when
+    several identities are saved and none was chosen.
+    """
+    pinned = explicit_config_path(override)
+    if pinned is not None:
+        return pinned
+    chosen = _clean_handle(handle) or _clean_handle(os.environ.get(ENV_HANDLE))
+    if chosen:
+        return get_handle_config_path(chosen)
+    saved = list_saved_handles()
+    if not saved:
+        return DEFAULT_CONFIG_PATH
+    legacy_handle = _peek_handle(DEFAULT_CONFIG_PATH)
+    identities = sorted(set(saved) | ({legacy_handle} if legacy_handle else set()))
+    if len(identities) == 1:
+        return get_handle_config_path(saved[0])
+    raise AmbiguousConfigError(identities)
+
+
+def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
+    """Return the legacy ``config.json`` only when it belongs to ``handle`` (for token reuse)."""
+    cleaned = _clean_handle(handle)
+    if not cleaned or _peek_handle(DEFAULT_CONFIG_PATH) != cleaned:
+        return None
+    try:
+        return load_config(DEFAULT_CONFIG_PATH)
+    except ValueError:
+        return None
 
 
 def get_spend_ledger_path(config_path: str | Path | None = None) -> Path:
-    """Resolve the daily paid-provider spend ledger file sibling to config.json."""
-    return get_config_path(config_path).parent / DEFAULT_SPEND_LEDGER_FILENAME
+    """Resolve the daily paid-provider spend ledger.
+
+    It sits beside the config file, except that all per-handle files share the one ledger in
+    the main config directory so the daily cap covers every agent on the machine.
+    """
+    cfg_path = get_config_path(config_path)
+    parent = cfg_path.parent
+    if parent == get_agents_dir():
+        parent = parent.parent
+    return parent / DEFAULT_SPEND_LEDGER_FILENAME
 
 
 def config_exists(path: str | Path | None = None) -> bool:

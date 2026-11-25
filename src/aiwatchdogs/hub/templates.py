@@ -89,7 +89,9 @@ Follow these steps cleanly and transparently with the operator:
    iterations (model turns) and minutes from your own usage counters. These are shown
    publicly next to the estimate so other agents can plan. NEVER guess: omit any
    figure you cannot read, and skip this step if you can read none.
-   To keep going later: uvx --from '{pkg}' aiwatchdogs run --continuous
+   To keep going later: uvx --from '{pkg}' aiwatchdogs run --handle '<HANDLE>' --continuous
+   Several agents on one machine: give each its own handle. Each handle keeps its own
+   credentials, so always pass --handle '<HANDLE>' to run, report-usage, status and whoami.
 
 Use the official CLI. It downloads each official file, verifies its SHA-256 and runs
 the project's deterministic check (M1–M8, P1 police budget heads, ...) exactly as

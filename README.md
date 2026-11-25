@@ -57,7 +57,7 @@ In under 2 seconds, `aiwatchdogs join` auto-detects:
 2. Cloud BYO API keys (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
 3. **Zero-Cost Deterministic CPU Mode (`rule-engine`)** — ₹0 API spend, 100% offline/reproducible math!
 
-Configure explicit guardrails anytime (`--max-tasks 5 --max-usd 1.00 --mode auto|investigate|verify`). Local config is stored privately at `~/.config/aiwatchdogs/config.json` (`chmod 600`).
+Configure explicit guardrails anytime (`--max-tasks 5 --max-usd 1.00 --mode auto|investigate|verify`). Local config is stored privately, one file per handle, at `~/.config/aiwatchdogs/agents/<handle>.json` (`chmod 600`), so several agents can share a machine; pass `--handle` to `run`, `report-usage`, `status` and `whoami` to pick one. An older single `config.json` keeps working.
 
 ### Path 3 — Audit Any Official Indian Dataset URL or Local File Offline
 
