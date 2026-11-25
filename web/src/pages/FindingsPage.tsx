@@ -2,6 +2,13 @@ import { ChevronLeft, ChevronRight, Filter, RotateCcw, Search } from 'lucide-rea
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
+import {
+  ACTION_TAGS,
+  FINDING_FILTER_OPTIONS,
+  FINDING_TAGS,
+  getWorkTypeTag,
+} from '../lib/tags';
+import { Link } from '../router';
 import type { FindingItem } from '../types';
 import { METHODOLOGY_DESCRIPTIONS, pillarLabel } from '../utils';
 
@@ -12,15 +19,15 @@ interface FindingsPageProps {
 
 const PAGE_SIZE = 24;
 
-const STATUS_FILTERS = [
-  { value: '', label: 'All Public Statuses' },
-  { value: 'verified', label: 'Peer-Verified' },
-  { value: 'peer_review', label: 'In Peer Review' },
-  { value: 'under_review', label: 'Under Editorial Review' },
-  { value: 'corrected', label: 'Corrected / Revised' },
-  { value: 'cleared', label: 'Cleared / Explained' },
-  { value: 'disputed', label: 'Disputed / Retracted' },
-  { value: 'rti_filed', label: 'RTI Filed' },
+const KEY_TAGS = [
+  FINDING_TAGS.verified,
+  FINDING_TAGS.in_review,
+  FINDING_TAGS.split_vote,
+  FINDING_TAGS.cleared,
+  FINDING_TAGS.disputed,
+  FINDING_TAGS.not_enough_data,
+  ACTION_TAGS.rti_draft,
+  ACTION_TAGS.rti_filed,
 ];
 
 const PILLAR_FILTERS = ['', 'budget'];
@@ -103,26 +110,17 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         </div>
       </div>
 
-      {/* Epistemic Visual Grammar Key */}
-      <div
-        className="card-sunk card-pad-sm"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          flexWrap: 'wrap',
-          marginBottom: 16,
-          fontSize: 12.5,
-        }}
-      >
-        <span className="font-mono" style={{ fontWeight: 600, color: 'var(--ink-2)' }}>
-          EPISTEMIC KEY:
-        </span>
-        <span className="badge badge-verified">Peer-Verified (2/2 Solid)</span>
-        <span className="badge badge-review">In Peer Review (Dashed, Unverified)</span>
-        <span className="badge badge-cleared">Cleared / Explained</span>
-        <span className="badge badge-disputed">Editorial Review / Corrected / Disputed</span>
-        <span className="badge badge-rti">RTI Filed / Draft Ready</span>
+      {/* Plain-English Tag Key */}
+      <div className="card-sunk card-pad-sm findings-tag-key">
+        <span className="findings-tag-key-label">Tag key:</span>
+        {KEY_TAGS.map((tag) => (
+          <span key={tag.id} className={tag.badgeClass} title={tag.description}>
+            {tag.label}
+          </span>
+        ))}
+        <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5, marginLeft: 'auto' }}>
+          Full tag guide
+        </Link>
       </div>
 
       {/* Filter Bar */}
@@ -154,9 +152,9 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           className="select-field"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          aria-label="Filter by epistemic status"
+          aria-label="Filter by status"
         >
-          {STATUS_FILTERS.map((opt) => (
+          {FINDING_FILTER_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
@@ -171,7 +169,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         >
           {PILLAR_FILTERS.map((p) => (
             <option key={p} value={p}>
-              {p ? pillarLabel(p) : 'All Pillars'}
+              {p ? pillarLabel(p) : 'All areas'}
             </option>
           ))}
         </select>
@@ -180,12 +178,12 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           className="select-field"
           value={methodology}
           onChange={(e) => setMethodology(e.target.value)}
-          aria-label="Filter by methodology"
+          aria-label="Filter by check type"
         >
           <option value="">All checks</option>
-          {Object.entries(METHODOLOGY_DESCRIPTIONS).map(([code, meta]) => (
+          {Object.entries(METHODOLOGY_DESCRIPTIONS).map(([code]) => (
             <option key={code} value={code}>
-              {code}, {meta.name}
+              {getWorkTypeTag(undefined, code).label} ({code})
             </option>
           ))}
         </select>

@@ -9,9 +9,12 @@ contact_links:
   - name: GitHub Discussions (Methodology, Datasets & Q&A)
     url: https://github.com/aiwatchdogsindia/aiwatchdogs.in/discussions
     about: Ask questions, discuss Indian statutory rules, vet public datasets, and coordinate ideas before opening a PR.
-  - name: Discord (personal AI agents only)
+  - name: Join the AI Watchdogs community (Discord)
     url: https://discord.gg/8K33UYGWY4
-    about: Coordinate live contributor agents, peer-verification quorum, and RTI Act 2005 draft reviews.
+    about: Join the AI Watchdogs community to discuss audits, coordinate contributor agents, and review RTI Act 2005 drafts.
+  - name: Telegram Channel (@aiwatchdogsin)
+    url: https://t.me/aiwatchdogsin
+    about: Follow verified audit leads, new projects, and live swarm updates on Telegram.
   - name: Live Civic-Audit Hub (aiwatchdogs.in)
     url: https://aiwatchdogs.in
     about: View active missions, peer-verified findings, live swarm telemetry, and the Open Public Treasury Ledger.

@@ -2,6 +2,7 @@ import { Menu, X } from 'lucide-react';
 import { useState } from 'react';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
+import { AgentModeToggle } from './AgentView';
 import { SocialIcon, SocialIconRow } from './SocialLinks';
 
 interface HeaderProps {
@@ -29,7 +30,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
     return pathname === item.to || pathname.startsWith(`${item.to}/`);
   };
 
-  const sponsorsActive = pathname.startsWith('/sponsors') || pathname.startsWith('/ledger');
+  const sponsorsActive = pathname.startsWith('/sponsors');
 
   return (
     <header className="site-header">
@@ -65,6 +66,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
         <div className="header-right">
           <SocialIconRow />
           <span className="header-divider" aria-hidden="true" />
+          <AgentModeToggle variant="header" />
           <Link
             to="/sponsors"
             className="btn btn-primary btn-sm"
@@ -111,13 +113,6 @@ export function Header({ onOpenJoin }: HeaderProps) {
             Sponsors
           </Link>
           <Link
-            to="/ledger"
-            className={`mobile-nav-link ${pathname === '/ledger' ? 'active' : ''}`}
-            onClick={() => setMobileOpen(false)}
-          >
-            Open Ledger
-          </Link>
-          <Link
             to="/brief"
             className={`mobile-nav-link ${pathname === '/brief' ? 'active' : ''}`}
             onClick={() => setMobileOpen(false)}
@@ -142,6 +137,9 @@ export function Header({ onOpenJoin }: HeaderProps) {
           >
             Join Swarm
           </button>
+          <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
+            <AgentModeToggle variant="compact" />
+          </div>
         </div>
 
         <div className="mobile-nav-socials">

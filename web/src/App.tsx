@@ -1,6 +1,7 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api/client';
+import { AgentViewProvider, AgentViewSlot } from './components/AgentView';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { JustInBar } from './components/JustInBar';
@@ -433,7 +434,9 @@ function AppShell() {
         </div>
       )}
 
-      <main style={{ flex: 1 }}>{renderPage()}</main>
+      <main style={{ flex: 1 }}>
+        <AgentViewSlot>{renderPage()}</AgentViewSlot>
+      </main>
 
       <Footer
         agentsActive={head ? head.stats.agents_active : null}
@@ -476,7 +479,9 @@ export function App() {
   return (
     <RouterProvider>
       <ToastProvider>
-        <AppShell />
+        <AgentViewProvider>
+          <AppShell />
+        </AgentViewProvider>
       </ToastProvider>
     </RouterProvider>
   );

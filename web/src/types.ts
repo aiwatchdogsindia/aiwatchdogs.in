@@ -142,6 +142,86 @@ export interface AgentRecord {
   current_task?: string | null;
 }
 
+export interface VisualStatusCounts {
+  completed: number;
+  claimed: number;
+  queued: number;
+  waiting: number;
+  planned: number;
+  total: number;
+  pct_complete: number;
+  audits_done: number;
+  audits_total: number;
+  checks_done: number;
+  checks_total: number;
+}
+
+export interface VisualBudgetDivergence {
+  finding_id: string;
+  entity_name: string;
+  title: string;
+  pct_difference: number | null;
+  monetary_exposure_inr_cr: number;
+  status: string;
+  severity: string;
+  fiscal_year: string;
+  rule_triggered: string;
+}
+
+export interface VisualBudgetAudit {
+  verified_count: number;
+  peer_review_count: number;
+  cleared_count: number;
+  disputed_count: number;
+  total_exposure_inr_cr: number;
+  top_divergences: VisualBudgetDivergence[];
+  groups: Array<{ label: string; done: number; total: number; pct: number }>;
+}
+
+export interface VisualWebsiteCheckpoint {
+  key: string;
+  label: string;
+  observed: number;
+  not_observed: number;
+  unassessable: number;
+  observed_pct: number;
+  not_observed_pct: number;
+  unassessable_pct: number;
+}
+
+export interface VisualWebsiteAudit {
+  batches_done: number;
+  batches_total: number;
+  hosts_observed: number;
+  hosts_unassessable: number;
+  hosts_total: number;
+  checkpoints: VisualWebsiteCheckpoint[];
+  reasons: Record<string, number>;
+}
+
+export interface VisualInflationStratum {
+  state_code: string;
+  state_name: string;
+  rural_status: string | null;
+  urban_status: string | null;
+  rural_task_id: string | null;
+  urban_task_id: string | null;
+}
+
+export interface VisualInflation {
+  batches_submitted: number;
+  roles: Array<{ role: string; label: string; done: number; total: number; pct: number }>;
+  strata: VisualInflationStratum[];
+}
+
+export interface ProjectVisualSummary {
+  methodology_code: string;
+  status_counts: VisualStatusCounts;
+  budget_audit?: VisualBudgetAudit;
+  website_audit?: VisualWebsiteAudit;
+  inflation?: VisualInflation;
+}
+
 export interface MissionItem {
   id?: string | number;
   slug: string;
@@ -157,6 +237,7 @@ export interface MissionItem {
   priority?: number;
   total_tasks: number;
   completed_tasks: number;
+  claimed_tasks?: number;
   queued_tasks?: number;
   progress_pct?: number;
   verified_findings_count: number;
@@ -179,6 +260,9 @@ export interface MissionItem {
   enlisted_pr_url?: string;
   planned_tasks?: PlannedTask[];
   token_summary?: TokenSummary;
+  contributors_all?: AgentRecord[];
+  contributors_hour?: AgentRecord[];
+  visual_summary?: ProjectVisualSummary;
 }
 
 export interface ProjectPoster {

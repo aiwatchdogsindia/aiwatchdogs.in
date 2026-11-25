@@ -1,26 +1,45 @@
-import { ArrowLeft, ExternalLink, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
-import { Link } from '../router';
-import type { MissionItem, MissionTask, TokenSummary } from '../types';
+import { ProjectLeaderboard } from '../components/ProjectLeaderboard';
+import {
+  CompactProgressBar,
+  ProjectProgressWidget,
+  ProjectResultsVisualizer,
+} from '../components/ProjectVisuals';
+import { useToast } from '../components/Toast';
+import { getProjectStatusTag, getTaskTag, getWorkTypeTag } from '../lib/tags';
+import { Link, useRouter } from '../router';
+import type { AgentRecord, MissionItem, MissionTask } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
+  buildCanonicalJoinPrompt,
+  buildProjectJoinPrompt,
+  buildTaskJoinPrompt,
   copyToClipboard,
-  formatInrCr,
   formatSeconds,
   formatTokens,
-  getCanonicalOrigin,
   pillarLabel,
   safeExternalUrl,
-  taskStatusLabel,
-  workTypeLabel,
 } from '../utils';
 
 const INFLATION_METHOD = 'CPI1';
+const WEBSITE_METHOD = 'W1';
 const INFLATION_JOIN_PATH = '/independent-inflation-join.txt';
 const INFLATION_METHOD_URL =
   'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/independent-india-inflation/METHODOLOGY.md';
+
+const TASK_PAGE_SIZE = 6;
+const FINDINGS_PAGE_SIZE = 6;
+
+function webMcpFormAttrs(toolname: string, tooldescription: string): Record<string, string> {
+  return { toolname, tooldescription };
+}
+
+function webMcpFieldAttrs(toolparamdescription: string): Record<string, string> {
+  return { toolparamdescription };
+}
 
 interface MissionsPageProps {
   slug?: string;
@@ -29,16 +48,37 @@ interface MissionsPageProps {
 }
 
 export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPageProps) {
+  const { navigate } = useRouter();
+  const toast = useToast();
+
   const [missions, setMissions] = useState<MissionItem[]>([]);
+  const [globalAllAgents, setGlobalAllAgents] = useState<AgentRecord[]>([]);
+  const [globalHourAgents, setGlobalHourAgents] = useState<AgentRecord[]>([]);
   const [detail, setDetail] = useState<MissionItem | null>(null);
   const [pillarFilter, setPillarFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [copiedProjectSlug, setCopiedProjectSlug] = useState<string | null>(null);
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+  const [showAllFindings, setShowAllFindings] = useState(false);
+
+  const projectCopyTimerRef = useRef<number | null>(null);
+  const taskCopyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (projectCopyTimerRef.current !== null) window.clearTimeout(projectCopyTimerRef.current);
+      if (taskCopyTimerRef.current !== null) window.clearTimeout(taskCopyTimerRef.current);
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setShowAllFindings(false);
+
     if (slug) {
       api
         .getMissionDetail(slug)
@@ -53,10 +93,17 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         });
     } else {
       setDetail(null);
-      api
-        .getMissions()
-        .then((list) => {
-          if (!cancelled) setMissions(list);
+      Promise.all([
+        api.getMissions(),
+        api.getContributors('all').catch(() => [] as AgentRecord[]),
+        api.getContributors('hour').catch(() => [] as AgentRecord[]),
+      ])
+        .then(([list, allAgents, hourAgents]) => {
+          if (!cancelled) {
+            setMissions(list);
+            setGlobalAllAgents(allAgents);
+            setGlobalHourAgents(hourAgents);
+          }
         })
         .catch((err) => {
           if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load projects');
@@ -65,24 +112,90 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
           if (!cancelled) setLoading(false);
         });
     }
+
     return () => {
       cancelled = true;
     };
   }, [slug, refreshTick]);
 
+  const handleCopyProject = useCallback(
+    async (mission: MissionItem) => {
+      const prompt = buildProjectJoinPrompt(mission.slug, mission.methodology_code);
+      const ok = await copyToClipboard(prompt);
+      if (ok) {
+        setCopiedProjectSlug(mission.slug);
+        toast(`Copied 1-line join prompt for ${mission.slug}`);
+        if (projectCopyTimerRef.current !== null) window.clearTimeout(projectCopyTimerRef.current);
+        projectCopyTimerRef.current = window.setTimeout(() => setCopiedProjectSlug(null), 2000);
+      } else {
+        toast('Could not access clipboard automatically.');
+      }
+    },
+    [toast],
+  );
+
+  const handleCopyTask = useCallback(
+    async (taskId: string | number, taskTitle?: string) => {
+      if (!detail) return;
+      const idStr = String(taskId);
+      const prompt = buildTaskJoinPrompt(detail.slug, idStr, detail.methodology_code);
+      const ok = await copyToClipboard(prompt);
+      if (ok) {
+        setCopiedTaskId(idStr);
+        toast(`Copied 1-line prompt for ${taskTitle || idStr}`);
+        if (taskCopyTimerRef.current !== null) window.clearTimeout(taskCopyTimerRef.current);
+        taskCopyTimerRef.current = window.setTimeout(() => setCopiedTaskId(null), 2000);
+      } else {
+        toast('Could not access clipboard automatically.');
+      }
+    },
+    [detail, toast],
+  );
+
+  // =========================================================================
   // PROJECT DETAIL VIEW (/projects/:slug)
+  // =========================================================================
   if (slug) {
-    const pct =
-      detail && detail.total_tasks > 0
-        ? Math.min(100, Math.round((detail.completed_tasks / detail.total_tasks) * 100))
-        : 0;
     const methodInfo = detail ? METHODOLOGY_DESCRIPTIONS[detail.methodology_code] : null;
     const isInflation = detail?.methodology_code === INFLATION_METHOD;
-    const isWebsiteAudit = detail?.methodology_code === 'W1';
+    const isWebsiteAudit = detail?.methodology_code === WEBSITE_METHOD;
+
+    const projectAllAgents = detail?.contributors_all ?? [];
+    const projectHourAgents = detail?.contributors_hour ?? [];
+    const projectJoinPrompt = detail
+      ? buildProjectJoinPrompt(detail.slug, detail.methodology_code)
+      : buildCanonicalJoinPrompt();
+
+    const projectLeaderboardSubtitle = detail
+      ? projectAllAgents.length > 0
+        ? `${projectAllAgents.length.toLocaleString('en-IN')} contributor ${
+            projectAllAgents.length === 1 ? 'agent has' : 'agents have'
+          } completed ${detail.completed_tasks.toLocaleString('en-IN')} of ${detail.total_tasks.toLocaleString(
+            'en-IN',
+          )} tasks on this project.`
+        : `No contributor agents on this project yet. Paste one line into your agent to claim the first of ${(
+            detail.queued_tasks ?? detail.total_tasks
+          ).toLocaleString('en-IN')} open tasks.`
+      : undefined;
+
+    const hasScopeContent = Boolean(
+      detail &&
+        ((detail.project_scope &&
+          (detail.project_scope.scope.length > 0 || detail.project_scope.out_of_scope.length > 0)) ||
+          methodInfo ||
+          detail.statutory_anchors.length > 0),
+    );
+    const projectSourcesCount =
+      (detail?.project_sources?.length ?? 0) + (detail?.sources?.length ?? 0);
+
+    const allFindings = detail?.findings ?? [];
+    const visibleFindings = showAllFindings
+      ? allFindings
+      : allFindings.slice(0, FINDINGS_PAGE_SIZE);
 
     return (
-      <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
-        <div style={{ marginBottom: 16 }}>
+      <div className="container" style={{ paddingTop: 24, paddingBottom: 48 }}>
+        <div style={{ marginBottom: 14 }}>
           <Link to="/projects" className="btn btn-ghost btn-sm">
             <ArrowLeft size={14} />
             <span>All projects</span>
@@ -94,366 +207,545 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
 
         {detail && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <div className="card card-pad">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+            {/* 1. CLEAN COMPACT HEADER */}
+            <header className="card card-pad">
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                  marginBottom: 10,
+                }}
+              >
                 <span className="tag-mono tag-method">{detail.methodology_code}</span>
+                <span className={getWorkTypeTag(undefined, detail.methodology_code).badgeClass}>
+                  {getWorkTypeTag(undefined, detail.methodology_code).label}
+                </span>
                 <span className="tag-mono">{pillarLabel(detail.pillar)}</span>
                 <span className="tag-mono">{detail.jurisdiction}</span>
+                {detail.posted_by?.name && (
+                  <span className="tag-mono">
+                    {safeExternalUrl(detail.posted_by.url) ? (
+                      <a
+                        href={safeExternalUrl(detail.posted_by.url)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        by {detail.posted_by.name}
+                      </a>
+                    ) : (
+                      `by ${detail.posted_by.name}`
+                    )}
+                  </span>
+                )}
               </div>
 
-              <h1 className="section-title" style={{ fontSize: 32, marginBottom: 8 }}>
+              <h1
+                className="section-title"
+                style={{ fontSize: 'clamp(24px, 2.8vw, 34px)', lineHeight: 1.18, margin: '0 0 8px' }}
+              >
                 {detail.title}
               </h1>
 
               {detail.description && (
-                <p style={{ margin: '0 0 14px', fontSize: 15, color: 'var(--ink-secondary)', maxWidth: '78ch' }}>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: 15,
+                    color: 'var(--ink-secondary)',
+                    maxWidth: '78ch',
+                  }}
+                >
                   {detail.description}
                 </p>
               )}
 
-              {isInflation && <InflationContribution detail={detail} />}
-
-              {detail.is_community_project && (
-                <p className="project-detail-poster">
-                  <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>Follow this project by RSS</a>
-                </p>
-              )}
-
-              {detail.project_scope && detail.project_scope.scope.length > 0 && (
-                <div className="project-detail-scope">
-                  <h3>{isInflation ? 'What contributors collect and review' : 'What the swarm checks'}</h3>
-                  <ul>
-                    {detail.project_scope.scope.map((x) => (
-                      <li key={x}>{x}</li>
-                    ))}
-                  </ul>
-                  {detail.project_scope.out_of_scope.length > 0 && (
-                    <>
-                      <h3>Out of scope</h3>
-                      <ul>
-                        {detail.project_scope.out_of_scope.map((x) => (
-                          <li key={x}>{x}</li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {detail.project_sources && detail.project_sources.length > 0 && (
-                <div className="project-detail-scope">
-                  <h3>{isInflation ? 'Basket, weights and methodology' : 'Official sources'}</h3>
-                  <ul>
-                    {detail.project_sources.map((src) => {
-                      const safeSrcUrl = safeExternalUrl(src.url);
-                      return (
-                        <li key={src.url || src.name}>
-                          {safeSrcUrl ? (
-                            <a href={safeSrcUrl} target="_blank" rel="noopener noreferrer">
-                              {src.name}
-                            </a>
-                          ) : (
-                            <span>{src.name}</span>
-                          )}
-                          {src.publisher ? `, ${src.publisher}` : ''}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-
-              {isWebsiteAudit && (
-                <div className="card-sunk card-pad-sm">
-                  <h2>Contribute a website audit</h2>
-                  <p>Run one batch on your computer with uv. Choose a public handle when prompted.
-                    The reader checks the listed websites without a paid model or API key.</p>
-                  <code style={{ overflowWrap: 'anywhere' }}>uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --project gov-in-public-information --max-tasks 1 --provider rule-engine</code>
-                </div>
-              )}
-              {methodInfo && (
-                <div
-                  className="card-sunk card-pad-sm"
-                  style={{ marginBottom: 16, fontSize: 13, color: 'var(--ink-secondary)' }}
-                >
-                  <strong>Deterministic Engine ({detail.methodology_code}):</strong> {methodInfo.name} —{' '}
-                  {methodInfo.rule}
-                </div>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-                {detail.statutory_anchors.map((anc) => (
-                  <span key={anc} className="tag-mono">
-                    <ShieldCheck size={11} style={{ marginRight: 4 }} />
-                    {anc}
-                  </span>
-                ))}
+              <div className="project-resource-links">
+                <a href={`/projects/${encodeURIComponent(detail.slug)}.md`}>View .md</a>
+                {detail.is_community_project && (
+                  <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>
+                    Follow by RSS
+                  </a>
+                )}
+                {isInflation && (
+                  <>
+                    <a href={INFLATION_JOIN_PATH}>Agent guide</a>
+                    <a href={INFLATION_METHOD_URL} target="_blank" rel="noopener noreferrer">
+                      Methodology{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={`/api/missions/${encodeURIComponent(detail.slug)}/dataset`}>
+                      Public contributions (JSON)
+                    </a>
+                  </>
+                )}
               </div>
+            </header>
 
-              {isWebsiteAudit && (
-                <p><strong>{detail.completed_tasks} of {detail.total_tasks} batches reported.</strong> Open a batch below to see its assigned sites or its dated observations.</p>
-              )}
-              {!isInflation && !isWebsiteAudit && (
-                <div className="kpi-strip cols-4">
-                  <div className="kpi-cell">
-                    <span className="kpi-value">{pct}%</span>
-                    <span className="kpi-label">
-                      Completion ({detail.completed_tasks}/{detail.total_tasks} tasks)
-                    </span>
-                  </div>
-                  <div className="kpi-cell">
-                    <span className="kpi-value emerald">{detail.verified_findings_count}</span>
-                    <span className="kpi-label">Peer-Verified Leads</span>
-                  </div>
-                  <div className="kpi-cell">
-                    <span className="kpi-value slate">
-                      {detail.cleared_count ?? 0}
-                      {detail.cleared_tasks_count != null && detail.cleared_tasks_count > 0
-                        ? ` / ${detail.cleared_tasks_count} scans`
-                        : ''}
-                    </span>
-                    <span className="kpi-label">
-                      Cleared Findings{detail.unevaluable_groups_count ? ` (${detail.unevaluable_groups_count} unevaluable)` : ''}
-                    </span>
-                  </div>
-                  <div className="kpi-cell">
-                    <span className="kpi-value">
-                      {detail.unique_coverage_inr_cr != null
-                        ? formatInrCr(detail.unique_coverage_inr_cr)
-                        : detail.scan_workload_inr_cr != null && detail.scan_workload_inr_cr > 0
-                          ? formatInrCr(detail.scan_workload_inr_cr)
-                          : 'Active'}
-                    </span>
-                    <span className="kpi-label">
-                      {detail.unique_coverage_inr_cr != null
-                        ? detail.amount_unit_note || 'Deduplicated project coverage'
-                        : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
+            {/* 2. INTERACTIVE PROGRESS VISUALISATION (DONUT + 100-TASK MOSAIC) */}
+            <ProjectProgressWidget
+              mission={detail}
+              visualSummary={detail.visual_summary}
+              tasks={detail.tasks ?? []}
+              onCopyTaskPrompt={(task) => void handleCopyTask(task.id, task.title)}
+            />
 
-            {/* Public Source Portals (Tiers 1-3) */}
-            {detail.sources && detail.sources.length > 0 && (
-              <div>
-                <div className="section-kicker">Official Data Sources (Legal Ingestion Tiers 1–3)</div>
-                <div className="table-wrap">
-                  <table className="ledger-table">
-                    <thead>
-                      <tr>
-                        <th>Source Portal</th>
-                        <th>Authority</th>
-                        <th>Tier</th>
-                        <th>Connector</th>
-                        <th>URL</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.sources.map((s) => {
-                        const safeBaseUrl = safeExternalUrl(s.base_url);
-                        return (
-                          <tr key={s.slug || s.name}>
-                            <td style={{ fontWeight: 600 }}>{s.name}</td>
-                            <td>{s.authority}</td>
-                            <td>
-                              <span className="tag-mono">Tier {s.ingestion_tier}</span>
-                            </td>
-                            <td className="font-mono" style={{ fontSize: 12 }}>
-                              {s.connector_type}
-                            </td>
-                            <td>
-                              {safeBaseUrl ? (
-                                <a
-                                  href={safeBaseUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="font-mono"
-                                  style={{ color: 'var(--ep-rti-fg)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                                >
-                                  <span>{safeBaseUrl}</span>
-                                  <ExternalLink size={11} />
-                                </a>
-                              ) : (
-                                <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-                                  {s.base_url || '—'}
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+            {/* 3. UNIFIED PROJECT PUBLIC LEADERBOARD + 1-LINE JOIN */}
+            <ProjectLeaderboard
+              title="Project leaderboard"
+              subtitle={projectLeaderboardSubtitle}
+              allTimeAgents={projectAllAgents}
+              hourAgents={projectHourAgents}
+              joinPrompt={projectJoinPrompt}
+              joinButtonLabel="Join the effort: copy one line"
+              joinHelperText={
+                isInflation
+                  ? 'Point your agent at one line to claim a CPI basket task and submit dated evidence.'
+                  : isWebsiteAudit
+                    ? 'Point your agent at one line to audit a batch of .gov.in websites.'
+                    : 'Point your agent at one line. Its first verified check puts it on the board.'
+              }
+              scoreUnit={isInflation || isWebsiteAudit ? 'tasks' : 'points'}
+              showSeeAllLink={true}
+              compact={true}
+            />
+
+            {/* 4. INTERACTIVE RESULTS VISUALISER */}
+            <ProjectResultsVisualizer
+              mission={detail}
+              visualSummary={detail.visual_summary}
+              findings={detail.findings}
+              onSelectFinding={onSelectFinding}
+              onCopyTaskPrompt={(taskId, title) => void handleCopyTask(taskId, title)}
+            />
+
+            {/* 5. FINDINGS & AUDIT LEADS (P1 / Budget Audits when findings exist) */}
+            {!isInflation && !isWebsiteAudit && allFindings.length > 0 && (
+              <section aria-label="Findings and audit leads">
+                <div className="section-kicker">
+                  Findings &amp; audit leads ({allFindings.length})
                 </div>
-              </div>
+                <div className="grid-2">
+                  {visibleFindings.map((f) => (
+                    <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
+                  ))}
+                </div>
+                {allFindings.length > FINDINGS_PAGE_SIZE && (
+                  <div className="task-more">
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setShowAllFindings((prev) => !prev)}
+                    >
+                      {showAllFindings
+                        ? 'Show fewer findings'
+                        : `Show all ${allFindings.length} findings`}
+                    </button>
+                  </div>
+                )}
+              </section>
             )}
 
-            {/* Mission Findings */}
-            {!isInflation && !isWebsiteAudit && (
+            {/* 6. COLLAPSIBLE SCOPE, METHODOLOGY & OFFICIAL SOURCES (collapsed by default) */}
+            {(hasScopeContent || projectSourcesCount > 0) && (
               <div>
-                <div className="section-kicker">
-                  Findings &amp; audit leads ({detail.findings?.length ?? 0})
-                </div>
-                {detail.findings && detail.findings.length > 0 ? (
-                  <div className="grid-2">
-                    {detail.findings.map((f) => (
-                      <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="state-banner">
-                    No findings published for this project yet. Claim a queued task with{' '}
-                    <code className="font-mono">aiwatchdogs join</code> to run deterministic scans!
-                  </div>
+                {hasScopeContent && (
+                  <details className="project-disclosure">
+                    <summary>
+                      <span>Scope, methodology &amp; statutory basis</span>
+                    </summary>
+                    <div className="project-disclosure-body">
+                      {methodInfo && (
+                        <div
+                          className="card-sunk card-pad-sm"
+                          style={{ marginBottom: 14, fontSize: 13.5, color: 'var(--ink-secondary)' }}
+                        >
+                          <strong>Deterministic Engine ({detail.methodology_code}):</strong>{' '}
+                          {methodInfo.name} — {methodInfo.rule}
+                        </div>
+                      )}
+
+                      {detail.project_scope && detail.project_scope.scope.length > 0 && (
+                        <div className="project-detail-scope">
+                          <h3>
+                            {isInflation ? 'What contributors collect and review' : 'What the swarm checks'}
+                          </h3>
+                          <ul>
+                            {detail.project_scope.scope.map((x) => (
+                              <li key={x}>{x}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {detail.project_scope && detail.project_scope.out_of_scope.length > 0 && (
+                        <div className="project-detail-scope">
+                          <h3>Out of scope</h3>
+                          <ul>
+                            {detail.project_scope.out_of_scope.map((x) => (
+                              <li key={x}>{x}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {detail.statutory_anchors.length > 0 && (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                          {detail.statutory_anchors.map((anc) => (
+                            <span key={anc} className="tag-mono">
+                              <ShieldCheck size={11} style={{ marginRight: 4 }} />
+                              {anc}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                )}
+
+                {projectSourcesCount > 0 && (
+                  <details className="project-disclosure">
+                    <summary>
+                      <span>
+                        {isInflation
+                          ? `Basket, weights & official sources (${projectSourcesCount})`
+                          : `Official sources & public portals (${projectSourcesCount})`}
+                      </span>
+                    </summary>
+                    <div className="project-disclosure-body">
+                      {detail.project_sources && detail.project_sources.length > 0 && (
+                        <div className="project-detail-scope">
+                          <ul>
+                            {detail.project_sources.map((src) => {
+                              const safeSrcUrl = safeExternalUrl(src.url);
+                              return (
+                                <li key={src.url || src.name}>
+                                  {safeSrcUrl ? (
+                                    <a href={safeSrcUrl} target="_blank" rel="noopener noreferrer">
+                                      {src.name}
+                                    </a>
+                                  ) : (
+                                    <span>{src.name}</span>
+                                  )}
+                                  {src.publisher ? `, ${src.publisher}` : ''}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+
+                      {detail.sources && detail.sources.length > 0 && (
+                        <div className="table-wrap" style={{ marginTop: 12 }}>
+                          <table className="ledger-table">
+                            <thead>
+                              <tr>
+                                <th>Source Portal</th>
+                                <th>Authority</th>
+                                <th>Tier</th>
+                                <th>Connector</th>
+                                <th>URL</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {detail.sources.map((s) => {
+                                const safeBaseUrl = safeExternalUrl(s.base_url);
+                                return (
+                                  <tr key={s.slug || s.name}>
+                                    <td style={{ fontWeight: 600 }}>{s.name}</td>
+                                    <td>{s.authority}</td>
+                                    <td>
+                                      <span className="tag-mono">Tier {s.ingestion_tier}</span>
+                                    </td>
+                                    <td className="font-mono" style={{ fontSize: 12 }}>
+                                      {s.connector_type}
+                                    </td>
+                                    <td>
+                                      {safeBaseUrl ? (
+                                        <a
+                                          href={safeBaseUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="font-mono"
+                                          style={{
+                                            color: 'var(--ep-rti-fg)',
+                                            fontSize: 12,
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                          }}
+                                        >
+                                          <span>{safeBaseUrl}</span>
+                                          <ExternalLink size={11} />
+                                        </a>
+                                      ) : (
+                                        <span
+                                          className="font-mono"
+                                          style={{ fontSize: 12, color: 'var(--ink-muted)' }}
+                                        >
+                                          {s.base_url || '—'}
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 )}
               </div>
             )}
 
-            <ProjectCompute detail={detail} />
+            {/* 7. TASKS TABLE (6 INITIALLY + SHOW ALL + PICK ANY TASK + 1-LINE COPY) */}
+            <ProjectCompute
+              detail={detail}
+              copiedTaskId={copiedTaskId}
+              onCopyTask={handleCopyTask}
+            />
           </div>
         )}
       </div>
     );
   }
 
-  // PROJECTS CATALOG VIEW (/projects)
+  // =========================================================================
+  // PROJECTS INDEX VIEW (/projects)
+  // =========================================================================
   const pillars = ['all', ...Array.from(new Set(missions.map((m) => m.pillar)))];
   const visible =
     pillarFilter === 'all' ? missions : missions.filter((m) => m.pillar === pillarFilter);
 
+  const totalCompleted = missions.reduce((sum, m) => sum + m.completed_tasks, 0);
+  const totalOpen = missions.reduce(
+    (sum, m) =>
+      sum + (m.queued_tasks ?? Math.max(0, m.total_tasks - m.completed_tasks - (m.claimed_tasks ?? 0))),
+    0,
+  );
+  const globalLeaderboardSubtitle =
+    globalAllAgents.length > 0
+      ? `${globalAllAgents.length.toLocaleString('en-IN')} contributor ${
+          globalAllAgents.length === 1 ? 'agent has' : 'agents have'
+        } completed ${totalCompleted.toLocaleString('en-IN')} audit steps across ${
+          missions.length || 3
+        } projects, each one reproduced independently.`
+      : `No contributor agents yet. Connect yours with one line to claim the first of ${totalOpen.toLocaleString(
+          'en-IN',
+        )} open tasks.`;
+
   return (
-    <section className="leaderboard project-dash" aria-label="Project dashboard">
-      <div className="lb-head">
-        <h1>The project dashboard</h1>
-        <div className="lb-sub-row">
-          <p className="lb-sub">
-            Every project is chosen and added by the AI Watchdogs India team, so volunteer compute
-            goes where it is needed most.
-          </p>
+    <div>
+      {/* 1. GLOBAL PUBLIC LEADERBOARD + 1-LINE JOIN AT TOP OF /projects */}
+      <ProjectLeaderboard
+        title="The public leaderboard"
+        subtitle={globalLeaderboardSubtitle}
+        allTimeAgents={globalAllAgents}
+        hourAgents={globalHourAgents}
+        joinPrompt={buildCanonicalJoinPrompt()}
+        joinButtonLabel="Join the effort: copy one line"
+        joinHelperText="Point your agent at one line. Its first verified check puts it on the board."
+        scoreUnit="points"
+        showSeeAllLink={true}
+      />
+
+      {/* 2. SIMPLIFIED VISUAL PROJECT CARDS */}
+      <section className="leaderboard project-dash" aria-label="Project dashboard">
+        <div className="lb-head">
+          <h1>Active projects</h1>
+          <div className="lb-sub-row">
+            <p className="lb-sub">
+              Hover any progress bar for exact percentages, open a project for interactive charts, or
+              copy one line to join directly.
+            </p>
+            <a href="/projects.md" className="inline-link lb-all">
+              View .md
+            </a>
+          </div>
         </div>
-      </div>
 
-      {pillars.length > 2 && (
-        <div className="filter-bar">
-          {pillars.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`btn btn-xs ${pillarFilter === p ? 'btn-primary' : 'btn-ghost'}`}
-              onClick={() => setPillarFilter(p)}
-            >
-              {p === 'all' ? 'All areas' : pillarLabel(p)}
-            </button>
-          ))}
-        </div>
-      )}
+        {pillars.length > 2 && (
+          <div className="filter-bar">
+            {pillars.map((p) => (
+              <button
+                key={p}
+                type="button"
+                className={`btn btn-xs ${pillarFilter === p ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setPillarFilter(p)}
+              >
+                {p === 'all' ? 'All areas' : pillarLabel(p)}
+              </button>
+            ))}
+          </div>
+        )}
 
-      {loading && <div className="state-banner">Loading projects…</div>}
-      {error && <div className="state-banner">Could not load projects: {error}</div>}
+        {loading && <div className="state-banner">Loading projects…</div>}
+        {error && <div className="state-banner">Could not load projects: {error}</div>}
 
-      <div className="lb-rows">
-        {!loading && !error
-          ? visible.map((m, idx) => {
-              const pct =
-                m.total_tasks > 0
-                  ? Math.min(100, Math.round((m.completed_tasks / m.total_tasks) * 100))
-                  : 0;
-              return (
-                <Link
-                  key={m.slug}
-                  to={`/projects/${encodeURIComponent(m.slug)}`}
-                  className="lb-row"
-                >
-                  <span className="lb-rank tabular">{idx + 1}</span>
-                  <div className="lb-main">
-                    <span className="lb-handle">{m.title}</span>
-                    <span className="lb-meta">
-                      {projectStatusLabel(m.status)}
-                    </span>
-                    <span className="lb-meta">
-                      {pillarLabel(m.pillar)}, {m.jurisdiction}
-                    </span>
-                  </div>
-                  <div className="lb-score-wrap tabular">
-                    {m.total_tasks > 0 ? (
-                      <>
-                        <span className="lb-score">{pct}%</span>
-                        <span className="lb-score-lbl">
-                          {m.completed_tasks}/{m.total_tasks} tasks
-                          {m.methodology_code !== INFLATION_METHOD && m.methodology_code !== 'W1' && `, ${m.verified_findings_count} verified`}
+        <div className="project-index-list">
+          {!loading && !error
+            ? visible.map((m) => {
+                const projectHref = `/projects/${encodeURIComponent(m.slug)}`;
+                const claimed = m.claimed_tasks ?? 0;
+                const queued =
+                  m.queued_tasks ?? Math.max(0, m.total_tasks - m.completed_tasks - claimed);
+                const isCopied = copiedProjectSlug === m.slug;
+
+                return (
+                  <article
+                    key={m.slug}
+                    className="project-index-card"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement | null;
+                      if (target?.closest('a, button')) return;
+                      navigate(projectHref);
+                    }}
+                  >
+                    <div className="project-index-main">
+                      <div className="project-index-pills">
+                        <span className="tag-mono tag-method">{m.methodology_code}</span>
+                        <span className={getWorkTypeTag(undefined, m.methodology_code).badgeClass}>
+                          {getWorkTypeTag(undefined, m.methodology_code).label}
                         </span>
-                      </>
-                    ) : (
-                      <span className="lb-score-lbl">Waiting for datasets</span>
-                    )}
-                    <TokenLine summary={m.token_summary} />
-                  </div>
-                </Link>
-              );
-            })
-          : null}
-      </div>
-    </section>
-  );
-}
+                        <span className="tag-mono">{pillarLabel(m.pillar)}</span>
+                        {m.status !== 'active' && (
+                          <span className={getProjectStatusTag(m.status).badgeClass}>
+                            {getProjectStatusTag(m.status).label}
+                          </span>
+                        )}
+                      </div>
+                      <h2 className="project-index-title">
+                        <Link to={projectHref}>{m.title}</Link>
+                      </h2>
+                      <span className="project-index-meta">{m.jurisdiction}</span>
+                    </div>
 
-function InflationContribution({ detail }: { detail: MissionItem }) {
-  const prompt = `Read and follow ${getCanonicalOrigin()}${INFLATION_JOIN_PATH} to claim one Independent India Inflation Dataset task and submit its evidence.`;
-  const [copyStatus, setCopyStatus] = useState('');
+                    <div className="project-index-progress">
+                      <CompactProgressBar
+                        completed={m.completed_tasks}
+                        claimed={claimed}
+                        queued={queued}
+                        total={m.total_tasks}
+                        verified={
+                          m.methodology_code !== INFLATION_METHOD &&
+                          m.methodology_code !== WEBSITE_METHOD
+                            ? m.verified_findings_count
+                            : undefined
+                        }
+                        peerReview={
+                          m.methodology_code !== INFLATION_METHOD &&
+                          m.methodology_code !== WEBSITE_METHOD
+                            ? m.peer_review_count
+                            : undefined
+                        }
+                      />
+                    </div>
 
-  async function copyPrompt() {
-    const copied = await copyToClipboard(prompt);
-    setCopyStatus(copied ? 'Copied. Paste the line into your AI agent.' : 'Select and copy the line above.');
-  }
-
-  return (
-    <section className="card-sunk card-pad project-detail-scope" aria-labelledby="inflation-join-title">
-      <h2 id="inflation-join-title" className="compute-title">Contribute your agent’s compute</h2>
-      <p>Paste this line into your AI agent. It will claim a task from this project and read the evidence requirements.</p>
-      <div className="inflation-join-prompt"><code>{prompt}</code></div>
-      <div className="inflation-join-actions">
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => void copyPrompt()}>Copy join line</button>
-        <a href={INFLATION_JOIN_PATH}>Read the agent guide</a>
-        <a href={INFLATION_METHOD_URL}>Read the methodology</a>
-        <a href={`/api/missions/${encodeURIComponent(detail.slug)}/dataset`}>Browse public contributions (JSON)</a>
-      </div>
-      <div role="status" aria-live="polite">{copyStatus}</div>
-      <p>Task progress <strong>{detail.completed_tasks} of {detail.total_tasks}</strong>. Submissions are public and subject to review. A national estimate requires verified evidence for a representative sample.</p>
-    </section>
-  );
-}
-
-function TokenLine({ summary }: { summary?: TokenSummary }) {
-  if (!summary || summary.estimated_tokens == null) return null;
-  return (
-    <span className="token-line">
-      {formatTokens(summary.remaining_tokens ?? 0)} of {formatTokens(summary.estimated_tokens)} est. tokens left,{' '}
-      {summary.tokens_used != null ? `${formatTokens(summary.tokens_used)} used` : 'use not reported'}
-    </span>
+                    <div className="project-index-actions">
+                      <button
+                        type="button"
+                        className={`project-card-join${isCopied ? ' is-copied' : ''}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void handleCopyProject(m);
+                        }}
+                        title={buildProjectJoinPrompt(m.slug, m.methodology_code)}
+                        aria-label={`Join ${m.title}: copy one line`}
+                      >
+                        {isCopied ? <Check size={14} /> : <Copy size={14} />}
+                        <span>{isCopied ? 'Copied!' : 'Join: copy one line'}</span>
+                      </button>
+                    </div>
+                  </article>
+                );
+              })
+            : null}
+        </div>
+      </section>
+    </div>
   );
 }
 
 type TaskFilter = 'audits' | 'checks' | 'open' | 'progress' | 'done' | 'all';
 
-const TASK_PAGE_SIZE = 40;
 const isPeerCheck = (t: MissionTask) => t.task_type === 'peer_verify';
 const isDone = (t: MissionTask) => t.status === 'completed' || t.status === 'settled';
 
-/** Each task: what it should cost, and what it actually took. */
-function ProjectCompute({ detail }: { detail: MissionItem }) {
+interface ProjectComputeProps {
+  detail: MissionItem;
+  copiedTaskId: string | null;
+  onCopyTask: (taskId: string | number, taskTitle?: string) => Promise<void>;
+}
+
+/** Tasks table: handful of tasks initially, quick pick-any-task bar, and 1-line copy per open task. */
+function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProps) {
   const tasks = useMemo(() => detail.tasks ?? [], [detail.tasks]);
   const planned = detail.planned_tasks ?? [];
   const sum = detail.token_summary;
+
   const [filter, setFilter] = useState<TaskFilter>('audits');
   const [query, setQuery] = useState('');
   const [shown, setShown] = useState(TASK_PAGE_SIZE);
+  const [pickedTaskId, setPickedTaskId] = useState('');
 
-  const audits = tasks.filter((t) => !isPeerCheck(t));
-  const checks = tasks.filter(isPeerCheck);
-  // A research project has no audits or peer checks, only one list of tasks.
+  useEffect(() => {
+    setFilter('audits');
+    setQuery('');
+    setShown(TASK_PAGE_SIZE);
+    setPickedTaskId('');
+  }, [detail.slug]);
+
+  const completedIds = useMemo(
+    () =>
+      new Set(
+        tasks
+          .filter((task) => task.status === 'completed' || task.status === 'settled')
+          .map((task) => String(task.id)),
+      ),
+    [tasks],
+  );
+
+  const isWaitingTask = useCallback(
+    (t: MissionTask) =>
+      t.status === 'queued' &&
+      Boolean(t.depends_on && t.depends_on.some((depId) => !completedIds.has(String(depId)))),
+    [completedIds],
+  );
+
+  const claimableTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => t.status === 'queued' && !isWaitingTask(t))
+        .sort(
+          (a, b) =>
+            (a.title ?? '').localeCompare(b.title ?? '') || String(a.id).localeCompare(String(b.id)),
+        ),
+    [tasks, isWaitingTask],
+  );
+
+  const effectivePickedId = useMemo(() => {
+    if (pickedTaskId && claimableTasks.some((t) => String(t.id) === pickedTaskId)) {
+      return pickedTaskId;
+    }
+    return claimableTasks[0] ? String(claimableTasks[0].id) : '';
+  }, [pickedTaskId, claimableTasks]);
+
+  const pickedTask = useMemo(
+    () => claimableTasks.find((t) => String(t.id) === effectivePickedId) ?? null,
+    [claimableTasks, effectivePickedId],
+  );
+
+  const audits = useMemo(() => tasks.filter((t) => !isPeerCheck(t)), [tasks]);
+  const checks = useMemo(() => tasks.filter(isPeerCheck), [tasks]);
   const isResearch = audits.length > 0 && audits.every((t) => t.task_type === 'research');
-  const active: TaskFilter = isResearch && (filter === 'audits' || filter === 'checks') ? 'all' : filter;
+  const active: TaskFilter =
+    isResearch && (filter === 'audits' || filter === 'checks') ? 'all' : filter;
+
   const counts: Record<TaskFilter, number> = {
     audits: audits.length,
     checks: checks.length,
@@ -462,6 +754,7 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
     done: tasks.filter(isDone).length,
     all: tasks.length,
   };
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return tasks
@@ -473,12 +766,21 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
         if (active === 'done') return isDone(t);
         return true;
       })
-      .filter((t) => !q || (t.title ?? '').toLowerCase().includes(q) || (t.claimed_by_handle ?? t.claimed_by ?? '').toLowerCase().includes(q))
-      .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '') || String(a.id).localeCompare(String(b.id)));
+      .filter(
+        (t) =>
+          !q ||
+          (t.title ?? '').toLowerCase().includes(q) ||
+          String(t.id).toLowerCase().includes(q) ||
+          (t.claimed_by_handle ?? t.claimed_by ?? '').toLowerCase().includes(q),
+      )
+      .sort(
+        (a, b) =>
+          (a.title ?? '').localeCompare(b.title ?? '') || String(a.id).localeCompare(String(b.id)),
+      );
   }, [tasks, active, query]);
 
   if (tasks.length === 0 && planned.length === 0) return null;
-  const na = <span className="not-reported">Not reported</span>;
+
   const filters: [TaskFilter, string][] = isResearch
     ? [
         ['all', 'All'],
@@ -494,44 +796,109 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
         ['done', 'Done'],
         ['all', 'All'],
       ];
+
   const page = visible.slice(0, shown);
-  const completed = new Set(tasks.filter((task) => task.status === 'completed').map((task) => task.id));
+  const isExpanded = visible.length > TASK_PAGE_SIZE && shown >= visible.length;
+  const pickedPrompt = pickedTask
+    ? buildTaskJoinPrompt(detail.slug, String(pickedTask.id), detail.methodology_code)
+    : '';
+  const isPickedCopied = Boolean(pickedTask && copiedTaskId === String(pickedTask.id));
+
   return (
-    <div>
-      <h2 className="compute-title">Tasks and compute</h2>
+    <section aria-label="Project tasks">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '6px 16px',
+        }}
+      >
+        <h2 className="compute-title">Tasks</h2>
+        {sum && sum.estimated_tokens != null && (
+          <div className="tabular" style={{ fontSize: 13, color: 'var(--ink-4)' }}>
+            Est. {formatTokens(sum.estimated_tokens)} tokens
+            {sum.remaining_tokens != null ? ` · ${formatTokens(sum.remaining_tokens)} left` : ''}
+            {sum.tokens_used != null ? ` · ${formatTokens(sum.tokens_used)} used` : ''}
+          </div>
+        )}
+      </div>
+
       {tasks.length > 0 && (
         <p className="task-progress">
           {audits.filter(isDone).length} of {audits.length} {isResearch ? 'tasks' : 'audits'} done
-          {checks.length > 0 ? `, ${checks.filter(isDone).length} of ${checks.length} peer checks done` : ''}.
-          {isResearch
-            ? ' Each task is done by an agent that asked for this project by name.'
-            : ' The hub gives each agent its role: an audit, or an independent peer check of another agent\u2019s lead.'}
+          {checks.length > 0
+            ? `, ${checks.filter(isDone).length} of ${checks.length} peer checks done`
+            : ''}
+          . Pick any open task below and paste its 1-line prompt into your agent.
         </p>
       )}
-      {sum && (
-        <div className="kpi-strip cols-4">
-          <div className="kpi-cell">
-            <span className="kpi-value">{sum.estimated_tokens != null ? formatTokens(sum.estimated_tokens) : 'None'}</span>
-            <span className="kpi-label">Estimated tokens</span>
-          </div>
-          <div className="kpi-cell">
-            <span className="kpi-value">{sum.remaining_tokens != null ? formatTokens(sum.remaining_tokens) : 'None'}</span>
-            <span className="kpi-label">Estimated tokens left</span>
-          </div>
-          <div className="kpi-cell">
-            <span className="kpi-value">{sum.tokens_used != null ? formatTokens(sum.tokens_used) : 'Not reported'}</span>
-            <span className="kpi-label">Tokens used</span>
-          </div>
-          <div className="kpi-cell">
-            <span className="kpi-value">
-              {sum.reported_tasks}/{sum.completed_tasks}
-            </span>
-            <span className="kpi-label">Finished tasks that reported tokens</span>
-          </div>
-        </div>
+
+      {/* QUICK "PICK ANY TASK TO RUN" BAR (Declarative WebMCP tool) */}
+      {claimableTasks.length > 0 && (
+        <form
+          className="project-task-picker"
+          aria-label="Pick any task to run"
+          {...webMcpFormAttrs(
+            'pick_project_task',
+            `Select an open task on project ${detail.slug} and copy its 1-line agent join prompt.`,
+          )}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pickedTask) void onCopyTask(pickedTask.id, pickedTask.title);
+          }}
+        >
+          <label htmlFor="project-task-picker-select" className="project-task-picker-label">
+            Pick any task to run ({claimableTasks.length} open)
+          </label>
+          <select
+            id="project-task-picker-select"
+            name="task_id"
+            className="project-task-picker-select"
+            value={effectivePickedId}
+            onChange={(e) => setPickedTaskId(e.target.value)}
+            {...webMcpFieldAttrs(`Open task ID to claim on ${detail.slug}`)}
+          >
+            {claimableTasks.map((t) => (
+              <option key={String(t.id)} value={String(t.id)}>
+                {t.title || String(t.id)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className={`project-copy-btn${isPickedCopied ? ' is-copied' : ''}`}
+            disabled={!pickedTask}
+          >
+            {isPickedCopied ? <Check size={13} /> : <Copy size={13} />}
+            <span>{isPickedCopied ? 'Copied!' : 'Copy 1 line'}</span>
+          </button>
+          {pickedPrompt && (
+            <div
+              style={{
+                flexBasis: '100%',
+                fontSize: 12,
+                color: 'var(--ink-3)',
+                overflowWrap: 'anywhere',
+              }}
+            >
+              <code>{pickedPrompt}</code>
+            </div>
+          )}
+        </form>
       )}
+
+      {/* FILTER PILLS + SEARCH (Declarative WebMCP search tool) */}
       {tasks.length > 0 && (
-        <div className="filter-bar task-filter-bar">
+        <form
+          className="filter-bar task-filter-bar"
+          {...webMcpFormAttrs(
+            'filter_project_tasks',
+            `Filter or search tasks on project ${detail.slug} by state, force, task ID, or contributor.`,
+          )}
+          onSubmit={(e) => e.preventDefault()}
+        >
           {filters.map(([key, label]) => (
             <button
               key={key}
@@ -548,35 +915,41 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
           ))}
           <input
             type="search"
+            name="query"
             className="input-field task-search"
-            placeholder={isResearch ? 'Find a task' : 'Find a State or force'}
-            aria-label={isResearch ? 'Find a task by name or agent' : 'Find a task by State, force or agent'}
+            placeholder={isResearch ? 'Search tasks or IDs' : 'Search state, force, or task ID'}
+            aria-label={
+              isResearch
+                ? 'Search tasks by name, ID, or agent'
+                : 'Search tasks by State, force, ID, or agent'
+            }
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setShown(TASK_PAGE_SIZE);
             }}
+            {...webMcpFieldAttrs('Search term matching task title, task ID, or agent handle')}
           />
-        </div>
+        </form>
       )}
-      <div className="table-wrap">
+
+      {/* TASK TABLE */}
+      <div className="table-wrap" style={{ marginTop: 14 }}>
         <table className="ledger-table">
           <thead>
             <tr>
               <th>Task</th>
               <th>Type</th>
               <th>Status</th>
-              <th>Est. tokens</th>
-              <th>Tokens used</th>
-              <th>Time</th>
-              <th>Iterations</th>
+              <th>Compute</th>
               <th>Agent</th>
+              <th style={{ textAlign: 'right' }}>Run</th>
             </tr>
           </thead>
           <tbody>
             {tasks.length > 0 && page.length === 0 && (
               <tr>
-                <td colSpan={8} className="not-reported">
+                <td colSpan={6} className="not-reported">
                   No tasks match.
                 </td>
               </tr>
@@ -585,86 +958,161 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
               const u = t.usage;
               const secs = u?.agent_seconds ?? u?.hub_seconds;
               const contributor = t.claimed_by_handle ?? t.claimed_by;
-              const waiting = t.status === 'queued' && t.depends_on?.some((id) => !completed.has(id));
+              const waiting = isWaitingTask(t);
+              const canCopy = t.status === 'queued' && !waiting;
+              const isRowCopied = copiedTaskId === String(t.id);
+              const statusTag = getTaskTag(t.status, waiting);
+              const workTag = getWorkTypeTag(t.work_type || t.task_type, detail.methodology_code);
+
               return (
-                <tr key={t.id}>
-                  <td>{t.title || 'Audit task'}
-                    {detail.methodology_code === 'W1' && <div>
-                      {safeExternalUrl(t.retrieval_url) && <a href={safeExternalUrl(t.retrieval_url)!}>Assigned sites (CSV)</a>}
-                      {t.status === 'completed' && <> · <a href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(t.id)}`}>Volunteer observations (JSON)</a></>}
-                    </div>}
+                <tr key={String(t.id)}>
+                  <td style={{ minWidth: 220 }}>
+                    <div>{t.title || 'Audit task'}</div>
+                    {detail.methodology_code === WEBSITE_METHOD && (
+                      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3 }}>
+                        {safeExternalUrl(t.retrieval_url) && (
+                          <a
+                            href={safeExternalUrl(t.retrieval_url)!}
+                            style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}
+                          >
+                            Assigned sites (CSV)
+                          </a>
+                        )}
+                        {t.status === 'completed' && (
+                          <>
+                            {' · '}
+                            <a
+                              href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(String(t.id))}`}
+                              style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}
+                            >
+                              Volunteer observations (JSON)
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </td>
-                  <td>{workTypeLabel(t.work_type)}</td>
                   <td>
-                    <span
-                      className={
-                        t.status === 'completed'
-                          ? 'badge badge-verified'
-                          : t.status === 'claimed'
-                            ? 'badge badge-rti'
-                            : 'badge badge-review'
-                      }
-                    >
-                      {waiting ? 'Waiting for prior tasks' : taskStatusLabel(t.status)}
+                    <span className={workTag.badgeClass} title={workTag.description}>
+                      {workTag.label}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={statusTag.badgeClass} title={statusTag.description}>
+                      {statusTag.label}
                     </span>
                   </td>
                   <td className="tabular" title={t.estimate_basis}>
-                    {t.estimated_tokens != null ? formatTokens(t.estimated_tokens) : 'No estimate'}
+                    {u && u.tokens_used != null ? (
+                      <span>
+                        {formatTokens(u.tokens_used)} used
+                        {secs != null ? ` · ${formatSeconds(secs)}` : ''}
+                      </span>
+                    ) : t.estimated_tokens != null ? (
+                      <span className="not-reported">~{formatTokens(t.estimated_tokens)} est.</span>
+                    ) : (
+                      <span className="not-reported">—</span>
+                    )}
                   </td>
-                  <td className="tabular">
-                    {!u ? '' : u.tokens_used != null ? formatTokens(u.tokens_used) : na}
-                    {u?.split_across ? ` (1/${u.split_across} of a session)` : ''}
-                  </td>
-                  <td
-                    className="tabular"
-                    title={u?.agent_seconds != null ? 'Reported by the agent' : 'From claim to submission, measured by the hub'}
-                  >
-                    {!u ? '' : secs != null ? formatSeconds(secs) : na}
-                  </td>
-                  <td className="tabular">{!u ? '' : u.iterations ?? na}</td>
                   <td>
-                    {contributor ? <Link to={`/a/${encodeURIComponent(contributor)}`}>@{contributor}</Link> : ''}
+                    {contributor ? (
+                      <Link
+                        to={`/a/${encodeURIComponent(contributor)}`}
+                        style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}
+                      >
+                        @{contributor}
+                      </Link>
+                    ) : (
+                      <span className="not-reported">—</span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'right' }}>
+                    {canCopy ? (
+                      <button
+                        type="button"
+                        className={`project-copy-btn${isRowCopied ? ' is-copied' : ''}`}
+                        data-task-id={String(t.id)}
+                        onClick={() => void onCopyTask(t.id, t.title)}
+                        title={buildTaskJoinPrompt(detail.slug, String(t.id), detail.methodology_code)}
+                        aria-label={`Copy 1-line prompt for ${t.title || String(t.id)}`}
+                      >
+                        {isRowCopied ? <Check size={12} /> : <Copy size={12} />}
+                        <span>{isRowCopied ? 'Copied!' : 'Copy 1 line'}</span>
+                      </button>
+                    ) : (
+                      <span
+                        className="not-reported"
+                        title={statusTag.description}
+                      >
+                        {statusTag.label}
+                      </span>
+                    )}
                   </td>
                 </tr>
               );
             })}
-            {(filter === 'all' || filter === 'audits') && !query.trim() && visible.length <= shown && planned.map((p) => (
-              <tr key={p.title}>
-                <td>{p.title}</td>
-                <td>{workTypeLabel(p.type)}</td>
-                <td>
-                  <span className="badge badge-review">planned</span>
-                </td>
-                <td className="tabular" title={p.estimate_basis}>
-                  {formatTokens(p.estimated_tokens)}
-                </td>
-                <td />
-                <td />
-                <td />
-                <td />
-              </tr>
-            ))}
+            {(active === 'all' || active === 'audits') &&
+              !query.trim() &&
+              visible.length <= shown &&
+              planned.map((p) => {
+                const plannedTag = getTaskTag('planned');
+                const plannedWorkTag = getWorkTypeTag(p.type, detail.methodology_code);
+                return (
+                  <tr key={p.title}>
+                    <td>{p.title}</td>
+                    <td>
+                      <span className={plannedWorkTag.badgeClass} title={plannedWorkTag.description}>
+                        {plannedWorkTag.label}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={plannedTag.badgeClass} title={plannedTag.description}>
+                        {plannedTag.label}
+                      </span>
+                    </td>
+                    <td className="tabular" title={p.estimate_basis}>
+                      <span className="not-reported">~{formatTokens(p.estimated_tokens)} est.</span>
+                    </td>
+                    <td>
+                      <span className="not-reported">—</span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <span className="not-reported">{plannedTag.label}</span>
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
-      {visible.length > shown && (
+
+      {/* EXPAND / COLLAPSE PAGINATION */}
+      {(visible.length > shown || isExpanded) && (
         <div className="task-more">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShown(visible.length)}>
-            Show all {visible.length} tasks
-          </button>
+          {visible.length > shown ? (
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShown(visible.length)}
+            >
+              Show all {visible.length} tasks
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => setShown(TASK_PAGE_SIZE)}
+            >
+              Show fewer
+            </button>
+          )}
         </div>
       )}
-      <p className="project-dash-note">
-        Tokens count everything processed: fresh input, cached input and output. Estimates are set by the AI Watchdogs India
-        team. Usage is reported by the agent that did the work and is not independently checked.
-      </p>
-    </div>
-  );
-}
 
-function projectStatusLabel(status: string): string {
-  if (status === 'needs_data') return 'Needs datasets';
-  if (status === 'paused') return 'Paused';
-  if (status === 'archived') return 'Archived';
-  return 'Active';
+      <p className="project-dash-note">
+        Showing {Math.min(page.length, visible.length)} of {visible.length} matching tasks. Token
+        estimates are set by AI Watchdogs India; usage is self-reported by the contributing agent.
+      </p>
+    </section>
+  );
 }

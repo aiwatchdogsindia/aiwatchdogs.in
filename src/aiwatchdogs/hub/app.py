@@ -21,6 +21,34 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from pydantic import BaseModel, Field
 
 from aiwatchdogs.core.usage import MAX_TOKENS, UsageReport
+from aiwatchdogs.hub.agent_access import (
+    build_link_header,
+    estimate_markdown_tokens,
+    handle_mcp_post,
+    markdown_response,
+    prefers_markdown,
+    render_api_catalog,
+    render_back_md,
+    render_brief_md,
+    render_changelog_md,
+    render_contributor_md,
+    render_finding_detail_md,
+    render_findings_md,
+    render_how_it_works_md,
+    render_index_md,
+    render_leaderboard_md,
+    render_live_md,
+    render_llms_full_txt,
+    render_llms_txt,
+    render_markdown_for_path,
+    render_mcp_discovery,
+    render_mcp_markdown,
+    render_project_detail_md,
+    render_projects_md,
+    render_robots_txt,
+    render_sitemap_xml,
+    resolve_spa_markdown_path,
+)
 from aiwatchdogs.hub.database import (
     Database,
     is_postgres_required,
@@ -86,12 +114,14 @@ class ReadOnlyMiddleware:
 
     async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope.get("type") == "http" and scope.get("method") not in {"GET", "HEAD", "OPTIONS"}:
-            response = JSONResponse(
-                status_code=403,
-                content={"detail": "This is a read-only preview. Use https://aiwatchdogs.in."},
-            )
-            await response(scope, receive, send)
-            return
+            # Streamable HTTP MCP is strictly read-only JSON-RPC 2.0 and never opens a write transaction.
+            if not (scope.get("method") == "POST" and scope.get("path") == "/mcp"):
+                response = JSONResponse(
+                    status_code=403,
+                    content={"detail": "This is a read-only preview. Use https://aiwatchdogs.in."},
+                )
+                await response(scope, receive, send)
+                return
         await self.app(scope, receive, send)
 
 
@@ -192,6 +222,8 @@ class SecurityHeadersMiddleware:
                 _add(b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()")
                 _add(b"cross-origin-opener-policy", b"same-origin")
                 _add(b"cross-origin-resource-policy", b"same-origin")
+                if str(scope.get("path") or "").startswith("/api/"):
+                    _add(b"link", build_link_header(None).encode("ascii"))
                 if is_https:
                     _add(b"strict-transport-security", b"max-age=63072000; includeSubDomains; preload")
 
@@ -225,6 +257,7 @@ class DeskNextRequest(BaseModel):
     mode: str | None = Field(default=None, max_length=32)
     preferred_mission: str | None = Field(default=None, max_length=120)
     max_estimated_tokens: int | None = Field(default=None, ge=0, le=MAX_TOKENS)
+    task_id: str | None = Field(default=None, max_length=128)
 
 
 class DeskBeatRequest(BaseModel):
@@ -558,7 +591,16 @@ def create_app(
         allow_origin_regex=r"^https://aiwatchdogs(?:-[a-z0-9-]+)?\.vercel\.app$",
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type", "X-Agent-Token", "Idempotency-Key", "Last-Event-ID"],
+        allow_headers=[
+            "Content-Type",
+            "Accept",
+            "X-Agent-Token",
+            "Idempotency-Key",
+            "Last-Event-ID",
+            "MCP-Protocol-Version",
+            "Mcp-Session-Id",
+        ],
+        expose_headers=["X-Markdown-Tokens", "MCP-Protocol-Version", "Link"],
     )
     application.add_middleware(SecurityHeadersMiddleware)
 
@@ -893,6 +935,7 @@ def create_app(
             preferred_mission=body.preferred_mission,
             max_estimated_tokens=body.max_estimated_tokens,
             website_observations=body.website_observations,
+            task_id=body.task_id,
         )
         if claimed is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})
@@ -974,7 +1017,165 @@ def create_app(
         )
 
     # ------------------------------------------------------------------
-    # Built Frontend SPA Serving (web/dist)
+    # Agent Discovery, Crawlability, Markdown Pages & Streamable HTTP MCP
+    # ------------------------------------------------------------------
+
+    @application.get("/llms.txt", response_class=PlainTextResponse)
+    def llms_txt(request: Request) -> PlainTextResponse:
+        content = render_llms_txt(desk, _public_base_url(request))
+        return PlainTextResponse(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={
+                "X-Markdown-Tokens": str(estimate_markdown_tokens(content)),
+                "Link": build_link_header("/index.md"),
+                "Cache-Control": "public, max-age=60, s-maxage=60",
+            },
+        )
+
+    @application.get("/llms-full.txt", response_class=PlainTextResponse)
+    def llms_full_txt(request: Request) -> PlainTextResponse:
+        content = render_llms_full_txt(desk, _public_base_url(request))
+        return PlainTextResponse(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={
+                "X-Markdown-Tokens": str(estimate_markdown_tokens(content)),
+                "Link": build_link_header("/index.md"),
+                "Cache-Control": "public, max-age=60, s-maxage=60",
+            },
+        )
+
+    @application.get("/robots.txt", response_class=PlainTextResponse)
+    def robots_txt(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(
+            content=render_robots_txt(_public_base_url(request)),
+            media_type="text/plain; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=300, s-maxage=300"},
+        )
+
+    @application.get("/sitemap.xml")
+    def sitemap_xml(request: Request) -> Response:
+        return Response(
+            content=render_sitemap_xml(desk, _public_base_url(request)),
+            media_type="application/xml; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=120, s-maxage=120"},
+        )
+
+    @application.get("/.well-known/api-catalog")
+    def well_known_api_catalog(request: Request) -> Response:
+        import json as _json
+
+        catalog = render_api_catalog(_public_base_url(request))
+        return Response(
+            content=_json.dumps(catalog, ensure_ascii=False, indent=2),
+            media_type="application/linkset+json; charset=utf-8",
+            headers={
+                "Link": build_link_header(None),
+                "Cache-Control": "public, max-age=300, s-maxage=300",
+            },
+        )
+
+    @application.get("/.well-known/mcp.json")
+    @application.get("/.well-known/mcp/server-card.json")
+    def well_known_mcp(request: Request) -> JSONResponse:
+        return JSONResponse(
+            content=render_mcp_discovery(_public_base_url(request)),
+            headers={
+                "Link": build_link_header(None),
+                "Cache-Control": "public, max-age=300, s-maxage=300",
+            },
+        )
+
+    @application.get("/mcp", response_model=None)
+    def mcp_get(request: Request) -> Response:
+        base_url = _public_base_url(request)
+        if prefers_markdown(request.headers.get("accept")):
+            return markdown_response(render_mcp_markdown(base_url), md_path="/mcp")
+        return JSONResponse(
+            content=render_mcp_discovery(base_url),
+            headers={
+                "Vary": "Accept",
+                "Link": build_link_header(None),
+                "Cache-Control": "public, max-age=60, s-maxage=60",
+            },
+        )
+
+    @application.post("/mcp", response_model=None)
+    async def mcp_post(request: Request) -> Response:
+        desk.check_rate_limit(
+            bucket_key=f"mcp:{_extract_client_ip(request)}",
+            limit=120,
+            window_seconds=60,
+        )
+        raw_body = await request.body()
+        return handle_mcp_post(desk, _public_base_url(request), raw_body)
+
+    # Explicit .md routes for every site page
+    @application.get("/index.md")
+    def md_index(request: Request) -> Response:
+        return markdown_response(render_index_md(desk, _public_base_url(request)), md_path="/index.md")
+
+    @application.get("/projects.md")
+    @application.get("/missions.md")
+    def md_projects(request: Request) -> Response:
+        return markdown_response(render_projects_md(desk, _public_base_url(request)), md_path="/projects.md")
+
+    @application.get("/projects/{slug}.md")
+    @application.get("/missions/{slug}.md")
+    def md_project_detail(slug: str, request: Request) -> Response:
+        resolved = desk.resolve_slug(slug)
+        return markdown_response(
+            render_project_detail_md(desk, _public_base_url(request), resolved),
+            md_path=f"/projects/{resolved}.md",
+        )
+
+    @application.get("/findings.md")
+    def md_findings(request: Request) -> Response:
+        return markdown_response(render_findings_md(desk, _public_base_url(request)), md_path="/findings.md")
+
+    @application.get("/findings/{finding_id}.md")
+    def md_finding_detail(finding_id: str, request: Request) -> Response:
+        return markdown_response(
+            render_finding_detail_md(desk, _public_base_url(request), finding_id),
+            md_path=f"/findings/{finding_id}.md",
+        )
+
+    @application.get("/live.md")
+    def md_live(request: Request) -> Response:
+        return markdown_response(render_live_md(desk, _public_base_url(request)), md_path="/live.md")
+
+    @application.get("/leaderboard.md")
+    @application.get("/contributors.md")
+    def md_leaderboard(request: Request) -> Response:
+        return markdown_response(render_leaderboard_md(desk, _public_base_url(request)), md_path="/leaderboard.md")
+
+    @application.get("/a/{handle}.md")
+    def md_contributor(handle: str, request: Request) -> Response:
+        return markdown_response(
+            render_contributor_md(desk, _public_base_url(request), handle),
+            md_path=f"/a/{handle}.md",
+        )
+
+    @application.get("/how-it-works.md")
+    def md_how_it_works(request: Request) -> Response:
+        return markdown_response(render_how_it_works_md(desk, _public_base_url(request)), md_path="/how-it-works.md")
+
+    @application.get("/brief.md")
+    def md_brief(request: Request) -> Response:
+        return markdown_response(render_brief_md(_public_base_url(request)), md_path="/brief.md")
+
+    @application.get("/changelog.md")
+    def md_changelog(request: Request) -> Response:
+        return markdown_response(render_changelog_md(_public_base_url(request)), md_path="/changelog.md")
+
+    @application.get("/back.md")
+    @application.get("/sponsors.md")
+    def md_back(request: Request) -> Response:
+        return markdown_response(render_back_md(desk, _public_base_url(request)), md_path="/back.md")
+
+    # ------------------------------------------------------------------
+    # Built Frontend SPA Serving (web/dist) + Accept: text/markdown Negotiation
     # ------------------------------------------------------------------
 
     def _current_dist() -> Path:
@@ -992,12 +1193,19 @@ def create_app(
         return JSONResponse(status_code=404, content={"detail": "Asset not found"})
 
     @application.get("/{full_path:path}", include_in_schema=False)
-    def spa_fallback(full_path: str) -> Response:
+    def spa_fallback(full_path: str, request: Request) -> Response:
         norm_path = full_path.strip("/")
         if norm_path.startswith("api/") or norm_path == "api":
             return JSONResponse(status_code=404, content={"detail": "API endpoint not found"})
         if not enable_docs and norm_path in {"docs", "docs/oauth2-redirect", "redoc", "openapi.json"}:
             return JSONResponse(status_code=404, content={"detail": "Not found"})
+
+        md_alt = resolve_spa_markdown_path(norm_path)
+        if md_alt is not None and prefers_markdown(request.headers.get("accept")):
+            rendered = render_markdown_for_path(desk, _public_base_url(request), "/" + norm_path)
+            if rendered is not None:
+                md_text, canon_md = rendered
+                return markdown_response(md_text, md_path=canon_md)
 
         dist = _current_dist().resolve()
         if full_path:
@@ -1005,9 +1213,14 @@ def create_app(
             if dist.is_dir() and static_candidate.is_file() and static_candidate.is_relative_to(dist):
                 return FileResponse(static_candidate)
 
+        discovery_headers = {
+            "Vary": "Accept",
+            "Link": build_link_header(md_alt or "/index.md"),
+        }
+
         index_html = dist / "index.html"
         if index_html.is_file():
-            return FileResponse(index_html)
+            return FileResponse(index_html, headers=discovery_headers)
 
         if _is_production_env():
             return JSONResponse(status_code=404, content={"detail": "Not found"})
@@ -1022,16 +1235,19 @@ def create_app(
                 "or run Vite dev server on <code>http://127.0.0.1:5173</code>.</p>"
                 "<ul>"
                 "<li><a href='/health'>/health</a></li>"
+                "<li><a href='/index.md'>/index.md</a></li>"
+                "<li><a href='/llms.txt'>/llms.txt</a></li>"
+                "<li><a href='/mcp'>/mcp</a></li>"
                 "<li><a href='/api/head'>/api/head</a></li>"
                 "<li><a href='/api/missions'>/api/missions</a></li>"
                 "<li><a href='/api/findings'>/api/findings</a></li>"
-                "<li><a href='/api/treasury'>/api/treasury</a></li>"
                 "<li><a href='/api/events'>/api/events</a></li>"
                 "<li><a href='/join.txt'>/join.txt</a></li>"
                 "<li><a href='/docs'>/docs (OpenAPI)</a></li>"
                 "</ul></body></html>"
             ),
             status_code=200,
+            headers=discovery_headers,
         )
 
     return application

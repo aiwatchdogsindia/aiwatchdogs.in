@@ -65,9 +65,106 @@
           "value": "no-store"
         }
       ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Vary",
+          "value": "Accept"
+        },
+        {
+          "key": "Link",
+          "value": "</llms.txt>; rel=\"describedby\"; type=\"text/plain\", </index.md>; rel=\"alternate\"; type=\"text/markdown\", </.well-known/api-catalog>; rel=\"api-catalog\", </mcp>; rel=\"mcp\""
+        }
+      ]
+    },
+    {
+      "source": "/(projects|missions|findings|live|leaderboard|contributors|how-it-works|brief|changelog|back|sponsors|ledger)",
+      "headers": [
+        {
+          "key": "Vary",
+          "value": "Accept"
+        },
+        {
+          "key": "Link",
+          "value": "</llms.txt>; rel=\"describedby\"; type=\"text/plain\", </.well-known/api-catalog>; rel=\"api-catalog\", </mcp>; rel=\"mcp\""
+        }
+      ]
+    },
+    {
+      "source": "/(projects|missions|findings|a)/:slug",
+      "headers": [
+        {
+          "key": "Vary",
+          "value": "Accept"
+        },
+        {
+          "key": "Link",
+          "value": "</llms.txt>; rel=\"describedby\"; type=\"text/plain\", </.well-known/api-catalog>; rel=\"api-catalog\", </mcp>; rel=\"mcp\""
+        }
+      ]
     }
   ],
   "rewrites": [
+    {
+      "source": "/(.*)\\.md",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/llms.txt",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/llms-full.txt",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/.well-known/api-catalog",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/.well-known/mcp.json",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/.well-known/mcp/(.*)",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/mcp",
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/api/index.py"
+    },
+    {
+      "source": "/((?!api/|assets/|fonts/|agents/|\\.well-known/).*)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/api/index.py"
+    },
     {
       "source": "/projects/(.*)",
       "destination": "/index.html"
@@ -85,6 +182,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/findings/(.*)",
+      "destination": "/index.html"
+    },
+    {
       "source": "/findings",
       "destination": "/index.html"
     },
@@ -93,11 +194,19 @@
       "destination": "/index.html"
     },
     {
+      "source": "/leaderboard",
+      "destination": "/index.html"
+    },
+    {
       "source": "/contributors",
       "destination": "/index.html"
     },
     {
       "source": "/a/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/back",
       "destination": "/index.html"
     },
     {

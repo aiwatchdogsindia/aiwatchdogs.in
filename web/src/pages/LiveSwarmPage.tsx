@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { LiveOrganism } from '../components/LiveOrganism';
 import type { SseStatus } from '../hooks/useSwarmStream';
+import { getVerdictTag } from '../lib/tags';
 import { Link } from '../router';
 import type { LiveData, MissionItem, WhisperItem } from '../types';
 import { formatRelativeTime, providerBadgeClass } from '../utils';
@@ -255,14 +256,15 @@ export function LiveSwarmPage({
                       )}
                     </td>
                     <td>
-                      <span
-                        className={
-                          v.verdict === 'confirm' ? 'badge badge-verified' : 'badge badge-disputed'
-                        }
-                      >
-                        <CheckCircle2 size={11} />
-                        {v.verdict}
-                      </span>
+                      {(() => {
+                        const verdictTag = getVerdictTag(v.verdict);
+                        return (
+                          <span className={verdictTag.badgeClass} title={verdictTag.description}>
+                            {verdictTag.id === 'confirm' && <CheckCircle2 size={11} />}
+                            <span>{verdictTag.label}</span>
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
                       {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
