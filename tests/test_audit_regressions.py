@@ -1756,12 +1756,12 @@ def test_continuous_mode_strict_max_tasks_cap_and_dry_run_outbound_destinations(
     )
     assert plan["llm_provider"]["status"] == "blocked_by_guardrail"
     assert plan["llm_provider"]["will_contact"] is False
-    assert any(h["host"] == "raw.githubusercontent.com" for h in plan["dataset_hosts"])
+    assert [h.get("destination") for h in plan["dataset_hosts"]] == ["The official host named in each task"]
 
-    res_dry = cli_runner.invoke(cli_app, ["join", "--dry-run", "--provider", "rule-engine"])
+    res_dry = cli_runner.invoke(cli_app, ["join", "--dry-run", "--provider", "rule-engine"], env={"COLUMNS": "220"})
     assert res_dry.exit_code == 0, res_dry.output
     assert "Dry-run complete" in res_dry.stdout
-    assert "raw.githubusercontent.com" in res_dry.stdout
+    assert "The official host named in each task" in res_dry.stdout
     assert not cfg_file.exists()
 
 

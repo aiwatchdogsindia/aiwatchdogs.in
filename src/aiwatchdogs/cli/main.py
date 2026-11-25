@@ -116,9 +116,10 @@ def _render_consent_notice(hub_url: str) -> None:
     notice = (
         "[bold]Owner Consent, Outbound Network & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
         f"• [cyan]Coordinator Hub:[/cyan] {_safe_rich(hub_url)} (outbound HTTPS only — no inbound ports required)\n"
-        "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official & pinned civic public-record artifacts "
-        "(e.g. raw.githubusercontent.com, d1jmc0u14z2tmp.cloudfront.net, cga.nic.in) directly over HTTPS and "
-        "verifies SHA-256 checksums locally (fail-closed on mismatch).\n"
+        "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official public-record files from the host "
+        "named in each task (for the police project: Union Budget, Home Ministry and State finance department "
+        "sites) directly over HTTPS, shows that host before each download, and verifies SHA-256 checksums "
+        "locally (fail-closed on mismatch).\n"
         "• [cyan]Hard Budget Guardrail:[/cyan] Deterministic CPU mode (rule-engine) and local loopback Ollama "
         "spend $0.00 / ₹0. Paid cloud LLM APIs are STRICTLY BLOCKED unless you explicitly opt in "
         "(--allow-paid-provider) AND set a positive hard cap (--max-usd > 0).\n"
@@ -162,7 +163,7 @@ def _render_outbound_destinations(
     for ds in plan["dataset_hosts"]:
         table.add_row(
             "Public Dataset",
-            f"https://{ds['host']}",
+            str(ds.get("destination") or f"https://{ds['host']}"),
             str(ds["purpose"]),
         )
 
@@ -243,6 +244,9 @@ def _make_event_printer() -> Any:
             console.print(f"  [red]✗ Task error (lease released cleanly): {_safe_rich(data.get('error'), max_len=240)}[/red]")
         elif event == "queue_empty":
             console.print("[dim]No queued tasks available right now.[/dim]")
+        elif event == "source_download":
+            hosts = ", ".join(_safe_rich(h, max_len=120) for h in data.get("hosts") or [])
+            console.print(f"  [dim]↓ Downloading the pinned file from[/dim] {hosts}")
         elif event == "hub_retry":
             why = "the hub is rate-limiting this network address" if data.get("reason") == "rate_limited" else f"hub {data.get('reason')}"
             console.print(f"  [dim]… {_safe_rich(data.get('what'))}: {_safe_rich(why)}; retrying in {_safe_rich(data.get('delay'))}s[/dim]")

@@ -258,6 +258,15 @@ def _resolve_dataset_ref(ref: str, *, allow_local_files: bool = False) -> str:
     return cleaned
 
 
+def _source_host(target_ref: str | None) -> str:
+    """The host a task's file is downloaded from, for the line shown before the download."""
+    try:
+        host = urlsplit(str(target_ref or "")).hostname if "://" in str(target_ref or "") else None
+    except ValueError:
+        host = None
+    return host or "public source"
+
+
 def _extract_target_ref(
     payload: dict[str, Any],
     *,
@@ -1571,6 +1580,10 @@ class AgentRunner:
             if "secondary_expected_sha256" in params and secondary_expected_sha256:
                 kwargs["secondary_expected_sha256"] = secondary_expected_sha256
 
+            # Say where the file comes from before fetching it, for audits and peer checks alike.
+            hosts = [_source_host(ref) for ref in (target_ref, secondary_url) if ref and _is_http_url(ref)]
+            if hosts:
+                self._emit("source_download", {"hosts": list(dict.fromkeys(hosts))})
             return load_dataset(target_ref, **kwargs)
 
         inline_records = payload.get("records")
@@ -1679,7 +1692,7 @@ class AgentRunner:
 
         if not self.heartbeat(
             lease_id,
-            whisper=f"Fetching {artifact_label} ({methodology_code}) from public source",
+            whisper=f"Fetching {artifact_label} ({methodology_code}) from {_source_host(target_ref)}",
             progress_pct=15,
         ):
             return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
