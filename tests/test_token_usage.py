@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from aiwatchdogs.core.usage import UsageReport, public_usage, summarise_tokens, tokens_used
 from aiwatchdogs.hub.app import create_app
 from aiwatchdogs.projects import validate_project
-from tests.test_projects import PLANNED, _project
+from test_projects import PLANNED, _project
 
 CLEARED = {
     "outcome": "cleared",
