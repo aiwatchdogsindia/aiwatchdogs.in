@@ -7,6 +7,7 @@ import math
 import re
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1168,6 +1169,7 @@ class AgentRunner:
             "handle": self.config.handle,
             "mode": self.config.mode,
         }
+        body["website_observations"] = True
         if preferred_mission:
             body["preferred_mission"] = preferred_mission
 
@@ -1260,6 +1262,7 @@ class AgentRunner:
         outcome: str,
         whisper: str | None = None,
         finding: dict[str, Any] | None = None,
+        observations: list[dict[str, Any]] | None = None,
         verification: dict[str, Any] | None = None,
         metrics: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
@@ -1273,6 +1276,8 @@ class AgentRunner:
         }
         if whisper is not None:
             body["whisper"] = whisper
+        if observations is not None:
+            body["observations"] = observations
         if finding is not None:
             body["finding"] = finding
         if verification is not None:
@@ -1515,6 +1520,23 @@ class AgentRunner:
         )
         if digest_state == CHECK_FAIL:
             raise DigestMismatchFailure(digest_err or "Artifact SHA-256 digest verification failed.")
+
+        if methodology_code == "W1":
+            from aiwatchdogs.engines.gov_pages import observe_site
+
+            if primary_matched is not True or not 1 <= len(dataset.records) <= 126:
+                raise ValueError("Website audit requires a checksummed batch of 1–126 websites.")
+            rows = []
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                for index in range(0, len(dataset.records), 12):
+                    if not self.heartbeat(
+                        lease_id, whisper=f"Reviewed {index} of {len(dataset.records)} assigned websites",
+                        progress_pct=20 + 75 * index // len(dataset.records),
+                    ):
+                        return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
+                    rows.extend(pool.map(observe_site, dataset.records[index:index + 12]))
+            response = self.submit(lease_id, outcome="observations", observations=rows)
+            return {"status": "completed", "task_id": task_id, "outcome": "observations", "response": response}
 
         sha_note = (
             f"sha256:{dataset.sha256[:8]} matched"

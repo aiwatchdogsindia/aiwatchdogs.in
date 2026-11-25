@@ -70,6 +70,7 @@ VALID_QUANTITY_TYPES = {
     "awarded_contract_values",
     "budget_and_treasury_expenditure",
     "cag_report_monetary_figures",
+    "public_website_information",
     "scheme_outlay_and_expenditure",
     "electoral_bond_disclosures",
 }
@@ -110,7 +111,7 @@ def default_projects_dir() -> Path:
 def _known_methodologies() -> set[str]:
     from aiwatchdogs.engines.registry import _ENGINE_DISPATCH
 
-    return set(_ENGINE_DISPATCH)
+    return set(_ENGINE_DISPATCH) | {"W1"}
 
 
 def _scan_terms(text: str) -> list[str]:
@@ -292,9 +293,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     if not isinstance(planned, list):
         errors.append("'planned_tasks' must be a list.")
         planned = []
-    if len(tasks) + len(planned) > MAX_TASKS_PER_PROJECT:
+    limit = 100 if methodology == "W1" else MAX_TASKS_PER_PROJECT
+    if len(tasks) + len(planned) > limit:
         errors.append(
-            f"A project can list at most {MAX_TASKS_PER_PROJECT} tasks ('tasks' and 'planned_tasks' together)."
+            f"A project can list at most {limit} tasks ('tasks' and 'planned_tasks' together)."
         )
     if not tasks and not planned:
         errors.append("'planned_tasks' must list at least one task with a type and estimated_tokens.")

@@ -151,6 +151,14 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 </div>
               )}
 
+              {detail.methodology_code === 'W1' && (
+                <div className="card-sunk card-pad-sm">
+                  <h2>Contribute a website audit</h2>
+                  <p>Run one batch on your computer with uv. Choose a public handle when prompted.
+                    The reader checks the listed websites without a paid model or API key.</p>
+                  <code style={{ overflowWrap: 'anywhere' }}>uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --project gov-in-public-information --max-tasks 1 --provider rule-engine</code>
+                </div>
+              )}
               {methodInfo && (
                 <div
                   className="card-sunk card-pad-sm"
@@ -170,7 +178,9 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 ))}
               </div>
 
-              <div className="kpi-strip cols-4">
+              {detail.methodology_code === 'W1' ? (
+                <p><strong>{detail.completed_tasks} of {detail.total_tasks} batches reported.</strong> Open a batch below to see its assigned sites or its dated observations.</p>
+              ) : <div className="kpi-strip cols-4">
                 <div className="kpi-cell">
                   <span className="kpi-value">{pct}%</span>
                   <span className="kpi-label">
@@ -206,7 +216,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
                   </span>
                 </div>
-              </div>
+              </div>}
             </div>
 
             {/* Public Source Portals (Tiers 1-3) */}
@@ -265,7 +275,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
             )}
 
             {/* Mission Findings */}
-            <div>
+            {detail.methodology_code !== 'W1' && <div>
               <div className="section-kicker">
                 Findings &amp; audit leads ({detail.findings?.length ?? 0})
               </div>
@@ -281,7 +291,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   <code className="font-mono">aiwatchdogs join</code> to run deterministic scans!
                 </div>
               )}
-            </div>
+            </div>}
 
             <ProjectCompute detail={detail} />
           </div>
@@ -432,7 +442,12 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
               const secs = u?.agent_seconds ?? u?.hub_seconds;
               return (
                 <tr key={t.id}>
-                  <td>{t.title || 'Audit task'}</td>
+                  <td>{t.title || 'Audit task'}
+                    {detail.methodology_code === 'W1' && <div>
+                      {safeExternalUrl(t.retrieval_url) && <a href={safeExternalUrl(t.retrieval_url)!}>Assigned sites (CSV)</a>}
+                      {t.status === 'completed' && <> · <a href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(t.id)}`}>Volunteer observations (JSON)</a></>}
+                    </div>}
+                  </td>
                   <td>{workTypeLabel(t.work_type)}</td>
                   <td>
                     <span

@@ -31,11 +31,11 @@ Projects with tasks start receiving agents immediately.
 | `sources` | yes | At least one official public source: `name`, `publisher`, `url`. |
 | `methodology_code` | with tasks | The deterministic check the tasks run (for example `P1`, `M5`). |
 | `planned_tasks` | if no tasks | Work still to be set up: `title`, `type`, `estimated_tokens`, `estimate_basis`. |
-| `tasks` | no | Up to 10 concrete datasets for agents. See below. |
+| `tasks` | no | Up to 10 concrete datasets (100 for W1 website batches) for agents. See below. |
 
 ### Tasks
 
-A project can have up to 10 tasks (`tasks` and `planned_tasks` together). Each task points agents at one exact file:
+A project can have up to 10 tasks, or 100 W1 website batches (`tasks` and `planned_tasks` together). Each task points agents at one exact file:
 
 - `id`: lowercase-hyphen id, unique across all projects.
 - `title`, `instructions`, `dataset_key`, `financial_quantity_type`.

@@ -94,8 +94,9 @@ Follow these steps cleanly and transparently with the operator:
    credentials, so always pass --handle '<HANDLE>' to run, report-usage, status and whoami.
 
 Use the official CLI. It downloads each official file, verifies its SHA-256 and runs
-the project's deterministic check (P1 police budget heads) exactly as
-peer verifiers will re-run it. Do not hand-write audits with the raw HTTP
+the assigned check. W1 visits the listed public government websites and records
+what is visible on their homepage and linked contact page. Budget projects use
+deterministic checks that peer verifiers can reproduce. Do not hand-write audits with the raw HTTP
 protocol (Option B in section 2) unless the CLI genuinely cannot run here.
 
 ================================================================================
@@ -105,7 +106,8 @@ Present this notice clearly before running the contributor CLI:
 - Local execution & outbound network destinations:
   * In ₹0 deterministic CPU mode (`rule-engine`), outbound HTTPS requests go to
     this Coordinator Hub ({hub}) and the pinned public Government of India /
-    civic mirror dataset hosts listed in each task manifest.
+    civic mirror dataset hosts listed in each task manifest. Website audit workers also
+    read public HTTPS pages and robots.txt on the assigned .gov.in hosts.
   * Local Ollama / vLLM connects only to your configured local inference endpoint.
   * Paid cloud LLM providers are strictly opt-in and never invoked when budget is ₹0.
 - Public attribution: Your chosen handle, provider/model name, audit whispers,

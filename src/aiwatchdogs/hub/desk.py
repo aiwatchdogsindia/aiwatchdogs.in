@@ -2114,17 +2114,20 @@ class DeskService:
 
             t_rows = conn.execute(
                 """
-                SELECT t.* FROM tasks t
-                WHERE t.mission_id = ?
+                SELECT t.id, t.task_type, t.methodology_code, t.title, t.status, t.claimed_by_handle,
+                       t.progress_pct, t.retry_count, t.available_at, t.target_finding_id, t.payload_json,
+                       t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis,
+                       t.usage_json, t.lease_started_at, t.attempt_count
+                FROM tasks t WHERE t.mission_id = ?
                   AND (t.target_finding_id IS NULL OR NOT EXISTS (
                       SELECT 1 FROM findings qf
                       WHERE qf.id = t.target_finding_id
                         AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
                   ))
-                ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.updated_at DESC
-                LIMIT 30
+                ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.updated_at DESC, t.id ASC
+                LIMIT ?
                 """,
-                (mid,),
+                (mid, 100 if mission["methodology_code"] == "W1" else 30),
             ).fetchall()
             tasks = []
             for t in t_rows:
@@ -2163,6 +2166,20 @@ class DeskService:
                 )
 
         return {**mission, "sources": sources, "findings": findings, "tasks": tasks}
+
+    def website_observations(self, slug: str, task_id: str) -> dict[str, Any]:
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT output_json, payload_json, completed_at FROM tasks WHERE mission_slug = ? AND id = ? "
+                "AND methodology_code = 'W1' AND status = 'completed'", (slug, task_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="No completed observation report for this batch")
+        manifest = loads_json(row["payload_json"], {})
+        return {"task_id": task_id, "manifest": manifest["retrieval_url"], "manifest_sha256": manifest["expected_sha256"],
+                "completed_at": row["completed_at"], "review_status": "volunteer_observations",
+                "guidelines": "https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/",
+                **loads_json(row["output_json"], {})}
 
     def list_findings(
         self,
@@ -3549,6 +3566,7 @@ class DeskService:
         mode: str | None = None,
         preferred_mission: str | None = None,
         max_estimated_tokens: int | None = None,
+        website_observations: bool = False,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
         with self.db.transaction() as conn:
@@ -3624,11 +3642,15 @@ class DeskService:
                 "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
             )
 
+            if not website_observations:
+                clauses.append("t.methodology_code != 'W1'")
             if eff_mode == "verify":
                 clauses.append("t.task_type = 'peer_verify'")
             elif eff_mode == "investigate":
                 clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse')")
-            if preferred_mission and _agents_may_choose_project():
+            if preferred_mission and (_agents_may_choose_project() or (
+                website_observations and preferred_mission == "gov-in-public-information"
+            )):
                 clauses.append("t.mission_slug = ?")
                 params.append(preferred_mission.strip()[:120])
             if max_estimated_tokens is not None:
@@ -3951,10 +3973,10 @@ class DeskService:
     ) -> dict[str, Any]:
         lease_id = str(payload.get("lease_id") or "").strip()
         outcome = str(payload.get("outcome") or "").strip().lower()
-        if outcome not in {"finding", "cleared", "verification"}:
+        if outcome not in {"finding", "cleared", "verification", "observations"}:
             raise HTTPException(
                 status_code=422,
-                detail="outcome must be one of 'finding', 'cleared', or 'verification'",
+                detail="Unknown task outcome",
             )
         eff_idem = (idempotency_key or str(payload.get("idempotency_key") or "")).strip() or None
         envelopes: list[dict[str, Any]] = []
@@ -3970,6 +3992,9 @@ class DeskService:
             )
             if replay is not None:
                 return replay
+
+            if (task["methodology_code"] == "W1") != (outcome == "observations"):
+                raise HTTPException(status_code=422, detail="Website assignments require a batch observation report.")
 
             # Server-authoritative task type enforcement
             assigned_type = str(task["task_type"] or "").strip().lower()
@@ -3995,7 +4020,23 @@ class DeskService:
             if not isinstance(metrics, dict):
                 metrics = {}
 
-            if outcome == "finding":
+            if outcome == "observations":
+                from aiwatchdogs.hub.website_reports import validate_batch
+
+                rows = validate_batch(loads_json(task["payload_json"], {}), payload.get("observations"))
+                result = {"status": "accepted", "outcome": outcome, "task_id": task["id"], "hosts": len(rows)}
+                self._settle_task_atomically(
+                    conn, task_id=task["id"], lease_id=lease_id, agent_id=agent["id"],
+                    output_obj={"observations": rows}, idempotency_key=eff_idem,
+                    response_obj=result, monetary_audited_inr=0, now=now,
+                )
+                conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (mission["id"],))
+                conn.execute(
+                    "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
+                    "last_heartbeat_at = ? WHERE id = ?", (now, agent["id"]),
+                )
+                self._emit_durable_event(conn, envelopes, "website_batch_observed", result, now=now)
+            elif outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
                     task=task,

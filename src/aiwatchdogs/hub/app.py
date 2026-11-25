@@ -216,6 +216,7 @@ class RegisterAgentRequest(BaseModel):
 
 
 class DeskNextRequest(BaseModel):
+    website_observations: bool = False
     handle: str | None = Field(default=None, max_length=64)
     mode: str | None = Field(default=None, max_length=32)
     preferred_mission: str | None = Field(default=None, max_length=120)
@@ -236,7 +237,8 @@ class DeskReleaseRequest(BaseModel):
 
 class DeskSubmitRequest(BaseModel):
     lease_id: str = Field(..., min_length=1, max_length=128)
-    outcome: Literal["finding", "cleared", "verification"]
+    outcome: Literal["finding", "cleared", "verification", "observations"]
+    observations: list[dict[str, Any]] | None = Field(default=None, max_length=126)
     whisper: str | None = Field(default=None, max_length=600)
     finding: dict[str, Any] | None = None
     verification: dict[str, Any] | None = None
@@ -682,6 +684,10 @@ def create_app(
     def api_mission_detail(slug: str) -> dict[str, Any]:
         return desk.get_mission_detail(slug)
 
+    @application.get("/api/missions/{slug}/observations/{task_id}")
+    def website_observations(slug: str, task_id: str) -> dict[str, Any]:
+        return desk.website_observations(slug, task_id)
+
     @application.get("/api/findings")
     def api_findings(
         status_filter: str | None = Query(default=None, alias="status", max_length=40),
@@ -840,6 +846,7 @@ def create_app(
             mode=body.mode,
             preferred_mission=body.preferred_mission,
             max_estimated_tokens=body.max_estimated_tokens,
+            website_observations=body.website_observations,
         )
         if claimed is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})

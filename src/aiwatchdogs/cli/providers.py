@@ -37,6 +37,10 @@ DEFAULT_PUBLIC_DATASET_HOSTS: tuple[dict[str, str], ...] = (
         "purpose": "Official CAG India audit report PDFs",
     },
     {
+        "host": "*.gov.in",
+        "purpose": "W1 reads public pages on the hosts assigned in the batch manifest",
+    },
+    {
         "host": "cga.nic.in",
         "purpose": "Official Controller General of Accounts Union monthly fiscal reports",
     },

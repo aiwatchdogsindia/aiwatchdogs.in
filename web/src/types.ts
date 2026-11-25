@@ -194,6 +194,7 @@ export interface ProjectSource {
 }
 
 export interface MissionTask {
+  retrieval_url?: string;
   id: string | number;
   task_type: string;
   title?: string;
