@@ -115,6 +115,19 @@ All eight methodologies are registered in `aiwatchdogs.engines.registry.METHODOL
   * Also supports procurement-side proximity checks (`< 180` day newly incorporated awardees, shared-DIN/address competing bidders) under strictly neutral **"Disclosure / Proximity Lead"** framing.
 * **Mandatory Benign Explanations Considered:** Lawful corporate political contributions under the then-prevailing scheme, normalized-name linkage requiring corroborating corporate identifiers, SPV/JV consortia, or routine group structures disclosed in conflict-of-interest filings.
 
+### `P1` — Police Budget-Head Variance (official budget documents)
+
+The check used by the live police finances project (`engines/police.py`, ruleset `P1-2026.11-v1`). It makes no judgement of its own: it reads figures that an official budget document prints and reports where they diverge.
+
+* **Statutory Anchors:** Constitution Articles 202–203 (Annual Financial Statement and Demands for Grants); GFR 2017 Rule 62; List of Major and Minor Heads, Major Head 2055 "Police" and 4055 "Capital Outlay on Police".
+* **Input:** one official PDF, pinned by its exact link and SHA-256. Each task names the page and the printed line of every head it reads (`context.budget_lines`), which figure sits at which position on that line (`values`), the unit the book uses (crore, lakh or thousand), and the fiscal year of each figure.
+* **How a line is read:** the first line on the named page that matches the task's pattern. Its whitespace-separated tokens that are numbers are counted from zero; Indian digit grouping (`1670,92.50`) is accepted; `..`, `-` and `–` standing alone count as nil; negative figures, `...` and `--` are not counted. Where a book prints a row one cell per line, the task sets `lines_before` / `lines_after` (0 to 12) and the matched line is read together with that many neighbouring lines, in page order.
+* **Comparisons (set per task, the same across the project):** revised estimate against budget estimate of the same year (flag at 10%); the next budget against the revised estimate (15%); the budget estimate against the previous year's accounts (15%); and accounts against the budget estimate of the accounts year (10%), where that estimate is cited from the previous edition of the same document. A head whose revised estimate repeats its budget estimate exactly is reported separately, at low severity.
+* **Outcomes:** a divergence at or above the threshold becomes a neutral lead that quotes the page and the printed line. Comparisons inside their thresholds count as cleared. A line that cannot be found as specified is **unevaluable**: it is never guessed, and a task in which nothing could be read is handed back to the queue rather than reported as cleared.
+* **One parser for every node:** `pypdf` is pinned to an exact version in `pyproject.toml`, because the auditor and both peer verifiers must extract the same text from the same file.
+* **Column order is verified when a task is written, not assumed:** PDF text extraction can return a row's figures in a different order from the printed columns (several State books come out reversed). Every task in the project was checked against the page's visual layout before it was added.
+* **Mandatory Benign Explanations Considered:** pay revisions and dearness allowance, posts sanctioned mid-year, capital works re-phased across years, supplementary grants and re-appropriations, savings on vacant posts, late release of funds, and budget books that carry the budget estimate forward as the revised estimate.
+
 ---
 
 ## 3. Epistemic Lifecycle, 4-Check Quorum & Jurisdiction-Aware RTI Drafts

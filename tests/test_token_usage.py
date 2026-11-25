@@ -34,8 +34,7 @@ def test_bad_estimates_are_rejected(patch: dict) -> None:
 def test_a_project_must_say_what_work_it_needs() -> None:
     errors = validate_project(_project(status="needs_data", tasks=[]), filename_stem="test-city-budget")
     assert any("planned_tasks" in e for e in errors)
-    errors = validate_project(_project(planned_tasks=[PLANNED] * 10), filename_stem="test-city-budget")
-    assert any("at most 10" in e for e in errors)
+    assert validate_project(_project(planned_tasks=[PLANNED] * 10), filename_stem="test-city-budget") == []
 
 
 def test_unreported_usage_is_never_shown_as_zero() -> None:

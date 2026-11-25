@@ -5778,6 +5778,36 @@ code.font-mono {
   min-width: 220px;
 }
 
+/* Project page: many tasks */
+.task-progress {
+  margin: 0 0 14px;
+  font-size: 15px;
+  color: var(--ink-2);
+  max-width: 78ch;
+}
+.task-filter-bar {
+  margin: 14px 0 0;
+}
+.task-filter-bar .task-search {
+  flex: 1 1 200px;
+  min-width: 160px;
+  max-width: 320px;
+  margin-left: auto;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+.task-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+@media (max-width: 760px) {
+  .task-filter-bar .task-search {
+    margin-left: 0;
+    max-width: none;
+  }
+}
+
 .community-sub a {
   text-decoration: underline;
   text-underline-offset: 3px;

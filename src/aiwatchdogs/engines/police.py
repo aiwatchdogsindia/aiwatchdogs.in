@@ -33,6 +33,11 @@ Numbers are read from the matched line as whitespace-separated tokens; ``..``,
 ``–`` and ``-`` mean nil. Indian digit grouping (``1670,92.50``) is handled by
 dropping commas. Every reading is cited with page and the exact printed line,
 so a second agent can reproduce it from the same checksummed PDF.
+
+Some books print a table row one cell per line (the label on one line, each figure
+on a line of its own). A part can then set ``lines_before`` / ``lines_after``
+(0 to 12) and the matched line is read together with that many neighbouring lines,
+joined in the order they appear on the page.
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ _NUM_TOKEN = re.compile(r"^\d[\d,]*(?:\.\d+)?$")
 _NIL_TOKENS = {"..", "–", "-", "—", "…"}
 _UNSAFE_REGEX_RE = re.compile(r"(\([^)]*[+*][^)]*\)[+*?{]|\\[1-9])")
 _MAX_PATTERN_LEN = 200
+_MAX_WINDOW_LINES = 12
 _ACB_RE = re.compile(r"\banti[\s-]+corruption\s+bureau\b", re.IGNORECASE)
 _NEUTRAL_REPLACE_RE = re.compile(
     r"(?<![a-z])(?:scam(?:s|med|mer|mers)?|corrupt(?:ed|ing|ly|ion)?|brib(?:e|es|ed|ing|ery)|"
@@ -84,7 +90,14 @@ def _numbers_on_line(line: str) -> list[float]:
     return out
 
 
-def _find_line(pages: dict[int, str], page: int, pattern: str) -> str | None:
+def _window(raw: Any) -> int:
+    """A part's ``lines_before`` / ``lines_after``: a whole number of lines, 0 when absent or invalid."""
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        return 0
+    return max(0, min(raw, _MAX_WINDOW_LINES))
+
+
+def _find_line(pages: dict[int, str], page: int, pattern: str, before: int = 0, after: int = 0) -> str | None:
     text = pages.get(page)
     if text is None or not isinstance(pattern, str) or not pattern.strip():
         return None
@@ -94,8 +107,12 @@ def _find_line(pages: dict[int, str], page: int, pattern: str) -> str | None:
         rx = re.compile(pattern)
     except re.error:
         return None
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
         if rx.search(line):
+            if before or after:
+                window = lines[max(0, i - before) : i + after + 1]
+                return " ".join(part.strip() for part in window if part.strip())
             return line.strip()
     return None
 
@@ -119,6 +136,17 @@ _BENIGN = {
         "Some budget books carry the BE forward as the RE for heads that are revised only at a higher level.",
     ],
 }
+
+
+_FIGURE_NAMES = {"actual": "Actuals", "be": "BE", "re": "RE", "be_next": "BE", "be_of_actual_year": "BE"}
+
+
+def _figure_label(name: str, years: dict[str, Any]) -> str:
+    """How a figure is named in a lead: 'BE FY2026-27', 'Actuals FY2024-25'."""
+    base = _FIGURE_NAMES.get(name, name.upper().replace("_", " "))
+    # The budget estimate cited for the accounts year belongs to that same year.
+    year = years.get(name) or (years.get("actual") if name == "be_of_actual_year" else "")
+    return f"{base} {year}".strip()
 
 
 def _fmt(value: float, unit: str) -> str:
@@ -199,7 +227,13 @@ def run_p1_police_budget_heads(
             except (TypeError, ValueError):
                 ok = False
                 break
-            line = _find_line(pages, page, str(part.get("pattern", "")))
+            line = _find_line(
+                pages,
+                page,
+                str(part.get("pattern", "")),
+                _window(part.get("lines_before")),
+                _window(part.get("lines_after")),
+            )
             if line is None:
                 ok = False
                 break
@@ -283,9 +317,8 @@ def run_p1_police_budget_heads(
                 AuditLeadCandidate(
                     title=f"{entity}: {comp_label} is {abs(pct):.1f}% {direction} ({label})",
                     summary=(
-                        f"The official budget document prints {_fmt(a_val, unit)} for {a_name.upper().replace('_', ' ')}"
-                        f"{f' {a_year}' if a_year else ''} against {_fmt(b_val, unit)} for "
-                        f"{b_name.upper().replace('_', ' ')}{f' {b_year}' if b_year else ''} on {label}, a difference of "
+                        f"The official budget document prints {_fmt(a_val, unit)} for {_figure_label(a_name, years)} "
+                        f"against {_fmt(b_val, unit)} for {_figure_label(b_name, years)} on {label}, a difference of "
                         f"{pct:+.1f}% (threshold {threshold:.0f}%). This is a statistical divergence in published "
                         "figures for public review, not a finding of wrongdoing."
                     ),

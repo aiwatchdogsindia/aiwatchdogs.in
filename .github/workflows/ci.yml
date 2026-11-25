@@ -73,7 +73,7 @@ jobs:
       - name: Run real PostgreSQL migration & concurrency tests
         env:
           TEST_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/aiwatchdogs_test
-        run: uv run pytest -v tests/test_postgres_integration.py tests/test_purge_legacy.py
+        run: uv run pytest -v tests/test_postgres_integration.py tests/test_purge_legacy.py tests/test_project_upgrade_backends.py
 
   web-build:
     name: Web Dashboard Typecheck & Build (Node 26)

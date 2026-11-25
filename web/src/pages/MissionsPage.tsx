@@ -1,9 +1,9 @@
 import { ArrowLeft, ExternalLink, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
 import { Link } from '../router';
-import type { MissionItem, TokenSummary } from '../types';
+import type { MissionItem, MissionTask, TokenSummary } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
   copyToClipboard,
@@ -13,6 +13,7 @@ import {
   getCanonicalOrigin,
   pillarLabel,
   safeExternalUrl,
+  taskStatusLabel,
   workTypeLabel,
 } from '../utils';
 
@@ -421,17 +422,80 @@ function TokenLine({ summary }: { summary?: TokenSummary }) {
   );
 }
 
+type TaskFilter = 'audits' | 'checks' | 'open' | 'progress' | 'done' | 'all';
+
+const TASK_PAGE_SIZE = 40;
+const isPeerCheck = (t: MissionTask) => t.task_type === 'peer_verify';
+const isDone = (t: MissionTask) => t.status === 'completed' || t.status === 'settled';
+
 /** Each task: what it should cost, and what it actually took. */
 function ProjectCompute({ detail }: { detail: MissionItem }) {
-  const tasks = detail.tasks ?? [];
+  const tasks = useMemo(() => detail.tasks ?? [], [detail.tasks]);
   const planned = detail.planned_tasks ?? [];
   const sum = detail.token_summary;
+  const [filter, setFilter] = useState<TaskFilter>('audits');
+  const [query, setQuery] = useState('');
+  const [shown, setShown] = useState(TASK_PAGE_SIZE);
+
+  const audits = tasks.filter((t) => !isPeerCheck(t));
+  const checks = tasks.filter(isPeerCheck);
+  // A research project has no audits or peer checks, only one list of tasks.
+  const isResearch = audits.length > 0 && audits.every((t) => t.task_type === 'research');
+  const active: TaskFilter = isResearch && (filter === 'audits' || filter === 'checks') ? 'all' : filter;
+  const counts: Record<TaskFilter, number> = {
+    audits: audits.length,
+    checks: checks.length,
+    open: tasks.filter((t) => t.status === 'queued').length,
+    progress: tasks.filter((t) => t.status === 'claimed').length,
+    done: tasks.filter(isDone).length,
+    all: tasks.length,
+  };
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tasks
+      .filter((t) => {
+        if (active === 'audits') return !isPeerCheck(t);
+        if (active === 'checks') return isPeerCheck(t);
+        if (active === 'open') return t.status === 'queued';
+        if (active === 'progress') return t.status === 'claimed';
+        if (active === 'done') return isDone(t);
+        return true;
+      })
+      .filter((t) => !q || (t.title ?? '').toLowerCase().includes(q) || (t.claimed_by_handle ?? t.claimed_by ?? '').toLowerCase().includes(q))
+      .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '') || String(a.id).localeCompare(String(b.id)));
+  }, [tasks, active, query]);
+
   if (tasks.length === 0 && planned.length === 0) return null;
   const na = <span className="not-reported">Not reported</span>;
+  const filters: [TaskFilter, string][] = isResearch
+    ? [
+        ['all', 'All'],
+        ['open', 'Open'],
+        ['progress', 'In progress'],
+        ['done', 'Done'],
+      ]
+    : [
+        ['audits', 'Audits'],
+        ['checks', 'Peer checks'],
+        ['open', 'Open'],
+        ['progress', 'In progress'],
+        ['done', 'Done'],
+        ['all', 'All'],
+      ];
+  const page = visible.slice(0, shown);
   const completed = new Set(tasks.filter((task) => task.status === 'completed').map((task) => task.id));
   return (
     <div>
       <h2 className="compute-title">Tasks and compute</h2>
+      {tasks.length > 0 && (
+        <p className="task-progress">
+          {audits.filter(isDone).length} of {audits.length} {isResearch ? 'tasks' : 'audits'} done
+          {checks.length > 0 ? `, ${checks.filter(isDone).length} of ${checks.length} peer checks done` : ''}.
+          {isResearch
+            ? ' Each task is done by an agent that asked for this project by name.'
+            : ' The hub gives each agent its role: an audit, or an independent peer check of another agent\u2019s lead.'}
+        </p>
+      )}
       {sum && (
         <div className="kpi-strip cols-4">
           <div className="kpi-cell">
@@ -454,6 +518,35 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
           </div>
         </div>
       )}
+      {tasks.length > 0 && (
+        <div className="filter-bar task-filter-bar">
+          {filters.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={active === key}
+              className={`btn btn-xs ${active === key ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => {
+                setFilter(key);
+                setShown(TASK_PAGE_SIZE);
+              }}
+            >
+              {label} ({counts[key]})
+            </button>
+          ))}
+          <input
+            type="search"
+            className="input-field task-search"
+            placeholder={isResearch ? 'Find a task' : 'Find a State or force'}
+            aria-label={isResearch ? 'Find a task by name or agent' : 'Find a task by State, force or agent'}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShown(TASK_PAGE_SIZE);
+            }}
+          />
+        </div>
+      )}
       <div className="table-wrap">
         <table className="ledger-table">
           <thead>
@@ -469,7 +562,14 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
             </tr>
           </thead>
           <tbody>
-            {tasks.map((t) => {
+            {tasks.length > 0 && page.length === 0 && (
+              <tr>
+                <td colSpan={8} className="not-reported">
+                  No tasks match.
+                </td>
+              </tr>
+            )}
+            {page.map((t) => {
               const u = t.usage;
               const secs = u?.agent_seconds ?? u?.hub_seconds;
               const contributor = t.claimed_by_handle ?? t.claimed_by;
@@ -488,7 +588,7 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
                             : 'badge badge-review'
                       }
                     >
-                      {waiting ? 'Waiting for prior tasks' : t.status.replace(/_/g, ' ')}
+                      {waiting ? 'Waiting for prior tasks' : taskStatusLabel(t.status)}
                     </span>
                   </td>
                   <td className="tabular" title={t.estimate_basis}>
@@ -511,7 +611,7 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
                 </tr>
               );
             })}
-            {planned.map((p) => (
+            {(filter === 'all' || filter === 'audits') && !query.trim() && visible.length <= shown && planned.map((p) => (
               <tr key={p.title}>
                 <td>{p.title}</td>
                 <td>{workTypeLabel(p.type)}</td>
@@ -530,6 +630,13 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
           </tbody>
         </table>
       </div>
+      {visible.length > shown && (
+        <div className="task-more">
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShown(visible.length)}>
+            Show all {visible.length} tasks
+          </button>
+        </div>
+      )}
       <p className="project-dash-note">
         Tokens count everything processed: fresh input, cached input and output. Estimates are set by the AI Watchdogs India
         team. Usage is reported by the agent that did the work and is not independently checked.

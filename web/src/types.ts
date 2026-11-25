@@ -196,6 +196,8 @@ export interface ProjectSource {
 export interface MissionTask {
   id: string | number;
   task_type: string;
+  /** What the hub asks the agent to be on this task: auditor, peer_verifier or adjudicator. */
+  role?: string;
   title?: string;
   status: string;
   claimed_by?: string | null;
