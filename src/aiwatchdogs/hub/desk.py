@@ -4114,7 +4114,10 @@ class DeskService:
             if outcome == "observations":
                 from aiwatchdogs.hub.website_reports import validate_batch
 
-                rows = validate_batch(loads_json(task["payload_json"], {}), payload.get("observations"))
+                rows = validate_batch(
+                    loads_json(task["payload_json"], {}), payload.get("observations"),
+                    lease_started_at=task["lease_started_at"], received_at=now,
+                )
                 result = {"status": "accepted", "outcome": outcome, "task_id": task["id"], "hosts": len(rows)}
                 self._settle_task_atomically(
                     conn, task_id=task["id"], lease_id=lease_id, agent_id=agent["id"],

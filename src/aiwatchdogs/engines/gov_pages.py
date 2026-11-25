@@ -24,12 +24,22 @@ USER_AGENT = "AIWatchdogs/1.0 (aiwatchdogs.in; public website content review)"
 DNS_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="gov-page-dns")
 LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
 DOMAIN = re.compile(rf"(?:{LABEL}\.)+gov\.in\Z", re.ASCII)
-CONTACT = re.compile(r"contact|directory|who.s.who|संपर्क|सम्पर्क", re.I)
+CONTACT = re.compile(r"contact|संपर्क|सम्पर्क|যোগাযোগ|தொடர்பு|సంప్రదించ|ಸಂಪರ್ಕ|સંપર્ક|ബന്ധപ്പെട|ਸੰਪਰਕ|ଯୋଗାଯୋଗ", re.I)
+DIRECTORY = re.compile(
+    r"who[’']?s[\s_-]+who|(?:telephone|phone|staff|officer|contact)[\s_-]+directory|^directory$", re.I
+)
+ABOUT = re.compile(r"about|परिचय|हमारे बारे|எங்களைப் பற்றி|మా గురించి|ನಮ್ಮ ಬಗ್ಗೆ|আমাদের সম্পর্কে|અમારા વિશે", re.I)
+HELP = re.compile(r"\bhelp\b|सहायता|मदद|உதவி|సహాయం|ಸಹಾಯ|সাহায্য|મદદ|സഹായം|ਮਦਦ|ସହାୟତା", re.I)
+
 EMAIL = re.compile(
     r"[\w.+-]{1,64}\s*(?:@|\[at\]|\(at\))\s*[\w-]+(?:\s*(?:\.|\[dot\]|\(dot\))\s*[\w-]+)+", re.I
 )
-PHONE = re.compile(r"(?:phone|tel(?:ephone)?|दूरभाष)\s*(?:no\.?)?\s*[:.-]?\s*\+?\d[\d() -]{6,19}\d", re.I)
-ADDRESS = re.compile(r"(?:address|office|पता|कार्यालय)\b.{0,180}?\b[1-9]\d{2}\s?\d{3}\b", re.I)
+PHONE = re.compile(r"(?:phone|tel(?:ephone)?|दूरभाष)\s*(?:no\.?)?\s*[:.-]?\s*(\+?[\d(][\d() -]{5,20}\d)", re.I)
+ADDRESS = re.compile(
+    r"(?:\b(?:postal|office|mailing|correspondence)\s+address\b|(?<!email )(?<!e-mail )\baddress\s*:|पता|पत्ता|முகவரி|చిరునామా|ವಿಳಾಸ|ঠিকানা|સરનામું)"
+    r".{0,200}?\b[1-9]\d{2}\s?\d{3}\b",
+    re.I,
+)
 UPDATED = re.compile(
     r"(?:last\s+(?:updated|reviewed)|(?:अंतिम|अन्तिम)\s+(?:अद्यतन|अपडेट))\s*(?:on|दिनांक)?\s*[:\-]?\s*(?:\d{1,4}[- ./,][\w]+[- ./,]+\d{1,4}|[a-z]{3,9}\s+\d{1,2},?\s+\d{4})",
     re.I,
@@ -59,17 +69,50 @@ def _page_url(base: str, target: str, domain: str) -> str:
     return url._replace(fragment="", path=url.path or "/").geturl()
 
 
+_PUBLIC_NAVIGATION = re.compile(
+    r"(?:en(?:-in|-us)?|eng|english|hi|hindi|ta|te|mr|gu|ml|kn|bn|pa|or|as|ur|"
+    r"home(?:page)?|index|default|welcome|main|portal|page|pages|content|site|web|"
+    r"contact(?:[-_]?(?:us|info|details|information))?|contacts|directory|"
+    r"(?:staff|telephone|phone|officer)[-_]directory|who[-_]?s[-_]?who|about[-_]?us|help)"
+    r"(?:\.(?:html?|aspx?|php|jsp))?",
+    re.I | re.ASCII,
+)
+
+
+def public_evidence_url(url: str, domain: str) -> str:
+    """Publish generic navigation paths. Keep the site origin for arbitrary CMS paths."""
+    checked = _page_url(f"https://{domain}/", url, domain)
+    parts = urlsplit(checked)
+    if all(_PUBLIC_NAVIGATION.fullmatch(segment) for segment in parts.path.split("/") if segment):
+        return checked
+    return parts._replace(path="/").geturl()
+
+
 class Page(HTMLParser):
+    VOID_TAGS = frozenset("area base br col embed hr img input link meta param source track wbr".split())
+
     def __init__(self, html: str):
         super().__init__()
         self.links: list[tuple[str, str]] = []
         self.text: list[str] = []
-        self._hidden = 0
+        self._hidden: list[str] = []
+        self.ids: set[str] = set()
+        self.base = ""
+        self.has_password = False
+        self.title: list[str] = []
+        self._in_title = False
         self._href = ""
         self._label: list[str] = []
         self.feed(html)
         self.close()
         self.body = " ".join(" ".join(self.text).split())
+        title = " ".join(self.title).strip()
+        if (
+            re.search(r"^(?:404\b|page not found\b|access denied\b|service unavailable\b)", title, re.I)
+            or self.has_password
+            and re.search(r"\b(?:log[ -]?in|sign[ -]?in)\b", title, re.I)
+        ):
+            raise Unavailable("unsupported_page")
         if len(self.body) < 40 or re.search(
             r"verify (?:that )?you are human|checking your browser|enable javascript to (?:continue|run this app)|access denied|just a moment\.\.\.",
             self.body[:1200],
@@ -78,32 +121,76 @@ class Page(HTMLParser):
             raise Unavailable("unsupported_page")
 
     def handle_starttag(self, tag, attrs):
-        if tag in {"script", "style", "template", "noscript"}:
-            self._hidden += 1
-        if tag == "a" and not self._hidden:
-            attributes = dict(attrs)
+        attributes = dict(attrs)
+        if (
+            self._hidden
+            or tag in {"script", "style", "template", "noscript"}
+            or "hidden" in attributes
+            or re.search(
+                r"(?:display\s*:\s*none|visibility\s*:\s*hidden)\b", attributes.get("style") or "", re.I
+            )
+        ):
+            if tag not in self.VOID_TAGS:
+                self._hidden.append(tag)
+            return
+        if identifier := attributes.get("id"):
+            self.ids.add(identifier)
+        if tag == "base" and not self.base:
+            self.base = attributes.get("href") or ""
+        if tag == "title":
+            self._in_title = True
+        if tag == "input" and (attributes.get("type") or "").lower() == "password":
+            self.has_password = True
+        if tag == "img" and self._href:
+            self._label.append(attributes.get("alt") or "")
+        if tag == "a":
             self._href = attributes.get("href") or ""
             self._label = [attributes.get("aria-label") or "", attributes.get("title") or ""]
 
     def handle_data(self, text):
         if not self._hidden:
             self.text.append(text)
+            if self._in_title:
+                self.title.append(text)
             if self._href:
                 self._label.append(text)
 
     def handle_endtag(self, tag):
-        if tag in {"script", "style", "template", "noscript"} and self._hidden:
-            self._hidden -= 1
+        if self._hidden:
+            if self._hidden[-1] == tag:
+                self._hidden.pop()
+            return
+        if tag == "title":
+            self._in_title = False
         if tag == "a" and self._href:
             self.links.append((self._href, " ".join(self._label)))
             self._href = ""
 
-    def link(self, pattern: re.Pattern) -> str | None:
+    def matching_links(self, pattern: re.Pattern):
         for href, label in self.links:
-            if not href.startswith("#") and urlsplit(href).scheme in {"", "http", "https"}:
-                if pattern.search(label) or pattern.search(unquote(urlsplit(href).path)):
-                    return href
-        return None
+            try:
+                parts = urlsplit(href)
+            except ValueError:
+                continue
+            if parts.scheme not in {"", "http", "https"}:
+                continue
+            if href.startswith("#") and unquote(parts.fragment) not in self.ids:
+                continue
+            if pattern.search(label.strip()) or pattern.search(unquote(parts.path).strip("/")):
+                yield href
+
+    def contact_link(self, home: str, domain: str) -> tuple[bool, str | None]:
+        # Prefer a reachable candidate on the assigned site when the navigation also
+        # points to a shared government directory or an external service desk.
+        linked = False
+        for pattern in (CONTACT, DIRECTORY):
+            for href in self.matching_links(pattern):
+                linked = True
+                try:
+                    return True, _page_url(urljoin(home, self.base), href, domain)
+                except (Unavailable, ValueError):
+                    continue
+        return linked, None
 
     def contact_fields(self) -> dict[str, bool]:
         return {
@@ -113,8 +200,11 @@ class Page(HTMLParser):
             ),
             "postal_address": bool(ADDRESS.search(self.body)),
             "telephone": bool(
-                PHONE.search(self.body)
-                or any(re.match(r"^tel:\+?[\d() -]{7,20}$", h, re.I) for h, _ in self.links)
+                any(len(re.findall(r"\d", match[1])) >= 7 for match in PHONE.finditer(self.body))
+                or any(
+                    re.fullmatch(r"tel:\+?[\d() -]{7,22}", h, re.I) and len(re.findall(r"\d", h)) >= 7
+                    for h, _ in self.links
+                )
             ),
         }
 
@@ -218,28 +308,30 @@ async def _observe(result: dict, start_url: str):
     domain = result["domain"]
     reader = Reader(domain)
     home_url, home = await reader.page(start_url)
-    contact = home.link(CONTACT)
+    contact, contact_url = home.contact_link(home_url, domain)
     signals = {
         "contact_link": bool(contact),
-        "about_link": bool(home.link(re.compile(r"about|परिचय|हमारे बारे", re.I))),
-        "help_link": bool(home.link(re.compile(r"\bhelp\b|सहायता|मदद", re.I))),
+        "about_link": bool(next(home.matching_links(ABOUT), None)),
+        "help_link": bool(next(home.matching_links(HELP), None)),
         "updated_date": bool(UPDATED.search(home.body)),
         **home.contact_fields(),
     }
     checks = result["checks"]
     checks.update({key: "observed" if found else "not_observed" for key, found in signals.items()})
-    result["pages"].append(home_url)
+    result["pages"].append(public_evidence_url(home_url, domain))
     result["outcome"] = "observed"
     if contact:
         for key in CONTACT_FIELDS:
             if not signals[key]:
                 checks[key] = "unassessable"
-        contact_url = _page_url(home_url, contact, domain)
+        if contact_url is None:
+            raise Unavailable("contact_unavailable")
         page = home
         if contact_url != home_url:
             contact_url, page = await reader.page(contact_url)
-            if contact_url != home_url:
-                result["pages"].append(contact_url)
+            evidence_url = public_evidence_url(contact_url, domain)
+            if evidence_url not in result["pages"]:
+                result["pages"].append(evidence_url)
         for key, found in page.contact_fields().items():
             checks[key] = "observed" if found or signals[key] else "not_observed"
 

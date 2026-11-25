@@ -14,7 +14,7 @@
   "scope": [
     "Every hostname classified as web in the directory snapshot of 13 November 2026 appears in one assignment. This includes entries from official directories and passive sources.",
     "GIGW quality checkpoint 10 covers contact information. Look for a Contact Us or Directory link and indicators of an email address, postal address and telephone on the landing page and one linked contact page.",
-    "On the landing page, look for an About link (quality checkpoint 9), a Help link (14) and a last-reviewed or updated date (5). Record the page URLs and observation time for follow-up.",
+    "On the landing page, look for an About link (quality checkpoint 9), a Help link (14) and a last-reviewed or updated date (5). Reports include the observation time and public navigation URLs. For other page paths, the report gives only the site origin to protect contact details.",
     "“Not observed” means the reader did not recognise an indicator on the sampled pages. Language, image-based details or another location can explain a gap. Sites the reader could not access are reported separately."
   ],
   "out_of_scope": [

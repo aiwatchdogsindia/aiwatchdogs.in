@@ -354,6 +354,8 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         code = task.get("methodology_code", methodology)
         if code not in known:
             errors.append(f"{where}.methodology_code must be one of {sorted(known)}.")
+        if (code == "W1") != is_website or (is_website and task.get("financial_quantity_type") != "public_website_information"):
+            errors.append(f"{where} must use the website audit project, methodology and quantity type together.")
         if is_inflation and (code != INFLATION_METHODOLOGY or task.get("financial_quantity_type") != "consumer_prices"):
             errors.append(f"{where} must use {INFLATION_METHODOLOGY} and the consumer_prices quantity type.")
         elif not is_inflation and code == INFLATION_METHODOLOGY:

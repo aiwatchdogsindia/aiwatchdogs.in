@@ -1,10 +1,12 @@
 """Exercise the volunteer workflow against a real manifest, without external traffic."""
 
 import csv
+import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from aiwatchdogs.cli.config import AgentConfig
@@ -12,6 +14,7 @@ from aiwatchdogs.cli.runner import AgentRunner
 from aiwatchdogs.connectors import loader
 from aiwatchdogs.engines import gov_pages
 from aiwatchdogs.hub.app import create_app
+from aiwatchdogs.hub.website_reports import validate_batch
 
 
 SLUG = "gov-in-public-information"
@@ -20,11 +23,7 @@ PROJECTS = Path(__file__).resolve().parents[1] / "projects"
 
 @pytest.mark.production_missions
 def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch):
-    projects = tmp_path / "projects"
-    projects.mkdir()
-    (projects / f"{SLUG}.json").symlink_to(PROJECTS / f"{SLUG}.json")
-    (projects / SLUG).symlink_to(PROJECTS / SLUG, target_is_directory=True)
-    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(PROJECTS))
     monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
 
     with TestClient(create_app(db_path=tmp_path / "hub.db", seed=True)) as client:
@@ -32,6 +31,11 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         dashboard = client.get(public_url).json()
         assert len({task["id"] for task in dashboard["tasks"]}) == 100
         assert all(task["status"] == "queued" for task in dashboard["tasks"])
+
+        inflation = client.get("/api/missions/independent-india-inflation").json()
+        assert len({task["id"] for task in inflation["tasks"]}) == 100
+        police = client.get("/api/missions/metro-police-finances").json()
+        assert police["tasks"]
 
         runner = AgentRunner(
             AgentConfig(handle="website-volunteer", hub_url="http://testserver", provider="rule-engine",
@@ -56,7 +60,7 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         assert client.get(report_url).status_code == 404
 
         retrieval_url = task["payload"]["retrieval_url"]
-        batch = projects / SLUG / Path(urlsplit(retrieval_url).path).name
+        batch = PROJECTS / SLUG / Path(urlsplit(retrieval_url).path).name
         with batch.open(newline="") as file:
             assignments = list(csv.DictReader(file))
         assert len(assignments) in (125, 126)
@@ -100,3 +104,43 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         dashboard = client.get(public_url).json()
         assert len(dashboard["tasks"]) == 100
         assert sum(task["status"] == "completed" for task in dashboard["tasks"]) == 1
+
+
+@pytest.mark.parametrize("fault", [
+    "future", "stale", "personal_path", "encoded_private_path", "arbitrary_contact_gap",
+    "missing_contact_page", "impossible_unknown", "two_pages_without_link", "wrong_host",
+])
+def test_public_report_rejects_inconsistent_or_private_evidence(monkeypatch, fault):
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(PROJECTS))
+    payload = json.loads((PROJECTS / f"{SLUG}.json").read_text())["tasks"][0]["payload"]
+    with (PROJECTS / SLUG / "batch-001.csv").open(newline="") as file:
+        rows = [{
+            "domain": entry["domain"], "observed_at": "2026-11-25T08:30:00Z",
+            "outcome": "unassessable", "reason": "robots_restricted", "pages": [],
+            "checks": dict.fromkeys(gov_pages.CHECKS, "unassessable"),
+        } for entry in csv.DictReader(file)]
+    row = rows[0]
+    root = f"https://{row['domain']}/"
+    row.update(outcome="observed", reason=None, pages=[root], checks=dict.fromkeys(gov_pages.CHECKS, "not_observed"))
+    if fault == "future":
+        row["observed_at"] = "2099-01-01T00:00:00Z"
+    elif fault == "stale":
+        row["observed_at"] = "2000-01-01T00:00:00Z"
+    elif fault == "personal_path":
+        row["pages"] = [root + "contacts/staff-member-name"]
+    elif fault == "encoded_private_path":
+        row["pages"] = [root + "directory/%252540personal"]
+    elif fault == "arbitrary_contact_gap":
+        row["reason"] = "contact_unavailable"
+        row["checks"]["contact_link"] = "observed"
+    elif fault == "missing_contact_page":
+        row["reason"] = "contact_unavailable"
+    elif fault == "impossible_unknown":
+        row["checks"]["about_link"] = "unassessable"
+    elif fault == "two_pages_without_link":
+        row["pages"].append(root + "contact")
+    elif fault == "wrong_host":
+        row["pages"] = ["https://other.gov.in/contact"]
+    with pytest.raises(HTTPException) as exc:
+        validate_batch(payload, rows, lease_started_at="2026-11-25T08:20:00Z", received_at="2026-11-25T08:35:00Z")
+    assert exc.value.status_code == 422
