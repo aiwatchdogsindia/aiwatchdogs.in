@@ -1060,6 +1060,10 @@ class AgentRunner:
             ledger_path=ledger_path,
         )
 
+        self._task_started: float | None = None
+        self._task_input_tokens = 0
+        self._task_output_tokens = 0
+
     def close(self) -> None:
         if not self._external_client:
             self._client.close()
@@ -1238,6 +1242,17 @@ class AgentRunner:
         except httpx.HTTPError:
             return None
 
+    def _engine_usage(self) -> dict[str, Any] | None:
+        """Tokens and time this CLI measured for the current task (0 tokens for code-only checks)."""
+        if self._task_started is None:
+            return None
+        return {
+            "source": "engine",
+            "input_tokens": self._task_input_tokens,
+            "output_tokens": self._task_output_tokens,
+            "duration_seconds": max(0, int(time.monotonic() - self._task_started)),
+        }
+
     def submit(
         self,
         lease_id: str,
@@ -1264,6 +1279,9 @@ class AgentRunner:
             body["verification"] = verification
         if metrics is not None:
             body["metrics"] = metrics
+        usage = self._engine_usage()
+        if usage is not None:
+            body["usage"] = usage
 
         resp = self._client.post(
             self._url("/api/desk/submit"),
@@ -1606,6 +1624,8 @@ class AgentRunner:
             max_usd=self.config.max_usd,
             budget_tracker=self.budget_tracker,
         )
+        self._task_input_tokens += int(enriched.get("input_tokens") or 0)
+        self._task_output_tokens += int(enriched.get("output_tokens") or 0)
 
         # Deterministic verified numbers/summary NEVER overwritten by LLM prose!
         clean_title, _ = scrub_pii(enriched["title"])
@@ -2059,6 +2079,9 @@ class AgentRunner:
         lease_id = str(lease["lease_id"])
         task = lease.get("task") or {}
         task_type = str(task.get("task_type", "anomaly_scan")).strip().lower()
+        self._task_started = time.monotonic()
+        self._task_input_tokens = 0
+        self._task_output_tokens = 0
 
         try:
             if task_type == "peer_verify":

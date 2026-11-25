@@ -39,6 +39,8 @@ def _project(**overrides: object) -> dict:
                 "title": "Police heads FY 2023-24",
                 "instructions": "Fetch the pinned file, verify the checksum, run the deterministic check.",
                 "dataset_key": "test-city-budget-fy24",
+                "estimated_tokens": 300_000,
+                "estimate_basis": "6 turns at 50,000 tokens",
                 "financial_quantity_type": "budget_and_treasury_expenditure",
                 "payload": {
                     "retrieval_url": f"https://raw.githubusercontent.com/org/repo/{COMMIT}/data/budget.csv",
@@ -84,13 +86,29 @@ def test_branch_urls_and_bad_hashes_are_rejected() -> None:
     assert any("SHA-256" in e for e in errors)
 
 
+def test_project_can_have_at_most_ten_tasks() -> None:
+    task = _project()["tasks"][0]
+    tasks = [{**task, "id": f"test-city-budget-{i}"} for i in range(11)]
+    assert validate_project(_project(tasks=tasks[:10]), filename_stem="test-city-budget") == []
+    errors = validate_project(_project(tasks=tasks), filename_stem="test-city-budget")
+    assert any("at most 10 tasks" in e for e in errors)
+
+
 def test_filename_must_match_slug() -> None:
     errors = validate_project(_project(), filename_stem="something-else")
     assert any("File name must match" in e for e in errors)
 
 
+PLANNED = {
+    "title": "Find the published budget books",
+    "type": "find_sources",
+    "estimated_tokens": 2_000_000,
+    "estimate_basis": "rough guess",
+}
+
+
 def test_needs_data_project_without_tasks_is_valid() -> None:
-    proj = _project(status="needs_data", tasks=[])
+    proj = _project(status="needs_data", tasks=[], planned_tasks=[PLANNED])
     assert validate_project(proj, filename_stem="test-city-budget") == []
 
 

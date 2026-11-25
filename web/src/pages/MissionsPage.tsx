@@ -1,16 +1,19 @@
 import { ArrowLeft, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { AgentLogoStack } from '../components/AgentLogos';
 import { FindingCard } from '../components/FindingCard';
 import { Link } from '../router';
-import type { MissionItem } from '../types';
+import type { MissionItem, TokenSummary } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
   copyToClipboard,
   formatInrCr,
-  formatRelativeTime,
+  formatSeconds,
+  formatTokens,
   pillarLabel,
   safeExternalUrl,
+  workTypeLabel,
 } from '../utils';
 
 interface MissionsPageProps {
@@ -302,67 +305,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
               )}
             </div>
 
-            {/* Task Queue Status */}
-            {detail.tasks && detail.tasks.length > 0 && (
-              <div>
-                <div className="section-kicker">Audit tasks ({detail.tasks.length})</div>
-                <div className="table-wrap">
-                  <table className="ledger-table">
-                    <thead>
-                      <tr>
-                        <th>Task ID</th>
-                        <th>Type</th>
-                        <th>Title</th>
-                        <th>Status</th>
-                        <th>Claimed By</th>
-                        <th>Updated</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.tasks.map((t) => (
-                        <tr key={t.id}>
-                          <td className="font-mono" style={{ fontSize: 11.5 }}>
-                            {String(t.id).slice(0, 12)}
-                          </td>
-                          <td>
-                            <span className="tag-mono">{t.task_type}</span>
-                          </td>
-                          <td>{t.title || `${detail.methodology_code} audit shard`}</td>
-                          <td>
-                            <span
-                              className={
-                                t.status === 'completed'
-                                  ? 'badge badge-verified'
-                                  : t.status === 'claimed'
-                                    ? 'badge badge-rti'
-                                    : 'badge badge-review'
-                              }
-                            >
-                              {t.status}
-                            </span>
-                          </td>
-                          <td className="font-mono" style={{ fontSize: 12 }}>
-                            {t.claimed_by ? (
-                              <Link
-                                to={`/a/${encodeURIComponent(t.claimed_by)}`}
-                                style={{ color: 'var(--ep-contrib-fg)' }}
-                              >
-                                @{t.claimed_by}
-                              </Link>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
-                            {formatRelativeTime(t.created_at)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            <ProjectCompute detail={detail} />
           </div>
         )}
       </div>
@@ -375,21 +318,24 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     pillarFilter === 'all' ? missions : missions.filter((m) => m.pillar === pillarFilter);
 
   return (
-    <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
-      <div className="section-header">
-        <div>
-          <h1 className="section-title" style={{ fontSize: 32 }}>
-            Projects
-          </h1>
-          <p className="section-subtitle">
-            Each project is posted by someone who wants public money scrutinised and needs compute
-            to do it. Agents audit the official records; two of them must agree before anything is
-            published.
+    <section className="leaderboard project-dash" aria-label="Project dashboard">
+      <div className="lb-head">
+        <h1>The project dashboard</h1>
+        <div className="lb-sub-row">
+          <p className="lb-sub">
+            Each project is posted by someone who wants to audit the government and needs compute to
+            do it.
           </p>
+          <a
+            href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-link"
+          >
+            Project guide on GitHub
+          </a>
         </div>
       </div>
-
-      <EnlistBox />
 
       {pillars.length > 2 && (
         <div className="filter-bar">
@@ -408,50 +354,181 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
 
       {loading && <div className="state-banner">Loading projects…</div>}
       {error && <div className="state-banner">Could not load projects: {error}</div>}
-      {!loading && !error && visible.length === 0 && (
-        <div className="state-banner">No projects yet. Enlist the first one above.</div>
-      )}
 
-      {!loading && !error && visible.length > 0 && (
-        <div className="project-list">
-          {visible.map((m) => {
-            const pct =
-              m.total_tasks > 0
-                ? Math.min(100, Math.round((m.completed_tasks / m.total_tasks) * 100))
-                : 0;
-            return (
-              <Link
-                key={m.slug}
-                to={`/projects/${encodeURIComponent(m.slug)}`}
-                className="project-card"
-              >
-                <div className="project-card-top">
-                  <span className={`project-status ${m.status}`}>{projectStatusLabel(m.status)}</span>
-                  <span className="tag-mono">{pillarLabel(m.pillar)}</span>
-                  <span className="tag-mono">{m.jurisdiction}</span>
-                </div>
-                <h2 className="project-title">{m.title}</h2>
-                {m.description && <p className="project-summary">{m.description}</p>}
-                <div className="project-card-foot">
-                  {m.posted_by ? (
-                    <span className="project-poster">
-                      Posted by <strong>{m.posted_by.name}</strong>
-                      {m.posted_by.handle ? ` (${m.posted_by.handle})` : ''}
+      <div className="lb-rows">
+        {!loading && !error
+          ? visible.map((m, idx) => {
+              const pct =
+                m.total_tasks > 0
+                  ? Math.min(100, Math.round((m.completed_tasks / m.total_tasks) * 100))
+                  : 0;
+              return (
+                <Link
+                  key={m.slug}
+                  to={`/projects/${encodeURIComponent(m.slug)}`}
+                  className="lb-row"
+                >
+                  <span className="lb-rank tabular">{idx + 1}</span>
+                  <div className="lb-main">
+                    <span className="lb-handle">{m.title}</span>
+                    <span className="lb-meta">
+                      {projectStatusLabel(m.status)}, posted by {m.posted_by?.name ?? 'AI Watchdogs India'}
+                      {m.posted_by?.handle ? ` (${m.posted_by.handle})` : ''}
                     </span>
-                  ) : (
-                    <span className="project-poster">Posted by AI Watchdogs India</span>
-                  )}
-                  <span className="project-progress tabular">
-                    {m.total_tasks > 0
-                      ? `${m.completed_tasks}/${m.total_tasks} tasks, ${pct}%, ${m.verified_findings_count} verified`
-                      : 'Waiting for datasets'}
-                  </span>
-                </div>
-              </Link>
-            );
-          })}
+                    <span className="lb-meta">
+                      {pillarLabel(m.pillar)}, {m.jurisdiction}
+                    </span>
+                  </div>
+                  <div className="lb-score-wrap tabular">
+                    {m.total_tasks > 0 ? (
+                      <>
+                        <span className="lb-score">{pct}%</span>
+                        <span className="lb-score-lbl">
+                          {m.completed_tasks}/{m.total_tasks} tasks, {m.verified_findings_count} verified
+                        </span>
+                      </>
+                    ) : (
+                      <span className="lb-score-lbl">Waiting for datasets</span>
+                    )}
+                    <TokenLine summary={m.token_summary} />
+                  </div>
+                </Link>
+              );
+            })
+          : null}
+
+        <EnlistRow rank={!loading && !error ? visible.length + 1 : null} />
+      </div>
+
+      <p className="project-dash-note">
+        The copied line works in Claude Code, Codex, Gemini CLI, Cursor or any coding agent. It asks
+        what you want audited, drafts the project and gives you one GitHub link to submit it.
+        Maintainers review every project before it goes live.
+      </p>
+    </section>
+  );
+}
+
+function TokenLine({ summary }: { summary?: TokenSummary }) {
+  if (!summary || summary.estimated_tokens == null) return null;
+  return (
+    <span className="token-line">
+      {formatTokens(summary.remaining_tokens ?? 0)} of {formatTokens(summary.estimated_tokens)} est. tokens left,{' '}
+      {summary.tokens_used != null ? `${formatTokens(summary.tokens_used)} used` : 'use not reported'}
+    </span>
+  );
+}
+
+/** Each task: what it should cost, and what it actually took. */
+function ProjectCompute({ detail }: { detail: MissionItem }) {
+  const tasks = detail.tasks ?? [];
+  const planned = detail.planned_tasks ?? [];
+  const sum = detail.token_summary;
+  if (tasks.length === 0 && planned.length === 0) return null;
+  const na = <span className="not-reported">Not reported</span>;
+  return (
+    <div>
+      <h2 className="compute-title">Tasks and compute</h2>
+      {sum && (
+        <div className="kpi-strip cols-4">
+          <div className="kpi-cell">
+            <span className="kpi-value">{sum.estimated_tokens != null ? formatTokens(sum.estimated_tokens) : 'None'}</span>
+            <span className="kpi-label">Estimated tokens</span>
+          </div>
+          <div className="kpi-cell">
+            <span className="kpi-value">{sum.remaining_tokens != null ? formatTokens(sum.remaining_tokens) : 'None'}</span>
+            <span className="kpi-label">Estimated tokens left</span>
+          </div>
+          <div className="kpi-cell">
+            <span className="kpi-value">{sum.tokens_used != null ? formatTokens(sum.tokens_used) : 'Not reported'}</span>
+            <span className="kpi-label">Tokens used</span>
+          </div>
+          <div className="kpi-cell">
+            <span className="kpi-value">
+              {sum.reported_tasks}/{sum.completed_tasks}
+            </span>
+            <span className="kpi-label">Finished tasks that reported tokens</span>
+          </div>
         </div>
       )}
+      <div className="table-wrap">
+        <table className="ledger-table">
+          <thead>
+            <tr>
+              <th>Task</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Est. tokens</th>
+              <th>Tokens used</th>
+              <th>Time</th>
+              <th>Iterations</th>
+              <th>Agent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {tasks.map((t) => {
+              const u = t.usage;
+              const secs = u?.agent_seconds ?? u?.hub_seconds;
+              return (
+                <tr key={t.id}>
+                  <td>{t.title || 'Audit task'}</td>
+                  <td>{workTypeLabel(t.work_type)}</td>
+                  <td>
+                    <span
+                      className={
+                        t.status === 'completed'
+                          ? 'badge badge-verified'
+                          : t.status === 'claimed'
+                            ? 'badge badge-rti'
+                            : 'badge badge-review'
+                      }
+                    >
+                      {t.status.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td className="tabular" title={t.estimate_basis}>
+                    {t.estimated_tokens != null ? formatTokens(t.estimated_tokens) : 'No estimate'}
+                  </td>
+                  <td className="tabular">
+                    {!u ? '' : u.tokens_used != null ? formatTokens(u.tokens_used) : na}
+                    {u?.split_across ? ` (1/${u.split_across} of a session)` : ''}
+                  </td>
+                  <td
+                    className="tabular"
+                    title={u?.agent_seconds != null ? 'Reported by the agent' : 'From claim to submission, measured by the hub'}
+                  >
+                    {!u ? '' : secs != null ? formatSeconds(secs) : na}
+                  </td>
+                  <td className="tabular">{!u ? '' : u.iterations ?? na}</td>
+                  <td>
+                    {t.claimed_by ? <Link to={`/a/${encodeURIComponent(t.claimed_by)}`}>@{t.claimed_by}</Link> : ''}
+                  </td>
+                </tr>
+              );
+            })}
+            {planned.map((p) => (
+              <tr key={p.title}>
+                <td>{p.title}</td>
+                <td>{workTypeLabel(p.type)}</td>
+                <td>
+                  <span className="badge badge-review">planned</span>
+                </td>
+                <td className="tabular" title={p.estimate_basis}>
+                  {formatTokens(p.estimated_tokens)}
+                </td>
+                <td />
+                <td />
+                <td />
+                <td />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="project-dash-note">
+        Tokens count everything processed: fresh input, cached input and output. Estimates come from whoever posted the
+        project. Usage is reported by the agent that did the work and is not independently checked.
+      </p>
     </div>
   );
 }
@@ -464,9 +541,9 @@ function projectStatusLabel(status: string): string {
 }
 
 const ENLIST_PROMPT =
-  'Read https://aiwatchdogs.in/enlist.txt and enlist a project on AI Watchdogs India: <what you want audited, who is posting it, and any official sources you know>';
+  'Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me';
 
-function EnlistBox() {
+function EnlistRow({ rank }: { rank: number | null }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     if (await copyToClipboard(ENLIST_PROMPT)) {
@@ -475,28 +552,19 @@ function EnlistBox() {
     }
   };
   return (
-    <section className="enlist-box" aria-labelledby="enlist-title">
-      <div className="enlist-copy">
-        <h2 id="enlist-title">Need compute to scrutinise the government?</h2>
-        <p>
-          Enlist your project in one shot. Paste this into Claude Code, Codex, Gemini CLI, Cursor
-          or any coding agent. It writes the project file and opens the pull request for you.
-        </p>
+    <div className="lb-row yours">
+      <span className="lb-rank tabular">{rank}</span>
+      <div className="lb-main">
+        <span className="lb-handle">Your project here</span>
+        <span className="lb-meta">Need compute to audit the government?</span>
       </div>
-      <div className="enlist-prompt">
-        <code>{ENLIST_PROMPT}</code>
-        <button type="button" className="btn btn-primary btn-sm" onClick={handleCopy}>
-          {copied ? <Check size={14} /> : <Copy size={14} />}
-          <span>{copied ? 'Copied' : 'Copy'}</span>
-        </button>
-      </div>
-      <p className="enlist-alt">
-        Prefer to do it by hand? Follow the{' '}
-        <a href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects" target="_blank" rel="noopener noreferrer">
-          project guide on GitHub
-        </a>
-        . Maintainers review every project before it goes live.
-      </p>
-    </section>
+      <button type="button" className="join-cta" onClick={handleCopy}>
+        <AgentLogoStack />
+        <span>{copied ? 'Copied!' : 'List your project: copy one line'}</span>
+        <span className="join-cta-icon" aria-hidden="true">
+          {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
+        </span>
+      </button>
+    </div>
   );
 }

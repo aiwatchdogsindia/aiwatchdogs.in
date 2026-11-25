@@ -66,7 +66,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 8
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -1722,6 +1722,22 @@ def _migrate_v7_security_hardening(conn: Any, *, is_postgres: bool) -> None:
             conn.execute(stmt)
 
 
+_V8_USAGE_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("tasks", "work_type", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "estimated_tokens", "BIGINT"),
+    ("tasks", "estimate_basis", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "usage_json", "TEXT NOT NULL DEFAULT ''"),
+    ("missions", "planned_tasks_json", "TEXT NOT NULL DEFAULT '[]'"),
+)
+
+
+def _migrate_v8_token_usage(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v8: token estimates and reported usage per task (additive columns only)."""
+    cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V8_USAGE_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=cache)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1730,6 +1746,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (5, "005_community_projects", _migrate_v5_community_projects),
     (6, "006_coding_agent_attribution", _migrate_v6_coding_agent_attribution),
     (7, "007_security_hardening", _migrate_v7_security_hardening),
+    (8, "008_token_usage", _migrate_v8_token_usage),
 )
 
 

@@ -32,6 +32,7 @@ from aiwatchdogs.core.safety import (
     validate_safe_http_url,
     verify_token_digest,
 )
+from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usage, summarise_tokens
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
@@ -455,7 +456,9 @@ class DeskService:
         rungs: list[dict[str, Any]] | None = None,
         unique_coverage_inr: float | None = None,
         cleared_findings_count: int | None = None,
+        token_rows: list[tuple[str, int | None, Any]] | None = None,
     ) -> dict[str, Any]:
+        planned = DeskService._planned_tasks(row)
         total = int(row["total_tasks"] or 0)
         completed = int(row["completed_tasks"] or 0)
         progress_pct = round((completed / total) * 100.0, 1) if total > 0 else 0.0
@@ -520,6 +523,8 @@ class DeskService:
             "project_sources": loads_json(_row_get(row, "project_sources_json", "[]") or "[]", []),
             "project_scope": loads_json(_row_get(row, "project_scope_json", "{}") or "{}", {}),
             "enlisted_pr_url": str(_row_get(row, "enlisted_pr_url", "") or ""),
+            "planned_tasks": planned,
+            "token_summary": summarise_tokens(token_rows or [], planned),
         }
 
     @staticmethod
@@ -2001,6 +2006,7 @@ class DeskService:
             "SELECT * FROM missions WHERE status != 'archived' ORDER BY priority ASC, id ASC"
         ).fetchall()
         mission_unique_inr, coverage_summary = self._compute_coverage_summary(conn, rows)
+        token_rows = self._token_rows(conn)
         missions = [
             self._serialize_mission(
                 r,
@@ -2009,6 +2015,7 @@ class DeskService:
                 rungs=rungs_map.get(r["id"], []),
                 unique_coverage_inr=mission_unique_inr.get(str(r["id"]), 0.0),
                 cleared_findings_count=cleared_findings_map.get(r["id"], 0),
+                token_rows=token_rows.get(str(r["id"]), []),
             )
             for r in rows
         ]
@@ -2061,6 +2068,7 @@ class DeskService:
                 rungs=rungs,
                 unique_coverage_inr=mission_unique_inr.get(str(mid), 0.0),
                 cleared_findings_count=cf_cnt,
+                token_rows=self._token_rows(conn, str(mid)).get(str(mid), []),
             )
 
             source_ids = mission["source_ids"]
@@ -2137,6 +2145,15 @@ class DeskService:
                         "expected_sha256": t_payload.get("expected_sha256"),
                         "created_at": t["created_at"],
                         "completed_at": t["completed_at"],
+                        "work_type": t["work_type"] or ("peer_verify" if t["task_type"] == "peer_verify" else None),
+                        "estimated_tokens": t["estimated_tokens"],
+                        "estimate_basis": t["estimate_basis"] or None,
+                        "usage": public_usage(
+                            loads_json(t["usage_json"] or "{}", {}),
+                            started_at=_row_get(t, "lease_started_at", None),
+                            completed_at=t["completed_at"] if t["status"] == "completed" else None,
+                            attempts=int(_row_get(t, "attempt_count", 0) or 0),
+                        ),
                     }
                 )
 
@@ -3526,6 +3543,7 @@ class DeskService:
         handle: str | None = None,
         mode: str | None = None,
         preferred_mission: str | None = None,
+        max_estimated_tokens: int | None = None,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
         with self.db.transaction() as conn:
@@ -3608,6 +3626,9 @@ class DeskService:
             if preferred_mission:
                 clauses.append("t.mission_slug = ?")
                 params.append(preferred_mission.strip()[:120])
+            if max_estimated_tokens is not None:
+                clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
+                params.append(int(max_estimated_tokens))
 
             # Atomic single-row claim: on Postgres lock at most 1 eligible row (FOR UPDATE SKIP LOCKED LIMIT 1)
             lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
@@ -3686,6 +3707,9 @@ class DeskService:
                     "instructions": cand["instructions"],
                     "target_finding_id": cand["target_finding_id"],
                     "payload": task_payload,
+                    "work_type": cand["work_type"] or None,
+                    "estimated_tokens": cand["estimated_tokens"],
+                    "estimate_basis": cand["estimate_basis"] or None,
                 },
             }
             self._emit_durable_event(
@@ -4002,8 +4026,71 @@ class DeskService:
                     envelopes=envelopes,
                 )
 
+            # Peer checks repeat the original check on the same dataset, so they carry its estimate.
+            if task["estimated_tokens"] is not None and task["dataset_key"]:
+                conn.execute(
+                    "UPDATE tasks SET estimated_tokens = ?, estimate_basis = ? "
+                    "WHERE mission_id = ? AND dataset_key = ? AND task_type = 'peer_verify' "
+                    "AND estimated_tokens IS NULL",
+                    (task["estimated_tokens"], PEER_ESTIMATE_BASIS, task["mission_id"], task["dataset_key"]),
+                )
+
+            raw_usage = payload.get("usage")
+            if isinstance(raw_usage, dict):
+                report = UsageReport.model_validate(raw_usage)
+                self._store_usage(conn, task, report.source, report.counts())
+
         self._broadcast_envelopes(envelopes)
         return result
+
+    @staticmethod
+    def _store_usage(conn: Any, task: Any, layer: str, counts: dict[str, int]) -> None:
+        usage = loads_json(_row_get(task, "usage_json", "") or "{}", {})
+        if not isinstance(usage, dict):
+            usage = {}
+        usage[layer] = counts
+        conn.execute("UPDATE tasks SET usage_json = ? WHERE id = ?", (dumps_json(usage), task["id"]))
+
+    def report_usage(
+        self, *, task_ids: list[str], usage: UsageReport, token: str | None
+    ) -> dict[str, Any]:
+        """Record a coding agent's session usage against tasks it has already completed."""
+        ids = list(dict.fromkeys(t.strip() for t in task_ids if t.strip()))
+        if not ids:
+            raise HTTPException(status_code=422, detail="task_ids must name at least one task")
+        with self.db.transaction() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            lock_clause = " FOR UPDATE" if self.db.is_postgres else ""
+            rows = []
+            for tid in sorted(ids):
+                row = conn.execute(f"SELECT * FROM tasks WHERE id = ?{lock_clause}", (tid,)).fetchone()
+                if row is None:
+                    raise HTTPException(status_code=404, detail=f"Task '{tid}' not found")
+                if row["claimed_by_agent_id"] != agent["id"]:
+                    raise HTTPException(status_code=403, detail=f"Task '{tid}' was completed by another agent")
+                if row["status"] != "completed":
+                    raise HTTPException(status_code=409, detail=f"Task '{tid}' is not completed yet")
+                rows.append(row)
+            for row, counts in zip(rows, usage.split(len(rows)), strict=True):
+                self._store_usage(conn, row, "agent", counts)
+        return {"status": "recorded", "task_ids": [r["id"] for r in rows]}
+
+    @staticmethod
+    def _planned_tasks(row: Any) -> list[dict[str, Any]]:
+        planned = loads_json(_row_get(row, "planned_tasks_json", "[]") or "[]", [])
+        return [p for p in planned if isinstance(p, dict)] if isinstance(planned, list) else []
+
+    def _token_rows(self, conn: Any, mission_id: str | None = None) -> dict[str, list[tuple[str, int | None, Any]]]:
+        where, params = ("WHERE mission_id = ?", (mission_id,)) if mission_id else ("", ())
+        out: dict[str, list[tuple[str, int | None, Any]]] = {}
+        for r in conn.execute(
+            f"SELECT mission_id, status, estimated_tokens, usage_json FROM tasks {where}", params
+        ).fetchall():
+            out.setdefault(str(r["mission_id"]), []).append(
+                (str(r["status"]), r["estimated_tokens"], loads_json(r["usage_json"] or "{}", {}))
+            )
+        return out
 
     def _settle_task_atomically(
         self,

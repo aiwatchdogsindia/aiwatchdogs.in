@@ -58,6 +58,9 @@
       "title": "Delhi Police budget vs revised vs actual (Union Demand 51, Budget 2025-26)",
       "instructions": "Fetch the official Notes on Demands for Grants 2025-26, Demand No. 51 (Police), verify the SHA-256, and run P1 on line 5 'Delhi Police' (revenue, capital and total). Compare RE 2024-25 with BE 2024-25, BE 2025-26 with RE 2024-25, and Actuals 2023-24 with the BE 2023-24 printed in the 2024-25 Notes. Cite page and printed line for every figure.",
       "dataset_key": "union-notes-dg51-2025-26",
+      "type": "run_check",
+      "estimated_tokens": 300000,
+      "estimate_basis": "About 6 agent turns at 50,000 tokens each, mostly cached. The CLI reads the PDF in code.",
       "financial_quantity_type": "budget_and_treasury_expenditure",
       "payload": {
         "retrieval_url": "https://www.indiabudget.gov.in/budget2025-26/doc/eb/sbe51.pdf",
@@ -120,6 +123,9 @@
       "title": "Delhi Police budget vs revised estimate (Union Demand 51, Budget 2024-25)",
       "instructions": "Fetch the official Notes on Demands for Grants 2024-25, Demand No. 51 (Police), verify the SHA-256, and run P1 on line 5 'Delhi Police'. Compare RE 2023-24 with BE 2023-24 and BE 2024-25 with RE 2023-24, revenue and capital separately. Cite page and printed line for every figure.",
       "dataset_key": "union-notes-dg51-2024-25",
+      "type": "run_check",
+      "estimated_tokens": 300000,
+      "estimate_basis": "About 6 agent turns at 50,000 tokens each, mostly cached. The CLI reads the PDF in code.",
       "financial_quantity_type": "budget_and_treasury_expenditure",
       "payload": {
         "retrieval_url": "https://www.indiabudget.gov.in/budget2024-25/doc/eb/sbe51.pdf",
@@ -163,6 +169,9 @@
       "title": "Hyderabad City Police budget heads (Telangana Budget 2026-27, Volume III-3)",
       "instructions": "Fetch the official Telangana Budget Estimates 2026-27 Volume III-3, verify the SHA-256, and run P1 on the 'Commissioner of City Police, HOD' (Hyderabad) heads: establishment Major Head 2055 (page 98), schemes Major Head 2055 (page 155) and capital Major Head 4055 (page 157). Compare RE 2025-26 with BE 2025-26, BE 2026-27 with RE 2025-26 and BE 2025-26 with Accounts 2024-25, and flag heads where RE repeats BE. Figures are Rs lakh.",
       "dataset_key": "telangana-be-2026-27-vol3-3",
+      "type": "run_check",
+      "estimated_tokens": 300000,
+      "estimate_basis": "About 6 agent turns at 50,000 tokens each, mostly cached. The CLI reads the PDF in code.",
       "financial_quantity_type": "budget_and_treasury_expenditure",
       "payload": {
         "retrieval_url": "https://d20exy1ygbh3sg.cloudfront.net/publicfiles/budget-books/2026-27/1774502529_Volume3_3_1774502528_.pdf",
@@ -215,6 +224,9 @@
       "title": "Mumbai (Greater Bombay) police budget heads (Maharashtra Police Performance Budget 2026-27)",
       "instructions": "Fetch the official Maharashtra Home Department Police Performance Budget 2026-27 (Part 4), verify the SHA-256, and run P1 on Minor Head 108 'State Headquarters Police': (1) Commissionerate of Police, Greater Bombay and (3) City Police Establishment. Actuals 2024-25 and BE 2025-26 are on page 237, RE 2025-26 and BE 2026-27 on page 238. Compare RE with BE for 2025-26 and BE 2026-27 with RE 2025-26. Figures are Rs thousand. Caveat: the document does not print 'Mumbai' beside 'City Police Establishment'; it sits under State Headquarters Police with the Greater Bombay commissionerate, while other commissionerates sit under District Police (MH 109).",
       "dataset_key": "maharashtra-police-performance-budget-2026-27",
+      "type": "run_check",
+      "estimated_tokens": 300000,
+      "estimate_basis": "About 6 agent turns at 50,000 tokens each, mostly cached. The CLI reads the PDF in code.",
       "financial_quantity_type": "budget_and_treasury_expenditure",
       "payload": {
         "retrieval_url": "https://www.mahalegislature.org.in/performance-report/2026/%E0%A4%AD%E0%A4%BE%E0%A4%97-4%20%E0%A4%AA%E0%A5%8B%E0%A4%B2%E0%A5%80%E0%A4%B8.pdf",

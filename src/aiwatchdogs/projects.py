@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from aiwatchdogs.core.safety import contains_pii, scan_forbidden_terms, validate_safe_http_url
+from aiwatchdogs.core.usage import DEFAULT_WORK_TYPE, MAX_TOKENS, PEER_ESTIMATE_BASIS, WORK_TYPES
 
 PROJECT_ID_PREFIX = "project-"
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -74,6 +75,7 @@ VALID_QUANTITY_TYPES = {
     "electoral_bond_disclosures",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
+MAX_TASKS_PER_PROJECT = 10
 SYNC_STATE_KEY = "community_projects"
 
 
@@ -194,6 +196,15 @@ def _validate_p1_context(ctx: dict[str, Any], where: str, errors: list[str]) -> 
                     errors.append(f"{bwhere}.references.{rname}.source_url must be a public https:// link.")
 
 
+def _validate_estimate(item: dict[str, Any], where: str, errors: list[str]) -> None:
+    est = item.get("estimated_tokens")
+    if isinstance(est, bool) or not isinstance(est, int) or not 1 <= est <= MAX_TOKENS:
+        errors.append(f"{where}.estimated_tokens must be a whole number of tokens, at least 1.")
+    basis = item.get("estimate_basis")
+    if not isinstance(basis, str) or not basis.strip() or len(basis) > 200:
+        errors.append(f"{where}.estimate_basis must say how the estimate was made (200 characters at most).")
+
+
 def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str]:
     """Return a list of human-readable problems (empty list means the project is valid)."""
     errors: list[str] = []
@@ -273,6 +284,27 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     if not isinstance(tasks, list):
         errors.append("'tasks' must be a list (it can be empty while data is still being found).")
         tasks = []
+    planned = data.get("planned_tasks", [])
+    if not isinstance(planned, list):
+        errors.append("'planned_tasks' must be a list.")
+        planned = []
+    if len(tasks) + len(planned) > MAX_TASKS_PER_PROJECT:
+        errors.append(
+            f"A project can list at most {MAX_TASKS_PER_PROJECT} tasks ('tasks' and 'planned_tasks' together)."
+        )
+    if not tasks and not planned:
+        errors.append("'planned_tasks' must list at least one task with a type and estimated_tokens.")
+    for i, item in enumerate(planned):
+        where = f"planned_tasks[{i}]"
+        if not isinstance(item, dict):
+            errors.append(f"{where} must be an object.")
+            continue
+        title = item.get("title")
+        if not isinstance(title, str) or not 10 <= len(title.strip()) or len(title) > 160:
+            errors.append(f"{where}.title must be text between 10 and 160 characters.")
+        if item.get("type") not in WORK_TYPES:
+            errors.append(f"{where}.type must be one of: {', '.join(WORK_TYPES)}.")
+        _validate_estimate(item, where, errors)
     if tasks and methodology not in known:
         errors.append(f"'methodology_code' must be one of {sorted(known)} when tasks are included.")
     if not tasks and status == "active":
@@ -298,6 +330,9 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             "financial_quantity_type"
         ) not in VALID_QUANTITY_TYPES:
             errors.append(f"{where}.financial_quantity_type must be one of {sorted(VALID_QUANTITY_TYPES)}.")
+        if task.get("type", DEFAULT_WORK_TYPE) not in WORK_TYPES:
+            errors.append(f"{where}.type must be one of: {', '.join(WORK_TYPES)}.")
+        _validate_estimate(task, where, errors)
         code = task.get("methodology_code", methodology)
         if code not in known:
             errors.append(f"{where}.methodology_code must be one of {sorted(known)}.")
@@ -368,6 +403,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         if isinstance(task, dict):
             text_blobs.append((f"tasks[{i}].title", task.get("title", "")))
             text_blobs.append((f"tasks[{i}].instructions", task.get("instructions", "")))
+    for i, item in enumerate(planned):
+        if isinstance(item, dict):
+            text_blobs.append((f"planned_tasks[{i}].title", item.get("title", "")))
+            text_blobs.append((f"planned_tasks[{i}].estimate_basis", item.get("estimate_basis", "")))
     for where, text in text_blobs:
         if not isinstance(text, str):
             continue
@@ -504,9 +543,9 @@ def sync_projects(
                     cleared_count, cleared_findings_count, unevaluable_count,
                     monetary_audited_inr, monetary_unit, financial_quantity_type, created_at,
                     posted_by_name, posted_by_handle, posted_by_url, project_sources_json,
-                    project_scope_json, enlisted_pr_url, is_community_project
+                    project_scope_json, enlisted_pr_url, planned_tasks_json, is_community_project
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', 'live_public', ?, ?, ?, 0, 0, 0, 0, 0, 0.0,
-                          'inr', ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                          'inr', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                 ON CONFLICT(id) DO UPDATE SET
                     title = excluded.title,
                     description = excluded.description,
@@ -524,6 +563,7 @@ def sync_projects(
                     project_sources_json = excluded.project_sources_json,
                     project_scope_json = excluded.project_scope_json,
                     enlisted_pr_url = excluded.enlisted_pr_url,
+                    planned_tasks_json = excluded.planned_tasks_json,
                     is_community_project = 1
                 """,
                 (
@@ -547,6 +587,12 @@ def sync_projects(
                     dumps_json(d.get("sources", [])),
                     dumps_json({"scope": d.get("scope", []), "out_of_scope": d.get("out_of_scope", [])}),
                     str(d.get("enlisted_pr_url", "") or ""),
+                    dumps_json(
+                        [
+                            {k: p[k] for k in ("title", "type", "estimated_tokens", "estimate_basis")}
+                            for p in d.get("planned_tasks", [])
+                        ]
+                    ),
                 ),
             )
             for task in tasks:
@@ -604,6 +650,21 @@ def sync_projects(
                             tid,
                         ),
                     )
+                # Estimates are descriptive, so refresh them whatever state the task is in.
+                conn.execute(
+                    "UPDATE tasks SET work_type = ?, estimated_tokens = ?, estimate_basis = ? WHERE id = ?",
+                    (
+                        task.get("type", DEFAULT_WORK_TYPE),
+                        task["estimated_tokens"],
+                        task["estimate_basis"],
+                        tid,
+                    ),
+                )
+                conn.execute(
+                    "UPDATE tasks SET estimated_tokens = ?, estimate_basis = ? "
+                    "WHERE mission_id = ? AND dataset_key = ? AND task_type = 'peer_verify'",
+                    (task["estimated_tokens"], PEER_ESTIMATE_BASIS, mid, task["dataset_key"]),
+                )
             if getattr(db, "is_postgres", False):
                 conn.execute("SELECT id FROM missions WHERE id = ? FOR UPDATE", (mid,))
             cnt = conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ?", (mid,)).fetchone()

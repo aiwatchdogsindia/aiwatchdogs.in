@@ -21,6 +21,7 @@ import type {
   TreasurySummary,
   VerificationCheckState,
   WhisperItem,
+  TaskUsage,
 } from '../types';
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -571,6 +572,24 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
       return { scope: asArray<string>(sc.scope), out_of_scope: asArray<string>(sc.out_of_scope) };
     })(),
     enlisted_pr_url: optStr(raw.enlisted_pr_url) ?? undefined,
+    planned_tasks: asArray<Record<string, unknown>>(raw.planned_tasks).map((p) => ({
+      title: String(p.title || ''),
+      type: String(p.type || ''),
+      estimated_tokens: Number(p.estimated_tokens ?? 0),
+      estimate_basis: optStr(p.estimate_basis) ?? undefined,
+    })),
+    token_summary: raw.token_summary
+      ? (() => {
+          const t = asRecord(raw.token_summary);
+          return {
+            estimated_tokens: optNum(t.estimated_tokens) ?? undefined,
+            remaining_tokens: optNum(t.remaining_tokens) ?? undefined,
+            tokens_used: optNum(t.tokens_used) ?? undefined,
+            reported_tasks: Number(t.reported_tasks ?? 0),
+            completed_tasks: Number(t.completed_tasks ?? 0),
+          };
+        })()
+      : undefined,
     rungs: raw.rungs ? asArray<Record<string, unknown>>(raw.rungs).map(normalizeRung) : undefined,
     sources: raw.sources ? asArray<Record<string, unknown>>(raw.sources).map(normalizeSource) : undefined,
     findings: raw.findings ? asArray<Record<string, unknown>>(raw.findings).map(normalizeFinding) : undefined,
@@ -583,8 +602,26 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
           claimed_by: (t.claimed_by_handle || t.claimed_by || null) as string | null,
           attempt_count: Number(t.attempt_count ?? 0),
           created_at: t.created_at ? String(t.created_at) : undefined,
+          work_type: optStr(t.work_type) ?? undefined,
+          estimated_tokens: optNum(t.estimated_tokens) ?? undefined,
+          estimate_basis: optStr(t.estimate_basis) ?? undefined,
+          usage: t.usage ? normalizeUsage(asRecord(t.usage)) : undefined,
         }))
       : undefined,
+  };
+}
+
+function normalizeUsage(u: Record<string, unknown>): TaskUsage {
+  const num = (k: string) => optNum(u[k]) ?? undefined;
+  return {
+    tokens_used: num('tokens_used'),
+    agent_tokens: num('agent_tokens'),
+    check_tokens: num('check_tokens'),
+    iterations: num('iterations'),
+    tool_calls: num('tool_calls'),
+    agent_seconds: num('agent_seconds'),
+    hub_seconds: num('hub_seconds'),
+    split_across: num('split_across'),
   };
 }
 

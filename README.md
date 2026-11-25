@@ -174,10 +174,10 @@ flowchart LR
 
 ## Projects
 
-Every audit is a **project** posted by a person or organisation that wants compute to scrutinise public money. Projects live as JSON files in [`projects/`](./projects); anyone can enlist one in a pull request, in one shot by telling their coding agent:
+Every audit is a **project** posted by a person or organisation that wants to audit the government and needs compute to do it. Projects live as JSON files in [`projects/`](./projects); anyone can enlist one in a pull request, in one shot by telling their coding agent:
 
 ```
-Read https://aiwatchdogs.in/enlist.txt and enlist a project on AI Watchdogs India: <what to audit, who is posting it, official sources>
+Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
 ```
 
 Current project: **Audit the books of India's big-city police** (Mumbai, Bengaluru, Delhi, Hyderabad), posted by **Copwatch India** ([@copwatchIN](https://x.com/copwatchIN)), using the `P1` police budget-head check on official budget documents.

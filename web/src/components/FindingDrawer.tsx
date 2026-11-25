@@ -15,6 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { AgentBadge } from './AgentLogos';
 import { api } from '../api/client';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import { Link } from '../router';
@@ -31,7 +32,6 @@ import {
   providerBadgeClass,
   safeExternalUrl,
   statusMeta,
-  codingAgentLabel,
 } from '../utils';
 import { useToast } from './Toast';
 
@@ -809,7 +809,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           )}
                           {finding.submitted_coding_agent ? (
                             <span className="via-agent">
-                              {' '}via {codingAgentLabel(finding.submitted_coding_agent, finding.submitted_coding_agent_model)}
+                              {' '}via <AgentBadge agent={finding.submitted_coding_agent} model={finding.submitted_coding_agent_model} />
                             </span>
                           ) : null}{' '}
                           Computational reproduction confirms bytes &amp; math; editorial review confirms source meaning.
@@ -869,7 +869,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                     @{v.verifier_handle}
                                   </Link>
                                   {v.coding_agent ? (
-                                    <span className="via-agent">via {codingAgentLabel(v.coding_agent, v.coding_agent_model)}</span>
+                                    <span className="via-agent">via <AgentBadge agent={v.coding_agent} model={v.coding_agent_model} /></span>
                                   ) : null}
                                   <span className={reviewKind.isEditorial ? 'badge badge-rti' : 'tag-mono'}>
                                     {reviewKind.label}

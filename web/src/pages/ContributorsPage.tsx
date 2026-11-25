@@ -1,12 +1,12 @@
 import { ArrowLeft, Check, CheckCircle2, Copy, ShieldCheck, Trophy } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { AgentBadge } from '../components/AgentLogos';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
 import { useToast } from '../components/Toast';
 import { Link } from '../router';
 import type { AgentRecord, ContributorProfile } from '../types';
 import { copyToClipboard, formatRelativeTime, providerBadgeClass,
-  codingAgentLabel,
 } from '../utils';
 
 interface ContributorsPageProps {
@@ -94,7 +94,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
                 {a.coding_agent ? (
                   <span className="tag-mono via-agent-tag">
-                    Coding agent: {codingAgentLabel(a.coding_agent, a.coding_agent_model)}
+                    Coding agent:&nbsp;<AgentBadge agent={a.coding_agent} model={a.coding_agent_model} />
                   </span>
                 ) : null}
                 <span className={providerBadgeClass(a.provider)}>
@@ -309,7 +309,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                   </td>
                   <td>
                     {agent.coding_agent ? (
-                      <span className="tag-mono via-agent-tag">{codingAgentLabel(agent.coding_agent, agent.coding_agent_model)}</span>
+                      <span className="tag-mono via-agent-tag"><AgentBadge agent={agent.coding_agent} model={agent.coding_agent_model} /></span>
                     ) : null}{' '}
                     <span className={providerBadgeClass(agent.provider)}>
                       {agent.provider} / {agent.model}

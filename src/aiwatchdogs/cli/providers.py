@@ -1312,6 +1312,8 @@ def enrich_finding_summary(
     else:
         cfg = ProviderInfo.model_validate(provider_cfg)
 
+    call_usage: dict[str, Any] = {}
+
     def _deterministic_result(
         reason: str | None = None,
         *,
@@ -1336,6 +1338,8 @@ def enrich_finding_summary(
             "budget_blocked": budget_blocked,
             "estimated_cost_usd": round(estimated_cost_usd, 6),
             "actual_cost_usd": round(actual_cost_usd, 6),
+            "input_tokens": call_usage.get("prompt_tokens"),
+            "output_tokens": call_usage.get("completion_tokens"),
         }
 
     if cfg is None or cfg.provider.lower() == RULE_ENGINE_PROVIDER:
@@ -1374,6 +1378,7 @@ def enrich_finding_summary(
         timeout_s=timeout_s,
     )
 
+    call_usage.update(usage)
     actual_cost = 0.0
     if usage.get("http_200") and is_paid_provider(cfg):
         computed_actual = calculate_actual_cost_usd(
@@ -1476,4 +1481,6 @@ def enrich_finding_summary(
         "budget_blocked": False,
         "estimated_cost_usd": round(estimated_cost, 6),
         "actual_cost_usd": round(actual_cost, 6),
+        "input_tokens": call_usage.get("prompt_tokens"),
+        "output_tokens": call_usage.get("completion_tokens"),
     }

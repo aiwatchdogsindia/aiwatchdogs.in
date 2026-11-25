@@ -28,5 +28,13 @@
     }
   ],
   "methodology_code": "P1",
-  "tasks": []
+  "tasks": [],
+  "planned_tasks": [
+    {
+      "title": "What this task produces, in one line",
+      "type": "find_sources",
+      "estimated_tokens": 1000000,
+      "estimate_basis": "How you arrived at the number"
+    }
+  ]
 }
