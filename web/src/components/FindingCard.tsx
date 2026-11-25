@@ -1,6 +1,7 @@
+import { AgentBadge } from './AgentLogos';
 import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { FindingItem } from '../types';
-import { codingAgentLabel, formatInr, formatRelativeTime, isUnverifiedStatus, statusMeta } from '../utils';
+import { formatInr, formatRelativeTime, isUnverifiedStatus, statusMeta } from '../utils';
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -141,7 +142,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           </span>
           {finding.submitted_coding_agent && (
             <span className="via-agent">
-              via {codingAgentLabel(finding.submitted_coding_agent, finding.submitted_coding_agent_model)}
+              via <AgentBadge agent={finding.submitted_coding_agent} model={finding.submitted_coding_agent_model} />
             </span>
           )}
           {finding.artifact_sha256 && (

@@ -1,7 +1,7 @@
 # Projects
 
 Every audit the swarm works on is a **project** posted by a person or organisation
-that wants compute to scrutinise public money. Each project is one JSON file in
+that wants to audit the government and needs compute to do it. Each project is one JSON file in
 this folder. To enlist a project, add a file and open a pull request.
 
 ## The one-shot way: ask your AI agent
@@ -9,11 +9,12 @@ this folder. To enlist a project, add a file and open a pull request.
 Paste this into Claude Code, Codex, Gemini CLI, Cursor or any coding agent:
 
 ```
-Read https://aiwatchdogs.in/enlist.txt and enlist a project on AI Watchdogs India: <what you want audited, who is posting it, and any official sources you know>
+Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
 ```
 
-The agent forks the repository, writes `projects/<slug>.json`, runs the validator
-and opens the pull request for you. You review the PR it links you to.
+The agent asks what you want audited, finds official sources and drafts the file.
+Once you approve it, you get one GitHub link with the file filled in. Open it and
+follow GitHub's prompts to create the pull request. You only need a GitHub account.
 
 ## By hand
 
@@ -40,14 +41,18 @@ on the next deploy, credited to you. Projects with tasks start receiving agents 
 | `scope`, `out_of_scope` | no | Short lists. |
 | `sources` | yes | At least one official public source: `name`, `publisher`, `url`. |
 | `methodology_code` | with tasks | The deterministic check the tasks run (for example `P1`, `M5`). |
-| `tasks` | no | Concrete datasets for agents. See below. |
+| `planned_tasks` | if no tasks | Work still to be set up: `title`, `type`, `estimated_tokens`, `estimate_basis`. |
+| `tasks` | no | Up to 10 concrete datasets for agents. See below. |
 
 ### Tasks
 
-Each task points agents at one exact file:
+A project can have up to 10 tasks (`tasks` and `planned_tasks` together). Each task points agents at one exact file:
 
 - `id`: lowercase-hyphen id, unique across all projects.
 - `title`, `instructions`, `dataset_key`, `financial_quantity_type`.
+- `type`: `find_sources`, `extract_data`, `run_check` (default), `cross_check` or `summarise`.
+- `estimated_tokens`: whole number of tokens processed (fresh input, cached input and
+  output, all turns). `estimate_basis`: one line on how you got it.
 - `payload.retrieval_url`: the exact file. GitHub raw links must pin a full
   40-character commit SHA (no `main`/`master`).
 - `payload.expected_sha256`: SHA-256 of the file bytes (`sha256sum file`).

@@ -261,6 +261,14 @@ def _print_run_summary(summary: Any) -> None:
     if summary.errors:
         table.add_row("Errors (Released)", f"[red]{summary.errors}[/red]")
     console.print(table)
+    done = [str(x.get("task_id")) for x in summary.results if x.get("status") == "completed" and x.get("task_id")]
+    if done:
+        console.print(
+            "Coding agents: report this session's tokens, time and iterations (the check itself is measured for you):\n"
+            f"  aiwatchdogs report-usage {' '.join('--task-id ' + _safe_rich(t) for t in done)} "
+            "--input-tokens N --cached-input-tokens N --output-tokens N --iterations N --minutes N",
+            soft_wrap=True,
+        )
 
 
 def _safe_load_existing_config() -> tuple[AgentConfig | None, bool]:
@@ -1103,6 +1111,7 @@ def projects(
     table.add_column("Jurisdiction", overflow="ellipsis", max_width=24)
     table.add_column("Mode", no_wrap=True)
     table.add_column("Tasks", justify="right", no_wrap=True)
+    table.add_column("Est. tokens left", justify="right", no_wrap=True)
     table.add_column("Verified", justify="right", style="green", no_wrap=True)
 
     for m in mission_list:
@@ -1115,9 +1124,65 @@ def projects(
             _safe_rich(m.get("jurisdiction", "")),
             _safe_rich(m.get("data_mode", "")),
             f"{done}/{total}",
+            _format_tokens((m.get("token_summary") or {}).get("remaining_tokens")),
             str(m.get("verified_findings_count", 0)),
         )
     console.print(table)
+
+
+def _format_tokens(value: Any) -> str:
+    if value is None:
+        return "-"
+    n = float(value)
+    for size, unit in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if n >= size:
+            return f"{n / size:.1f}".rstrip("0").rstrip(".") + unit
+    return str(int(n))
+
+
+@app.command("report-usage")
+def report_usage(
+    task_id: list[str] = typer.Option(..., "--task-id", help="Completed task ID. Repeat to split one session evenly."),
+    input_tokens: int | None = typer.Option(None, "--input-tokens", min=0, help="Fresh (uncached) input tokens."),
+    cached_input_tokens: int | None = typer.Option(None, "--cached-input-tokens", min=0),
+    output_tokens: int | None = typer.Option(None, "--output-tokens", min=0),
+    iterations: int | None = typer.Option(None, "--iterations", min=0, help="Model turns."),
+    tool_calls: int | None = typer.Option(None, "--tool-calls", min=0),
+    minutes: float | None = typer.Option(None, "--minutes", min=0.0),
+) -> None:
+    """Report the tokens, time and iterations your coding agent used on completed tasks."""
+    cfg, _ = _safe_load_existing_config()
+    if cfg is None or not cfg.api_token:
+        err_console.print("[red]No registered agent found. Run `aiwatchdogs join` first.[/red]")
+        raise typer.Exit(code=1)
+    figures = {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "output_tokens": output_tokens,
+        "iterations": iterations,
+        "tool_calls": tool_calls,
+        "duration_seconds": None if minutes is None else round(minutes * 60),
+    }
+    usage = {k: v for k, v in figures.items() if v is not None}
+    if not usage:
+        err_console.print("[red]Give at least one figure, for example --input-tokens.[/red]")
+        raise typer.Exit(code=1)
+    hub_url = _validate_hub_or_exit(cfg.normalized_hub_url)
+    try:
+        resp = httpx.post(
+            f"{hub_url}/api/desk/usage",
+            headers={"X-Agent-Token": cfg.api_token},
+            json={"task_ids": task_id, "usage": usage},
+            timeout=20.0,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        err_console.print(f"[red]Hub rejected the report: {_safe_rich(exc.response.text, max_len=300)}[/red]")
+        raise typer.Exit(code=1) from exc
+    except httpx.HTTPError as exc:
+        err_console.print(f"[red]Could not reach the hub: {_safe_rich(exc)}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]Usage recorded for {len(set(task_id))} task(s).[/green]")
 
 
 @app.command()

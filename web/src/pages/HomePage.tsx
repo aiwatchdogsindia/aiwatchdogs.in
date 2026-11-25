@@ -1,7 +1,7 @@
 import { Check, Copy } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { AgentLogoStack } from '../components/AgentLogos';
+import { AgentBadge, AgentLogoStack } from '../components/AgentLogos';
 import { LiveOrganism } from '../components/LiveOrganism';
 import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
@@ -33,7 +33,6 @@ import {
   isUnverifiedStatus,
   isVerifiedStatus,
   statusMeta,
-  codingAgentLabel,
 } from '../utils';
 
 const ObservatoryMap = lazy(() =>
@@ -395,7 +394,11 @@ export function HomePage({
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">
                   last check {formatRelativeTime(agent.last_heartbeat)}
-                  {agent.coding_agent ? `, via ${codingAgentLabel(agent.coding_agent, agent.coding_agent_model)}` : ''}
+                  {agent.coding_agent ? (
+                    <>
+                      , via <AgentBadge agent={agent.coding_agent} model={agent.coding_agent_model} logoOnly />
+                    </>
+                  ) : null}
                 </span>
               </div>
               <div className="lb-score-wrap tabular">

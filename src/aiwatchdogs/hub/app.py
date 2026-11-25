@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from aiwatchdogs.core.usage import MAX_TOKENS, UsageReport
 from aiwatchdogs.hub.database import (
     Database,
     is_postgres_required,
@@ -199,6 +200,7 @@ class DeskNextRequest(BaseModel):
     handle: str | None = Field(default=None, max_length=64)
     mode: str | None = Field(default=None, max_length=32)
     preferred_mission: str | None = Field(default=None, max_length=120)
+    max_estimated_tokens: int | None = Field(default=None, ge=0, le=MAX_TOKENS)
 
 
 class DeskBeatRequest(BaseModel):
@@ -220,7 +222,13 @@ class DeskSubmitRequest(BaseModel):
     finding: dict[str, Any] | None = None
     verification: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
+    usage: UsageReport | None = None
     idempotency_key: str | None = Field(default=None, max_length=128)
+
+
+class DeskUsageRequest(BaseModel):
+    task_ids: list[str] = Field(..., min_length=1, max_length=20)
+    usage: UsageReport
 
 
 class RTIDraftRequest(BaseModel):
@@ -777,6 +785,7 @@ def create_app(
             handle=body.handle,
             mode=body.mode,
             preferred_mission=body.preferred_mission,
+            max_estimated_tokens=body.max_estimated_tokens,
         )
         if claimed is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})
@@ -821,6 +830,21 @@ def create_app(
             notes=body.notes,
             token=x_agent_token,
         )
+
+    @application.post("/api/desk/usage")
+    def api_desk_usage(
+        body: DeskUsageRequest,
+        request: Request,
+        response: Response,
+        x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+    ) -> dict[str, Any]:
+        desk.check_rate_limit(
+            bucket_key=f"desk_usage:{_extract_client_ip(request)}",
+            limit=30,
+            window_seconds=60,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return desk.report_usage(task_ids=body.task_ids, usage=body.usage, token=x_agent_token)
 
     @application.post("/api/desk/submit")
     def api_desk_submit(

@@ -420,3 +420,31 @@ export function codingAgentLabel(agent?: string | null, model?: string | null): 
   if (!a) return '';
   return m ? `${a} (${m})` : a;
 }
+
+/** 1234567 -> "1.2M". Undefined stays undefined so callers can say "not reported". */
+export function formatTokens(n: number): string {
+  for (const [size, unit] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']] as const) {
+    if (n >= size) return `${Number((n / size).toFixed(1))}${unit}`;
+  }
+  return String(n);
+}
+
+export function formatSeconds(s: number): string {
+  if (s < 1) return 'under 1s';
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+const WORK_TYPE_LABELS: Record<string, string> = {
+  find_sources: 'Find sources',
+  extract_data: 'Extract data',
+  run_check: 'Run check',
+  cross_check: 'Cross-check',
+  summarise: 'Summarise',
+  peer_verify: 'Peer check',
+};
+
+export function workTypeLabel(type?: string): string {
+  return (type && WORK_TYPE_LABELS[type]) || 'Audit';
+}

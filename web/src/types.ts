@@ -177,6 +177,8 @@ export interface MissionItem {
   project_sources?: ProjectSource[];
   project_scope?: { scope: string[]; out_of_scope: string[] };
   enlisted_pr_url?: string;
+  planned_tasks?: PlannedTask[];
+  token_summary?: TokenSummary;
 }
 
 export interface ProjectPoster {
@@ -199,6 +201,37 @@ export interface MissionTask {
   claimed_by?: string | null;
   attempt_count?: number;
   created_at?: string;
+  work_type?: string;
+  estimated_tokens?: number;
+  estimate_basis?: string;
+  usage?: TaskUsage;
+}
+
+/** What a completed task actually took. Missing fields were not reported. */
+export interface TaskUsage {
+  tokens_used?: number;
+  agent_tokens?: number;
+  check_tokens?: number;
+  iterations?: number;
+  tool_calls?: number;
+  agent_seconds?: number;
+  hub_seconds?: number;
+  split_across?: number;
+}
+
+export interface PlannedTask {
+  title: string;
+  type: string;
+  estimated_tokens: number;
+  estimate_basis?: string;
+}
+
+export interface TokenSummary {
+  estimated_tokens?: number;
+  remaining_tokens?: number;
+  tokens_used?: number;
+  reported_tasks: number;
+  completed_tasks: number;
 }
 
 export interface Citation {
