@@ -11,7 +11,7 @@ import { HomePage } from './pages/HomePage';
 import { initAnalytics } from './lib/analytics';
 import { RouterProvider, useRouter } from './router';
 import type { HeadData, WhisperItem } from './types';
-import { isVerifiedStatus } from './utils';
+import { isVerifiedStatus, safeDecodeURIComponent } from './utils';
 
 // Code-split secondary pages and heavy interactive overlays to keep initial JS lean
 const MissionsPage = lazy(() =>
@@ -93,6 +93,7 @@ function AppShell() {
   const [latestEventId, setLatestEventId] = useState<number>(0);
   const latestEventIdRef = useRef<number>(0);
   const eventsSupportedRef = useRef<boolean>(false);
+  const sseRefreshTimerRef = useRef<number | null>(null);
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [sponsorOpen, setSponsorOpen] = useState(false);
@@ -162,15 +163,24 @@ function AppShell() {
     fetchHead();
   }, [fetchHead]);
 
-  // Scope background polling strictly to live-telemetry routes (/ and /live)
+  // Coalesce SSE-triggered refreshes so bursts never amplify into parallel refetches
+  const scheduleSseRefresh = useCallback(() => {
+    if (sseRefreshTimerRef.current !== null) return;
+    sseRefreshTimerRef.current = window.setTimeout(() => {
+      sseRefreshTimerRef.current = null;
+      fetchHead();
+      setRefreshTick((t) => t + 1);
+    }, 2000);
+  }, [fetchHead]);
+
   useEffect(() => {
-    if (!needsLiveUpdates) return;
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'hidden') return;
-      pollIncrementalEvents();
-    }, 25000);
-    return () => window.clearInterval(interval);
-  }, [needsLiveUpdates, pollIncrementalEvents]);
+    return () => {
+      if (sseRefreshTimerRef.current !== null) {
+        window.clearTimeout(sseRefreshTimerRef.current);
+        sseRefreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Allow opening finding drawer via ?finding=... query parameter (stable dossier URLs)
   useEffect(() => {
@@ -200,16 +210,29 @@ function AppShell() {
             'sponsor_added',
           ].includes(evt.type)
         ) {
-          fetchHead();
-          setRefreshTick((t) => t + 1);
+          scheduleSseRefresh();
         }
       },
-      [fetchHead, recordLatestEventId],
+      [recordLatestEventId, scheduleSseRefresh],
     ),
     { enabled: needsLiveUpdates, sinceId: latestEventId },
   );
 
+  // Scope background fallback polling strictly to live-telemetry routes when SSE is not live
+  useEffect(() => {
+    if (!needsLiveUpdates || sseStatus === 'live') return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      pollIncrementalEvents();
+    }, 25000);
+    return () => window.clearInterval(interval);
+  }, [needsLiveUpdates, sseStatus, pollIncrementalEvents]);
+
   const triggerFullRefresh = useCallback(() => {
+    if (sseRefreshTimerRef.current !== null) {
+      window.clearTimeout(sseRefreshTimerRef.current);
+      sseRefreshTimerRef.current = null;
+    }
     fetchHead();
     setRefreshTick((t) => t + 1);
   }, [fetchHead]);
@@ -243,7 +266,7 @@ function AppShell() {
     }
 
     if (cleanPath.startsWith('/projects/') || cleanPath.startsWith('/missions/')) {
-      const slug = decodeURIComponent(cleanPath.replace(/^\/(projects|missions)\//, ''));
+      const slug = safeDecodeURIComponent(cleanPath.replace(/^\/(projects|missions)\//, ''));
       return (
         <Suspense fallback={<PageFallback />}>
           <MissionsPage
@@ -286,7 +309,7 @@ function AppShell() {
     }
 
     if (cleanPath.startsWith('/a/')) {
-      const handle = decodeURIComponent(cleanPath.slice('/a/'.length));
+      const handle = safeDecodeURIComponent(cleanPath.slice('/a/'.length));
       return (
         <Suspense fallback={<PageFallback />}>
           <ContributorsPage
@@ -370,11 +393,17 @@ function AppShell() {
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
               <WifiOff size={14} />
-              <span>
-                Unable to reach Coordinator Hub API ({headError}). Ensure{' '}
-                <code className="font-mono">aiwatchdogs-hub</code> is running on{' '}
-                <code className="font-mono">127.0.0.1:8000</code>.
-              </span>
+              {import.meta.env.DEV ? (
+                <span>
+                  Unable to reach Coordinator Hub API ({headError}). Ensure{' '}
+                  <code className="font-mono">aiwatchdogs-hub</code> is running on{' '}
+                  <code className="font-mono">127.0.0.1:8000</code>.
+                </span>
+              ) : (
+                <span>
+                  Live hub data is temporarily unavailable ({headError}). Please retry in a moment.
+                </span>
+              )}
             </span>
             <button type="button" className="btn btn-secondary btn-xs" onClick={triggerFullRefresh}>
               <RefreshCw size={12} />

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import getpass
 import inspect
 import json
 import re
@@ -14,6 +13,7 @@ import httpx
 import typer
 from rich import box
 from rich.console import Console
+from rich.markup import escape as rich_escape
 from rich.panel import Panel
 from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
@@ -28,6 +28,7 @@ from aiwatchdogs.cli.config import (
     mask_token,
     normalize_hub_origin,
     resolve_reusable_token,
+    validate_hub_url,
 )
 from aiwatchdogs.cli.providers import (
     RULE_ENGINE_PROVIDER,
@@ -56,13 +57,45 @@ console = Console()
 err_console = Console(stderr=True)
 
 VALID_MODES = ("auto", "investigate", "verify")
+MAX_CLI_HTTP_BYTES = 5 * 1024 * 1024  # 5 MiB cap on CLI Hub GET responses
+_ANSI_ESC_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_CTRL_CHARS_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def _safe_rich(value: Any, *, max_len: int | None = None) -> str:
+    """Strip terminal escape/control sequences and escape Rich markup on untrusted strings."""
+    text = str("" if value is None else value)
+    text = _ANSI_ESC_RE.sub("", text)
+    text = _CTRL_CHARS_RE.sub("", text)
+    if max_len is not None and len(text) > max_len:
+        text = text[:max_len] + "…"
+    return rich_escape(text)
+
+
+def _bounded_http_get_json(url: str, *, timeout: float = 10.0, max_bytes: int = MAX_CLI_HTTP_BYTES) -> Any:
+    """Perform a bounded HTTP GET with redirects disabled and strict response-size cap."""
+    with httpx.Client(timeout=httpx.Timeout(timeout), follow_redirects=False) as client:
+        with client.stream("GET", url, headers={"Accept": "application/json"}) as resp:
+            resp.raise_for_status()
+            buf = bytearray()
+            for chunk in resp.iter_bytes(chunk_size=65536):
+                buf.extend(chunk)
+                if len(buf) > max_bytes:
+                    raise ValueError(f"Hub response exceeded maximum allowed size ({max_bytes} bytes).")
+            return json.loads(buf.decode("utf-8"))
+
+
+def _validate_hub_or_exit(url: str, *, allow_insecure_http: bool = False) -> str:
+    try:
+        return validate_hub_url(url, allow_insecure_http=allow_insecure_http)
+    except ValueError as exc:
+        err_console.print(f"[red]Invalid Hub URL: {_safe_rich(exc)}[/red]")
+        raise typer.Exit(code=2) from exc
 
 
 def _default_handle() -> str:
-    raw_user = getpass.getuser().lower()
-    cleaned = re.sub(r"[^a-z0-9]+", "-", raw_user).strip("-")[:14] or "citizen"
-    suffix = secrets.token_hex(2)
-    return f"{cleaned}-{suffix}"
+    """Generate a pseudonymous random default handle (never leaking local OS username)."""
+    return f"civic-{secrets.token_hex(3)}"
 
 
 def _format_inr(amount: float) -> str:
@@ -77,7 +110,7 @@ def _format_inr(amount: float) -> str:
 def _render_consent_notice(hub_url: str) -> None:
     notice = (
         "[bold]Owner Consent, Outbound Network & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
-        f"• [cyan]Coordinator Hub:[/cyan] {hub_url} (outbound HTTPS only — no inbound ports required)\n"
+        f"• [cyan]Coordinator Hub:[/cyan] {_safe_rich(hub_url)} (outbound HTTPS only — no inbound ports required)\n"
         "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official & pinned civic public-record artifacts "
         "(e.g. raw.githubusercontent.com, d1jmc0u14z2tmp.cloudfront.net, cga.nic.in) directly over HTTPS and "
         "verifies SHA-256 checksums locally (fail-closed on mismatch).\n"
@@ -177,31 +210,31 @@ def _make_event_printer() -> Any:
         if event == "registered":
             console.print(
                 Panel(
-                    f"[bold green]Registered![/bold green] Handle: [bold]{data.get('handle')}[/bold]\n"
-                    f"Follow your agent live: [bold underline cyan]{data.get('profile_url')}[/bold underline cyan]",
+                    f"[bold green]Registered![/bold green] Handle: [bold]{_safe_rich(data.get('handle'))}[/bold]\n"
+                    f"Follow your agent live: [bold underline cyan]{_safe_rich(data.get('profile_url'))}[/bold underline cyan]",
                     border_style="green",
                 )
             )
         elif event == "task_claimed":
             task = data.get("task") or {}
             console.print(
-                f"[cyan]▶ Claimed[/cyan] [{task.get('task_type')}] "
-                f"[bold]{task.get('methodology_code')}[/bold] · {task.get('title')} "
-                f"(lease {str(data.get('lease_id', ''))[:8]})"
+                f"[cyan]▶ Claimed[/cyan] [{_safe_rich(task.get('task_type'))}] "
+                f"[bold]{_safe_rich(task.get('methodology_code'))}[/bold] · {_safe_rich(task.get('title'), max_len=160)} "
+                f"(lease {_safe_rich(str(data.get('lease_id', ''))[:8])})"
             )
         elif event == "heartbeat":
             pct = data.get("progress_pct")
-            whisper = data.get("whisper") or ""
+            whisper = _safe_rich(data.get("whisper") or "", max_len=240)
             pct_str = f"{pct}%" if pct is not None else "beat"
             console.print(f"  [dim]♥ {pct_str}[/dim] {whisper}")
         elif event == "task_submitted":
             outcome = str(data.get("outcome", "")).upper()
             color = {"FINDING": "yellow", "CLEARED": "green", "VERIFICATION": "cyan"}.get(outcome, "white")
-            console.print(f"  [{color}]✓ Submitted {outcome}[/{color}]")
+            console.print(f"  [{color}]✓ Submitted {_safe_rich(outcome)}[/{color}]")
         elif event == "lease_gone":
             console.print("  [yellow]⚠ Lease already settled (410 Gone) — stopping cleanly.[/yellow]")
         elif event == "task_error":
-            console.print(f"  [red]✗ Task error (lease released cleanly): {data.get('error')}[/red]")
+            console.print(f"  [red]✗ Task error (lease released cleanly): {_safe_rich(data.get('error'), max_len=240)}[/red]")
         elif event == "queue_empty":
             console.print("[dim]No queued tasks available right now.[/dim]")
 
@@ -298,19 +331,21 @@ def join(
         "--continuous",
         help="Wait & poll on empty queue until --max-tasks is reached (never exceeds --max-tasks).",
     ),
+    allow_insecure_http: bool = typer.Option(
+        False,
+        "--allow-insecure-http",
+        help="Allow non-loopback http:// Hub URLs (NOT recommended; exposes bearer token in cleartext).",
+    ),
 ) -> None:
     """<60s onboarding wizard: consent, auto-detect provider, register handle, and start auditing."""
     auto_accept = yes or non_interactive or dry_run
-    hub_clean = hub.rstrip("/")
+    hub_clean = _validate_hub_or_exit(hub, allow_insecure_http=allow_insecure_http)
 
     if mode not in VALID_MODES:
-        err_console.print(f"[red]Invalid --mode '{mode}'. Must be one of: {', '.join(VALID_MODES)}[/red]")
+        err_console.print(f"[red]Invalid --mode '{_safe_rich(mode)}'. Must be one of: {', '.join(VALID_MODES)}[/red]")
         raise typer.Exit(code=2)
 
     _render_consent_notice(hub_clean)
-
-    detected = detect_providers(probe_local=not dry_run)
-    _render_providers_table(detected)
 
     existing, had_existing_file = _safe_load_existing_config()
     suggested_handle = handle or (existing.handle if existing and existing.handle else _default_handle())
@@ -322,6 +357,10 @@ def join(
         if not Confirm.ask("Do you consent to run a local civic-audit agent under these rules?", default=True):
             console.print("[yellow]Onboarding cancelled. No config was written.[/yellow]")
             raise typer.Exit(code=0)
+
+        # Defer any local provider probing until AFTER explicit owner consent!
+        detected = detect_providers(probe_local=not dry_run)
+        _render_providers_table(detected)
 
         chosen_handle = Prompt.ask("Choose your public agent handle", default=suggested_handle).strip()
 
@@ -374,6 +413,8 @@ def join(
             chosen_max_usd = 0.0
             chosen_daily_max_usd = 0.0
     else:
+        detected = detect_providers(probe_local=not dry_run)
+        _render_providers_table(detected)
         chosen_handle = suggested_handle
         if provider is None or provider.lower() == "auto":
             selected_prov = detect_best_provider(
@@ -442,25 +483,26 @@ def join(
         on_event=_make_event_printer(),
         config_path=cfg_path,
         allow_local_files=False,
+        allow_insecure_http=allow_insecure_http,
     ) as runner:
         try:
             reg = runner.register(save=True)
         except httpx.HTTPError as exc:
             # CRITICAL: NEVER overwrite or destroy an existing local config/credential on HTTP error!
             preserve_msg = (
-                f"Existing local credentials at [bold]{cfg_path}[/bold] were preserved untouched."
+                f"Existing local credentials at [bold]{_safe_rich(cfg_path)}[/bold] were preserved untouched."
                 if had_existing_file
                 else "No local config file was written."
             )
             err_console.print(
-                f"[red]Registration/reconnection failed against Hub {hub_clean}: {exc}[/red]\n"
+                f"[red]Registration/reconnection failed against Hub {_safe_rich(hub_clean)}: {_safe_rich(exc)}[/red]\n"
                 f"{preserve_msg}"
             )
             raise typer.Exit(code=1) from exc
 
         console.print(
-            f"[bold]Config saved atomically:[/bold] {cfg_path} (0600) · "
-            f"[bold]Follow your agent live:[/bold] {reg['profile_url']}"
+            f"[bold]Config saved atomically:[/bold] {_safe_rich(cfg_path)} (0600) · "
+            f"[bold]Follow your agent live:[/bold] {_safe_rich(reg['profile_url'])}"
         )
 
         if no_run:
@@ -512,6 +554,11 @@ def run(
         None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
     ),
     mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug to claim."),
+    allow_insecure_http: bool = typer.Option(
+        False,
+        "--allow-insecure-http",
+        help="Allow non-loopback http:// Hub URLs (NOT recommended).",
+    ),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
     cfg_path = get_config_path()
@@ -581,8 +628,10 @@ def run(
     if coding_agent_model:
         cfg.coding_agent_model = normalize_coding_agent_model(coding_agent_model)
 
+    cfg.hub_url = _validate_hub_or_exit(cfg.hub_url, allow_insecure_http=allow_insecure_http)
+
     if cfg.mode not in VALID_MODES:
-        err_console.print(f"[red]Invalid --mode '{cfg.mode}'. Must be one of: {', '.join(VALID_MODES)}[/red]")
+        err_console.print(f"[red]Invalid --mode '{_safe_rich(cfg.mode)}'. Must be one of: {', '.join(VALID_MODES)}[/red]")
         raise typer.Exit(code=2)
 
     prov_cfg = resolve_provider_config(
@@ -622,6 +671,7 @@ def run(
         on_event=_make_event_printer(),
         config_path=cfg_path,
         allow_local_files=False,
+        allow_insecure_http=allow_insecure_http,
     ) as runner:
         try:
             summary = runner.run_loop(
@@ -634,7 +684,7 @@ def run(
             console.print("\n[yellow]Runner interrupted cleanly.[/yellow]")
             return
         except httpx.HTTPError as exc:
-            err_console.print(f"[red]Failed to communicate with Hub at {cfg.normalized_hub_url}: {exc}[/red]")
+            err_console.print(f"[red]Failed to communicate with Hub at {_safe_rich(cfg.normalized_hub_url)}: {_safe_rich(exc)}[/red]")
             raise typer.Exit(code=1) from exc
 
     _print_run_summary(summary)
@@ -743,9 +793,9 @@ def _run_interactive_audit(
         return
 
     header_text = (
-        f"[bold]Source:[/bold] {dataset.source_ref}\n"
-        f"[bold]Methodology:[/bold] {code} — {METHODOLOGY_CATALOG[code].get('name', code)}\n"
-        f"[bold]SHA-256:[/bold] {dataset.sha256}\n"
+        f"[bold]Source:[/bold] {_safe_rich(dataset.source_ref)}\n"
+        f"[bold]Methodology:[/bold] {_safe_rich(code)} — {_safe_rich(METHODOLOGY_CATALOG[code].get('name', code))}\n"
+        f"[bold]SHA-256:[/bold] {_safe_rich(dataset.sha256)}\n"
         f"[bold]Scanned:[/bold] {result.records_scanned:,} records  ·  "
         f"[bold]Monetary Audited:[/bold] {_format_inr(result.monetary_audited_inr)}  ·  "
         f"[bold]Leads:[/bold] {len(processed_leads)}  ·  "
@@ -757,7 +807,7 @@ def _run_interactive_audit(
     if not processed_leads:
         console.print(
             Panel(
-                f"[bold green]CLEARED[/bold green] — {result.summary}",
+                f"[bold green]CLEARED[/bold green] — {_safe_rich(result.summary)}",
                 border_style="green",
             )
         )
@@ -777,24 +827,26 @@ def _run_interactive_audit(
         lint_badge = "[green]PASS[/green]" if lead_dict["legal_lint_passed"] else "[red]FAIL[/red]"
         leads_table.add_row(
             str(idx),
-            f"[{sev_color}]{sev}[/{sev_color}]",
-            str(lead_dict["entity_name"]),
+            f"[{sev_color}]{_safe_rich(sev)}[/{sev_color}]",
+            _safe_rich(lead_dict["entity_name"]),
             _format_inr(float(lead_dict.get("monetary_exposure_inr", 0.0))),
-            str(lead_dict["rule_triggered"]),
+            _safe_rich(lead_dict["rule_triggered"]),
             lint_badge,
         )
     console.print(leads_table)
 
     for idx, lead_dict in enumerate(processed_leads, start=1):
-        benign_lines = "\n".join(f"  • {b}" for b in lead_dict["benign_explanations"])
-        metrics_preview = ", ".join(f"{k}={v}" for k, v in list((lead_dict.get("anomaly_metrics") or {}).items())[:6])
+        benign_lines = "\n".join(f"  • {_safe_rich(b)}" for b in lead_dict["benign_explanations"])
+        metrics_preview = ", ".join(
+            f"{_safe_rich(k)}={_safe_rich(v)}" for k, v in list((lead_dict.get("anomaly_metrics") or {}).items())[:6]
+        )
         body = (
-            f"[bold]{lead_dict['title']}[/bold]\n\n"
-            f"{lead_dict['summary']}\n\n"
+            f"[bold]{_safe_rich(lead_dict['title'])}[/bold]\n\n"
+            f"{_safe_rich(lead_dict['summary'])}\n\n"
             f"[bold]Deterministic Metrics:[/bold] {metrics_preview}\n"
             f"[bold]Plausible Lawful / Benign Explanations:[/bold]\n{benign_lines}"
         )
-        console.print(Panel(body, title=f"Lead #{idx} · {lead_dict['methodology_code']}", border_style="yellow"))
+        console.print(Panel(body, title=f"Lead #{idx} · {_safe_rich(lead_dict['methodology_code'])}", border_style="yellow"))
 
     if rti and rti_drafts:
         for idx, draft in enumerate(rti_drafts, start=1):
@@ -802,15 +854,15 @@ def _run_interactive_audit(
             jur_level = draft.get("jurisdiction_level") or ""
             fee_info = draft.get("fee_rules") or draft.get("fee_note") or ""
             rti_body = (
-                f"[bold]Public Authority:[/bold] {draft.get('public_authority')}"
-                f"{f' ({jur_level})' if jur_level else ''}\n"
-                f"[bold]CPIO/SPIO:[/bold] {draft.get('cpio_designation')}  ·  "
-                f"[bold]Channel / Portal:[/bold] {channel}\n"
-                f"{f'[bold]Fee Rules:[/bold] {fee_info}\n' if fee_info else ''}"
-                f"[bold]Sections:[/bold] {', '.join(draft.get('statutory_sections') or [])}  ·  "
-                f"[bold]Word Count:[/bold] {draft.get('word_count')} / 500\n"
-                f"[bold]Subject:[/bold] {draft.get('subject')}\n\n"
-                f"{draft.get('body_text')}"
+                f"[bold]Public Authority:[/bold] {_safe_rich(draft.get('public_authority'))}"
+                f"{f' ({_safe_rich(jur_level)})' if jur_level else ''}\n"
+                f"[bold]CPIO/SPIO:[/bold] {_safe_rich(draft.get('cpio_designation'))}  ·  "
+                f"[bold]Channel / Portal:[/bold] {_safe_rich(channel)}\n"
+                f"{f'[bold]Fee Rules:[/bold] {_safe_rich(fee_info)}\n' if fee_info else ''}"
+                f"[bold]Sections:[/bold] {_safe_rich(', '.join(draft.get('statutory_sections') or []))}  ·  "
+                f"[bold]Word Count:[/bold] {_safe_rich(draft.get('word_count'))} / 500\n"
+                f"[bold]Subject:[/bold] {_safe_rich(draft.get('subject'))}\n\n"
+                f"{_safe_rich(draft.get('body_text'))}"
             )
             console.print(
                 Panel(
@@ -919,11 +971,19 @@ def status(
         "--dry-run",
         help="Display local mode, budget guardrails, and outbound destinations without contacting the Hub.",
     ),
+    allow_insecure_http: bool = typer.Option(
+        False,
+        "--allow-insecure-http",
+        help="Allow non-loopback http:// Hub URLs (NOT recommended).",
+    ),
 ) -> None:
     """Display live swarm metrics from the Hub (/api/head) and local outbound network / budget posture."""
     cfg_path = get_config_path()
     saved, _ = _safe_load_existing_config()
-    hub_url = (hub or (saved.hub_url if saved else DEFAULT_HUB_URL)).rstrip("/")
+    hub_url = _validate_hub_or_exit(
+        hub or (saved.hub_url if saved else DEFAULT_HUB_URL),
+        allow_insecure_http=allow_insecure_http,
+    )
 
     prov_cfg = resolve_provider_config(
         saved.provider if saved else RULE_ENGINE_PROVIDER,
@@ -947,17 +1007,15 @@ def status(
         return
 
     try:
-        resp = httpx.get(f"{hub_url}/api/head", timeout=10.0)
-        resp.raise_for_status()
-        head = resp.json()
-    except httpx.HTTPError as exc:
-        err_console.print(f"[red]Could not fetch swarm status from {hub_url}/api/head: {exc}[/red]")
+        head = _bounded_http_get_json(f"{hub_url}/api/head", timeout=10.0)
+    except (httpx.HTTPError, ValueError) as exc:
+        err_console.print(f"[red]Could not fetch swarm status from {_safe_rich(hub_url)}/api/head: {_safe_rich(exc)}[/red]")
         raise typer.Exit(code=1) from exc
 
     stats = head.get("stats") or {}
     disposition = head.get("disposition") or {}
 
-    kpi_table = Table(title=f"AI Watchdogs India · Live Swarm Status ({hub_url})", box=box.ROUNDED)
+    kpi_table = Table(title=f"AI Watchdogs India · Live Swarm Status ({_safe_rich(hub_url)})", box=box.ROUNDED)
     kpi_table.add_column("Metric", style="bold")
     kpi_table.add_column("Value", justify="right", style="cyan")
 
@@ -1001,8 +1059,8 @@ def status(
     if whispers:
         lines = []
         for item in whispers[:5]:
-            who = item.get("handle") or item.get("agent_handle") or "swarm"
-            msg = item.get("message") or item.get("text") or ""
+            who = _safe_rich(item.get("handle") or item.get("agent_handle") or "swarm", max_len=64)
+            msg = _safe_rich(item.get("message") or item.get("text") or "", max_len=240)
             lines.append(f"[bold cyan]@{who}[/bold cyan]: {msg}")
         console.print(Panel("\n".join(lines), title="Latest Agent Whispers", border_style="dim"))
 
@@ -1010,32 +1068,35 @@ def status(
 @app.command("missions", hidden=True)
 def missions(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
+    allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URLs."),
 ) -> None:
     """Alias of `projects` (kept for older scripts)."""
-    projects(hub=hub)
+    projects(hub=hub, allow_insecure_http=allow_insecure_http)
 
 
 @app.command("projects")
 def projects(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
+    allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URLs."),
 ) -> None:
     """List the community projects agents can work on (from the Hub)."""
     saved, _ = _safe_load_existing_config()
-    hub_url = (hub or (saved.hub_url if saved else DEFAULT_HUB_URL)).rstrip("/")
+    hub_url = _validate_hub_or_exit(
+        hub or (saved.hub_url if saved else DEFAULT_HUB_URL),
+        allow_insecure_http=allow_insecure_http,
+    )
 
     try:
-        resp = httpx.get(f"{hub_url}/api/missions", timeout=10.0)
-        resp.raise_for_status()
-        data = resp.json()
-    except httpx.HTTPError as exc:
-        err_console.print(f"[red]Could not fetch projects from {hub_url}: {exc}[/red]")
+        data = _bounded_http_get_json(f"{hub_url}/api/missions", timeout=10.0)
+    except (httpx.HTTPError, ValueError) as exc:
+        err_console.print(f"[red]Could not fetch projects from {_safe_rich(hub_url)}: {_safe_rich(exc)}[/red]")
         raise typer.Exit(code=1) from exc
 
     mission_list = data.get("missions", data) if isinstance(data, dict) else data
     if not isinstance(mission_list, list):
         mission_list = []
 
-    table = Table(title=f"Projects ({hub_url})", box=box.SIMPLE_HEAVY)
+    table = Table(title=f"Projects ({_safe_rich(hub_url)})", box=box.SIMPLE_HEAVY)
     table.add_column("Code", style="bold cyan", no_wrap=True)
     table.add_column("Project", style="bold", no_wrap=True)
     table.add_column("Pillar", no_wrap=True)
@@ -1048,11 +1109,11 @@ def projects(
         done = m.get("completed_tasks", 0)
         total = m.get("total_tasks", 0)
         table.add_row(
-            str(m.get("methodology_code", "")),
-            str(m.get("slug", "")),
-            str(m.get("pillar", "")),
-            str(m.get("jurisdiction", "")),
-            str(m.get("data_mode", "")),
+            _safe_rich(m.get("methodology_code", "")),
+            _safe_rich(m.get("slug", "")),
+            _safe_rich(m.get("pillar", "")),
+            _safe_rich(m.get("jurisdiction", "")),
+            _safe_rich(m.get("data_mode", "")),
             f"{done}/{total}",
             str(m.get("verified_findings_count", 0)),
         )

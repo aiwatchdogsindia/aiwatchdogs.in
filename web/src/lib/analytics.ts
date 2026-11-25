@@ -20,6 +20,21 @@ export function analyticsEnabled(): boolean {
   return VALID_ID.test(MEASUREMENT_ID) && typeof window !== 'undefined';
 }
 
+function getSanitizedLocation(): string {
+  try {
+    const url = new URL(window.location.href);
+    const finding = url.searchParams.get('finding');
+    const cleanParams = new URLSearchParams();
+    if (finding) {
+      cleanParams.set('finding', finding);
+    }
+    const qs = cleanParams.toString();
+    return `${url.origin}${url.pathname}${qs ? `?${qs}` : ''}`;
+  } catch {
+    return `${window.location.origin}${window.location.pathname}`;
+  }
+}
+
 export function initAnalytics(): void {
   if (initialised || !analyticsEnabled()) return;
   initialised = true;
@@ -33,7 +48,13 @@ export function initAnalytics(): void {
   // GA4 sends the first page view itself, and its Enhanced Measurement ("page changes
   // based on browser history events", on by default) counts every in-app navigation.
   // Sending our own page_view as well would count each page twice, so we don't.
-  window.gtag('config', MEASUREMENT_ID);
+  const sanitizedLocation = getSanitizedLocation();
+  window.gtag('config', MEASUREMENT_ID, {
+    cookie_flags: 'SameSite=Lax;Secure',
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false,
+    page_location: sanitizedLocation,
+  });
   const script = document.createElement('script');
   script.async = true;
   script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(MEASUREMENT_ID)}`;

@@ -284,9 +284,56 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P1: { name: 'Police Budget-Head Variance', rule: 'MH 2055 / 4055, Actuals vs BE vs RE from official budget documents (cited page and line)' },
 };
 
+const ALLOWED_PRODUCTION_ORIGINS = new Set([
+  'https://aiwatchdogs.in',
+  'https://www.aiwatchdogs.in',
+]);
+
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+
+export function safeExternalUrl(raw?: string | null): string | null {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed || CONTROL_CHAR_RE.test(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    if (parsed.username || parsed.password) return null;
+    if (!parsed.hostname) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+export function safeDecodeURIComponent(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 export function getCanonicalOrigin(): string {
   if (typeof window !== 'undefined' && window.location && window.location.origin) {
-    return window.location.origin.replace(/\/+$/, '');
+    const origin = window.location.origin.replace(/\/+$/, '');
+    if (ALLOWED_PRODUCTION_ORIGINS.has(origin)) {
+      return origin;
+    }
+    if (import.meta.env.DEV) {
+      try {
+        const parsed = new URL(origin);
+        if (
+          (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+          (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1')
+        ) {
+          return origin;
+        }
+      } catch {
+        // fall through to canonical production origin
+      }
+    }
   }
   return 'https://aiwatchdogs.in';
 }
@@ -309,10 +356,22 @@ export function formatBytes(bytes: number | null | undefined): string {
 }
 
 export function isOfficialGovUrl(url?: string | null): boolean {
-  if (!url) return false;
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (!trimmed || CONTROL_CHAR_RE.test(trimmed)) return false;
   try {
-    const host = new URL(url).hostname.toLowerCase();
-    return host.endsWith('.gov.in') || host.endsWith('.nic.in') || host.endsWith('.org.in') && host.includes('cag');
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'https:') return false;
+    if (parsed.username || parsed.password) return false;
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === 'gov.in' ||
+      host.endsWith('.gov.in') ||
+      host === 'nic.in' ||
+      host.endsWith('.nic.in') ||
+      host === 'cag.org.in' ||
+      host.endsWith('.cag.org.in')
+    );
   } catch {
     return false;
   }

@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { safeExternalUrl } from './utils';
 
 interface RouterContextValue {
   pathname: string;
@@ -13,6 +14,40 @@ const RouterContext = createContext<RouterContextValue>({
   hash: '',
   navigate: () => {},
 });
+
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR_RE = /[\u0000-\u001f\u007f]/;
+const SCHEME_PREFIX_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+
+function resolveLinkTarget(to: string): { href?: string; isExternal: boolean } {
+  if (typeof to !== 'string') return { href: undefined, isExternal: false };
+  const trimmed = to.trim();
+  if (!trimmed || trimmed.startsWith('//') || CONTROL_CHAR_RE.test(trimmed)) {
+    return { href: undefined, isExternal: false };
+  }
+  if (SCHEME_PREFIX_RE.test(trimmed)) {
+    const safeUrl = safeExternalUrl(trimmed);
+    return safeUrl ? { href: safeUrl, isExternal: true } : { href: undefined, isExternal: false };
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    try {
+      const parsed = new URL(trimmed, window.location.origin);
+      if (parsed.origin !== window.location.origin) {
+        return { href: undefined, isExternal: false };
+      }
+    } catch {
+      return { href: undefined, isExternal: false };
+    }
+  }
+  return { href: trimmed, isExternal: false };
+}
+
+function mergeNoopenerRel(rel?: string): string {
+  const tokens = new Set((rel || '').split(/\s+/).filter(Boolean));
+  tokens.add('noopener');
+  tokens.add('noreferrer');
+  return Array.from(tokens).join(' ');
+}
 
 export function RouterProvider({ children }: { children: React.ReactNode }) {
   const [loc, setLoc] = useState(() => ({
@@ -34,11 +69,20 @@ export function RouterProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const navigate = useCallback((to: string, opts?: { replace?: boolean }) => {
-    const url = new URL(to, window.location.origin);
+    let url: URL;
+    try {
+      url = new URL(to, window.location.origin);
+    } catch {
+      return;
+    }
+    if (url.origin !== window.location.origin) {
+      return;
+    }
+    const nextUrl = url.pathname + url.search + url.hash;
     if (opts?.replace) {
-      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      window.history.replaceState({}, '', nextUrl);
     } else {
-      window.history.pushState({}, '', url.pathname + url.search + url.hash);
+      window.history.pushState({}, '', nextUrl);
     }
     setLoc({ pathname: url.pathname || '/', search: url.search || '', hash: url.hash || '' });
     if (url.hash) {
@@ -69,10 +113,17 @@ interface LinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
   to: string;
 }
 
-export function Link({ to, onClick, children, ...rest }: LinkProps) {
+export function Link({ to, onClick, rel, children, ...rest }: LinkProps) {
   const { navigate } = useRouter();
+  const { href: safeHref, isExternal } = resolveLinkTarget(to);
+  const safeRel = rest.target === '_blank' ? mergeNoopenerRel(rel) : rel;
+
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
     if (onClick) onClick(e);
+    if (!safeHref) {
+      e.preventDefault();
+      return;
+    }
     if (
       e.defaultPrevented ||
       e.button !== 0 ||
@@ -84,12 +135,12 @@ export function Link({ to, onClick, children, ...rest }: LinkProps) {
     ) {
       return;
     }
-    if (to.startsWith('http://') || to.startsWith('https://')) return;
+    if (isExternal) return;
     e.preventDefault();
-    navigate(to);
+    navigate(safeHref);
   };
   return (
-    <a href={to} onClick={handleClick} {...rest}>
+    <a href={safeHref} rel={safeRel} onClick={handleClick} {...rest}>
       {children}
     </a>
   );

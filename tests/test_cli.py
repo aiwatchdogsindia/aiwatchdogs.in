@@ -1031,7 +1031,7 @@ def test_cli_join_status_missions_against_live_hub(
     _point_mission_task_to_local_fixture(hub_app, "assam-ocds-single-bid", m1_fixture)
     _point_mission_task_to_local_fixture(hub_app, "assam-gfr-split-tendering", m2_fixture)
 
-    with TestClient(hub_app, base_url="http://testserver") as asgi_client:
+    with TestClient(hub_app, base_url="https://testserver") as asgi_client:
         # Route CLI httpx calls & AgentRunner to the in-process ASGI TestClient
         orig_init = AgentRunner.__init__
 
@@ -1041,12 +1041,14 @@ def test_cli_join_status_missions_against_live_hub(
             kwargs["allow_local_files"] = True
             orig_init(self, config, **kwargs)
 
-        def _patched_get(url: str, **kwargs: Any) -> httpx.Response:
-            path = url.replace("http://testserver", "")
-            return asgi_client.get(path)
+        def _patched_get_json(url: str, **_kwargs: Any) -> Any:
+            path = url.replace("https://testserver", "").replace("http://testserver", "")
+            resp = asgi_client.get(path)
+            resp.raise_for_status()
+            return resp.json()
 
         monkeypatch.setattr(AgentRunner, "__init__", _patched_init)
-        monkeypatch.setattr(httpx, "get", _patched_get)
+        monkeypatch.setattr("aiwatchdogs.cli.main._bounded_http_get_json", _patched_get_json)
 
         # 1. `aiwatchdogs join --yes`
         res_join = cli_runner.invoke(
@@ -1054,7 +1056,7 @@ def test_cli_join_status_missions_against_live_hub(
             [
                 "join",
                 "--hub",
-                "http://testserver",
+                "https://testserver",
                 "--handle",
                 "cli-join-node",
                 "--provider",
@@ -1068,7 +1070,7 @@ def test_cli_join_status_missions_against_live_hub(
         )
         assert res_join.exit_code == 0, res_join.output
         assert "Follow your agent live" in res_join.stdout
-        assert "http://testserver/a/cli-join-node" in res_join.stdout
+        assert "https://testserver/a/cli-join-node" in res_join.stdout
         assert "SAMPLE" not in res_join.stdout.upper()
         assert cfg_file.is_file()
         assert stat.S_IMODE(cfg_file.stat().st_mode) == 0o600
@@ -1087,16 +1089,16 @@ def test_cli_join_status_missions_against_live_hub(
         assert "Agent Run Summary" in res_run.stdout
         assert "cli-join-node" in res_run.stdout
 
-        # 3. `aiwatchdogs status --hub http://testserver`
-        res_status = cli_runner.invoke(cli_app, ["status", "--hub", "http://testserver"])
+        # 3. `aiwatchdogs status --hub https://testserver`
+        res_status = cli_runner.invoke(cli_app, ["status", "--hub", "https://testserver"])
         assert res_status.exit_code == 0, res_status.output
         assert "Public Spend Audited" in res_status.stdout
         assert "Peer-Verified Leads" in res_status.stdout
 
-        # 4. `aiwatchdogs missions --hub http://testserver` (wide COLUMNS so Rich keeps full slugs)
+        # 4. `aiwatchdogs missions --hub https://testserver` (wide COLUMNS so Rich keeps full slugs)
         res_missions = cli_runner.invoke(
             cli_app,
-            ["missions", "--hub", "http://testserver"],
+            ["missions", "--hub", "https://testserver"],
             env={"COLUMNS": "140"},
         )
         assert res_missions.exit_code == 0, res_missions.output

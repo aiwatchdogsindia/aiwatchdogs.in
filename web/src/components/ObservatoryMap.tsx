@@ -2,7 +2,7 @@ import { ArrowUpRight, ChevronLeft, ChevronRight, ExternalLink, Minus, Plus, Rot
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../router';
 import type { GraphData, GraphNode } from '../types';
-import { formatInrCr, isUnverifiedStatus, pillarLabel, pillarTint, statusMeta } from '../utils';
+import { formatInrCr, isUnverifiedStatus, pillarLabel, pillarTint, safeExternalUrl, statusMeta } from '../utils';
 
 interface ObservatoryMapProps {
   graph: GraphData | null;
@@ -995,7 +995,10 @@ export function ObservatoryMap({
       const slug = String(meta.slug || wn.node.id.replace(/^mission:/, ''));
       navigate(`/projects/${encodeURIComponent(slug)}`);
     } else if (wn.kind === 'source' && (meta.base_url || meta.url)) {
-      window.open(String(meta.base_url || meta.url), '_blank', 'noopener,noreferrer');
+      const safeUrl = safeExternalUrl(String(meta.base_url || meta.url));
+      if (safeUrl) {
+        window.open(safeUrl, '_blank', 'noopener,noreferrer');
+      }
     }
   };
 
@@ -1448,7 +1451,15 @@ export function ObservatoryMap({
               </button>
             )}
             {pinnedWn.kind === 'source' &&
-              Boolean(pinnedWn.node.meta?.base_url || pinnedWn.node.meta?.url) && (
+              Boolean(
+                safeExternalUrl(
+                  pinnedWn.node.meta?.base_url
+                    ? String(pinnedWn.node.meta.base_url)
+                    : pinnedWn.node.meta?.url
+                      ? String(pinnedWn.node.meta.url)
+                      : null,
+                ),
+              ) && (
                 <button
                   type="button"
                   className="btn btn-secondary"

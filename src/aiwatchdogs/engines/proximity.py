@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections import defaultdict
 from datetime import date, datetime
@@ -25,14 +26,26 @@ def _neutralize_text(text: str) -> str:
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
-    if value is None or value == "":
+    if value is None or value == "" or isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").strip()
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
+        return default
+    return parsed if math.isfinite(parsed) else default
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    flt = _to_float(value, float(default))
+    if not math.isfinite(flt):
+        return default
+    try:
+        return int(round(flt))
+    except OverflowError:
         return default
 
 
@@ -143,15 +156,15 @@ def _run_electoral_bond_csr_disclosure(
     elif isinstance(ctx.get("secondary_records"), list):
         strict_csr, core_csr, cin_csr = _build_csr_lookup(ctx["secondary_records"])
     elif not already_joined:
+        # Never allow untrusted context to escalate allow_local_files or read local secondary_path.
         sec_ref = str(
-            ctx.get("secondary_url") or ctx.get("secondary_dataset_url") or ctx.get("secondary_path") or ""
+            ctx.get("secondary_url") or ctx.get("secondary_dataset_url") or ""
         ).strip()
         if sec_ref:
             sec_expected = str(ctx.get("secondary_expected_sha256") or ctx.get("secondary_sha256") or "").strip() or None
-            allow_local = bool(ctx.get("allow_local_files", False))
             sec_ds = load_dataset(
                 sec_ref,
-                allow_local_files=allow_local,
+                allow_local_files=False,
                 expected_sha256=sec_expected,
             )
             strict_csr, core_csr, cin_csr = _build_csr_lookup(sec_ds.records)
@@ -357,9 +370,10 @@ def _run_electoral_bond_csr_disclosure(
                 f"(disclosed_bond_value=INR {eb_inr / _INR_CRORE:.2f} Cr across {entry['bond_count']} bonds)"
             )
 
+        safe_purchasers = [_neutralize_text(p) for p in raw_purchasers[:3]]
         summary = (
             f"Corporate-Electoral Public Disclosure summary for {safe_company}: SBI/ECI statutory "
-            f"disclosures ({date_span}; bond purchaser name(s): {', '.join(raw_purchasers[:3])}; "
+            f"disclosures ({date_span}; bond purchaser name(s): {', '.join(safe_purchasers)}; "
             f"bond source CIN: {entry['bond_source_cin'] or 'absent in bond file'}) record "
             f"{entry['bond_count']} electoral bond(s) with disclosed bond value INR {eb_inr / _INR_CRORE:.2f} Cr "
             f"across {len(party_totals)} political recipient(s), with largest recipient {safe_party} receiving "
@@ -377,7 +391,7 @@ def _run_electoral_bond_csr_disclosure(
                 "row_id": r_idx,
                 "source_url": entry["source_url"],
                 "excerpt": (
-                    f"Bond {bno} ({raw_purchasers[0]}): disclosed_bond_value=INR {b_amt:,.0f} -> "
+                    f"Bond {bno} ({_neutralize_text(raw_purchasers[0])}): disclosed_bond_value=INR {b_amt:,.0f} -> "
                     f"{_neutralize_text(b_party)} ({b_dt.isoformat() if b_dt else 'date N/A'})"
                 ),
             }
@@ -517,7 +531,7 @@ def run_m8_corporate_proximity(
         inc_dt = _parse_date(rec.get("incorporation_date"))
         award_dt = _parse_date(rec.get("award_date"))
         if rec.get("company_age_days") not in (None, ""):
-            company_age_days: int | None = int(round(_to_float(rec.get("company_age_days"))))
+            company_age_days: int | None = _safe_int(rec.get("company_age_days"), default=0)
         elif inc_dt and award_dt:
             company_age_days = max(0, (award_dt - inc_dt).days)
         else:
@@ -531,9 +545,9 @@ def run_m8_corporate_proximity(
 
         bidders_list: list[dict[str, Any]] = []
         if isinstance(rec.get("competing_bidders"), list):
-            bidders_list.extend(rec["competing_bidders"])
+            bidders_list.extend(b for b in rec["competing_bidders"] if isinstance(b, dict))
         elif tender_id in tender_bidders and len(tender_bidders[tender_id]) >= 2:
-            bidders_list.extend(tender_bidders[tender_id])
+            bidders_list.extend(b for b in tender_bidders[tender_id] if isinstance(b, dict))
 
         shared_dins, shared_addrs = _find_bidder_overlaps(bidders_list)
         overlap_flag = bool(shared_dins or shared_addrs)
@@ -548,7 +562,7 @@ def run_m8_corporate_proximity(
         disc_dt = _parse_date(rec.get("disclosure_date") or rec.get("bond_purchase_date"))
         days_gap: int | None = None
         if rec.get("days_between_disclosure_and_award") not in (None, ""):
-            days_gap = abs(int(round(_to_float(rec.get("days_between_disclosure_and_award")))))
+            days_gap = abs(_safe_int(rec.get("days_between_disclosure_and_award"), default=0))
         elif disc_dt and award_dt:
             days_gap = abs((award_dt - disc_dt).days)
 
@@ -587,7 +601,7 @@ def run_m8_corporate_proximity(
             f"This entry records factual public registry overlap for transparent eligibility verification "
             f"and makes no allegation of improper conduct or quid pro quo."
         )
-        row_num = int(rec.get("source_row_index") or (idx + 1))
+        row_num = _safe_int(rec.get("source_row_index"), default=idx + 1) or (idx + 1)
 
         leads.append(
             AuditLeadCandidate(

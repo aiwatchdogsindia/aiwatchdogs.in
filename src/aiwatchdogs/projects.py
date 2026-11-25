@@ -14,26 +14,54 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
-from aiwatchdogs.core.safety import _FORBIDDEN_TERM_PATTERNS, contains_pii
+from aiwatchdogs.core.safety import contains_pii, scan_forbidden_terms, validate_safe_http_url
 
 PROJECT_ID_PREFIX = "project-"
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TASK_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-PINNED_GITHUB_RAW_RE = re.compile(
-    r"^https://raw\.githubusercontent\.com/[^/]+/[^/]+/[0-9a-f]{40}/.+"
+PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
+ENLISTED_PR_URL_RE = re.compile(r"^https://github\.com/aiwatchdogsindia/aiwatchdogs\.in/pull/[1-9][0-9]*$")
+
+# Reserved legacy seed mission slugs that community projects cannot collide with.
+RESERVED_MISSION_SLUGS = frozenset(
+    {
+        "single-bidder-procurement-scrutiny",
+        "split-order-threshold-audit",
+        "vendor-concentration-hhi-watch",
+        "price-escalation-estimate-gap",
+        "fiscal-pacing-march-rush-audit",
+        "cag-pending-atn-accountability",
+        "scheme-delivery-utilization-gap",
+        "electoral-bond-csr-proximity",
+    }
 )
-# Mutable-branch raw URLs are rejected: tasks must point at bytes that cannot change.
-MUTABLE_GITHUB_RAW_RE = re.compile(
-    r"^https://raw\.githubusercontent\.com/[^/]+/[^/]+/(?:main|master|HEAD|gh-pages|dev|develop)/"
+
+# Loader-control keys that community project payload.context MUST NOT set.
+FORBIDDEN_CONTEXT_KEYS = frozenset(
+    {
+        "allow_local_files",
+        "use_cache",
+        "secondary_path",
+        "max_download_bytes",
+        "max_decompressed_bytes",
+        "max_compression_ratio",
+        "max_zip_members",
+        "max_parse_rows",
+        "max_pdf_pages",
+    }
 )
+# Heuristic guard against catastrophic-backtracking regex patterns in P1 context.
+_UNSAFE_REGEX_RE = re.compile(r"(\([^)]*[+*][^)]*\)[+*?{]|\\[1-9])")
 
 VALID_PILLARS = {"procurement", "budget", "audit", "infra", "scheme", "disclosure"}
 VALID_STATUSES = {"active", "needs_data", "paused"}
@@ -84,11 +112,86 @@ def _known_methodologies() -> set[str]:
 
 
 def _scan_terms(text: str) -> list[str]:
-    return [label for label, pattern in _FORBIDDEN_TERM_PATTERNS if pattern.search(text or "")]
+    return scan_forbidden_terms(text or "")
 
 
 def _is_https(url: Any) -> bool:
-    return isinstance(url, str) and url.startswith("https://") and len(url) > len("https://") + 3
+    try:
+        validate_safe_http_url(url, require_https=True, allow_private=False)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_github_immutability(url: str) -> str | None:
+    """Return an error string if a GitHub raw URL is not pinned to a 40-char commit SHA."""
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    if ".." in path.split("/"):
+        return "must not contain '..' path segments."
+    if host == "raw.github.com":
+        return "must use raw.githubusercontent.com pinned to a 40-character commit SHA."
+    if host == "raw.githubusercontent.com":
+        if not PINNED_GITHUB_RAW_PATH_RE.match(path):
+            return "must pin a full 40-character commit SHA (lowercase hex), not a branch name."
+    if host in {"github.com", "www.github.com"} and "/raw/" in path.lower():
+        parts = [p for p in path.split("/") if p]
+        if len(parts) < 5 or not re.fullmatch(r"[0-9a-f]{40}", parts[3]):
+            return "must pin a full 40-character commit SHA (lowercase hex), not a mutable GitHub branch."
+    return None
+
+
+def _validate_p1_context(ctx: dict[str, Any], where: str, errors: list[str]) -> None:
+    budget_lines = ctx.get("budget_lines")
+    if budget_lines is None:
+        return
+    if not isinstance(budget_lines, list) or len(budget_lines) > 50:
+        errors.append(f"{where}.payload.context.budget_lines must be a list of at most 50 entries.")
+        return
+    for bi, spec in enumerate(budget_lines):
+        bwhere = f"{where}.payload.context.budget_lines[{bi}]"
+        if not isinstance(spec, dict):
+            errors.append(f"{bwhere} must be an object.")
+            continue
+        parts = spec.get("parts") or []
+        if not isinstance(parts, list) or len(parts) > 30:
+            errors.append(f"{bwhere}.parts must be a list of at most 30 items.")
+        else:
+            for pi, part in enumerate(parts):
+                pwhere = f"{bwhere}.parts[{pi}]"
+                if not isinstance(part, dict):
+                    errors.append(f"{pwhere} must be an object.")
+                    continue
+                pattern = part.get("pattern")
+                if not isinstance(pattern, str) or not pattern.strip() or len(pattern) > 200:
+                    errors.append(f"{pwhere}.pattern must be a regex string <= 200 characters.")
+                elif _UNSAFE_REGEX_RE.search(pattern):
+                    errors.append(f"{pwhere}.pattern uses nested quantifiers or backreferences (ReDoS risk).")
+                else:
+                    try:
+                        re.compile(pattern)
+                    except re.error as exc:
+                        errors.append(f"{pwhere}.pattern is not a valid regex: {exc}")
+                idx = part.get("index", 0)
+                if isinstance(idx, bool) or not isinstance(idx, int) or idx < 0 or idx > 50:
+                    errors.append(f"{pwhere}.index must be a non-negative integer <= 50.")
+        refs = spec.get("references") or {}
+        if refs and not isinstance(refs, dict):
+            errors.append(f"{bwhere}.references must be an object.")
+        elif isinstance(refs, dict):
+            for rname, ref in refs.items():
+                if not isinstance(ref, dict):
+                    errors.append(f"{bwhere}.references.{rname} must be an object.")
+                    continue
+                val = ref.get("value")
+                if val is not None and (
+                    isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(float(val))
+                ):
+                    errors.append(f"{bwhere}.references.{rname}.value must be a finite number.")
+                ref_url = ref.get("source_url")
+                if ref_url not in (None, "") and not _is_https(ref_url):
+                    errors.append(f"{bwhere}.references.{rname}.source_url must be a public https:// link.")
 
 
 def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str]:
@@ -102,9 +205,13 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(f"Missing required field '{key}'.")
 
     slug = data.get("slug")
-    if isinstance(slug, str):
+    if slug is not None and not isinstance(slug, str):
+        errors.append("'slug' must be a string (lowercase words joined by hyphens).")
+    elif isinstance(slug, str):
         if not SLUG_RE.match(slug) or len(slug) > 64:
             errors.append("'slug' must be lowercase words joined by hyphens (max 64 characters).")
+        if slug in RESERVED_MISSION_SLUGS:
+            errors.append(f"'slug' '{slug}' is reserved for a built-in mission; choose a distinct slug.")
         if filename_stem is not None and filename_stem != slug:
             errors.append(f"File name must match the slug: rename it to '{slug}.json'.")
 
@@ -113,14 +220,28 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         if val is not None and (not isinstance(val, str) or len(val.strip()) < 10 or len(val) > limit):
             errors.append(f"'{key}' must be text between 10 and {limit} characters.")
 
+    for key, limit in (("jurisdiction", 120), ("authority", 200)):
+        val = data.get(key)
+        if val is not None and (not isinstance(val, str) or not val.strip() or len(val) > limit):
+            errors.append(f"'{key}' must be text up to {limit} characters.")
+
+    enlisted_pr_url = data.get("enlisted_pr_url")
+    if enlisted_pr_url not in (None, ""):
+        if not isinstance(enlisted_pr_url, str) or not ENLISTED_PR_URL_RE.match(enlisted_pr_url.strip()):
+            errors.append(
+                "'enlisted_pr_url' must be an official PR URL (https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/<number>)."
+            )
+
     posted_by = data.get("posted_by")
     if posted_by is not None:
-        if not isinstance(posted_by, dict) or not str(posted_by.get("name", "")).strip():
+        if not isinstance(posted_by, dict) or not isinstance(posted_by.get("name"), str) or not posted_by["name"].strip():
             errors.append("'posted_by.name' is required: say who is posting this project.")
         else:
+            if len(posted_by["name"]) > 120:
+                errors.append("'posted_by.name' must be at most 120 characters.")
             url = posted_by.get("url")
             if url not in (None, "") and not _is_https(url):
-                errors.append("'posted_by.url' must be an https:// link.")
+                errors.append("'posted_by.url' must be a public https:// link.")
             handle = posted_by.get("handle")
             if handle not in (None, "") and (not isinstance(handle, str) or len(handle) > 40):
                 errors.append("'posted_by.handle' must be a short handle such as '@copwatchIN'.")
@@ -135,16 +256,16 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
 
     for key in ("scope", "out_of_scope", "statutory_anchors"):
         val = data.get(key, [])
-        if not isinstance(val, list) or not all(isinstance(x, str) and x.strip() for x in val):
+        if not isinstance(val, list) or len(val) > 30 or not all(isinstance(x, str) and x.strip() and len(x) <= 300 for x in val):
             errors.append(f"'{key}' must be a list of short text items.")
 
     sources = data.get("sources", [])
-    if not isinstance(sources, list) or not sources:
+    if not isinstance(sources, list) or not sources or len(sources) > 30:
         errors.append("'sources' must list at least one official public source (name, publisher, url).")
     else:
         for i, src in enumerate(sources):
             if not isinstance(src, dict) or not str(src.get("name", "")).strip() or not _is_https(src.get("url")):
-                errors.append(f"sources[{i}] needs a 'name' and an https:// 'url'.")
+                errors.append(f"sources[{i}] needs a 'name' and a public https:// 'url'.")
 
     methodology = data.get("methodology_code")
     known = _known_methodologies()
@@ -171,7 +292,7 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         else:
             seen_task_ids.add(tid)
         for key in ("title", "instructions", "dataset_key", "financial_quantity_type"):
-            if not str(task.get(key, "")).strip():
+            if not isinstance(task.get(key), str) or not str(task.get(key, "")).strip():
                 errors.append(f"{where}.{key} is required.")
         if task.get("financial_quantity_type") not in (None, "") and task.get(
             "financial_quantity_type"
@@ -186,27 +307,63 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             continue
         url = payload.get("retrieval_url")
         if not _is_https(url):
-            errors.append(f"{where}.payload.retrieval_url must be an https:// link to the exact file.")
-        elif MUTABLE_GITHUB_RAW_RE.match(url) or (
-            "raw.githubusercontent.com" in url and not PINNED_GITHUB_RAW_RE.match(url)
-        ):
-            errors.append(
-                f"{where}.payload.retrieval_url must pin a full 40-character commit SHA, not a branch name."
-            )
+            errors.append(f"{where}.payload.retrieval_url must be a public https:// link to the exact file.")
+        else:
+            gh_err = _validate_github_immutability(url)
+            if gh_err:
+                errors.append(f"{where}.payload.retrieval_url {gh_err}")
+        for extra_url_key in ("dataset_url", "source_url"):
+            extra_val = payload.get(extra_url_key)
+            if extra_val not in (None, ""):
+                if not _is_https(extra_val):
+                    errors.append(f"{where}.payload.{extra_url_key} must be a public https:// link.")
+                else:
+                    gh_err = _validate_github_immutability(extra_val)
+                    if gh_err:
+                        errors.append(f"{where}.payload.{extra_url_key} {gh_err}")
+        sec_url = payload.get("secondary_url")
+        if sec_url not in (None, ""):
+            if not _is_https(sec_url):
+                errors.append(f"{where}.payload.secondary_url must be a public https:// link.")
+            else:
+                gh_err = _validate_github_immutability(sec_url)
+                if gh_err:
+                    errors.append(f"{where}.payload.secondary_url {gh_err}")
+            sec_sha = payload.get("secondary_expected_sha256")
+            if not isinstance(sec_sha, str) or not SHA256_RE.match(sec_sha):
+                errors.append(
+                    f"{where}.payload.secondary_expected_sha256 must be a 64-character lowercase SHA-256 when secondary_url is set."
+                )
         sha = payload.get("expected_sha256")
         if not isinstance(sha, str) or not SHA256_RE.match(sha):
             errors.append(f"{where}.payload.expected_sha256 must be the 64-character lowercase SHA-256 of the file.")
         if not str(payload.get("official_publisher", "")).strip():
             errors.append(f"{where}.payload.official_publisher is required.")
         if not _is_https(payload.get("source_landing_page")):
-            errors.append(f"{where}.payload.source_landing_page must be an https:// link.")
+            errors.append(f"{where}.payload.source_landing_page must be a public https:// link.")
+        ctx = payload.get("context")
+        if ctx is not None:
+            if not isinstance(ctx, dict):
+                errors.append(f"{where}.payload.context must be an object.")
+            else:
+                forbidden_present = sorted(FORBIDDEN_CONTEXT_KEYS.intersection(ctx.keys()))
+                if forbidden_present:
+                    errors.append(
+                        f"{where}.payload.context must not override loader controls: {', '.join(forbidden_present)}."
+                    )
+                if code == "P1":
+                    _validate_p1_context(ctx, where, errors)
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
         ("title", data.get("title", "")),
         ("summary", data.get("summary", "")),
+        ("authority", data.get("authority", "")),
         ("scope", " ".join(x for x in data.get("scope", []) if isinstance(x, str))),
+        ("out_of_scope", " ".join(x for x in data.get("out_of_scope", []) if isinstance(x, str))),
     ]
+    if isinstance(posted_by, dict):
+        text_blobs.append(("posted_by.name", posted_by.get("name", "")))
     for i, task in enumerate(tasks):
         if isinstance(task, dict):
             text_blobs.append((f"tasks[{i}].title", task.get("title", "")))
@@ -218,7 +375,11 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(
                 f"{where} uses the accusatory term '{term}'. Describe what to check, not who to blame."
             )
-    has_pii, tags = contains_pii({k: v for k, v in data.items() if k != "posted_by"})
+    # Scan all fields including posted_by (only allow benign github/org handles, never phone/email/PAN/Aadhaar).
+    pii_payload = dict(data)
+    if isinstance(posted_by, dict):
+        pii_payload["posted_by"] = {k: v for k, v in posted_by.items() if k != "url"}
+    has_pii, tags = contains_pii(pii_payload)
     if has_pii:
         errors.append(f"Remove personal data from the project ({', '.join(sorted(set(tags)))}).")
 
@@ -277,15 +438,26 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def sync_projects(db: Any, directory: Path | None = None) -> dict[str, Any]:
+def sync_projects(
+    db: Any,
+    directory: Path | None = None,
+    *,
+    allow_archive_all: bool = False,
+) -> dict[str, Any]:
     """Upsert valid project files into ``missions``/``tasks``. Invalid files are skipped, never half-loaded.
 
     Runs on every hub start; it is a no-op when the project files are unchanged.
     Existing task execution history is preserved: only queued tasks are refreshed.
+    Fails closed (does not archive live projects) if the projects directory is missing or yields
+    zero valid files when community projects already exist unless ``allow_archive_all=True``.
     """
     from aiwatchdogs.hub.database import PG_SEED_ADVISORY_LOCK_KEY, dumps_json
 
-    files = load_project_files(directory)
+    root = directory or default_projects_dir()
+    if not root.is_dir():
+        return {"synced": 0, "skipped": [], "changed": False, "warning": f"Projects directory not found: {root}"}
+
+    files = load_project_files(root)
     valid = [pf for pf in files if not pf.errors]
     skipped = [{"file": pf.path.name, "errors": pf.errors} for pf in files if pf.errors]
     fingerprint = _fingerprint(valid)
@@ -294,11 +466,26 @@ def sync_projects(db: Any, directory: Path | None = None) -> dict[str, Any]:
         row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
         if row is not None and int(row["version"]) == fingerprint:
             return {"synced": 0, "skipped": skipped, "changed": False}
+        if not valid and not allow_archive_all:
+            existing_active = conn.execute(
+                "SELECT COUNT(*) AS c FROM missions WHERE is_community_project = 1 AND status != 'archived'"
+            ).fetchone()
+            if existing_active is not None and int(existing_active["c"]) > 0:
+                return {
+                    "synced": 0,
+                    "skipped": skipped,
+                    "changed": False,
+                    "warning": "Refusing to archive active community projects when 0 valid project files were loaded.",
+                }
 
     now = _utc_now_iso()
     with db.transaction() as conn:
         if getattr(db, "is_postgres", False):
             conn.execute(f"SELECT pg_advisory_xact_lock({PG_SEED_ADVISORY_LOCK_KEY})")
+        # Re-check fingerprint after acquiring advisory lock to prevent redundant cold-start writes.
+        locked_row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
+        if locked_row is not None and int(locked_row["version"]) == fingerprint:
+            return {"synced": 0, "skipped": skipped, "changed": False}
         for priority, pf in enumerate(valid, start=1):
             d = pf.data
             mid = project_mission_id(d["slug"])
@@ -417,6 +604,8 @@ def sync_projects(db: Any, directory: Path | None = None) -> dict[str, Any]:
                             tid,
                         ),
                     )
+            if getattr(db, "is_postgres", False):
+                conn.execute("SELECT id FROM missions WHERE id = ? FOR UPDATE", (mid,))
             cnt = conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ?", (mid,)).fetchone()
             conn.execute("UPDATE missions SET total_tasks = ? WHERE id = ?", (int(cnt["c"]), mid))
 
@@ -429,7 +618,7 @@ def sync_projects(db: Any, directory: Path | None = None) -> dict[str, Any]:
                 f"WHERE is_community_project = 1 AND id NOT IN ({placeholders})",
                 active_ids,
             )
-        else:
+        elif allow_archive_all:
             conn.execute("UPDATE missions SET status = 'archived' WHERE is_community_project = 1")
 
         conn.execute(

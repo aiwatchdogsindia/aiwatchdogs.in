@@ -57,42 +57,59 @@ def _neutralize_external_text(text: str) -> str:
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
-    if value is None or value == "":
+    import math
+    if value is None or value == "" or isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").strip()
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def _to_float_opt(value: Any) -> float | None:
+    import math
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").strip()
     if not text or text in {"--", "-", "NA", "N/A", "null", "None"}:
         return None
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def _to_int_opt(value: Any) -> int | None:
+    import math
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
         return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        try:
+            return int(round(value))
+        except OverflowError:
+            return None
     text = str(value).strip()
     if not text or text in {"--", "-", "NA", "N/A", "null", "None"}:
         return None
     try:
-        return int(round(float(text.replace(",", ""))))
-    except ValueError:
+        parsed = float(text.replace(",", ""))
+        if not math.isfinite(parsed):
+            return None
+        return int(round(parsed))
+    except (ValueError, OverflowError):
         return None
 
 
@@ -1391,6 +1408,7 @@ def run_m4_unit_price_outliers(
         if (
             not escalation_flag
             and has_explicit_award
+            and tender_est > 0
             and tender_est >= min_tender_estimate_inr
             and awarded > tender_est
         ):

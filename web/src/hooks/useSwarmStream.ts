@@ -56,18 +56,37 @@ export function useSwarmStream(
     let retryTimer: number | null = null;
     let attempts = 0;
 
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const closeEventSource = () => {
+      if (es) {
+        es.close();
+        es = null;
+      }
+    };
+
     const connect = () => {
+      clearRetryTimer();
+      closeEventSource();
       if (closed || document.visibilityState === 'hidden') return;
       setStatus(attempts === 0 ? 'connecting' : 'reconnecting');
       const qs = lastEventIdRef.current > 0 ? `?since_id=${lastEventIdRef.current}` : '';
-      es = new EventSource(`/api/stream${qs}`);
+      const currentEs = new EventSource(`/api/stream${qs}`);
+      es = currentEs;
 
-      es.onopen = () => {
+      currentEs.onopen = () => {
+        if (closed || es !== currentEs) return;
         attempts = 0;
         setStatus('live');
       };
 
       const handleEvent = (type: string) => (ev: MessageEvent) => {
+        if (closed || es !== currentEs) return;
         setStatus('live');
         let parsed: Record<string, unknown> = {};
         try {
@@ -86,34 +105,33 @@ export function useSwarmStream(
       };
 
       for (const evtName of SSE_EVENTS) {
-        es.addEventListener(evtName, handleEvent(evtName));
+        currentEs.addEventListener(evtName, handleEvent(evtName));
       }
-      es.onmessage = handleEvent('whisper');
+      currentEs.onmessage = handleEvent('whisper');
 
-      es.onerror = () => {
-        if (es) {
-          es.close();
-          es = null;
+      currentEs.onerror = () => {
+        if (es === currentEs) {
+          closeEventSource();
+        } else {
+          currentEs.close();
+          return;
         }
-        if (closed) return;
+        if (closed || document.visibilityState === 'hidden') return;
         attempts += 1;
         setStatus(attempts > 3 ? 'offline' : 'reconnecting');
-        const delay = Math.min(15000, 1500 * Math.pow(1.5, Math.min(attempts, 6)));
+        const capMs = Math.min(60000, 1500 * Math.pow(2, Math.min(attempts, 6)));
+        const delay = Math.max(500, Math.floor(Math.random() * capMs));
+        clearRetryTimer();
         retryTimer = window.setTimeout(connect, delay);
       };
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === 'hidden') {
-        if (retryTimer !== null) {
-          window.clearTimeout(retryTimer);
-          retryTimer = null;
-        }
-        if (es) {
-          es.close();
-          es = null;
-        }
+        clearRetryTimer();
+        closeEventSource();
       } else if (!closed && !es) {
+        clearRetryTimer();
         connect();
       }
     };
@@ -124,8 +142,8 @@ export function useSwarmStream(
     return () => {
       closed = true;
       document.removeEventListener('visibilitychange', handleVisibility);
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-      if (es) es.close();
+      clearRetryTimer();
+      closeEventSource();
     };
   }, [enabled]);
 

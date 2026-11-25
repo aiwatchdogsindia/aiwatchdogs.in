@@ -1022,9 +1022,9 @@ def test_http_loader_cache_user_agent_and_captcha_refusal(
     assert not (tmp_path / "http_cache").exists()
 
     # Opt-in cache write + second load hits disk cache with SHA-256 revalidation
-    ds1 = load_dataset(url, context={"use_cache": True})
+    ds1 = load_dataset(url, use_cache=True)
     assert call_count["n"] == 2
-    ds2 = load_dataset(url, context={"use_cache": True})
+    ds2 = load_dataset(url, use_cache=True)
     assert ds2.sha256 == ds1.sha256
     assert call_count["n"] == 2
 

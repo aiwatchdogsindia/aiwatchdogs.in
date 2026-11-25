@@ -6,7 +6,19 @@ services:
     container_name: aiwatchdogs-hub
     restart: unless-stopped
     ports:
-      - "${AIWATCHDOGS_PORT:-8000}:8000"
+      - "127.0.0.1:${AIWATCHDOGS_PORT:-8000}:8000"
+    networks:
+      - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "1.0"
     environment:
       AIWATCHDOGS_DB_PATH: /app/data/aiwatchdogs.db
       AIWATCHDOGS_WEB_DIST: /app/web/dist
@@ -27,7 +39,7 @@ services:
   # Optional automatic HTTPS reverse proxy for production deployment at aiwatchdogs.in
   # Start with: docker compose --profile tls up -d --build
   caddy:
-    image: caddy:2.10.0-alpine
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
     container_name: aiwatchdogs-caddy
     profiles: ["tls", "prod"]
     restart: unless-stopped
@@ -35,6 +47,21 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    networks:
+      - backend
+      - edge
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+    pids_limit: 256
+    mem_limit: 256m
+    cpus: "1.0"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -42,6 +69,12 @@ services:
     depends_on:
       hub:
         condition: service_healthy
+
+networks:
+  backend:
+    driver: bridge
+  edge:
+    driver: bridge
 
 volumes:
   aiwatchdogs_data:

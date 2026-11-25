@@ -165,17 +165,30 @@ def test_removed_project_file_archives_the_project(tmp_path: Path, monkeypatch: 
     pdir = tmp_path / "projects"
     pdir.mkdir()
     (pdir / "test-city-budget.json").write_text(json.dumps(_project()))
+    second = _project()
+    second["slug"] = "test-state-budget"
+    second["title"] = "Test state budget"
+    second["tasks"][0]["id"] = "prj-test-state-budget-fy24"
+    (pdir / "test-state-budget.json").write_text(json.dumps(second))
     monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
     monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
     db_path = tmp_path / "hub.db"
 
     with TestClient(create_app(db_path=db_path, seed=True)) as client:
-        assert [m["slug"] for m in client.get("/api/missions").json()["missions"]] == ["test-city-budget"]
+        assert sorted(m["slug"] for m in client.get("/api/missions").json()["missions"]) == [
+            "test-city-budget",
+            "test-state-budget",
+        ]
 
     (pdir / "test-city-budget.json").unlink()
     with TestClient(create_app(db_path=db_path, seed=True)) as client:
-        assert client.get("/api/missions").json()["missions"] == []
+        assert [m["slug"] for m in client.get("/api/missions").json()["missions"]] == ["test-state-budget"]
         assert client.get("/api/missions/test-city-budget").json()["status"] == "archived"
+
+    # Removing the final project fails closed (does not wipe active projects on empty dir unless explicit)
+    (pdir / "test-state-budget.json").unlink()
+    with TestClient(create_app(db_path=db_path, seed=True)) as client:
+        assert [m["slug"] for m in client.get("/api/missions").json()["missions"]] == ["test-state-budget"]
 
 
 # ---------------------------------------------------------------------------

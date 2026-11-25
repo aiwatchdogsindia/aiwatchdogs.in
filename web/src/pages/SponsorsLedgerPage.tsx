@@ -11,7 +11,7 @@ import { api } from '../api/client';
 import type { SponsorPreset } from '../components/SponsorModal';
 import { Link } from '../router';
 import type { LedgerEntry, SponsorItem } from '../types';
-import { formatInrExact } from '../utils';
+import { formatInrExact, safeExternalUrl } from '../utils';
 
 interface SponsorsLedgerPageProps {
   activeView: 'sponsors' | 'ledger';
@@ -211,15 +211,17 @@ export function SponsorsLedgerPage({
                   Institutional Compute-Grant Sponsors &amp; Compute Patrons
                 </div>
                 <div className="grid-3">
-                  {institutional.map((s, idx) => (
+                  {institutional.map((s, idx) => {
+                    const sponsorUrl = safeExternalUrl(s.url);
+                    return (
                     <div key={s.id ?? idx} className="card card-pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                         <span className="tag-mono">{s.tier.replace(/_/g, ' ')}</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
                         <h3 className="font-serif" style={{ margin: 0, fontSize: 20, lineHeight: 1.25 }}>
-                          {s.url ? (
-                            <a href={s.url} target="_blank" rel="noreferrer">
+                          {sponsorUrl ? (
+                            <a href={sponsorUrl} target="_blank" rel="noopener noreferrer">
                               {s.name}
                               <ExternalLink
                                 size={12}
@@ -243,7 +245,8 @@ export function SponsorsLedgerPage({
                         <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-muted)' }}>{s.note}</p>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                   {institutional.length === 0 && (
                     <div
                       className="card card-pad"

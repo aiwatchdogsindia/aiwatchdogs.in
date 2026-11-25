@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { useToast } from '../components/Toast';
 import { Link } from '../router';
 import type { PublicSource } from '../types';
-import { copyToClipboard, pillarLabel } from '../utils';
+import { copyToClipboard, pillarLabel, safeExternalUrl } from '../utils';
 
 interface HowItWorksPageProps {
   onOpenJoin: () => void;
@@ -191,19 +191,26 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
                 </tr>
               </thead>
               <tbody>
-                {sources.map((s) => (
-                  <tr key={s.slug || s.name}>
-                    <td>
-                      <a href={s.base_url} target="_blank" rel="noreferrer" className="how-source-link">
-                        {s.name}
-                        <ExternalLink size={11} aria-hidden="true" />
-                      </a>
-                      <div className="how-source-auth">{s.authority}</div>
-                    </td>
-                    <td>{pillarLabel(s.pillar)}</td>
-                    <td>Tier {s.ingestion_tier}</td>
-                  </tr>
-                ))}
+                {sources.map((s) => {
+                  const safeBaseUrl = safeExternalUrl(s.base_url);
+                  return (
+                    <tr key={s.slug || s.name}>
+                      <td>
+                        {safeBaseUrl ? (
+                          <a href={safeBaseUrl} target="_blank" rel="noopener noreferrer" className="how-source-link">
+                            {s.name}
+                            <ExternalLink size={11} aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span className="how-source-link">{s.name}</span>
+                        )}
+                        <div className="how-source-auth">{s.authority}</div>
+                      </td>
+                      <td>{pillarLabel(s.pillar)}</td>
+                      <td>Tier {s.ingestion_tier}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

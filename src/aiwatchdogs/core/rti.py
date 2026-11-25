@@ -7,11 +7,12 @@ state-subject applications without refund. Preserves strict human-only filing.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
 from aiwatchdogs.core.models import AuditLeadCandidate
-from aiwatchdogs.core.safety import scrub_pii
+from aiwatchdogs.core.safety import scan_forbidden_terms, scrub_pii
 
 RTI_PORTAL_URL = "https://rtionline.gov.in"
 CENTRAL_RTI_PORTAL_URL = RTI_PORTAL_URL
@@ -306,7 +307,24 @@ _DEFAULT_RECORDS: list[str] = [
 ]
 
 
+_CTRL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]+")
+
+
+def _clean_single_line(raw: Any, *, max_len: int = 160, default: str = "") -> str:
+    """Scrub PII, strip control/newline characters, collapse whitespace, and cap length."""
+    text = str(raw or "")
+    text = _CTRL_CHARS_RE.sub(" ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return default
+    scrubbed, _ = scrub_pii(text[: max_len * 2])
+    cleaned = re.sub(r"\s+", " ", scrubbed).strip()[:max_len]
+    return cleaned or default
+
+
 def _format_inr(amount: float) -> str:
+    if not math.isfinite(amount) or amount <= 0:
+        return "recorded public outlay"
     if amount >= 10_000_000:
         return f"INR {amount / 10_000_000:.2f} crore"
     if amount >= 100_000:
@@ -324,12 +342,15 @@ def _extract_reference_ids(finding: dict[str, Any]) -> str:
             continue
         for key in ("record_id", "row_id", "tender_id", "para_id", "work_id", "ocid"):
             val = cit.get(key)
-            if val and str(val) not in refs:
-                refs.append(str(val))
+            cleaned = _clean_single_line(val, max_len=64) if val else ""
+            if cleaned and cleaned not in refs:
+                refs.append(cleaned)
     if not refs:
         rule = finding.get("rule_triggered")
         if rule:
-            refs.append(str(rule))
+            cleaned_rule = _clean_single_line(rule, max_len=64)
+            if cleaned_rule:
+                refs.append(cleaned_rule)
     return ", ".join(refs[:4]) if refs else "cited public portal records"
 
 
@@ -420,7 +441,7 @@ def resolve_rti_jurisdiction(
         }
 
     # Unmapped state/UT: never route to rtionline.gov.in!
-    pretty_state = state_key.title()
+    pretty_state = _clean_single_line(state_key.title(), max_len=64, default="Concerned State")
     return {
         "jurisdiction": f"State:{pretty_state}",
         "jurisdiction_level": "state",
@@ -462,6 +483,22 @@ def _trim_to_word_limit(text: str, max_words: int = MAX_RTI_WORDS) -> str:
     return result
 
 
+def _compose_bounded_rti_body(
+    header_and_middle: list[str],
+    mandatory_footer: list[str],
+    max_words: int = MAX_RTI_WORDS,
+) -> str:
+    """Trim only the dynamic middle body if needed so mandatory statutory notices are never dropped."""
+    footer_text = "\n".join(mandatory_footer).strip()
+    footer_words = len(footer_text.split())
+    middle_budget = max(40, max_words - footer_words)
+    middle_text = _trim_to_word_limit("\n".join(header_and_middle).strip(), middle_budget)
+    combined = f"{middle_text}\n\n{footer_text}".strip()
+    if len(combined.split()) > max_words:
+        combined = _trim_to_word_limit(combined, max_words)
+    return combined
+
+
 def generate_rti_draft(
     finding: dict[str, Any] | AuditLeadCandidate,
     public_authority: str | None = None,
@@ -474,26 +511,40 @@ def generate_rti_draft(
     """
     data = finding.model_dump() if isinstance(finding, AuditLeadCandidate) else dict(finding)
 
+    cleaned_override = _clean_single_line(public_authority, max_len=160) if public_authority else ""
+    if cleaned_override:
+        forbidden = scan_forbidden_terms(cleaned_override)
+        if forbidden:
+            raise ValueError(
+                f"public_authority contains disallowed accusatory term(s): {', '.join(forbidden)}"
+            )
+
     authority = (
-        (public_authority or "").strip()
-        or str(data.get("suggested_authority") or "").strip()
-        or str(data.get("entity_name") or "").strip()
+        cleaned_override
+        or _clean_single_line(data.get("suggested_authority"), max_len=160)
+        or _clean_single_line(data.get("entity_name"), max_len=160)
         or "Concerned Public Authority"
     )
-    resolved = resolve_rti_jurisdiction(data, public_authority=public_authority)
-    jurisdiction = resolved["jurisdiction"]
+    resolved = resolve_rti_jurisdiction(data, public_authority=cleaned_override or None)
+    jurisdiction = _clean_single_line(resolved["jurisdiction"], max_len=100, default="Union of India")
     jurisdiction_level = resolved["jurisdiction_level"]
     pio_title = resolved["pio_title"]
     portal_url = resolved["rti_portal_url"]
-    filing_channel = resolved["filing_channel"]
-    fee_rules = resolved["fee_rules"]
+    filing_channel = _clean_single_line(resolved["filing_channel"], max_len=240)
+    fee_rules = _clean_single_line(resolved["fee_rules"], max_len=300)
     central_warning = resolved["central_portal_warning"]
 
-    fiscal_year = str(data.get("fiscal_year") or "Relevant Fiscal Year").strip()
-    entity_name = str(data.get("entity_name") or authority).strip()
-    method_code = str(data.get("methodology_code") or "M1").upper().strip()
-    exposure_inr = float(data.get("monetary_exposure_inr") or 0.0)
-    cpio_designation = f"{pio_title}, {authority}"
+    fiscal_year = _clean_single_line(data.get("fiscal_year"), max_len=48, default="Relevant Fiscal Year")
+    entity_name = _clean_single_line(data.get("entity_name"), max_len=160, default=authority)
+    method_code = _clean_single_line(data.get("methodology_code"), max_len=16, default="M1").upper()
+    raw_exposure = data.get("monetary_exposure_inr")
+    try:
+        exposure_inr = float(raw_exposure or 0.0) if not isinstance(raw_exposure, bool) else 0.0
+    except (TypeError, ValueError):
+        exposure_inr = 0.0
+    if not math.isfinite(exposure_inr) or exposure_inr < 0:
+        exposure_inr = 0.0
+    cpio_designation = _clean_single_line(f"{pio_title}, {authority}", max_len=220)
 
     requested_records = list(_METHODOLOGY_RECORDS.get(method_code, _DEFAULT_RECORDS))
     ref_ids = _extract_reference_ids(data)
@@ -517,7 +568,7 @@ def generate_rti_draft(
         else f"Online Filing Portal: {portal_url}"
     )
 
-    body_lines = [
+    body_middle = [
         "To,",
         f"The {cpio_designation}",
         f"Jurisdiction: {jurisdiction} ({jurisdiction_level.title()} Public Authority)",
@@ -541,7 +592,9 @@ def generate_rti_draft(
             "Where any sought record is already proactively published under Section 4(1)(b), "
             "kindly provide the exact official URL and document reference."
         ),
-        "",
+    ]
+
+    mandatory_footer = [
         (
             f"Fee & Timeline Note: Prescribed fee: {fee_rules}. "
             "Kindly furnish the requested information within the statutory period of 30 days under "
@@ -551,9 +604,9 @@ def generate_rti_draft(
         ),
     ]
     if central_warning:
-        body_lines.extend(["", f"Jurisdiction Notice: {central_warning}"])
+        mandatory_footer.extend(["", f"Jurisdiction Notice: {central_warning}"])
 
-    body_lines.extend(
+    mandatory_footer.extend(
         [
             "",
             "Human Filing Note: Draft for citizen review and manual submission only (never auto-filed).",
@@ -563,9 +616,9 @@ def generate_rti_draft(
         ]
     )
 
-    raw_body = "\n".join(body_lines)
-    scrubbed_body, _ = scrub_pii(raw_body)
-    final_body = _trim_to_word_limit(scrubbed_body, MAX_RTI_WORDS)
+    scrubbed_middle = [scrub_pii(line)[0] for line in body_middle]
+    scrubbed_footer = [scrub_pii(line)[0] for line in mandatory_footer]
+    final_body = _compose_bounded_rti_body(scrubbed_middle, scrubbed_footer, MAX_RTI_WORDS)
     word_count = len(final_body.split())
 
     return {

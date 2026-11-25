@@ -37,14 +37,68 @@ so a second agent can reproduce it from the same checksummed PDF.
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
 from aiwatchdogs.core.models import AuditLeadCandidate
+from aiwatchdogs.core.safety import validate_safe_http_url
 
 UNIT_MULTIPLIER = {"crore": 1e7, "lakh": 1e5, "thousand": 1e3, "rupee": 1.0}
 _NUM_TOKEN = re.compile(r"^\d[\d,]*(?:\.\d+)?$")
 _NIL_TOKENS = {"..", "–", "-", "—", "…"}
+_UNSAFE_REGEX_RE = re.compile(r"(\([^)]*[+*][^)]*\)[+*?{]|\\[1-9])")
+_MAX_PATTERN_LEN = 200
+_ACB_RE = re.compile(r"\banti[\s-]+corruption\s+bureau\b", re.IGNORECASE)
+_NEUTRAL_REPLACE_RE = re.compile(
+    r"(?<![a-z])(?:scam(?:s|med|mer|mers)?|corrupt(?:ed|ing|ly|ion)?|brib(?:e|es|ed|ing|ery)|"
+    r"fraud(?:s|ulent|ulently|ster|sters)?|kickback(?:s)?|guilty|stolen|rigged|"
+    r"crook(?:s|ed)?|loot(?:s|ed|ing|er|ers)?|embezzl(?:e|es|ed|ing|ement))(?![a-z])",
+    re.IGNORECASE,
+)
+
+
+def _neutralize_text(text: str) -> str:
+    cleaned = _ACB_RE.sub("Vigilance / ACB", text or "")
+    return _NEUTRAL_REPLACE_RE.sub("compliance-review", cleaned)
+
+
+def _parse_number(token: str) -> float | None:
+    if token in _NIL_TOKENS:
+        return 0.0
+    if _NUM_TOKEN.match(token):
+        try:
+            val = float(token.replace(",", ""))
+        except ValueError:
+            return None
+        return val if math.isfinite(val) else None
+    return None
+
+
+def _numbers_on_line(line: str) -> list[float]:
+    out: list[float] = []
+    for tok in line.split():
+        val = _parse_number(tok.strip())
+        if val is not None:
+            out.append(val)
+    return out
+
+
+def _find_line(pages: dict[int, str], page: int, pattern: str) -> str | None:
+    text = pages.get(page)
+    if text is None or not isinstance(pattern, str) or not pattern.strip():
+        return None
+    if len(pattern) > _MAX_PATTERN_LEN or _UNSAFE_REGEX_RE.search(pattern):
+        return None
+    try:
+        rx = re.compile(pattern)
+    except re.error:
+        return None
+    for line in text.splitlines():
+        if rx.search(line):
+            return line.strip()
+    return None
+
 
 _BENIGN = {
     "re_be": [
@@ -67,34 +121,6 @@ _BENIGN = {
 }
 
 
-def _parse_number(token: str) -> float | None:
-    if token in _NIL_TOKENS:
-        return 0.0
-    if _NUM_TOKEN.match(token):
-        return float(token.replace(",", ""))
-    return None
-
-
-def _numbers_on_line(line: str) -> list[float]:
-    out: list[float] = []
-    for tok in line.split():
-        val = _parse_number(tok.strip())
-        if val is not None:
-            out.append(val)
-    return out
-
-
-def _find_line(pages: dict[int, str], page: int, pattern: str) -> str | None:
-    text = pages.get(page)
-    if text is None:
-        return None
-    rx = re.compile(pattern)
-    for line in text.splitlines():
-        if rx.search(line):
-            return line.strip()
-    return None
-
-
 def _fmt(value: float, unit: str) -> str:
     return f"{value:,.2f} {unit}" if unit != "thousand" else f"{value:,.0f} thousand"
 
@@ -113,20 +139,31 @@ def run_p1_police_budget_heads(
     context: dict[str, Any] | None = None,
 ) -> tuple[list[AuditLeadCandidate], int, float, str, dict[str, Any]]:
     ctx = context or {}
-    lines = ctx.get("budget_lines") or []
-    comparisons = ctx.get("comparisons") or [
+    raw_lines = ctx.get("budget_lines") or []
+    lines = [spec for spec in raw_lines if isinstance(spec, dict)] if isinstance(raw_lines, list) else []
+    raw_comps = ctx.get("comparisons") or [
         {"a": "re", "b": "be", "label": "Revised estimate vs budget estimate (same year)", "threshold_pct": 10.0}
     ]
+    comparisons = [c for c in raw_comps if isinstance(c, dict)] if isinstance(raw_comps, list) else []
     flag_equal = bool(ctx.get("flag_re_equals_be", False))
-    source_url = str(ctx.get("retrieval_url") or ctx.get("source_url") or "")
+    raw_src = str(ctx.get("retrieval_url") or ctx.get("source_url") or "").strip()
+    try:
+        source_url = validate_safe_http_url(raw_src, require_https=True, allow_private=False) if raw_src else ""
+    except ValueError:
+        source_url = ""
     sha = str(ctx.get("expected_sha256") or "")
     jurisdiction = str(ctx.get("jurisdiction") or "India")
-    authority = str(ctx.get("suggested_authority") or ctx.get("official_publisher") or "Finance Department")
+    authority = _neutralize_text(str(ctx.get("suggested_authority") or ctx.get("official_publisher") or "Finance Department"))
 
     pages: dict[int, str] = {}
     for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        raw_page = rec.get("page")
+        if isinstance(raw_page, bool):
+            continue
         try:
-            pages[int(rec.get("page"))] = str(rec.get("raw_text") or "")
+            pages[int(raw_page)] = str(rec.get("raw_text") or "")
         except (TypeError, ValueError):
             continue
 
@@ -138,13 +175,14 @@ def run_p1_police_budget_heads(
 
     for spec in lines:
         key = str(spec.get("key", "line"))
-        entity = str(spec.get("entity", key))
-        label = str(spec.get("label", key))
+        entity = _neutralize_text(str(spec.get("entity", key)))
+        label = _neutralize_text(str(spec.get("label", key)))
         unit = str(spec.get("unit", "crore"))
         mult = UNIT_MULTIPLIER.get(unit)
-        years = spec.get("years") or {}
-        parts = spec.get("parts") or [spec]
-        if mult is None:
+        years = spec.get("years") if isinstance(spec.get("years"), dict) else {}
+        raw_parts = spec.get("parts") if isinstance(spec.get("parts"), list) and spec.get("parts") else [spec]
+        parts = [p for p in raw_parts if isinstance(p, dict)]
+        if mult is None or not parts:
             unevaluable += 1
             continue
 
@@ -152,17 +190,29 @@ def run_p1_police_budget_heads(
         cites: list[dict[str, Any]] = []
         ok = True
         for part in parts:
-            page = int(part.get("page", 0))
+            raw_p = part.get("page", 0)
+            if isinstance(raw_p, bool):
+                ok = False
+                break
+            try:
+                page = int(raw_p)
+            except (TypeError, ValueError):
+                ok = False
+                break
             line = _find_line(pages, page, str(part.get("pattern", "")))
             if line is None:
                 ok = False
                 break
             nums = _numbers_on_line(line)
-            for name, idx in (part.get("values") or {}).items():
-                if not isinstance(idx, int) or idx >= len(nums):
+            val_map = part.get("values")
+            if not isinstance(val_map, dict):
+                ok = False
+                break
+            for name, idx in val_map.items():
+                if isinstance(idx, bool) or not isinstance(idx, int) or idx < 0 or idx >= len(nums):
                     ok = False
                     break
-                values[name] = nums[idx]
+                values[str(name)] = nums[idx]
             if not ok:
                 break
             cites.append({"source_url": source_url, "page": page, "printed_line": line, "sha256": sha})
@@ -171,19 +221,36 @@ def run_p1_police_budget_heads(
             readings.append({"key": key, "status": "unevaluable", "reason": "printed line not found as specified"})
             continue
 
-        refs = spec.get("references") or {}
+        refs = spec.get("references") if isinstance(spec.get("references"), dict) else {}
         for name, ref in refs.items():
-            if isinstance(ref, dict) and isinstance(ref.get("value"), (int, float)):
-                values[name] = float(ref["value"])
-                cites.append(
-                    {
-                        "source_url": str(ref.get("source_url", "")),
-                        "page": ref.get("page"),
-                        "printed_line": str(ref.get("printed_line", "")),
-                        "sha256": str(ref.get("sha256", "")),
-                        "role": f"reference:{name}",
-                    }
+            if not isinstance(ref, dict):
+                continue
+            ref_val = ref.get("value")
+            if isinstance(ref_val, bool) or not isinstance(ref_val, (int, float)):
+                continue
+            fval = float(ref_val)
+            if not math.isfinite(fval) or fval < 0:
+                continue
+            raw_ref_url = str(ref.get("source_url", "") or "").strip()
+            try:
+                safe_ref_url = (
+                    validate_safe_http_url(raw_ref_url, require_https=True, allow_private=False)
+                    if raw_ref_url
+                    else ""
                 )
+            except ValueError:
+                safe_ref_url = ""
+            values[str(name)] = fval
+            cites.append(
+                {
+                    "source_url": safe_ref_url,
+                    "page": ref.get("page"),
+                    "printed_line": str(ref.get("printed_line", "")),
+                    "sha256": str(ref.get("sha256", "")),
+                    "role": f"reference:{name}",
+                    "verification_basis": "static_context_reference",
+                }
+            )
 
         audited_inr = max(audited_inr, max((v for v in values.values()), default=0.0) * mult)
         readings.append({"key": key, "status": "read", "values": values, "unit": unit})
@@ -197,12 +264,18 @@ def run_p1_police_budget_heads(
                 unevaluable += 1
                 continue
             pct = (a_val - b_val) / b_val * 100.0
-            threshold = float(comp.get("threshold_pct", 10.0))
+            raw_thr = comp.get("threshold_pct", 10.0)
+            try:
+                threshold = float(raw_thr) if not isinstance(raw_thr, bool) else 10.0
+            except (TypeError, ValueError):
+                threshold = 10.0
+            if not math.isfinite(threshold) or threshold < 0:
+                threshold = 10.0
             kind = str(comp.get("kind", "re_be"))
             if abs(pct) < threshold:
                 cleared += 1
                 continue
-            comp_label = str(comp.get("label", f"{a_name} vs {b_name}"))
+            comp_label = _neutralize_text(str(comp.get("label", f"{a_name} vs {b_name}")))
             a_year = years.get(a_name, "")
             b_year = years.get(b_name, "")
             direction = "above" if pct > 0 else "below"

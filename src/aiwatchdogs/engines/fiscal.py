@@ -188,29 +188,46 @@ def _neutralize_text(text: str) -> str:
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
-    if value is None or value == "":
+    import math
+    if value is None or value == "" or isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").strip()
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def _to_float_opt(value: Any) -> float | None:
+    import math
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").strip()
     if not text or text in {"--", "-", "NA", "N/A", "null", "None"}:
         return None
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    import math
+    val = _to_float(value, float(default))
+    if not math.isfinite(val):
+        return default
+    try:
+        return int(round(val))
+    except OverflowError:
+        return default
 
 
 def _to_bool(value: Any, default: bool = False) -> bool:
@@ -653,7 +670,7 @@ def _eval_cga_monthly_accounts(
                 citations=[
                     {
                         "record_id": demand_no,
-                        "row_id": int(rec.get("source_row_index") or (idx + 1)),
+                        "row_id": _safe_int(rec.get("source_row_index"), idx + 1) or (idx + 1),
                         "source_url": _norm_str(rec.get("source_url"), "https://cga.nic.in"),
                         "excerpt": (
                             f"CGA {entity} ({period}): BE=INR {be_inr / _INR_CRORE:,.2f} Cr, "
@@ -897,13 +914,24 @@ def run_m5_march_rush(
             r_lbl = f"RE vs BE {be_re_shift_pct:+.1f}%" if be_re_shift_pct is not None else "RE unrecorded"
             metric_badge = f"{b_lbl} / {r_lbl}"
 
-        pacing_clause = (
-            f"Q4 spend reached {q4_pct:.1f}% (INR {q4_inr / _INR_CRORE:.2f} Cr) "
-            f"and March spend reached {march_pct:.1f}% (INR {march_inr / _INR_CRORE:.2f} Cr) "
-            f"against {allocation_basis} INR {alloc_inr / _INR_CRORE:.2f} Cr"
-            if (q4_pct is not None or march_pct is not None)
-            else f"annual {allocation_basis} stands at INR {alloc_inr / _INR_CRORE:.2f} Cr"
-        )
+        if q4_pct is not None and march_pct is not None:
+            pacing_clause = (
+                f"Q4 spend reached {q4_pct:.1f}% (INR {q4_inr / _INR_CRORE:.2f} Cr) "
+                f"and March spend reached {march_pct:.1f}% (INR {march_inr / _INR_CRORE:.2f} Cr) "
+                f"against {allocation_basis} INR {alloc_inr / _INR_CRORE:.2f} Cr"
+            )
+        elif q4_pct is not None:
+            pacing_clause = (
+                f"Q4 spend reached {q4_pct:.1f}% (INR {q4_inr / _INR_CRORE:.2f} Cr) "
+                f"(March share unrecorded) against {allocation_basis} INR {alloc_inr / _INR_CRORE:.2f} Cr"
+            )
+        elif march_pct is not None:
+            pacing_clause = (
+                f"March spend reached {march_pct:.1f}% (INR {march_inr / _INR_CRORE:.2f} Cr) "
+                f"(Q4 total unrecorded) against {allocation_basis} INR {alloc_inr / _INR_CRORE:.2f} Cr"
+            )
+        else:
+            pacing_clause = f"annual {allocation_basis} stands at INR {alloc_inr / _INR_CRORE:.2f} Cr"
         be_str = f"INR {be_inr / _INR_CRORE:.2f} Cr" if has_be else "unrecorded"
         re_str = f"INR {re_inr / _INR_CRORE:.2f} Cr" if has_re else "unrecorded"
         act_str = f"INR {actual_inr / _INR_CRORE:.2f} Cr" if has_actual else "unrecorded"
@@ -919,7 +947,7 @@ def run_m5_march_rush(
             f"Rule markers: {'; '.join(rules_hit)}."
         )
 
-        row_ids = rec.get("row_indices") if isinstance(rec.get("row_indices"), list) else [int(rec.get("source_row_index") or (idx + 1))]
+        row_ids = rec.get("row_indices") if isinstance(rec.get("row_indices"), list) else [_safe_int(rec.get("source_row_index"), idx + 1) or (idx + 1)]
         locator = f"rows={','.join(str(r) for r in row_ids[:10])}"
 
         leads.append(

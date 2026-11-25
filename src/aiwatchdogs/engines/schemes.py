@@ -29,17 +29,31 @@ def _to_float(value: Any, default: float = 0.0) -> float:
 
 
 def _to_float_opt(value: Any) -> float | None:
+    import math
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").strip()
     if not text or text in {"--", "-", "NA", "N/A", "null", "None"}:
         return None
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    import math
+    val = _to_float(value, float(default))
+    if not math.isfinite(val):
+        return default
+    try:
+        return int(round(val))
+    except OverflowError:
+        return default
 
 
 def _to_bool(value: Any, default: bool = True) -> bool:
@@ -237,11 +251,12 @@ def _eval_pmgsy(idx: int, rec: dict[str, Any]) -> tuple[AuditLeadCandidate | Non
         "high" if len(triggers) >= 2 or exposure >= 10_000_000 else "medium"
     )
 
-    row_num = int(rec.get("source_row_index") or (idx + 1))
+    row_num = _safe_int(rec.get("source_row_index"), idx + 1) or (idx + 1)
+    safe_work_id = _neutralize_text(work_id)
     scope_desc = (
-        f"district-phase aggregate (synthetic fallback ID '{work_id}' built from phase+district)"
+        f"district-phase aggregate (synthetic fallback ID '{safe_work_id}' built from phase+district)"
         if is_fallback_identifier
-        else f"road work package '{work_id}'"
+        else f"road work package '{safe_work_id}'"
     )
     phys_clause = (
         f"{phys_pct:.1f}% physical road length completed ({completed_km:.2f} km of {sanctioned_km:.2f} km)"
@@ -262,9 +277,9 @@ def _eval_pmgsy(idx: int, rec: dict[str, Any]) -> tuple[AuditLeadCandidate | Non
     return (
         AuditLeadCandidate(
             title=(
-                f"PMGSY Physical-Financial Gap Lead ({fin_pct:.0f}% Expended vs {phys_pct:.0f}% Road km) — {work_id}"
+                f"PMGSY Physical-Financial Gap Lead ({fin_pct:.0f}% Expended vs {phys_pct:.0f}% Road km) — {safe_work_id}"
                 if (fin_pct is not None and phys_pct is not None)
-                else f"PMGSY Scheme Verification Lead — {work_id}"
+                else f"PMGSY Scheme Verification Lead — {safe_work_id}"
             ),
             summary=(
                 f"Public record anomaly on PMGSY {scope_desc} under {entity} ({jurisdiction}, {fiscal_year}): "
