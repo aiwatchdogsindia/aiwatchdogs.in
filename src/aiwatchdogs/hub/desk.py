@@ -36,6 +36,7 @@ from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usag
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
+from aiwatchdogs.projects import INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG, MAX_INFLATION_TASKS
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -67,6 +68,10 @@ MAX_MONETARY_INR = 1e14
 MAX_PLEDGE_INR = 1e12
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 30
+MAX_RESEARCH_BATCHES = 64
+MAX_RESEARCH_BATCH_BYTES = 128 * 1024
+MAX_RESEARCH_PAGE_BATCHES = 20
+RESEARCH_CURSOR_RE = re.compile(r"(prj-[a-z0-9-]{1,60}):([1-9][0-9]?)\Z")
 
 VALID_VERDICTS: frozenset[str] = frozenset(
     {"confirm", "dispute", "needs_review", "reject_false_positive", "flag_pii_or_legal"}
@@ -1090,13 +1095,15 @@ class DeskService:
         now = utc_now_iso()
         lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
         expired = conn.execute(
-            f"SELECT id, claimed_by_agent_id, retry_count, max_retries FROM tasks "
+            f"SELECT id, task_type, lease_id, claimed_by_agent_id, retry_count, max_retries FROM tasks "
             f"WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < ? "
             f"ORDER BY lease_expires_at ASC LIMIT 50{lock_clause}",
             (now,),
         ).fetchall()
         base_delay = int(os.environ.get("AIWATCHDOGS_RETRY_BASE_SECONDS", str(DEFAULT_RETRY_BASE_SECONDS)))
         for row in expired:
+            if row["task_type"] == "research":
+                conn.execute("DELETE FROM research_batches WHERE task_id = ? AND lease_id = ?", (row["id"], row["lease_id"]))
             next_retry = int(_row_get(row, "retry_count", 0) or 0) + 1
             max_retries = int(_row_get(row, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
             if next_retry >= max_retries:
@@ -1883,6 +1890,7 @@ class DeskService:
             ("verified", "finding"): 0,
             ("verified", "task"): 1,
             ("cleared", "finding"): 2,
+            ("cleared", "task"): 2,
             ("peer_review", "finding"): 3,
             ("hard", "task"): 4,
             ("disputed", "finding"): 5,
@@ -1947,7 +1955,7 @@ class DeskService:
             st = str(r["status"] or "")
             ttype = str(r["task_type"] or "")
             if st in ("completed", "settled"):
-                rung_state = "verified"
+                rung_state = "cleared" if ttype == "research" else "verified"
             elif st == "claimed" or (st == "queued" and ttype == "peer_verify"):
                 rung_state = "hard"
             elif st in ("failed", "needs_adjudication"):
@@ -2112,6 +2120,7 @@ class DeskService:
                 for r in f_rows
             ]
 
+            is_inflation = row["methodology_code"] == INFLATION_METHODOLOGY
             t_rows = conn.execute(
                 """
                 SELECT t.* FROM tasks t
@@ -2122,9 +2131,9 @@ class DeskService:
                         AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
                   ))
                 ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.updated_at DESC
-                LIMIT 30
+                LIMIT ?
                 """,
-                (mid,),
+                (mid, MAX_INFLATION_TASKS if is_inflation else 30),
             ).fetchall()
             tasks = []
             for t in t_rows:
@@ -2137,6 +2146,7 @@ class DeskService:
                         "title": t["title"],
                         "status": t["status"],
                         "claimed_by_handle": t["claimed_by_handle"],
+                        **({"depends_on": t_payload.get("depends_on", [])} if is_inflation else {}),
                         "progress_pct": t["progress_pct"],
                         "retry_count": int(_row_get(t, "retry_count", 0) or 0),
                         "available_at": _row_get(t, "available_at", None),
@@ -2163,6 +2173,56 @@ class DeskService:
                 )
 
         return {**mission, "sources": sources, "findings": findings, "tasks": tasks}
+
+    def get_inflation_dataset(
+        self, slug: str, *, task_id: str | None, after: str | None, limit: int,
+    ) -> dict[str, Any]:
+        if slug != INFLATION_PROJECT_SLUG:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+
+        clauses = ["t.mission_id = ?", "t.task_type = 'research'", "t.status = 'completed'"]
+        with self.db.read() as conn:
+            mission = conn.execute(
+                "SELECT id, methodology_code, total_tasks, completed_tasks FROM missions WHERE slug = ?",
+                (slug,),
+            ).fetchone()
+            if mission is None or mission["methodology_code"] != INFLATION_METHODOLOGY:
+                raise HTTPException(status_code=404, detail="Dataset not found")
+            params: list[Any] = [mission["id"]]
+            if task_id:
+                clauses.append("b.task_id = ?")
+                params.append(task_id)
+            if after:
+                cursor = RESEARCH_CURSOR_RE.fullmatch(after)
+                if cursor is None or int(cursor[2]) > MAX_RESEARCH_BATCHES:
+                    raise HTTPException(status_code=422, detail="Invalid dataset cursor")
+                clauses.append("(b.task_id > ? OR (b.task_id = ? AND b.batch_number > ?))")
+                params.extend((cursor[1], cursor[1], int(cursor[2])))
+            batches = conn.execute(
+                f"""
+                SELECT b.task_id, b.batch_number, b.report_json
+                FROM research_batches b
+                JOIN tasks t ON t.id = b.task_id AND t.lease_id = b.lease_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY b.task_id, b.batch_number
+                LIMIT ?
+                """,
+                (*params, limit + 1),
+            ).fetchall()
+
+        more = len(batches) > limit
+        page = batches[:limit]
+        return {
+            "slug": slug,
+            "methodology_code": mission["methodology_code"],
+            "total_tasks": mission["total_tasks"],
+            "completed_tasks": mission["completed_tasks"],
+            "reports": [
+                {"task_id": row["task_id"], "batch": row["batch_number"], "report": loads_json(row["report_json"], {})}
+                for row in page
+            ],
+            "next_after": f"{page[-1]['task_id']}:{page[-1]['batch_number']}" if more else None,
+        }
 
     def list_findings(
         self,
@@ -3624,13 +3684,41 @@ class DeskService:
                 "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
             )
 
+            preferred_slug = (preferred_mission or "").strip()[:120]
+            if preferred_slug == INFLATION_PROJECT_SLUG:
+                clauses.extend(("t.task_type = 'research'", "t.mission_slug = ?"))
+                params.append(INFLATION_PROJECT_SLUG)
+                if self.db.is_postgres:
+                    relation = "jsonb_array_elements_text(t.payload_json::jsonb -> 'depends_on') AS dep(id)"
+                    dependency_id = "dep.id"
+                    dependency_count = "jsonb_array_length(t.payload_json::jsonb -> 'depends_on')"
+                else:
+                    relation = "json_each(t.payload_json, '$.depends_on') AS dep"
+                    dependency_id = "dep.value"
+                    dependency_count = "json_array_length(t.payload_json, '$.depends_on')"
+                clauses.append(
+                    f"""NOT EXISTS (
+                        SELECT 1 FROM {relation}
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM tasks done
+                            WHERE done.id = {dependency_id} AND done.mission_id = t.mission_id
+                              AND done.task_type = 'research' AND done.status = 'completed'
+                              AND ({dependency_count} != 1 OR done.claimed_by_agent_id IS NULL
+                                   OR done.claimed_by_agent_id != ?)
+                        )
+                    )"""
+                )
+                params.append(agent["id"])
+            else:
+                clauses.append("t.task_type != 'research'")
+                if preferred_slug and _agents_may_choose_project():
+                    clauses.append("t.mission_slug = ?")
+                    params.append(preferred_slug)
+
             if eff_mode == "verify":
                 clauses.append("t.task_type = 'peer_verify'")
             elif eff_mode == "investigate":
-                clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse')")
-            if preferred_mission and _agents_may_choose_project():
-                clauses.append("t.mission_slug = ?")
-                params.append(preferred_mission.strip()[:120])
+                clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse', 'research')")
             if max_estimated_tokens is not None:
                 clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
                 params.append(int(max_estimated_tokens))
@@ -3911,6 +3999,9 @@ class DeskService:
             if cur.rowcount != 1:
                 raise HTTPException(status_code=410, detail="Lease is no longer active")
 
+            if task["task_type"] == "research":
+                conn.execute("DELETE FROM research_batches WHERE task_id = ? AND lease_id = ?", (task["id"], lease_id))
+
             conn.execute(
                 "UPDATE agents SET current_task_id = NULL, last_heartbeat_at = ? WHERE id = ?",
                 (now, authed["id"]),
@@ -3951,10 +4042,10 @@ class DeskService:
     ) -> dict[str, Any]:
         lease_id = str(payload.get("lease_id") or "").strip()
         outcome = str(payload.get("outcome") or "").strip().lower()
-        if outcome not in {"finding", "cleared", "verification"}:
+        if outcome not in {"finding", "cleared", "verification", "research"}:
             raise HTTPException(
                 status_code=422,
-                detail="outcome must be one of 'finding', 'cleared', or 'verification'",
+                detail="outcome must be one of 'finding', 'cleared', 'verification' or 'research'",
             )
         eff_idem = (idempotency_key or str(payload.get("idempotency_key") or "")).strip() or None
         envelopes: list[dict[str, Any]] = []
@@ -3973,6 +4064,8 @@ class DeskService:
 
             # Server-authoritative task type enforcement
             assigned_type = str(task["task_type"] or "").strip().lower()
+            if (assigned_type == "research") != (outcome == "research"):
+                raise HTTPException(status_code=422, detail="The research outcome requires a research task lease.")
             if assigned_type == "peer_verify" and outcome != "verification":
                 raise HTTPException(
                     status_code=422,
@@ -3995,7 +4088,20 @@ class DeskService:
             if not isinstance(metrics, dict):
                 metrics = {}
 
-            if outcome == "finding":
+            if outcome == "research":
+                result = self._handle_submit_research(
+                    conn=conn,
+                    task=task,
+                    lease_id=lease_id,
+                    agent=agent,
+                    payload=payload,
+                    idempotency_key=eff_idem,
+                    now=now,
+                    envelopes=envelopes,
+                )
+                if result["status"] == "staged":
+                    return result
+            elif outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
                     task=task,
@@ -4051,6 +4157,89 @@ class DeskService:
                 self._store_usage(conn, task, report.source, report.counts())
 
         self._broadcast_envelopes(envelopes)
+        return result
+
+    def _handle_submit_research(
+        self,
+        *,
+        conn: Any,
+        task: Any,
+        lease_id: str,
+        agent: Any,
+        payload: dict[str, Any],
+        idempotency_key: str | None,
+        now: str,
+        envelopes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        from aiwatchdogs.inflation import validate_report
+
+        report = payload.get("research")
+        if not isinstance(report, dict):
+            raise HTTPException(status_code=422, detail="research must contain a structured report.")
+        _validate_json_blob(
+            report, field_name="research", max_depth=8, max_nodes=8000, max_bytes=MAX_RESEARCH_BATCH_BYTES
+        )
+        try:
+            normalized = validate_report(report, loads_json(task["payload_json"], {}))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        _validate_json_blob(
+            normalized, field_name="research", max_depth=8, max_nodes=8000, max_bytes=MAX_RESEARCH_BATCH_BYTES
+        )
+
+        task_id = str(task["id"])
+        batch = _parse_int_422(payload.get("research_batch"), field="research_batch", min_value=1,
+                              max_value=MAX_RESEARCH_BATCHES, default=1)
+        final = payload.get("research_final", True)
+        if not isinstance(final, bool):
+            raise HTTPException(status_code=422, detail="research_final must be a boolean.")
+
+        last = conn.execute(
+            "SELECT MAX(batch_number) AS last_batch FROM research_batches WHERE task_id = ? AND lease_id = ?",
+            (task_id, lease_id),
+        ).fetchone()
+        last_batch = int(last["last_batch"] or 0)
+        if batch > last_batch + 1 or (final and batch < last_batch):
+            raise HTTPException(status_code=409, detail="Send research batches in order and finalize the last batch.")
+        if batch <= last_batch:
+            existing = conn.execute(
+                "SELECT report_json FROM research_batches WHERE task_id = ? AND lease_id = ? AND batch_number = ?",
+                (task_id, lease_id, batch),
+            ).fetchone()
+            if not existing or loads_json(existing["report_json"], {}) != normalized:
+                raise HTTPException(status_code=409, detail="This research batch number already has different content.")
+        else:
+            conn.execute(
+                "INSERT INTO research_batches (task_id, lease_id, batch_number, report_json) VALUES (?, ?, ?, ?)",
+                (task_id, lease_id, batch, dumps_json(normalized)),
+            )
+
+        result = {"status": "staged", "outcome": "research", "task_id": task_id, "batch": batch}
+        if not final:
+            return result
+        result.update(status="accepted", batches=batch)
+
+        self._settle_task_atomically(
+            conn,
+            task_id=task_id,
+            lease_id=lease_id,
+            agent_id=str(agent["id"]),
+            output_obj={"outcome": "research", "batches": batch},
+            idempotency_key=idempotency_key,
+            response_obj=result,
+            monetary_audited_inr=0.0,
+            now=now,
+        )
+        conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (task["mission_id"],))
+        conn.execute(
+            "UPDATE agents SET tasks_completed = tasks_completed + 1, last_heartbeat_at = ?, "
+            "current_task_id = CASE WHEN current_task_id = ? THEN NULL ELSE current_task_id END WHERE id = ?",
+            (now, task_id, agent["id"]),
+        )
+        self._emit_durable_event(
+            conn, envelopes, "research_submitted",
+            {"task_id": task_id, "mission_slug": task["mission_slug"], "agent_handle": agent["handle"]}, now=now,
+        )
         return result
 
     @staticmethod

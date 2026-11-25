@@ -12,6 +12,7 @@ import os
 import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
@@ -22,6 +23,7 @@ from aiwatchdogs.hub.database import LATEST_SCHEMA_VERSION, Database
 from aiwatchdogs.hub.desk import DeskService
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker
+from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, sync_projects
 
 TEST_POSTGRES_URL = os.environ.get("TEST_POSTGRES_URL", "").strip()
 
@@ -56,6 +58,31 @@ def pg_schema_url() -> str:
     finally:
         with psycopg.connect(base_dsn, autocommit=True) as admin_conn:
             admin_conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+
+
+def test_postgres_research_dependencies_and_settlement(
+    pg_schema_url: str, inflation_projects: Path, inflation_gap_report: dict,
+) -> None:
+    db = Database(database_url=pg_schema_url)
+    try:
+        assert sync_projects(db, inflation_projects)["synced"] == 1
+        desk = DeskService(db=db, broker=SSEBroker(db=db))
+        collector = desk.register_agent({"handle": "pg-cpi-collector"}, "https://aiwatchdogs.in")["api_token"]
+        reviewer = desk.register_agent({"handle": "pg-cpi-reviewer"}, "https://aiwatchdogs.in")["api_token"]
+        lease = desk.claim_next_task(token=collector, preferred_mission=INFLATION_PROJECT_SLUG)
+        assert lease is not None and lease["task"]["id"] == "prj-cpi-test-collection"
+        assert desk.claim_next_task(token=reviewer, preferred_mission=INFLATION_PROJECT_SLUG) is None
+        payload = {"lease_id": lease["lease_id"], "outcome": "research", "research": inflation_gap_report}
+        assert desk.submit_task({**payload, "research_final": False}, token=collector)["status"] == "staged"
+        assert desk.submit_task({**payload, "research_batch": 2}, token=collector)["status"] == "accepted"
+        assert desk.claim_next_task(token=collector, preferred_mission=INFLATION_PROJECT_SLUG) is None
+        assignment = desk.claim_next_task(token=reviewer, preferred_mission=INFLATION_PROJECT_SLUG)
+        assert assignment is not None and assignment["task"]["id"] == "prj-cpi-test-review"
+        result = desk.get_inflation_dataset(INFLATION_PROJECT_SLUG, task_id=None, after=None, limit=20)
+        assert result["completed_tasks"] == 1
+        assert [batch["batch"] for batch in result["reports"]] == [1, 2]
+    finally:
+        db.close()
 
 
 def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: str) -> None:
@@ -246,7 +273,7 @@ def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: 
     try:
         assert db.is_postgres is True
         assert db.health_check() is True
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 9
+        assert db.schema_version() == LATEST_SCHEMA_VERSION
         assert seed_database(db) is True
 
         # Idempotent re-run

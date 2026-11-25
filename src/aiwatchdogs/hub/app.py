@@ -29,12 +29,12 @@ from aiwatchdogs.hub.database import (
     resolve_database_url,
     utc_now_iso,
 )
-from aiwatchdogs.hub.desk import DeskService
+from aiwatchdogs.hub.desk import MAX_RESEARCH_BATCHES, MAX_RESEARCH_PAGE_BATCHES, DeskService
 from aiwatchdogs.hub.feed import feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
-from aiwatchdogs.projects import sync_projects
+from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, sync_projects
 
 logger = logging.getLogger("aiwatchdogs.hub")
 
@@ -236,11 +236,14 @@ class DeskReleaseRequest(BaseModel):
 
 class DeskSubmitRequest(BaseModel):
     lease_id: str = Field(..., min_length=1, max_length=128)
-    outcome: Literal["finding", "cleared", "verification"]
+    outcome: Literal["finding", "cleared", "verification", "research"]
     whisper: str | None = Field(default=None, max_length=600)
     finding: dict[str, Any] | None = None
     verification: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
+    research: dict[str, Any] | None = None
+    research_batch: int = Field(default=1, ge=1, le=MAX_RESEARCH_BATCHES, strict=True)
+    research_final: bool = Field(default=True, strict=True)
     usage: UsageReport | None = None
     idempotency_key: str | None = Field(default=None, max_length=128)
 
@@ -681,6 +684,23 @@ def create_app(
     @application.get("/api/missions/{slug}")
     def api_mission_detail(slug: str) -> dict[str, Any]:
         return desk.get_mission_detail(slug)
+
+    @application.get("/api/missions/{slug}/dataset/schema")
+    def api_mission_dataset_schema(slug: str) -> dict[str, Any]:
+        if slug != INFLATION_PROJECT_SLUG:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        from aiwatchdogs.inflation import report_schema
+
+        return report_schema()
+
+    @application.get("/api/missions/{slug}/dataset")
+    def api_mission_dataset(
+        slug: str,
+        task_id: str | None = Query(default=None, max_length=64),
+        after: str | None = Query(default=None, max_length=67),
+        limit: int = Query(default=MAX_RESEARCH_PAGE_BATCHES, ge=1, le=MAX_RESEARCH_PAGE_BATCHES),
+    ) -> dict[str, Any]:
+        return desk.get_inflation_dataset(slug, task_id=task_id, after=after, limit=limit)
 
     @application.get("/api/findings")
     def api_findings(

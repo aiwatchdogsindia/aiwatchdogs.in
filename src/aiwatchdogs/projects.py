@@ -18,6 +18,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -70,11 +71,15 @@ VALID_QUANTITY_TYPES = {
     "awarded_contract_values",
     "budget_and_treasury_expenditure",
     "cag_report_monetary_figures",
+    "consumer_prices",
     "scheme_outlay_and_expenditure",
     "electoral_bond_disclosures",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_TASKS_PER_PROJECT = 10
+INFLATION_PROJECT_SLUG = "independent-india-inflation"
+INFLATION_METHODOLOGY = "CPI1"
+MAX_INFLATION_TASKS = 100
 DEFAULT_PRIORITY = 5
 SYNC_STATE_KEY = "community_projects"
 
@@ -110,7 +115,7 @@ def default_projects_dir() -> Path:
 def _known_methodologies() -> set[str]:
     from aiwatchdogs.engines.registry import _ENGINE_DISPATCH
 
-    return set(_ENGINE_DISPATCH)
+    return set(_ENGINE_DISPATCH) | {INFLATION_METHODOLOGY}
 
 
 def _scan_terms(text: str) -> list[str]:
@@ -292,9 +297,13 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     if not isinstance(planned, list):
         errors.append("'planned_tasks' must be a list.")
         planned = []
-    if len(tasks) + len(planned) > MAX_TASKS_PER_PROJECT:
+    is_inflation = slug == INFLATION_PROJECT_SLUG and methodology == INFLATION_METHODOLOGY
+    if (slug == INFLATION_PROJECT_SLUG or methodology == INFLATION_METHODOLOGY) and not is_inflation:
+        errors.append(f"Methodology {INFLATION_METHODOLOGY} is reserved for '{INFLATION_PROJECT_SLUG}'.")
+    task_limit = MAX_INFLATION_TASKS if is_inflation else MAX_TASKS_PER_PROJECT
+    if len(tasks) + len(planned) > task_limit:
         errors.append(
-            f"A project can list at most {MAX_TASKS_PER_PROJECT} tasks ('tasks' and 'planned_tasks' together)."
+            f"A project can list at most {task_limit} tasks ('tasks' and 'planned_tasks' together)."
         )
     if not tasks and not planned:
         errors.append("'planned_tasks' must list at least one task with a type and estimated_tokens.")
@@ -315,6 +324,7 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         errors.append("A project with no tasks yet must use \"status\": \"needs_data\".")
 
     seen_task_ids: set[str] = set()
+    dependencies: dict[str, list[str]] = {}
     for i, task in enumerate(tasks):
         where = f"tasks[{i}]"
         if not isinstance(task, dict):
@@ -340,10 +350,28 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         code = task.get("methodology_code", methodology)
         if code not in known:
             errors.append(f"{where}.methodology_code must be one of {sorted(known)}.")
+        if is_inflation and (code != INFLATION_METHODOLOGY or task.get("financial_quantity_type") != "consumer_prices"):
+            errors.append(f"{where} must use {INFLATION_METHODOLOGY} and the consumer_prices quantity type.")
+        elif not is_inflation and code == INFLATION_METHODOLOGY:
+            errors.append(f"{where}.methodology_code {INFLATION_METHODOLOGY} is reserved for '{INFLATION_PROJECT_SLUG}'.")
+        if "depends_on" in task:
+            deps = task["depends_on"]
+            if not is_inflation:
+                errors.append(f"{where}.depends_on is available to {INFLATION_METHODOLOGY} tasks.")
+            elif (
+                not isinstance(deps, list)
+                or len(deps) > MAX_INFLATION_TASKS
+                or any(not isinstance(dep, str) or not TASK_ID_RE.fullmatch(dep) or len(dep) > 60 for dep in deps)
+            ):
+                errors.append(f"{where}.depends_on must be a list of task IDs in this project.")
+            elif isinstance(tid, str):
+                dependencies[tid] = deps
         payload = task.get("payload")
         if not isinstance(payload, dict):
             errors.append(f"{where}.payload is required.")
             continue
+        if is_inflation and "depends_on" in payload:
+            errors.append(f"{where}.depends_on belongs on the task, outside of 'payload'.")
         url = payload.get("retrieval_url")
         if not _is_https(url):
             errors.append(f"{where}.payload.retrieval_url must be a public https:// link to the exact file.")
@@ -392,6 +420,14 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                     )
                 if code == "P1":
                     _validate_p1_context(ctx, where, errors)
+
+    for tid, deps in dependencies.items():
+        if len(deps) != len(set(deps)) or any(dep not in seen_task_ids for dep in deps):
+            errors.append(f"Task '{tid}' must list distinct prerequisites from this project's tasks.")
+    try:
+        TopologicalSorter(dependencies).prepare()
+    except CycleError:
+        errors.append("Research task prerequisites must be acyclic.")
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -603,6 +639,7 @@ def sync_projects(
             for task in tasks:
                 tid = project_task_id(task["id"])
                 code = task.get("methodology_code", methodology)
+                task_type = "research" if code == INFLATION_METHODOLOGY else "anomaly_scan"
                 payload = dict(task["payload"])
                 payload.setdefault("methodology_code", code)
                 payload.setdefault("dataset_key", task["dataset_key"])
@@ -611,6 +648,8 @@ def sync_projects(
                 payload.setdefault("source_url", payload.get("source_landing_page", ""))
                 payload.setdefault("is_demo_sample", False)
                 payload["project_slug"] = d["slug"]
+                if task_type == "research":
+                    payload["depends_on"] = [project_task_id(dep) for dep in task.get("depends_on", [])]
                 payload_str = dumps_json(payload)
                 existing = conn.execute("SELECT status FROM tasks WHERE id = ?", (tid,)).fetchone()
                 if existing is None:
@@ -621,13 +660,14 @@ def sync_projects(
                             title, instructions, payload_json, target_finding_id,
                             excluded_handles_json, status, dataset_key, financial_quantity_type,
                             created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, 'anomaly_scan', ?, ?, ?, NULL, '[]', 'queued', ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', 'queued', ?, ?, ?, ?)
                         """,
                         (
                             tid,
                             mid,
                             d["slug"],
                             code,
+                            task_type,
                             task["title"],
                             task["instructions"],
                             payload_str,
@@ -640,7 +680,7 @@ def sync_projects(
                 elif existing["status"] == "queued":
                     conn.execute(
                         """
-                        UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?,
+                        UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?, task_type = ?,
                             dataset_key = ?, financial_quantity_type = ?, updated_at = ?
                         WHERE id = ? AND status = 'queued'
                         """,
@@ -649,6 +689,7 @@ def sync_projects(
                             task["instructions"],
                             payload_str,
                             code,
+                            task_type,
                             task["dataset_key"],
                             task["financial_quantity_type"],
                             now,
