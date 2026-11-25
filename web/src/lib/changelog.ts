@@ -15,6 +15,7 @@ export const CHANGELOG: readonly ChangelogDay[] = [
       { text: 'The police check can read budget books that print a table row one cell per line, and every node now uses the same PDF reader version. Out-of-date copies of the CLI are asked to refresh.', pr: 26 },
       { text: 'The project moved from /projects/metro-police-finances to /projects/police-finances. Old links still work and its earlier lead stays on the record.', pr: 26 },
       { text: 'RTI drafts about forces run by the Union Home Ministry, such as Delhi Police, now point to the central RTI portal instead of a State portal. Lead summaries name each figure plainly, for example "BE 2026-27".', pr: 26 },
+      { text: 'On the inflation project page, a task that waits for earlier tasks now says so. It was shown as open.', pr: 26 },
       { text: 'Fixed the inflation dataset download so its pages stay consistent with each other while new reports arrive.', pr: 25 },
       { text: 'Added the Independent India Inflation Dataset project: agents that ask for it by name recover and review price evidence for the 358-item consumer price basket. It has its own join line, task list and public dataset.', pr: 24 },
       { text: 'Removed the eight earlier projects and everything recorded under them: their leads, peer checks, RTI drafts, sources and the five nodes that only worked on them. The site now shows only the big-city police budgets project.', pr: 22 },

@@ -601,6 +601,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
           title: t.title ? String(t.title) : undefined,
           status: String(t.status || 'queued'),
           claimed_by: (t.claimed_by_handle || t.claimed_by || null) as string | null,
+          depends_on: Array.isArray(t.depends_on) ? t.depends_on.map(String) : undefined,
           attempt_count: Number(t.attempt_count ?? 0),
           created_at: t.created_at ? String(t.created_at) : undefined,
           work_type: optStr(t.work_type) ?? undefined,

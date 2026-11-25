@@ -439,6 +439,9 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
 
   const audits = tasks.filter((t) => !isPeerCheck(t));
   const checks = tasks.filter(isPeerCheck);
+  // A research project has no audits or peer checks, only one list of tasks.
+  const isResearch = audits.length > 0 && audits.every((t) => t.task_type === 'research');
+  const active: TaskFilter = isResearch && (filter === 'audits' || filter === 'checks') ? 'all' : filter;
   const counts: Record<TaskFilter, number> = {
     audits: audits.length,
     checks: checks.length,
@@ -451,28 +454,34 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
     const q = query.trim().toLowerCase();
     return tasks
       .filter((t) => {
-        if (filter === 'audits') return !isPeerCheck(t);
-        if (filter === 'checks') return isPeerCheck(t);
-        if (filter === 'open') return t.status === 'queued';
-        if (filter === 'progress') return t.status === 'claimed';
-        if (filter === 'done') return isDone(t);
+        if (active === 'audits') return !isPeerCheck(t);
+        if (active === 'checks') return isPeerCheck(t);
+        if (active === 'open') return t.status === 'queued';
+        if (active === 'progress') return t.status === 'claimed';
+        if (active === 'done') return isDone(t);
         return true;
       })
       .filter((t) => !q || (t.title ?? '').toLowerCase().includes(q) || (t.claimed_by_handle ?? t.claimed_by ?? '').toLowerCase().includes(q))
       .sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '') || String(a.id).localeCompare(String(b.id)));
-  }, [tasks, filter, query]);
+  }, [tasks, active, query]);
 
   if (tasks.length === 0 && planned.length === 0) return null;
   const na = <span className="not-reported">Not reported</span>;
-  const isResearch = audits.length > 0 && audits.every((t) => t.task_type === 'research');
-  const filters: [TaskFilter, string][] = [
-    ['audits', isResearch ? 'Tasks' : 'Audits'],
-    ['checks', 'Peer checks'],
-    ['open', 'Open'],
-    ['progress', 'In progress'],
-    ['done', 'Done'],
-    ['all', 'All'],
-  ];
+  const filters: [TaskFilter, string][] = isResearch
+    ? [
+        ['all', 'All'],
+        ['open', 'Open'],
+        ['progress', 'In progress'],
+        ['done', 'Done'],
+      ]
+    : [
+        ['audits', 'Audits'],
+        ['checks', 'Peer checks'],
+        ['open', 'Open'],
+        ['progress', 'In progress'],
+        ['done', 'Done'],
+        ['all', 'All'],
+      ];
   const page = visible.slice(0, shown);
   const completed = new Set(tasks.filter((task) => task.status === 'completed').map((task) => task.id));
   return (
@@ -515,8 +524,8 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
             <button
               key={key}
               type="button"
-              aria-pressed={filter === key}
-              className={`btn btn-xs ${filter === key ? 'btn-primary' : 'btn-ghost'}`}
+              aria-pressed={active === key}
+              className={`btn btn-xs ${active === key ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => {
                 setFilter(key);
                 setShown(TASK_PAGE_SIZE);
@@ -528,8 +537,8 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
           <input
             type="search"
             className="input-field task-search"
-            placeholder="Find a State or force"
-            aria-label="Find a task by State, force or agent"
+            placeholder={isResearch ? 'Find a task' : 'Find a State or force'}
+            aria-label={isResearch ? 'Find a task by name or agent' : 'Find a task by State, force or agent'}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
