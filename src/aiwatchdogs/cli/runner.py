@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import inspect
 import math
+import re
 import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlsplit
 
 import httpx
 from pydantic import BaseModel, Field
 
-from aiwatchdogs.cli.config import AgentConfig, get_spend_ledger_path, save_config
+from aiwatchdogs.cli.config import (
+    AgentConfig,
+    get_spend_ledger_path,
+    normalize_hub_origin,
+    save_config,
+    validate_hub_url,
+)
 from aiwatchdogs.cli.providers import (
     BudgetTracker,
     ProviderInfo,
@@ -38,6 +46,71 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CHECK_PASS = "pass"
 CHECK_FAIL = "fail"
 CHECK_UNRECORDED = "unrecorded"
+
+MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
+MAX_INLINE_RECORDS = 5_000
+_SAFE_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_SAFE_HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
+
+# Strict allowlist of task context keys forwarded to connectors/engines.
+# Security-sensitive keys (allow_local_files, use_cache, secondary_path, secondary_records,
+# max_download_bytes, max_decompressed_bytes, max_compression_ratio, max_zip_members,
+# max_parse_rows, max_pdf_pages, max_pdf_chars) are NEVER forwarded from remote task payloads.
+_ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
+    {
+        "artifact_title",
+        "as_of_date",
+        "budget_lines",
+        "canonical_url",
+        "comparisons",
+        "dataset_url",
+        "electoral_award_cutoff_inr",
+        "escalation_cutoff_pct",
+        "expected_sha256",
+        "filter_buyer",
+        "fiscal_year",
+        "fiscal_year_end",
+        "fiscal_year_start",
+        "flag_re_equals_be",
+        "hhi_threshold",
+        "jurisdiction",
+        "lower_ratio",
+        "mad_cutoff",
+        "major_contract_inr",
+        "march_ceiling_pct",
+        "max_leads",
+        "max_rows",
+        "median_ratio_cutoff",
+        "methodology_code",
+        "min_cluster_count",
+        "min_disclosure_inr",
+        "min_escalation_inr",
+        "min_group_tenders",
+        "min_impact_inr",
+        "min_tender_estimate_inr",
+        "min_tenders",
+        "mirror_catalog_url",
+        "mirror_name",
+        "new_entity_days",
+        "official_publisher",
+        "pac_note_threshold_inr",
+        "q4_ceiling_pct",
+        "retrieval_url",
+        "secondary_dataset_url",
+        "secondary_expected_sha256",
+        "secondary_sha256",
+        "secondary_url",
+        "share_threshold",
+        "short_window_days",
+        "single_bid_share_threshold",
+        "source_landing_page",
+        "source_url",
+        "suggested_authority",
+        "upper_ratio",
+        "variance_ceiling_pct",
+        "window_days",
+    }
+)
 
 # Semantic / structural metric keys whose values must agree exactly when present on a reproduced lead.
 CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
@@ -133,7 +206,12 @@ def _resolve_dataset_ref(ref: str, *, allow_local_files: bool = False) -> str:
     return cleaned
 
 
-def _extract_target_ref(payload: dict[str, Any], *, allow_local_files: bool = False) -> str | None:
+def _extract_target_ref(
+    payload: dict[str, Any],
+    *,
+    allow_local_files: bool = False,
+    allow_finding_fallback: bool = True,
+) -> str | None:
     """Extract official dataset URL or (when allowed) local file path from a Desk task payload or finding."""
     for key in (
         "retrieval_url",
@@ -167,6 +245,9 @@ def _extract_target_ref(payload: dict[str, Any], *, allow_local_files: bool = Fa
                 val = nested.get(key)
                 if isinstance(val, str) and val.strip():
                     return _resolve_dataset_ref(val, allow_local_files=allow_local_files)
+
+    if not allow_finding_fallback:
+        return None
 
     finding = payload.get("finding")
     if isinstance(finding, dict):
@@ -214,7 +295,12 @@ def _extract_target_ref(payload: dict[str, Any], *, allow_local_files: bool = Fa
     return None
 
 
-def _extract_secondary_url(payload: dict[str, Any], *, allow_local_files: bool = False) -> str | None:
+def _extract_secondary_url(
+    payload: dict[str, Any],
+    *,
+    allow_local_files: bool = False,
+    allow_finding_fallback: bool = True,
+) -> str | None:
     """Extract optional secondary dataset URL (e.g. MCA CSR CSV for M8 Electoral Bonds cross-check)."""
     ctx = payload.get("context") if isinstance(payload.get("context"), dict) else {}
     prov = payload.get("provenance") if isinstance(payload.get("provenance"), dict) else {}
@@ -225,20 +311,21 @@ def _extract_secondary_url(payload: dict[str, Any], *, allow_local_files: bool =
         ctx.get("secondary_dataset_url"),
         prov.get("secondary_url"),
     ]
-    finding = payload.get("finding")
-    if isinstance(finding, dict):
-        candidates.append(finding.get("secondary_url"))
-        f_prov = finding.get("provenance")
-        if isinstance(f_prov, dict):
-            candidates.append(f_prov.get("secondary_url"))
-        trace = finding.get("agent_trace")
-        if isinstance(trace, dict):
-            candidates.append(trace.get("secondary_url"))
-        citations = finding.get("citations")
-        if isinstance(citations, list):
-            for cit in citations:
-                if isinstance(cit, dict):
-                    candidates.append(cit.get("secondary_url"))
+    if allow_finding_fallback:
+        finding = payload.get("finding")
+        if isinstance(finding, dict):
+            candidates.append(finding.get("secondary_url"))
+            f_prov = finding.get("provenance")
+            if isinstance(f_prov, dict):
+                candidates.append(f_prov.get("secondary_url"))
+            trace = finding.get("agent_trace")
+            if isinstance(trace, dict):
+                candidates.append(trace.get("secondary_url"))
+            citations = finding.get("citations")
+            if isinstance(citations, list):
+                for cit in citations:
+                    if isinstance(cit, dict):
+                        candidates.append(cit.get("secondary_url"))
     for val in candidates:
         if isinstance(val, str) and val.strip():
             return _resolve_dataset_ref(val, allow_local_files=allow_local_files)
@@ -362,17 +449,21 @@ def _build_task_context(
     *,
     allow_local_files: bool = False,
     as_of_date: str | None = None,
+    allow_finding_fallback: bool = True,
 ) -> dict[str, Any]:
-    """Assemble engine/loader context hints from a Desk task payload or embedded finding."""
+    """Assemble strictly allowlisted engine/loader context hints from a Desk task payload."""
     ctx: dict[str, Any] = {}
     nested = payload.get("context")
     if isinstance(nested, dict):
-        ctx.update(nested)
+        for k, v in nested.items():
+            if k in _ALLOWED_TASK_CONTEXT_KEYS:
+                ctx[k] = v
 
-    # Context MUST NEVER escalate allow_local_files
-    ctx.pop("allow_local_files", None)
-
-    finding = payload.get("finding") if isinstance(payload.get("finding"), dict) else {}
+    finding = (
+        payload.get("finding")
+        if allow_finding_fallback and isinstance(payload.get("finding"), dict)
+        else {}
+    )
     for key in (
         "retrieval_url",
         "dataset_url",
@@ -401,7 +492,23 @@ def _build_task_context(
         if val is not None and key not in ctx:
             ctx[key] = val
 
-    secondary = _extract_secondary_url(payload, allow_local_files=allow_local_files)
+    # Clamp numeric row/lead caps to safe upper bounds
+    if "max_rows" in ctx:
+        try:
+            ctx["max_rows"] = max(1, min(int(ctx["max_rows"]), 50_000))
+        except (TypeError, ValueError):
+            ctx.pop("max_rows", None)
+    if "max_leads" in ctx:
+        try:
+            ctx["max_leads"] = max(1, min(int(ctx["max_leads"]), 50))
+        except (TypeError, ValueError):
+            ctx.pop("max_leads", None)
+
+    secondary = _extract_secondary_url(
+        payload,
+        allow_local_files=allow_local_files,
+        allow_finding_fallback=allow_finding_fallback,
+    )
     if secondary:
         ctx["secondary_url"] = secondary
 
@@ -412,6 +519,10 @@ def _build_task_context(
 
     if as_of_date:
         ctx["as_of_date"] = as_of_date
+
+    # Defense-in-depth: never allow untrusted context keys to escalate local/cache/limit settings
+    for forbidden in ("allow_local_files", "use_cache", "secondary_path", "secondary_records"):
+        ctx.pop(forbidden, None)
 
     return ctx
 
@@ -916,10 +1027,13 @@ class AgentRunner:
         request_timeout: float = 30.0,
         config_path: str | Path | None = None,
         allow_local_files: bool = False,
+        allow_insecure_http: bool = False,
         budget_tracker: BudgetTracker | None = None,
     ) -> None:
         self.config = config
         self.allow_local_files = bool(allow_local_files)
+        if http_client is None:
+            validate_hub_url(config.normalized_hub_url, allow_insecure_http=allow_insecure_http)
         self.provider_cfg = provider_cfg or resolve_provider_config(
             config.provider,
             config.model,
@@ -931,6 +1045,7 @@ class AgentRunner:
             base_url=config.normalized_hub_url,
             timeout=httpx.Timeout(request_timeout),
             headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.2"},
+            follow_redirects=False,
         )
         self.on_event = on_event
         self.poll_interval = poll_interval
@@ -975,6 +1090,11 @@ class AgentRunner:
     def _request_kwargs(self) -> dict[str, Any]:
         return {} if self._external_client else {"timeout": self.request_timeout}
 
+    def _parse_hub_json(self, resp: httpx.Response) -> Any:
+        if len(resp.content) > MAX_HUB_RESPONSE_BYTES:
+            raise ValueError(f"Hub response exceeded maximum size limit ({MAX_HUB_RESPONSE_BYTES} bytes).")
+        return resp.json()
+
     def register(
         self,
         *,
@@ -1004,19 +1124,29 @@ class AgentRunner:
             **self._request_kwargs(),
         )
         resp.raise_for_status()
-        data = resp.json()
+        data = self._parse_hub_json(resp)
+        if not isinstance(data, dict):
+            raise ValueError("Hub registration response must be a JSON object.")
 
         token = str(data.get("api_token", "")).strip()
         if token:
             self.config.api_token = token
-        returned_handle = str(data.get("handle", "")).strip()
+        returned_handle = str(data.get("handle", "")).strip().lower()
         if returned_handle:
+            if not _SAFE_HANDLE_RE.fullmatch(returned_handle):
+                raise ValueError(f"Hub returned an invalid agent handle: {returned_handle!r}")
             self.config.handle = returned_handle
 
         raw_profile = str(data.get("profile_url", "")).strip()
+        expected_origin = self.config.normalized_hub_origin
         if raw_profile.startswith(("http://", "https://")):
-            profile_url = raw_profile
-        elif raw_profile.startswith("/"):
+            parsed_prof = urlsplit(raw_profile)
+            prof_origin = normalize_hub_origin(f"{parsed_prof.scheme}://{parsed_prof.netloc}")
+            if prof_origin and expected_origin and prof_origin == expected_origin:
+                profile_url = raw_profile
+            else:
+                profile_url = self.config.profile_url
+        elif raw_profile.startswith("/") and not raw_profile.startswith("//"):
             profile_url = f"{self.config.normalized_hub_url}{raw_profile}"
         else:
             profile_url = self.config.profile_url
@@ -1047,7 +1177,7 @@ class AgentRunner:
             self._emit("queue_empty", {"handle": self.config.handle})
             return None
         resp.raise_for_status()
-        lease = resp.json()
+        lease = self._parse_hub_json(resp)
         self._emit("task_claimed", lease)
         return lease
 
@@ -1147,14 +1277,17 @@ class AgentRunner:
         return data
 
     def _fetch_finding(self, finding_id: str) -> dict[str, Any] | None:
+        cleaned_id = str(finding_id or "").strip()
+        if not _SAFE_FINDING_ID_RE.fullmatch(cleaned_id):
+            raise ValueError(f"Invalid finding_id format: {cleaned_id!r}")
         resp = self._client.get(
-            self._url(f"/api/findings/{finding_id}"),
+            self._url(f"/api/findings/{quote(cleaned_id, safe='')}"),
             headers=self._auth_headers(),
             **self._request_kwargs(),
         )
         if resp.status_code != 200:
             return None
-        data = resp.json()
+        data = self._parse_hub_json(resp)
         if isinstance(data, dict) and isinstance(data.get("finding"), dict):
             return data["finding"]
         return data if isinstance(data, dict) else None
@@ -1180,9 +1313,18 @@ class AgentRunner:
         expected_sha256: str | None = None,
         secondary_expected_sha256: str | None = None,
         as_of_date: str | None = None,
+        allow_finding_fallback: bool = True,
     ) -> LoadedDataset:
-        target_ref = _extract_target_ref(payload, allow_local_files=self.allow_local_files)
-        secondary_url = _extract_secondary_url(payload, allow_local_files=self.allow_local_files)
+        target_ref = _extract_target_ref(
+            payload,
+            allow_local_files=self.allow_local_files,
+            allow_finding_fallback=allow_finding_fallback,
+        )
+        secondary_url = _extract_secondary_url(
+            payload,
+            allow_local_files=self.allow_local_files,
+            allow_finding_fallback=allow_finding_fallback,
+        )
 
         if target_ref:
             # Defense-in-depth: block local file paths in unattended runner mode even if loader is stubbed.
@@ -1201,6 +1343,7 @@ class AgentRunner:
                 payload,
                 allow_local_files=self.allow_local_files,
                 as_of_date=as_of_date,
+                allow_finding_fallback=allow_finding_fallback,
             )
             if expected_sha256:
                 load_ctx["expected_sha256"] = expected_sha256
@@ -1216,6 +1359,8 @@ class AgentRunner:
                 kwargs["context"] = load_ctx or None
             if "allow_local_files" in params:
                 kwargs["allow_local_files"] = self.allow_local_files
+            if "use_cache" in params:
+                kwargs["use_cache"] = False
             if "expected_sha256" in params and expected_sha256:
                 kwargs["expected_sha256"] = expected_sha256
             if "secondary_expected_sha256" in params and secondary_expected_sha256:
@@ -1225,16 +1370,19 @@ class AgentRunner:
 
         inline_records = payload.get("records")
         if isinstance(inline_records, list):
-            raw_text = str(inline_records)
+            if len(inline_records) > MAX_INLINE_RECORDS:
+                raise ValueError(f"Inline records count exceeds maximum allowed cap ({MAX_INLINE_RECORDS}).")
+            scrubbed_records, redactions = scrub_pii_in_obj(inline_records)
+            raw_text = str(scrubbed_records)
             return LoadedDataset(
-                records=inline_records,
-                raw_text=raw_text,
+                records=scrubbed_records,
+                raw_text=raw_text[:8192],
                 sha256=compute_sha256(raw_text),
                 byte_size=len(raw_text.encode("utf-8")),
                 format="json",
                 is_demo_sample=False,
                 source_ref=str(payload.get("source_ref", "inline-task-payload")),
-                pii_redactions=[],
+                pii_redactions=redactions,
             )
         raise ValueError("Task payload missing dataset_url, dataset_path, source_url, or inline records")
 
@@ -1676,7 +1824,19 @@ class AgentRunner:
                 finding = merged_finding
                 merged_payload = {**payload, "finding": finding}
 
-        secondary_url = _extract_secondary_url(merged_payload, allow_local_files=self.allow_local_files)
+        # Prefer server-pinned task payload URLs over any untrusted finding-embedded URLs!
+        server_has_target = (
+            _extract_target_ref(
+                payload, allow_local_files=self.allow_local_files, allow_finding_fallback=False
+            )
+            is not None
+        )
+        allow_finding_url_fallback = not server_has_target
+        secondary_url = _extract_secondary_url(
+            merged_payload,
+            allow_local_files=self.allow_local_files,
+            allow_finding_fallback=allow_finding_url_fallback,
+        )
         expected_sha = _extract_expected_sha256(merged_payload, finding)
         expected_secondary_sha = _extract_expected_secondary_sha256(merged_payload, finding)
         as_of_date = _extract_as_of_date(merged_payload, finding, default_today_utc=False)
@@ -1684,6 +1844,7 @@ class AgentRunner:
             merged_payload,
             allow_local_files=self.allow_local_files,
             as_of_date=as_of_date,
+            allow_finding_fallback=allow_finding_url_fallback,
         )
 
         notes_parts: list[str] = []
@@ -1707,6 +1868,7 @@ class AgentRunner:
                 expected_sha256=expected_sha or None,
                 secondary_expected_sha256=expected_secondary_sha or None,
                 as_of_date=as_of_date,
+                allow_finding_fallback=allow_finding_url_fallback,
             )
             bytes_digest_state, _prim_ok, _sec_ok, observed_secondary_sha, digest_note = (
                 self._verify_digests_strict(
@@ -1915,11 +2077,22 @@ class AgentRunner:
                 "reason": "unsupported_task_type",
             }
         except Exception as exc:
-            release_reason = "digest_mismatch" if _is_digest_mismatch_exception(exc) else "execution_error"
+            if _is_digest_mismatch_exception(exc):
+                release_reason = "digest_mismatch"
+                safe_release_note = "Artifact SHA-256 digest mismatch."
+            elif isinstance(exc, PermissionError):
+                release_reason = "policy_blocked"
+                safe_release_note = "Dataset source disallowed by local runner security policy."
+            elif isinstance(exc, httpx.HTTPError):
+                release_reason = "network_error"
+                safe_release_note = f"Upstream fetch error ({type(exc).__name__})."
+            else:
+                release_reason = "execution_error"
+                safe_release_note = f"Local audit execution failed ({type(exc).__name__})."
             self.release(
                 lease_id,
                 reason=release_reason,
-                notes=f"{type(exc).__name__}: {exc}",
+                notes=safe_release_note,
             )
             self._emit(
                 "task_error",

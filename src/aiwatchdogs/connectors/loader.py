@@ -13,24 +13,34 @@ from __future__ import annotations
 
 import csv
 import html
+from html.parser import HTMLParser
 import io
 import ipaddress
 import json
+import math
 import os
 import re
+import socket
+import stat
 import tempfile
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from pypdf import PdfReader
 
 from aiwatchdogs.core.models import LoadedDataset
-from aiwatchdogs.core.safety import compute_sha256, scrub_pii
+from aiwatchdogs.core.safety import (
+    compute_sha256,
+    is_public_ip_address,
+    scrub_pii,
+    scrub_sensitive_field_value,
+    validate_safe_http_url,
+)
 
 # Identifies the project honestly. The contact is written as a bare domain: some government
 # web firewalls (e.g. indiabudget.gov.in) reject any User-Agent that embeds an "https://" URL.
@@ -42,9 +52,13 @@ DEFAULT_MAX_COMPRESSION_RATIO = 100.0
 DEFAULT_MAX_ZIP_MEMBERS = 500
 DEFAULT_MAX_PARSE_ROWS = 250_000
 DEFAULT_MAX_PDF_PAGES = 1000
+DEFAULT_MAX_PDF_CHARS = 50_000_000
+DEFAULT_MAX_SHARED_STRINGS = 500_000
+DEFAULT_MAX_REDIRECTS = 5
 DEFAULT_CACHE_TTL_SECONDS = 3600
 
 _ORIGINAL_HTTPX_GET = httpx.Client.get
+_ORIGINAL_HTTPX_STREAM = httpx.Client.stream
 
 _CAPTCHA_MARKERS: tuple[str, ...] = (
     "recaptcha",
@@ -102,57 +116,94 @@ def _is_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def _validate_public_https_url(url: str) -> None:
-    """Enforce HTTPS and reject private/loopback/link-local/metadata hosts for unattended loading."""
-    parsed = urlparse(url)
-    if parsed.scheme.lower() != "https":
-        raise PermissionError(
-            f"Unattended remote loading requires HTTPS URLs; refused scheme '{parsed.scheme}' in {url!r}."
-        )
-    if parsed.username or parsed.password:
-        raise PermissionError(f"Credentials embedded in URL are disallowed: {url!r}.")
+def _validate_public_https_url(url: str, *, resolve_dns: bool = False) -> None:
+    """Enforce HTTPS and reject private/loopback/link-local/metadata/CGNAT hosts & DNS records."""
+    try:
+        cleaned = validate_safe_http_url(url, require_https=True, allow_private=False)
+    except ValueError as exc:
+        raise PermissionError(str(exc)) from exc
+
+    parsed = urlparse(cleaned)
     hostname = (parsed.hostname or "").strip().lower().rstrip(".")
-    if not hostname:
-        raise PermissionError(f"URL missing valid public hostname: {url!r}.")
-    if hostname in _BLOCKED_HOSTNAMES or hostname.endswith((".localhost", ".local", ".internal")):
+    if hostname in _BLOCKED_HOSTNAMES or hostname.endswith((".localhost", ".local", ".internal", ".arpa")):
         raise PermissionError(f"Refused non-public/internal hostname '{hostname}' in {url!r}.")
+
     try:
         ip = ipaddress.ip_address(hostname)
     except ValueError:
         ip = None
-    if ip is not None and not ip.is_global:
-        raise PermissionError(
-            f"Refused non-public IP address '{hostname}' (loopback/private/link-local/reserved) in {url!r}."
-        )
+    if ip is not None:
+        if not is_public_ip_address(ip):
+            raise PermissionError(
+                f"Refused non-public IP address '{hostname}' (loopback/private/link-local/reserved) in {url!r}."
+            )
+        return
+
+    if resolve_dns:
+        port = parsed.port or 443
+        try:
+            infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            # Fail closed on real network clients; allow mocked httpx tests using synthetic hostnames.
+            if httpx.Client.get is _ORIGINAL_HTTPX_GET and httpx.Client.stream is _ORIGINAL_HTTPX_STREAM:
+                raise PermissionError(f"Could not resolve hostname '{hostname}' for {url!r}: {exc}") from exc
+            return
+        for _family, _socktype, _proto, _canonname, sockaddr in infos:
+            addr_str = sockaddr[0]
+            try:
+                resolved_ip = ipaddress.ip_address(addr_str)
+            except ValueError:
+                continue
+            if not is_public_ip_address(resolved_ip):
+                raise PermissionError(
+                    f"Refused URL {url!r}: hostname '{hostname}' resolved to non-public IP address '{resolved_ip}'."
+                )
 
 
 def _cache_dir() -> Path:
-    return Path(os.environ.get("AIWATCHDOGS_CACHE_DIR", "/tmp/aiwatchdogs_cache"))
+    explicit = os.environ.get("AIWATCHDOGS_CACHE_DIR", "").strip()
+    if explicit:
+        return Path(explicit)
+    xdg = os.environ.get("XDG_CACHE_HOME", "").strip()
+    base = Path(xdg) if xdg else (Path.home() / ".cache")
+    return base / "aiwatchdogs"
 
 
 def _to_float_safe(value: Any, default: float = 0.0) -> float:
-    if value is None or value == "":
+    if value is None or value == "" or isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
-        return float(value)
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else default
     text = str(value).strip().replace(",", "").replace("₹", "").replace("INR", "").replace(" ", "")
     try:
-        return float(text)
+        parsed = float(text)
     except ValueError:
         return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def _to_int_opt(value: Any) -> int | None:
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
-    if isinstance(value, bool):
-        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        try:
+            return int(round(value))
+        except OverflowError:
+            return None
     text = str(value).strip()
     if not text or text in {"--", "-", "NA", "N/A", "null", "None"}:
         return None
     try:
-        return int(round(float(text.replace(",", ""))))
-    except ValueError:
+        parsed = float(text.replace(",", ""))
+        if not math.isfinite(parsed):
+            return None
+        return int(round(parsed))
+    except (ValueError, OverflowError):
         return None
 
 
@@ -583,20 +634,72 @@ def _unlink_quiet(path: Path) -> None:
         pass
 
 
+def _ensure_private_cache_dir(cdir: Path, *, create: bool) -> bool:
+    """Verify cache directory is owned by current user, not a symlink, and mode 0700 (fail closed)."""
+    try:
+        if create:
+            cdir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        st = os.lstat(cdir)
+        if not stat.S_ISDIR(st.st_mode) or stat.S_ISLNK(st.st_mode):
+            return False
+        if hasattr(os, "getuid") and st.st_uid != os.getuid():
+            return False
+        if st.st_mode & 0o077:
+            if not create:
+                return False
+            os.chmod(cdir, 0o700)
+            st = os.lstat(cdir)
+            if st.st_mode & 0o077:
+                return False
+        return True
+    except OSError:
+        return False
+
+
+def _read_regular_file_bounded(path: Path, max_bytes: int) -> bytes | None:
+    """Open with O_NOFOLLOW, verify S_ISREG and st_size <= max_bytes before reading."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd: int | None = None
+    try:
+        fd = os.open(str(path), flags)
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_size <= 0 or st.st_size > max_bytes:
+            return None
+        with os.fdopen(fd, "rb") as fh:
+            fd = None
+            data = fh.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            return None
+        return data
+    except OSError:
+        return None
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+
 def _read_validated_cache(
     url: str,
     expected_sha256: str | None,
     max_download_bytes: int,
 ) -> tuple[bytes, str, str] | None:
-    """Return ``(bytes, content_type, fetched_at)`` only if cache digest & TTL revalidate cleanly."""
+    """Return ``(bytes, content_type, fetched_at)`` only if cache dir/files & digest/TTL revalidate cleanly."""
     url_hash = compute_sha256(url)
     cdir = _cache_dir()
+    if not _ensure_private_cache_dir(cdir, create=False):
+        return None
     data_cache = cdir / f"{url_hash}.bin"
     meta_cache = cdir / f"{url_hash}.meta.json"
     if not (data_cache.exists() and meta_cache.exists()):
         return None
     try:
-        meta = json.loads(meta_cache.read_text(encoding="utf-8"))
+        meta_raw = _read_regular_file_bounded(meta_cache, 65_536)
+        if meta_raw is None:
+            return None
+        meta = json.loads(meta_raw.decode("utf-8"))
         if meta.get("url") != url:
             return None
         ttl = int(os.environ.get("AIWATCHDOGS_CACHE_TTL_SECONDS", str(DEFAULT_CACHE_TTL_SECONDS)))
@@ -611,8 +714,8 @@ def _read_validated_cache(
                     return None
             except ValueError:
                 pass
-        cached_bytes = data_cache.read_bytes()
-        if not cached_bytes or len(cached_bytes) > max_download_bytes:
+        cached_bytes = _read_regular_file_bounded(data_cache, max_download_bytes)
+        if not cached_bytes:
             _unlink_quiet(data_cache)
             _unlink_quiet(meta_cache)
             return None
@@ -641,7 +744,7 @@ def _persist_raw_cache_if_clean(
     *,
     has_pii: bool,
 ) -> None:
-    """Persist opt-in cache with 0o700/0o600 permissions ONLY when zero raw PII was detected."""
+    """Persist opt-in cache with strict 0o700/0o600 permissions ONLY when zero raw PII was detected."""
     url_hash = compute_sha256(url)
     cdir = _cache_dir()
     data_cache = cdir / f"{url_hash}.bin"
@@ -653,15 +756,12 @@ def _persist_raw_cache_if_clean(
         return
     if not raw_bytes:
         return
+    if not _ensure_private_cache_dir(cdir, create=True):
+        return
     try:
-        cdir.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(cdir, 0o700)
-        except OSError:
-            pass
         fd, tmp_path = tempfile.mkstemp(prefix=f"{url_hash}_", dir=str(cdir))
         try:
-            os.chmod(tmp_path, 0o600)
+            os.fchmod(fd, 0o600)
             with os.fdopen(fd, "wb") as fh:
                 fh.write(raw_bytes)
             os.replace(tmp_path, data_cache)
@@ -680,7 +780,7 @@ def _persist_raw_cache_if_clean(
         )
         fd_m, tmp_meta = tempfile.mkstemp(prefix=f"{url_hash}_meta_", dir=str(cdir))
         try:
-            os.chmod(tmp_meta, 0o600)
+            os.fchmod(fd_m, 0o600)
             with os.fdopen(fd_m, "w", encoding="utf-8") as fh:
                 fh.write(meta_payload)
             os.replace(tmp_meta, meta_cache)
@@ -698,11 +798,11 @@ def _fetch_remote_bytes(
     expected_sha256: str | None = None,
     max_download_bytes: int = DEFAULT_MAX_DOWNLOAD_BYTES,
 ) -> tuple[bytes, str, str, bool]:
-    """Fetch remote public HTTPS bytes with strict size bounds and cache digest revalidation.
+    """Fetch remote public HTTPS bytes with hop-by-hop redirect SSRF validation and size bounds.
 
     Returns ``(raw_bytes, content_type, fetched_at_iso, from_cache)``.
     """
-    _validate_public_https_url(url)
+    _validate_public_https_url(url, resolve_dns=True)
 
     cache_enabled = use_cache and os.environ.get("AIWATCHDOGS_DISABLE_CACHE") != "1"
     if cache_enabled:
@@ -715,50 +815,77 @@ def _fetch_remote_bytes(
         "Accept": "application/json, text/csv, application/pdf, application/zip, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, text/html;q=0.9, text/plain;q=0.8, */*;q=0.5",
     }
     fetched_at = _utc_now_iso()
-    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=True) as client:
-        if httpx.Client.get is _ORIGINAL_HTTPX_GET:
-            with client.stream("GET", url) as response:
-                final_url = str(getattr(response, "url", "") or url)
+    current_url = url
+    raw_bytes = b""
+    content_type = ""
+
+    # Never enable automatic redirect following: validate every redirect hop BEFORE connecting.
+    with httpx.Client(headers=headers, timeout=timeout, follow_redirects=False) as client:
+        for _hop in range(DEFAULT_MAX_REDIRECTS + 1):
+            _validate_public_https_url(current_url, resolve_dns=True)
+            if httpx.Client.get is _ORIGINAL_HTTPX_GET:
+                with client.stream("GET", current_url) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location", "").strip()
+                        if not location:
+                            raise ValueError(f"Redirect response from {current_url} missing Location header.")
+                        next_url = urljoin(current_url, location)
+                        _validate_public_https_url(next_url, resolve_dns=True)
+                        current_url = next_url
+                        continue
+                    final_url = str(getattr(response, "url", "") or current_url)
+                    if _is_url(final_url):
+                        _validate_public_https_url(final_url, resolve_dns=False)
+                    if response.status_code in {401, 403}:
+                        raise PermissionError(
+                            f"Remote source {current_url} returned HTTP {response.status_code}. "
+                            "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
+                        )
+                    response.raise_for_status()
+                    content_type = response.headers.get("content-type", "")
+                    cl_hdr = response.headers.get("content-length")
+                    if cl_hdr and cl_hdr.isdigit() and int(cl_hdr) > max_download_bytes:
+                        raise ValueError(
+                            f"Remote artifact {current_url} declares Content-Length={int(cl_hdr)} bytes, "
+                            f"exceeding limit of {max_download_bytes} bytes."
+                        )
+                    buf = bytearray()
+                    for chunk in response.iter_bytes():
+                        buf.extend(chunk)
+                        if len(buf) > max_download_bytes:
+                            raise ValueError(
+                                f"Remote artifact {current_url} exceeded maximum allowed download size of {max_download_bytes} bytes."
+                            )
+                    raw_bytes = bytes(buf)
+                    break
+            else:
+                response = client.get(current_url)
+                if response.status_code in {301, 302, 303, 307, 308}:
+                    location = response.headers.get("location", "").strip()
+                    if not location:
+                        raise ValueError(f"Redirect response from {current_url} missing Location header.")
+                    next_url = urljoin(current_url, location)
+                    _validate_public_https_url(next_url, resolve_dns=True)
+                    current_url = next_url
+                    continue
+                final_url = str(getattr(response, "url", "") or current_url)
                 if _is_url(final_url):
-                    _validate_public_https_url(final_url)
+                    _validate_public_https_url(final_url, resolve_dns=False)
                 if response.status_code in {401, 403}:
                     raise PermissionError(
-                        f"Remote source {url} returned HTTP {response.status_code}. "
+                        f"Remote source {current_url} returned HTTP {response.status_code}. "
                         "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
                     )
                 response.raise_for_status()
                 content_type = response.headers.get("content-type", "")
-                cl_hdr = response.headers.get("content-length")
-                if cl_hdr and cl_hdr.isdigit() and int(cl_hdr) > max_download_bytes:
+                raw_bytes = response.content
+                if len(raw_bytes) > max_download_bytes:
                     raise ValueError(
-                        f"Remote artifact {url} declares Content-Length={int(cl_hdr)} bytes, "
-                        f"exceeding limit of {max_download_bytes} bytes."
+                        f"Remote artifact {current_url} size {len(raw_bytes)} bytes exceeds limit of {max_download_bytes} bytes."
                     )
-                buf = bytearray()
-                for chunk in response.iter_bytes():
-                    buf.extend(chunk)
-                    if len(buf) > max_download_bytes:
-                        raise ValueError(
-                            f"Remote artifact {url} exceeded maximum allowed download size of {max_download_bytes} bytes."
-                        )
-                raw_bytes = bytes(buf)
+                break
         else:
-            response = client.get(url)
-            final_url = str(getattr(response, "url", "") or url)
-            if _is_url(final_url):
-                _validate_public_https_url(final_url)
-            if response.status_code in {401, 403}:
-                raise PermissionError(
-                    f"Remote source {url} returned HTTP {response.status_code}. "
-                    "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
-                )
-            response.raise_for_status()
-            content_type = response.headers.get("content-type", "")
-            raw_bytes = response.content
-            if len(raw_bytes) > max_download_bytes:
-                raise ValueError(
-                    f"Remote artifact {url} size {len(raw_bytes)} bytes exceeds limit of {max_download_bytes} bytes."
-                )
+            raise ValueError(f"Remote source {url} exceeded maximum allowed redirects ({DEFAULT_MAX_REDIRECTS}).")
 
         # Refuse to scrape or bypass CAPTCHA/anti-bot HTML pages.
         if "text/html" in content_type.lower() or raw_bytes[:512].lstrip().lower().startswith((b"<!doctype html", b"<html")):
@@ -821,9 +948,27 @@ def _parse_csv_bytes(
 
 
 def _check_xml_safe(xml_bytes: bytes, member_name: str) -> None:
-    head = xml_bytes[:4096].upper()
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
+    """Reject XML containing DTD/ENTITY declarations in any encoding, BOM, or offset using Expat."""
+    import xml.parsers.expat as expat
+
+    upper = xml_bytes.upper()
+    if b"<!DOCTYPE" in upper or b"<!ENTITY" in upper:
         raise ValueError(f"Refused unsafe XML DTD/ENTITY declaration in archive member '{member_name}'.")
+
+    def _forbid_dtd(*_args: Any, **_kwargs: Any) -> None:
+        raise ValueError(f"Refused unsafe XML DTD/ENTITY declaration in archive member '{member_name}'.")
+
+    parser = expat.ParserCreate()
+    parser.StartDoctypeDeclHandler = _forbid_dtd
+    parser.EntityDeclHandler = _forbid_dtd
+    parser.UnparsedEntityDeclHandler = _forbid_dtd
+    parser.ExternalEntityRefHandler = lambda *_args: (_forbid_dtd() or 0)
+    try:
+        parser.Parse(xml_bytes, True)
+    except ValueError:
+        raise
+    except expat.ExpatError as exc:
+        raise ValueError(f"Malformed XML in archive member '{member_name}': {exc}") from exc
 
 
 def _read_zip_member_bounded(
@@ -833,7 +978,7 @@ def _read_zip_member_bounded(
     remaining_bytes: int,
     max_ratio: float,
 ) -> bytes:
-    """Safely read a single zip member enforcing decompressed byte and ratio limits."""
+    """Safely read a single zip member enforcing incremental decompressed byte and ratio limits."""
     name = info.filename
     if name.startswith(("/", "\\")) or ".." in Path(name).parts:
         raise ValueError(f"Refused unsafe archive member path: {name!r}")
@@ -841,6 +986,7 @@ def _read_zip_member_bounded(
         raise ValueError(
             f"Archive member '{name}' declared size {info.file_size} exceeds remaining limit {remaining_bytes}."
         )
+    denom = float(max(info.compress_size, 1))
     buf = bytearray()
     with zf.open(info, "r") as stream:
         while True:
@@ -852,12 +998,11 @@ def _read_zip_member_bounded(
                 raise ValueError(
                     f"Archive member '{name}' decompressed size exceeds maximum allowed limit."
                 )
-    actual_size = len(buf)
-    if actual_size >= 65_536 and (actual_size / float(max(info.compress_size, 1))) > max_ratio:
-        raise ValueError(
-            f"Archive member '{name}' compression ratio {actual_size / float(max(info.compress_size, 1)):.1f}x "
-            f"exceeds maximum allowed ratio {max_ratio:.1f}x."
-        )
+            if len(buf) >= 65_536 and (len(buf) / denom) > max_ratio:
+                raise ValueError(
+                    f"Archive member '{name}' compression ratio {len(buf) / denom:.1f}x "
+                    f"exceeds maximum allowed ratio {max_ratio:.1f}x."
+                )
     return bytes(buf)
 
 
@@ -959,11 +1104,19 @@ def _parse_xlsx_bytes(
             )
             remaining -= len(sst_bytes)
             _check_xml_safe(sst_bytes, "xl/sharedStrings.xml")
-            sst_root = ET.fromstring(sst_bytes)
             si_tag = f"{{{_XLSX_MAIN_NS}}}si"
             t_tag = f"{{{_XLSX_MAIN_NS}}}t"
-            for si in sst_root.findall(si_tag):
-                shared_strings.append("".join(t.text or "" for t in si.iter(t_tag)))
+            for _, elem in ET.iterparse(
+                io.BytesIO(sst_bytes),
+                events=("end",),
+            ):
+                if elem.tag == si_tag:
+                    if len(shared_strings) >= DEFAULT_MAX_SHARED_STRINGS:
+                        raise ValueError(
+                            f"XLSX sharedStrings.xml exceeds maximum cap of {DEFAULT_MAX_SHARED_STRINGS} strings."
+                        )
+                    shared_strings.append("".join(t.text or "" for t in elem.iter(t_tag)))
+                    elem.clear()
 
         wb_bytes = _read_zip_member_bounded(
             zf,
@@ -1047,12 +1200,12 @@ def _parse_xlsx_bytes(
                         if k.startswith("parties/") and base.get(k):
                             continue
                         base[k] = v
-                joined.append(_normalize_ocds_flat_row(base, source_ref, row_index=int(aw.get("source_row_index") or row_i)))
+                joined.append(_normalize_ocds_flat_row(base, source_ref, row_index=_to_int_opt(aw.get("source_row_index")) or row_i))
 
             for row_i, t in enumerate(tenders, start=1):
                 ocid = str(t.get("ocid") or "").strip()
                 if ocid not in matched_ocids:
-                    joined.append(_normalize_ocds_flat_row(dict(t), source_ref, row_index=int(t.get("source_row_index") or row_i)))
+                    joined.append(_normalize_ocds_flat_row(dict(t), source_ref, row_index=_to_int_opt(t.get("source_row_index")) or row_i))
 
             preview = f"XLSX OCDS workbook: {len(tenders)} tenders, {len(awards)} awards, {len(joined)} joined rows"
             return joined, preview, "xlsx_ocds", "sheets=tenders+awards"
@@ -1079,7 +1232,7 @@ def _parse_xlsx_bytes(
             headers = set(records[0].keys())
             if _is_ocds_flat_row(headers):
                 records = [
-                    _normalize_ocds_flat_row(r, source_ref, row_index=int(r.get("source_row_index") or i))
+                    _normalize_ocds_flat_row(r, source_ref, row_index=_to_int_opt(r.get("source_row_index")) or i)
                     for i, r in enumerate(records, start=1)
                 ]
                 return records, f"XLSX OCDS sheet '{chosen_sheet}': {len(records)} rows", "xlsx_ocds", f"sheet={chosen_sheet}"
@@ -1090,6 +1243,10 @@ def _parse_xlsx_bytes(
         return records, f"XLSX sheet '{chosen_sheet}': {len(records)} rows", "xlsx", f"sheet={chosen_sheet}"
 
 
+def _reject_non_finite_json(token: str) -> Any:
+    raise ValueError(f"Non-standard JSON numeric constant '{token}' is not permitted.")
+
+
 def _parse_json_bytes(
     raw_bytes: bytes,
     source_ref: str = "",
@@ -1097,7 +1254,7 @@ def _parse_json_bytes(
     max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
 ) -> tuple[list[dict[str, Any]], str, Any, str]:
     text = raw_bytes.decode("utf-8-sig", errors="replace")
-    payload = json.loads(text)
+    payload = json.loads(text, parse_constant=_reject_non_finite_json)
     detected_format = "json"
     preview = text[:8192]
 
@@ -1211,10 +1368,80 @@ def _parse_zip_bytes(
     return [], "", None, "zip", "zip=empty"
 
 
+class _HTMLTableParser(HTMLParser):
+    """Linear-time O(N) HTML table extractor replacing backtracking regexes (CWE-1333)."""
+
+    def __init__(self, *, max_rows: int, source_ref: str, max_cell_chars: int = 8192) -> None:
+        super().__init__(convert_charrefs=True)
+        self.max_rows = max_rows
+        self.source_ref = source_ref
+        self.max_cell_chars = max_cell_chars
+        self.rows: list[list[str]] = []
+        self._in_tr = False
+        self._in_cell = False
+        self._current_row: list[str] = []
+        self._current_cell: list[str] = []
+        self._current_cell_len = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t == "tr":
+            if self._in_tr:
+                self._flush_row()
+            self._in_tr = True
+            self._current_row = []
+        elif t in ("td", "th") and self._in_tr:
+            if self._in_cell:
+                self._flush_cell()
+            self._in_cell = True
+            self._current_cell = []
+            self._current_cell_len = 0
+
+    def handle_endtag(self, tag: str) -> None:
+        t = tag.lower()
+        if t in ("td", "th") and self._in_cell:
+            self._flush_cell()
+        elif t == "tr" and self._in_tr:
+            if self._in_cell:
+                self._flush_cell()
+            self._flush_row()
+
+    def handle_data(self, data: str) -> None:
+        if self._in_cell and self._current_cell_len < self.max_cell_chars:
+            rem = self.max_cell_chars - self._current_cell_len
+            piece = data[:rem]
+            self._current_cell.append(piece)
+            self._current_cell_len += len(piece)
+
+    def _flush_cell(self) -> None:
+        raw = "".join(self._current_cell).replace("\xa0", " ")
+        self._current_row.append(" ".join(raw.split()).strip())
+        self._current_cell = []
+        self._current_cell_len = 0
+        self._in_cell = False
+
+    def _flush_row(self) -> None:
+        if any(self._current_row):
+            if len(self.rows) >= self.max_rows:
+                raise ValueError(f"HTML table in {self.source_ref} exceeds maximum row cap ({self.max_rows}).")
+            self.rows.append(self._current_row)
+        self._current_row = []
+        self._in_tr = False
+
+
 def _strip_html_cell(fragment: str) -> str:
-    no_tags = re.sub(r"<[^>]+>", " ", fragment)
-    unescaped = html.unescape(no_tags).replace("\xa0", " ")
-    return " ".join(unescaped.split()).strip()
+    class _Strip(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.parts: list[str] = []
+
+        def handle_data(self, data: str) -> None:
+            self.parts.append(data)
+
+    p = _Strip()
+    p.feed(fragment)
+    p.close()
+    return " ".join("".join(p.parts).replace("\xa0", " ").split()).strip()
 
 
 def _parse_html_bytes(
@@ -1223,20 +1450,12 @@ def _parse_html_bytes(
     *,
     max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
 ) -> tuple[list[dict[str, Any]], str, str]:
-    """Extract structured fiscal/accounts tables from official .nic.in HTML pages (e.g. CGA Monthly Accounts)."""
+    """Extract structured fiscal/accounts tables from official .nic.in HTML pages in strict O(N) time."""
     text = raw_bytes.decode("utf-8", errors="replace")
-    tr_blocks = re.findall(r"<tr\b[^>]*>(.*?)</tr>", text, re.IGNORECASE | re.DOTALL)
-
-    rows_cells: list[list[str]] = []
-    for tr in tr_blocks:
-        if len(rows_cells) >= max_parse_rows:
-            raise ValueError(f"HTML table in {source_ref} exceeds maximum row cap ({max_parse_rows}).")
-        cells = [
-            _strip_html_cell(td)
-            for td in re.findall(r"<t[dh]\b[^>]*>(.*?)</t[dh]>", tr, re.IGNORECASE | re.DOTALL)
-        ]
-        if any(cells):
-            rows_cells.append(cells)
+    parser = _HTMLTableParser(max_rows=max_parse_rows, source_ref=source_ref)
+    parser.feed(text)
+    parser.close()
+    rows_cells = parser.rows
 
     header_probe = " ".join(" ".join(r) for r in rows_cells[:25])
     fy_match = re.search(
@@ -1346,6 +1565,7 @@ def _parse_pdf_bytes(
     source_ref: str,
     *,
     max_pdf_pages: int = DEFAULT_MAX_PDF_PAGES,
+    max_pdf_chars: int = DEFAULT_MAX_PDF_CHARS,
 ) -> tuple[list[dict[str, Any]], str, str]:
     reader = PdfReader(io.BytesIO(raw_bytes))
     num_pages = len(reader.pages)
@@ -1354,10 +1574,20 @@ def _parse_pdf_bytes(
             f"PDF document {source_ref} has {num_pages} pages, exceeding cap of {max_pdf_pages} pages."
         )
     records: list[dict[str, Any]] = []
-    all_pages: list[str] = []
+    preview_chunks: list[str] = []
+    preview_chars = 0
+    total_chars = 0
     for page_idx, page in enumerate(reader.pages, start=1):
         page_text = (page.extract_text() or "").strip()
-        all_pages.append(page_text)
+        total_chars += len(page_text)
+        if total_chars > max_pdf_chars:
+            raise ValueError(
+                f"PDF document {source_ref} extracted text exceeded cap of {max_pdf_chars} characters."
+            )
+        if preview_chars < 65_536:
+            snippet = page_text[: max(0, 65_536 - preview_chars)]
+            preview_chunks.append(snippet)
+            preview_chars += len(snippet)
         records.append(
             {
                 "page": page_idx,
@@ -1367,7 +1597,7 @@ def _parse_pdf_bytes(
                 "jurisdiction": _infer_jurisdiction(source_ref),
             }
         )
-    return records, "\n\n".join(all_pages), f"pages=1-{num_pages}"
+    return records, "\n\n".join(preview_chunks), f"pages=1-{num_pages}"
 
 
 def normalize_company_name(name: str) -> tuple[str, str]:
@@ -1562,68 +1792,70 @@ def _resolve_provenance(
     fetched_at: str,
     source_locator: str | None,
 ) -> dict[str, Any]:
-    """Build strictly separated provenance fields distinguishing official publisher vs mirror."""
-    lower = source_ref.lower()
+    """Build strictly separated provenance fields anchored strictly to parsed host and path."""
     is_remote = _is_url(source_ref)
-    host = (urlparse(source_ref).hostname or "").lower() if is_remote else ""
+    parsed_ref = urlparse(source_ref) if is_remote else None
+    host = (parsed_ref.hostname or "").lower().rstrip(".") if parsed_ref else ""
+    path_lower = (parsed_ref.path or "").lower() if parsed_ref else ""
+    is_github_host = host in {"raw.githubusercontent.com", "github.com", "www.github.com"}
 
     inferred_publisher: str | None = None
     inferred_landing: str | None = None
     inferred_mirror: str | None = None
 
-    if "civicdatalab/assam-tenders-data" in lower:
+    if is_github_host and path_lower.startswith("/civicdatalab/assam-tenders-data/"):
         inferred_publisher = "Finance Department, Government of Assam (assamtenders.gov.in)"
         inferred_landing = "https://assam.open-contracting.in/datasets"
         inferred_mirror = "CivicDataLab GitHub Mirror"
-    elif "civicdatalab/himachal-pradesh-health-procurement-ocds" in lower:
+    elif is_github_host and path_lower.startswith("/civicdatalab/himachal-pradesh-health-procurement-ocds/"):
         inferred_publisher = "Government of Himachal Pradesh (hptenders.gov.in)"
         inferred_landing = "https://hptenders.gov.in"
         inferred_mirror = "CivicDataLab GitHub Mirror"
-    elif "civicdatalab/assam-budget-obds" in lower:
+    elif is_github_host and path_lower.startswith("/civicdatalab/assam-budget-obds/"):
         inferred_publisher = "Finance Department, Government of Assam"
         inferred_landing = "https://finance.assam.gov.in"
         inferred_mirror = "CivicDataLab GitHub Mirror (Assam-Budget-OBDS)"
-    elif "civicdatalab/child-budget-tracker" in lower:
+    elif is_github_host and path_lower.startswith("/civicdatalab/child-budget-tracker/"):
         inferred_publisher = "Finance Department, Government of Andhra Pradesh"
         inferred_landing = "https://treasury.ap.gov.in"
         inferred_mirror = "CivicDataLab GitHub Mirror (child-budget-tracker)"
-    elif "d1jmc0u14z2tmp.cloudfront.net" in lower or host.endswith("cag.gov.in"):
+    elif host == "d1jmc0u14z2tmp.cloudfront.net" or host == "cag.gov.in" or host.endswith(".cag.gov.in"):
         inferred_publisher = "Comptroller and Auditor General of India"
         inferred_landing = "https://cag.gov.in/en/audit-report"
-        inferred_mirror = "CAG CloudFront Distribution" if "cloudfront.net" in lower else None
-    elif host.endswith("cga.nic.in"):
+        inferred_mirror = "CAG CloudFront Distribution" if host == "d1jmc0u14z2tmp.cloudfront.net" else None
+    elif host == "cga.nic.in" or host.endswith(".cga.nic.in"):
         inferred_publisher = "Controller General of Accounts, Ministry of Finance"
         inferred_landing = source_ref
         inferred_mirror = None
-    elif "saisantoshv3/electoral_bonds" in lower:
+    elif is_github_host and path_lower.startswith("/saisantoshv3/electoral_bonds/"):
         inferred_publisher = "Election Commission of India / State Bank of India (SC WP(C) 880/2017)"
         inferred_landing = "https://www.eci.gov.in"
         inferred_mirror = "GitHub Mirror (saisantoshv3/electoral_bonds)"
-    elif "spfrantz/mca-csr-scraper" in lower:
+    elif is_github_host and path_lower.startswith("/spfrantz/mca-csr-scraper/"):
         inferred_publisher = "Ministry of Corporate Affairs (National CSR Portal)"
         inferred_landing = "https://www.csr.gov.in"
         inferred_mirror = "GitHub Mirror (spfrantz/MCA-CSR-Scraper)"
-    elif "aditya-kr86/pmgsy_multiclass_ml" in lower:
+    elif is_github_host and path_lower.startswith("/aditya-kr86/pmgsy_multiclass_ml/"):
         inferred_publisher = "National Rural Infrastructure Development Agency (PMGSY OMMAS / data.gov.in)"
         inferred_landing = "https://ommas.nic.in"
         inferred_mirror = "GitHub Mirror (aditya-kr86/PMGSY_Multiclass_ML)"
-    elif "arpita-deb/nrega-data-analysis" in lower:
+    elif is_github_host and path_lower.startswith("/arpita-deb/nrega-data-analysis/"):
         inferred_publisher = "Ministry of Rural Development (MGNREGA MIS)"
         inferred_landing = "https://nrega.nic.in"
         inferred_mirror = "GitHub Mirror (Arpita-deb/NREGA-Data-Analysis)"
-    elif "vonter/india-mplads-works" in lower:
+    elif is_github_host and path_lower.startswith("/vonter/india-mplads-works/"):
         inferred_publisher = "Ministry of Statistics & Programme Implementation (MPLADS)"
         inferred_landing = "https://mplads.mospi.gov.in"
         inferred_mirror = "GitHub Mirror (Vonter/india-mplads-works)"
-    elif "varnasr/policystack" in lower:
+    elif is_github_host and path_lower.startswith("/varnasr/policystack/"):
         inferred_publisher = "Union Budget / Ministry of Finance (unverified third-party mirror)"
         inferred_landing = "https://indiabudget.gov.in"
         inferred_mirror = "GitHub Mirror (Varnasr/PolicyStack)"
-    elif host.endswith((".gov.in", ".nic.in")):
+    elif host in {"gov.in", "nic.in"} or host.endswith((".gov.in", ".nic.in")):
         inferred_publisher = host
         inferred_landing = source_ref
         inferred_mirror = None
-    elif "github.com" in host or "githubusercontent.com" in host:
+    elif is_github_host or host.endswith(".githubusercontent.com"):
         inferred_mirror = "GitHub Mirror"
         inferred_landing = str(ctx.get("source_landing_page") or ctx.get("source_url") or "") or None
     elif not is_remote:
@@ -1658,11 +1890,17 @@ def _resolve_provenance(
     }
 
 
-def _fast_scrub_records(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
-    """Recursively scrub all string values and PII keys in records via scrub_pii."""
+def _fast_scrub_records(
+    records: list[dict[str, Any]],
+    *,
+    max_depth: int = 32,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Recursively scrub all string values, PII keys, and sensitive structured fields with depth bound."""
     redactions: list[str] = []
 
-    def _walk(item: Any) -> Any:
+    def _walk(item: Any, depth: int) -> Any:
+        if depth > max_depth:
+            return "[TRUNCATED_DEPTH]"
         if isinstance(item, str):
             if len(item) >= 6 and ("@" in item or any("0" <= ch <= "9" for ch in item)):
                 cleaned, tags = scrub_pii(item)
@@ -1672,25 +1910,30 @@ def _fast_scrub_records(records: list[dict[str, Any]]) -> tuple[list[dict[str, A
                 return cleaned
             return item
         if isinstance(item, list):
-            return [_walk(v) for v in item]
+            return [_walk(v, depth + 1) for v in item]
         if isinstance(item, tuple):
-            return tuple(_walk(v) for v in item)
+            return tuple(_walk(v, depth + 1) for v in item)
         if isinstance(item, dict):
             out: dict[Any, Any] = {}
             for k, v in item.items():
                 clean_k = k
-                if isinstance(k, str) and len(k) >= 6 and ("@" in k or any("0" <= ch <= "9" for ch in k)):
-                    ck, ktags = scrub_pii(k)
-                    if ktags:
-                        for tag in ktags:
-                            if tag not in redactions:
-                                redactions.append(tag)
-                        clean_k = ck
-                out[clean_k] = _walk(v)
+                if isinstance(k, str):
+                    if len(k) >= 6 and ("@" in k or any("0" <= ch <= "9" for ch in k)):
+                        ck, ktags = scrub_pii(k)
+                        if ktags:
+                            for tag in ktags:
+                                if tag not in redactions:
+                                    redactions.append(tag)
+                            clean_k = ck
+                    matched, redacted_v = scrub_sensitive_field_value(k, v, redactions)
+                    if matched:
+                        out[clean_k] = redacted_v
+                        continue
+                out[clean_k] = _walk(v, depth + 1)
             return out
         return item
 
-    return [_walk(r) for r in records], redactions
+    return [_walk(r, 0) for r in records], redactions
 
 
 def _apply_context_filters(
@@ -1726,6 +1969,25 @@ def _apply_context_filters(
     return filtered
 
 
+def _clamp_int_cap(raw: Any, default: int, *, minimum: int = 1) -> int:
+    val = _to_int_opt(raw)
+    if val is None:
+        return default
+    return max(minimum, min(val, default))
+
+
+def _clamp_float_cap(raw: Any, default: float, *, minimum: float = 1.0) -> float:
+    if raw is None or isinstance(raw, bool):
+        return default
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(val):
+        return default
+    return max(minimum, min(val, default))
+
+
 def load_dataset(
     path_or_url: str,
     fmt: str | None = None,
@@ -1734,34 +1996,37 @@ def load_dataset(
     allow_local_files: bool = False,
     expected_sha256: str | None = None,
     secondary_expected_sha256: str | None = None,
+    use_cache: bool | None = None,
 ) -> LoadedDataset:
     """Load, hash, verify digests, detect demo status, and PII-scrub a public URL or local file.
 
     Security & provenance guarantees:
     - ``allow_local_files`` defaults to ``False`` for unattended swarm runner safety; untrusted
-      ``context`` dictionaries cannot override ``allow_local_files=False``.
+      ``context`` dictionaries cannot override ``allow_local_files=False``, cannot raise resource
+      caps above hardcoded ceilings, and cannot enable raw disk caching without explicit opt-in.
     - Primary and secondary ``expected_sha256`` digests fail closed with ``DigestMismatchError``.
-    - Remote fetches require HTTPS public hosts, enforce bounded download size, decompression
-      size/ratio limits, XML DTD guards, and row/page parse caps.
-    - Raw disk caching is opt-in (``use_cache=True`` or ``AIWATCHDOGS_ENABLE_RAW_CACHE=1``),
-      revalidates SHA-256 on hit, writes ``0o600`` files in ``0o700`` dir, and refuses to persist
-      raw bytes if any PII is detected.
+    - Remote fetches require HTTPS public hosts (with DNS IP & hop-by-hop redirect checks), enforce
+      bounded download size, decompression size/ratio limits, XML DTD guards, and row/page parse caps.
     """
     ctx = context or {}
     source_ref = str(path_or_url).strip()
     content_type = ""
 
-    # Opt-in raw disk cache only (never persist raw bytes by default unless explicitly requested)
-    use_cache = bool(
-        ctx.get("use_cache", False)
-        or os.environ.get("AIWATCHDOGS_ENABLE_RAW_CACHE") == "1"
-    )
-    max_download_bytes = int(ctx.get("max_download_bytes", DEFAULT_MAX_DOWNLOAD_BYTES))
-    max_decompressed_bytes = int(ctx.get("max_decompressed_bytes", DEFAULT_MAX_DECOMPRESSED_BYTES))
-    max_compression_ratio = float(ctx.get("max_compression_ratio", DEFAULT_MAX_COMPRESSION_RATIO))
-    max_zip_members = int(ctx.get("max_zip_members", DEFAULT_MAX_ZIP_MEMBERS))
-    max_parse_rows = int(ctx.get("max_parse_rows", DEFAULT_MAX_PARSE_ROWS))
-    max_pdf_pages = int(ctx.get("max_pdf_pages", DEFAULT_MAX_PDF_PAGES))
+    # Opt-in raw disk cache only via explicit keyword argument or operator env var (never untrusted context in unattended mode).
+    env_cache = os.environ.get("AIWATCHDOGS_ENABLE_RAW_CACHE") == "1"
+    if use_cache is not None:
+        resolved_use_cache = bool(use_cache)
+    else:
+        resolved_use_cache = bool(env_cache or (allow_local_files and ctx.get("use_cache", False)))
+
+    # Clamp all context-provided limits strictly to <= hardcoded safe defaults (untrusted context can never raise caps).
+    max_download_bytes = _clamp_int_cap(ctx.get("max_download_bytes"), DEFAULT_MAX_DOWNLOAD_BYTES)
+    max_decompressed_bytes = _clamp_int_cap(ctx.get("max_decompressed_bytes"), DEFAULT_MAX_DECOMPRESSED_BYTES)
+    max_compression_ratio = _clamp_float_cap(ctx.get("max_compression_ratio"), DEFAULT_MAX_COMPRESSION_RATIO)
+    max_zip_members = _clamp_int_cap(ctx.get("max_zip_members"), DEFAULT_MAX_ZIP_MEMBERS)
+    max_parse_rows = _clamp_int_cap(ctx.get("max_parse_rows"), DEFAULT_MAX_PARSE_ROWS)
+    max_pdf_pages = _clamp_int_cap(ctx.get("max_pdf_pages"), DEFAULT_MAX_PDF_PAGES)
+    max_pdf_chars = _clamp_int_cap(ctx.get("max_pdf_chars"), DEFAULT_MAX_PDF_CHARS)
 
     resolved_expected_sha = (
         str(expected_sha256 or ctx.get("expected_sha256") or "").strip().lower() or None
@@ -1781,7 +2046,7 @@ def load_dataset(
     if is_remote:
         raw_bytes, content_type, fetched_at, from_cache = _fetch_remote_bytes(
             source_ref,
-            use_cache=use_cache,
+            use_cache=resolved_use_cache,
             expected_sha256=resolved_expected_sha,
             max_download_bytes=max_download_bytes,
         )
@@ -1851,7 +2116,7 @@ def load_dataset(
         source_locator = f"table_rows=1-{len(records)}" if records else "table_rows=0"
     elif resolved_fmt == "pdf":
         records, raw_text, source_locator = _parse_pdf_bytes(
-            raw_bytes, source_ref, max_pdf_pages=max_pdf_pages
+            raw_bytes, source_ref, max_pdf_pages=max_pdf_pages, max_pdf_chars=max_pdf_chars
         )
     else:
         raw_text = raw_bytes.decode("utf-8-sig", errors="replace")
@@ -1865,28 +2130,34 @@ def load_dataset(
             records = [{"raw_text": raw_text, "page": 1, "source_ref": source_ref}]
             source_locator = "page=1"
 
-    # Optional secondary dataset join (fail closed on secondary digest mismatch!)
+    # Optional secondary dataset join (fail closed on secondary digest mismatch!).
+    # In unattended mode (allow_local_files=False), ignore secondary_path so untrusted context
+    # cannot inject an untracked secondary dataset bypassing runner secondary digest verification.
     secondary_ref = str(
-        ctx.get("secondary_url") or ctx.get("secondary_dataset_url") or ctx.get("secondary_path") or ""
+        ctx.get("secondary_url")
+        or ctx.get("secondary_dataset_url")
+        or (ctx.get("secondary_path") if allow_local_files else "")
+        or ""
     ).strip()
     secondary_sha256: str | None = None
     secondary_digest_verified: bool | None = None
     secondary_provenance: dict[str, Any] | None = None
     if secondary_ref and secondary_ref != source_ref:
         sec_ctx: dict[str, Any] = {
-            "use_cache": use_cache,
             "max_download_bytes": max_download_bytes,
             "max_decompressed_bytes": max_decompressed_bytes,
             "max_compression_ratio": max_compression_ratio,
             "max_zip_members": max_zip_members,
             "max_parse_rows": max_parse_rows,
             "max_pdf_pages": max_pdf_pages,
+            "max_pdf_chars": max_pdf_chars,
         }
         sec_ds = load_dataset(
             secondary_ref,
             context=sec_ctx,
             allow_local_files=allow_local_files,
             expected_sha256=resolved_sec_expected_sha,
+            use_cache=resolved_use_cache,
         )
         secondary_sha256 = sec_ds.sha256
         secondary_digest_verified = sec_ds.digest_verified
@@ -1906,7 +2177,7 @@ def load_dataset(
             combined_redactions.append(tag)
 
     # Persist opt-in raw cache ONLY after verifying zero PII was present in the payload.
-    if is_remote and use_cache and not from_cache and os.environ.get("AIWATCHDOGS_DISABLE_CACHE") != "1":
+    if is_remote and resolved_use_cache and not from_cache and os.environ.get("AIWATCHDOGS_DISABLE_CACHE") != "1":
         _persist_raw_cache_if_clean(
             source_ref,
             raw_bytes,

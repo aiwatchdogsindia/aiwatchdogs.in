@@ -1101,18 +1101,33 @@ def seed_database(db: Database, repo_root: Path | None = None) -> bool:
     """
     _ = repo_root  # Retained in signature for caller compatibility
 
-    with db.read() as conn:
+    canonical_source_ids = tuple(src["id"] for src in PUBLIC_SOURCES)
+    canonical_mission_ids = tuple(m["id"] for m in SEED_MISSIONS)
+    src_placeholders = ",".join("?" for _ in canonical_source_ids)
+    mis_placeholders = ",".join("?" for _ in canonical_mission_ids)
+
+    def _is_seed_current(conn: Any) -> bool:
         state_row = conn.execute(
             "SELECT version FROM seed_state WHERE key = 'canonical_seed'"
         ).fetchone()
-        src_cnt = int(conn.execute("SELECT COUNT(*) AS cnt FROM public_sources").fetchone()["cnt"])
-        mis_cnt = int(conn.execute("SELECT COUNT(*) AS cnt FROM missions").fetchone()["cnt"])
-        if (
-            state_row is not None
-            and int(state_row["version"]) >= SEED_VERSION
-            and src_cnt >= len(PUBLIC_SOURCES)
-            and mis_cnt >= len(SEED_MISSIONS)
-        ):
+        if state_row is None or int(state_row["version"]) < SEED_VERSION:
+            return False
+        src_cnt = int(
+            conn.execute(
+                f"SELECT COUNT(*) AS cnt FROM public_sources WHERE id IN ({src_placeholders})",
+                canonical_source_ids,
+            ).fetchone()["cnt"]
+        )
+        mis_cnt = int(
+            conn.execute(
+                f"SELECT COUNT(*) AS cnt FROM missions WHERE id IN ({mis_placeholders})",
+                canonical_mission_ids,
+            ).fetchone()["cnt"]
+        )
+        return src_cnt >= len(canonical_source_ids) and mis_cnt >= len(canonical_mission_ids)
+
+    with db.read() as conn:
+        if _is_seed_current(conn):
             return False
 
     now_iso = _utc_now_iso()
@@ -1121,18 +1136,13 @@ def seed_database(db: Database, repo_root: Path | None = None) -> bool:
         if db.is_postgres:
             conn.execute(f"SELECT pg_advisory_xact_lock({PG_SEED_ADVISORY_LOCK_KEY})")
 
+        if _is_seed_current(conn):
+            return False
+
         state_row = conn.execute(
             "SELECT version FROM seed_state WHERE key = 'canonical_seed'"
         ).fetchone()
-        src_cnt = int(conn.execute("SELECT COUNT(*) AS cnt FROM public_sources").fetchone()["cnt"])
         mis_cnt = int(conn.execute("SELECT COUNT(*) AS cnt FROM missions").fetchone()["cnt"])
-        if (
-            state_row is not None
-            and int(state_row["version"]) >= SEED_VERSION
-            and src_cnt >= len(PUBLIC_SOURCES)
-            and mis_cnt >= len(SEED_MISSIONS)
-        ):
-            return False
 
         # 1. Upsert all 15 canonical Indian public data sources (Tiers 1-3)
         for src in PUBLIC_SOURCES:

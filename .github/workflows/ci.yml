@@ -6,16 +6,21 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
   python-tests:
     name: Python 3.14, Locked Deps & Pytest
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install uv and Python 3.14
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           python-version: "3.14"
           enable-cache: true
@@ -52,10 +57,12 @@ jobs:
           --health-retries=10
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install uv and Python 3.14
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           python-version: "3.14"
           enable-cache: true
@@ -76,10 +83,12 @@ jobs:
         working-directory: web
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Setup Node 26
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "26"
           cache: "npm"
@@ -88,12 +97,44 @@ jobs:
       - name: Install frontend dependencies, typecheck, and build
         run: npm ci && npx tsc --noEmit && npm run build
 
+  security-audit:
+    name: Dependency Security Audit (pip-audit & npm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python 3.14
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Setup Node 26
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "26"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Audit Python locked dependencies (pip-audit)
+        shell: bash
+        run: uvx pip-audit -r <(uv export --format requirements-txt --no-hashes --no-emit-project)
+
+      - name: Audit web npm dependencies (npm audit)
+        working-directory: web
+        run: npm audit --audit-level=moderate
+
   container-smoke:
     name: Docker Build & /health Startup Check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Verify Dockerfile pins base images and has no missing datasets/ copy
         run: |

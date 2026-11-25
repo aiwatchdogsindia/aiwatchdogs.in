@@ -23,24 +23,99 @@ import type {
   WhisperItem,
 } from '../types';
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json', ...(init?.headers || {}) },
+const DEFAULT_TIMEOUT_MS = 15000;
+
+const SENSITIVE_ERROR_PATTERN =
+  /DATABASE_URL|POSTGRES_URL|PGPASSWORD|SECRET|TOKEN|Traceback|File\s+"|psycopg|sqlalchemy|sqlite3|ECONNREFUSED|127\.0\.0\.1|localhost:\d+/i;
+
+function sanitizeErrorMessage(status: number | null, rawDetail: string): string {
+  if (import.meta.env.DEV) {
+    return rawDetail;
+  }
+  if (status === null) {
+    return 'Unable to reach the service right now. Please try again shortly.';
+  }
+  if (status >= 500) {
+    return `Service temporarily unavailable (HTTP ${status}). Please try again shortly.`;
+  }
+  if (status === 429) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  const cleaned = rawDetail.replace(/[\r\n]+/g, ' ').trim();
+  if (!cleaned || cleaned.length > 240 || SENSITIVE_ERROR_PATTERN.test(cleaned)) {
+    return `Request could not be completed (HTTP ${status}).`;
+  }
+  return cleaned;
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<Response> {
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal: externalSignal, ...fetchInit } = init ?? {};
+  const controller = new AbortController();
+  let timedOut = false;
+
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort();
+    } else {
+      externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+  }
+
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...fetchInit,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (timedOut) {
+      throw new Error(
+        import.meta.env.DEV
+          ? `Request timed out after ${timeoutMs}ms`
+          : 'Request timed out. Please try again.',
+      );
+    }
+    const rawMsg = err instanceof Error ? err.message : 'Network error';
+    throw new Error(sanitizeErrorMessage(null, rawMsg));
+  } finally {
+    window.clearTimeout(timeoutId);
+    if (externalSignal) {
+      externalSignal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+}
+
+async function fetchJson<T>(
+  url: string,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<T> {
+  const res = await fetchWithTimeout(url, {
     ...init,
+    headers: { Accept: 'application/json', ...(init?.headers || {}) },
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body?.detail
-        ? typeof body.detail === 'string'
-          ? body.detail
-          : JSON.stringify(body.detail)
-        : detail;
-    } catch {
-      // ignore non-json error body
+    if (import.meta.env.DEV || res.status < 500) {
+      try {
+        const body = await res.json();
+        detail = body?.detail
+          ? typeof body.detail === 'string'
+            ? body.detail
+            : JSON.stringify(body.detail)
+          : detail;
+      } catch {
+        // ignore non-json error body
+      }
     }
-    throw new Error(detail);
+    throw new Error(sanitizeErrorMessage(res.status, detail));
   }
   return res.json() as Promise<T>;
 }
@@ -1137,8 +1212,8 @@ export const api = {
   },
 
   async getJoinTxt(): Promise<string> {
-    const res = await fetch('/join.txt');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const res = await fetchWithTimeout('/join.txt');
+    if (!res.ok) throw new Error(sanitizeErrorMessage(res.status, `HTTP ${res.status}`));
     return res.text();
   },
 };

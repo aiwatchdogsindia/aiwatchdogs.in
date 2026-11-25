@@ -46,7 +46,7 @@ _SAFE = re.compile(r"[^\w .+()/-]")
 
 def normalize_coding_agent(value: object) -> str:
     """Map common spellings to a canonical product name; keep other names, cleaned and short."""
-    raw = str(value or "").strip()
+    raw = str(value or "").strip()[:256]
     if not raw:
         return ""
     key = re.sub(r"\s+", " ", raw.lower())
@@ -57,7 +57,7 @@ def normalize_coding_agent(value: object) -> str:
 
 
 def normalize_coding_agent_model(value: object) -> str:
-    raw = str(value or "").strip()
+    raw = str(value or "").strip()[:256]
     if not raw:
         return ""
     cleaned, _ = scrub_pii(_SAFE.sub("", raw))

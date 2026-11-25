@@ -29,6 +29,7 @@ import {
   formatRelativeTime,
   isOfficialGovUrl,
   providerBadgeClass,
+  safeExternalUrl,
   statusMeta,
   codingAgentLabel,
 } from '../utils';
@@ -107,7 +108,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
         if (cancelled) return;
         setFinding(data);
         setRtiDraft(data.rti_draft ?? null);
-        setRtiAuthority(data.rti_draft?.public_authority || data.entity_name || '');
+        setRtiAuthority((data.rti_draft?.public_authority || data.entity_name || '').slice(0, 160));
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load dossier');
@@ -134,9 +135,14 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
   const handleGenerateRti = async () => {
     if (!finding) return;
+    const trimmedAuthority = rtiAuthority.trim();
+    if (trimmedAuthority.length > 160) {
+      toast('Target Public Authority must be 160 characters or fewer.');
+      return;
+    }
     setRtiLoading(true);
     try {
-      const draft = await api.generateRtiDraft(finding.id, rtiAuthority.trim() || undefined);
+      const draft = await api.generateRtiDraft(finding.id, trimmedAuthority || undefined);
       setRtiDraft(draft);
       toast(
         draft.is_preview
@@ -217,9 +223,14 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
   const prov = finding?.provenance;
   const retrievalUrl = prov?.retrieval_url || finding?.source_url || '';
-  const retrievalIsOfficial = isOfficialGovUrl(retrievalUrl);
-  const landingIsOfficial = isOfficialGovUrl(prov?.source_landing_page);
-  const mirrorUrl = prov?.mirror_url || (!retrievalIsOfficial && retrievalUrl ? retrievalUrl : null);
+  const safeLandingUrl = safeExternalUrl(prov?.source_landing_page);
+  const safeRetrievalUrl = safeExternalUrl(retrievalUrl);
+  const safeArchiveUrl = safeExternalUrl(prov?.archive_url);
+  const retrievalIsOfficial = isOfficialGovUrl(safeRetrievalUrl);
+  const landingIsOfficial = isOfficialGovUrl(safeLandingUrl);
+  const rawMirrorUrl = prov?.mirror_url || (!retrievalIsOfficial && retrievalUrl ? retrievalUrl : null);
+  const safeMirrorUrl = safeExternalUrl(rawMirrorUrl);
+  const safeRtiPortalUrl = safeExternalUrl(rtiDraft?.rti_portal_url);
   const fiscalDisplay =
     finding?.fiscal_year_start &&
     finding?.fiscal_year_end &&
@@ -230,7 +241,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
   const isStateRti =
     rtiDraft?.jurisdiction_level === 'state' ||
     (Boolean(finding) &&
-      !isOfficialGovUrl(rtiDraft?.rti_portal_url) &&
+      !isOfficialGovUrl(safeRtiPortalUrl) &&
       finding!.jurisdiction.toLowerCase() !== 'union' &&
       finding!.jurisdiction.toLowerCase() !== 'all-india' &&
       finding!.jurisdiction.toLowerCase() !== 'central');
@@ -358,18 +369,21 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                               {c.source_discrepancy}
                             </p>
                           )}
-                          {c.source_evidence_url && (
-                            <a
-                              href={c.source_evidence_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-link"
-                              style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}
-                            >
-                              <span>Inspect referenced source evidence</span>
-                              <ExternalLink size={11} aria-hidden="true" />
-                            </a>
-                          )}
+                          {(() => {
+                            const safeEvidenceUrl = safeExternalUrl(c.source_evidence_url);
+                            return safeEvidenceUrl ? (
+                              <a
+                                href={safeEvidenceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-link"
+                                style={{ fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4 }}
+                              >
+                                <span>Inspect referenced source evidence</span>
+                                <ExternalLink size={11} aria-hidden="true" />
+                              </a>
+                            ) : null;
+                          })()}
                           {c.rti_notice && (
                             <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--red)' }}>
                               <strong>RTI Draft Impact:</strong> {c.rti_notice}
@@ -535,36 +549,42 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         <div className="provenance-row">
                           <dt>{landingIsOfficial ? 'Official Source Landing Page' : 'Source Landing Page'}</dt>
                           <dd>
-                            <a
-                              href={prov.source_landing_page}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="provenance-link"
-                            >
-                              <ExternalLink size={12} aria-hidden="true" />
-                              <span>{prov.source_landing_page}</span>
-                            </a>
-                          </dd>
-                        </div>
-                      )}
-
-                      {(prov?.mirror_name || mirrorUrl) && (
-                        <div className="provenance-row">
-                          <dt>Civic Mirror / Catalog</dt>
-                          <dd>
-                            {prov?.mirror_name && <span>{prov.mirror_name}</span>}
-                            {prov?.mirror_name && mirrorUrl && ', '}
-                            {mirrorUrl && (
+                            {safeLandingUrl ? (
                               <a
-                                href={mirrorUrl}
+                                href={safeLandingUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="provenance-link"
                               >
                                 <ExternalLink size={12} aria-hidden="true" />
-                                <span>{mirrorUrl}</span>
+                                <span>{safeLandingUrl}</span>
                               </a>
+                            ) : (
+                              <span>{prov.source_landing_page}</span>
                             )}
+                          </dd>
+                        </div>
+                      )}
+
+                      {(prov?.mirror_name || rawMirrorUrl) && (
+                        <div className="provenance-row">
+                          <dt>Civic Mirror / Catalog</dt>
+                          <dd>
+                            {prov?.mirror_name && <span>{prov.mirror_name}</span>}
+                            {prov?.mirror_name && rawMirrorUrl && ', '}
+                            {safeMirrorUrl ? (
+                              <a
+                                href={safeMirrorUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="provenance-link"
+                              >
+                                <ExternalLink size={12} aria-hidden="true" />
+                                <span>{safeMirrorUrl}</span>
+                              </a>
+                            ) : rawMirrorUrl ? (
+                              <span>{rawMirrorUrl}</span>
+                            ) : null}
                           </dd>
                         </div>
                       )}
@@ -577,15 +597,19 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                               : 'Immutable Retrieval URL (Mirror / Snapshot)'}
                           </dt>
                           <dd>
-                            <a
-                              href={retrievalUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="provenance-link"
-                            >
-                              <ExternalLink size={12} aria-hidden="true" />
+                            {safeRetrievalUrl ? (
+                              <a
+                                href={safeRetrievalUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="provenance-link"
+                              >
+                                <ExternalLink size={12} aria-hidden="true" />
+                                <span>{safeRetrievalUrl}</span>
+                              </a>
+                            ) : (
                               <span>{retrievalUrl}</span>
-                            </a>
+                            )}
                           </dd>
                         </div>
                       )}
@@ -594,15 +618,19 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         <div className="provenance-row">
                           <dt>Archive Snapshot</dt>
                           <dd>
-                            <a
-                              href={prov.archive_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="provenance-link"
-                            >
-                              <ExternalLink size={12} aria-hidden="true" />
+                            {safeArchiveUrl ? (
+                              <a
+                                href={safeArchiveUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="provenance-link"
+                              >
+                                <ExternalLink size={12} aria-hidden="true" />
+                                <span>{safeArchiveUrl}</span>
+                              </a>
+                            ) : (
                               <span>{prov.archive_url}</span>
-                            </a>
+                            )}
                           </dd>
                         </div>
                       )}
@@ -951,6 +979,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         onChange={(e) => setRtiAuthority(e.target.value)}
                         placeholder="Target Public Authority / Ministry (optional personal override)"
                         aria-label="Target Public Authority"
+                        maxLength={160}
                       />
                       <button
                         type="button"
@@ -1035,16 +1064,16 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                   <strong>State Public Authority:</strong> Do <em>not</em> submit State
                                   authority RTIs on Central <code className="font-mono">rtionline.gov.in</code>{' '}
                                   (applications for State authorities are returned without refund).{' '}
-                                  {rtiDraft.rti_portal_url ? (
+                                  {safeRtiPortalUrl ? (
                                     <>
                                       File via{' '}
                                       <a
-                                        href={rtiDraft.rti_portal_url}
+                                        href={safeRtiPortalUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         style={{ color: 'var(--ep-rti-fg)', textDecoration: 'underline', fontWeight: 600 }}
                                       >
-                                        {rtiDraft.rti_portal_url}
+                                        {safeRtiPortalUrl}
                                       </a>
                                       .
                                     </>
@@ -1059,12 +1088,12 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                 <>
                                   Open{' '}
                                   <a
-                                    href={rtiDraft.rti_portal_url || 'https://rtionline.gov.in/'}
+                                    href={safeRtiPortalUrl || 'https://rtionline.gov.in/'}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     style={{ color: 'var(--ep-rti-fg)', textDecoration: 'underline', fontWeight: 600 }}
                                   >
-                                    {rtiDraft.rti_portal_url || 'https://rtionline.gov.in/'}
+                                    {safeRtiPortalUrl || 'https://rtionline.gov.in/'}
                                   </a>
                                   , select the Public Authority, and paste the text (strictly ≤500 words per
                                   Central RTI Rules 2012 Rule 3).

@@ -90,10 +90,16 @@ def _submit_clean_finding(
     )
     assert claim.status_code == 200, claim.text
     lease_id = claim.json()["lease_id"]
+    task_obj = claim.json().get("task") or {}
+    task_method = str(task_obj.get("methodology_code") or "M1").upper()
+    task_sha = str(
+        (task_obj.get("payload") or {}).get("expected_sha256")
+        or "01a3ab8b7dcd3023e10f2e14cf7685d16825932feb88a363d69bc1177af4a77e"
+    )
     finding = {
         "title": "Public Record Anomaly: Single-Bidder Concentration in Public Tenders",
         "summary": "Deterministic scan observed 81 of 228 positive-bid tenders (35.53%) with 1 bid.",
-        "methodology_code": "M1",
+        "methodology_code": task_method,
         "entity_name": "Jorhat Medical College, Assam",
         "jurisdiction": "State:Assam",
         "fiscal_year": "FY 2017-18 to FY 2021-22",
@@ -104,9 +110,9 @@ def _submit_clean_finding(
         "anomaly_metrics": {"numerator": 81, "denominator": 228, "single_bid_share_pct": 35.53},
         "rule_triggered": "CVC-Single-Tender-Guidelines",
         "engine_version": "2.0.0",
-        "ruleset_version": "M1-2026.11-v2",
+        "ruleset_version": f"{task_method}-2026.11-v2",
         "source_locator": "rows=1,2,3",
-        "artifact_sha256": "01a3ab8b7dcd3023e10f2e14cf7685d16825932feb88a363d69bc1177af4a77e",
+        "artifact_sha256": task_sha,
         "citations": [{"record_id": "OCID-JMC-1", "excerpt": "81/228 single bid"}],
         "benign_explanations": [
             "Specialized hospital medical equipment may lawfully attract a single qualified OEM under procurement rules."
@@ -491,6 +497,7 @@ def test_finding4_hub_verification_enforcement_and_split_vote_adjudication(tmp_p
             assert r_bad_ruleset.status_code == 422
 
             # 5. Valid Peer 1 confirm (explicit 4 checks pass + metrics + omitted confidence stays None!)
+            expected_sha = p1_claim.json()["task"]["payload"]["expected_sha256"]
             r_p1 = client.post(
                 "/api/desk/submit",
                 headers={"X-Agent-Token": peer1["api_token"]},
@@ -507,7 +514,11 @@ def test_finding4_hub_verification_enforcement_and_split_vote_adjudication(tmp_p
                             "metric_tolerance": "pass",
                             "neutrality_privacy": "pass",
                         },
-                        "reproduced_metrics": {"numerator": 81, "denominator": 228},
+                        "reproduced_metrics": {
+                            "artifact_sha256": expected_sha,
+                            "numerator": 81,
+                            "denominator": 228,
+                        },
                     },
                 },
             )
@@ -1233,7 +1244,7 @@ def test_cache_revalidation_0600_permissions_and_no_raw_pii_persistence(
     monkeypatch.setattr(httpx.Client, "get", _mock_get)
 
     clean_url = "https://openbudgetsindia.org/clean.json"
-    ds1 = load_dataset(clean_url, context={"use_cache": True})
+    ds1 = load_dataset(clean_url, use_cache=True)
     assert calls["clean"] == 1
     assert stat.S_IMODE(cache_dir.stat().st_mode) == 0o700
     url_hash = compute_sha256(clean_url)
@@ -1243,13 +1254,13 @@ def test_cache_revalidation_0600_permissions_and_no_raw_pii_persistence(
 
     # Tamper cached bytes -> SHA-256 revalidation MUST purge and refetch!
     bin_file.write_bytes(b"CORRUPTED_BYTES")
-    ds2 = load_dataset(clean_url, context={"use_cache": True})
+    ds2 = load_dataset(clean_url, use_cache=True)
     assert calls["clean"] == 2
     assert ds2.sha256 == ds1.sha256
 
     # Payload containing raw PII MUST NEVER be written to disk cache even with use_cache=True!
     pii_url = "https://openbudgetsindia.org/pii.json"
-    ds_pii = load_dataset(pii_url, context={"use_cache": True})
+    ds_pii = load_dataset(pii_url, use_cache=True)
     assert "pan" in ds_pii.pii_redactions and "email" in ds_pii.pii_redactions
     pii_hash = compute_sha256(pii_url)
     assert not (cache_dir / f"{pii_hash}.bin").exists()
@@ -1659,7 +1670,7 @@ def test_atomic_credential_preservation_on_409_rejoin_and_origin_scoping(
         return httpx.Response(404)
 
     orig_init = AgentRunner.__init__
-    mock_client = httpx.Client(transport=httpx.MockTransport(_hub_409), base_url="http://mockhub")
+    mock_client = httpx.Client(transport=httpx.MockTransport(_hub_409), base_url="https://mockhub")
     try:
         def _patched_init(self: AgentRunner, config: AgentConfig, **kwargs: Any) -> None:
             kwargs["http_client"] = mock_client
@@ -1673,7 +1684,7 @@ def test_atomic_credential_preservation_on_409_rejoin_and_origin_scoping(
             [
                 "join",
                 "--hub",
-                "http://mockhub",
+                "https://mockhub",
                 "--handle",
                 "taken-handle",
                 "--provider",
@@ -2024,7 +2035,7 @@ def test_legacy_v0_to_v4_migration_idempotency_and_four_live_dossier_corrections
     # Open with new Database + seed_database -> runs migrations v1..v4 + versioned seed upsert!
     db = Database(db_path=legacy_db_path)
     try:
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 6
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 7
         assert seed_database(db) is True
         # Second run is completely idempotent!
         db.init_schema()

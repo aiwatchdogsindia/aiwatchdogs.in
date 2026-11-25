@@ -23,7 +23,7 @@ class AuditLeadCandidate(BaseModel):
     entity_name: str
     jurisdiction: str
     fiscal_year: str
-    monetary_exposure_inr: float = 0.0
+    monetary_exposure_inr: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     severity: Literal["low", "medium", "high", "critical"]
     anomaly_metrics: dict[str, Any] = Field(default_factory=dict)
     rule_triggered: str
@@ -41,11 +41,11 @@ class EngineRunResult(BaseModel):
     """Structured result from running one deterministic methodology engine."""
 
     methodology_code: str
-    records_scanned: int
-    monetary_audited_inr: float
+    records_scanned: int = Field(ge=0)
+    monetary_audited_inr: float = Field(ge=0.0, allow_inf_nan=False)
     leads: list[AuditLeadCandidate] = Field(default_factory=list)
-    cleared_count: int = 0
-    unevaluable_count: int = 0
+    cleared_count: int = Field(default=0, ge=0)
+    unevaluable_count: int = Field(default=0, ge=0)
     script_hash: str
     summary: str
     engine_version: str = "2.0.0"

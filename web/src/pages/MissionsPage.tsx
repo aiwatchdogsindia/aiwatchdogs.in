@@ -10,6 +10,7 @@ import {
   formatInrCr,
   formatRelativeTime,
   pillarLabel,
+  safeExternalUrl,
 } from '../utils';
 
 interface MissionsPageProps {
@@ -99,27 +100,31 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 </p>
               )}
 
-              {detail.posted_by && (
-                <p className="project-detail-poster">
-                  Posted by{' '}
-                  {detail.posted_by.url ? (
-                    <a href={detail.posted_by.url} target="_blank" rel="noreferrer">
-                      <strong>{detail.posted_by.name}</strong>
-                    </a>
-                  ) : (
-                    <strong>{detail.posted_by.name}</strong>
-                  )}
-                  {detail.posted_by.handle ? `, ${detail.posted_by.handle}` : ''}
-                  {detail.enlisted_pr_url ? (
-                    <>
-                      {', '}
-                      <a href={detail.enlisted_pr_url} target="_blank" rel="noreferrer">
-                        enlisting pull request
+              {detail.posted_by && (() => {
+                const postedByUrl = safeExternalUrl(detail.posted_by.url);
+                const enlistedPrUrl = safeExternalUrl(detail.enlisted_pr_url);
+                return (
+                  <p className="project-detail-poster">
+                    Posted by{' '}
+                    {postedByUrl ? (
+                      <a href={postedByUrl} target="_blank" rel="noopener noreferrer">
+                        <strong>{detail.posted_by.name}</strong>
                       </a>
-                    </>
-                  ) : null}
-                </p>
-              )}
+                    ) : (
+                      <strong>{detail.posted_by.name}</strong>
+                    )}
+                    {detail.posted_by.handle ? `, ${detail.posted_by.handle}` : ''}
+                    {enlistedPrUrl ? (
+                      <>
+                        {', '}
+                        <a href={enlistedPrUrl} target="_blank" rel="noopener noreferrer">
+                          enlisting pull request
+                        </a>
+                      </>
+                    ) : null}
+                  </p>
+                );
+              })()}
 
               {detail.project_scope && detail.project_scope.scope.length > 0 && (
                 <div className="project-detail-scope">
@@ -146,14 +151,21 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 <div className="project-detail-scope">
                   <h3>Official sources</h3>
                   <ul>
-                    {detail.project_sources.map((src) => (
-                      <li key={src.url}>
-                        <a href={src.url} target="_blank" rel="noreferrer">
-                          {src.name}
-                        </a>
-                        {src.publisher ? `, ${src.publisher}` : ''}
-                      </li>
-                    ))}
+                    {detail.project_sources.map((src) => {
+                      const safeSrcUrl = safeExternalUrl(src.url);
+                      return (
+                        <li key={src.url || src.name}>
+                          {safeSrcUrl ? (
+                            <a href={safeSrcUrl} target="_blank" rel="noopener noreferrer">
+                              {src.name}
+                            </a>
+                          ) : (
+                            <span>{src.name}</span>
+                          )}
+                          {src.publisher ? `, ${src.publisher}` : ''}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -232,30 +244,39 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       </tr>
                     </thead>
                     <tbody>
-                      {detail.sources.map((s) => (
-                        <tr key={s.slug || s.name}>
-                          <td style={{ fontWeight: 600 }}>{s.name}</td>
-                          <td>{s.authority}</td>
-                          <td>
-                            <span className="tag-mono">Tier {s.ingestion_tier}</span>
-                          </td>
-                          <td className="font-mono" style={{ fontSize: 12 }}>
-                            {s.connector_type}
-                          </td>
-                          <td>
-                            <a
-                              href={s.base_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-mono"
-                              style={{ color: 'var(--ep-rti-fg)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
-                            >
-                              <span>{s.base_url}</span>
-                              <ExternalLink size={11} />
-                            </a>
-                          </td>
-                        </tr>
-                      ))}
+                      {detail.sources.map((s) => {
+                        const safeBaseUrl = safeExternalUrl(s.base_url);
+                        return (
+                          <tr key={s.slug || s.name}>
+                            <td style={{ fontWeight: 600 }}>{s.name}</td>
+                            <td>{s.authority}</td>
+                            <td>
+                              <span className="tag-mono">Tier {s.ingestion_tier}</span>
+                            </td>
+                            <td className="font-mono" style={{ fontSize: 12 }}>
+                              {s.connector_type}
+                            </td>
+                            <td>
+                              {safeBaseUrl ? (
+                                <a
+                                  href={safeBaseUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-mono"
+                                  style={{ color: 'var(--ep-rti-fg)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                >
+                                  <span>{safeBaseUrl}</span>
+                                  <ExternalLink size={11} />
+                                </a>
+                              ) : (
+                                <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                                  {s.base_url || '—'}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -471,7 +492,7 @@ function EnlistBox() {
       </div>
       <p className="enlist-alt">
         Prefer to do it by hand? Follow the{' '}
-        <a href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects" target="_blank" rel="noreferrer">
+        <a href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects" target="_blank" rel="noopener noreferrer">
           project guide on GitHub
         </a>
         . Maintainers review every project before it goes live.

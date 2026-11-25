@@ -314,6 +314,10 @@ def _sanitize_and_lint_lead(lead: AuditLeadCandidate, ruleset_version: str) -> A
     clean_summary, _ = scrub_pii(lead.summary)
     clean_entity, _ = scrub_pii(lead.entity_name)
     clean_authority, _ = scrub_pii(lead.suggested_authority)
+    clean_rule, _ = scrub_pii(lead.rule_triggered)
+    clean_jurisdiction, _ = scrub_pii(lead.jurisdiction)
+    clean_fy, _ = scrub_pii(lead.fiscal_year)
+    clean_locator = scrub_pii(lead.source_locator)[0] if lead.source_locator else lead.source_locator
     clean_benign, _ = scrub_pii_in_obj(lead.benign_explanations)
     clean_citations, _ = scrub_pii_in_obj(lead.citations)
     clean_metrics, _ = scrub_pii_in_obj(lead.anomaly_metrics)
@@ -324,18 +328,54 @@ def _sanitize_and_lint_lead(lead: AuditLeadCandidate, ruleset_version: str) -> A
             "summary": clean_summary,
             "entity_name": clean_entity,
             "suggested_authority": clean_authority,
+            "rule_triggered": clean_rule,
+            "jurisdiction": clean_jurisdiction,
+            "fiscal_year": clean_fy,
+            "source_locator": clean_locator,
             "benign_explanations": clean_benign,
             "citations": clean_citations,
             "anomaly_metrics": clean_metrics,
             "ruleset_version": lead.ruleset_version or ruleset_version,
         }
     )
-    lint = lint_neutrality(sanitized.title, sanitized.summary, sanitized.benign_explanations)
+    extra_lint: dict[str, str] = {
+        "entity_name": sanitized.entity_name,
+        "suggested_authority": sanitized.suggested_authority,
+    }
+    citation_excerpts = " ".join(
+        str(c.get("excerpt") or "")
+        for c in (sanitized.citations or [])
+        if isinstance(c, dict) and c.get("excerpt")
+    )
+    if citation_excerpts.strip():
+        extra_lint["citations.excerpt"] = citation_excerpts
+    lint = lint_neutrality(
+        sanitized.title,
+        sanitized.summary,
+        sanitized.benign_explanations,
+        extra_fields=extra_lint,
+    )
     if not lint.passed:
         raise ValueError(
             f"Engine {sanitized.methodology_code} emitted lead failing neutrality lint: {lint.violations}"
         )
     return sanitized
+
+
+_STRIPPED_ENGINE_CTX_KEYS = frozenset(
+    {
+        "allow_local_files",
+        "use_cache",
+        "secondary_path",
+        "max_download_bytes",
+        "max_decompressed_bytes",
+        "max_compression_ratio",
+        "max_zip_members",
+        "max_parse_rows",
+        "max_pdf_pages",
+        "max_pdf_chars",
+    }
+)
 
 
 def run_engine(
@@ -345,14 +385,16 @@ def run_engine(
     *,
     as_of_date: str | date | datetime | None = None,
 ) -> EngineRunResult:
-    """Run one deterministic civic-audit engine (M1-M8) with full fingerprint manifest, neutrality & recursive PII safety."""
+    """Run one deterministic civic-audit engine (M1-M8, P1) with full fingerprint manifest, neutrality & recursive PII safety."""
     code = methodology_code.upper().strip()
     if code not in _ENGINE_DISPATCH:
         raise ValueError(
             f"Unknown methodology code: {methodology_code!r}. Expected one of {sorted(_ENGINE_DISPATCH)}."
         )
 
-    effective_ctx = dict(context or {})
+    effective_ctx = {
+        k: v for k, v in (context or {}).items() if k not in _STRIPPED_ENGINE_CTX_KEYS
+    }
     normalized_as_of = _normalize_as_of_date(
         as_of_date if as_of_date is not None else effective_ctx.get("as_of_date")
     )

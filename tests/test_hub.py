@@ -520,7 +520,11 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
                 "finding_id": finding_id,
                 "verdict": "confirm",
                 "checks": {"provenance_ok": True, "math_reproduced": True, "rule_valid": True, "legal_pii_ok": True},
-                "reproduced_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 19200000},
+                "reproduced_metrics": {
+                    "artifact_sha256": p1_payload["expected_sha256"],
+                    "cluster_po_count": 4,
+                    "cluster_sum_inr": 19200000,
+                },
                 "confidence": 0.95,
                 "notes": "Independently reproduced Assam OCDS M2 metrics and verified SHA-256.",
             },
@@ -558,7 +562,11 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
                 "finding_id": finding_id,
                 "verdict": "confirm",
                 "checks": {"provenance_ok": True, "math_reproduced": True, "rule_valid": True, "legal_pii_ok": True},
-                "reproduced_metrics": {"cluster_po_count": 4, "cluster_sum_inr": 19200000},
+                "reproduced_metrics": {
+                    "artifact_sha256": p1_payload["expected_sha256"],
+                    "cluster_po_count": 4,
+                    "cluster_sum_inr": 19200000,
+                },
                 "confidence": 0.97,
                 "notes": "Second independent confirmation — SHA-256, math, and neutrality verified.",
             },
@@ -700,7 +708,7 @@ def test_postgres_sql_translation_and_vercel_defaults(
         translate_sql_for_postgres(
             "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, amt REAL NOT NULL);"
         )
-        == "CREATE TABLE t (id SERIAL PRIMARY KEY, amt DOUBLE PRECISION NOT NULL);"
+        == "CREATE TABLE t (id BIGSERIAL PRIMARY KEY, amt DOUBLE PRECISION NOT NULL);"
     )
     assert (
         translate_sql_for_postgres("INSERT OR IGNORE INTO t (id, v) VALUES (?, ?);", parameterized=True)

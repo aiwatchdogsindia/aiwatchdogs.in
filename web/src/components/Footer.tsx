@@ -141,7 +141,7 @@ export function Footer({
               <a
                 href="https://policies.google.com/technologies/partner-sites"
                 target="_blank"
-                rel="noreferrer"
+                rel="noopener noreferrer"
                 className="foot-analytics-link"
               >
                 How Google uses this data

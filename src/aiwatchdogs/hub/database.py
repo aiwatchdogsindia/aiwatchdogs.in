@@ -12,7 +12,9 @@ instance-local SQLite unless ``AIWATCHDOGS_ALLOW_EPHEMERAL_SQLITE=1`` is explici
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -21,6 +23,9 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+logger = logging.getLogger(__name__)
 
 try:
     import psycopg
@@ -30,7 +35,7 @@ except ImportError:  # pragma: no cover - psycopg[binary] is a core dependency
     dict_row = None  # type: ignore[assignment]
 
 DEFAULT_DB_REL_PATH = Path("data/aiwatchdogs.db")
-VERCEL_DB_PATH = Path("/tmp/aiwatchdogs.db")
+VERCEL_DB_PATH = Path("/tmp/aiwatchdogs-hub/aiwatchdogs.db")
 
 HUB_TABLES: frozenset[str] = frozenset(
     {
@@ -51,12 +56,17 @@ HUB_TABLES: frozenset[str] = frozenset(
         "score_events",
         "sponsors",
         "treasury_ledger",
+        "rate_limit_buckets",
     }
 )
 
+_SAFE_IDENT_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
+_LOOPBACK_PG_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", ""})
+_WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
+
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
-LATEST_SCHEMA_VERSION = 6
+LATEST_SCHEMA_VERSION = 7
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -150,6 +160,8 @@ CREATE TABLE IF NOT EXISTS agents (
     compute_score INTEGER NOT NULL DEFAULT 0,
     hourly_score INTEGER NOT NULL DEFAULT 0,
     current_task_id TEXT,
+    revoked_at TEXT,
+    token_rotated_at TEXT,
     joined_at TEXT NOT NULL,
     last_heartbeat_at TEXT NOT NULL
 );
@@ -192,6 +204,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     claimed_by_agent_id TEXT REFERENCES agents(id),
     claimed_by_handle TEXT,
     lease_id TEXT UNIQUE,
+    lease_started_at TEXT,
     lease_expires_at TEXT,
     available_at TEXT,
     retry_count INTEGER NOT NULL DEFAULT 0,
@@ -353,8 +366,16 @@ CREATE TABLE IF NOT EXISTS whispers (
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,
+    finding_id TEXT,
     payload_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+    bucket_key TEXT PRIMARY KEY,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS score_events (
@@ -404,22 +425,34 @@ CREATE TABLE IF NOT EXISTS treasury_ledger (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status_type ON tasks(status, task_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_status_lease_exp ON tasks(status, lease_expires_at);
 CREATE INDEX IF NOT EXISTS idx_tasks_mission_slug ON tasks(mission_slug);
 CREATE INDEX IF NOT EXISTS idx_tasks_target_finding ON tasks(target_finding_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_available_at ON tasks(status, available_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_active_claim_finding ON tasks(target_finding_id, claimed_by_handle) WHERE status = 'claimed' AND target_finding_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);
 CREATE INDEX IF NOT EXISTS idx_findings_mission ON findings(mission_slug);
 CREATE INDEX IF NOT EXISTS idx_findings_pillar ON findings(pillar);
 CREATE INDEX IF NOT EXISTS idx_findings_methodology ON findings(methodology_code);
 CREATE INDEX IF NOT EXISTS idx_findings_quarantined ON findings(quarantined);
+CREATE INDEX IF NOT EXISTS idx_findings_submitted_by ON findings(submitted_by);
 CREATE INDEX IF NOT EXISTS idx_corrections_finding ON finding_corrections(finding_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_peer_verif_finding ON peer_verifications(finding_id);
+CREATE INDEX IF NOT EXISTS idx_peer_verif_contributor ON peer_verifications(contributor_id);
+CREATE INDEX IF NOT EXISTS idx_peer_verif_handle ON peer_verifications(verifier_handle);
 CREATE INDEX IF NOT EXISTS idx_rti_versions_finding ON rti_draft_versions(finding_id, version);
 CREATE INDEX IF NOT EXISTS idx_whispers_created ON whispers(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_whispers_finding ON whispers(finding_id);
+CREATE INDEX IF NOT EXISTS idx_whispers_handle_ts ON whispers(agent_handle, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_type_id ON events(event_type, id);
+CREATE INDEX IF NOT EXISTS idx_events_finding_id ON events(finding_id);
 CREATE INDEX IF NOT EXISTS idx_score_events_handle_ts ON score_events(agent_handle, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_score_events_created ON score_events(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_score_events_dedup ON score_events(agent_handle, event_type, ref_id) WHERE ref_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_api_token_hash ON agents(api_token_hash);
 CREATE INDEX IF NOT EXISTS idx_agents_score ON agents(compute_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_date ON treasury_ledger(entry_date DESC);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_updated ON rate_limit_buckets(updated_at);
 """
 
 # Named editorial corrections for the 4 confirmed defective published dossiers from the
@@ -573,8 +606,48 @@ def loads_json(raw: str | None, default: Any) -> Any:
 
 
 def dumps_json(value: Any) -> str:
-    """Serialize a Python object to compact JSON for database storage."""
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    """Serialize a Python object to strict RFC-8259 compact JSON (disallowing NaN/Infinity)."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+
+def redact_database_url(dsn: str | None) -> str | None:
+    """Mask password credentials in a PostgreSQL DSN before logging, repr, or inspection."""
+    if not dsn:
+        return None
+    try:
+        parsed = urlsplit(dsn)
+        if not parsed.hostname:
+            return "***"
+        host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
+        port_part = f":{parsed.port}" if parsed.port else ""
+        user_part = f"{parsed.username}:***@" if parsed.username else ""
+        return urlunsplit((parsed.scheme, f"{user_part}{host}{port_part}", parsed.path, "", ""))
+    except Exception:
+        return "***"
+
+
+def enforce_pg_sslmode(dsn: str) -> str:
+    """Enforce PostgreSQL TLS (sslmode >= require) on non-loopback hosts."""
+    normalized = "postgresql://" + dsn[len("postgres://") :] if dsn.startswith("postgres://") else dsn
+    parsed = urlsplit(normalized)
+    host = (parsed.hostname or "").strip().lower()
+    is_loopback = host in _LOOPBACK_PG_HOSTS or host.endswith(".localhost")
+    allow_insecure = os.environ.get("AIWATCHDOGS_ALLOW_INSECURE_PG", "").strip().lower() in {"1", "true", "yes"}
+    if is_loopback or allow_insecure:
+        return normalized
+
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    sslmode_vals = [v.strip().lower() for k, v in query_items if k.lower() == "sslmode"]
+    if sslmode_vals:
+        if any(mode in _WEAK_SSLMODES for mode in sslmode_vals):
+            raise RuntimeError(
+                f"Refusing insecure PostgreSQL sslmode ({sslmode_vals[-1]!r}) for non-loopback host {host!r}. "
+                "Use sslmode=require or verify-full."
+            )
+        return normalized
+
+    query_items.append(("sslmode", "require"))
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query_items), parsed.fragment))
 
 
 def is_postgres_url(value: str | Path | None) -> bool:
@@ -619,7 +692,12 @@ def resolve_db_path(db_path: str | Path | None = None) -> Path:
         else:
             resolved = DEFAULT_DB_REL_PATH
     if str(resolved) != ":memory:":
-        resolved.parent.mkdir(parents=True, exist_ok=True)
+        resolved.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if resolved == VERCEL_DB_PATH or str(resolved.parent).startswith("/tmp/aiwatchdogs"):
+            try:
+                os.chmod(resolved.parent, 0o700)
+            except OSError:
+                pass
     return resolved
 
 
@@ -725,7 +803,7 @@ def translate_sql_for_postgres(sql: str, *, parameterized: bool = False) -> str 
 
     # Handle SQLite DDL dialects
     if _DDL_REAL_RE.match(stripped):
-        stripped = _AUTOINC_RE.sub("SERIAL PRIMARY KEY", stripped)
+        stripped = _AUTOINC_RE.sub("BIGSERIAL PRIMARY KEY", stripped)
         stripped = _REAL_TYPE_RE.sub("DOUBLE PRECISION", stripped)
 
     # Handle INSERT OR IGNORE INTO ... -> INSERT INTO ... ON CONFLICT DO NOTHING
@@ -998,8 +1076,16 @@ CREATE TABLE IF NOT EXISTS rti_draft_versions (
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     event_type TEXT NOT NULL,
+    finding_id TEXT,
     payload_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+    bucket_key TEXT PRIMARY KEY,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS score_events (
@@ -1027,6 +1113,8 @@ def _execute_statements(conn: Any, sql_script: str) -> None:
 
 
 def _get_table_columns(conn: Any, table: str, *, is_postgres: bool) -> set[str]:
+    if table not in HUB_TABLES:
+        raise ValueError(f"Table '{table}' is not in HUB_TABLES allowlist.")
     if is_postgres:
         rows = conn.execute(
             "SELECT column_name FROM information_schema.columns "
@@ -1047,6 +1135,10 @@ def _ensure_column(
     is_postgres: bool,
     column_cache: dict[str, set[str]],
 ) -> None:
+    if table not in HUB_TABLES:
+        raise ValueError(f"Table '{table}' is not in HUB_TABLES allowlist.")
+    if not _SAFE_IDENT_RE.fullmatch(column):
+        raise ValueError(f"Unsafe SQL column identifier: {column!r}")
     cols = column_cache.get(table)
     if cols is None:
         cols = _get_table_columns(conn, table, is_postgres=is_postgres)
@@ -1124,9 +1216,23 @@ def _migrate_v2_audit_remediation_schema(conn: Any, *, is_postgres: bool) -> Non
                 """
             )
             conn.execute("DROP TABLE _peer_verifications_legacy")
-    # Create all indexes now that every table and column is guaranteed to exist
+    # Create v1/v2 indexes now that v2 tables and columns exist (v7 indexes run in migration v7)
+    _v7_index_names = (
+        "idx_tasks_status_lease_exp",
+        "uq_tasks_active_claim_finding",
+        "idx_findings_submitted_by",
+        "idx_peer_verif_contributor",
+        "idx_peer_verif_handle",
+        "idx_whispers_finding",
+        "idx_whispers_handle_ts",
+        "idx_events_finding_id",
+        "idx_score_events_created",
+        "uq_score_events_dedup",
+        "uq_agents_api_token_hash",
+        "idx_rate_limit_updated",
+    )
     for stmt in split_sql_statements(SCHEMA_SQL):
-        if stmt.upper().startswith("CREATE INDEX"):
+        if stmt.upper().startswith("CREATE INDEX") and not any(idx in stmt for idx in _v7_index_names):
             conn.execute(stmt)
 
 
@@ -1519,6 +1625,103 @@ def _migrate_v6_coding_agent_attribution(conn: Any, *, is_postgres: bool) -> Non
     )
 
 
+_V7_SECURITY_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("events", "finding_id", "TEXT"),
+    ("agents", "revoked_at", "TEXT"),
+    ("agents", "token_rotated_at", "TEXT"),
+    ("tasks", "lease_started_at", "TEXT"),
+)
+
+_V7_PG_FINITE_CHECKS: tuple[tuple[str, str, str], ...] = (
+    ("missions", "chk_missions_monetary_finite", "monetary_audited_inr >= 0 AND monetary_audited_inr < 'Infinity'::double precision AND monetary_audited_inr <> 'NaN'::double precision"),
+    ("tasks", "chk_tasks_monetary_finite", "monetary_audited_inr >= 0 AND monetary_audited_inr < 'Infinity'::double precision AND monetary_audited_inr <> 'NaN'::double precision"),
+    ("findings", "chk_findings_exposure_finite", "monetary_exposure_inr >= 0 AND monetary_exposure_inr < 'Infinity'::double precision AND monetary_exposure_inr <> 'NaN'::double precision"),
+    ("sponsors", "chk_sponsors_amount_finite", "amount_inr >= 0 AND amount_inr < 'Infinity'::double precision AND amount_inr <> 'NaN'::double precision"),
+    ("sponsors", "chk_sponsors_inkind_finite", "in_kind_value_inr >= 0 AND in_kind_value_inr < 'Infinity'::double precision AND in_kind_value_inr <> 'NaN'::double precision"),
+    ("treasury_ledger", "chk_ledger_amount_finite", "amount_inr >= 0 AND amount_inr < 'Infinity'::double precision AND amount_inr <> 'NaN'::double precision"),
+)
+
+
+def _migrate_v7_security_hardening(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v7: operational indexes, rate-limit table, events.finding_id, BIGINT events, finite CHECKs."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+            bucket_key TEXT PRIMARY KEY,
+            window_start INTEGER NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT NOT NULL
+        )
+        """
+    )
+    cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V7_SECURITY_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=cache)
+
+    # Backfill events.finding_id from payload_json for existing rows so quarantine redaction is indexed.
+    event_rows = conn.execute(
+        "SELECT id, payload_json FROM events WHERE finding_id IS NULL AND payload_json LIKE '%finding_id%'"
+    ).fetchall()
+    for row in event_rows:
+        payload = loads_json(row["payload_json"], {})
+        if isinstance(payload, dict):
+            fid = str(payload.get("finding_id") or "").strip()
+            if fid:
+                conn.execute("UPDATE events SET finding_id = ? WHERE id = ?", (fid, row["id"]))
+
+    # Remove any historical duplicate score_events sharing (agent_handle, event_type, ref_id) before unique index.
+    conn.execute(
+        """
+        DELETE FROM score_events
+        WHERE ref_id IS NOT NULL
+          AND id NOT IN (
+              SELECT MIN(id) FROM score_events WHERE ref_id IS NOT NULL
+              GROUP BY agent_handle, event_type, ref_id
+          )
+        """
+    )
+
+    if is_postgres:
+        # Upgrade events.id from 32-bit SERIAL to 64-bit BIGINT/BIGSERIAL cleanly.
+        col_row = conn.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema = current_schema() AND table_name = 'events' AND column_name = 'id'"
+        ).fetchone()
+        if col_row and str(col_row["data_type"]).lower() != "bigint":
+            conn.execute("ALTER TABLE events ALTER COLUMN id TYPE BIGINT")
+        seq_row = conn.execute("SELECT pg_get_serial_sequence('events', 'id') AS seq").fetchone()
+        if seq_row and seq_row["seq"]:
+            seq_name = str(seq_row["seq"])
+            conn.execute(f"ALTER SEQUENCE {seq_name} AS BIGINT")
+
+        # Sanitize any legacy non-finite / negative values before adding finite non-negative CHECK constraints.
+        for table, constraint_name, expr in _V7_PG_FINITE_CHECKS:
+            col = expr.split()[0]
+            conn.execute(
+                f"UPDATE {table} SET {col} = 0.0 "
+                f"WHERE {col} IS NULL OR {col} < 0 OR {col} = 'NaN'::double precision "
+                f"OR {col} = 'Infinity'::double precision OR {col} = '-Infinity'::double precision"
+            )
+            exists_row = conn.execute(
+                """
+                SELECT 1 AS found
+                FROM pg_constraint c
+                JOIN pg_class t ON t.oid = c.conrelid
+                JOIN pg_namespace n ON n.oid = t.relnamespace
+                WHERE n.nspname = current_schema() AND t.relname = ? AND c.conname = ?
+                """,
+                (table, constraint_name),
+            ).fetchone()
+            if not exists_row:
+                conn.execute(f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} CHECK ({expr})")
+
+    # Create all baseline + security indexes (including unique partial indexes) idempotently.
+    for stmt in split_sql_statements(SCHEMA_SQL):
+        upper = stmt.upper()
+        if upper.startswith("CREATE INDEX") or upper.startswith("CREATE UNIQUE INDEX"):
+            conn.execute(stmt)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1526,6 +1729,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (4, "004_editorial_corrections_live_dossiers", _migrate_v4_editorial_corrections_live_dossiers),
     (5, "005_community_projects", _migrate_v5_community_projects),
     (6, "006_coding_agent_attribution", _migrate_v6_coding_agent_attribution),
+    (7, "007_security_hardening", _migrate_v7_security_hardening),
 )
 
 
@@ -1563,7 +1767,7 @@ class Database:
                 )
             self.backend = "postgres"
             self.is_postgres = True
-            self.database_url: str | None = pg_url
+            self._database_url: str | None = enforce_pg_sslmode(pg_url)
             self.db_path: Path | None = None
             self._pg_conn = self._open_pg_connection()
             self._pg_adapter = _PgConnectionAdapter(self)
@@ -1576,11 +1780,20 @@ class Database:
                 )
             self.backend = "sqlite"
             self.is_postgres = False
-            self.database_url = None
+            self._database_url = None
             self.db_path = resolve_db_path(db_path)
             self._conn = self._open_sqlite_connection()
 
         self.init_schema()
+
+    @property
+    def database_url(self) -> str | None:
+        """Return a credential-redacted view of the configured PostgreSQL DSN."""
+        return redact_database_url(self._database_url)
+
+    def __repr__(self) -> str:
+        target = self.database_url if self.is_postgres else str(self.db_path)
+        return f"Database(backend={self.backend!r}, target={target!r})"
 
     def _open_sqlite_connection(self) -> sqlite3.Connection:
         assert self.db_path is not None
@@ -1595,13 +1808,19 @@ class Database:
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA busy_timeout = 30000;")
+        if str(self.db_path) != ":memory:":
+            for suffix in ("", "-wal", "-shm"):
+                candidate = Path(f"{self.db_path}{suffix}")
+                if candidate.exists():
+                    try:
+                        os.chmod(candidate, 0o600)
+                    except OSError:
+                        pass
         return conn
 
     def _open_pg_connection(self) -> Any:
-        assert psycopg is not None and self.database_url is not None
-        dsn = self.database_url
-        if dsn.startswith("postgres://"):
-            dsn = "postgresql://" + dsn[len("postgres://") :]
+        assert psycopg is not None and self._database_url is not None
+        dsn = self._database_url
         # prepare_threshold=None is critical for Neon PgBouncer transaction pooling!
         return psycopg.connect(
             dsn,
@@ -1664,7 +1883,7 @@ class Database:
             if expected_versions.issubset(applied):
                 return
 
-            with self.transaction() as conn:
+            with self.transaction(statement_timeout_ms=30_000, lock_timeout_ms=15_000) as conn:
                 if self.is_postgres:
                     conn.execute(f"SELECT pg_advisory_xact_lock({PG_SCHEMA_ADVISORY_LOCK_KEY})")
 
@@ -1686,17 +1905,27 @@ class Database:
                     if version in applied:
                         continue
                     migrate_fn(conn, is_postgres=self.is_postgres)
-                    checksum = hashlib.sha256(f"{version}:{name}".encode("utf-8")).hexdigest()[:16]
+                    try:
+                        fn_src = inspect.getsource(migrate_fn)
+                    except (OSError, TypeError):
+                        fn_src = ""
+                    checksum = hashlib.sha256(f"{version}:{name}:{fn_src}".encode("utf-8")).hexdigest()[:16]
                     conn.execute(
                         """
-                        INSERT OR IGNORE INTO schema_migrations (version, name, checksum, applied_at)
+                        INSERT INTO schema_migrations (version, name, checksum, applied_at)
                         VALUES (?, ?, ?, ?)
+                        ON CONFLICT(version) DO NOTHING
                         """,
                         (version, name, checksum, utc_now_iso()),
                     )
 
     @contextmanager
-    def transaction(self) -> Iterator[Any]:
+    def transaction(
+        self,
+        *,
+        statement_timeout_ms: int = 10_000,
+        lock_timeout_ms: int = 5_000,
+    ) -> Iterator[Any]:
         """Acquire write lock and yield a transactional database connection."""
         with self._lock:
             is_outer = self._tx_depth == 0
@@ -1707,6 +1936,8 @@ class Database:
                     if is_outer:
                         self._ensure_pg_connection()
                         self._pg_adapter.reset_stmt_count()
+                        self._pg_adapter.execute(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
+                        self._pg_adapter.execute(f"SET LOCAL lock_timeout = {int(lock_timeout_ms)}")
                     yield self._pg_adapter
                     if is_outer:
                         self._pg_adapter.commit()
@@ -1735,8 +1966,8 @@ class Database:
                 self._tx_depth -= 1
 
     @contextmanager
-    def read(self) -> Iterator[Any]:
-        """Acquire lock and yield database connection for consistent reads."""
+    def read(self, *, statement_timeout_ms: int = 10_000) -> Iterator[Any]:
+        """Acquire lock and yield database connection for consistent read-only snapshots."""
         with self._lock:
             if self.is_postgres:
                 assert self._pg_adapter is not None
@@ -1744,6 +1975,7 @@ class Database:
                 if is_outer:
                     self._ensure_pg_connection()
                     self._pg_adapter.reset_stmt_count()
+                    self._pg_adapter.execute(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
                 try:
                     yield self._pg_adapter
                 finally:
@@ -1755,7 +1987,17 @@ class Database:
                             pass
             else:
                 assert self._conn is not None
-                yield self._conn
+                started_tx = self._tx_depth == 0 and not self._conn.in_transaction
+                if started_tx:
+                    self._conn.execute("BEGIN DEFERRED")
+                try:
+                    yield self._conn
+                finally:
+                    if started_tx and self._conn.in_transaction:
+                        try:
+                            self._conn.execute("ROLLBACK")
+                        except Exception:
+                            pass
 
     def health_check(self) -> bool:
         """Verify database connectivity cleanly on SQLite or Neon Postgres."""

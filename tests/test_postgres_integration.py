@@ -246,7 +246,7 @@ def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: 
     try:
         assert db.is_postgres is True
         assert db.health_check() is True
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 6
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 7
         assert seed_database(db) is True
 
         # Idempotent re-run
@@ -415,6 +415,7 @@ def test_postgres_concurrent_peer_vote_aggregation_and_cross_instance_events(pg_
         c1 = desk_a.claim_next_task(token=peer1["api_token"], handle=peer1["handle"], mode="verify")
         c2 = desk_b.claim_next_task(token=peer2["api_token"], handle=peer2["handle"], mode="verify")
         assert c1 is not None and c2 is not None
+        finding_sha = desk_a.get_finding_detail(fid).get("artifact_sha256")
 
         # Both peers submit 'confirm' votes SIMULTANEOUSLY across separate PostgreSQL connections!
         vote_barrier = threading.Barrier(2)
@@ -438,7 +439,11 @@ def test_postgres_concurrent_peer_vote_aggregation_and_cross_instance_events(pg_
                                 "metric_tolerance": "pass",
                                 "neutrality_privacy": "pass",
                             },
-                            "reproduced_metrics": {"numerator": 10, "denominator": 20},
+                            "reproduced_metrics": {
+                                "artifact_sha256": finding_sha,
+                                "numerator": 10,
+                                "denominator": 20,
+                            },
                             "confidence": 0.96,
                         },
                     },
@@ -467,3 +472,108 @@ def test_postgres_concurrent_peer_vote_aggregation_and_cross_instance_events(pg_
     finally:
         db_a.close()
         db_b.close()
+
+
+def test_postgres_security_hardening_constraints_indexes_and_races(pg_schema_url: str) -> None:
+    """Verify PG v7 security constraints (BIGINT events.id, finite CHECKs, indexes) & concurrent races."""
+    db = Database(database_url=pg_schema_url)
+    try:
+        seed_database(db)
+        desk = DeskService(db, SSEBroker(db))
+
+        with db.read() as conn:
+            # 1. events.id is BIGINT on PostgreSQL (prevents 32-bit SERIAL overflow)
+            ev_col = conn.execute(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'events' AND column_name = 'id'"
+            ).fetchone()
+            assert ev_col is not None and ev_col["data_type"] == "bigint"
+
+            # 2. Key v7 operational & unique indexes exist
+            idx_names = {
+                str(r["indexname"])
+                for r in conn.execute(
+                    "SELECT indexname FROM pg_indexes WHERE schemaname = current_schema()"
+                ).fetchall()
+            }
+            for expected_idx in (
+                "uq_agents_api_token_hash",
+                "uq_tasks_active_claim_finding",
+                "uq_score_events_dedup",
+                "idx_tasks_status_lease_exp",
+                "idx_events_finding_id",
+            ):
+                assert expected_idx in idx_names, f"Missing PG index {expected_idx}"
+
+        # 3. PostgreSQL CHECK constraint rejects NaN, +/-Infinity, and negative sponsor amounts at DB layer
+        for bad_literal in ("'NaN'::double precision", "'Infinity'::double precision", "'-Infinity'::double precision", "-5.0"):
+            with pytest.raises(Exception):
+                with db.transaction() as conn:
+                    conn.execute(
+                        f"""
+                        INSERT INTO sponsors (id, name, tier, amount_inr, created_at)
+                        VALUES ('sp-bad-test', 'Bad Float Test', 'citizen_backer', {bad_literal}, '2026-11-25T00:00:00Z')
+                        """
+                    )
+
+        # 4. Concurrent registration race on identical handle -> exactly 1 succeeds (200), other gets 409
+        reg_barrier = threading.Barrier(2)
+
+        def _reg_worker(_i: int) -> int:
+            w_db = Database(database_url=pg_schema_url)
+            try:
+                w_desk = DeskService(w_db, SSEBroker(w_db))
+                reg_barrier.wait(timeout=15)
+                try:
+                    w_desk.register_agent({"handle": "pg-race-handle"}, base_url="https://aiwatchdogs.in")
+                    return 200
+                except Exception as exc:
+                    return getattr(exc, "status_code", 500)
+            finally:
+                w_db.close()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            reg_codes = sorted(pool.map(_reg_worker, [0, 1]))
+        assert reg_codes == [200, 409]
+
+        # 5. Concurrent RTI draft creation race -> both return cleanly without 500 IntegrityError
+        author = desk.register_agent({"handle": "pg-rti-author"}, base_url="https://aiwatchdogs.in")
+        claim = desk.claim_next_task(
+            token=author["api_token"],
+            handle=author["handle"],
+            mode="investigate",
+            preferred_mission="assam-ocds-single-bid",
+        )
+        assert claim is not None
+        sub = desk.submit_task(
+            {
+                "lease_id": claim["lease_id"],
+                "outcome": "finding",
+                "finding": {
+                    "title": "Public Record Anomaly: PG RTI Race Test",
+                    "summary": "Deterministic summary for RTI draft concurrency.",
+                    "methodology_code": "M1",
+                    "entity_name": "Assam Health",
+                    "benign_explanations": ["Lawful OEM exception."],
+                },
+            },
+            token=author["api_token"],
+        )
+        fid = sub["finding_id"]
+        rti_barrier = threading.Barrier(2)
+
+        def _rti_worker(_i: int) -> str:
+            w_db = Database(database_url=pg_schema_url)
+            try:
+                w_desk = DeskService(w_db, SSEBroker(w_db))
+                rti_barrier.wait(timeout=15)
+                draft = w_desk.create_or_get_rti_draft(fid)
+                return str(draft["id"])
+            finally:
+                w_db.close()
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            draft_ids = list(pool.map(_rti_worker, [0, 1]))
+        assert len(set(draft_ids)) == 1
+    finally:
+        db.close()

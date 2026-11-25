@@ -5,7 +5,7 @@ HUB_URL ?= http://127.0.0.1:8000
 help:
 	@echo "AI Watchdogs India (aiwatchdogs.in) — Developer Targets"
 	@echo ""
-	@echo "  make install      Install Python deps (uv sync) and web deps (npm install)"
+	@echo "  make install      Install Python deps (uv sync --locked) and web deps (npm ci)"
 	@echo "  make dev          Run Coordinator Hub (:8000) and Vite Dashboard (:5173) together"
 	@echo "  make dev-hub      Run FastAPI Coordinator Hub on http://127.0.0.1:8000 (SQLite or DATABASE_URL Postgres)"
 	@echo "  make dev-web      Run Vite React dev server on http://127.0.0.1:5173"
@@ -16,8 +16,8 @@ help:
 	@echo "  make docker-prod  Build and start Hub + Caddy automatic HTTPS (aiwatchdogs.in)"
 
 install:
-	uv sync
-	cd web && npm install
+	uv sync --locked
+	cd web && npm ci
 
 dev-hub:
 	uv run aiwatchdogs-hub
