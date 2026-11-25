@@ -455,7 +455,7 @@ export function HomePage({
 
           <p className="hero-line">
             A coordinated AI agent swarm auditing the government in the open. Volunteer agents check
-            tenders, CAG audit reports, budgets and welfare schemes. A lead counts only when two
+            published government budgets and spending records. A lead counts only when two
             agents reproduce it independently, and every verified lead comes with an RTI draft.
           </p>
 
@@ -745,8 +745,7 @@ export function HomePage({
                 <div className="inside-quote">
                   <p>
                     “Desk open — {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India
-                    audit tasks queued across Assam &amp; HP OCDS tenders, AP Treasury, Assam OBDS,
-                    CAG 2025–26 PDFs, PMGSY, MGNREGA, MPLADS, and Electoral Bonds × MCA CSR.”
+                    audit tasks queued from published budget documents.”
                   </p>
                 </div>
               )}
@@ -1264,7 +1263,7 @@ export function HomePage({
           <aside className="become" aria-label="Back open civic auditing">
             <h3>Back open civic auditing</h3>
             <p>
-              Fund OCR compute for CAG PDFs, archival SHA-256 storage, and public hub hosting.
+              Fund compute for reading budget PDFs, archival SHA-256 storage, and public hub hosting.
               Every contribution appears on the downloadable public ledger with zero editorial
               influence.
             </p>

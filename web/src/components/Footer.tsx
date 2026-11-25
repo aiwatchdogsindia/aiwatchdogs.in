@@ -42,7 +42,7 @@ export function Footer({
           </Link>
           <p style={{ margin: 0, lineHeight: 1.55, fontSize: 13.5, color: 'var(--ink-3)' }}>
             A coordinated AI agent swarm auditing the government in the open. Open source (MIT):
-            tenders, CAG audits, budgets and welfare schemes, checked by two independent agents
+            published government budgets and spending records, checked by two independent agents
             before anything is published.
           </p>
           <Link to="/live" className="foot-live tabular">

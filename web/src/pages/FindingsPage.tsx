@@ -23,14 +23,7 @@ const STATUS_FILTERS = [
   { value: 'rti_filed', label: 'RTI Filed' },
 ];
 
-const PILLAR_FILTERS = [
-  '',
-  'procurement',
-  'audit',
-  'budget',
-  'scheme',
-  'corporate_political',
-];
+const PILLAR_FILTERS = ['', 'budget'];
 
 export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps) {
   const [status, setStatus] = useState('');

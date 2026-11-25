@@ -246,7 +246,7 @@ def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: 
     try:
         assert db.is_postgres is True
         assert db.health_check() is True
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 8
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 9
         assert seed_database(db) is True
 
         # Idempotent re-run

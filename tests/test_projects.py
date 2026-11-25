@@ -155,10 +155,10 @@ def test_hub_lists_projects_archives_legacy_missions_and_queues_project_tasks(
         assert project["total_tasks"] == 1
         assert project["project_sources"][0]["url"] == "https://finance.test.gov.in"
 
-        # Archived legacy missions are still reachable by direct link (public record).
-        legacy = client.get("/api/missions/assam-ocds-single-bid")
-        assert legacy.status_code == 200
-        assert legacy.json()["status"] == "archived"
+        # The original missions are gone: not listed, not reachable, nothing of theirs is served.
+        assert client.get("/api/missions/assam-ocds-single-bid").status_code == 404
+        assert client.get("/api/sources").json()["sources"] == []
+        assert client.get("/api/findings").json()["findings"] == []
 
         # Only the project's task is offered to a new agent; legacy scans are not.
         reg = client.post(

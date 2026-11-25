@@ -273,14 +273,6 @@ export function pillarTint(pillar?: string): PillarTint {
 }
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {
-  M1: { name: 'Single-Bidder & Spec-Lock', rule: 'GFR Rule 166, CVC Single-Tender (>35% share or <14d window)' },
-  M2: { name: 'Split-Tendering / Threshold Hugging', rule: 'GFR Rules 149/154/155/161 (85–99.9% of ₹50k/₹2.5L/₹10L/₹50L)' },
-  M3: { name: 'Repeat-Winner Concentration', rule: 'CCI Bid-Rigging Indicators (HHI > 0.35 or >40% share)' },
-  M4: { name: 'Unit-Price Outlier & Escalation', rule: 'GeM/BOQ Benchmark (>2.5 MAD or >1.75× median / >20% variation)' },
-  M5: { name: 'March Rush & Budget Variance', rule: 'GFR Rule 62(3), MoF CMS (Q4 >33% or March >15% spend)' },
-  M6: { name: 'CAG Unresolved Audit Paras', rule: 'CAG Reports & PAC ATN/ATR Multi-Year Quantification' },
-  M7: { name: 'Scheme Physical-Financial Gap', rule: 'PMGSY OMMAS, MPLADS e-SAKSHI, MGNREGA 60:40 & R9.2' },
-  M8: { name: 'Corporate–Procurement Proximity', rule: 'MCA21 + ECI + Tenders (<180d vendor / shared directors — Disclosure Lead)' },
   P1: { name: 'Police Budget-Head Variance', rule: 'MH 2055 / 4055, Actuals vs BE vs RE from official budget documents (cited page and line)' },
 };
 

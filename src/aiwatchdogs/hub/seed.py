@@ -1101,6 +1101,12 @@ def seed_database(db: Database, repo_root: Path | None = None) -> bool:
     """
     _ = repo_root  # Retained in signature for caller compatibility
 
+    # The original eight missions and their source directory are no longer part of the hub
+    # (migration v9 removed them). They are seeded only for the test suite and forks that
+    # opt in with AIWATCHDOGS_KEEP_LEGACY_MISSIONS=1; projects come from ``projects/``.
+    if not legacy_missions_kept_active():
+        return False
+
     canonical_source_ids = tuple(src["id"] for src in PUBLIC_SOURCES)
     canonical_mission_ids = tuple(m["id"] for m in SEED_MISSIONS)
     src_placeholders = ",".join("?" for _ in canonical_source_ids)
