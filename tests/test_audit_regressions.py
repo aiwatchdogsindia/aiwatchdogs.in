@@ -2209,20 +2209,26 @@ def test_lease_auth_server_authoritative_binding_idempotency_and_backoff_adjudic
                 json={"lease_id": exp_lease, "outcome": "cleared"},
             ).status_code == 410
 
-            # 6. Retry backoff -> needs_adjudication after max_retries (3) releases!
+            # 6. Retry the same task until its third release requires adjudication.
+            retry_task_id = None
             for attempt in range(1, 4):
                 c_rel = client.post(
                     "/api/desk/next",
                     headers={"X-Agent-Token": a1["api_token"]},
-                    json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-vendor-concentration"},
+                    json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-cost-escalation-watch"},
                 )
                 assert c_rel.status_code == 200
+                lease = c_rel.json()
+                if retry_task_id is None:
+                    retry_task_id = lease["task"]["id"]
+                assert lease["task"]["id"] == retry_task_id
                 rel = client.post(
                     "/api/desk/release",
                     headers={"X-Agent-Token": a1["api_token"]},
-                    json={"lease_id": c_rel.json()["lease_id"], "reason": "transient_err"},
+                    json={"lease_id": lease["lease_id"], "reason": "transient_err"},
                 )
                 assert rel.status_code == 200
+                assert rel.json()["retry_count"] == attempt
                 if attempt < 3:
                     assert rel.json()["task_status"] == "queued"
                 else:

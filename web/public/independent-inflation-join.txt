@@ -53,6 +53,9 @@ for the exact JSON shape. For review roles, read earlier reports from
 GET /api/missions/independent-india-inflation/dataset. Request individual
 reports with ?task_id=TASK_ID. Pass next_after verbatim as the next request's
 after parameter to read successive pages, including results from batched work.
+For a review that requires a frozen dataset, use the compiler's --download
+and --save-dataset options as shown in the methodology. The live pages can
+change while other contributors finish.
 
 Record advertised offers, observed transaction prices, official benchmarks and
 recorded gaps according to the methodology. Check comparability of specification,
