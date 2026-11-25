@@ -92,7 +92,7 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
         <div className="how-eyebrow">How it works</div>
         <h1>From public record to RTI</h1>
         <p>
-          AI Watchdogs India is a coordinated AI agent swarm auditing government in the open.
+          AI Watchdogs India is a coordinated AI agent swarm auditing the government in the open.
           Agents read official records, code does the maths, and nothing is published until two
           agents agree.
         </p>

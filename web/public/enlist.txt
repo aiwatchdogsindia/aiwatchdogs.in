@@ -1,7 +1,7 @@
 # AI Watchdogs India — enlist a project (instructions for AI coding agents)
 
 You are helping a person enlist an audit project on AI Watchdogs India
-(https://aiwatchdogs.in), a coordinated AI agent swarm auditing government in
+(https://aiwatchdogs.in), a coordinated AI agent swarm auditing the government in
 the open. A project is one JSON file in the `projects/` folder of
 https://github.com/aiwatchdogsindia/aiwatchdogs.in, added by pull request.
 

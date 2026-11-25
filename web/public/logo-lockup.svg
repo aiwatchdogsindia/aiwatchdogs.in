@@ -1,45 +1,318 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 120" role="img" aria-label="AI Watchdogs · India — Open Civic-Audit Swarm">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 690 120" role="img" aria-label="AI Watchdogs India">
   <title>AI Watchdogs · India — aiwatchdogs.in</title>
-  <!-- Primary Swarm-Shield Emblem (104x104) -->
-  <g transform="translate(6, 8) scale(0.203125)">
-  <!-- Connected 6-Node Civic Swarm-Shield Perimeter (Tiranga Saffron · Chakra Navy · India Green) -->
-  <g fill="none" stroke-width="19" stroke-linecap="butt">
-    <line x1="87.7" y1="107.2" x2="240.0" y2="53.6" stroke="#FF9933"/>
-    <line x1="272.0" y1="53.6" x2="424.3" y2="107.2" stroke="#FF9933"/>
-    <line x1="437.1" y1="126.5" x2="426.9" y2="291.5" stroke="#0A0F3C"/>
-    <line x1="85.1" y1="291.5" x2="74.9" y2="126.5" stroke="#0A0F3C"/>
-    <path d="M 424.1 320.4 Q 408.0 397.1 271.8 457.2" stroke="#138808"/>
-    <path d="M 87.9 320.4 Q 104.0 397.1 240.2 457.2" stroke="#138808"/>
-  </g>
-
-  <!-- 6 Distributed AI Agent Swarm Ring-Nodes (Transparent Open Cores) -->
-  <g fill-rule="evenodd">
-    <path d="M 232.0 48.0 a 24.0,24.0 0 1,0 48.0,0 a 24.0,24.0 0 1,0 -48.0,0 Z M 245.5 48.0 a 10.5,10.5 0 1,1 21.0,0 a 10.5,10.5 0 1,1 -21.0,0 Z" fill="#FF9933"/>
-    <path d="M 417.5 112.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 429.5 112.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#0A0F3C"/>
-    <path d="M 405.5 306.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 417.5 306.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#0A0F3C"/>
-    <path d="M 232.0 464.0 a 24.0,24.0 0 1,0 48.0,0 a 24.0,24.0 0 1,0 -48.0,0 Z M 245.5 464.0 a 10.5,10.5 0 1,1 21.0,0 a 10.5,10.5 0 1,1 -21.0,0 Z" fill="#138808"/>
-    <path d="M 65.5 306.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 77.5 306.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#0A0F3C"/>
-    <path d="M 53.5 112.0 a 20.5,20.5 0 1,0 41.0,0 a 20.5,20.5 0 1,0 -41.0,0 Z M 65.5 112.0 a 8.5,8.5 0 1,1 17.0,0 a 8.5,8.5 0 1,1 -17.0,0 Z"  fill="#0A0F3C"/>
-  </g>
-
-  <!-- Sculpted Vigilant Watchdog Eye -->
-  <path d="M 108.0 248.0 C 176.1 122.7, 335.9 122.7, 404.0 248.0 C 335.9 373.3, 176.1 373.3, 108.0 248.0 Z M 132.0 248.0 C 185.3 152.0, 326.7 152.0, 380.0 248.0 C 326.7 344.0, 185.3 344.0, 132.0 248.0 Z" fill="#0A0F3C" fill-rule="evenodd"/>
-
-  <!-- Ashoka-Chakra Consensus Iris (8 Tapered Spokes + Open Verification Hub) -->
-  <g>
-    <circle cx="256.0" cy="248.0" r="53.0" fill="none" stroke="#000080" stroke-width="12.5"/>
-    <path d="M 272.0 245.1 L 291.4 243.2 L 305.5 245.2 L 305.5 250.8 L 291.4 252.8 L 272.0 250.9 Z" fill="#000080"/>
-    <path d="M 269.4 257.3 L 284.4 269.7 L 293.0 281.0 L 289.0 285.0 L 277.7 276.4 L 265.3 261.4 Z" fill="#000080"/>
-    <path d="M 258.9 264.0 L 260.8 283.4 L 258.8 297.5 L 253.2 297.5 L 251.2 283.4 L 253.1 264.0 Z" fill="#000080"/>
-    <path d="M 246.7 261.4 L 234.3 276.4 L 223.0 285.0 L 219.0 281.0 L 227.6 269.7 L 242.6 257.3 Z" fill="#000080"/>
-    <path d="M 240.0 250.9 L 220.6 252.8 L 206.5 250.8 L 206.5 245.2 L 220.6 243.2 L 240.0 245.1 Z" fill="#000080"/>
-    <path d="M 242.6 238.7 L 227.6 226.3 L 219.0 215.0 L 223.0 211.0 L 234.3 219.6 L 246.7 234.6 Z" fill="#000080"/>
-    <path d="M 253.1 232.0 L 251.2 212.6 L 253.2 198.5 L 258.8 198.5 L 260.8 212.6 L 258.9 232.0 Z" fill="#000080"/>
-    <path d="M 265.3 234.6 L 277.7 219.6 L 289.0 211.0 L 293.0 215.0 L 284.4 226.3 L 269.4 238.7 Z" fill="#000080"/>
-    <path d="M 238.5 248.0 a 17.5,17.5 0 1,0 35.0,0 a 17.5,17.5 0 1,0 -35.0,0 Z M 248.8 248.0 a 7.2,7.2 0 1,1 14.4,0 a 7.2,7.2 0 1,1 -14.4,0 Z" fill="#000080" fill-rule="evenodd"/>
-  </g>
-  </g>
-
+<svg x="2" y="2" width="116" height="116" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+<title id="title">AI Watchdogs India: a swarm of cursors in the shape of India</title>
+<desc>Stylized cursor densities based on 2011 Census state densities and urban agglomeration population; no fixed people-per-cursor scale.</desc>
+<defs>
+<path id="india" d="M127.4,460.6 127.6,464.4 131.7,470.4 130.2,473.1 146.4,484.2 159.8,487.1 164.4,483.3 174.1,480.6 177.3,481.5 172.6,492.6 147.4,501.5 145.1,497.2 141.6,495.9 139.4,500.2 147.5,511.0 174.9,539.6 190.1,548.0 194.7,546.9 195.3,546.6 198.8,546.1 198.9,545.6 223.1,534.1 230.0,520.2 227.7,510.5 231.5,503.2 238.9,500.7 235.3,510.5 235.7,512.7 238.3,513.3 235.7,517.9 238.3,518.6 239.5,524.9 237.8,529.6 245.5,550.4 244.5,554.5 243.3,557.5 241.4,564.5 241.5,571.3 239.1,573.3 243.8,594.6 245.8,614.3 255.2,648.2 258.2,669.0 257.1,671.4 261.8,688.1 266.8,695.5 277.9,720.2 278.5,723.5 282.6,725.4 292.1,751.7 298.7,783.7 307.9,805.7 316.7,815.0 316.9,815.4 322.3,825.4 332.2,854.8 338.4,882.8 344.2,898.6 358.9,916.4 364.7,921.5 371.2,922.7 384.2,914.4 386.7,910.3 388.8,896.5 394.4,892.0 409.7,887.2 407.3,881.8 408.0,878.0 417.1,864.6 417.4,858.6 420.5,856.1 433.6,857.0 432.5,841.1 432.9,836.2 431.0,812.7 431.4,812.6 431.5,811.1 431.0,810.8 430.8,811.1 430.9,811.1 431.0,810.8 432.4,807.6 432.6,805.8 433.5,805.0 440.6,793.4 443.7,783.4 446.0,768.5 444.2,759.8 440.4,741.4 442.1,730.1 438.1,715.6 440.4,705.8 446.2,694.8 450.6,691.6 456.5,690.8 459.4,696.1 462.7,695.3 467.9,688.1 470.7,677.9 474.0,676.8 483.3,678.2 498.7,670.4 500.5,662.9 497.3,660.8 498.7,657.0 505.7,650.1 523.3,640.2 536.5,624.9 547.6,619.0 565.1,595.9 568.4,591.1 580.7,580.9 608.1,570.1 612.4,563.6 619.3,558.9 617.9,556.4 619.4,552.9 625.5,548.3 620.8,534.2 623.7,528.4 629.1,523.8 638.3,521.0 647.6,517.6 653.4,508.7 658.0,506.9 656.1,510.3 657.8,516.2 659.3,516.5 658.9,515.1 659.0,514.8 660.4,513.7 659.5,513.4 668.1,511.9 668.6,505.9 670.1,503.0 670.6,502.9 672.0,503.2 673.1,503.8 676.3,503.9 677.2,500.4 674.8,496.4 675.3,492.9 676.1,492.4 677.2,492.2 678.1,484.1 675.4,480.3 675.5,476.5 677.9,473.7 671.4,471.9 672.6,466.2 667.2,458.2 667.5,453.9 671.8,452.2 671.5,440.9 661.2,438.5 652.4,429.8 656.7,421.7 660.2,423.6 662.7,421.7 663.9,414.0 676.7,415.1 679.0,411.1 674.7,409.2 674.4,405.7 666.9,404.7 662.1,398.9 655.1,396.4 656.4,387.2 666.0,379.0 661.6,375.2 662.6,372.0 672.4,381.1 679.0,381.6 678.5,377.8 681.3,378.5 683.2,386.2 688.5,390.0 693.6,390.4 696.1,384.0 698.3,385.4 702.3,391.1 701.8,405.9 700.8,409.0 703.4,410.9 717.7,415.8 739.8,413.9 750.0,416.3 761.6,414.5 771.3,419.1 772.9,424.0 766.3,422.8 765.8,434.8 763.7,434.8 764.1,437.2 762.0,438.6 757.6,439.6 757.2,445.4 755.0,443.4 753.3,445.3 750.5,444.2 748.5,447.5 744.1,446.5 738.9,453.1 737.0,461.6 741.4,472.3 743.0,473.6 744.9,471.8 749.3,481.1 754.7,476.5 753.8,470.3 758.9,465.2 757.9,459.7 766.7,457.9 770.1,471.6 769.6,481.4 773.5,488.3 775.6,508.8 778.0,508.0 778.5,504.7 783.5,508.8 786.3,507.6 787.8,503.2 790.7,503.9 791.7,500.9 789.0,485.2 790.7,482.1 789.9,478.1 794.4,479.3 796.9,472.9 798.0,462.3 795.4,448.3 797.5,447.5 799.0,450.7 806.8,449.7 808.1,451.9 813.7,451.9 817.6,454.3 820.3,444.9 833.2,419.5 833.3,416.2 829.4,414.4 831.6,406.5 835.1,405.5 841.5,397.6 840.5,394.3 845.1,388.0 843.6,387.6 843.8,379.0 842.0,376.6 846.5,370.1 851.5,369.8 854.9,365.7 865.9,358.8 868.0,355.0 873.3,352.4 888.6,350.4 890.3,355.0 895.6,357.6 898.5,356.9 891.5,347.2 891.2,342.4 900.8,333.8 904.1,333.6 904.1,324.5 897.4,320.5 893.9,321.7 891.2,319.7 887.9,320.0 885.0,317.2 877.1,319.3 879.8,310.7 882.9,309.6 883.5,307.4 878.9,300.2 873.3,303.4 871.2,299.7 877.7,293.7 873.4,294.0 869.3,287.5 854.9,294.8 852.5,300.2 840.4,296.2 834.9,296.3 830.3,290.9 828.4,294.4 825.1,294.4 819.2,298.7 811.7,310.8 795.5,312.1 791.7,321.5 787.1,322.0 777.9,327.5 779.5,331.3 774.7,336.3 767.9,337.5 766.5,335.0 756.4,339.2 755.0,336.6 750.8,335.2 747.9,343.3 750.4,346.3 760.1,347.0 761.5,352.4 760.4,358.3 762.5,363.8 761.1,365.2 756.8,363.2 752.3,366.2 743.7,365.5 741.8,367.2 723.3,367.3 716.9,363.5 712.0,364.9 711.0,367.5 702.0,369.4 687.6,365.0 682.5,366.3 675.5,357.4 672.4,356.2 673.7,353.3 676.4,352.5 672.8,343.9 675.8,334.0 672.4,328.7 669.4,327.8 662.6,331.6 655.9,332.0 655.6,334.7 657.4,335.3 653.3,345.9 652.4,354.2 651.8,357.4 656.6,364.5 655.0,374.3 652.2,379.8 646.5,376.4 645.7,378.2 635.5,377.9 634.3,380.0 625.5,374.5 617.9,377.7 607.5,372.0 591.3,371.2 591.1,366.7 587.7,364.9 580.4,368.3 576.9,367.7 576.6,364.5 572.2,364.4 570.3,361.7 561.8,359.2 563.0,354.0 561.3,350.6 551.9,348.8 547.5,345.1 545.1,347.7 540.3,347.5 540.8,350.4 533.9,346.7 528.4,346.4 525.9,350.8 522.5,347.2 510.7,345.8 509.2,339.3 503.0,340.5 492.7,333.2 487.7,335.1 476.6,328.4 475.3,325.8 472.7,326.8 469.5,320.3 461.3,317.4 451.9,310.4 446.9,312.1 438.8,306.3 440.5,299.1 444.2,296.9 444.3,289.5 448.0,283.5 447.9,277.8 450.0,277.7 460.2,266.4 464.9,265.6 453.2,257.3 443.0,254.4 443.7,249.6 433.3,242.5 430.3,241.8 426.3,243.6 423.9,240.8 421.5,240.8 413.9,228.9 411.9,227.9 407.9,234.2 403.0,225.8 405.8,223.3 402.1,218.4 404.3,212.2 396.0,203.9 397.5,199.8 393.9,196.4 391.9,198.1 395.0,195.1 399.8,194.4 403.3,191.8 405.3,199.0 409.0,201.2 413.1,200.7 419.1,194.5 422.0,196.3 426.9,190.1 420.3,183.2 422.2,174.7 409.8,172.5 407.8,163.6 412.8,164.1 407.4,153.4 410.4,151.1 420.1,151.6 425.7,145.6 425.6,138.1 431.3,138.3 430.8,134.2 438.7,131.4 445.7,108.9 444.8,105.1 440.0,102.8 436.8,98.1 430.1,99.2 421.4,96.4 420.4,93.5 416.5,93.6 413.1,98.1 408.4,96.8 394.5,99.6 390.4,101.5 386.8,106.9 382.2,105.9 380.6,109.0 370.2,108.4 365.6,101.6 358.6,100.9 351.9,97.4 347.3,87.6 328.8,80.0 323.7,72.8 317.8,70.5 313.5,71.1 311.9,66.1 305.2,63.7 299.5,65.9 293.8,62.0 278.7,66.8 278.1,68.6 268.0,67.9 272.1,69.9 270.3,71.6 250.8,72.4 251.2,75.3 248.1,79.2 237.0,86.4 237.6,92.8 235.7,96.1 243.1,98.1 251.0,96.9 252.4,101.7 256.5,104.4 262.2,107.1 269.1,107.3 267.2,113.9 269.5,115.9 278.2,118.7 276.4,126.6 269.5,129.0 265.3,135.2 260.7,135.6 259.4,142.0 264.5,155.6 265.4,165.2 263.7,171.4 266.4,176.3 265.7,179.8 285.9,189.6 292.2,189.6 293.9,197.6 301.0,198.9 303.3,197.4 305.9,200.0 315.4,202.6 311.6,201.9 312.7,204.9 310.1,208.5 300.9,210.1 290.9,217.1 290.0,221.5 293.2,228.0 290.5,230.9 289.5,237.7 294.2,238.0 293.5,240.1 287.9,242.7 277.4,256.1 274.8,257.1 273.0,261.0 274.9,265.7 259.3,273.6 256.0,285.0 247.3,300.2 230.2,310.5 227.3,319.3 220.0,327.1 219.1,332.0 212.6,334.6 200.5,335.9 192.4,339.5 188.7,339.1 183.9,330.6 178.1,330.5 171.7,336.6 168.7,343.9 157.0,355.2 155.0,368.3 162.7,372.5 172.7,374.0 170.7,392.3 175.4,399.0 186.1,400.1 185.9,408.2 191.8,415.5 197.6,429.4 194.7,431.8 194.9,436.5 197.9,436.8 191.5,440.9 191.7,442.4 187.4,443.3 183.5,442.2 183.5,437.2 170.9,441.0 168.5,444.7 160.8,444.6 157.0,441.1 141.2,443.1 139.6,440.8 137.1,443.2 134.9,441.6 134.5,450.7 129.1,450.7 129.6,453.3 132.3,453.9Z M120.3,462.0 123.6,461.7 125.5,458.1 123.9,455.5Z M653.1,519.6 655.6,520.1 655.6,512.8Z M657.8,520.5 657.9,516.2 660.3,518.9 659.8,522.1Z M676.0,495.3 676.1,492.5 676.7,492.4 677.6,492.8 678.8,496.4 676.9,497.1Z M669.0,506.0 669.5,504.4 670.6,503.0 673.2,504.1 670.6,506.4Z M214.7,807.4 215.9,811.1 217.6,811.1 216.1,806.2Z M672.2,510.5 673.8,508.6 676.1,508.8 676.4,511.3Z M119.9,455.4 123.3,454.5 123.9,450.5Z M659.0,514.9 659.1,515.3 659.6,515.4 660.0,516.0 660.3,517.8 662.1,516.0 660.9,513.3 660.1,514.3Z M340.1,176.9 349.4,177.0 350.7,174.8 354.5,181.4 351.3,177.2Z M678.0,502.8 678.4,497.8 679.9,502.5Z M274.6,826.9 275.9,825.6 278.3,829.9Z M674.4,511.6 675.9,514.7 677.9,513.2Z M324.6,184.5 327.4,189.6 327.7,193.0Z M673.7,519.8 674.3,516.1 675.1,519.8Z M322.0,199.7 326.3,194.9 327.7,193.0Z"/>
+<clipPath id="silhouette"><path d="M127.4,460.6 127.6,464.4 131.7,470.4 130.2,473.1 146.4,484.2 159.8,487.1 164.4,483.3 174.1,480.6 177.3,481.5 172.6,492.6 147.4,501.5 145.1,497.2 141.6,495.9 139.4,500.2 147.5,511.0 174.9,539.6 190.1,548.0 194.7,546.9 195.3,546.6 198.8,546.1 198.9,545.6 223.1,534.1 230.0,520.2 227.7,510.5 231.5,503.2 238.9,500.7 235.3,510.5 235.7,512.7 238.3,513.3 235.7,517.9 238.3,518.6 239.5,524.9 237.8,529.6 245.5,550.4 244.5,554.5 243.3,557.5 241.4,564.5 241.5,571.3 239.1,573.3 243.8,594.6 245.8,614.3 255.2,648.2 258.2,669.0 257.1,671.4 261.8,688.1 266.8,695.5 277.9,720.2 278.5,723.5 282.6,725.4 292.1,751.7 298.7,783.7 307.9,805.7 316.7,815.0 316.9,815.4 322.3,825.4 332.2,854.8 338.4,882.8 344.2,898.6 358.9,916.4 364.7,921.5 371.2,922.7 384.2,914.4 386.7,910.3 388.8,896.5 394.4,892.0 409.7,887.2 407.3,881.8 408.0,878.0 417.1,864.6 417.4,858.6 420.5,856.1 433.6,857.0 432.5,841.1 432.9,836.2 431.0,812.7 431.4,812.6 431.5,811.1 431.0,810.8 430.8,811.1 430.9,811.1 431.0,810.8 432.4,807.6 432.6,805.8 433.5,805.0 440.6,793.4 443.7,783.4 446.0,768.5 444.2,759.8 440.4,741.4 442.1,730.1 438.1,715.6 440.4,705.8 446.2,694.8 450.6,691.6 456.5,690.8 459.4,696.1 462.7,695.3 467.9,688.1 470.7,677.9 474.0,676.8 483.3,678.2 498.7,670.4 500.5,662.9 497.3,660.8 498.7,657.0 505.7,650.1 523.3,640.2 536.5,624.9 547.6,619.0 565.1,595.9 568.4,591.1 580.7,580.9 608.1,570.1 612.4,563.6 619.3,558.9 617.9,556.4 619.4,552.9 625.5,548.3 620.8,534.2 623.7,528.4 629.1,523.8 638.3,521.0 647.6,517.6 653.4,508.7 658.0,506.9 656.1,510.3 657.8,516.2 659.3,516.5 658.9,515.1 659.0,514.8 660.4,513.7 659.5,513.4 668.1,511.9 668.6,505.9 670.1,503.0 670.6,502.9 672.0,503.2 673.1,503.8 676.3,503.9 677.2,500.4 674.8,496.4 675.3,492.9 676.1,492.4 677.2,492.2 678.1,484.1 675.4,480.3 675.5,476.5 677.9,473.7 671.4,471.9 672.6,466.2 667.2,458.2 667.5,453.9 671.8,452.2 671.5,440.9 661.2,438.5 652.4,429.8 656.7,421.7 660.2,423.6 662.7,421.7 663.9,414.0 676.7,415.1 679.0,411.1 674.7,409.2 674.4,405.7 666.9,404.7 662.1,398.9 655.1,396.4 656.4,387.2 666.0,379.0 661.6,375.2 662.6,372.0 672.4,381.1 679.0,381.6 678.5,377.8 681.3,378.5 683.2,386.2 688.5,390.0 693.6,390.4 696.1,384.0 698.3,385.4 702.3,391.1 701.8,405.9 700.8,409.0 703.4,410.9 717.7,415.8 739.8,413.9 750.0,416.3 761.6,414.5 771.3,419.1 772.9,424.0 766.3,422.8 765.8,434.8 763.7,434.8 764.1,437.2 762.0,438.6 757.6,439.6 757.2,445.4 755.0,443.4 753.3,445.3 750.5,444.2 748.5,447.5 744.1,446.5 738.9,453.1 737.0,461.6 741.4,472.3 743.0,473.6 744.9,471.8 749.3,481.1 754.7,476.5 753.8,470.3 758.9,465.2 757.9,459.7 766.7,457.9 770.1,471.6 769.6,481.4 773.5,488.3 775.6,508.8 778.0,508.0 778.5,504.7 783.5,508.8 786.3,507.6 787.8,503.2 790.7,503.9 791.7,500.9 789.0,485.2 790.7,482.1 789.9,478.1 794.4,479.3 796.9,472.9 798.0,462.3 795.4,448.3 797.5,447.5 799.0,450.7 806.8,449.7 808.1,451.9 813.7,451.9 817.6,454.3 820.3,444.9 833.2,419.5 833.3,416.2 829.4,414.4 831.6,406.5 835.1,405.5 841.5,397.6 840.5,394.3 845.1,388.0 843.6,387.6 843.8,379.0 842.0,376.6 846.5,370.1 851.5,369.8 854.9,365.7 865.9,358.8 868.0,355.0 873.3,352.4 888.6,350.4 890.3,355.0 895.6,357.6 898.5,356.9 891.5,347.2 891.2,342.4 900.8,333.8 904.1,333.6 904.1,324.5 897.4,320.5 893.9,321.7 891.2,319.7 887.9,320.0 885.0,317.2 877.1,319.3 879.8,310.7 882.9,309.6 883.5,307.4 878.9,300.2 873.3,303.4 871.2,299.7 877.7,293.7 873.4,294.0 869.3,287.5 854.9,294.8 852.5,300.2 840.4,296.2 834.9,296.3 830.3,290.9 828.4,294.4 825.1,294.4 819.2,298.7 811.7,310.8 795.5,312.1 791.7,321.5 787.1,322.0 777.9,327.5 779.5,331.3 774.7,336.3 767.9,337.5 766.5,335.0 756.4,339.2 755.0,336.6 750.8,335.2 747.9,343.3 750.4,346.3 760.1,347.0 761.5,352.4 760.4,358.3 762.5,363.8 761.1,365.2 756.8,363.2 752.3,366.2 743.7,365.5 741.8,367.2 723.3,367.3 716.9,363.5 712.0,364.9 711.0,367.5 702.0,369.4 687.6,365.0 682.5,366.3 675.5,357.4 672.4,356.2 673.7,353.3 676.4,352.5 672.8,343.9 675.8,334.0 672.4,328.7 669.4,327.8 662.6,331.6 655.9,332.0 655.6,334.7 657.4,335.3 653.3,345.9 652.4,354.2 651.8,357.4 656.6,364.5 655.0,374.3 652.2,379.8 646.5,376.4 645.7,378.2 635.5,377.9 634.3,380.0 625.5,374.5 617.9,377.7 607.5,372.0 591.3,371.2 591.1,366.7 587.7,364.9 580.4,368.3 576.9,367.7 576.6,364.5 572.2,364.4 570.3,361.7 561.8,359.2 563.0,354.0 561.3,350.6 551.9,348.8 547.5,345.1 545.1,347.7 540.3,347.5 540.8,350.4 533.9,346.7 528.4,346.4 525.9,350.8 522.5,347.2 510.7,345.8 509.2,339.3 503.0,340.5 492.7,333.2 487.7,335.1 476.6,328.4 475.3,325.8 472.7,326.8 469.5,320.3 461.3,317.4 451.9,310.4 446.9,312.1 438.8,306.3 440.5,299.1 444.2,296.9 444.3,289.5 448.0,283.5 447.9,277.8 450.0,277.7 460.2,266.4 464.9,265.6 453.2,257.3 443.0,254.4 443.7,249.6 433.3,242.5 430.3,241.8 426.3,243.6 423.9,240.8 421.5,240.8 413.9,228.9 411.9,227.9 407.9,234.2 403.0,225.8 405.8,223.3 402.1,218.4 404.3,212.2 396.0,203.9 397.5,199.8 393.9,196.4 391.9,198.1 395.0,195.1 399.8,194.4 403.3,191.8 405.3,199.0 409.0,201.2 413.1,200.7 419.1,194.5 422.0,196.3 426.9,190.1 420.3,183.2 422.2,174.7 409.8,172.5 407.8,163.6 412.8,164.1 407.4,153.4 410.4,151.1 420.1,151.6 425.7,145.6 425.6,138.1 431.3,138.3 430.8,134.2 438.7,131.4 445.7,108.9 444.8,105.1 440.0,102.8 436.8,98.1 430.1,99.2 421.4,96.4 420.4,93.5 416.5,93.6 413.1,98.1 408.4,96.8 394.5,99.6 390.4,101.5 386.8,106.9 382.2,105.9 380.6,109.0 370.2,108.4 365.6,101.6 358.6,100.9 351.9,97.4 347.3,87.6 328.8,80.0 323.7,72.8 317.8,70.5 313.5,71.1 311.9,66.1 305.2,63.7 299.5,65.9 293.8,62.0 278.7,66.8 278.1,68.6 268.0,67.9 272.1,69.9 270.3,71.6 250.8,72.4 251.2,75.3 248.1,79.2 237.0,86.4 237.6,92.8 235.7,96.1 243.1,98.1 251.0,96.9 252.4,101.7 256.5,104.4 262.2,107.1 269.1,107.3 267.2,113.9 269.5,115.9 278.2,118.7 276.4,126.6 269.5,129.0 265.3,135.2 260.7,135.6 259.4,142.0 264.5,155.6 265.4,165.2 263.7,171.4 266.4,176.3 265.7,179.8 285.9,189.6 292.2,189.6 293.9,197.6 301.0,198.9 303.3,197.4 305.9,200.0 315.4,202.6 311.6,201.9 312.7,204.9 310.1,208.5 300.9,210.1 290.9,217.1 290.0,221.5 293.2,228.0 290.5,230.9 289.5,237.7 294.2,238.0 293.5,240.1 287.9,242.7 277.4,256.1 274.8,257.1 273.0,261.0 274.9,265.7 259.3,273.6 256.0,285.0 247.3,300.2 230.2,310.5 227.3,319.3 220.0,327.1 219.1,332.0 212.6,334.6 200.5,335.9 192.4,339.5 188.7,339.1 183.9,330.6 178.1,330.5 171.7,336.6 168.7,343.9 157.0,355.2 155.0,368.3 162.7,372.5 172.7,374.0 170.7,392.3 175.4,399.0 186.1,400.1 185.9,408.2 191.8,415.5 197.6,429.4 194.7,431.8 194.9,436.5 197.9,436.8 191.5,440.9 191.7,442.4 187.4,443.3 183.5,442.2 183.5,437.2 170.9,441.0 168.5,444.7 160.8,444.6 157.0,441.1 141.2,443.1 139.6,440.8 137.1,443.2 134.9,441.6 134.5,450.7 129.1,450.7 129.6,453.3 132.3,453.9Z M120.3,462.0 123.6,461.7 125.5,458.1 123.9,455.5Z M653.1,519.6 655.6,520.1 655.6,512.8Z M657.8,520.5 657.9,516.2 660.3,518.9 659.8,522.1Z M676.0,495.3 676.1,492.5 676.7,492.4 677.6,492.8 678.8,496.4 676.9,497.1Z M669.0,506.0 669.5,504.4 670.6,503.0 673.2,504.1 670.6,506.4Z M214.7,807.4 215.9,811.1 217.6,811.1 216.1,806.2Z M672.2,510.5 673.8,508.6 676.1,508.8 676.4,511.3Z M119.9,455.4 123.3,454.5 123.9,450.5Z M659.0,514.9 659.1,515.3 659.6,515.4 660.0,516.0 660.3,517.8 662.1,516.0 660.9,513.3 660.1,514.3Z M340.1,176.9 349.4,177.0 350.7,174.8 354.5,181.4 351.3,177.2Z M678.0,502.8 678.4,497.8 679.9,502.5Z M274.6,826.9 275.9,825.6 278.3,829.9Z M674.4,511.6 675.9,514.7 677.9,513.2Z M324.6,184.5 327.4,189.6 327.7,193.0Z M673.7,519.8 674.3,516.1 675.1,519.8Z M322.0,199.7 326.3,194.9 327.7,193.0Z"/></clipPath>
+<path id="cursor" d="M16 0 L-11.2 9.6 L-5.6 0 L-11.2 -9.6 Z" fill="none" stroke="#000000" stroke-width="4.7" stroke-linejoin="round"/>
+</defs>
+<rect width="1024" height="1024" fill="#FFFFFF"/>
+<g clip-path="url(#silhouette)">
+<use href="#cursor" xlink:href="#cursor" transform="translate(255.30 596.50) rotate(-176.62) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(262.50 604.70) rotate(-152.63) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(356.40 297.10) rotate(70.62) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(368.00 298.30) rotate(112.93) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(381.90 314.30) rotate(-175.60) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(643.40 498.30) rotate(-18.45) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(365.50 785.50) rotate(-50.91) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(256.50 584.20) rotate(133.52) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(245.80 579.00) rotate(91.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(397.20 665.60) rotate(-92.81) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(407.50 655.60) rotate(-139.78) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(429.80 761.80) rotate(40.79) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(387.40 783.60) rotate(-157.88) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(672.10 484.00) rotate(141.85) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(382.40 303.10) rotate(154.70) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(658.50 512.20) rotate(-81.07) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(358.20 770.40) rotate(26.76) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(413.70 634.00) rotate(145.07) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(437.10 787.80) rotate(-62.68) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(343.80 307.10) rotate(17.53) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(257.00 568.60) rotate(112.85) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(374.80 638.90) rotate(18.54) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(370.60 334.40) rotate(-111.90) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(387.30 650.30) rotate(-24.93) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(343.10 325.90) rotate(-34.94) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(385.20 661.40) rotate(-53.90) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(374.20 756.40) rotate(95.85) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(377.10 796.00) rotate(-105.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(354.80 335.60) rotate(-72.69) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(652.60 471.60) rotate(66.33) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(341.30 295.90) rotate(39.42) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(360.40 755.10) rotate(62.28) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(350.30 783.00) rotate(-14.46) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(367.90 767.00) rotate(68.20) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(356.60 793.00) rotate(-45.07) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(330.60 309.30) rotate(6.39) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(353.70 307.00) rotate(35.18) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(270.40 611.70) rotate(-147.64) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(428.50 778.80) rotate(-16.51) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(362.50 344.00) rotate(-91.12) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(440.00 755.67) rotate(79.35) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(266.00 577.00) rotate(137.36) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(662.30 466.50) rotate(91.42) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(394.80 318.60) rotate(-170.01) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(256.90 624.20) rotate(-112.02) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(344.90 768.40) rotate(18.33) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(333.30 330.60) rotate(-31.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(402.60 782.50) rotate(-170.57) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(393.60 768.10) rotate(156.61) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(397.20 627.50) rotate(92.95) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(668.50 498.90) rotate(-136.12) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(670.26 475.17) rotate(114.88) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(368.70 323.30) rotate(-122.92) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(385.50 289.30) rotate(135.14) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(644.40 510.10) rotate(-46.00) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(353.30 323.10) rotate(-50.37) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(361.50 285.60) rotate(89.22) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(402.80 639.10) rotate(132.59) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(344.20 344.20) rotate(-60.58) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(643.40 461.10) rotate(59.65) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(426.50 650.70) rotate(-171.32) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(425.60 795.40) rotate(-48.89) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(383.60 329.40) rotate(-142.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(347.00 285.70) rotate(61.18) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(395.40 615.70) rotate(88.32) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(637.50 473.30) rotate(38.14) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(267.70 587.80) rotate(160.07) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(425.10 746.50) rotate(55.46) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(626.00 504.50) rotate(-19.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(647.20 484.90) rotate(26.90) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(271.50 565.10) rotate(130.20) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(380.30 341.60) rotate(-122.59) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(393.00 797.20) rotate(-136.61) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(381.00 768.00) rotate(133.54) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(363.80 659.60) rotate(-22.60) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(283.20 584.20) rotate(162.78) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(248.60 608.30) rotate(-104.12) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(635.10 485.10) rotate(15.03) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(354.30 275.90) rotate(78.39) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(414.10 758.20) rotate(28.06) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(285.30 604.70) rotate(-167.59) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(362.20 634.30) rotate(19.13) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(392.20 755.00) rotate(131.85) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(324.40 298.10) rotate(21.49) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(373.40 815.50) rotate(-92.00) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(396.90 298.80) rotate(158.24) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(387.30 636.70) rotate(46.22) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(414.50 645.10) rotate(176.87) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(621.60 486.60) rotate(8.00) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(413.50 774.90) rotate(-1.36) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(653.00 450.20) rotate(78.34) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(425.10 667.90) rotate(-142.89) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(394.30 810.90) rotate(-123.55) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(417.50 618.80) rotate(127.87) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(387.20 743.00) rotate(113.69) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(279.00 624.10) rotate(-139.91) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(365.60 357.70) rotate(-94.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(414.70 682.80) rotate(-116.61) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(247.90 560.40) rotate(93.87) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(351.90 742.60) rotate(59.86) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(369.00 272.90) rotate(100.08) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(382.60 610.00) rotate(69.22) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(375.50 676.00) rotate(-55.17) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(429.20 627.10) rotate(149.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(369.80 737.70) rotate(86.69) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(437.80 734.80) rotate(80.90) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(338.20 784.10) rotate(-11.24) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(388.80 678.50) rotate(-77.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(338.80 803.50) rotate(-38.08) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(271.00 637.30) rotate(-121.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(326.10 281.90) rotate(40.83) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(383.90 274.40) rotate(119.88) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(408.70 314.40) rotate(-178.01) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(404.80 603.10) rotate(101.17) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(316.60 328.30) rotate(-18.87) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(358.20 805.80) rotate(-63.88) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(435.70 640.50) rotate(171.82) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(619.80 467.00) rotate(31.12) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(267.40 550.60) rotate(115.80) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(243.70 531.30) rotate(88.40) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(413.20 791.50) rotate(-29.28) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(423.30 810.60) rotate(-60.20) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(443.20 655.50) rotate(-168.64) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(396.50 350.60) rotate(-132.48) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(338.60 359.70) rotate(-63.63) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(399.00 281.60) rotate(139.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(331.40 749.90) rotate(34.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(401.10 330.00) rotate(-156.34) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(391.10 696.60) rotate(-84.16) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(327.10 767.30) rotate(12.70) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(291.20 570.30) rotate(150.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(366.10 607.70) rotate(51.81) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(416.30 536.70) rotate(-67.49) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(328.10 486.30) rotate(41.76) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(318.90 365.80) rotate(79.38) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(412.40 736.80) rotate(49.63) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(239.80 472.10) rotate(33.01) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(307.10 312.10) rotate(0.76) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(350.20 260.40) rotate(77.46) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(444.70 373.90) rotate(87.74) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(465.80 362.80) rotate(2.40) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(573.90 411.50) rotate(86.79) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(624.70 520.00) rotate(-36.93) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(607.60 496.20) rotate(-4.21) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(614.90 418.90) rotate(173.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(538.80 409.00) rotate(149.78) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(545.80 375.80) rotate(36.44) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(300.60 595.30) rotate(179.34) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(361.90 475.60) rotate(-29.39) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(358.30 677.40) rotate(-39.48) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(580.80 375.10) rotate(91.46) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(562.40 429.70) rotate(110.03) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(634.50 407.20) rotate(132.21) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(322.90 790.00) rotate(-14.33) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(516.00 632.30) rotate(-6.52) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(559.60 357.70) rotate(39.17) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(617.90 393.20) rotate(180.46) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(297.30 623.60) rotate(-151.86) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(517.30 415.90) rotate(71.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(371.60 255.40) rotate(99.67) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(349.50 827.50) rotate(-65.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(344.70 647.60) rotate(-1.62) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(648.30 427.40) rotate(78.38) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(249.70 495.20) rotate(31.06) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(537.40 434.50) rotate(0.65) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(330.70 239.70) rotate(57.97) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(669.10 374.70) rotate(129.16) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(317.30 346.00) rotate(-36.76) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(414.60 296.70) rotate(163.06) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(345.60 857.00) rotate(-103.40) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(381.30 833.30) rotate(-99.38) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(438.90 352.40) rotate(16.99) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(455.10 401.20) rotate(62.09) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(402.00 439.30) rotate(9.58) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(474.40 338.50) rotate(116.14) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(519.40 394.10) rotate(87.97) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(440.30 326.90) rotate(49.11) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(501.00 349.10) rotate(106.70) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(419.70 337.30) rotate(-157.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(511.80 439.00) rotate(77.47) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(402.50 407.60) rotate(-23.27) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(448.20 623.20) rotate(156.17) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(485.10 383.70) rotate(130.51) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(427.60 401.50) rotate(74.24) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(358.00 889.70) rotate(-41.78) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(354.90 721.00) rotate(73.04) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(630.50 440.50) rotate(58.95) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(495.00 413.70) rotate(68.23) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(383.80 724.50) rotate(102.44) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(427.70 718.20) rotate(73.67) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(648.00 389.00) rotate(71.20) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(225.20 493.50) rotate(34.71) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(347.00 615.70) rotate(31.64) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(214.50 473.20) rotate(41.18) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(598.70 404.60) rotate(152.99) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(417.00 368.50) rotate(105.99) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(694.20 372.40) rotate(197.87) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(393.10 584.90) rotate(87.04) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(522.60 366.70) rotate(69.78) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(435.90 686.40) rotate(-134.54) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(404.80 261.20) rotate(129.81) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(266.10 526.30) rotate(44.44) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(422.30 592.50) rotate(115.87) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(403.50 853.40) rotate(-27.13) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(324.60 214.60) rotate(24.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(386.00 369.10) rotate(-113.17) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(304.70 254.50) rotate(52.43) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(562.10 393.70) rotate(152.95) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(376.30 861.20) rotate(-112.04) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(424.50 831.00) rotate(-70.89) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(305.40 287.20) rotate(24.38) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(395.20 880.90) rotate(-54.31) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(380.20 462.90) rotate(8.48) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(305.30 477.40) rotate(-57.58) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(597.90 475.20) rotate(14.98) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(602.10 530.70) rotate(-82.82) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(348.70 381.40) rotate(-15.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(273.70 497.70) rotate(29.33) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(262.90 473.60) rotate(9.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(561.10 474.90) rotate(93.25) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(765.30 381.90) rotate(87.97) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(856.30 344.10) rotate(186.16) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(288.80 546.00) rotate(130.93) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(430.20 516.20) rotate(47.80) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(304.10 772.80) rotate(-112.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(813.40 386.40) rotate(221.17) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(777.40 427.50) rotate(127.88) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(337.40 508.20) rotate(-32.57) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(281.60 672.90) rotate(-32.85) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(359.80 531.20) rotate(3.41) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(363.70 579.30) rotate(20.03) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(445.10 543.60) rotate(-66.81) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(394.50 551.70) rotate(18.02) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(826.20 357.30) rotate(205.68) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(327.50 570.70) rotate(-26.69) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(590.20 442.00) rotate(81.92) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(313.10 532.30) rotate(-18.49) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(752.90 451.70) rotate(171.95) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(294.80 361.10) rotate(18.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(308.70 688.20) rotate(-4.25) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(450.10 575.00) rotate(-27.09) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(184.70 479.60) rotate(1.77) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(251.80 446.20) rotate(-50.63) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(303.70 721.20) rotate(-46.61) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(398.60 522.20) rotate(-42.24) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(194.00 528.70) rotate(-23.18) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(490.80 649.10) rotate(-49.53) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(215.90 440.20) rotate(-1.42) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(309.70 390.70) rotate(-33.45) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(164.40 450.70) rotate(-17.63) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(535.40 597.10) rotate(-113.60) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(511.90 552.50) rotate(-19.58) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(564.60 571.20) rotate(-131.56) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(308.90 657.50) rotate(4.42) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(537.10 503.00) rotate(-6.84) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(715.20 390.20) rotate(153.30) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(437.20 463.20) rotate(94.03) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(375.00 501.80) rotate(-64.43) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(544.90 545.90) rotate(-135.47) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(579.70 497.90) rotate(208.83) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(455.30 492.60) rotate(-41.93) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(320.40 441.10) rotate(22.13) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(373.50 432.80) rotate(71.23) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(437.50 430.20) rotate(-40.61) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(493.10 475.10) rotate(66.58) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(321.40 607.50) rotate(14.66) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(198.90 402.00) rotate(72.35) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(493.10 579.80) rotate(5.21) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(488.10 617.50) rotate(-90.02) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(248.90 338.00) rotate(-42.30) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(478.30 541.10) rotate(-77.16) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(224.10 373.50) rotate(-47.01) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(252.00 397.80) rotate(-15.68) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(501.80 511.70) rotate(-60.23) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(270.00 282.70) rotate(28.70) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(421.20 564.80) rotate(17.59) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(195.50 351.30) rotate(75.13) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(464.40 668.20) rotate(-50.55) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(410.70 482.40) rotate(81.19) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(164.20 507.80) rotate(-64.75) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(790.60 367.80) rotate(164.94) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(466.30 445.30) rotate(81.22) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(284.20 446.70) rotate(14.78) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(359.40 227.20) rotate(-3.05) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(326.70 155.40) rotate(65.31) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(285.80 158.80) rotate(105.73) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(387.00 201.60) rotate(105.84) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(440.30 268.20) rotate(113.77) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(527.10 464.50) rotate(16.38) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(335.40 409.90) rotate(-44.96) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(280.30 319.80) rotate(63.14) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(337.70 699.70) rotate(-59.19) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(342.60 188.00) rotate(112.11) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(809.70 432.50) rotate(130.12) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(820.80 317.40) rotate(169.58) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(419.80 119.90) rotate(98.16) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(303.50 94.20) rotate(13.15) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(360.30 117.00) rotate(121.37) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(392.40 159.60) rotate(63.19) scale(0.285)"/>
+<use href="#cursor" xlink:href="#cursor" transform="translate(780.50 473.50) rotate(104.04) scale(0.285)"/>
+</g>
+<use href="#india" xlink:href="#india" fill="none" stroke="#000000" stroke-width="3.5" stroke-linejoin="round"/>
+</svg>
   <!-- Archival Broadsheet Hairline Divider -->
   <line x1="126" y1="22" x2="126" y2="98" stroke="#D3CFC5" stroke-width="1.5"/>
 
@@ -49,14 +322,8 @@
         font-size="42"
         font-weight="400"
         letter-spacing="-0.6"
-        fill="#0A0F3C">AI Watchdogs<tspan fill="#FF9933" dx="9">·</tspan><tspan dx="9">India</tspan></text>
+        fill="#000000">AI Watchdogs<tspan fill="#000000" dx="9">·</tspan><tspan dx="9">India</tspan></text>
 
-  <!-- Secondary Institutional Sub-line -->
-  <circle cx="152.5" cy="87.5" r="4.0" fill="#138808"/>
-  <text x="166" y="92.5"
-        font-family="'Geist Serif', 'Times New Roman', Times, Georgia, serif"
-        font-size="14.5"
-        font-weight="400"
-        letter-spacing="1.4"
-        fill="#585B7A">AIWATCHDOGS.IN · OPEN CIVIC-AUDIT SWARM</text>
+  <!-- Tagline -->
+  <text x="148" y="88" font-family="'Geist Serif', 'Times New Roman', Times, Georgia, serif" font-size="11" letter-spacing="0.4" fill="#3A3A3A" textLength="520">A COORDINATED AI AGENT SWARM AUDITING THE GOVERNMENT IN THE OPEN</text>
 </svg>

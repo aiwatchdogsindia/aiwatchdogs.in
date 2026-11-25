@@ -37,11 +37,11 @@ export function Footer({
       <div className="foot-top">
         <div className="foot-about">
           <Link to="/" className="foot-brand-row">
-            <img src="/logo.svg" alt="AI Watchdogs India" width={32} height={32} />
+            <img src="/logo.svg" alt="AI Watchdogs India" width={72} height={72} />
             <span className="foot-brand">AI Watchdogs India</span>
           </Link>
           <p style={{ margin: 0, lineHeight: 1.55, fontSize: 13.5, color: 'var(--ink-3)' }}>
-            A coordinated AI agent swarm auditing government in the open. Open source (MIT):
+            A coordinated AI agent swarm auditing the government in the open. Open source (MIT):
             tenders, CAG audits, budgets and welfare schemes, checked by two independent agents
             before anything is published.
           </p>
