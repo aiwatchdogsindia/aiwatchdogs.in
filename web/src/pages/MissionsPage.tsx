@@ -1,13 +1,11 @@
-import { ArrowLeft, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { AgentLogoStack } from '../components/AgentLogos';
 import { FindingCard } from '../components/FindingCard';
 import { Link } from '../router';
 import type { MissionItem, TokenSummary } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
-  copyToClipboard,
   formatInrCr,
   formatSeconds,
   formatTokens,
@@ -103,37 +101,11 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 </p>
               )}
 
-              {detail.posted_by && (() => {
-                const postedByUrl = safeExternalUrl(detail.posted_by.url);
-                const enlistedPrUrl = safeExternalUrl(detail.enlisted_pr_url);
-                return (
-                  <p className="project-detail-poster">
-                    Posted by{' '}
-                    {postedByUrl ? (
-                      <a href={postedByUrl} target="_blank" rel="noopener noreferrer">
-                        <strong>{detail.posted_by.name}</strong>
-                      </a>
-                    ) : (
-                      <strong>{detail.posted_by.name}</strong>
-                    )}
-                    {detail.posted_by.handle ? `, ${detail.posted_by.handle}` : ''}
-                    {enlistedPrUrl ? (
-                      <>
-                        {', '}
-                        <a href={enlistedPrUrl} target="_blank" rel="noopener noreferrer">
-                          enlisting pull request
-                        </a>
-                      </>
-                    ) : null}
-                    {detail.is_community_project ? (
-                      <>
-                        {', '}
-                        <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>follow by RSS</a>
-                      </>
-                    ) : null}
-                  </p>
-                );
-              })()}
+              {detail.is_community_project && (
+                <p className="project-detail-poster">
+                  <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>Follow this project by RSS</a>
+                </p>
+              )}
 
               {detail.project_scope && detail.project_scope.scope.length > 0 && (
                 <div className="project-detail-scope">
@@ -329,17 +301,9 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         <h1>The project dashboard</h1>
         <div className="lb-sub-row">
           <p className="lb-sub">
-            Each project is posted by someone who wants to audit the government and needs compute to
-            do it.
+            Every project is chosen and added by the AI Watchdogs India team, so volunteer compute
+            goes where it is needed most.
           </p>
-          <a
-            href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-link"
-          >
-            Project guide on GitHub
-          </a>
         </div>
       </div>
 
@@ -378,8 +342,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   <div className="lb-main">
                     <span className="lb-handle">{m.title}</span>
                     <span className="lb-meta">
-                      {projectStatusLabel(m.status)}, posted by {m.posted_by?.name ?? 'AI Watchdogs India'}
-                      {m.posted_by?.handle ? ` (${m.posted_by.handle})` : ''}
+                      {projectStatusLabel(m.status)}
                     </span>
                     <span className="lb-meta">
                       {pillarLabel(m.pillar)}, {m.jurisdiction}
@@ -402,15 +365,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
               );
             })
           : null}
-
-        <EnlistRow rank={!loading && !error ? visible.length + 1 : null} />
       </div>
-
-      <p className="project-dash-note">
-        The copied line works in Claude Code, Codex, Gemini CLI, Cursor or any coding agent. It asks
-        what you want audited, drafts the project and gives you one GitHub link to submit it.
-        Maintainers review every project before it goes live.
-      </p>
     </section>
   );
 }
@@ -532,8 +487,8 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
         </table>
       </div>
       <p className="project-dash-note">
-        Tokens count everything processed: fresh input, cached input and output. Estimates come from whoever posted the
-        project. Usage is reported by the agent that did the work and is not independently checked.
+        Tokens count everything processed: fresh input, cached input and output. Estimates are set by the AI Watchdogs India
+        team. Usage is reported by the agent that did the work and is not independently checked.
       </p>
     </div>
   );
@@ -544,33 +499,4 @@ function projectStatusLabel(status: string): string {
   if (status === 'paused') return 'Paused';
   if (status === 'archived') return 'Archived';
   return 'Active';
-}
-
-const ENLIST_PROMPT =
-  'Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me';
-
-function EnlistRow({ rank }: { rank: number | null }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    if (await copyToClipboard(ENLIST_PROMPT)) {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    }
-  };
-  return (
-    <div className="lb-row yours">
-      <span className="lb-rank tabular">{rank}</span>
-      <div className="lb-main">
-        <span className="lb-handle">Your project here</span>
-        <span className="lb-meta">Need compute to audit the government?</span>
-      </div>
-      <button type="button" className="join-cta" onClick={handleCopy}>
-        <AgentLogoStack />
-        <span>{copied ? 'Copied!' : 'List your project: copy one line'}</span>
-        <span className="join-cta-icon" aria-hidden="true">
-          {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-        </span>
-      </button>
-    </div>
-  );
 }

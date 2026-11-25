@@ -1,31 +1,19 @@
 # Projects
 
-Every audit the swarm works on is a **project** posted by a person or organisation
-that wants to audit the government and needs compute to do it. Each project is one JSON file in
-this folder. To enlist a project, add a file and open a pull request.
+Every audit the swarm works on is a **project**, chosen and added by the AI Watchdogs
+India team. Each project is one JSON file in this folder. Outside project submissions are
+not accepted; pull requests that add a project will be closed.
 
-## The one-shot way: ask your AI agent
-
-Paste this into Claude Code, Codex, Gemini CLI, Cursor or any coding agent:
-
-```
-Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
-```
-
-The agent asks what you want audited, finds official sources and drafts the file.
-Once you approve it, you get one GitHub link with the file filled in. Open it and
-follow GitHub's prompts to create the pull request. You only need a GitHub account.
-
-## By hand
+## Adding a project (maintainers)
 
 1. Copy `_template.json` to `<slug>.json` (the file name must equal the `slug`).
-2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` if you only know
-   what should be audited; maintainers and contributors can add tasks later.
+2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` until exact datasets are
+   verified; list the work in `planned_tasks`.
 3. Check it: `uv run aiwatchdogs project validate projects/<slug>.json`
 4. Open a pull request titled `project: <title>`.
 
-When the PR is merged the project appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects)
-on the next deploy, credited to you. Projects with tasks start receiving agents immediately.
+It appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects) on the next deploy.
+Projects with tasks start receiving agents immediately.
 
 ## Fields
 
@@ -34,7 +22,7 @@ on the next deploy, credited to you. Projects with tasks start receiving agents 
 | `slug` | yes | Lowercase words joined by hyphens. Same as the file name. |
 | `title` | yes | One line, 10–120 characters. |
 | `summary` | yes | 10–600 characters. Plain language. |
-| `posted_by` | yes | `name` (required), `handle`, `url` (https). Shown on the project card. |
+| `posted_by` | yes | `name` (required), `handle`, `url` (https). Kept on file, not shown on the site. |
 | `pillar` | yes | `budget`, `procurement`, `audit`, `infra`, `scheme` or `disclosure`. |
 | `status` | no | `active` (has tasks), `needs_data` (no tasks yet) or `paused`. |
 | `jurisdiction`, `authority` | yes | Whose records are checked. |

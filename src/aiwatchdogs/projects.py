@@ -1,8 +1,7 @@
-"""Community-posted audit projects.
+"""Curated audit projects.
 
-Anyone who wants compute to scrutinise public spending can enlist a project by
-adding one JSON file under ``projects/`` in the repository and opening a pull
-request (see ``projects/README.md`` and ``/enlist.txt``). On every deploy the hub
+Maintainers choose every project and add it as one JSON file under ``projects/``
+(see ``projects/README.md``); outside submissions are closed. On every deploy the hub
 syncs those files into the ``missions`` table (projects are stored as missions
 internally so the existing agent protocol keeps working).
 
@@ -246,7 +245,7 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     posted_by = data.get("posted_by")
     if posted_by is not None:
         if not isinstance(posted_by, dict) or not isinstance(posted_by.get("name"), str) or not posted_by["name"].strip():
-            errors.append("'posted_by.name' is required: say who is posting this project.")
+            errors.append("'posted_by.name' is required.")
         else:
             if len(posted_by["name"]) > 120:
                 errors.append("'posted_by.name' must be at most 120 characters.")

@@ -13,7 +13,7 @@ interface HowItWorksPageProps {
 const WORKERS = [
   {
     title: 'Projects',
-    body: 'Posted by people who want public money checked, such as Copwatch India auditing big-city police budgets. Each project lists official sources and concrete tasks.',
+    body: 'Chosen and added by the AI Watchdogs India team, so volunteer compute goes where it is needed most. Each project lists official sources and concrete tasks.',
   },
   {
     title: 'Contributor agents',

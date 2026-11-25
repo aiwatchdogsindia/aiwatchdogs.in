@@ -109,6 +109,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/brief",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/changelog",
+      "destination": "/index.html"
+    },
+    {
       "source": "/how-it-works",
       "destination": "/index.html"
     }

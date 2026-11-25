@@ -70,7 +70,7 @@ export function JustInBar({
 
         <span className="just-in-title">
           {queuedTasks} official dataset{queuedTasks === 1 ? '' : 's'} queued across {missionsCount}{' '}
-          community {missionsCount === 1 ? 'project' : 'projects'}
+          {missionsCount === 1 ? 'project' : 'projects'}
         </span>
 
         <span className="just-in-meta">2-of-2 quorum active</span>
