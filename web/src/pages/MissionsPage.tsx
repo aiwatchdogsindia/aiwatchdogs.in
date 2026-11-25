@@ -78,6 +78,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         : 0;
     const methodInfo = detail ? METHODOLOGY_DESCRIPTIONS[detail.methodology_code] : null;
     const isInflation = detail?.methodology_code === INFLATION_METHOD;
+    const isWebsiteAudit = detail?.methodology_code === 'W1';
 
     return (
       <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
@@ -162,6 +163,14 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 </div>
               )}
 
+              {isWebsiteAudit && (
+                <div className="card-sunk card-pad-sm">
+                  <h2>Contribute a website audit</h2>
+                  <p>Run one batch on your computer with uv. Choose a public handle when prompted.
+                    The reader checks the listed websites without a paid model or API key.</p>
+                  <code style={{ overflowWrap: 'anywhere' }}>uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --project gov-in-public-information --max-tasks 1 --provider rule-engine</code>
+                </div>
+              )}
               {methodInfo && (
                 <div
                   className="card-sunk card-pad-sm"
@@ -181,7 +190,10 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 ))}
               </div>
 
-              {!isInflation && (
+              {isWebsiteAudit && (
+                <p><strong>{detail.completed_tasks} of {detail.total_tasks} batches reported.</strong> Open a batch below to see its assigned sites or its dated observations.</p>
+              )}
+              {!isInflation && !isWebsiteAudit && (
                 <div className="kpi-strip cols-4">
                   <div className="kpi-cell">
                     <span className="kpi-value">{pct}%</span>
@@ -278,7 +290,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
             )}
 
             {/* Mission Findings */}
-            {!isInflation && (
+            {!isInflation && !isWebsiteAudit && (
               <div>
                 <div className="section-kicker">
                   Findings &amp; audit leads ({detail.findings?.length ?? 0})
@@ -369,7 +381,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                         <span className="lb-score">{pct}%</span>
                         <span className="lb-score-lbl">
                           {m.completed_tasks}/{m.total_tasks} tasks
-                          {m.methodology_code !== INFLATION_METHOD && `, ${m.verified_findings_count} verified`}
+                          {m.methodology_code !== INFLATION_METHOD && m.methodology_code !== 'W1' && `, ${m.verified_findings_count} verified`}
                         </span>
                       </>
                     ) : (
@@ -576,7 +588,12 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
               const waiting = t.status === 'queued' && t.depends_on?.some((id) => !completed.has(id));
               return (
                 <tr key={t.id}>
-                  <td>{t.title || 'Audit task'}</td>
+                  <td>{t.title || 'Audit task'}
+                    {detail.methodology_code === 'W1' && <div>
+                      {safeExternalUrl(t.retrieval_url) && <a href={safeExternalUrl(t.retrieval_url)!}>Assigned sites (CSV)</a>}
+                      {t.status === 'completed' && <> · <a href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(t.id)}`}>Volunteer observations (JSON)</a></>}
+                    </div>}
+                  </td>
                   <td>{workTypeLabel(t.work_type)}</td>
                   <td>
                     <span

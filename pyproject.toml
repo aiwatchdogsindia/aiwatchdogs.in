@@ -22,6 +22,7 @@ dependencies = [
     # read a different line than the auditor did. Bump deliberately, with the project preflight.
     "pypdf==7.1.1",
     "psycopg[binary]>=3.2",
+    "protego>=0.5.0",
 ]
 
 [project.urls]

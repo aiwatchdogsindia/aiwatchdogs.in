@@ -36,7 +36,7 @@ from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usag
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
-from aiwatchdogs.projects import INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG, MAX_INFLATION_TASKS
+from aiwatchdogs.projects import INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -124,6 +124,13 @@ TASK_ROLES: dict[str, dict[str, str]] = {
 def task_role(task_type: Any, payload: Any = None) -> dict[str, str]:
     """The role a claimed task puts its agent in: auditor, peer verifier, adjudicator or researcher."""
     kind = str(task_type or "").strip().lower()
+    if kind == "anomaly_scan" and isinstance(payload, dict) and payload.get("methodology_code") == "W1":
+        return {
+            "name": "auditor",
+            "title": "Website auditor",
+            "brief": "Verify the batch checksum, review the assigned public pages and submit one dated observation for every host.",
+            "submit_outcomes": "observations",
+        }
     if kind == "research":
         return dict(TASK_ROLES["researcher"])
     if kind == "peer_verify":
@@ -2220,8 +2227,11 @@ class DeskService:
             is_inflation = row["methodology_code"] == INFLATION_METHODOLOGY
             t_rows = conn.execute(
                 """
-                SELECT t.* FROM tasks t
-                WHERE t.mission_id = ?
+                SELECT t.id, t.task_type, t.methodology_code, t.title, t.status, t.claimed_by_handle,
+                       t.progress_pct, t.retry_count, t.available_at, t.target_finding_id, t.payload_json,
+                       t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis,
+                       t.usage_json, t.lease_started_at, t.attempt_count
+                FROM tasks t WHERE t.mission_id = ?
                   AND (t.target_finding_id IS NULL OR NOT EXISTS (
                       SELECT 1 FROM findings qf
                       WHERE qf.id = t.target_finding_id
@@ -2271,6 +2281,20 @@ class DeskService:
                 )
 
         return {**mission, "sources": sources, "findings": findings, "tasks": tasks}
+
+    def website_observations(self, slug: str, task_id: str) -> dict[str, Any]:
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT output_json, payload_json, completed_at FROM tasks WHERE mission_slug = ? AND id = ? "
+                "AND methodology_code = 'W1' AND status = 'completed'", (slug, task_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="No completed observation report for this batch")
+        manifest = loads_json(row["payload_json"], {})
+        return {"task_id": task_id, "manifest": manifest["retrieval_url"], "manifest_sha256": manifest["expected_sha256"],
+                "completed_at": row["completed_at"], "review_status": "volunteer_observations",
+                "guidelines": "https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/",
+                **loads_json(row["output_json"], {})}
 
     def get_inflation_dataset(
         self, slug: str, *, task_id: str | None, after: str | None, limit: int,
@@ -3707,6 +3731,7 @@ class DeskService:
         mode: str | None = None,
         preferred_mission: str | None = None,
         max_estimated_tokens: int | None = None,
+        website_observations: bool = False,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
         with self.db.transaction() as conn:
@@ -3782,6 +3807,8 @@ class DeskService:
                 "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
             )
 
+            if not website_observations:
+                clauses.append("t.methodology_code != 'W1'")
             preferred_slug = (preferred_mission or "").strip()[:120]
             if preferred_slug == INFLATION_PROJECT_SLUG:
                 clauses.extend(("t.task_type = 'research'", "t.mission_slug = ?"))
@@ -3809,7 +3836,7 @@ class DeskService:
                 params.append(agent["id"])
             else:
                 clauses.append("t.task_type != 'research'")
-                if preferred_slug and _agents_may_choose_project():
+                if preferred_slug and (_agents_may_choose_project() or preferred_slug == "gov-in-public-information"):
                     clauses.append("t.mission_slug = ?")
                     params.append(preferred_slug)
 
@@ -4141,10 +4168,10 @@ class DeskService:
     ) -> dict[str, Any]:
         lease_id = str(payload.get("lease_id") or "").strip()
         outcome = str(payload.get("outcome") or "").strip().lower()
-        if outcome not in {"finding", "cleared", "verification", "research"}:
+        if outcome not in {"finding", "cleared", "verification", "research", "observations"}:
             raise HTTPException(
                 status_code=422,
-                detail="outcome must be one of 'finding', 'cleared', 'verification' or 'research'",
+                detail="Unknown task outcome",
             )
         eff_idem = (idempotency_key or str(payload.get("idempotency_key") or "")).strip() or None
         envelopes: list[dict[str, Any]] = []
@@ -4160,6 +4187,9 @@ class DeskService:
             )
             if replay is not None:
                 return replay
+
+            if (task["methodology_code"] == "W1") != (outcome == "observations"):
+                raise HTTPException(status_code=422, detail="Website assignments require a batch observation report.")
 
             # Server-authoritative task type enforcement
             assigned_type = str(task["task_type"] or "").strip().lower()
@@ -4187,7 +4217,26 @@ class DeskService:
             if not isinstance(metrics, dict):
                 metrics = {}
 
-            if outcome == "research":
+            if outcome == "observations":
+                from aiwatchdogs.hub.website_reports import validate_batch
+
+                rows = validate_batch(
+                    loads_json(task["payload_json"], {}), payload.get("observations"),
+                    lease_started_at=task["lease_started_at"], received_at=now,
+                )
+                result = {"status": "accepted", "outcome": outcome, "task_id": task["id"], "hosts": len(rows)}
+                self._settle_task_atomically(
+                    conn, task_id=task["id"], lease_id=lease_id, agent_id=agent["id"],
+                    output_obj={"observations": rows}, idempotency_key=eff_idem,
+                    response_obj=result, monetary_audited_inr=0, now=now,
+                )
+                conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (mission["id"],))
+                conn.execute(
+                    "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
+                    "last_heartbeat_at = ? WHERE id = ?", (now, agent["id"]),
+                )
+                self._emit_durable_event(conn, envelopes, "website_batch_observed", result, now=now)
+            elif outcome == "research":
                 result = self._handle_submit_research(
                     conn=conn,
                     task=task,

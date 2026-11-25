@@ -1,0 +1,1950 @@
+{
+  "slug": "gov-in-public-information",
+  "priority": 5,
+  "title": "Can people find contact information on Indian government websites?",
+  "summary": "Contribute compute to check the 12,537 web hostnames in Data Libertarian’s November 2026 .gov.in directory. Across 100 assignments, volunteers look for a contact page, published email and postal address, and navigation links. The observations show what a visitor can find on the pages sampled and flag gaps for human review.",
+  "posted_by": {
+    "name": "Data Libertarian",
+    "url": "https://datalibertarian.in/gov"
+  },
+  "pillar": "disclosure",
+  "status": "active",
+  "jurisdiction": "India, including Union, state, Union Territory and local government websites",
+  "authority": "The public bodies responsible for the websites listed in the Data Libertarian .gov.in directory",
+  "scope": [
+    "Every hostname classified as web in the directory snapshot of 13 November 2026 appears in one assignment. This includes entries from official directories and passive sources.",
+    "GIGW quality checkpoint 10 covers contact information. Look for a Contact Us or Directory link and indicators of an email address, postal address and telephone on the landing page and one linked contact page.",
+    "On the landing page, look for an About link (quality checkpoint 9), a Help link (14) and a last-reviewed or updated date (5). Reports include the observation time and public navigation URLs. For other page paths, the report gives only the site origin to protect contact details.",
+    "“Not observed” means the reader did not recognise an indicator on the sampled pages. Language, image-based details or another location can explain a gap. Sites the reader could not access are reported separately."
+  ],
+  "out_of_scope": [
+    "The 26 mail and other infrastructure hostnames in the source inventory, hostnames outside the snapshot, and private or sign-in-only pages.",
+    "Personal contact values, testing whether contact channels work, and formal GIGW certification."
+  ],
+  "statutory_anchors": [],
+  "sources": [
+    {
+      "name": "Guidelines for Indian Government Websites and Apps 3.0, quality guidelines",
+      "publisher": "National Informatics Centre, Government of India",
+      "url": "https://guidelines.india.gov.in/guidelines/?hash=qualityGuidelines"
+    },
+    {
+      "name": "Integrated Government Online Directory",
+      "publisher": "National Informatics Centre, Government of India",
+      "url": "https://igod.gov.in/"
+    },
+    {
+      "name": "Compiled .gov.in register, 13 November 2026",
+      "publisher": "Data Libertarian",
+      "url": "https://datalibertarian.in/gov"
+    },
+    {
+      "name": "Immutable inventory snapshot used to assign hostnames",
+      "publisher": "Data Libertarian",
+      "url": "https://github.com/piyushbodaa/datalibertarian/blob/2801dc7d932115c86aee39e51f4702799e1b0adc/gov/data/snapshot.json"
+    }
+  ],
+  "methodology_code": "W1",
+  "tasks": [
+    {
+      "id": "gov-in-public-information-001",
+      "title": "001 · 1000d.gujarat.gov.in to admin-kanyashree.wb.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-001",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-001.csv",
+        "expected_sha256": "090e14dae153b2159c13c90ccdb4d9ebf6e47641f120015764220145f6ffb173",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 001 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from 1000d.gujarat.gov.in through admin-kanyashree.wb.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-002",
+      "title": "002 · admin.mcd.gov.in to agrlmktg.ap.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-002",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-002.csv",
+        "expected_sha256": "713b9d753fa1cda142bd99b616e38cf8836e0c32d25aee2eee12fa4be5237436",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 002 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from admin.mcd.gov.in through agrlmktg.ap.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-003",
+      "title": "003 · agskm.cag.gov.in to amcmea.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-003",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-003.csv",
+        "expected_sha256": "3931fee5074c89dab2e2f2e591796962197e41a8d605c1b25f6b1b8d37da0640",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 003 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from agskm.cag.gov.in through amcmea.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-004",
+      "title": "004 · amcmodules.ahmedabadcity.gov.in to apeda.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-004",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-004.csv",
+        "expected_sha256": "ced1e03ed5640d94f57b94798e6706c90a398d3c4e65ce3dd327d1711f19c0e4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 004 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from amcmodules.ahmedabadcity.gov.in through apeda.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-005",
+      "title": "005 · apedb.gov.in to apswc.ap.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-005",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-005.csv",
+        "expected_sha256": "397fdd381ff9d5cbbead35be5009fb13ce7b329141696fed3f122b82cb5f0095",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 005 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from apedb.gov.in through apswc.ap.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-006",
+      "title": "006 · apswreis.cgg.gov.in to asrb.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-006",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-006.csv",
+        "expected_sha256": "a02d35b7951c7d7ec2f91bce6bd70a270cc87b5effbdc20aa1842b0a11c19ad7",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 006 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from apswreis.cgg.gov.in through asrb.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-007",
+      "title": "007 · asrlms.assam.gov.in to baghpat.dcourts.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-007",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-007.csv",
+        "expected_sha256": "934b2b3c9a3479bf893e99fbb002a3ff0af887693f9c67a29841c780225c31a2",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 007 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from asrlms.assam.gov.in through baghpat.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-008",
+      "title": "008 · bahraich.dcourts.gov.in to bcwd.karnataka.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-008",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-008.csv",
+        "expected_sha256": "4dc3ad6110f26e462c6839c9fa375c96e8d9df72a9b67bb942773bc888bd87a4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 008 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from bahraich.dcourts.gov.in through bcwd.karnataka.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-009",
+      "title": "009 · bda.gov.in to bhunaksha.goa.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-009",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-009.csv",
+        "expected_sha256": "d0a5b01368e538fd74b4d29d3360d92f79a7a9b15b3c7e4972033c5ceba08718",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 009 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from bda.gov.in through bhunaksha.goa.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-010",
+      "title": "010 · bhunaksha.rajasthan.gov.in to bomdila.dcourts.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-010",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-010.csv",
+        "expected_sha256": "02bd7ea911b1b44e6b01b95bc1fb7054cbf4f4b50251d9a431168a2eae16a056",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 010 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from bhunaksha.rajasthan.gov.in through bomdila.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-011",
+      "title": "011 · bongaigaon.assam.gov.in to cacharjudiciary.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-011",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-011.csv",
+        "expected_sha256": "0dc11e6d34566c70c67e772825f3f999d9ff0772e3195217db4e1f57d3ae69c2",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 011 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from bongaigaon.assam.gov.in through cacharjudiciary.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-012",
+      "title": "012 · cache.umang.gov.in to ccpmumbai.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-012",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-012.csv",
+        "expected_sha256": "d56b51d04a25ee8fd0044900cb43804a74736d9a0ad3045c95c08416c5fd68c8",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 012 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from cache.umang.gov.in through ccpmumbai.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-013",
+      "title": "013 · ccps.digifootprint.gov.in to certificate.nielit.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-013",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-013.csv",
+        "expected_sha256": "4c9fa163d333e18bc36d4ea84da46511dff49210521e459372132db85bbf8ea3",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 013 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from ccps.digifootprint.gov.in through certificate.nielit.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-014",
+      "title": "014 · cescmysore.karnataka.gov.in to champawat.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-014",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-014.csv",
+        "expected_sha256": "6d6c7a9c9849b2100d96cd415ca5a9998561274a88579479c58ebfb606b18623",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 014 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from cescmysore.karnataka.gov.in through champawat.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-015",
+      "title": "015 · champhai.dcourts.gov.in to cib.assam.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-015",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-015.csv",
+        "expected_sha256": "18f7063d0219b800746249113cfb04586e0e5032c4b73e67885ca1321dc0cb78",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 015 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from champhai.dcourts.gov.in through cib.assam.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-016",
+      "title": "016 · ciba.icar.gov.in to cmkarnataka.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-016",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-016.csv",
+        "expected_sha256": "972dd25a936044d3336068627965ed9f56c99037afef534082a2fd234f23c148",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 016 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from ciba.icar.gov.in through cmkarnataka.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-017",
+      "title": "017 · cmkisan.odisha.gov.in to collectorkutch.gujarat.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-017",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-017.csv",
+        "expected_sha256": "4093a24b2137a25d3ed544737b2b5f0eb3efb443d6873d09b3043f510059f258",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 017 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from cmkisan.odisha.gov.in through collectorkutch.gujarat.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-018",
+      "title": "018 · collectormehsana.gujarat.gov.in to crcs.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-018",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-018.csv",
+        "expected_sha256": "945b2866bbb1a2f57196b1570c48fcabd29c2edf86c60c02283290520f9d0504",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 018 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from collectormehsana.gujarat.gov.in through crcs.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-019",
+      "title": "019 · crd.kerala.gov.in to dahod.dcourts.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-019",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-019.csv",
+        "expected_sha256": "1a5e2ebf8ef5f8dc01b693d4f931429c761ee5a965eb08bdd2938b8726fcd9dc",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 019 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from crd.kerala.gov.in through dahod.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-020",
+      "title": "020 · dahod.gujarat.gov.in to dcimanipur.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-020",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-020.csv",
+        "expected_sha256": "962ff9bcaaed80a20ee85e749988d210a5d9c231bbc213964ac5cb9f28b0490a",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 020 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from dahod.gujarat.gov.in through dcimanipur.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-021",
+      "title": "021 · dcis.dot.gov.in to des.telangana.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-021",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-021.csv",
+        "expected_sha256": "f546ed767ce0d6d6135e94e26c23d83963d27cea9a8a374594fa705c4c591e0f",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 021 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from dcis.dot.gov.in through des.telangana.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-022",
+      "title": "022 · des.tn.gov.in to dhsekerala.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-022",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-022.csv",
+        "expected_sha256": "23fdcea4856154ec777d3c9833f19afe8760c04427725e8dee010bb2bd2fe14f",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 022 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from des.tn.gov.in through dhsekerala.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-023",
+      "title": "023 · dhsems.kerala.gov.in to disnic.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-023",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-023.csv",
+        "expected_sha256": "43ca7dbf5552790a97dfa182b80697cfe28b12e251806e9f5cc510f276c93e61",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 023 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from dhsems.kerala.gov.in through disnic.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-024",
+      "title": "024 · display.calcuttahighcourt.gov.in to dol.maharashtra.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-024",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-024.csv",
+        "expected_sha256": "0819c371d396ad44e9a2f61f1d888bf4cd6d37cf0d0337682fbf0104efb68c95",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 024 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from display.calcuttahighcourt.gov.in through dol.maharashtra.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-025",
+      "title": "025 · dolcbec.gov.in to dsp.imdpune.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-025",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-025.csv",
+        "expected_sha256": "04fc71dd2be0ab2da3645076e83566203ee0a645e0775ac2a4f5b7d9b28b9ca8",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 025 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from dolcbec.gov.in through dsp.imdpune.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-026",
+      "title": "026 · dss.andaman.gov.in to eacademy.mpanashik.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-026",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-026.csv",
+        "expected_sha256": "26b4eefa70653eddae797b94471fc591a31a07481512300298e5cf7308862671",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 026 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from dss.andaman.gov.in through eacademy.mpanashik.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-027",
+      "title": "027 · eacpm.gov.in to edistrict.wb.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-027",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-027.csv",
+        "expected_sha256": "130fab417606d4f456888672f6a31fde3f265a5126f374f341ac9df342e963f4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 027 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from eacpm.gov.in through edistrict.wb.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-028",
+      "title": "028 · edistrictdd.gov.in to ekamaan.bihar.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-028",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-028.csv",
+        "expected_sha256": "151f543cae6b8cbd514b978044aaf67e05774f7766c1ef2cf27b5b3fa9729bd8",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 028 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from edistrictdd.gov.in through ekamaan.bihar.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-029",
+      "title": "029 · ekannada.karnataka.gov.in to enibandhan.jharkhand.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-029",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-029.csv",
+        "expected_sha256": "1866f70d60edbd5158a9fc95f29bf8b80c656817e5d87d076d6c453d8c2b9b10",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 029 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from ekannada.karnataka.gov.in through enibandhan.jharkhand.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-030",
+      "title": "030 · enirmanbocw.gujarat.gov.in to eolakh.gujarat.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-030",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-030.csv",
+        "expected_sha256": "ee4724c5145cbf2cbc40b9630753565f1818aec3aebb52e9303fa96d2403cf9d",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 030 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from enirmanbocw.gujarat.gov.in through eolakh.gujarat.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-031",
+      "title": "031 · eouindia.gov.in to eregistration.uk.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-031",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-031.csv",
+        "expected_sha256": "f9627bb45d39a5331e23bb118e51d36c3b65e3c7511948c2a5a24f2256b01f6e",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 031 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from eouindia.gov.in through eregistration.uk.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-032",
+      "title": "032 · ereport.wb.gov.in to etenders.kerala.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-032",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-032.csv",
+        "expected_sha256": "4068b83f184e9347f9be572a725c1373618585042be78d8b5e5c0a7778c26c12",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 032 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from ereport.wb.gov.in through etenders.kerala.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-033",
+      "title": "033 · etimber.aranya.gov.in to fdi.pharma-dept.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-033",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-033.csv",
+        "expected_sha256": "94ad2c90c14e2d0b1fcb49e320329f788c830f4c72948b57ba4768d8461525b2",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 033 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from etimber.aranya.gov.in through fdi.pharma-dept.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-034",
+      "title": "034 · feastjk.gov.in to forest.tripura.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-034",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-034.csv",
+        "expected_sha256": "3b640f1d32d385eda6b32999f6cd6d504b748a41486c4e6fdd89035d926b6092",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 034 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from feastjk.gov.in through forest.tripura.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-035",
+      "title": "035 · forest.uk.gov.in to gbpec.delhi.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-035",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-035.csv",
+        "expected_sha256": "67718c9a112e0ded7307b92e453c816164f00b359654c73ce510ab905b213b85",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 035 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from forest.uk.gov.in through gbpec.delhi.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-036",
+      "title": "036 · gbpihed.gov.in to goalpara.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-036",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-036.csv",
+        "expected_sha256": "d0db575e4faff408a6d521db1ede65e849bc82957ac87ca01930339a1941b9fd",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 036 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from gbpihed.gov.in through goalpara.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-037",
+      "title": "037 · goalparadistjudiciary.gov.in to gssc.goa.gov.in (126 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 126 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-037",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-037.csv",
+        "expected_sha256": "a58c9028548ec71bfe215ae5126156377dcbf490adb88f8fbed2ca88d4970409",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 037 of 100",
+        "jurisdiction": "India",
+        "description": "126 unique web hostnames, sorted alphabetically from goalparadistjudiciary.gov.in through gssc.goa.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-038",
+      "title": "038 · gssca.gujarat.gov.in to handlooms.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-038",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-038.csv",
+        "expected_sha256": "777b8b404fb44a5a8ae06dbb852ab689de9cb68502640c4a5eb1faad6418c685",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 038 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from gssca.gujarat.gov.in through handlooms.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-039",
+      "title": "039 · handloomschemes.gov.in to hcxbeta.nha.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-039",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-039.csv",
+        "expected_sha256": "c886921334434ea1698c88771089709af64b3f6f8ba2b24c499f2d3f965bd2b4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 039 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from handloomschemes.gov.in through hcxbeta.nha.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-040",
+      "title": "040 · hda.gov.in to hojai.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-040",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-040.csv",
+        "expected_sha256": "47e7d02fa256c91d2c74554c58eca9ba1430dc1dcb25a82dfd4af25e0c4c9d61",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 040 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from hda.gov.in through hojai.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-041",
+      "title": "041 · holalkeretown.mrc.gov.in to hr-swalekha.jharkhand.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-041",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-041.csv",
+        "expected_sha256": "29244200f8224012efe862cb4dddf95dee59485f58c4c0dbb710ca3dffb06d02",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 041 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from holalkeretown.mrc.gov.in through hr-swalekha.jharkhand.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-042",
+      "title": "042 · hr-vsk.ndear.gov.in to iced.cag.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-042",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-042.csv",
+        "expected_sha256": "68f0ea2e72c4b4b5d52b057850bb204848ebf393248d3e42463cd04af6736d68",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 042 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from hr-vsk.ndear.gov.in through iced.cag.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-043",
+      "title": "043 · icegate.gov.in to ikp.serp.ap.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-043",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-043.csv",
+        "expected_sha256": "7264cabb4e0c3b713ea483f323b6c66433dc52eb4c90e0542a74a36d5ea1d4e4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 043 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from icegate.gov.in through ikp.serp.ap.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-044",
+      "title": "044 · ikppwd.telangana.gov.in to indianembassybrussels.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-044",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-044.csv",
+        "expected_sha256": "9cb7ff6a649834a738e9031bf2a7d9583d84c786ddb8e2ecce6d2eeef3eff414",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 044 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from ikppwd.telangana.gov.in through indianembassybrussels.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-045",
+      "title": "045 · indianembassycopenhagen.gov.in to ipirti.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-045",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-045.csv",
+        "expected_sha256": "869c712461cae68edc80e1350816f46b420ce9c046716b6fee85e19e46999b84",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 045 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from indianembassycopenhagen.gov.in through ipirti.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-046",
+      "title": "046 · ipm.mospi.gov.in to iwd.wb.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-046",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-046.csv",
+        "expected_sha256": "7d9a99d31adaefb155522ff074cbc80978aa9fcd9f324b2a90e4f6f2d53d181c",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 046 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from ipm.mospi.gov.in through iwd.wb.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-047",
+      "title": "047 · iwmp.ap.gov.in to jeevanrekha.kerala.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-047",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-047.csv",
+        "expected_sha256": "f0dcf4da97b76750f8e002b39a4fa283019cafc64b6cd8d6755a807d49d9914d",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 047 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from iwmp.ap.gov.in through jeevanrekha.kerala.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-048",
+      "title": "048 · jehanabad.dcourts.gov.in to jnvthrissur.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-048",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-048.csv",
+        "expected_sha256": "fb2c1d6c3f12434cbcdfde2d7c7767205c57a305db7da0eacf9c5282efddece4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 048 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from jehanabad.dcourts.gov.in through jnvthrissur.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-049",
+      "title": "049 · jnvuttarakannada.gov.in to karepass.cgg.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-049",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-049.csv",
+        "expected_sha256": "63b811cd75dc217f4746544979f43e86f6fcb5e8994c5e214ad9b02b250885ef",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 049 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from jnvuttarakannada.gov.in through karepass.cgg.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-050",
+      "title": "050 · kargaltown.mrc.gov.in to keralawomen.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-050",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-050.csv",
+        "expected_sha256": "38f35153c81d31d0ed12fc056e413ba1728cd2e9db03425f63d6ba7422c4ef8b",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 050 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from kargaltown.mrc.gov.in through keralawomen.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-051",
+      "title": "051 · keralawomenscommission.gov.in to koraput.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-051",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-051.csv",
+        "expected_sha256": "a3414cdca902f3b8988e5a886386baf2746dda9631c8d4004116604418b8c217",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 051 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from keralawomenscommission.gov.in through koraput.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-052",
+      "title": "052 · koraput.odisha.gov.in to kulgam.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-052",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-052.csv",
+        "expected_sha256": "65c16a1c8b1777b2843a29f2e8fd673f1bd006e42a3b970c9b13d1946c141df8",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 052 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from koraput.odisha.gov.in through kulgam.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-053",
+      "title": "053 · kulgam.gov.in to landrevenue.mizoram.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-053",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-053.csv",
+        "expected_sha256": "93f81e87ecb1db2df7ab3379c648f3fea5fe3a6a3f1530fa69d8da4ef775b3f0",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 053 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from kulgam.gov.in through landrevenue.mizoram.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-054",
+      "title": "054 · landrevenue.rajasthan.gov.in to longding.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-054",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-054.csv",
+        "expected_sha256": "2caa14d016d1b2731f6ca403491e6ab8d33be12fbb4ce82cd771d5a8c8c662c7",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 054 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from landrevenue.rajasthan.gov.in through longding.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-055",
+      "title": "055 · longleng.dcourts.gov.in to maharerait.mahaonline.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-055",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-055.csv",
+        "expected_sha256": "6a3fa88348fc4cc2f4653bf7cda28935198260f53c107886365009786b87c654",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 055 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from longleng.dcourts.gov.in through maharerait.mahaonline.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-056",
+      "title": "056 · maharerait.maharashtra.gov.in to margadeepam.kerala.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-056",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-056.csv",
+        "expected_sha256": "00889d0a7013032fb4437b4b50150d5cc72f8525e98b474420cf21290d140f35",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 056 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from maharerait.maharashtra.gov.in through margadeepam.kerala.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-057",
+      "title": "057 · mariyojana.gujarat.gov.in to megcmrf.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-057",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-057.csv",
+        "expected_sha256": "8a46b0df8763231c9dfbd25d0bdd981a38c9df3574a607684fcca7dd0a16453f",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 057 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from mariyojana.gujarat.gov.in through megcmrf.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-058",
+      "title": "058 · megcnrd.gov.in to minerals.jharkhand.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-058",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-058.csv",
+        "expected_sha256": "128813cd79fcfa8438ac2f7b9455f49bc4a3997cce75964070d4ab7540c634b8",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 058 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from megcnrd.gov.in through minerals.jharkhand.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-059",
+      "title": "059 · mineralsportal.jharkhand.gov.in to morbi.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-059",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-059.csv",
+        "expected_sha256": "6e6b76f65d41be62c9619941c5ac2ee3fe58d2f98a643812d4d1b7b102581162",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 059 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from mineralsportal.jharkhand.gov.in through morbi.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-060",
+      "title": "060 · morbi.gujarat.gov.in to msbm.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-060",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-060.csv",
+        "expected_sha256": "60ca51cc75ccefe6d8ec42ab9f57ab88f9ea2b4d837ea148a5b5a82298ecd793",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 060 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from morbi.gujarat.gov.in through msbm.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-061",
+      "title": "061 · msbve.gov.in to mybmtc.karnataka.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-061",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-061.csv",
+        "expected_sha256": "081b5fe9bbf571921802be728e3b5bd3c66f92ff58f7b1a70fe3de56181402dd",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 061 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from msbve.gov.in through mybmtc.karnataka.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-062",
+      "title": "062 · myc.mizoram.gov.in to narcoordindia.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-062",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-062.csv",
+        "expected_sha256": "6f01fb73f8c594c0955a612424e762ba590b1a2dbb2ba27bad3c380fcea03749",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 062 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from myc.mizoram.gov.in through narcoordindia.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-063",
+      "title": "063 · naregaltown.mrc.gov.in to ndl.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-063",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-063.csv",
+        "expected_sha256": "a7a0d10b68d12e5d67fd30abf3926643fa1e8ace9c626149425f53b15e63a7be",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 063 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from naregaltown.mrc.gov.in through ndl.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-064",
+      "title": "064 · ndma.gov.in to niceo.webvpn.crpf.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-064",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-064.csv",
+        "expected_sha256": "9cb020f45447e3ece789781867f5d1da982f684ad0095f8611b108257c956d8e",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 064 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from ndma.gov.in through niceo.webvpn.crpf.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-065",
+      "title": "065 · nicf.gov.in to npsc.nagaland.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-065",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-065.csv",
+        "expected_sha256": "d1c6717223f8f4d9ee90d4e28014b79b4c89bc2dbd3fc5737f136e67ac485f6e",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 065 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from nicf.gov.in through npsc.nagaland.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-066",
+      "title": "066 · npst.ncte.gov.in to nulm.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-066",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-066.csv",
+        "expected_sha256": "c5ce7b2286a98564981deba818440a76f2f0f0c1d4ec2a2adc3cb8eb49b07c7d",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 066 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from npst.ncte.gov.in through nulm.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-067",
+      "title": "067 · nursetrns.wbhealth.gov.in to online.ulbharyana.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-067",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-067.csv",
+        "expected_sha256": "fe96286b67c1c430145f0d2cb76e33fe6cfef90bbee7c83268334f3e2e33d5ac",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 067 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from nursetrns.wbhealth.gov.in through online.ulbharyana.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-068",
+      "title": "068 · onlineap.meeseva.gov.in to pandr.py.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-068",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-068.csv",
+        "expected_sha256": "9b9cb834f98133312e7648611f1f4a5581fb78de29ee14fd08de7522045ba63b",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 068 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from onlineap.meeseva.gov.in through pandr.py.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-069",
+      "title": "069 · pangin.dcourts.gov.in to pcc.wb.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-069",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-069.csv",
+        "expected_sha256": "3e6b9fe2788a8b333b8847e93cfbdb8ff20bdb884f99e0c2938150206869d7fe",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 069 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from pangin.dcourts.gov.in through pcc.wb.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-070",
+      "title": "070 · pccacbdt.gov.in to phhc.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-070",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-070.csv",
+        "expected_sha256": "b8597338b17f1c4722935e019392895872c0d66e039a4991623acf67814d938f",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 070 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from pccacbdt.gov.in through phhc.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-071",
+      "title": "071 · phme.mp.gov.in to pmposhan-mis.education.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-071",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-071.csv",
+        "expected_sha256": "65f3e049ecfc0d6aac9f45ee80a39b573b5b3cf31559b8be6a58bda183b95399",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 071 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from phme.mp.gov.in through pmposhan-mis.education.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-072",
+      "title": "072 · pmposhan.ap.gov.in to powerlak.utl.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-072",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-072.csv",
+        "expected_sha256": "59b593a8ddd7cd8caec9870bd71d79f3a4b9502f6c28f6d89085ff885c813a6f",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 072 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from pmposhan.ap.gov.in through powerlak.utl.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-073",
+      "title": "073 · powermin.gov.in to prsc.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-073",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-073.csv",
+        "expected_sha256": "a19d530bab7a87704916d9590f64f1821305c0f53ef5f4445d82eed28355b109",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 073 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from powermin.gov.in through prsc.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-074",
+      "title": "074 · prsc.punjab.gov.in to pwd.py.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-074",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-074.csv",
+        "expected_sha256": "2764759605ca7a54b5fe569c8264eb889fc8cf4d616c8cd35124c931290adcaf",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 074 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from prsc.punjab.gov.in through pwd.py.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-075",
+      "title": "075 · pwd.rajasthan.gov.in to rajposhan.rajasthan.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-075",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-075.csv",
+        "expected_sha256": "ebc0e2361165a7d87ff9086d2139f48f2902c5a31b981fa42df0848af8963c74",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 075 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from pwd.rajasthan.gov.in through rajposhan.rajasthan.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-076",
+      "title": "076 · rajpsp.rajasthan.gov.in to rdsdemaharashtra.dgt.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-076",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-076.csv",
+        "expected_sha256": "cb0b3f9c1095386433d519bb6e4193004c0bf085d73d25ea334ecf1e0d9df76a",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 076 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from rajpsp.rajasthan.gov.in through rdsdemaharashtra.dgt.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-077",
+      "title": "077 · rdsdetamilnadu.dgt.gov.in to revenue.haryana.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-077",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-077.csv",
+        "expected_sha256": "c1aa75972bbf7c5ad7e2be4dfa19f945c445db59bdffa6bed69789de3261c677",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 077 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from rdsdetamilnadu.dgt.gov.in through revenue.haryana.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-078",
+      "title": "078 · revenue.kerala.gov.in to rohtak.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-078",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-078.csv",
+        "expected_sha256": "32fd00dbfddfbbc2cdedc8392db2e8270111aee5f704dfb0fb4f0c67e4c28c69",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 078 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from revenue.kerala.gov.in through rohtak.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-079",
+      "title": "079 · rohtak.gov.in to rti.sic.kerala.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-079",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-079.csv",
+        "expected_sha256": "712fa99671ef937e259bd8d3c435f2908d3c38fa556964940b9f332364fa7dde",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 079 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from rohtak.gov.in through rti.sic.kerala.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-080",
+      "title": "080 · rti.telangana.gov.in to sahityaacademy.gujarat.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-080",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-080.csv",
+        "expected_sha256": "2ca5d0419b251352f3ab545fcde24d772e02112885f33f1b7e544dc62baaacf3",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 080 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from rti.telangana.gov.in through sahityaacademy.gujarat.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-081",
+      "title": "081 · sahityakalaparishad.delhi.gov.in to sasa.ap.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-081",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-081.csv",
+        "expected_sha256": "e604a944b88a89c8224e17490d4606a7bd1640e115f3fba7aebedf6b968876b3",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 081 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from sahityakalaparishad.delhi.gov.in through sasa.ap.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-082",
+      "title": "082 · sashakt-hwc.mohfw.gov.in to scrb.mppolice.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-082",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-082.csv",
+        "expected_sha256": "947df81ff3f9f238fc382544fb4dadc8f3e7e1fae81dd07c3a841cccb3e4a8f6",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 082 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from sashakt-hwc.mohfw.gov.in through scrb.mppolice.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-083",
+      "title": "083 · scrbwb.gov.in to services.nagaland.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-083",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-083.csv",
+        "expected_sha256": "e3e59d88894404a39fab45ed13dbc6a0c1524d6db4066b342b1272c9fd70d5f1",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 083 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from scrbwb.gov.in through services.nagaland.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-084",
+      "title": "084 · services.parivahan.gov.in to shrimahakaleshwar.mp.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-084",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-084.csv",
+        "expected_sha256": "5a9368770f3b0c8eba23e79b7a6ef0fdbbd243b3170b49b8c75b7ad25ab22a26",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 084 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from services.parivahan.gov.in through shrimahakaleshwar.mp.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-085",
+      "title": "085 · shringeritown.mrc.gov.in to skill.tripura.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-085",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-085.csv",
+        "expected_sha256": "a9497ccb303a8193e1523621a38fa827f23c8abb8057c9b9c4154cef4fd8e726",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 085 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from shringeritown.mrc.gov.in through skill.tripura.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-086",
+      "title": "086 · skilldevelopment.gov.in to southwestdelhi.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-086",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-086.csv",
+        "expected_sha256": "02a3474f277903501c5876f2d25b837a976b844fa6bc1a5ee39b508b306cfb79",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 086 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from skilldevelopment.gov.in through southwestdelhi.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-087",
+      "title": "087 · southwestgarohills.gov.in to ssca.mp.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-087",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-087.csv",
+        "expected_sha256": "c5d5e4e72ff8076195357e22448b7c874cbdef7411e4d9dfba5f1e8700f6e1cb",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 087 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from southwestgarohills.gov.in through ssca.mp.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-088",
+      "title": "088 · sscac.gov.in to styandptg.py.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-088",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-088.csv",
+        "expected_sha256": "fe2a3716bdded0dbed477e0ff8905d4ad0b8c023bdef3ccae6d952969078926f",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 088 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from sscac.gov.in through styandptg.py.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-089",
+      "title": "089 · su-dhara.gujarat.gov.in to swrtc.cgg.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-089",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-089.csv",
+        "expected_sha256": "131b701901d702e84a76dbf0e65ec1d042b125fe584923ebd173c79f5b2b6aeb",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 089 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from su-dhara.gujarat.gov.in through swrtc.cgg.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-090",
+      "title": "090 · sws.delhi.gov.in to tejas.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-090",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-090.csv",
+        "expected_sha256": "ceecbff89c278ad5eb677664438d855c88c126290642ca76db505036a1819b59",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 090 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from sws.delhi.gov.in through tejas.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-091",
+      "title": "091 · tejasvi.gov.in to tirunelveli.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-091",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-091.csv",
+        "expected_sha256": "e44496f4e9419acaff3a99af14ef32da00938ecc5536d939c3f973f8e94c2e55",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 091 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from tejasvi.gov.in through tirunelveli.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-092",
+      "title": "092 · tirupathur.dcourts.gov.in to tnurbanepay.tn.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-092",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-092.csv",
+        "expected_sha256": "06d30f4cd90b6c80dc92d1b83f8c7170972997bf353fe688ea84f86ec817ada4",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 092 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from tirupathur.dcourts.gov.in through tnurbanepay.tn.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-093",
+      "title": "093 · tnurbaneseva.tn.gov.in to trichycustomszone.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-093",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-093.csv",
+        "expected_sha256": "e9ace26d1fe912b419ee4ebe444832dcb1163af5099dc7614cbcb6208b0cb08b",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 093 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from tnurbaneseva.tn.gov.in through trichycustomszone.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-094",
+      "title": "094 · trifed.tribal.gov.in to uddkar.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-094",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-094.csv",
+        "expected_sha256": "923a4c08a4a143a3a06778d8dbcd6c715c52fba9166c56d7c401e867e67d7c7b",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 094 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from trifed.tribal.gov.in through uddkar.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-095",
+      "title": "095 · udh.rajasthan.gov.in to uplc.neva.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-095",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-095.csv",
+        "expected_sha256": "7ec97c2149bcaea5fab27d8f1f738e27ddc92b9ba7096569b8aeeddcffdcb8b2",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 095 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from udh.rajasthan.gov.in through uplc.neva.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-096",
+      "title": "096 · uplc.up.gov.in to vaishali.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-096",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-096.csv",
+        "expected_sha256": "98a6fc2e5a88a513bb110e21f9b2b9b6f7ff1de9232d324e20434a61938a2d4d",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 096 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from uplc.up.gov.in through vaishali.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-097",
+      "title": "097 · validation.mha.gov.in to vscrap.parivahan.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-097",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-097.csv",
+        "expected_sha256": "e521b88f9d49de2da39b03babbb21a8f13687280932df7b5c3e2a0f19e02d1ff",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 097 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from validation.mha.gov.in through vscrap.parivahan.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-098",
+      "title": "098 · vsez.gov.in to wbnorthbengaldev.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-098",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-098.csv",
+        "expected_sha256": "b0509e1536ec3a0c295f204bc3445f61a3559ba042d69f420d6e7bbab93ec0a2",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 098 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from vsez.gov.in through wbnorthbengaldev.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-099",
+      "title": "099 · wbpad.gov.in to womenandchild.assam.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-099",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-099.csv",
+        "expected_sha256": "94a65a6f04e71b350d7b3e50fd3832398af8444edb8fa19a7dcbfe8e2d24696e",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 099 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from wbpad.gov.in through womenandchild.assam.gov.in, from the 13 November 2026 snapshot."
+      }
+    },
+    {
+      "id": "gov-in-public-information-100",
+      "title": "100 · womenandchildren.assam.gov.in to zunheboto.dcourts.gov.in (125 hosts)",
+      "instructions": "Verify the CSV checksum and run W1 on its 125 listed web hostnames. Check the published pages for contact navigation, email and postal address indicators. Cite the sampled pages and distinguish a possible gap from a site that could not be assessed. Record the type of contact information found without copying personal details.",
+      "dataset_key": "gov-in-public-information-100",
+      "type": "run_check",
+      "estimated_tokens": 1000,
+      "estimate_basis": "An agent may use about 1,000 tokens to invoke the CLI and inspect its summary. The HTML checks run locally without model tokens.",
+      "financial_quantity_type": "public_website_information",
+      "payload": {
+        "retrieval_url": "https://raw.githubusercontent.com/aiwatchdogsindia/aiwatchdogs.in/981bcb526e71730a4826c60fc17e93f0d8366012/projects/gov-in-public-information/batch-100.csv",
+        "expected_sha256": "9a21310f1d8a83a9514bee2b3c0e3210242a5f4db7696b4724e3cea5dbb86a6c",
+        "official_publisher": "Data Libertarian (source directory), AI Watchdogs India (batch manifest)",
+        "source_landing_page": "https://datalibertarian.in/gov",
+        "artifact_title": ".gov.in directory assignment 100 of 100",
+        "jurisdiction": "India",
+        "description": "125 unique web hostnames, sorted alphabetically from womenandchildren.assam.gov.in through zunheboto.dcourts.gov.in, from the 13 November 2026 snapshot."
+      }
+    }
+  ]
+}

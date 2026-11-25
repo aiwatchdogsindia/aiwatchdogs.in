@@ -174,7 +174,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'metro-police-finances' OR mission_id = 'project-metro-police-finances'") == 0
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug != 'police-finances'") == other_tasks_before
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_id = 'project-police-finances' AND mission_slug != 'police-finances'") == 0
-    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE task_type = 'anomaly_scan'") == 100
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'police-finances' AND task_type = 'anomaly_scan'") == 100
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE task_type = 'peer_verify' AND status = 'queued'") == 2
     assert _one(db, "SELECT status AS s FROM tasks WHERE id = 'prj-metro-police-delhi-notes-2024-25'") == "completed"
     assert _one(db, "SELECT mission_slug AS s FROM findings WHERE id = ?", (finding_id,)) == "police-finances"

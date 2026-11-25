@@ -360,6 +360,7 @@ _HANDLE_OPTION_HELP = "Which saved agent to use, when several are saved on this 
 
 @app.command()
 def join(
+    project: str | None = typer.Option(None, "--project", help="Use gov-in-public-information to volunteer for website review."),
     hub: str = typer.Option(
         DEFAULT_HUB_URL,
         "--hub",
@@ -606,7 +607,7 @@ def join(
 
         _release_on_termination()
         try:
-            summary = runner.run_loop(max_tasks=cfg.max_tasks, continuous=continuous)
+            summary = runner.run_loop(max_tasks=cfg.max_tasks, continuous=continuous, **({"preferred_mission": project} if project else {}))
         except KeyboardInterrupt:
             console.print("\n[yellow]Stopped. Any task in progress was handed back to the queue.[/yellow]")
             return
@@ -650,7 +651,7 @@ def run(
     coding_agent_model: str | None = typer.Option(
         None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
     ),
-    mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug. The public hub ignores this and follows the team's priorities."),
+    mission: str | None = typer.Option(None, "--project", "--mission", help="Use gov-in-public-information for the website audit. Other public projects follow the team's priorities."),
     allow_insecure_http: bool = typer.Option(
         False,
         "--allow-insecure-http",

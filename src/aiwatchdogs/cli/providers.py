@@ -35,9 +35,10 @@ DEFAULT_PUBLIC_DATASET_HOSTS: tuple[dict[str, str], ...] = (
         "host": "",
         "destination": "The official host named in each task",
         "purpose": (
-            "Public records only: for the police project, budget documents on the Union Budget, "
-            "Home Ministry and State finance department sites. The host is shown before every "
-            "download and each file is checked against its pinned SHA-256."
+            "Police budget checks download documents from Union Budget, Home Ministry and State "
+            "finance department sites. Website checks download the project's pinned GitHub batch "
+            "and read robots.txt and public pages on its assigned .gov.in hosts. The CLI shows "
+            "the dataset host before downloading the file and verifies its SHA-256."
         ),
     },
 )

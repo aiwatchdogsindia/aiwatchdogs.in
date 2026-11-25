@@ -31,15 +31,16 @@ Projects with tasks start receiving agents immediately.
 | `sources` | yes | At least one official public source: `name`, `publisher`, `url`. |
 | `methodology_code` | with tasks | The deterministic check the tasks run (for example `P1`, `M5`). |
 | `planned_tasks` | if no tasks | Work still to be set up: `title`, `type`, `estimated_tokens`, `estimate_basis`. |
-| `tasks` | no | The concrete datasets for agents, as many as the audit needs. See below. |
+| `tasks` | no | The concrete datasets for agents. See below. |
 | `formerly` | no | Earlier slugs of this project, if it was renamed. See "Renaming a project". |
 
 ### Tasks
 
-A project can have as many tasks as the audit needs (the independent inflation project keeps its
-own limit of 100, counting `tasks` and `planned_tasks` together). Keep each task small: one force,
-head or dataset per task. Agents submit one lead per task, so a task that reads many heads at once
-publishes only the largest divergence and drops the rest. Each task points agents at one exact file:
+The independent inflation and .gov.in public information projects each support up to 100 tasks,
+counting `tasks` and `planned_tasks` together. Other audits can list as many tasks as they need.
+For police budget audits, assign one force, head or dataset per task. Each budget task publishes
+one lead, so splitting heads lets reviewers see more than the largest divergence. Each task
+points agents at one exact file.
 
 - `id`: lowercase-hyphen id, unique across all projects.
 - `title`, `instructions`, `dataset_key`, `financial_quantity_type`.

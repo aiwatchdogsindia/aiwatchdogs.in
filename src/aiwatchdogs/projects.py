@@ -74,6 +74,7 @@ VALID_QUANTITY_TYPES = {
     "awarded_contract_values",
     "budget_and_treasury_expenditure",
     "cag_report_monetary_figures",
+    "public_website_information",
     "consumer_prices",
     "scheme_outlay_and_expenditure",
     "electoral_bond_disclosures",
@@ -84,7 +85,7 @@ _COLUMN_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
 MAX_PART_WINDOW_LINES = 12
 INFLATION_PROJECT_SLUG = "independent-india-inflation"
 INFLATION_METHODOLOGY = "CPI1"
-MAX_INFLATION_TASKS = 100
+MAX_LARGE_PROJECT_TASKS = 100
 DEFAULT_PRIORITY = 5
 SYNC_STATE_KEY = "community_projects"
 
@@ -120,7 +121,7 @@ def default_projects_dir() -> Path:
 def _known_methodologies() -> set[str]:
     from aiwatchdogs.engines.registry import _ENGINE_DISPATCH
 
-    return set(_ENGINE_DISPATCH) | {INFLATION_METHODOLOGY}
+    return set(_ENGINE_DISPATCH) | {INFLATION_METHODOLOGY, "W1"}
 
 
 def _scan_terms(text: str) -> list[str]:
@@ -323,11 +324,12 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     is_inflation = slug == INFLATION_PROJECT_SLUG and methodology == INFLATION_METHODOLOGY
     if (slug == INFLATION_PROJECT_SLUG or methodology == INFLATION_METHODOLOGY) and not is_inflation:
         errors.append(f"Methodology {INFLATION_METHODOLOGY} is reserved for '{INFLATION_PROJECT_SLUG}'.")
-    # Audit projects list as many tasks as the audit needs. Only the inflation research project,
-    # whose tasks form one dependency graph, keeps a fixed size.
-    if is_inflation and len(tasks) + len(planned) > MAX_INFLATION_TASKS:
+    is_website = slug == "gov-in-public-information" and methodology == "W1"
+    if (slug == "gov-in-public-information" or methodology == "W1") and not is_website:
+        errors.append("Methodology W1 is reserved for gov-in-public-information.")
+    if (is_inflation or is_website) and len(tasks) + len(planned) > MAX_LARGE_PROJECT_TASKS:
         errors.append(
-            f"A project can list at most {MAX_INFLATION_TASKS} tasks ('tasks' and 'planned_tasks' together)."
+            f"A project can list at most {MAX_LARGE_PROJECT_TASKS} tasks ('tasks' and 'planned_tasks' together)."
         )
     if not tasks and not planned:
         errors.append("'planned_tasks' must list at least one task with a type and estimated_tokens.")
@@ -374,6 +376,8 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         code = task.get("methodology_code", methodology)
         if code not in known:
             errors.append(f"{where}.methodology_code must be one of {sorted(known)}.")
+        if (code == "W1") != is_website or (is_website and task.get("financial_quantity_type") != "public_website_information"):
+            errors.append(f"{where} must use the website audit project, methodology and quantity type together.")
         if is_inflation and (code != INFLATION_METHODOLOGY or task.get("financial_quantity_type") != "consumer_prices"):
             errors.append(f"{where} must use {INFLATION_METHODOLOGY} and the consumer_prices quantity type.")
         elif not is_inflation and code == INFLATION_METHODOLOGY:
@@ -384,7 +388,7 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                 errors.append(f"{where}.depends_on is available to {INFLATION_METHODOLOGY} tasks.")
             elif (
                 not isinstance(deps, list)
-                or len(deps) > MAX_INFLATION_TASKS
+                or len(deps) > MAX_LARGE_PROJECT_TASKS
                 or any(not isinstance(dep, str) or not TASK_ID_RE.fullmatch(dep) or len(dep) > 60 for dep in deps)
             ):
                 errors.append(f"{where}.depends_on must be a list of task IDs in this project.")
