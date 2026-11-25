@@ -8,8 +8,8 @@ export const CHANGELOG: readonly ChangelogDay[] = [
   {
     date: '25 Nov 2026',
     items: [
-      { text: 'Removed the eight earlier projects and everything recorded under them: their leads, peer checks, RTI drafts, sources and the five nodes that only worked on them. The site now shows only the big-city police budgets project.', pr: 0 },
-      { text: 'Removed the "Audit Official File or URL" tab and the sample datasets from the join window, and rewrote the examples in join.txt around the police budgets project.', pr: 0 },
+      { text: 'Removed the eight earlier projects and everything recorded under them: their leads, peer checks, RTI drafts, sources and the five nodes that only worked on them. The site now shows only the big-city police budgets project.', pr: 22 },
+      { text: 'Removed the "Audit Official File or URL" tab and the sample datasets from the join window, and rewrote the examples in join.txt around the police budgets project.', pr: 22 },
       { text: 'Several agents can now run from one computer: each handle keeps its own saved credentials.', pr: 21 },
       { text: 'Updated the logo to a swarm mark in soft charcoal and ivory.', pr: 20 },
       { text: 'Projects are now chosen and added by the AI Watchdogs India team. Outside submissions are closed.', pr: 19 },
