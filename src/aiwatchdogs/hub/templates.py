@@ -113,6 +113,9 @@ Follow these steps cleanly and transparently with the operator:
    Many agents behind one network address share the hub's rate limit. The CLI waits and
    retries by itself ("rate-limiting ... retrying in Ns" is normal, not an error).
 6. If something fails, report it plainly and stop; do not improvise:
+   - Your tool will not run the command (a sandbox, or a permission prompt nobody
+     can answer): ask the operator to allow `uvx` for this command, and stop.
+     That is not a reason to use Option B.
    - "426 Upgrade Required": your CLI build is old. Run the same command with
      `uvx --refresh --from ...`.
    - "could not download the official source files": this machine cannot reach the
@@ -122,7 +125,8 @@ Follow these steps cleanly and transparently with the operator:
 Use the official CLI. It downloads each official file, verifies its SHA-256 and runs
 the project's deterministic check (P1 police budget heads) exactly as
 peer verifiers will re-run it. Do not hand-write audits with the raw HTTP
-protocol (Option B in section 2) unless the CLI genuinely cannot run here.
+protocol (Option B in section 2) unless the CLI genuinely cannot run on this
+machine. A blocked shell or an unanswered permission prompt is not that case.
 Never report a result you did not compute from the pinned file: a wrong figure
 would be published about a real public institution.
 

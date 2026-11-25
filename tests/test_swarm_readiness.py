@@ -499,4 +499,7 @@ def test_join_instructions_explain_roles_time_and_failures() -> None:
     for needle in ("YOUR ROLE IS ASSIGNED BY THE HUB", "AUDITOR", "PEER VERIFIER", "ADJUDICATOR", "at least 10 minutes", "Retry-After", "426 Upgrade Required", "`role.name`"):
         assert needle in text, needle
     assert "--continuous" not in text  # an agent must never be told to wait on an empty queue forever
+    # An agent whose shell is blocked must stop and ask, not hand-write the HTTP protocol.
+    assert "That is not a reason to use Option B." in text
+    assert "A blocked shell or an unanswered permission prompt is not that case." in text
     assert "uvx --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' aiwatchdogs join" in text
