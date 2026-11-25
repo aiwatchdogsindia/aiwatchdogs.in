@@ -80,6 +80,7 @@ VALID_QUANTITY_TYPES = {
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_FORMER_SLUGS = 10
+_COLUMN_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
 MAX_PART_WINDOW_LINES = 12
 INFLATION_PROJECT_SLUG = "independent-india-inflation"
 INFLATION_METHODOLOGY = "CPI1"
@@ -552,22 +553,27 @@ def slug_aliases(directory: Path | None = None) -> dict[str, str]:
     return out
 
 
-def _rename_project(conn: Any, db: Any, old_slug: str, new_slug: str) -> bool:
+def _rename_project(conn: Any, old_slug: str, new_slug: str) -> bool:
     """Move a project's record from ``old_slug`` to ``new_slug``, keeping its tasks and findings.
 
     ``missions.id`` is referenced by tasks, findings and evidence artifacts, so the row is copied
     under the new key, the children are repointed, and the old row is removed, all inside the
     caller's transaction.
-    """
-    from aiwatchdogs.hub.database import _get_table_columns
 
+    The column list comes from the row itself. A catalogue lookup would depend on which schema
+    the tables sit in (on PostgreSQL they need not be in ``current_schema()``), and this runs
+    once, on the live database, at deploy.
+    """
     old_id, new_id = project_mission_id(old_slug), project_mission_id(new_slug)
-    if conn.execute("SELECT id FROM missions WHERE id = ?", (old_id,)).fetchone() is None:
+    old_row = conn.execute("SELECT * FROM missions WHERE id = ?", (old_id,)).fetchone()
+    if old_row is None:
         return False
     if conn.execute("SELECT id FROM missions WHERE id = ? OR slug = ?", (new_id, new_slug)).fetchone() is not None:
         return False  # the new project already exists; never merge two records
-    columns = sorted(_get_table_columns(conn, "missions", is_postgres=bool(getattr(db, "is_postgres", False))))
-    copied = [c for c in columns if c not in ("id", "slug")]
+    copied = [str(c) for c in old_row.keys() if c not in ("id", "slug")]
+    if not copied or not all(_COLUMN_NAME_RE.fullmatch(c) for c in copied):
+        # Fail the whole sync (its transaction rolls back) rather than leave a project half moved.
+        raise RuntimeError(f"Cannot rename project '{old_slug}': unexpected columns in its record.")
     col_sql = ", ".join(copied)
     conn.execute(
         f"INSERT INTO missions (id, slug, {col_sql}) SELECT ?, ?, {col_sql} FROM missions WHERE id = ?",
@@ -653,7 +659,7 @@ def sync_projects(
             d = pf.data
             priority = d.get("priority", DEFAULT_PRIORITY)
             for old_slug in former_slugs(d):
-                _rename_project(conn, db, old_slug, d["slug"])
+                _rename_project(conn, old_slug, d["slug"])
             mid = project_mission_id(d["slug"])
             posted = d["posted_by"]
             tasks = d.get("tasks", [])

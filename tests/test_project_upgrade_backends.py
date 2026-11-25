@@ -37,22 +37,43 @@ OLD_TASK_IDS = (
 pytestmark = pytest.mark.production_missions
 
 
-@pytest.fixture()
-def pg_url() -> Iterator[str]:
+def _with_search_path(base: str, search_path: str) -> str:
+    parts = urlsplit(base)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "options"]
+    query.append(("options", f"-csearch_path={search_path}"))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+@pytest.fixture(params=["own_schema", "behind_an_empty_schema"])
+def pg_url(request: pytest.FixtureRequest) -> Iterator[str]:
+    """A private PostgreSQL schema for one test, in two layouts.
+
+    ``public`` is left off the search path on purpose. Another test creates the hub's tables
+    there, and a connection that can fall back to them finds every migration already applied,
+    skips its own, and silently works on the shared tables.
+
+    ``behind_an_empty_schema`` puts an empty schema first on the search path, so the tables are
+    not in ``current_schema()``. The upgrade has to work there too: that layout is what first
+    exposed a rename step that looked its columns up in the catalogue and found none.
+    """
     import psycopg
 
     base = TEST_POSTGRES_URL.replace("postgres://", "postgresql://", 1)
-    schema = f"awd_upgrade_{secrets.token_hex(6)}"
+    token = secrets.token_hex(6)
+    tables, empty = f"awd_upgrade_{token}", f"awd_upgrade_{token}_empty"
     with psycopg.connect(base, autocommit=True) as admin:
-        admin.execute(f'CREATE SCHEMA "{schema}"')
-    parts = urlsplit(base)
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k != "options"]
-    query.append(("options", f"-csearch_path={schema},public"))
+        admin.execute(f'CREATE SCHEMA "{tables}"')
+        admin.execute(f'CREATE SCHEMA "{empty}"')
     try:
-        yield urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+        if request.param == "own_schema":
+            yield _with_search_path(base, tables)
+        else:
+            Database(database_url=_with_search_path(base, tables)).close()  # the tables exist first
+            yield _with_search_path(base, f"{empty},{tables}")
     finally:
         with psycopg.connect(base, autocommit=True) as admin:
-            admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+            admin.execute(f'DROP SCHEMA IF EXISTS "{tables}" CASCADE')
+            admin.execute(f'DROP SCHEMA IF EXISTS "{empty}" CASCADE')
 
 
 def _old_project() -> dict[str, Any]:
@@ -238,6 +259,8 @@ def test_live_upgrade_on_postgres(pg_url: str, tmp_path: Path) -> None:
     db = Database(database_url=pg_url)
     try:
         assert db.is_postgres is True
+        # The test really is on its own tables: nothing from another test is visible.
+        assert _one(db, "SELECT COUNT(*) AS n FROM missions") == 0
         _check_live_upgrade(db, tmp_path, lambda: Database(database_url=pg_url))
     finally:
         db.close()
