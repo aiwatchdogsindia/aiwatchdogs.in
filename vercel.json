@@ -108,42 +108,6 @@
   ],
   "rewrites": [
     {
-      "source": "/(.*)\\.md",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/llms.txt",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/llms-full.txt",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/robots.txt",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/sitemap.xml",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/.well-known/api-catalog",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/.well-known/mcp.json",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/.well-known/mcp/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/mcp",
-      "destination": "/api/index.py"
-    },
-    {
       "source": "/",
       "has": [
         {
@@ -152,10 +116,10 @@
           "value": "(.*)text/markdown(.*)"
         }
       ],
-      "destination": "/api/index.py"
+      "destination": "/index.md"
     },
     {
-      "source": "/((?!api/|assets/|fonts/|agents/|\\.well-known/).*)",
+      "source": "/projects",
       "has": [
         {
           "type": "header",
@@ -163,10 +127,175 @@
           "value": "(.*)text/markdown(.*)"
         }
       ],
-      "destination": "/api/index.py"
+      "destination": "/projects.md"
     },
     {
-      "source": "/projects/(.*)",
+      "source": "/missions",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/projects.md"
+    },
+    {
+      "source": "/projects/:slug((?!.*\\.md$)[^/]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/projects/:slug.md"
+    },
+    {
+      "source": "/missions/:slug((?!.*\\.md$)[^/]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/projects/:slug.md"
+    },
+    {
+      "source": "/findings",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/findings.md"
+    },
+    {
+      "source": "/findings/:id((?!.*\\.md$)[^/]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/findings/:id.md"
+    },
+    {
+      "source": "/live",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/live.md"
+    },
+    {
+      "source": "/leaderboard",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/leaderboard.md"
+    },
+    {
+      "source": "/contributors",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/leaderboard.md"
+    },
+    {
+      "source": "/a/:handle((?!.*\\.md$)[^/]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/a/:handle.md"
+    },
+    {
+      "source": "/how-it-works",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/how-it-works.md"
+    },
+    {
+      "source": "/brief",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/brief.md"
+    },
+    {
+      "source": "/changelog",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/changelog.md"
+    },
+    {
+      "source": "/back",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/back.md"
+    },
+    {
+      "source": "/sponsors",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/back.md"
+    },
+    {
+      "source": "/ledger",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/back.md"
+    },
+    {
+      "source": "/projects/((?!.*\\.md$).*)",
       "destination": "/index.html"
     },
     {
@@ -178,11 +307,11 @@
       "destination": "/index.html"
     },
     {
-      "source": "/missions/(.*)",
+      "source": "/missions/((?!.*\\.md$).*)",
       "destination": "/index.html"
     },
     {
-      "source": "/findings/(.*)",
+      "source": "/findings/((?!.*\\.md$).*)",
       "destination": "/index.html"
     },
     {
@@ -202,7 +331,7 @@
       "destination": "/index.html"
     },
     {
-      "source": "/a/(.*)",
+      "source": "/a/((?!.*\\.md$).*)",
       "destination": "/index.html"
     },
     {

@@ -418,16 +418,35 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
 
 def test_vercel_json_routes_agent_endpoints_ahead_of_spa_fallbacks() -> None:
     import json
+    import re
 
     vercel_path = Path(__file__).resolve().parents[1] / "vercel.json"
     cfg = json.loads(vercel_path.read_text(encoding="utf-8"))
     rewrites = cfg["rewrites"]
+
+    # Never rewrite directly to /api/index.py (Vercel rewrites scope["path"] to /api/index.py);
+    # instead let Vercel's FastAPI catch-all preserve real paths for .md, /llms.txt, /.well-known/*, /mcp!
+    assert all(r["destination"] != "/api/index.py" for r in rewrites)
+
     first_spa_idx = next(i for i, r in enumerate(rewrites) if r["destination"] == "/index.html")
-    agent_rules = rewrites[:first_spa_idx]
-    agent_sources = {r["source"] for r in agent_rules}
-    assert all(r["destination"] == "/api/index.py" for r in agent_rules)
-    for required in (
-        "/(.*)\\.md",
+    md_rules = rewrites[:first_spa_idx]
+    spa_rules = rewrites[first_spa_idx:]
+
+    # Accept: text/markdown negotiation rules come before SPA /index.html fallbacks
+    assert len(md_rules) >= 10
+    assert all(r["destination"].endswith(".md") for r in md_rules)
+    assert all(
+        any(h.get("type") == "header" and h.get("key") == "accept" and "text/markdown" in h.get("value", "") for h in r.get("has", []))
+        for r in md_rules
+    )
+
+    # SPA /index.html fallback regexes MUST NOT swallow .md paths or discovery/MCP paths
+    protected_paths = (
+        "/index.md",
+        "/projects.md",
+        "/projects/police-finances.md",
+        "/findings/fnd-123.md",
+        "/a/civic-owl.md",
         "/llms.txt",
         "/llms-full.txt",
         "/robots.txt",
@@ -435,11 +454,9 @@ def test_vercel_json_routes_agent_endpoints_ahead_of_spa_fallbacks() -> None:
         "/.well-known/api-catalog",
         "/.well-known/mcp.json",
         "/mcp",
-    ):
-        assert required in agent_sources
-    md_has_rules = [
-        r for r in agent_rules
-        if any(h.get("type") == "header" and h.get("key") == "accept" and "text/markdown" in h.get("value", "") for h in r.get("has", []))
-    ]
-    assert len(md_has_rules) >= 2
+    )
+    for rule in spa_rules:
+        pat = re.compile(f"^{rule['source']}$")
+        for p in protected_paths:
+            assert pat.match(p) is None, f"SPA rule {rule['source']!r} wrongly matches {p!r}"
 
