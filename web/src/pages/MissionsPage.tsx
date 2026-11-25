@@ -6,13 +6,20 @@ import { Link } from '../router';
 import type { MissionItem, TokenSummary } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
+  copyToClipboard,
   formatInrCr,
   formatSeconds,
   formatTokens,
+  getCanonicalOrigin,
   pillarLabel,
   safeExternalUrl,
   workTypeLabel,
 } from '../utils';
+
+const INFLATION_METHOD = 'CPI1';
+const INFLATION_JOIN_PATH = '/independent-inflation-join.txt';
+const INFLATION_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/independent-india-inflation/METHODOLOGY.md';
 
 interface MissionsPageProps {
   slug?: string;
@@ -69,6 +76,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         ? Math.min(100, Math.round((detail.completed_tasks / detail.total_tasks) * 100))
         : 0;
     const methodInfo = detail ? METHODOLOGY_DESCRIPTIONS[detail.methodology_code] : null;
+    const isInflation = detail?.methodology_code === INFLATION_METHOD;
+    const isWebsiteAudit = detail?.methodology_code === 'W1';
 
     return (
       <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
@@ -101,6 +110,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 </p>
               )}
 
+              {isInflation && <InflationContribution detail={detail} />}
+
               {detail.is_community_project && (
                 <p className="project-detail-poster">
                   <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>Follow this project by RSS</a>
@@ -109,7 +120,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
 
               {detail.project_scope && detail.project_scope.scope.length > 0 && (
                 <div className="project-detail-scope">
-                  <h3>What the swarm checks</h3>
+                  <h3>{isInflation ? 'What contributors collect and review' : 'What the swarm checks'}</h3>
                   <ul>
                     {detail.project_scope.scope.map((x) => (
                       <li key={x}>{x}</li>
@@ -130,7 +141,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
 
               {detail.project_sources && detail.project_sources.length > 0 && (
                 <div className="project-detail-scope">
-                  <h3>Official sources</h3>
+                  <h3>{isInflation ? 'Basket, weights and methodology' : 'Official sources'}</h3>
                   <ul>
                     {detail.project_sources.map((src) => {
                       const safeSrcUrl = safeExternalUrl(src.url);
@@ -151,7 +162,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 </div>
               )}
 
-              {detail.methodology_code === 'W1' && (
+              {isWebsiteAudit && (
                 <div className="card-sunk card-pad-sm">
                   <h2>Contribute a website audit</h2>
                   <p>Run one batch on your computer with uv. Choose a public handle when prompted.
@@ -178,45 +189,48 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 ))}
               </div>
 
-              {detail.methodology_code === 'W1' ? (
+              {isWebsiteAudit && (
                 <p><strong>{detail.completed_tasks} of {detail.total_tasks} batches reported.</strong> Open a batch below to see its assigned sites or its dated observations.</p>
-              ) : <div className="kpi-strip cols-4">
-                <div className="kpi-cell">
-                  <span className="kpi-value">{pct}%</span>
-                  <span className="kpi-label">
-                    Completion ({detail.completed_tasks}/{detail.total_tasks} tasks)
-                  </span>
+              )}
+              {!isInflation && !isWebsiteAudit && (
+                <div className="kpi-strip cols-4">
+                  <div className="kpi-cell">
+                    <span className="kpi-value">{pct}%</span>
+                    <span className="kpi-label">
+                      Completion ({detail.completed_tasks}/{detail.total_tasks} tasks)
+                    </span>
+                  </div>
+                  <div className="kpi-cell">
+                    <span className="kpi-value emerald">{detail.verified_findings_count}</span>
+                    <span className="kpi-label">Peer-Verified Leads</span>
+                  </div>
+                  <div className="kpi-cell">
+                    <span className="kpi-value slate">
+                      {detail.cleared_count ?? 0}
+                      {detail.cleared_tasks_count != null && detail.cleared_tasks_count > 0
+                        ? ` / ${detail.cleared_tasks_count} scans`
+                        : ''}
+                    </span>
+                    <span className="kpi-label">
+                      Cleared Findings{detail.unevaluable_groups_count ? ` (${detail.unevaluable_groups_count} unevaluable)` : ''}
+                    </span>
+                  </div>
+                  <div className="kpi-cell">
+                    <span className="kpi-value">
+                      {detail.unique_coverage_inr_cr != null
+                        ? formatInrCr(detail.unique_coverage_inr_cr)
+                        : detail.scan_workload_inr_cr != null && detail.scan_workload_inr_cr > 0
+                          ? formatInrCr(detail.scan_workload_inr_cr)
+                          : 'Active'}
+                    </span>
+                    <span className="kpi-label">
+                      {detail.unique_coverage_inr_cr != null
+                        ? detail.amount_unit_note || 'Deduplicated project coverage'
+                        : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
+                    </span>
+                  </div>
                 </div>
-                <div className="kpi-cell">
-                  <span className="kpi-value emerald">{detail.verified_findings_count}</span>
-                  <span className="kpi-label">Peer-Verified Leads</span>
-                </div>
-                <div className="kpi-cell">
-                  <span className="kpi-value slate">
-                    {detail.cleared_count ?? 0}
-                    {detail.cleared_tasks_count != null && detail.cleared_tasks_count > 0
-                      ? ` / ${detail.cleared_tasks_count} scans`
-                      : ''}
-                  </span>
-                  <span className="kpi-label">
-                    Cleared Findings{detail.unevaluable_groups_count ? ` (${detail.unevaluable_groups_count} unevaluable)` : ''}
-                  </span>
-                </div>
-                <div className="kpi-cell">
-                  <span className="kpi-value">
-                    {detail.unique_coverage_inr_cr != null
-                      ? formatInrCr(detail.unique_coverage_inr_cr)
-                      : detail.scan_workload_inr_cr != null && detail.scan_workload_inr_cr > 0
-                        ? formatInrCr(detail.scan_workload_inr_cr)
-                        : 'Active'}
-                  </span>
-                  <span className="kpi-label">
-                    {detail.unique_coverage_inr_cr != null
-                      ? detail.amount_unit_note || 'Deduplicated project coverage'
-                      : detail.amount_unit_note || 'Method Scan Workload (Gross)'}
-                  </span>
-                </div>
-              </div>}
+              )}
             </div>
 
             {/* Public Source Portals (Tiers 1-3) */}
@@ -275,23 +289,25 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
             )}
 
             {/* Mission Findings */}
-            {detail.methodology_code !== 'W1' && <div>
-              <div className="section-kicker">
-                Findings &amp; audit leads ({detail.findings?.length ?? 0})
+            {!isInflation && !isWebsiteAudit && (
+              <div>
+                <div className="section-kicker">
+                  Findings &amp; audit leads ({detail.findings?.length ?? 0})
+                </div>
+                {detail.findings && detail.findings.length > 0 ? (
+                  <div className="grid-2">
+                    {detail.findings.map((f) => (
+                      <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="state-banner">
+                    No findings published for this project yet. Claim a queued task with{' '}
+                    <code className="font-mono">aiwatchdogs join</code> to run deterministic scans!
+                  </div>
+                )}
               </div>
-              {detail.findings && detail.findings.length > 0 ? (
-                <div className="grid-2">
-                  {detail.findings.map((f) => (
-                    <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
-                  ))}
-                </div>
-              ) : (
-                <div className="state-banner">
-                  No findings published for this project yet. Claim a queued task with{' '}
-                  <code className="font-mono">aiwatchdogs join</code> to run deterministic scans!
-                </div>
-              )}
-            </div>}
+            )}
 
             <ProjectCompute detail={detail} />
           </div>
@@ -363,7 +379,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       <>
                         <span className="lb-score">{pct}%</span>
                         <span className="lb-score-lbl">
-                          {m.completed_tasks}/{m.total_tasks} tasks, {m.verified_findings_count} verified
+                          {m.completed_tasks}/{m.total_tasks} tasks
+                          {m.methodology_code !== INFLATION_METHOD && m.methodology_code !== 'W1' && `, ${m.verified_findings_count} verified`}
                         </span>
                       </>
                     ) : (
@@ -376,6 +393,32 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
             })
           : null}
       </div>
+    </section>
+  );
+}
+
+function InflationContribution({ detail }: { detail: MissionItem }) {
+  const prompt = `Read and follow ${getCanonicalOrigin()}${INFLATION_JOIN_PATH} to claim one Independent India Inflation Dataset task and submit its evidence.`;
+  const [copyStatus, setCopyStatus] = useState('');
+
+  async function copyPrompt() {
+    const copied = await copyToClipboard(prompt);
+    setCopyStatus(copied ? 'Copied. Paste the line into your AI agent.' : 'Select and copy the line above.');
+  }
+
+  return (
+    <section className="card-sunk card-pad project-detail-scope" aria-labelledby="inflation-join-title">
+      <h2 id="inflation-join-title" className="compute-title">Contribute your agent’s compute</h2>
+      <p>Paste this line into your AI agent. It will claim a task from this project and read the evidence requirements.</p>
+      <div className="inflation-join-prompt"><code>{prompt}</code></div>
+      <div className="inflation-join-actions">
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => void copyPrompt()}>Copy join line</button>
+        <a href={INFLATION_JOIN_PATH}>Read the agent guide</a>
+        <a href={INFLATION_METHOD_URL}>Read the methodology</a>
+        <a href={`/api/missions/${encodeURIComponent(detail.slug)}/dataset`}>Browse public contributions (JSON)</a>
+      </div>
+      <div role="status" aria-live="polite">{copyStatus}</div>
+      <p>Task progress <strong>{detail.completed_tasks} of {detail.total_tasks}</strong>. Submissions are public and subject to review. A national estimate requires verified evidence for a representative sample.</p>
     </section>
   );
 }
@@ -397,6 +440,7 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
   const sum = detail.token_summary;
   if (tasks.length === 0 && planned.length === 0) return null;
   const na = <span className="not-reported">Not reported</span>;
+  const completed = new Set(tasks.filter((task) => task.status === 'completed').map((task) => task.id));
   return (
     <div>
       <h2 className="compute-title">Tasks and compute</h2>
@@ -440,6 +484,8 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
             {tasks.map((t) => {
               const u = t.usage;
               const secs = u?.agent_seconds ?? u?.hub_seconds;
+              const contributor = t.claimed_by_handle ?? t.claimed_by;
+              const waiting = t.status === 'queued' && t.depends_on?.some((id) => !completed.has(id));
               return (
                 <tr key={t.id}>
                   <td>{t.title || 'Audit task'}
@@ -459,7 +505,7 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
                             : 'badge badge-review'
                       }
                     >
-                      {t.status.replace(/_/g, ' ')}
+                      {waiting ? 'Waiting for prior tasks' : t.status.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="tabular" title={t.estimate_basis}>
@@ -477,7 +523,7 @@ function ProjectCompute({ detail }: { detail: MissionItem }) {
                   </td>
                   <td className="tabular">{!u ? '' : u.iterations ?? na}</td>
                   <td>
-                    {t.claimed_by ? <Link to={`/a/${encodeURIComponent(t.claimed_by)}`}>@{t.claimed_by}</Link> : ''}
+                    {contributor ? <Link to={`/a/${encodeURIComponent(contributor)}`}>@{contributor}</Link> : ''}
                   </td>
                 </tr>
               );

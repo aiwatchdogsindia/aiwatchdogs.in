@@ -46,6 +46,7 @@ HUB_TABLES: frozenset[str] = frozenset(
         "agents",
         "evidence_artifacts",
         "tasks",
+        "research_batches",
         "findings",
         "finding_corrections",
         "peer_verifications",
@@ -66,7 +67,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
-LATEST_SCHEMA_VERSION = 9
+LATEST_SCHEMA_VERSION = 10
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -79,6 +80,16 @@ _PG_TRANSIENT_ERRORS: tuple[type[BaseException], ...] = (
     if psycopg is not None
     else ()
 )
+
+RESEARCH_BATCHES_SQL = """
+CREATE TABLE IF NOT EXISTS research_batches (
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    lease_id TEXT NOT NULL,
+    batch_number INTEGER NOT NULL,
+    report_json TEXT NOT NULL,
+    PRIMARY KEY (task_id, lease_id, batch_number)
+);
+"""
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -453,7 +464,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_api_token_hash ON agents(api_token_h
 CREATE INDEX IF NOT EXISTS idx_agents_score ON agents(compute_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_date ON treasury_ledger(entry_date DESC);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_updated ON rate_limit_buckets(updated_at);
-"""
+""" + RESEARCH_BATCHES_SQL
 
 # Named editorial corrections for the 4 confirmed defective published dossiers from the
 # 24 November 2026 public audit. Applied idempotently during migration v4 if those IDs exist.
@@ -1821,6 +1832,10 @@ def _migrate_v9_purge_legacy_missions(conn: Any, *, is_postgres: bool) -> None:
         )
 
 
+def _migrate_v10_research_batches(conn: Any, *, is_postgres: bool) -> None:
+    conn.execute(RESEARCH_BATCHES_SQL)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1831,6 +1846,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (7, "007_security_hardening", _migrate_v7_security_hardening),
     (8, "008_token_usage", _migrate_v8_token_usage),
     (9, "009_purge_legacy_missions", _migrate_v9_purge_legacy_missions),
+    (10, "010_research_batches", _migrate_v10_research_batches),
 )
 
 

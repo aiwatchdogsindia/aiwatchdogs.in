@@ -200,6 +200,8 @@ export interface MissionTask {
   title?: string;
   status: string;
   claimed_by?: string | null;
+  claimed_by_handle?: string | null;
+  depends_on?: string[];
   attempt_count?: number;
   created_at?: string;
   work_type?: string;
