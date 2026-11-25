@@ -12,7 +12,7 @@ COPY web/public/ ./public/
 RUN npm run build
 
 # Stage 2: Build the Python virtual environment with pinned uv (not shipped to runtime)
-FROM python:3.14.7-slim AS python-builder
+FROM python:3.15.1-slim AS python-builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
 
@@ -29,7 +29,7 @@ RUN uv sync --no-dev --frozen \
     && python3 -m compileall -q /app/src
 
 # Stage 3: Minimal non-root runtime serving API + built web/dist on port 8000 (no uv/uvx)
-FROM python:3.14.7-slim AS runtime
+FROM python:3.15.1-slim AS runtime
 
 WORKDIR /app
 
