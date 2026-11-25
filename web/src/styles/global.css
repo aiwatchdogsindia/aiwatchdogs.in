@@ -5581,7 +5581,7 @@ code.font-mono {
 .brand-logo {
   width: 128px;
   height: 128px;
-  margin: -2px -4px -2px -14px;
+  margin: -2px 4px -2px 0;
 }
 .brand-text {
   gap: 5px;
@@ -5618,7 +5618,6 @@ code.font-mono {
   .brand-logo {
     width: 104px;
     height: 104px;
-    margin-left: -12px;
   }
   .brand-mark {
     font-size: 28px;
@@ -5630,7 +5629,6 @@ code.font-mono {
   .brand-logo {
     width: 88px;
     height: 88px;
-    margin-left: -10px;
   }
   .brand-mark {
     font-size: 25px;
