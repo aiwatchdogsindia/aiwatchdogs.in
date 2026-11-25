@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from aiwatchdogs.cli.main import app as cli_app
 from aiwatchdogs.hub.app import create_app
-from aiwatchdogs.projects import load_project_files, validate_project
+from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, load_project_files, validate_project
 
 REPO_PROJECTS = Path(__file__).resolve().parents[1] / "projects"
 SHA = "a" * 64
@@ -120,6 +120,85 @@ def test_repository_project_files_are_valid() -> None:
     assert files, "projects/ should contain at least one project"
     for pf in files:
         assert pf.errors == [], f"{pf.path.name}: {pf.errors}"
+
+
+def test_inflation_limit_and_dependency_validation(inflation_projects: Path) -> None:
+    source = inflation_projects / f"{INFLATION_PROJECT_SLUG}.json"
+    project = json.loads(source.read_text())
+    collect, review = project["tasks"]
+    project["tasks"] += [{**collect, "id": f"cpi-test-extra-{i}"} for i in range(98)]
+    assert validate_project(project, filename_stem=INFLATION_PROJECT_SLUG) == []
+    project["tasks"].append({**collect, "id": "cpi-too-many"})
+    assert any("at most 100 tasks" in error for error in validate_project(project))
+    project["tasks"].pop()
+    collect["depends_on"] = [review["id"]]
+    assert any("acyclic" in error for error in validate_project(project))
+    collect["depends_on"] = ["outside-the-project"]
+    assert any("distinct prerequisites" in error for error in validate_project(project))
+
+
+@pytest.mark.production_missions
+def test_inflation_reports_commit_as_one_lease_and_unlock_independent_review(
+    tmp_path: Path, inflation_projects: Path, inflation_gap_report: dict,
+) -> None:
+    (inflation_projects / "test-city-budget.json").write_text(json.dumps(_project(priority=10)))
+    url = f"/api/missions/{INFLATION_PROJECT_SLUG}/dataset"
+    with TestClient(create_app(db_path=tmp_path / "research.db", seed=True)) as client:
+        def register(handle: str) -> dict[str, str]:
+            response = client.post("/api/agents/register", json={"handle": handle})
+            assert response.is_success, response.text
+            return {"X-Agent-Token": response.json()["api_token"]}
+
+        contributor = register("cpi-contributor")
+        reviewer = register("cpi-reviewer")
+        opt_in = {"preferred_mission": INFLATION_PROJECT_SLUG, "mode": "investigate"}
+        general = client.post("/api/desk/next", headers=reviewer, json={"mode": "auto"})
+        assert general.json()["task"]["mission_slug"] == "test-city-budget"
+        invalid = client.post("/api/desk/submit", headers=reviewer, json={
+            "lease_id": general.json()["lease_id"], "outcome": "research", "research": inflation_gap_report,
+        })
+        assert invalid.status_code == 422
+        lease = client.post("/api/desk/next", headers=contributor, json=opt_in).json()
+        assert lease["task"]["task_type"] == "research"
+        assert lease["task"]["payload"]["context"]["inflation_scope"]["role"] == "collection"
+        assert client.post("/api/desk/next", headers=reviewer, json=opt_in).status_code == 204
+        batch = {"lease_id": lease["lease_id"], "outcome": "research", "research": inflation_gap_report}
+        assert client.post("/api/desk/submit", headers=reviewer, json=batch).status_code == 403
+        assert client.post("/api/desk/submit", headers=contributor, json={
+            "lease_id": lease["lease_id"], "outcome": "cleared",
+        }).status_code == 422
+        assert client.post("/api/desk/submit", headers=contributor, json={
+            **batch, "research_batch": 2,
+        }).status_code == 409
+        staged = {**batch, "research_final": False}
+        assert client.post("/api/desk/submit", headers=contributor, json=staged).json()["status"] == "staged"
+        assert client.post("/api/desk/submit", headers=contributor, json=staged).json()["status"] == "staged"
+        assert client.post("/api/desk/beat", headers=contributor, json={
+            "lease_id": lease["lease_id"], "progress_pct": 50,
+        }).is_success
+        assert client.get(url).json()["reports"] == []
+        final = {**batch, "research_batch": 2}
+        headers = {**contributor, "Idempotency-Key": "finish-research-test"}
+        response = client.post("/api/desk/submit", headers=headers, json=final)
+        assert response.json().get("status") == "accepted", response.text
+        assert response.json()["batches"] == 2
+        assert client.post("/api/desk/submit", headers=headers, json=final).json()["idempotent_replay"]
+
+        page = client.get(url, params={"limit": 1}).json()
+        assert page["total_tasks"] == 2
+        assert page["completed_tasks"] == 1
+        rows = page["reports"]
+        assert len(rows) == 1
+        assert rows[0] == {"task_id": lease["task"]["id"], "batch": 1, "report": inflation_gap_report}
+        page2 = client.get(url, params={"limit": 1, "after": page["next_after"], "task_id": rows[0]["task_id"]}).json()
+        assert page2["reports"][0]["batch"] == 2
+        assert page2["next_after"] is None
+        assert client.get(f"{url}/schema").json()["title"] == "InflationReport"
+        assert client.get(url, params={"after": "unparseable-cursor"}).status_code == 422
+        assert client.post("/api/desk/next", headers=contributor, json=opt_in).status_code == 204
+        review = client.post("/api/desk/next", headers=reviewer, json=opt_in).json()["task"]
+        assert review["id"] == "prj-cpi-test-review"
+        assert review["payload"]["depends_on"] == [lease["task"]["id"]]
 
 
 def test_cli_validate_reports_problems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

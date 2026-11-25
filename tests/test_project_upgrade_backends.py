@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -120,10 +121,16 @@ def _one(db: Database, sql: str, params: tuple[Any, ...] = ()) -> Any:
 
 def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     desk = DeskService(db, SSEBroker(db))
+    # Before the deploy the hub carries the old police project next to every other project in the
+    # repository (they are already live and must come through the upgrade untouched).
     old_dir = tmp_path / "before"
     old_dir.mkdir()
     (old_dir / "metro-police-finances.json").write_text(json.dumps(_old_project()))
+    others = [f for f in REPO_PROJECTS.glob("*.json") if not f.name.startswith("_") and f.name != "police-finances.json"]
+    for other in others:
+        shutil.copy(other, old_dir / other.name)
     assert sync_projects(db, old_dir)["changed"] is True
+    other_tasks_before = _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug != 'metro-police-finances'")
 
     # State of the live hub before the upgrade: one audit done, its lead waiting for two peer checks.
     author = desk.register_agent({"handle": "early-agent", "provider": "antigravity", "model": "Gemini"}, base_url=BASE)
@@ -138,9 +145,14 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     assert result["changed"] is True and result["skipped"] == []
     desk.slug_aliases = slug_aliases(REPO_PROJECTS)
 
-    assert _one(db, "SELECT COUNT(*) AS n FROM missions") == 1  # renamed in place: not archived, not duplicated
+    # Renamed in place: not archived, not duplicated, and no other project is touched.
+    assert _one(db, "SELECT COUNT(*) AS n FROM missions") == 1 + len(others)
+    assert _one(db, "SELECT COUNT(*) AS n FROM missions WHERE status != 'active'") == 0
+    assert _one(db, "SELECT COUNT(*) AS n FROM missions WHERE slug = 'metro-police-finances' OR id = 'project-metro-police-finances'") == 0
     assert _one(db, "SELECT status AS s FROM missions WHERE id = 'project-police-finances'") == "active"
-    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_id != 'project-police-finances' OR mission_slug != 'police-finances'") == 0
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'metro-police-finances' OR mission_id = 'project-metro-police-finances'") == 0
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug != 'police-finances'") == other_tasks_before
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_id = 'project-police-finances' AND mission_slug != 'police-finances'") == 0
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE task_type = 'anomaly_scan'") == 100
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE task_type = 'peer_verify' AND status = 'queued'") == 2
     assert _one(db, "SELECT status AS s FROM tasks WHERE id = 'prj-metro-police-delhi-notes-2024-25'") == "completed"
@@ -156,7 +168,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
 
     # Deploying again (every cold start runs the sync) changes nothing.
     assert sync_projects(db, REPO_PROJECTS)["changed"] is False
-    assert _one(db, "SELECT COUNT(*) AS n FROM tasks") == 102
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'police-finances'") == 102
 
     # Old links keep working, and the page lists every task with its role.
     detail = desk.get_mission_detail("metro-police-finances")
@@ -183,6 +195,8 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
         claims = list(pool.map(claim, agents))
     assert None not in claims
     assert len({c[0] for c in claims if c}) == 12  # twelve different tasks, no double hand-out
+    # Agents that join the ordinary way are only given audit work, never another project's research tasks.
+    assert all(c and c[0].startswith(("prj-police-", "prj-metro-police-", "tsk-pv-")) for c in claims)
     # Peer checks come first in auto mode: the two waiting ones are taken, by two different agents.
     assert sorted(c[1] for c in claims if c) == ["auditor"] * 10 + ["peer_verifier"] * 2
 

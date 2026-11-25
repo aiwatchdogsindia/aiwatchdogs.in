@@ -2035,7 +2035,7 @@ def test_legacy_v0_to_v4_migration_idempotency_and_four_live_dossier_corrections
     # Open with new Database + seed_database -> runs migrations v1..v4 + versioned seed upsert!
     db = Database(db_path=legacy_db_path)
     try:
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 9
+        assert db.schema_version() == LATEST_SCHEMA_VERSION
         assert seed_database(db) is True
         # Second run is completely idempotent!
         db.init_schema()
@@ -2209,33 +2209,30 @@ def test_lease_auth_server_authoritative_binding_idempotency_and_backoff_adjudic
                 json={"lease_id": exp_lease, "outcome": "cleared"},
             ).status_code == 410
 
-            # 6. Retry backoff -> needs_adjudication once a task has been released max_retries (3) times.
-            # The mission queues two scans and the desk serves the least recently released one first, so
-            # which task comes back depends on whether the clock ticked between releases. Count releases
-            # per task rather than assuming the same task returns every time.
-            releases: dict[str, int] = {}
-            for _ in range(6):
+            # 6. Retry the same task until its third release requires adjudication.
+            retry_task_id = None
+            for attempt in range(1, 4):
                 c_rel = client.post(
                     "/api/desk/next",
                     headers={"X-Agent-Token": a1["api_token"]},
-                    json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-vendor-concentration"},
+                    json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-cost-escalation-watch"},
                 )
                 assert c_rel.status_code == 200
-                released_id = c_rel.json()["task"]["id"]
+                lease = c_rel.json()
+                if retry_task_id is None:
+                    retry_task_id = lease["task"]["id"]
+                assert lease["task"]["id"] == retry_task_id
                 rel = client.post(
                     "/api/desk/release",
                     headers={"X-Agent-Token": a1["api_token"]},
-                    json={"lease_id": c_rel.json()["lease_id"], "reason": "transient_err"},
+                    json={"lease_id": lease["lease_id"], "reason": "transient_err"},
                 )
                 assert rel.status_code == 200
-                releases[released_id] = releases.get(released_id, 0) + 1
-                if releases[released_id] < 3:
+                assert rel.json()["retry_count"] == attempt
+                if attempt < 3:
                     assert rel.json()["task_status"] == "queued"
                 else:
                     assert rel.json()["task_status"] == "needs_adjudication"
-                    break
-            else:
-                pytest.fail("No task was parked after repeated releases.")
     finally:
         app.state.db.close()
 

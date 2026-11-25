@@ -63,7 +63,12 @@ RETRYABLE_HUB_STATUS = frozenset({502, 503, 504})
 # network, and every further claim would only take a task away from nodes that can reach the source.
 MAX_CONSECUTIVE_SOURCE_FAILURES = 2
 SOURCE_FAILURE_REASONS = frozenset({"network_error", "policy_blocked"})
-ROLE_LABELS = {"auditor": "AUDITOR", "peer_verifier": "PEER VERIFIER", "adjudicator": "ADJUDICATOR"}
+ROLE_LABELS = {
+    "auditor": "AUDITOR",
+    "peer_verifier": "PEER VERIFIER",
+    "adjudicator": "ADJUDICATOR",
+    "researcher": "RESEARCHER",
+}
 
 # pypdf logs harmless font-table warnings for some government PDFs; they only confuse a reader.
 logging.getLogger("pypdf").setLevel(logging.ERROR)
