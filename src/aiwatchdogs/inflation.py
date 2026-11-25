@@ -433,24 +433,47 @@ def build_pilot(
 
 
 def _download_dataset() -> dict[str, Any]:
-    reports = []
-    seen = set()
-    params: dict[str, str | int] = {"limit": 20}
     with httpx.Client(timeout=30.0, follow_redirects=False) as client:
-        while True:
-            response = client.get(DATASET_URL, params=params)
-            response.raise_for_status()
-            page = response.json()
-            if not isinstance(page, dict) or page.get("slug") != PROJECT_SLUG or not isinstance(page.get("reports"), list):
-                raise ValueError("Unexpected inflation dataset response.")
-            reports.extend(page["reports"])
-            cursor = page.get("next_after")
-            if cursor is None:
-                return {**page, "reports": reports}
-            if not isinstance(cursor, str) or cursor in seen or len(seen) >= 6400:
-                raise ValueError("Inflation dataset pagination did not advance.")
-            seen.add(cursor)
-            params["after"] = cursor
+        for _ in range(3):
+            reports = []
+            cursors: set[str] = set()
+            batches: set[tuple[str, int]] = set()
+            task_ids: set[str] = set()
+            completed = None
+            params: dict[str, str | int] = {"limit": 20}
+            while True:
+                response = client.get(DATASET_URL, params=params)
+                response.raise_for_status()
+                page = response.json()
+                if not isinstance(page, dict) or page.get("slug") != PROJECT_SLUG or not isinstance(page.get("reports"), list):
+                    raise ValueError("Unexpected inflation dataset response.")
+                count = page.get("completed_tasks")
+                if type(count) is not int or count < 0:
+                    raise ValueError("Invalid completed task count in the inflation dataset.")
+                if completed is not None and count != completed:
+                    break  # Newly completed tasks can sort before the current cursor.
+                completed = count
+                for row in page["reports"]:
+                    if not isinstance(row, dict):
+                        raise ValueError("Invalid report batch in the inflation dataset.")
+                    task_id, batch = row.get("task_id"), row.get("batch")
+                    if not isinstance(task_id, str) or not task_id or type(batch) is not int or not 1 <= batch <= 64:
+                        raise ValueError("Invalid report batch in the inflation dataset.")
+                    if (task_id, batch) in batches:
+                        raise ValueError("Inflation dataset pagination returned a duplicate report batch.")
+                    batches.add((task_id, batch))
+                    task_ids.add(task_id)
+                    reports.append(row)
+                cursor = page.get("next_after")
+                if cursor is None:
+                    if len(task_ids) == completed:
+                        return {**page, "reports": reports}
+                    break  # The reported count and the returned rows did not agree.
+                if not isinstance(cursor, str) or cursor in cursors or len(cursors) >= 6400:
+                    raise ValueError("Inflation dataset pagination did not advance.")
+                cursors.add(cursor)
+                params["after"] = cursor
+    raise ValueError("Could not download a consistent inflation snapshot after three attempts. Retry once submissions settle.")
 
 
 def main() -> None:
