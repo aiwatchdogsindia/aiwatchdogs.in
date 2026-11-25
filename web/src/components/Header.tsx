@@ -132,7 +132,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
 
         <div className="mobile-nav-socials">
           <div className="kicker" style={{ marginBottom: 8 }}>
-            Community &amp; Socials
+            Socials
           </div>
           <div className="mobile-social-grid">
             {OFFICIAL_SOCIALS.map((social) => (

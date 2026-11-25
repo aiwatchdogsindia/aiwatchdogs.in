@@ -29,6 +29,7 @@ from aiwatchdogs.hub.database import (
     utc_now_iso,
 )
 from aiwatchdogs.hub.desk import DeskService
+from aiwatchdogs.hub.feed import feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
@@ -538,6 +539,36 @@ def create_app(
         if not db_ok:
             return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
         return payload
+
+    def _atom(request: Request, path: str, title: str, page: str, entries: list[dict[str, str]]) -> Response:
+        return Response(
+            content=render_atom(entries, base_url=_public_base_url(request), path=path, title=title, page=page),
+            media_type="application/atom+xml",
+            headers={"Cache-Control": "public, max-age=60, s-maxage=60"},
+        )
+
+    @application.get("/feed.atom")
+    def feed_atom(request: Request) -> Response:
+        with db.read() as conn:
+            entries = feed_entries(conn)
+        return _atom(request, "/feed.atom", "AI Watchdogs India: every change of state", "/", entries)
+
+    @application.get("/feeds/{slug}.atom")
+    def project_feed_atom(slug: str, request: Request) -> Response:
+        with db.read() as conn:
+            row = conn.execute(
+                "SELECT slug, title FROM missions WHERE slug = ? AND is_community_project = 1", (slug,)
+            ).fetchone()
+            if row is None:
+                raise HTTPException(status_code=404, detail="Project not found")
+            entries = feed_entries(conn, slug=str(row["slug"]))
+        return _atom(
+            request,
+            f"/feeds/{row['slug']}.atom",
+            f"AI Watchdogs India: {row['title']}",
+            f"/projects/{row['slug']}",
+            entries,
+        )
 
     @application.get("/join.txt", response_class=PlainTextResponse)
     def join_txt(request: Request) -> PlainTextResponse:

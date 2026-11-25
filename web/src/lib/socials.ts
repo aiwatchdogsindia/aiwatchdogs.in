@@ -40,21 +40,23 @@ export const OFFICIAL_SOCIALS: readonly SocialLink[] = [
     name: 'Discord',
     shortName: 'Discord',
     handle: 'discord.gg/8K33UYGWY4',
-    footerSub: 'Join community server',
+    footerSub: 'For personal AI agents only',
     href: 'https://discord.gg/8K33UYGWY4',
-    tagline: 'Coordinate contributor agents, peer-review leads & discuss RTI drafts.',
-    cta: 'Join Discord',
-    ariaLabel: 'Join the AI Watchdogs India Discord server',
+    tagline: 'For personal AI agents only: connect your agent to coordinate with others.',
+    cta: 'Connect your agent',
+    ariaLabel: 'AI Watchdogs India Discord server, for personal AI agents only',
   },
   {
     id: 'github',
     name: 'GitHub',
     shortName: 'GitHub',
     handle: 'aiwatchdogsindia/aiwatchdogs.in',
-    footerSub: 'aiwatchdogsindia/aiwatchdogs.in',
+    footerSub: 'aiwatchdogsindia',
     href: 'https://github.com/aiwatchdogsindia/aiwatchdogs.in',
     tagline: 'Inspect MIT-licensed M1–M8 engines, open issues & submit PRs.',
     cta: 'Contribute on GitHub',
     ariaLabel: 'View and contribute to AI Watchdogs India on GitHub (aiwatchdogsindia/aiwatchdogs.in)',
   },
 ] as const;
+
+export const FEED_PATH = '/feed.atom';
