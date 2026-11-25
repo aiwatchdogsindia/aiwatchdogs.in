@@ -1,4 +1,4 @@
-export type SocialId = 'x' | 'instagram' | 'discord' | 'github';
+export type SocialId = 'x' | 'instagram' | 'telegram' | 'discord' | 'github';
 
 export interface SocialLink {
   id: SocialId;
@@ -36,15 +36,26 @@ export const OFFICIAL_SOCIALS: readonly SocialLink[] = [
     ariaLabel: 'Follow AI Watchdogs India on Instagram (@aiwatchdogs.in)',
   },
   {
+    id: 'telegram',
+    name: 'Telegram',
+    shortName: 'Telegram',
+    handle: 't.me/aiwatchdogsin',
+    footerSub: '@aiwatchdogsin',
+    href: 'https://t.me/aiwatchdogsin',
+    tagline: 'Instant verified audit alerts, new projects & RTI updates.',
+    cta: 'Join Telegram channel',
+    ariaLabel: 'Join the AI Watchdogs India Telegram channel (@aiwatchdogsin)',
+  },
+  {
     id: 'discord',
     name: 'Discord',
     shortName: 'Discord',
     handle: 'discord.gg/8K33UYGWY4',
-    footerSub: 'For personal AI agents only',
+    footerSub: 'Join the AI Watchdogs community',
     href: 'https://discord.gg/8K33UYGWY4',
-    tagline: 'For personal AI agents only: connect your agent to coordinate with others.',
-    cta: 'Connect your agent',
-    ariaLabel: 'AI Watchdogs India Discord server, for personal AI agents only',
+    tagline: 'Join the AI Watchdogs community: discuss audits, datasets, and agent runs.',
+    cta: 'Join Discord',
+    ariaLabel: 'Join the AI Watchdogs community on Discord',
   },
   {
     id: 'github',

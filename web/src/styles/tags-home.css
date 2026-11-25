@@ -1,0 +1,790 @@
+/* =========================================================================
+   CONSISTENT TAG SYSTEM & SPACIOUS "HOW IT WORKS" LAYOUT (tags-home.css)
+   Imported after global.css and projects.css in web/src/main.tsx.
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. UNIFIED TAG & BADGE PALETTE (plain-English Sentence case across site)
+   ------------------------------------------------------------------------- */
+
+/* Split vote (tie-breaker needed): dashed warm amber */
+.badge-split,
+.chip-split {
+  color: #8A4200;
+  background: #FFF7EB;
+  border: 1px dashed #D98A2B;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Neutral / Not enough data / Unreachable: calm warm stone */
+.badge-neutral,
+.chip-neutral {
+  color: var(--ink-3);
+  background: #F4F3F0;
+  border: 1px solid #D9D5CC;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Open task: upright dashed stone (distinct from italic In review finding) */
+.badge-open,
+.chip-open {
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px dashed #9E988B;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* In progress task: crisp civic blue */
+.badge-progress,
+.chip-progress {
+  color: #1D4A8A;
+  background: #EDF3FC;
+  border: 1px solid #B7CEE8;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Waiting / Paused task: muted stone */
+.badge-waiting,
+.chip-waiting {
+  color: var(--ink-4);
+  background: var(--sunk);
+  border: 1px solid var(--rule-strong);
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Planned task: subtle muted dashed */
+.badge-planned,
+.chip-planned {
+  color: var(--ink-4);
+  background: transparent;
+  border: 1px dashed var(--ink-6);
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* RTI draft: warm amber-tint ready-to-review draft */
+.badge-rti-draft,
+.chip-rti-draft {
+  color: #8A4200;
+  background: #FFF6EB;
+  border: 1px solid #E8BF89;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* RTI filed / Official reply: clean civic blue (overrides lavender/orange clash) */
+.badge-rti,
+.chip-rti {
+  color: #1D4A8A;
+  background: #EDF3FC;
+  border: 1px solid #B7CEE8;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Website check: Missing item (page loaded, item not found) */
+.badge-missing,
+.chip-missing {
+  color: #9C3D12;
+  background: #FDF1EA;
+  border: 1px solid #EBC1AA;
+  font-style: normal;
+  font-weight: 400;
+}
+
+/* Work / check type pill: Budget check, Website check, Price research, Peer check */
+.badge-work,
+.chip-work {
+  color: var(--ink-2);
+  background: #F4F3F0;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-4);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  padding: 2px 8px;
+}
+
+/* -------------------------------------------------------------------------
+   2. SPACIOUS "HOW IT WORKS" CONTAINER & "THE SWARM" ALIGNMENT FIX
+   Fixes the cramped 760px width and the `.how-section > p` specificity bug
+   that collapsed `.how-rule` to margin-top: 0 right against Peer quorum /
+   Safety gates.
+   ------------------------------------------------------------------------- */
+.how {
+  max-width: 980px;
+  padding: 64px var(--gutter) 84px;
+  gap: 72px;
+}
+
+.how-intro p,
+.how-prose,
+.how-section > p:not(.how-rule),
+.how-section > .text-list {
+  max-width: 68ch;
+}
+
+.how-section h2 {
+  margin: 0 0 26px;
+  font-size: clamp(28px, 2.6vw, 34px);
+  line-height: 1.12;
+}
+
+/* "The swarm" spacious two-tier layout */
+.how-swarm-tiers {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.how-swarm-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.how-swarm .how-tier-label {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: 0.005em;
+}
+
+.how-swarm .how-cards {
+  display: grid;
+  gap: 24px 32px;
+  align-items: stretch;
+}
+
+.how-swarm .how-cards.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.how-swarm .how-cards.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.how-swarm .how-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--ink);
+  border-radius: var(--r-6);
+  padding: 22px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.how-swarm .how-card h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.how-swarm .how-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--ink-2);
+}
+
+/* Legal & quorum footer note — strictly overrides `.how-section > p` from global.css */
+.how-section > p.how-rule,
+.how-swarm-note {
+  margin: 32px 0 0;
+  padding: 18px 22px;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-6);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  max-width: 100%;
+}
+
+/* -------------------------------------------------------------------------
+   3. CLEAN, GROUPED "HOW TO READ THIS SITE" TAG GUIDE
+   ------------------------------------------------------------------------- */
+.how-guide-intro {
+  margin: -10px 0 28px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  max-width: 64ch;
+}
+
+.how-legend-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 36px 44px;
+  align-items: start;
+}
+
+.how-legend-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.how-legend-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.how-legend-group-head h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.how-legend-group-head p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
+
+.how-guide .how-legend {
+  margin: 0;
+  border-top: 0;
+}
+
+.how-guide .how-legend-row {
+  display: grid;
+  grid-template-columns: 134px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.how-guide .how-legend-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.how-guide .how-legend-row dt {
+  margin: 0;
+  padding-top: 1px;
+}
+
+.how-guide .how-legend-row dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.52;
+  color: var(--ink-2);
+}
+
+/* "Three plain facts" grid also breathes comfortably at 980px */
+.how-facts {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px 32px;
+}
+
+/* Findings page compact key bar */
+.findings-tag-key {
+  display: flex;
+  align-items: center;
+  gap: 10px 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  font-size: 12.5px;
+}
+
+.findings-tag-key-label {
+  font-weight: 500;
+  color: var(--ink-3);
+  margin-right: 4px;
+}
+
+/* -------------------------------------------------------------------------
+   4. RESPONSIVE BREAKPOINTS
+   ------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .how-swarm .how-cards.three,
+  .how-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .how-legend-groups {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+  .how-guide .how-legend-row {
+    grid-template-columns: 144px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .how {
+    padding-block: 40px 56px;
+    gap: 52px;
+  }
+  .how-swarm-tiers {
+    gap: 30px;
+  }
+  .how-swarm .how-cards.three,
+  .how-swarm .how-cards.two,
+  .how-facts {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .how-swarm .how-card {
+    padding: 18px 18px 20px;
+  }
+  .how-section > p.how-rule,
+  .how-swarm-note {
+    margin-top: 24px;
+    padding: 15px 16px;
+  }
+}
+
+@media (max-width: 520px) {
+  .how-guide .how-legend-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   5. ONE-PAGE EDITORIAL BRIEF (/brief — BriefPage.tsx)
+   ------------------------------------------------------------------------- */
+.brief-page {
+  gap: 64px;
+}
+
+.how-intro p.brief-lead {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 64ch;
+}
+
+.brief-facts {
+  margin: 28px 0 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px 20px;
+  padding-top: 22px;
+  border-top: 1px solid var(--rule);
+}
+
+.brief-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.brief-fact dt {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.15;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.brief-fact dd {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.48;
+  color: var(--ink-3);
+}
+
+.how-section > p.brief-section-sub {
+  margin: -10px 0 22px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  max-width: 66ch;
+}
+
+/* 4-step workflow grid */
+.brief-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 28px;
+}
+
+.brief-step {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top: 2px solid var(--ink);
+  border-radius: var(--r-6);
+  padding: 22px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brief-step-num {
+  font-size: 12px;
+  color: var(--accent-deep);
+  letter-spacing: 0.08em;
+}
+
+.brief-step h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.28;
+  color: var(--ink);
+}
+
+.brief-step p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--ink-2);
+}
+
+.brief-step .badge {
+  vertical-align: baseline;
+  margin: 0 2px;
+}
+
+/* 3 live projects cards */
+.brief-projects {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px 24px;
+}
+
+.brief-project-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  padding: 22px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.brief-project-card:hover,
+.brief-project-card:focus-visible {
+  border-color: var(--ink);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.brief-project-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.brief-project-card h3 {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.brief-project-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.56;
+  color: var(--ink-3);
+  flex: 1;
+}
+
+.brief-project-cta {
+  margin-top: 6px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.brief-card-arrow {
+  color: var(--ink-4);
+  flex-shrink: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.brief-project-card:hover .brief-card-arrow,
+.brief-explore-card:hover .brief-card-arrow,
+.brief-social-card:hover .brief-card-arrow {
+  color: var(--ink);
+  transform: translateX(2px);
+}
+
+/* Explore the site 2x2 grid + dual human/agent callout */
+.brief-explore {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+
+.brief-explore-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-6);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  transition: border-color 0.15s ease;
+}
+
+.brief-explore-card:hover,
+.brief-explore-card:focus-visible {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.brief-explore-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.brief-explore-card h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.brief-explore-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-3);
+}
+
+.brief-agent-callout {
+  margin-top: 24px;
+  padding: 22px 24px;
+  background: var(--sunk);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-8);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 28px;
+  flex-wrap: wrap;
+}
+
+.brief-agent-copy {
+  flex: 1 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.brief-agent-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+.brief-agent-copy h3 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1.28;
+  color: var(--ink);
+}
+
+.brief-agent-copy p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.58;
+  color: var(--ink-2);
+}
+
+.brief-agent-copy a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.brief-agent-copy code {
+  font-size: 12.5px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-4);
+  padding: 1px 5px;
+}
+
+.brief-agent-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.brief-agent-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.brief-agent-links a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.brief-agent-links a:hover {
+  color: var(--ink);
+}
+
+/* Independence & guardrails grid */
+.brief-rules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 32px;
+}
+
+.brief-rule-card {
+  border-top: 1px solid var(--rule-strong);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.brief-rule-card h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.brief-rule-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.58;
+  color: var(--ink-3);
+}
+
+/* Community channels grid on Brief */
+.brief-social-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.brief-social-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-6);
+  padding: 15px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  transition: border-color 0.15s ease;
+}
+
+.brief-social-card:hover,
+.brief-social-card:focus-visible {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.brief-social-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.brief-social-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.brief-social-sub {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-4);
+  overflow-wrap: anywhere;
+}
+
+.how-section > p.brief-colophon {
+  margin: 26px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-size: 14.5px;
+  line-height: 1.62;
+  color: var(--ink-3);
+  max-width: 68ch;
+}
+
+@media (max-width: 900px) {
+  .brief-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .brief-projects {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .brief-page {
+    gap: 48px;
+  }
+  .brief-steps,
+  .brief-explore,
+  .brief-rules {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .brief-step {
+    padding: 18px 18px 20px;
+  }
+  .brief-agent-callout {
+    padding: 18px;
+  }
+  .brief-agent-actions {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .brief-facts {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}

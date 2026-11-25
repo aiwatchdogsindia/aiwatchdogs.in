@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AgentBadge } from './AgentLogos';
 import { api } from '../api/client';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+import { getFindingTag, getVerdictTag, getWorkTypeTag } from '../lib/tags';
 import { Link } from '../router';
 import type { FindingItem, RtiDraft, VerificationCheckState } from '../types';
 import {
@@ -31,7 +32,6 @@ import {
   isOfficialGovUrl,
   providerBadgeClass,
   safeExternalUrl,
-  statusMeta,
 } from '../utils';
 import { useToast } from './Toast';
 
@@ -77,9 +77,9 @@ function renderCheckBadge(label: string, state: VerificationCheckState) {
 
 function formatReviewKindLabel(kind?: string): { label: string; isEditorial: boolean } {
   const k = (kind || 'computational_reproduction').toLowerCase();
-  if (k.includes('editorial')) return { label: 'Editorial Review', isEditorial: true };
-  if (k.includes('adjudic')) return { label: 'Adjudication', isEditorial: true };
-  return { label: 'Computational Reproduction', isEditorial: false };
+  if (k.includes('editorial')) return { label: 'Editorial check', isEditorial: true };
+  if (k.includes('adjudic')) return { label: 'Tie-breaker', isEditorial: true };
+  return { label: 'Peer check', isEditorial: false };
 }
 
 export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawerProps) {
@@ -195,7 +195,8 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     toast('Downloaded RTI draft (.txt)');
   };
 
-  const sm = finding ? statusMeta(finding.status) : null;
+  const sm = finding ? getFindingTag(finding.status) : null;
+  const workTag = finding ? getWorkTypeTag(undefined, finding.methodology_code) : null;
   const confirmCount =
     finding?.reproduction_summary?.computational_confirm_count ??
     finding?.confirm_count ??
@@ -267,17 +268,27 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
                 EVIDENCE DOSSIER #{String(findingId)}
               </span>
-              {sm && <span className={sm.badgeClass}>{sm.label}</span>}
-              {finding && <span className="tag-mono tag-method">{finding.methodology_code}</span>}
+              {sm && (
+                <span className={sm.badgeClass} title={sm.description}>
+                  {sm.label}
+                </span>
+              )}
+              {finding && workTag && (
+                <span
+                  className={workTag.badgeClass}
+                  title={`${finding.methodology_code}: ${workTag.description}`}
+                >
+                  {workTag.label}
+                </span>
+              )}
               {finding?.editorial_status &&
                 finding.editorial_status !== 'none' &&
-                finding.editorial_status !== finding.status &&
-                !(
-                  finding.status === 'under_editorial_review' &&
-                  finding.editorial_status === 'under_review'
-                ) && (
-                  <span className="badge badge-disputed">
-                    Editorial: {finding.editorial_status.replace(/_/g, ' ')}
+                getFindingTag(finding.editorial_status).id !== sm?.id && (
+                  <span
+                    className={getFindingTag(finding.editorial_status).badgeClass}
+                    title={getFindingTag(finding.editorial_status).description}
+                  >
+                    {getFindingTag(finding.editorial_status).label}
                   </span>
                 )}
             </div>
@@ -334,8 +345,11 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                     <History size={15} aria-hidden="true" />
                     <span>Correction &amp; Editorial Review History</span>
                     {finding.editorial_status && finding.editorial_status !== 'none' && (
-                      <span className="tag-mono" style={{ marginLeft: 'auto' }}>
-                        {finding.editorial_status.replace(/_/g, ' ')}
+                      <span
+                        className={getFindingTag(finding.editorial_status).badgeClass}
+                        style={{ marginLeft: 'auto' }}
+                      >
+                        {getFindingTag(finding.editorial_status).label}
                       </span>
                     )}
                   </div>
@@ -353,7 +367,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                             <span>
                               <strong>{c.correction_type ? c.correction_type.replace(/_/g, ' ') : 'Editorial review'}</strong>
                               {c.previous_status && c.new_status
-                                ? `, ${c.previous_status} to ${c.new_status}`
+                                ? `, ${getFindingTag(c.previous_status).label} to ${getFindingTag(c.new_status).label}`
                                 : ''}
                             </span>
                             <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
@@ -832,13 +846,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         {finding.verifications.map((v, i) => {
                           const reviewKind = formatReviewKindLabel(v.review_kind);
-                          const verdictUpper = (v.verdict || 'unrecorded').replace(/_/g, ' ').toUpperCase();
-                          const verdictClass =
-                            v.verdict === 'confirm'
-                              ? 'badge badge-verified'
-                              : v.verdict === 'unrecorded' || v.verdict === 'needs_review'
-                                ? 'badge badge-review'
-                                : 'badge badge-disputed';
+                          const verdictTag = getVerdictTag(v.verdict);
                           return (
                             <div
                               key={v.id ?? i}
@@ -871,7 +879,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                   {v.coding_agent ? (
                                     <span className="via-agent">via <AgentBadge agent={v.coding_agent} model={v.coding_agent_model} /></span>
                                   ) : null}
-                                  <span className={reviewKind.isEditorial ? 'badge badge-rti' : 'tag-mono'}>
+                                  <span className={reviewKind.isEditorial ? 'badge badge-rti' : 'badge badge-work'}>
                                     {reviewKind.label}
                                   </span>
                                   <span className={providerBadgeClass(v.provider || v.model_id)}>
@@ -879,7 +887,9 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                   </span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <span className={verdictClass}>{verdictUpper}</span>
+                                  <span className={verdictTag.badgeClass} title={verdictTag.description}>
+                                    {verdictTag.label}
+                                  </span>
                                   <span className="font-mono tabular" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
                                     {v.confidence != null
                                       ? `${Math.round(v.confidence * 100)}% conf`
@@ -935,7 +945,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {rtiDraft?.is_preview && (
-                          <span className="badge badge-review">Personal Preview (Not Persisted)</span>
+                          <span className="badge badge-review">Preview only</span>
                         )}
                         {rtiDraft?.version != null && (
                           <span className="tag-mono">v{rtiDraft.version}</span>
@@ -1133,7 +1143,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               {finding.created_at && (
                 <div className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'right' }}>
                   Logged {formatRelativeTime(finding.created_at)}
-                  {finding.verified_at ? `, Peer-Verified ${formatRelativeTime(finding.verified_at)}` : ''}
+                  {finding.verified_at ? `, Verified ${formatRelativeTime(finding.verified_at)}` : ''}
                 </div>
               )}
             </>

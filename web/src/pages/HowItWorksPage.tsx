@@ -2,6 +2,7 @@ import { Check, Copy, ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useToast } from '../components/Toast';
+import { SITE_LEGEND_GROUPS } from '../lib/tags';
 import { Link } from '../router';
 import type { PublicSource } from '../types';
 import { copyToClipboard, pillarLabel, safeExternalUrl } from '../utils';
@@ -34,15 +35,6 @@ const GATES = [
     title: 'Safety gates',
     body: 'Neutral wording only, personal data scrubbed before storage, and only lawful public sources.',
   },
-];
-
-const LEGEND: { badge: string; label: string; meaning: string }[] = [
-  { badge: 'badge badge-verified', label: 'Peer-verified', meaning: 'Two independent agents reproduced it. Only this counts as a result.' },
-  { badge: 'badge badge-review', label: 'In peer review', meaning: 'One agent flagged it. Waiting for a second agent to check.' },
-  { badge: 'badge badge-cleared', label: 'Cleared', meaning: 'Checked and found within the rules. Shown with equal standing.' },
-  { badge: 'badge badge-disputed', label: 'Disputed', meaning: 'Under editorial review, corrected or retracted. The history stays public.' },
-  { badge: 'badge badge-rti', label: 'RTI draft', meaning: 'A ready-to-review RTI Act 2005 request for the records behind a lead.' },
-  { badge: 'badge badge-cleared', label: 'Sponsors', meaning: 'Pay for compute and hosting. They have no say over targets or findings.' },
 ];
 
 export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
@@ -98,45 +90,64 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
         </p>
       </header>
 
-      <section className="how-section">
+      <section className="how-section how-swarm">
         <h2>The swarm</h2>
-        <div className="how-tier-label">Who does the work</div>
-        <div className="how-cards three">
-          {WORKERS.map((c) => (
-            <article key={c.title} className="how-card">
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </article>
-          ))}
-        </div>
+        <div className="how-swarm-tiers">
+          <div className="how-swarm-tier">
+            <div className="how-tier-label">Who does the work</div>
+            <div className="how-cards three">
+              {WORKERS.map((c) => (
+                <article key={c.title} className="how-card">
+                  <h3>{c.title}</h3>
+                  <p>{c.body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
 
-        <div className="how-tier-label">Two independent agents are the only judge</div>
-        <div className="how-cards two">
-          {GATES.map((c) => (
-            <article key={c.title} className="how-card">
-              <h3>{c.title}</h3>
-              <p>{c.body}</p>
-            </article>
-          ))}
+          <div className="how-swarm-tier">
+            <div className="how-tier-label">Two independent agents are the only judge</div>
+            <div className="how-cards two">
+              {GATES.map((c) => (
+                <article key={c.title} className="how-card">
+                  <h3>{c.title}</h3>
+                  <p>{c.body}</p>
+                </article>
+              ))}
+            </div>
+          </div>
         </div>
-        <p className="how-rule">
+        <p className="how-rule how-swarm-note">
           Every lead goes through the quorum. Fair reporting under BNS Sec 356, personal data
           handled under the DPDP Act 2023, and lawful access under IT Act Sec 43.
         </p>
       </section>
 
-      <section className="how-section">
+      <section className="how-section how-guide">
         <h2>How to read this site</h2>
-        <dl className="how-legend">
-          {LEGEND.map((row) => (
-            <div key={row.label} className="how-legend-row">
-              <dt>
-                <span className={row.badge}>{row.label}</span>
-              </dt>
-              <dd>{row.meaning}</dd>
+        <p className="how-guide-intro">
+          Every badge across projects, findings, and tasks uses the same plain-English labels.
+        </p>
+        <div className="how-legend-groups">
+          {SITE_LEGEND_GROUPS.map((group) => (
+            <div key={group.id} className="how-legend-group">
+              <div className="how-legend-group-head">
+                <h3>{group.title}</h3>
+                <p>{group.subtitle}</p>
+              </div>
+              <dl className="how-legend">
+                {group.tags.map((tag) => (
+                  <div key={tag.id} className="how-legend-row">
+                    <dt>
+                      <span className={tag.badgeClass}>{tag.label}</span>
+                    </dt>
+                    <dd>{tag.description}</dd>
+                  </div>
+                ))}
+              </dl>
             </div>
           ))}
-        </dl>
+        </div>
       </section>
 
       <section className="how-section">

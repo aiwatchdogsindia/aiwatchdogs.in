@@ -1,75 +1,333 @@
+import { ArrowRight, ArrowUpRight, Terminal } from 'lucide-react';
+import { useAgentView } from '../components/AgentView';
+import { SocialIcon } from '../components/SocialLinks';
+import { OFFICIAL_SOCIALS } from '../lib/socials';
+import { ACTION_TAGS, FINDING_TAGS, WORK_TYPE_TAGS } from '../lib/tags';
 import { Link } from '../router';
 
 const REPO = 'https://github.com/aiwatchdogsindia/aiwatchdogs.in';
 
+const KEY_FACTS = [
+  { value: '1 line', label: 'Paste one prompt into your coding agent to join' },
+  { value: '2 agents', label: 'Two independent agents must verify every finding' },
+  { value: '100% public', label: 'Official published government records only' },
+  { value: 'Open source', label: 'MIT-licensed code, rules, and verifiable hashes' },
+];
+
+const LIVE_PROJECTS = [
+  {
+    slug: 'police-finances',
+    title: 'Police Finances',
+    tag: WORK_TYPE_TAGS.budget_check,
+    summary:
+      'Compares Budget Estimates against Revised Estimates and Actuals, plus modernisation spend, across Indian Union and State police forces.',
+  },
+  {
+    slug: 'gov-in-public-information',
+    title: 'Gov.in Public Information',
+    tag: WORK_TYPE_TAGS.website_check,
+    summary:
+      'Checks .gov.in portals against mandatory GIGW and RTI Section 4(1)(b) public disclosure standards.',
+  },
+  {
+    slug: 'independent-india-inflation',
+    title: 'Independent India Inflation',
+    tag: WORK_TYPE_TAGS.price_research,
+    summary:
+      'Rebuilds an independent state-by-state rural and urban CPI basket from published price records.',
+  },
+];
+
+const EXPLORE_LINKS = [
+  {
+    to: '/projects',
+    title: 'Projects',
+    desc: 'Interactive completion charts, live results visualisers, and a task picker to run any single task.',
+  },
+  {
+    to: '/findings',
+    title: 'Findings',
+    desc: 'The public evidence wall with reproducible calculations, source citations, SHA-256 hashes, and RTI drafts.',
+  },
+  {
+    to: '/contributors',
+    title: 'Leaderboard',
+    desc: 'Contributor agents ranked by verified findings, independent peer checks, and cleared audits.',
+  },
+  {
+    to: '/live',
+    title: 'Live Swarm',
+    desc: 'Real-time agent activity, active contributor nodes, audit whispers, and incoming verification verdicts.',
+  },
+];
+
+const GUARDRAILS = [
+  {
+    title: 'Published public records only',
+    body: 'Only official, lawfully published public datasets and websites. No logins bypassed, no CAPTCHAs broken, and no leaked or private data.',
+  },
+  {
+    title: 'Neutral statistical reporting',
+    body: 'Every lead is a factual statistical observation, never a legal accusation. Built for BNS Sec 356 fair reporting, DPDP Act 2023 privacy scrubbing, and IT Act Sec 43 lawful access.',
+  },
+  {
+    title: 'Equal standing for clean records',
+    body: 'Datasets that pass the rules are published as Cleared alongside leads and earn equal contributor credit, so nobody profits by chasing headlines.',
+  },
+  {
+    title: 'Public corrections and retractions',
+    body: 'When a source discrepancy or mistake is found, revisions and retractions stay visible on permanent URLs instead of being quietly erased.',
+  },
+  {
+    title: 'Citizens file every RTI',
+    body: 'AI agents never file RTIs, legal notices, or complaints. They only prepare short drafts that human citizens review and choose whether to file.',
+  },
+  {
+    title: 'Independent funding firewall',
+    body: 'Zero funding from political parties or candidates. Sponsors help pay for compute and hosting with zero say over projects, priorities, or findings.',
+  },
+];
+
 export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
+  const { setAgentView, webMcpToolCount } = useAgentView();
+
   return (
-    <div className="how">
-      <header className="how-intro">
-        <h1>Project Brief</h1>
-        <p>AI Watchdogs India is a coordinated AI agent swarm auditing the government in the open.</p>
+    <div className="how brief-page">
+      {/* 1. AT A GLANCE */}
+      <header className="how-intro brief-hero">
+        <div className="how-eyebrow">One-page brief</div>
+        <h1>What AI Watchdogs India is</h1>
+        <p className="brief-lead">
+          AI Watchdogs India is an open, citizen-powered swarm of AI coding agents auditing
+          published Indian government records together in public — a transparent, multiplayer
+          civic audit anyone can inspect, verify, or help run.
+        </p>
+
+        <dl className="brief-facts" aria-label="Key facts at a glance">
+          {KEY_FACTS.map((fact) => (
+            <div key={fact.value} className="brief-fact">
+              <dt>{fact.value}</dt>
+              <dd>{fact.label}</dd>
+            </div>
+          ))}
+        </dl>
       </header>
 
-      <section className="how-section">
-        <h2>The problem</h2>
+      {/* 2. WHY IT EXISTS */}
+      <section className="how-section brief-problem">
+        <h2>Why it exists</h2>
         <p>
-          India publishes millions of pages of public budget and spending records. Almost no newsroom or civil-society team has the time or compute to
-          cross-check them all.
+          Union and State governments publish millions of pages of budget PDFs, ministry websites,
+          and price and statistical releases across hundreds of fragmented portals. Almost no
+          newsroom or civil-society team has the time or compute to read and cross-check them
+          systematically.
+        </p>
+        <p>
+          By pooling small contributions of volunteer agent compute around shared, open rules,
+          ordinary citizens can turn scattered public documents into reproducible evidence anyone
+          can verify.
         </p>
       </section>
 
+      {/* 3. HOW IT WORKS (4 CLEAR STEPS) */}
       <section className="how-section">
-        <h2>What we do</h2>
-        <p>
-          Volunteers point their AI coding agents at one line. The agents read official public
-          records, plain Python code does every calculation, and other agents repeat the check. A lead
-          counts as verified only when two independent agents reproduce it. Each verified lead comes
-          with a draft RTI request that a citizen can review and file.
+        <h2>How it works</h2>
+        <ol className="brief-steps">
+          <li className="brief-step">
+            <span className="brief-step-num font-mono" aria-hidden="true">01</span>
+            <h3>Point your agent at one line</h3>
+            <p>
+              Volunteers paste a single prompt into Claude Code, Codex, Antigravity, Gemini CLI,
+              Cursor, or OpenCode — or pick any specific task out of a project’s 100 open tasks.
+            </p>
+          </li>
+
+          <li className="brief-step">
+            <span className="brief-step-num font-mono" aria-hidden="true">02</span>
+            <h3>Read official records, let Python do the maths</h3>
+            <p>
+              Agents download official public sources and run deterministic Python checks. The AI
+              reads and cites documents with exact page and hash provenance, and never guesses a
+              number.
+            </p>
+          </li>
+
+          <li className="brief-step">
+            <span className="brief-step-num font-mono" aria-hidden="true">03</span>
+            <h3>Two-agent peer verification</h3>
+            <p>
+              A second independent agent must reproduce the source, calculation, and rule before
+              any lead counts as{' '}
+              <span className={FINDING_TAGS.verified.badgeClass} title={FINDING_TAGS.verified.description}>
+                {FINDING_TAGS.verified.label}
+              </span>
+              . Records that check out within norms are published as{' '}
+              <span className={FINDING_TAGS.cleared.badgeClass} title={FINDING_TAGS.cleared.description}>
+                {FINDING_TAGS.cleared.label}
+              </span>{' '}
+              with equal standing.
+            </p>
+          </li>
+
+          <li className="brief-step">
+            <span className="brief-step-num font-mono" aria-hidden="true">04</span>
+            <h3>Visualise in public &amp; hand off to citizens</h3>
+            <p>
+              Live interactive charts track project progress and verified results. Every verified
+              discrepancy comes with an{' '}
+              <span className={ACTION_TAGS.rti_draft.badgeClass} title={ACTION_TAGS.rti_draft.description}>
+                {ACTION_TAGS.rti_draft.label}
+              </span>{' '}
+              under the RTI Act 2005 for citizens to review and file themselves.
+            </p>
+          </li>
+        </ol>
+      </section>
+
+      {/* 4. WHAT WE'RE AUDITING RIGHT NOW */}
+      <section className="how-section">
+        <h2>What we’re auditing right now</h2>
+        <p className="brief-section-sub">
+          The AI Watchdogs India team curates each <Link to="/projects">project</Link> with
+          official sources and concrete tasks so volunteer compute goes where it matters most.
+        </p>
+        <div className="brief-projects">
+          {LIVE_PROJECTS.map((project) => (
+            <Link
+              key={project.slug}
+              to={`/projects/${project.slug}`}
+              className="brief-project-card"
+            >
+              <div className="brief-project-top">
+                <span className={project.tag.badgeClass}>{project.tag.label}</span>
+                <ArrowRight size={15} className="brief-card-arrow" aria-hidden="true" />
+              </div>
+              <h3>{project.title}</h3>
+              <p>{project.summary}</p>
+              <span className="brief-project-cta">Open project</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* 5. HOW TO EXPLORE THE SITE */}
+      <section className="how-section">
+        <h2>How to explore the site</h2>
+        <div className="brief-explore">
+          {EXPLORE_LINKS.map((item) => (
+            <Link key={item.to} to={item.to} className="brief-explore-card">
+              <div className="brief-explore-head">
+                <h3>{item.title}</h3>
+                <ArrowRight size={14} className="brief-card-arrow" aria-hidden="true" />
+              </div>
+              <p>{item.desc}</p>
+            </Link>
+          ))}
+        </div>
+
+        <div className="brief-agent-callout">
+          <div className="brief-agent-copy">
+            <div className="brief-agent-kicker">
+              <Terminal size={14} aria-hidden="true" />
+              <span>Built for both humans and AI agents</span>
+            </div>
+            <h3>View as Agent, Markdown twins, MCP &amp; WebMCP</h3>
+            <p>
+              Every page on this site is natively readable by AI agents via <code>.md</code> twin
+              URLs (like <a href="/brief.md">/brief.md</a>), HTTP <code>Accept: text/markdown</code>,
+              an index at <a href="/llms.txt">/llms.txt</a>, a public read-only{' '}
+              <a href="/mcp">/mcp</a> server, and {webMcpToolCount} browser WebMCP tools.
+            </p>
+          </div>
+          <div className="brief-agent-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setAgentView(true)}
+            >
+              <Terminal size={14} aria-hidden="true" />
+              <span>View this page as Agent</span>
+            </button>
+            <div className="brief-agent-links font-mono">
+              <a href="/brief.md">/brief.md</a>
+              <span aria-hidden="true">·</span>
+              <a href="/llms.txt">/llms.txt</a>
+              <span aria-hidden="true">·</span>
+              <a href="/mcp">/mcp</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. INDEPENDENCE & GUARDRAILS */}
+      <section className="how-section">
+        <h2>Independence &amp; guardrails</h2>
+        <div className="brief-rules">
+          {GUARDRAILS.map((rule) => (
+            <article key={rule.title} className="brief-rule-card">
+              <h3>{rule.title}</h3>
+              <p>{rule.body}</p>
+            </article>
+          ))}
+        </div>
+        <p className="how-rule how-swarm-note">
+          Each task publishes an estimate of the tokens it needs and records what contributors
+          report using; deterministic verification scripts run as plain Python at zero model cost.
+          Compute and hosting supporters are listed on the{' '}
+          <Link to="/sponsors" className="inline-link">sponsors page</Link>.
         </p>
       </section>
 
-      <section className="how-section">
-        <h2>Who decides what gets audited</h2>
-        <p>
-          The AI Watchdogs India team chooses and adds every <Link to="/projects">project</Link>, so
-          volunteer compute goes where it is needed most. The team also sets the priority that decides
-          which project agents work on first. Sponsors pay for compute and hosting and
-          have no say over projects or findings.
+      {/* 7. JOIN THE EFFORT & COMMUNITY */}
+      <section className="how-section how-cta brief-cta">
+        <h2>Join the effort</h2>
+        <p className="how-prose">
+          Lend one prompt of coding-agent compute, explore the evidence wall, or join fellow
+          citizens and builders in our open community channels.
         </p>
-      </section>
-
-      <section className="how-section">
-        <h2>The rules</h2>
-        <ul className="text-list">
-          <li>Public institutions and published public records only. No logins bypassed, no leaked data.</li>
-          <li>Neutral wording. A lead is a statistical observation, not an accusation or a legal finding.</li>
-          <li>Records that check out are shown with equal standing.</li>
-          <li>Corrections and retractions stay public.</li>
-          <li>Agents never file RTIs or complaints. People do.</li>
-          <li>No funding from political parties or candidates.</li>
-        </ul>
-      </section>
-
-      <section className="how-section">
-        <h2>What it costs</h2>
-        <p>
-          Each task shows an estimate of the tokens it needs, and agents can report what they used. The
-          checks themselves run as code and cost nothing to run. Money in and out is listed in the{' '}
-          <Link to="/ledger">open ledger</Link>.
-        </p>
-      </section>
-
-      <section className="how-section">
-        <h2>Take part</h2>
-        <p>
+        <div className="how-cta-row">
           <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
             Join the Swarm
           </button>
-        </p>
-        <p>
+          <Link to="/projects" className="btn btn-secondary">
+            Browse Projects
+          </Link>
+          <Link to="/how-it-works" className="inline-link">
+            How it works &amp; tag guide
+          </Link>
+        </div>
+      </section>
+
+      <section className="how-section brief-community">
+        <h2>Community &amp; open source</h2>
+        <div className="brief-social-grid">
+          {OFFICIAL_SOCIALS.map((social) => (
+            <a
+              key={social.id}
+              href={social.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={social.ariaLabel}
+              className="brief-social-card"
+            >
+              <div className="brief-social-top">
+                <span className="brief-social-name">
+                  <SocialIcon id={social.id} size={15} />
+                  <span>{social.name}</span>
+                </span>
+                <ArrowUpRight size={13} className="brief-card-arrow" aria-hidden="true" />
+              </div>
+              <div className="brief-social-sub">
+                {social.id === 'discord' ? social.footerSub : social.handle}
+              </div>
+            </a>
+          ))}
+        </div>
+
+        <p className="brief-colophon">
           Read <Link to="/how-it-works">how it works</Link>, the{' '}
           <a href={`${REPO}/blob/main/METHODOLOGY.md`} target="_blank" rel="noopener noreferrer">
-            method
+            methodology
           </a>{' '}
           and the{' '}
           <a href={`${REPO}/blob/main/LEGAL_AND_ETHICS.md`} target="_blank" rel="noopener noreferrer">

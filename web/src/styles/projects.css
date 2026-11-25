@@ -1,0 +1,1603 @@
+/* ============================================================================
+   PROJECTS VISUALS, LEADERBOARD, DISCLOSURES & TASK PICKER
+   Editorial Broadsheet tokens harmonised with tokens.css & global.css
+   ============================================================================ */
+
+:root {
+  --pv-done: #2F6B4F;
+  --pv-done-strong: #138808;
+  --pv-done-soft: #E8F3EC;
+  --pv-claimed: #3B5998;
+  --pv-claimed-soft: #EBF0FA;
+  --pv-open: #DFCFAF;
+  --pv-open-hover: #C8A96E;
+  --pv-open-soft: #F7F2E7;
+  --pv-open-border: #CEBC96;
+  --pv-waiting: #9E988B;
+  --pv-not-obs: #C2593F;
+  --pv-unassess: #B8B2A6;
+  --pv-tooltip-bg: #1B1A17;
+  --pv-tooltip-fg: #FFFFFF;
+}
+
+/* ============================================================================
+   1. PROJECT LEADERBOARD (Reusable on /projects and /projects/:slug)
+   ============================================================================ */
+
+.leaderboard.project-leaderboard {
+  padding-top: 36px;
+  padding-bottom: 40px;
+}
+
+/* Inside a .container (project detail page) or compact mode, sit flush as a broadsheet card */
+.container .leaderboard.project-leaderboard,
+.leaderboard.project-leaderboard--compact {
+  padding: 22px 24px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--raised);
+}
+
+.leaderboard.project-leaderboard--compact .lb-head {
+  margin-bottom: 14px;
+  gap: 6px;
+}
+
+.leaderboard.project-leaderboard--compact .lb-head h2 {
+  font-size: clamp(22px, 2.2vw, 28px);
+}
+
+.leaderboard.project-leaderboard--compact .lb-sub {
+  font-size: 14.5px;
+}
+
+.leaderboard.project-leaderboard--compact .lb-rows {
+  margin-top: 16px;
+}
+
+.leaderboard.project-leaderboard--compact .lb-row {
+  min-height: 54px;
+  padding: 9px 16px;
+}
+
+/* ============================================================================
+   2. SHARED HOVER TOOLTIP SYSTEM (Crisp high-contrast broadsheet callouts)
+   ============================================================================ */
+
+.pv-tooltip {
+  position: absolute;
+  z-index: 45;
+  pointer-events: none;
+  background: var(--pv-tooltip-bg);
+  color: var(--pv-tooltip-fg);
+  border-radius: var(--r-6);
+  padding: 7px 11px;
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  line-height: 1.4;
+  box-shadow: var(--shadow-pop);
+  max-width: min(340px, 85vw);
+  width: max-content;
+  white-space: normal;
+}
+
+.pv-tooltip-title {
+  font-weight: 500;
+  color: #FFFFFF;
+  margin-bottom: 2px;
+}
+
+.pv-tooltip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.pv-tooltip-row strong,
+.pv-tooltip-row .is-emph {
+  color: #FFFFFF;
+  font-weight: 600;
+}
+
+.pv-tooltip-hint {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #B4E5BE;
+}
+
+.pv-tooltip--compact {
+  bottom: calc(100% + 8px);
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pv-tooltip--left {
+  left: 0;
+}
+
+.pv-tooltip--center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.pv-tooltip--right {
+  right: 0;
+}
+
+.pv-tooltip--donut {
+  top: -8px;
+  left: 50%;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+}
+
+.pv-tooltip--bar {
+  bottom: calc(100% + 6px);
+  left: 12px;
+}
+
+.pv-tooltip--pill {
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.pv-tooltip--state {
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 190px;
+}
+
+.pv-tooltip--mosaic {
+  bottom: calc(100% + 8px);
+  right: 0;
+  max-width: min(380px, 86vw);
+}
+
+/* ============================================================================
+   3. COMPACT PROGRESS BAR (For /projects index cards)
+   ============================================================================ */
+
+.pv-compact {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.pv-compact--empty {
+  justify-content: center;
+}
+
+.pv-compact-empty-label {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.pv-compact-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.pv-compact-ring-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px 2px 3px;
+  border-radius: var(--r-999);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+  cursor: default;
+}
+
+.pv-compact-ring-pill:hover,
+.pv-compact-ring-pill:focus-visible {
+  border-color: var(--pv-done);
+  background: var(--pv-done-soft);
+  outline: none;
+}
+
+.pv-mini-ring {
+  flex-shrink: 0;
+}
+
+.pv-compact-pct {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.pv-compact-meta {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.pv-compact-meta strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.pv-compact-stat {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: var(--r-999);
+}
+
+.pv-compact-stat--verified {
+  background: var(--pv-done-soft);
+  color: var(--pv-done);
+  border: 1px solid #C4DFCE;
+}
+
+.pv-compact-stat--review {
+  background: transparent;
+  color: var(--conjecture-ink);
+  border: 1px dashed var(--conjecture-stroke);
+  font-style: italic;
+}
+
+.pv-compact-track {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: 10px;
+  border-radius: var(--r-999);
+  overflow: hidden;
+  background: var(--pv-open-soft);
+  border: 1px solid var(--rule);
+  gap: 1px;
+}
+
+.pv-compact-seg {
+  display: block;
+  height: 100%;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+  cursor: pointer;
+}
+
+.pv-compact-seg:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.pv-compact-seg--done {
+  background: var(--pv-done);
+}
+
+.pv-compact-seg--claimed {
+  background: var(--pv-claimed);
+}
+
+.pv-compact-seg--open {
+  background: var(--pv-open);
+}
+
+.pv-compact-seg.is-active,
+.pv-compact-seg:hover {
+  filter: brightness(0.92);
+}
+
+/* ============================================================================
+   4. PROJECT PROGRESS WIDGET (Interactive Donut + Task Mosaic Grid)
+   ============================================================================ */
+
+.pv-progress-widget {
+  position: relative;
+}
+
+.pv-progress-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 290px) minmax(0, 1fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.pv-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.pv-count-pill {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  padding: 2px 10px;
+}
+
+/* Donut Chart */
+.pv-donut-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pv-donut-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px auto 14px;
+  width: 196px;
+  height: 196px;
+}
+
+.pv-donut-svg {
+  overflow: visible;
+}
+
+.pv-donut-arc {
+  cursor: pointer;
+  transition: stroke-width 0.16s ease, opacity 0.16s ease;
+  outline: none;
+}
+
+.pv-donut-arc.is-dimmed {
+  opacity: 0.35;
+}
+
+.pv-donut-arc:focus-visible {
+  stroke-width: 26;
+}
+
+.pv-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  padding: 24px;
+}
+
+.pv-donut-pct {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  line-height: 1.05;
+  color: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.pv-donut-lbl {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-4);
+  margin-top: 4px;
+}
+
+.pv-donut-sub {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+
+/* Legend List */
+.pv-legend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.pv-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--r-6);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.pv-legend-item:hover,
+.pv-legend-item:focus-visible,
+.pv-legend-item.is-active {
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+  outline: none;
+}
+
+.pv-legend-name {
+  color: var(--ink-2);
+  flex: 1 1 auto;
+}
+
+.pv-legend-val {
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 12.5px;
+}
+
+.pv-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.pv-swatch--completed {
+  background: var(--pv-done);
+}
+
+.pv-swatch--claimed {
+  background: var(--pv-claimed);
+}
+
+.pv-swatch--queued {
+  background: var(--pv-open);
+  border: 1px solid var(--pv-open-border);
+}
+
+.pv-swatch--waiting {
+  background: var(--sunk);
+  border: 1px dashed var(--pv-waiting);
+}
+
+/* Task Mosaic Panel */
+.pv-mosaic-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pv-mosaic-hint {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.pv-mosaic-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pv-copied-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--r-999);
+  background: var(--pv-done);
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.pv-mosaic-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv-mosaic-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(22px, 1fr));
+  gap: 5px;
+  padding: 12px;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+}
+
+.pv-tile {
+  aspect-ratio: 1;
+  width: 100%;
+  min-height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, border-color 0.12s ease, opacity 0.14s ease, box-shadow 0.12s ease;
+}
+
+.pv-tile--completed {
+  background: var(--pv-done);
+  border-color: #23533C;
+  color: #FFFFFF;
+  cursor: default;
+}
+
+.pv-tile--claimed {
+  background: var(--pv-claimed);
+  border-color: #2B4275;
+  color: #FFFFFF;
+  cursor: default;
+}
+
+.pv-tile--queued {
+  background: var(--pv-open-soft);
+  border-color: var(--pv-open-border);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.pv-tile--queued:hover,
+.pv-tile--queued:focus-visible {
+  background: var(--pv-open);
+  border-color: var(--ink);
+}
+
+.pv-tile--waiting {
+  background: var(--paper);
+  border: 1px dashed var(--pv-waiting);
+  cursor: default;
+}
+
+.pv-tile.is-hovered,
+.pv-tile:focus-visible {
+  transform: scale(1.18);
+  z-index: 3;
+  box-shadow: 0 2px 6px rgba(27, 26, 23, 0.18);
+  outline: none;
+}
+
+.pv-tile.is-dimmed {
+  opacity: 0.24;
+}
+
+.pv-tile.is-copied {
+  background: var(--pv-done-strong);
+  border-color: var(--pv-done-strong);
+  color: #FFFFFF;
+  transform: scale(1.12);
+}
+
+.pv-mosaic-inspector {
+  min-height: 54px;
+  padding: 10px 14px;
+  border-radius: var(--r-6);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.pv-mosaic-inspector.is-active {
+  border-color: var(--rule-strong);
+  background: #FAF9F6;
+}
+
+.pv-inspector-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pv-inspector-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv-inspector-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.pv-inspector-status {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pv-inspector-actor {
+  color: var(--pv-done);
+  font-weight: 500;
+}
+
+.pv-inspector-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-deep);
+  font-weight: 500;
+}
+
+.pv-inspector-idle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.pv-inspector-idle strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ============================================================================
+   5. PROJECT RESULTS VISUALISER (P1, W1, CPI1)
+   ============================================================================ */
+
+.pv-results {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pv-results-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 20px;
+  flex-wrap: wrap;
+}
+
+.pv-results-title-wrap .kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pv-results-title {
+  margin: 4px 0 0;
+  font-family: var(--font-serif);
+  font-size: clamp(22px, 2.1vw, 28px);
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.pv-summary-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pv-results-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(240px, 0.95fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.pv-chart-card {
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--paper);
+  min-width: 0;
+}
+
+.pv-chart-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.pv-chart-subhead h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pv-chart-note {
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+.pv-mini-legend,
+.pv-gigw-legend,
+.pv-cpi-matrix-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.pv-mini-legend span,
+.pv-gigw-legend span,
+.pv-cpi-matrix-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pv-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.pv-dot--verified {
+  background: var(--pv-done);
+}
+
+.pv-dot--review {
+  background: #F4F2EC;
+  border: 1.5px dashed var(--conjecture-stroke);
+}
+
+.pv-dot--disputed {
+  background: var(--red);
+}
+
+.pv-dot--claimed {
+  background: var(--pv-claimed);
+}
+
+.pv-dot--open {
+  background: var(--pv-open);
+  border: 1px solid var(--pv-open-border);
+}
+
+.pv-dot--not-obs {
+  background: var(--pv-not-obs);
+}
+
+.pv-dot--unassess {
+  background: var(--pv-unassess);
+}
+
+.pv-empty-box {
+  padding: 18px 16px;
+  border-radius: var(--r-6);
+  border: 1px dashed var(--rule-strong);
+  background: var(--sunk);
+  font-size: 14px;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+
+.pv-zero-banner {
+  padding: 12px 14px;
+  border-radius: var(--r-6);
+  background: var(--pv-open-soft);
+  border: 1px solid var(--pv-open-border);
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+/* ---------- P1 Divergence Bar Chart ---------- */
+
+.pv-div-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pv-div-row-wrap {
+  position: relative;
+}
+
+.pv-div-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(110px, 165px) minmax(0, 1fr) minmax(68px, 86px);
+  align-items: center;
+  gap: 12px;
+  padding: 7px 8px;
+  border-radius: var(--r-6);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.pv-div-row.is-clickable {
+  cursor: pointer;
+}
+
+.pv-div-row:hover,
+.pv-div-row:focus-visible,
+.pv-div-row.is-hovered {
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+  outline: none;
+}
+
+.pv-div-label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.pv-div-entity {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pv-div-meta {
+  font-size: 11.5px;
+  color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pv-div-track {
+  position: relative;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--sunk);
+  border: 1px solid var(--rule-soft);
+  overflow: visible;
+}
+
+.pv-div-threshold {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 0;
+  border-left: 1.5px dashed var(--ink-5);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pv-div-bar {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.25s ease, filter 0.14s ease;
+}
+
+.pv-div-bar--verified {
+  background: var(--pv-done);
+}
+
+.pv-div-bar--review {
+  background: #EDEAE1;
+  border: 1.5px dashed var(--conjecture-stroke);
+}
+
+.pv-div-bar--disputed {
+  background: var(--red);
+}
+
+.pv-div-bar--cleared {
+  background: var(--pv-waiting);
+}
+
+.pv-div-val {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.pv-div-exposure {
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.pv-axis-note {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+/* ---------- Horizontal Coverage Bars (P1 Groups & CPI1 Roles) ---------- */
+
+.pv-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv-group-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--r-6);
+  border: 1px solid transparent;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.pv-group-row:hover,
+.pv-group-row:focus-visible,
+.pv-group-row.is-hovered {
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+  outline: none;
+}
+
+.pv-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.pv-group-label {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.pv-group-stat {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.pv-group-stat strong {
+  color: var(--ink);
+}
+
+.pv-hbar-track {
+  width: 100%;
+  height: 10px;
+  border-radius: var(--r-999);
+  background: var(--pv-open-soft);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.pv-hbar-fill {
+  display: block;
+  height: 100%;
+  background: var(--pv-done);
+  border-radius: var(--r-999);
+  transition: width 0.25s ease;
+}
+
+/* ---------- W1 7-Checkpoint GIGW Stacked Bar Chart ---------- */
+
+.pv-gigw-legend-hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+.pv-gigw-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pv-gigw-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(112px, 148px) minmax(0, 1fr) minmax(88px, 110px);
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: var(--r-6);
+  border: 1px solid transparent;
+  transition: background-color 0.14s ease, border-color 0.14s ease;
+}
+
+.pv-gigw-row:hover,
+.pv-gigw-row.is-hovered {
+  background: var(--sunk);
+  border-color: var(--rule);
+}
+
+.pv-gigw-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pv-gigw-track {
+  display: flex;
+  width: 100%;
+  height: 22px;
+  border-radius: var(--r-4);
+  overflow: hidden;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+}
+
+.pv-gigw-track--skeleton {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--paper),
+    var(--paper) 6px,
+    var(--sunk) 6px,
+    var(--sunk) 12px
+  );
+  border-style: dashed;
+  align-items: center;
+  padding-left: 10px;
+}
+
+.pv-gigw-skeleton-hint {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.pv-gigw-seg {
+  height: 100%;
+  border: none;
+  padding: 0;
+  transition: filter 0.14s ease, opacity 0.14s ease;
+}
+
+.pv-gigw-seg--obs {
+  background: var(--pv-done);
+}
+
+.pv-gigw-seg--notobs {
+  background: var(--pv-not-obs);
+}
+
+.pv-gigw-seg--unass {
+  background: var(--pv-unassess);
+}
+
+.pv-gigw-seg:hover,
+.pv-gigw-seg:focus-visible,
+.pv-gigw-seg.is-active {
+  filter: brightness(0.9);
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+.pv-gigw-val {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 5px;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.pv-gigw-val span {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.pv-reasons-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.pv-reason-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pv-reason-pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 11px;
+  border-radius: var(--r-999);
+  border: 1px solid var(--rule-strong);
+  background: var(--sunk);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.pv-reason-pill strong {
+  color: var(--ink);
+}
+
+.pv-reason-pill:hover,
+.pv-reason-pill:focus-visible {
+  border-color: var(--ink);
+  outline: none;
+}
+
+.pv-reasons-empty {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+/* ---------- CPI1 Rural vs Urban State/UT Matrix ---------- */
+
+.pv-cpi-roles {
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--paper);
+}
+
+.pv-cpi-roles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px 18px;
+}
+
+.pv-cpi-matrix-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv-cpi-matrix-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+}
+
+.pv-cpi-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pv-cpi-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.pv-state-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--r-6);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  min-width: 0;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.pv-state-card:hover,
+.pv-state-card.is-hovered {
+  border-color: var(--rule-strong);
+  background: #FAF9F6;
+}
+
+.pv-state-info {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.pv-state-code {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--ink-4);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+
+.pv-state-name {
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pv-state-cells {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.pv-sector-cell {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.pv-sector-cell:disabled {
+  cursor: default;
+}
+
+.pv-sector-cell--completed {
+  background: var(--pv-done);
+  color: #FFFFFF;
+}
+
+.pv-sector-cell--claimed {
+  background: var(--pv-claimed);
+  color: #FFFFFF;
+}
+
+.pv-sector-cell--queued {
+  background: var(--pv-open-soft);
+  border-color: var(--pv-open-border);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.pv-sector-cell--queued:not(:disabled):hover,
+.pv-sector-cell--queued:not(:disabled):focus-visible {
+  background: var(--pv-open);
+  border-color: var(--ink);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.pv-sector-cell--waiting {
+  background: var(--sunk);
+  border: 1px dashed var(--pv-waiting);
+  color: var(--ink-4);
+}
+
+.pv-sector-cell--none {
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  color: var(--ink-5);
+}
+
+.pv-sector-cell.is-copied {
+  background: var(--pv-done-strong);
+  border-color: var(--pv-done-strong);
+  color: #FFFFFF;
+}
+
+/* ============================================================================
+   6. PROJECT CARDS, COLLAPSIBLE DISCLOSURES & COMPACT TASK PICKER
+   ============================================================================ */
+
+/* Collapsible <details class="project-disclosure"> */
+.project-disclosure {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--raised);
+  overflow: hidden;
+}
+
+.project-disclosure + .project-disclosure {
+  margin-top: 10px;
+}
+
+.project-disclosure summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 13px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  transition: background-color 0.14s ease;
+}
+
+.project-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.project-disclosure summary::after {
+  content: '+';
+  font-family: var(--font-code);
+  font-size: 16px;
+  color: var(--ink-4);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.project-disclosure[open] summary::after {
+  content: '−';
+  color: var(--ink);
+}
+
+.project-disclosure summary:hover {
+  background: var(--sunk);
+}
+
+.project-disclosure-body {
+  padding: 0 18px 16px;
+  border-top: 1px solid var(--rule-soft);
+  padding-top: 14px;
+}
+
+/* Compact Project Header Links & Metadata */
+.project-resource-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.project-resource-links a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.project-resource-links a:hover {
+  color: var(--ink);
+}
+
+/* Projects Index Cards (/projects) */
+.project-index-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.project-index-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(240px, 1fr) auto;
+  align-items: center;
+  gap: 16px 24px;
+  padding: 18px 20px;
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.project-index-card:hover {
+  border-color: var(--ink);
+  background: #FCFCFA;
+}
+
+.project-index-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-index-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.project-index-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.project-index-meta {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.project-index-progress {
+  min-width: 0;
+}
+
+.project-index-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.project-card-join {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border-radius: var(--r-6);
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+}
+
+.project-card-join:hover {
+  border-color: var(--ink);
+  background: var(--sunk);
+}
+
+.project-card-join.is-copied {
+  border-color: var(--pv-done);
+  background: var(--pv-done-soft);
+  color: var(--pv-done);
+}
+
+/* Compact Task Picker Bar (Pick any task to run) */
+.project-task-picker {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-8);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  margin-bottom: 14px;
+}
+
+.project-task-picker-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.project-task-picker-select {
+  flex: 1 1 260px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--r-6);
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.project-task-picker-select:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.project-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: var(--r-6);
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease;
+}
+
+.project-copy-btn:hover {
+  border-color: var(--ink);
+  background: var(--sunk);
+}
+
+.project-copy-btn.is-copied {
+  border-color: var(--pv-done);
+  background: var(--pv-done-soft);
+  color: var(--pv-done);
+}
+
+/* ============================================================================
+   7. RESPONSIVE BREAKPOINTS (Zero horizontal overflow on tablet & mobile)
+   ============================================================================ */
+
+@media (max-width: 960px) {
+  .pv-progress-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .pv-results-split {
+    grid-template-columns: 1fr;
+  }
+
+  .project-index-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .project-index-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .container .leaderboard.project-leaderboard,
+  .leaderboard.project-leaderboard--compact {
+    padding: 16px 14px;
+  }
+
+  .pv-div-row {
+    grid-template-columns: minmax(90px, 118px) minmax(0, 1fr) minmax(58px, 72px);
+    gap: 8px;
+    padding: 6px 4px;
+  }
+
+  .pv-gigw-row {
+    grid-template-columns: minmax(86px, 108px) minmax(0, 1fr) minmax(68px, 82px);
+    gap: 8px;
+    padding: 6px 4px;
+  }
+
+  .pv-gigw-legend-hint {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .pv-mosaic-grid {
+    grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
+    gap: 4px;
+    padding: 9px;
+  }
+
+  .pv-cpi-matrix {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+
+  .pv-tooltip--compact {
+    white-space: normal;
+    max-width: min(260px, 82vw);
+  }
+
+  .pv-tooltip--donut,
+  .pv-tooltip--bar,
+  .pv-tooltip--state {
+    left: 0;
+    transform: none;
+    max-width: min(280px, 84vw);
+  }
+}

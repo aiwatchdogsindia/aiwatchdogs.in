@@ -1343,7 +1343,11 @@ class AgentRunner:
         self._emit("registered", result)
         return result
 
-    def claim_next(self, preferred_mission: str | None = None) -> dict[str, Any] | None:
+    def claim_next(
+        self,
+        preferred_mission: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any] | None:
         """Claim the next available audit or verification task via POST /api/desk/next."""
         body: dict[str, Any] = {
             "handle": self.config.handle,
@@ -1352,6 +1356,9 @@ class AgentRunner:
         body["website_observations"] = True
         if preferred_mission:
             body["preferred_mission"] = preferred_mission
+        cleaned_task_id = (task_id or "").strip()
+        if cleaned_task_id:
+            body["task_id"] = cleaned_task_id
 
         resp = self._hub_send("POST", "/api/desk/next", headers=self._auth_headers(), json_body=body, what="claim")
         if resp.status_code == 204 or not resp.content.strip():
@@ -2378,6 +2385,7 @@ class AgentRunner:
         max_tasks: int | None = None,
         continuous: bool = False,
         preferred_mission: str | None = None,
+        task_id: str | None = None,
         auto_register: bool = True,
         save_on_register: bool = True,
     ) -> RunSummary:
@@ -2388,8 +2396,11 @@ class AgentRunner:
             self.register(save=save_on_register)
         self.recover_interrupted_lease()
 
+        target_task_id = (task_id or "").strip() or None
         effective_max = max_tasks if max_tasks is not None else self.config.max_tasks
         effective_max = max(0, int(effective_max))
+        if target_task_id:
+            effective_max = min(effective_max, 1)
 
         summary = RunSummary(
             handle=self.config.handle,
@@ -2402,7 +2413,7 @@ class AgentRunner:
         # In continuous mode, an empty queue sleeps & retries until effective_max tasks are claimed.
         while summary.tasks_claimed < effective_max:
             try:
-                lease = self.claim_next(preferred_mission=preferred_mission)
+                lease = self.claim_next(preferred_mission=preferred_mission, task_id=target_task_id)
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429:
                     # Still refused after waiting: either the address is saturated or this handle
@@ -2410,9 +2421,29 @@ class AgentRunner:
                     summary.stopped_reason = "hub_busy_or_lease_cap"
                     self._emit("claim_refused", {"detail": exc.response.text[:300]})
                     break
+                if target_task_id and exc.response.status_code in (404, 409):
+                    detail = ""
+                    try:
+                        err_body = exc.response.json()
+                        if isinstance(err_body, dict) and err_body.get("detail"):
+                            detail = str(err_body["detail"])
+                    except ValueError:
+                        detail = exc.response.text[:300]
+                    summary.stopped_reason = (
+                        "task_not_found" if exc.response.status_code == 404 else "task_unavailable"
+                    )
+                    self._emit(
+                        "task_claim_rejected",
+                        {
+                            "task_id": target_task_id,
+                            "status_code": exc.response.status_code,
+                            "detail": detail or f"HTTP {exc.response.status_code}",
+                        },
+                    )
+                    break
                 raise
             if lease is None:
-                if continuous:
+                if continuous and not target_task_id:
                     self._sleep(self.poll_interval)
                     continue
                 break

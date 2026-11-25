@@ -1,0 +1,1772 @@
+import { BarChart3, Check, Copy, Globe, Layers, TrendingUp } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FINDING_TAGS,
+  TASK_TAGS,
+  WEBSITE_OUTCOME_TAGS,
+  WORK_TYPE_TAGS,
+  getFindingTag,
+  getTaskTag,
+  getWorkTypeTag,
+} from '../lib/tags';
+import type { FindingItem, MissionItem, MissionTask } from '../types';
+import { formatInrCr } from '../utils';
+
+export interface ProjectVisualSummary {
+  methodology_code: string;
+  status_counts: {
+    completed: number;
+    claimed: number;
+    queued: number;
+    waiting: number;
+    planned: number;
+    total: number;
+    pct_complete: number;
+    audits_done: number;
+    audits_total: number;
+    checks_done: number;
+    checks_total: number;
+  };
+  budget_audit?: {
+    verified_count: number;
+    peer_review_count: number;
+    cleared_count: number;
+    disputed_count: number;
+    total_exposure_inr_cr: number;
+    top_divergences: Array<{
+      finding_id: string;
+      entity_name: string;
+      title: string;
+      pct_difference: number | null;
+      monetary_exposure_inr_cr: number;
+      status: string;
+      severity: string;
+      fiscal_year: string;
+      rule_triggered: string;
+    }>;
+    groups: Array<{ label: string; done: number; total: number; pct: number }>;
+  };
+  website_audit?: {
+    batches_done: number;
+    batches_total: number;
+    hosts_observed: number;
+    hosts_unassessable: number;
+    hosts_total: number;
+    checkpoints: Array<{
+      key: string;
+      label: string;
+      observed: number;
+      not_observed: number;
+      unassessable: number;
+      observed_pct: number;
+      not_observed_pct: number;
+      unassessable_pct: number;
+    }>;
+    reasons: Record<string, number>;
+  };
+  inflation?: {
+    batches_submitted: number;
+    roles: Array<{ role: string; label: string; done: number; total: number; pct: number }>;
+    strata: Array<{
+      state_code: string;
+      state_name: string;
+      rural_status: string | null;
+      urban_status: string | null;
+      rural_task_id: string | null;
+      urban_task_id: string | null;
+    }>;
+  };
+}
+
+export interface CompactProgressBarProps {
+  completed: number;
+  claimed?: number;
+  queued?: number;
+  total: number;
+  verified?: number;
+  peerReview?: number;
+  label?: string;
+}
+
+export interface ProjectProgressWidgetProps {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  tasks: MissionTask[];
+  onCopyTaskPrompt?: (task: MissionTask) => void;
+}
+
+export interface ProjectResultsVisualizerProps {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  findings?: FindingItem[];
+  onSelectFinding?: (id: string | number) => void;
+  onCopyTaskPrompt?: (taskId: string, title?: string) => void;
+}
+
+type StatusBucket = 'completed' | 'claimed' | 'queued' | 'waiting';
+
+const STATUS_META: Record<
+  StatusBucket,
+  { label: string; color: string; badgeClass: string; dashed?: boolean }
+> = {
+  completed: {
+    label: TASK_TAGS.done.label,
+    color: 'var(--pv-done)',
+    badgeClass: TASK_TAGS.done.badgeClass,
+  },
+  claimed: {
+    label: TASK_TAGS.in_progress.label,
+    color: 'var(--pv-claimed)',
+    badgeClass: TASK_TAGS.in_progress.badgeClass,
+  },
+  queued: {
+    label: TASK_TAGS.open.label,
+    color: 'var(--pv-open)',
+    badgeClass: TASK_TAGS.open.badgeClass,
+  },
+  waiting: {
+    label: TASK_TAGS.waiting.label,
+    color: 'var(--pv-waiting)',
+    badgeClass: TASK_TAGS.waiting.badgeClass,
+    dashed: true,
+  },
+};
+
+const DEFAULT_W1_CHECKPOINTS: Array<{
+  key: string;
+  label: string;
+  hint: string;
+}> = [
+  { key: 'contact_link', label: 'Contact link', hint: 'GIGW 10 · Navigation link to Contact Us or Directory' },
+  { key: 'email', label: 'Email', hint: 'GIGW 10 · Published official email indicator' },
+  { key: 'postal_address', label: 'Postal address', hint: 'GIGW 10 · Official street or postal address indicator' },
+  { key: 'telephone', label: 'Telephone', hint: 'GIGW 10 · Official telephone or helpline indicator' },
+  { key: 'about_link', label: 'About link', hint: 'GIGW 9 · Landing page link explaining the public body' },
+  { key: 'updated_date', label: 'Updated date', hint: 'GIGW 5 · Last reviewed or updated date indicator' },
+  { key: 'help_link', label: 'Help link', hint: 'GIGW 14 · Landing page help or support link' },
+];
+
+const W1_REASON_LABELS: Record<string, string> = {
+  robots_restricted: 'Robots.txt restricted',
+  fetch_failed: 'Fetch failed / timeout',
+  unsupported_page: 'Unsupported page format',
+  contact_unavailable: 'Contact page unavailable',
+};
+
+function calcPct(part: number, total: number): number {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return 0;
+  return Math.max(0, Math.min(100, (part / total) * 100));
+}
+
+function fmtPct(pct: number): string {
+  if (!Number.isFinite(pct)) return '0.0%';
+  return `${pct.toFixed(1)}%`;
+}
+
+function buildDashedArcArray(
+  arcLen: number,
+  circumference: number,
+  dash = 6,
+  gap = 4,
+): string {
+  if (arcLen <= 0) return `0 ${circumference.toFixed(2)}`;
+  const parts: number[] = [];
+  let used = 0;
+  while (used < arcLen) {
+    const d = Math.min(dash, arcLen - used);
+    parts.push(Number(d.toFixed(2)));
+    used += d;
+    if (used >= arcLen) break;
+    const g = Math.min(gap, arcLen - used);
+    parts.push(Number(g.toFixed(2)));
+    used += g;
+  }
+  const remaining = Math.max(0, circumference - arcLen);
+  if (parts.length % 2 === 0) {
+    parts[parts.length - 1] = Number((parts[parts.length - 1] + remaining).toFixed(2));
+  } else {
+    parts.push(Number(remaining.toFixed(2)));
+  }
+  return parts.join(' ');
+}
+
+function formatSignedPct(val: number): string {
+  const sign = val > 0 ? '+' : '';
+  return `${sign}${val.toFixed(1)}%`;
+}
+
+function formatReasonLabel(key: string): string {
+  return W1_REASON_LABELS[key] || key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function classifyTaskStatus(task: MissionTask, completedIds: Set<string>): StatusBucket {
+  if (task.status === 'completed' || task.status === 'settled') return 'completed';
+  if (task.status === 'claimed') return 'claimed';
+  if (task.status === 'queued') {
+    const hasUnmetPrereq = task.depends_on?.some((dep) => !completedIds.has(String(dep))) ?? false;
+    return hasUnmetPrereq ? 'waiting' : 'queued';
+  }
+  return 'waiting';
+}
+
+function normalizeStratumStatus(status: string | null): StatusBucket | 'none' {
+  if (!status) return 'none';
+  if (status === 'completed' || status === 'settled') return 'completed';
+  if (status === 'claimed') return 'claimed';
+  if (status === 'queued' || status === 'open') return 'queued';
+  return 'waiting';
+}
+
+function extractNumericMetric(metrics: Record<string, unknown> | undefined): number | null {
+  if (!metrics) return null;
+  const candidates = [
+    metrics.pct_difference,
+    metrics.variance_pct,
+    metrics.re_vs_be_pct,
+    metrics.actual_vs_be_pct,
+    metrics.yoy_pct,
+  ];
+  for (const val of candidates) {
+    if (typeof val === 'number' && Number.isFinite(val)) return val;
+    if (typeof val === 'string' && val.trim() !== '') {
+      const parsed = Number(val);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+/* ============================================================================
+   1. COMPACT PROGRESS BAR (For /projects index cards)
+   ============================================================================ */
+
+export function CompactProgressBar({
+  completed,
+  claimed = 0,
+  queued,
+  total,
+  verified,
+  peerReview,
+  label,
+}: CompactProgressBarProps) {
+  const [hovered, setHovered] = useState<'ring' | 'completed' | 'claimed' | 'queued' | null>(null);
+
+  const safeTotal = Math.max(0, total);
+  const safeDone = Math.max(0, Math.min(safeTotal, completed));
+  const safeClaimed = Math.max(0, Math.min(safeTotal - safeDone, claimed));
+  const safeQueued =
+    queued != null
+      ? Math.max(0, Math.min(safeTotal - safeDone - safeClaimed, queued))
+      : Math.max(0, safeTotal - safeDone - safeClaimed);
+  const remainder = Math.max(0, safeTotal - safeDone - safeClaimed - safeQueued);
+  const openCount = safeQueued + remainder;
+
+  const donePct = calcPct(safeDone, safeTotal);
+  const claimedPct = calcPct(safeClaimed, safeTotal);
+  const openPct = calcPct(openCount, safeTotal);
+
+  const ringRadius = 10;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference * (1 - donePct / 100);
+
+  if (safeTotal === 0) {
+    return (
+      <div className="pv-compact pv-compact--empty">
+        <span className="pv-compact-empty-label">{label || 'Waiting for datasets'}</span>
+      </div>
+    );
+  }
+
+  const tooltipContent = (() => {
+    if (hovered === 'completed') {
+      return `${safeDone.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(donePct)} ${TASK_TAGS.done.label}`;
+    }
+    if (hovered === 'claimed') {
+      return `${safeClaimed.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}`;
+    }
+    if (hovered === 'queued') {
+      return `${openCount.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(openPct)} ${TASK_TAGS.open.label}`;
+    }
+    if (hovered === 'ring') {
+      const parts = [
+        `${safeDone.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(donePct)} ${TASK_TAGS.done.label}`,
+      ];
+      if (safeClaimed > 0) {
+        parts.push(
+          `${safeClaimed.toLocaleString('en-IN')} ${TASK_TAGS.in_progress.label} (${fmtPct(claimedPct)})`,
+        );
+      }
+      parts.push(`${openCount.toLocaleString('en-IN')} ${TASK_TAGS.open.label} (${fmtPct(openPct)})`);
+      return parts.join(' · ');
+    }
+    return null;
+  })();
+
+  const tooltipAlign =
+    hovered === 'ring' || hovered === 'completed'
+      ? 'left'
+      : hovered === 'queued' && openPct > 45
+        ? 'right'
+        : 'center';
+
+  return (
+    <div className="pv-compact" onMouseLeave={() => setHovered(null)}>
+      {tooltipContent ? (
+        <div
+          className={`pv-tooltip pv-tooltip--compact pv-tooltip--${tooltipAlign}`}
+          role="tooltip"
+        >
+          {tooltipContent}
+        </div>
+      ) : null}
+
+      <div className="pv-compact-top">
+        <span
+          className="pv-compact-ring-pill"
+          tabIndex={0}
+          role="note"
+          aria-label={`${fmtPct(donePct)} ${TASK_TAGS.done.label} (${safeDone} of ${safeTotal})`}
+          onMouseEnter={() => setHovered('ring')}
+          onFocus={() => setHovered('ring')}
+          onBlur={() => setHovered(null)}
+        >
+          <svg
+            className="pv-mini-ring"
+            width="24"
+            height="24"
+            viewBox="0 0 26 26"
+            aria-hidden="true"
+          >
+            <circle
+              cx="13"
+              cy="13"
+              r={ringRadius}
+              fill="none"
+              stroke="var(--rule)"
+              strokeWidth="3"
+            />
+            {donePct > 0 ? (
+              <circle
+                cx="13"
+                cy="13"
+                r={ringRadius}
+                fill="none"
+                stroke="var(--pv-done)"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeDasharray={ringCircumference}
+                strokeDashoffset={ringOffset}
+                transform="rotate(-90 13 13)"
+              />
+            ) : null}
+          </svg>
+          <span className="pv-compact-pct tabular">{fmtPct(donePct)}</span>
+        </span>
+
+        <span className="pv-compact-meta tabular">
+          {label ? (
+            label
+          ) : (
+            <>
+              <strong>{safeDone.toLocaleString('en-IN')}</strong>/{safeTotal.toLocaleString('en-IN')} tasks
+            </>
+          )}
+        </span>
+
+        {verified != null && verified > 0 ? (
+          <span className="pv-compact-stat pv-compact-stat--verified tabular">
+            {verified.toLocaleString('en-IN')} {FINDING_TAGS.verified.label}
+          </span>
+        ) : null}
+        {peerReview != null && peerReview > 0 ? (
+          <span className="pv-compact-stat pv-compact-stat--review tabular">
+            {peerReview.toLocaleString('en-IN')} {FINDING_TAGS.in_review.label}
+          </span>
+        ) : null}
+      </div>
+
+      <div
+        className="pv-compact-track"
+        role="group"
+        aria-label={`Progress breakdown: ${fmtPct(donePct)} ${TASK_TAGS.done.label}, ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}, ${fmtPct(openPct)} ${TASK_TAGS.open.label}`}
+      >
+        {safeDone > 0 ? (
+          <span
+            className={`pv-compact-seg pv-compact-seg--done${hovered === 'completed' ? ' is-active' : ''}`}
+            style={{ width: `${Math.max(donePct, 3)}%` }}
+            tabIndex={0}
+            role="note"
+            aria-label={`${safeDone} of ${safeTotal}, ${fmtPct(donePct)} ${TASK_TAGS.done.label}`}
+            onMouseEnter={() => setHovered('completed')}
+            onFocus={() => setHovered('completed')}
+            onBlur={() => setHovered(null)}
+          />
+        ) : null}
+        {safeClaimed > 0 ? (
+          <span
+            className={`pv-compact-seg pv-compact-seg--claimed${hovered === 'claimed' ? ' is-active' : ''}`}
+            style={{ width: `${Math.max(claimedPct, 3)}%` }}
+            tabIndex={0}
+            role="note"
+            aria-label={`${safeClaimed} of ${safeTotal}, ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}`}
+            onMouseEnter={() => setHovered('claimed')}
+            onFocus={() => setHovered('claimed')}
+            onBlur={() => setHovered(null)}
+          />
+        ) : null}
+        {openCount > 0 ? (
+          <span
+            className={`pv-compact-seg pv-compact-seg--open${hovered === 'queued' ? ' is-active' : ''}`}
+            style={{ flex: '1 1 0%' }}
+            tabIndex={0}
+            role="note"
+            aria-label={`${openCount} of ${safeTotal}, ${fmtPct(openPct)} ${TASK_TAGS.open.label}`}
+            onMouseEnter={() => setHovered('queued')}
+            onFocus={() => setHovered('queued')}
+            onBlur={() => setHovered(null)}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   2. PROJECT PROGRESS WIDGET (Top-of-project Donut + Interactive Task Mosaic)
+   ============================================================================ */
+
+export function ProjectProgressWidget({
+  mission,
+  visualSummary,
+  tasks,
+  onCopyTaskPrompt,
+}: ProjectProgressWidgetProps) {
+  const [activeBucket, setActiveBucket] = useState<StatusBucket | null>(null);
+  const [hoveredTileIdx, setHoveredTileIdx] = useState<number | null>(null);
+  const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const completedIds = useMemo(
+    () =>
+      new Set(
+        tasks
+          .filter((t) => t.status === 'completed' || t.status === 'settled')
+          .map((t) => String(t.id)),
+      ),
+    [tasks],
+  );
+
+  // Primary audit/research tasks for the mosaic grid (excluding peer_verify unless only peer_verify exist)
+  const mosaicTasks = useMemo(() => {
+    const primary = tasks.filter((t) => t.task_type !== 'peer_verify');
+    return primary.length > 0 ? primary : tasks;
+  }, [tasks]);
+
+  const counts = useMemo(() => {
+    const sc = visualSummary?.status_counts;
+    if (sc && sc.total > 0) {
+      return {
+        completed: sc.completed,
+        claimed: sc.claimed,
+        queued: sc.queued,
+        waiting: sc.waiting,
+        planned: sc.planned,
+        total: sc.total,
+        pctComplete: sc.pct_complete,
+        auditsDone: sc.audits_done,
+        auditsTotal: sc.audits_total,
+        checksDone: sc.checks_done,
+        checksTotal: sc.checks_total,
+      };
+    }
+
+    if (mosaicTasks.length > 0) {
+      let completedCount = 0;
+      let claimedCount = 0;
+      let queuedCount = 0;
+      let waitingCount = 0;
+      for (const t of mosaicTasks) {
+        const b = classifyTaskStatus(t, completedIds);
+        if (b === 'completed') completedCount += 1;
+        else if (b === 'claimed') claimedCount += 1;
+        else if (b === 'queued') queuedCount += 1;
+        else waitingCount += 1;
+      }
+      const totalCount = mosaicTasks.length;
+      const peerChecks = tasks.filter((t) => t.task_type === 'peer_verify');
+      const peerDone = peerChecks.filter(
+        (t) => t.status === 'completed' || t.status === 'settled',
+      ).length;
+      return {
+        completed: completedCount,
+        claimed: claimedCount,
+        queued: queuedCount,
+        waiting: waitingCount,
+        planned: mission.planned_tasks?.length ?? 0,
+        total: totalCount,
+        pctComplete: calcPct(completedCount, totalCount),
+        auditsDone: completedCount,
+        auditsTotal: totalCount,
+        checksDone: peerDone,
+        checksTotal: peerChecks.length,
+      };
+    }
+
+    const totalCount = Math.max(0, mission.total_tasks || 0);
+    const completedCount = Math.min(totalCount, mission.completed_tasks || 0);
+    const queuedCount = Math.max(0, totalCount - completedCount);
+    return {
+      completed: completedCount,
+      claimed: 0,
+      queued: queuedCount,
+      waiting: 0,
+      planned: mission.planned_tasks?.length ?? 0,
+      total: totalCount,
+      pctComplete: calcPct(completedCount, totalCount),
+      auditsDone: completedCount,
+      auditsTotal: totalCount,
+      checksDone: 0,
+      checksTotal: 0,
+    };
+  }, [visualSummary, mosaicTasks, completedIds, tasks, mission]);
+
+  const segments = useMemo(() => {
+    const order: StatusBucket[] = ['completed', 'claimed', 'queued', 'waiting'];
+    const raw: Array<{ key: StatusBucket; count: number; pct: number }> = order.map((key) => {
+      const count = counts[key];
+      return { key, count, pct: calcPct(count, counts.total) };
+    });
+
+    const radius = 74;
+    const circumference = 2 * Math.PI * radius;
+    let cumulative = 0;
+
+    return raw.map((seg) => {
+      const arcLength = counts.total > 0 ? (seg.count / counts.total) * circumference : 0;
+      const dashOffset = -cumulative;
+      cumulative += arcLength;
+      return {
+        ...seg,
+        ...STATUS_META[seg.key],
+        arcLength,
+        dashOffset,
+        circumference,
+      };
+    });
+  }, [counts]);
+
+  const activeSeg = activeBucket
+    ? segments.find((s) => s.key === activeBucket) ?? null
+    : null;
+
+  const hoveredTile = hoveredTileIdx !== null ? mosaicTasks[hoveredTileIdx] ?? null : null;
+  const hoveredTileBucket = hoveredTile ? classifyTaskStatus(hoveredTile, completedIds) : null;
+  const hoveredTileTag = hoveredTile
+    ? getTaskTag(hoveredTile.status, hoveredTileBucket === 'waiting')
+    : null;
+  const tileWeightPct = mosaicTasks.length > 0 ? 100 / mosaicTasks.length : 0;
+
+  const handleTileClick = (task: MissionTask, bucket: StatusBucket) => {
+    if (bucket !== 'queued' || !onCopyTaskPrompt) return;
+    onCopyTaskPrompt(task);
+    const idStr = String(task.id);
+    setCopiedTaskId(idStr);
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopiedTaskId(null);
+      copyTimerRef.current = null;
+    }, 2000);
+  };
+
+  return (
+    <section
+      className="card card-pad pv-progress-widget"
+      aria-label="Project progress overview"
+    >
+      <div className="pv-progress-grid">
+        {/* LEFT: Interactive SVG Donut */}
+        <div className="pv-donut-panel">
+          <div className="pv-panel-head">
+            <span className="kicker">Completion breakdown</span>
+            <span className="pv-count-pill tabular">
+              {counts.completed.toLocaleString('en-IN')} / {counts.total.toLocaleString('en-IN')}
+            </span>
+          </div>
+
+          <div
+            className="pv-donut-stage"
+            onMouseLeave={() => setActiveBucket(null)}
+          >
+            {activeSeg ? (
+              <div className="pv-tooltip pv-tooltip--donut" role="tooltip">
+                <strong>{activeSeg.label}:</strong>{' '}
+                <span className="tabular">
+                  {activeSeg.count.toLocaleString('en-IN')} / {counts.total.toLocaleString('en-IN')} (
+                  {fmtPct(activeSeg.pct)})
+                </span>
+              </div>
+            ) : null}
+
+            <svg
+              className="pv-donut-svg"
+              viewBox="0 0 196 196"
+              width="196"
+              height="196"
+              role="img"
+              aria-label={`Project progress chart: ${fmtPct(counts.pctComplete)} ${TASK_TAGS.done.label} (${counts.completed} of ${counts.total} tasks)`}
+            >
+              <circle
+                cx="98"
+                cy="98"
+                r="74"
+                fill="none"
+                stroke="var(--sunk)"
+                strokeWidth="22"
+              />
+              <g transform="rotate(-90 98 98)">
+                {segments.map((seg) => {
+                  if (seg.count <= 0) return null;
+                  const isActive = activeBucket === seg.key;
+                  const isDimmed = activeBucket !== null && !isActive;
+                  const strokeGap = counts.total > seg.count ? 1.5 : 0;
+                  const visibleArc = Math.max(0.5, seg.arcLength - strokeGap);
+                  return (
+                    <circle
+                      key={seg.key}
+                      cx="98"
+                      cy="98"
+                      r="74"
+                      fill="none"
+                      stroke={seg.color}
+                      strokeWidth={isActive ? 26 : 22}
+                      strokeDasharray={
+                        seg.dashed
+                          ? buildDashedArcArray(visibleArc, seg.circumference)
+                          : `${visibleArc.toFixed(2)} ${Math.max(0, seg.circumference - visibleArc).toFixed(2)}`
+                      }
+                      strokeDashoffset={seg.dashOffset}
+                      className={`pv-donut-arc${isActive ? ' is-active' : ''}${isDimmed ? ' is-dimmed' : ''}`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${seg.label}: ${seg.count} of ${counts.total} (${fmtPct(seg.pct)})`}
+                      onMouseEnter={() => setActiveBucket(seg.key)}
+                      onFocus={() => setActiveBucket(seg.key)}
+                      onBlur={() => setActiveBucket(null)}
+                    />
+                  );
+                })}
+              </g>
+            </svg>
+
+            <div className="pv-donut-center" aria-live="polite">
+              <span className="pv-donut-pct tabular">
+                {activeSeg ? fmtPct(activeSeg.pct) : fmtPct(counts.pctComplete)}
+              </span>
+              <span className="pv-donut-lbl">
+                {activeSeg ? activeSeg.label : TASK_TAGS.done.label}
+              </span>
+              <span className="pv-donut-sub tabular">
+                {activeSeg
+                  ? `${activeSeg.count.toLocaleString('en-IN')} / ${counts.total.toLocaleString('en-IN')}`
+                  : `${counts.completed.toLocaleString('en-IN')} / ${counts.total.toLocaleString('en-IN')} tasks`}
+              </span>
+            </div>
+          </div>
+
+          <div className="pv-legend-list" role="list" aria-label="Task status breakdown">
+            {segments
+              .filter((s) => s.key !== 'waiting' || s.count > 0)
+              .map((seg) => {
+                const isActive = activeBucket === seg.key;
+                return (
+                  <button
+                    key={seg.key}
+                    type="button"
+                    role="listitem"
+                    className={`pv-legend-item${isActive ? ' is-active' : ''}`}
+                    onMouseEnter={() => setActiveBucket(seg.key)}
+                    onMouseLeave={() => setActiveBucket(null)}
+                    onFocus={() => setActiveBucket(seg.key)}
+                    onBlur={() => setActiveBucket(null)}
+                  >
+                    <span
+                      className={`pv-swatch pv-swatch--${seg.key}`}
+                      aria-hidden="true"
+                    />
+                    <span className="pv-legend-name">{seg.label}</span>
+                    <span className="pv-legend-val tabular">
+                      {seg.count.toLocaleString('en-IN')} · {fmtPct(seg.pct)}
+                    </span>
+                  </button>
+                );
+              })}
+          </div>
+        </div>
+
+        {/* RIGHT: Interactive Task Mosaic Grid */}
+        <div className="pv-mosaic-panel">
+          <div className="pv-panel-head">
+            <div>
+              <span className="kicker">Task progress mosaic</span>
+              <p className="pv-mosaic-hint">
+                Hover any tile for details
+                {onCopyTaskPrompt ? ' · click an open tile to copy its 1-line prompt' : ''}.
+              </p>
+            </div>
+            <div className="pv-mosaic-badges">
+              {copiedTaskId ? (
+                <span className="pv-copied-pill" role="status" aria-live="polite">
+                  <Check size={12} />
+                  Copied 1-line prompt!
+                </span>
+              ) : null}
+              {counts.checksTotal > 0 ? (
+                <span className={`${WORK_TYPE_TAGS.peer_check.badgeClass} tabular`}>
+                  {WORK_TYPE_TAGS.peer_check.label}: {counts.checksDone}/{counts.checksTotal}
+                </span>
+              ) : null}
+              {counts.planned > 0 ? (
+                <span className={`${TASK_TAGS.planned.badgeClass} tabular`}>
+                  +{counts.planned} {TASK_TAGS.planned.label}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {mosaicTasks.length > 0 ? (
+            <div
+              className="pv-mosaic-wrap"
+              onMouseLeave={() => setHoveredTileIdx(null)}
+            >
+              <div
+                className="pv-mosaic-grid"
+                role="grid"
+                aria-label={`${mosaicTasks.length} project tasks`}
+              >
+                {mosaicTasks.map((task, idx) => {
+                  const bucket = classifyTaskStatus(task, completedIds);
+                  const taskTag = getTaskTag(task.status, bucket === 'waiting');
+                  const isOpen = bucket === 'queued';
+                  const isCopied = copiedTaskId === String(task.id);
+                  const isHovered = hoveredTileIdx === idx;
+                  const isBucketFiltered = activeBucket !== null && activeBucket !== bucket;
+                  const contributor = task.claimed_by_handle || task.claimed_by;
+
+                  return (
+                    <button
+                      key={task.id}
+                      type="button"
+                      className={`pv-tile pv-tile--${bucket}${isHovered ? ' is-hovered' : ''}${isBucketFiltered ? ' is-dimmed' : ''}${isCopied ? ' is-copied' : ''}`}
+                      onMouseEnter={() => setHoveredTileIdx(idx)}
+                      onFocus={() => setHoveredTileIdx(idx)}
+                      onBlur={() => setHoveredTileIdx(null)}
+                      onClick={() => handleTileClick(task, bucket)}
+                      aria-label={`${task.title || `Task ${idx + 1}`}: ${taskTag.label}, ${fmtPct(tileWeightPct)} of project${contributor ? `, by @${contributor}` : ''}${isOpen && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
+                      title={task.title || `Task ${idx + 1}`}
+                    >
+                      {isCopied ? <Check size={11} aria-hidden="true" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Floating hover tooltip + persistent inspector */}
+              {hoveredTile && hoveredTileBucket && hoveredTileTag ? (
+                <div className="pv-tooltip pv-tooltip--mosaic" role="tooltip">
+                  <div className="pv-tooltip-title">
+                    {hoveredTile.title || `Task ${String(hoveredTile.id)}`}
+                  </div>
+                  <div className="pv-tooltip-row tabular">
+                    <strong>{hoveredTileTag.label}</strong>
+                    <span>·</span>
+                    <span>
+                      1 / {mosaicTasks.length.toLocaleString('en-IN')} ({fmtPct(tileWeightPct)})
+                    </span>
+                    {hoveredTile.claimed_by_handle || hoveredTile.claimed_by ? (
+                      <>
+                        <span>·</span>
+                        <span>@{hoveredTile.claimed_by_handle || hoveredTile.claimed_by}</span>
+                      </>
+                    ) : null}
+                  </div>
+                  {hoveredTileBucket === 'queued' && onCopyTaskPrompt ? (
+                    <div className="pv-tooltip-hint">Click tile to copy 1-line prompt</div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div
+                className={`pv-mosaic-inspector${hoveredTile ? ' is-active' : ''}`}
+                role="status"
+                aria-live="polite"
+              >
+                {hoveredTile && hoveredTileBucket && hoveredTileTag ? (
+                  <>
+                    <div className="pv-inspector-top">
+                      <span
+                        className={`pv-swatch pv-swatch--${hoveredTileBucket}`}
+                        aria-hidden="true"
+                      />
+                      <span className="pv-inspector-title">
+                        {hoveredTile.title || `Task ${String(hoveredTile.id)}`}
+                      </span>
+                    </div>
+                    <div className="pv-inspector-meta tabular">
+                      <span className={hoveredTileTag.badgeClass}>{hoveredTileTag.label}</span>
+                      <span>
+                        1 / {mosaicTasks.length.toLocaleString('en-IN')} · {fmtPct(tileWeightPct)} of project
+                      </span>
+                      {hoveredTile.claimed_by_handle || hoveredTile.claimed_by ? (
+                        <span className="pv-inspector-actor">
+                          @{hoveredTile.claimed_by_handle || hoveredTile.claimed_by}
+                        </span>
+                      ) : null}
+                      {hoveredTileBucket === 'queued' && onCopyTaskPrompt ? (
+                        <span className="pv-inspector-cta">
+                          <Copy size={11} aria-hidden="true" />
+                          Click tile to copy 1-line prompt
+                        </span>
+                      ) : null}
+                    </div>
+                  </>
+                ) : (
+                  <div className="pv-inspector-idle tabular">
+                    <span>
+                      <strong>{counts.queued.toLocaleString('en-IN')}</strong> {TASK_TAGS.open.label} (
+                      {fmtPct(calcPct(counts.queued, counts.total))})
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      <strong>{counts.completed.toLocaleString('en-IN')}</strong> {TASK_TAGS.done.label} (
+                      {fmtPct(counts.pctComplete)})
+                    </span>
+                    {counts.claimed > 0 ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          <strong>{counts.claimed.toLocaleString('en-IN')}</strong>{' '}
+                          {TASK_TAGS.in_progress.label} ({fmtPct(calcPct(counts.claimed, counts.total))})
+                        </span>
+                      </>
+                    ) : null}
+                    {counts.waiting > 0 ? (
+                      <>
+                        <span aria-hidden="true">·</span>
+                        <span>
+                          <strong>{counts.waiting.toLocaleString('en-IN')}</strong>{' '}
+                          {TASK_TAGS.waiting.label} ({fmtPct(calcPct(counts.waiting, counts.total))})
+                        </span>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              No queued tasks yet. Once datasets are published, every task tile appears here.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ============================================================================
+   3. PROJECT RESULTS VISUALISER (P1 Divergences / W1 GIGW / CPI1 Matrix)
+   ============================================================================ */
+
+export function ProjectResultsVisualizer({
+  mission,
+  visualSummary,
+  findings,
+  onSelectFinding,
+  onCopyTaskPrompt,
+}: ProjectResultsVisualizerProps) {
+  const code = (visualSummary?.methodology_code || mission.methodology_code || '').toUpperCase();
+
+  if (code === 'W1') {
+    return <WebsiteAuditVisualizer mission={mission} visualSummary={visualSummary} />;
+  }
+  if (code === 'CPI1') {
+    return (
+      <InflationCoverageVisualizer
+        mission={mission}
+        visualSummary={visualSummary}
+        onCopyTaskPrompt={onCopyTaskPrompt}
+      />
+    );
+  }
+  return (
+    <BudgetAuditVisualizer
+      mission={mission}
+      visualSummary={visualSummary}
+      findings={findings}
+      onSelectFinding={onSelectFinding}
+    />
+  );
+}
+
+/* ---------- 3A. P1 / Budget Audit Divergence & Force Coverage ---------- */
+
+function BudgetAuditVisualizer({
+  mission,
+  visualSummary,
+  findings = [],
+  onSelectFinding,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  findings?: FindingItem[];
+  onSelectFinding?: (id: string | number) => void;
+}) {
+  const [hoveredDivIdx, setHoveredDivIdx] = useState<number | null>(null);
+  const [hoveredGroupIdx, setHoveredGroupIdx] = useState<number | null>(null);
+
+  const budget = visualSummary?.budget_audit;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+
+  const divergences = useMemo(() => {
+    if (budget?.top_divergences && budget.top_divergences.length > 0) {
+      return budget.top_divergences;
+    }
+    return findings
+      .filter((f) => !f.quarantined)
+      .slice(0, 12)
+      .map((f) => ({
+        finding_id: String(f.id),
+        entity_name: f.entity_name || f.jurisdiction || 'Public authority',
+        title: f.title,
+        pct_difference: extractNumericMetric(f.anomaly_metrics),
+        monetary_exposure_inr_cr: f.monetary_exposure_inr ? f.monetary_exposure_inr / 1e7 : 0,
+        status: String(f.status || 'peer_review'),
+        severity: String(f.severity || 'medium'),
+        fiscal_year: f.fiscal_year || '',
+        rule_triggered: f.rule_triggered || '',
+      }));
+  }, [budget, findings]);
+
+  const groups = budget?.groups ?? [];
+  const verifiedCount = budget?.verified_count ?? mission.verified_findings_count ?? 0;
+  const peerReviewCount = budget?.peer_review_count ?? mission.peer_review_count ?? 0;
+  const clearedCount = budget?.cleared_count ?? mission.cleared_count ?? 0;
+  const disputedCount = budget?.disputed_count ?? 0;
+  const totalExposureCr =
+    budget?.total_exposure_inr_cr ??
+    mission.unique_coverage_inr_cr ??
+    mission.monetary_audited_inr_cr ??
+    0;
+
+  const hasPctValues = divergences.some((d) => d.pct_difference !== null);
+  const maxAbsPct = useMemo(() => {
+    const vals = divergences
+      .map((d) => (d.pct_difference !== null ? Math.abs(d.pct_difference) : 0))
+      .filter((v) => Number.isFinite(v));
+    return Math.max(25, ...vals);
+  }, [divergences]);
+
+  const maxExposure = useMemo(() => {
+    const vals = divergences.map((d) => Math.max(0, d.monetary_exposure_inr_cr || 0));
+    return Math.max(1, ...vals);
+  }, [divergences]);
+
+  const thresholdPosPct = Math.min(92, (20 / maxAbsPct) * 100);
+
+  return (
+    <section className="card card-pad pv-results" aria-label="Budget audit visual results">
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Budget variances &amp; force coverage</h2>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className={FINDING_TAGS.verified.badgeClass}>
+            {verifiedCount.toLocaleString('en-IN')} {FINDING_TAGS.verified.label}
+          </span>
+          <span className={FINDING_TAGS.in_review.badgeClass}>
+            {peerReviewCount.toLocaleString('en-IN')} {FINDING_TAGS.in_review.label}
+          </span>
+          <span className={FINDING_TAGS.cleared.badgeClass}>
+            {clearedCount.toLocaleString('en-IN')} {FINDING_TAGS.cleared.label}
+          </span>
+          {disputedCount > 0 ? (
+            <span className={FINDING_TAGS.disputed.badgeClass}>
+              {disputedCount.toLocaleString('en-IN')} {FINDING_TAGS.disputed.label}
+            </span>
+          ) : null}
+          {totalExposureCr > 0 ? (
+            <span className="tag-mono">{formatInrCr(totalExposureCr)} flagged</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="pv-results-split">
+        {/* Divergence Bar Chart */}
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Top budget variances</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-dot--verified" /> {FINDING_TAGS.verified.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--review" /> {FINDING_TAGS.in_review.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--disputed" /> {FINDING_TAGS.disputed.label}
+              </span>
+            </div>
+          </div>
+
+          {divergences.length > 0 ? (
+            <div className="pv-div-list" onMouseLeave={() => setHoveredDivIdx(null)}>
+              {divergences.map((item, idx) => {
+                const findingTag = getFindingTag(item.status);
+                const barKind =
+                  findingTag.tone === 'verified' || findingTag.tone === 'rti'
+                    ? 'verified'
+                    : findingTag.tone === 'disputed'
+                      ? 'disputed'
+                      : findingTag.tone === 'cleared' || findingTag.tone === 'neutral'
+                        ? 'cleared'
+                        : 'review';
+                const widthPct =
+                  hasPctValues && item.pct_difference !== null
+                    ? Math.max(4, Math.min(100, (Math.abs(item.pct_difference) / maxAbsPct) * 100))
+                    : Math.max(
+                        4,
+                        Math.min(100, ((item.monetary_exposure_inr_cr || 0) / maxExposure) * 100),
+                      );
+                const isHovered = hoveredDivIdx === idx;
+
+                return (
+                  <div key={`${item.finding_id}-${idx}`} className="pv-div-row-wrap">
+                    {isHovered ? (
+                      <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
+                        <div className="pv-tooltip-title">{item.title}</div>
+                        <div className="pv-tooltip-row tabular">
+                          <span>{item.entity_name}</span>
+                          {item.fiscal_year ? <span>· FY {item.fiscal_year}</span> : null}
+                        </div>
+                        <div className="pv-tooltip-row tabular">
+                          {item.pct_difference !== null ? (
+                            <strong>Variance {formatSignedPct(item.pct_difference)}</strong>
+                          ) : null}
+                          {item.monetary_exposure_inr_cr > 0 ? (
+                            <span>{formatInrCr(item.monetary_exposure_inr_cr)}</span>
+                          ) : null}
+                          <span>{findingTag.label}</span>
+                          {item.rule_triggered ? <span>· {item.rule_triggered}</span> : null}
+                        </div>
+                        {onSelectFinding ? (
+                          <div className="pv-tooltip-hint">Click to inspect full finding dossier</div>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      className={`pv-div-row${isHovered ? ' is-hovered' : ''}${onSelectFinding ? ' is-clickable' : ''}`}
+                      onMouseEnter={() => setHoveredDivIdx(idx)}
+                      onFocus={() => setHoveredDivIdx(idx)}
+                      onBlur={() => setHoveredDivIdx(null)}
+                      onClick={() => onSelectFinding?.(item.finding_id)}
+                      aria-label={`${item.entity_name}: ${item.pct_difference !== null ? formatSignedPct(item.pct_difference) : formatInrCr(item.monetary_exposure_inr_cr)}, ${findingTag.label}`}
+                    >
+                      <div className="pv-div-label">
+                        <span className="pv-div-entity">{item.entity_name}</span>
+                        <span className="pv-div-meta">
+                          {item.fiscal_year || item.rule_triggered || findingTag.label}
+                        </span>
+                      </div>
+
+                      <div className="pv-div-track" aria-hidden="true">
+                        {hasPctValues ? (
+                          <span
+                            className="pv-div-threshold"
+                            style={{ left: `${thresholdPosPct}%` }}
+                            title="20% variance threshold"
+                          />
+                        ) : null}
+                        <span
+                          className={`pv-div-bar pv-div-bar--${barKind}`}
+                          style={{ width: `${widthPct}%` }}
+                        />
+                      </div>
+
+                      <div className="pv-div-val tabular">
+                        <strong>
+                          {item.pct_difference !== null
+                            ? formatSignedPct(item.pct_difference)
+                            : formatInrCr(item.monetary_exposure_inr_cr)}
+                        </strong>
+                        {item.pct_difference !== null && item.monetary_exposure_inr_cr > 0 ? (
+                          <span className="pv-div-exposure">
+                            {formatInrCr(item.monetary_exposure_inr_cr)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </button>
+                  </div>
+                );
+              })}
+              {hasPctValues ? (
+                <div className="pv-axis-note">
+                  Dashed vertical line marks the 20% review threshold. Dashed bars are{' '}
+                  {FINDING_TAGS.in_review.label}; solid green bars are{' '}
+                  {FINDING_TAGS.verified.label}.
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              No budget divergences reported yet. As contributor agents check police budget lines
+              under MH 2055 &amp; 4055, flagged variances appear here as clickable bars.
+            </div>
+          )}
+        </div>
+
+        {/* Coverage by Force Category */}
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Coverage by force category</h3>
+            <span className="pv-chart-note">Hover bar for exact %</span>
+          </div>
+
+          {groups.length > 0 ? (
+            <div className="pv-group-list" onMouseLeave={() => setHoveredGroupIdx(null)}>
+              {groups.map((grp, idx) => {
+                const isHovered = hoveredGroupIdx === idx;
+                const remaining = Math.max(0, grp.total - grp.done);
+                const exactPct = grp.total > 0 ? calcPct(grp.done, grp.total) : grp.pct;
+
+                return (
+                  <div
+                    key={grp.label}
+                    className={`pv-group-row${isHovered ? ' is-hovered' : ''}`}
+                    tabIndex={0}
+                    role="note"
+                    aria-label={`${grp.label}: ${grp.done} of ${grp.total} ${TASK_TAGS.done.label} (${fmtPct(exactPct)})`}
+                    onMouseEnter={() => setHoveredGroupIdx(idx)}
+                    onFocus={() => setHoveredGroupIdx(idx)}
+                    onBlur={() => setHoveredGroupIdx(null)}
+                  >
+                    {isHovered ? (
+                      <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
+                        <strong>{grp.label}:</strong>{' '}
+                        <span className="tabular">
+                          {grp.done.toLocaleString('en-IN')} / {grp.total.toLocaleString('en-IN')} ·{' '}
+                          {fmtPct(exactPct)} {TASK_TAGS.done.label} (
+                          {remaining.toLocaleString('en-IN')} {TASK_TAGS.open.label})
+                        </span>
+                      </div>
+                    ) : null}
+
+                    <div className="pv-group-head">
+                      <span className="pv-group-label">{grp.label}</span>
+                      <span className="pv-group-stat tabular">
+                        <strong>{fmtPct(exactPct)}</strong> ({grp.done}/{grp.total})
+                      </span>
+                    </div>
+                    <div className="pv-hbar-track">
+                      <span
+                        className="pv-hbar-fill"
+                        style={{ width: `${exactPct > 0 ? Math.max(exactPct, 2) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              Force category coverage updates automatically once budget tasks are categorised.
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3B. W1 Website Audit 7-Checkpoint GIGW Stacked Bar Chart ---------- */
+
+function WebsiteAuditVisualizer({
+  mission,
+  visualSummary,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+}) {
+  const [hoveredCell, setHoveredCell] = useState<{
+    key: string;
+    segment: 'observed' | 'not_observed' | 'unassessable' | 'row';
+  } | null>(null);
+  const [hoveredReason, setHoveredReason] = useState<string | null>(null);
+
+  const web = visualSummary?.website_audit;
+  const batchesDone = web?.batches_done ?? mission.completed_tasks ?? 0;
+  const batchesTotal = web?.batches_total ?? mission.total_tasks ?? 100;
+  const hostsObserved = web?.hosts_observed ?? 0;
+  const hostsUnassessable = web?.hosts_unassessable ?? 0;
+  const hostsTotal = web?.hosts_total ?? hostsObserved + hostsUnassessable;
+  const hasObservations = batchesDone > 0 && hostsTotal > 0;
+
+  const foundTag = WEBSITE_OUTCOME_TAGS.found;
+  const missingTag = WEBSITE_OUTCOME_TAGS.missing;
+  const unreachableTag = WEBSITE_OUTCOME_TAGS.unreachable;
+
+  const checkpoints = useMemo(() => {
+    if (web?.checkpoints && web.checkpoints.length > 0) {
+      return web.checkpoints;
+    }
+    return DEFAULT_W1_CHECKPOINTS.map((c) => ({
+      key: c.key,
+      label: c.label,
+      observed: 0,
+      not_observed: 0,
+      unassessable: 0,
+      observed_pct: 0,
+      not_observed_pct: 0,
+      unassessable_pct: 0,
+    }));
+  }, [web]);
+
+  const reasonEntries = useMemo(() => {
+    if (!web?.reasons) return [];
+    return Object.entries(web.reasons)
+      .filter(([, count]) => count > 0)
+      .sort((a, b) => b[1] - a[1]);
+  }, [web]);
+
+  const hintByKey = useMemo(
+    () => Object.fromEntries(DEFAULT_W1_CHECKPOINTS.map((c) => [c.key, c.hint])),
+    [],
+  );
+
+  return (
+    <section className="card card-pad pv-results" aria-label="GIGW website audit visual results">
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <Globe size={12} aria-hidden="true" />
+            GIGW 3.0 checkpoints · {WORK_TYPE_TAGS.website_check.label}
+          </span>
+          <h2 className="pv-results-title">7-checkpoint .gov.in disclosure profile</h2>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">
+            Batches {TASK_TAGS.done.label}: {batchesDone}/{batchesTotal} (
+            {fmtPct(calcPct(batchesDone, batchesTotal))})
+          </span>
+          <span className={foundTag.badgeClass}>
+            {hostsObserved.toLocaleString('en-IN')} hosts checked
+          </span>
+          {hostsUnassessable > 0 ? (
+            <span className={unreachableTag.badgeClass}>
+              {hostsUnassessable.toLocaleString('en-IN')} {unreachableTag.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="pv-gigw-legend">
+        <span>
+          <i className="pv-dot pv-dot--verified" /> {foundTag.label}
+        </span>
+        <span>
+          <i className="pv-dot pv-dot--not-obs" /> {missingTag.label}
+        </span>
+        <span>
+          <i className="pv-dot pv-dot--unassess" /> {unreachableTag.label}
+        </span>
+        <span className="pv-gigw-legend-hint">Hover any bar segment for exact host counts &amp; %</span>
+      </div>
+
+      {!hasObservations ? (
+        <div className="pv-zero-banner">
+          <strong>0 of {batchesTotal.toLocaleString('en-IN')} batches reported yet.</strong> Stacked{' '}
+          {foundTag.label} / {missingTag.label} / {unreachableTag.label} percentages across all 7
+          GIGW checkpoints fill in automatically as volunteers submit website batches. Hover any
+          checkpoint below to see what the reader checks.
+        </div>
+      ) : null}
+
+      <div className="pv-gigw-chart" onMouseLeave={() => setHoveredCell(null)}>
+        {checkpoints.map((cp) => {
+          const isRowHovered = hoveredCell?.key === cp.key;
+          const rowTotal = cp.observed + cp.not_observed + cp.unassessable;
+          const obsPct = rowTotal > 0 ? calcPct(cp.observed, rowTotal) : cp.observed_pct;
+          const notObsPct = rowTotal > 0 ? calcPct(cp.not_observed, rowTotal) : cp.not_observed_pct;
+          const unassPct = rowTotal > 0 ? calcPct(cp.unassessable, rowTotal) : cp.unassessable_pct;
+
+          return (
+            <div
+              key={cp.key}
+              className={`pv-gigw-row${isRowHovered ? ' is-hovered' : ''}`}
+              onMouseEnter={() => {
+                if (!hasObservations) setHoveredCell({ key: cp.key, segment: 'row' });
+              }}
+            >
+              {isRowHovered ? (
+                <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
+                  <div className="pv-tooltip-title">{cp.label}</div>
+                  {hasObservations && rowTotal > 0 ? (
+                    <div className="pv-tooltip-row tabular">
+                      <span className={hoveredCell?.segment === 'observed' ? 'is-emph' : ''}>
+                        {foundTag.label}: {cp.observed.toLocaleString('en-IN')} ({fmtPct(obsPct)})
+                      </span>
+                      <span>·</span>
+                      <span className={hoveredCell?.segment === 'not_observed' ? 'is-emph' : ''}>
+                        {missingTag.label}: {cp.not_observed.toLocaleString('en-IN')} (
+                        {fmtPct(notObsPct)})
+                      </span>
+                      <span>·</span>
+                      <span className={hoveredCell?.segment === 'unassessable' ? 'is-emph' : ''}>
+                        {unreachableTag.label}: {cp.unassessable.toLocaleString('en-IN')} (
+                        {fmtPct(unassPct)})
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="pv-tooltip-row">
+                      {hintByKey[cp.key] || 'Checked on landing page and linked contact page'} · 0.0%{' '}
+                      {foundTag.label.toLowerCase()} so far
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              <div className="pv-gigw-label">{cp.label}</div>
+
+              {hasObservations && rowTotal > 0 ? (
+                <div
+                  className="pv-gigw-track"
+                  role="group"
+                  aria-label={`${cp.label}: ${fmtPct(obsPct)} ${foundTag.label}, ${fmtPct(notObsPct)} ${missingTag.label}, ${fmtPct(unassPct)} ${unreachableTag.label}`}
+                >
+                  {cp.observed > 0 ? (
+                    <button
+                      type="button"
+                      className={`pv-gigw-seg pv-gigw-seg--obs${hoveredCell?.key === cp.key && hoveredCell.segment === 'observed' ? ' is-active' : ''}`}
+                      style={{ width: `${obsPct}%` }}
+                      onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
+                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
+                      onBlur={() => setHoveredCell(null)}
+                      aria-label={`${cp.label} ${foundTag.label}: ${cp.observed} hosts (${fmtPct(obsPct)})`}
+                    />
+                  ) : null}
+                  {cp.not_observed > 0 ? (
+                    <button
+                      type="button"
+                      className={`pv-gigw-seg pv-gigw-seg--notobs${hoveredCell?.key === cp.key && hoveredCell.segment === 'not_observed' ? ' is-active' : ''}`}
+                      style={{ width: `${notObsPct}%` }}
+                      onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
+                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
+                      onBlur={() => setHoveredCell(null)}
+                      aria-label={`${cp.label} ${missingTag.label}: ${cp.not_observed} hosts (${fmtPct(notObsPct)})`}
+                    />
+                  ) : null}
+                  {cp.unassessable > 0 ? (
+                    <button
+                      type="button"
+                      className={`pv-gigw-seg pv-gigw-seg--unass${hoveredCell?.key === cp.key && hoveredCell.segment === 'unassessable' ? ' is-active' : ''}`}
+                      style={{ width: `${unassPct}%` }}
+                      onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
+                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
+                      onBlur={() => setHoveredCell(null)}
+                      aria-label={`${cp.label} ${unreachableTag.label}: ${cp.unassessable} hosts (${fmtPct(unassPct)})`}
+                    />
+                  ) : null}
+                </div>
+              ) : (
+                <div
+                  className="pv-gigw-track pv-gigw-track--skeleton"
+                  tabIndex={0}
+                  role="note"
+                  aria-label={`${cp.label}: 0.0% ${foundTag.label}, waiting for first batch`}
+                  onFocus={() => setHoveredCell({ key: cp.key, segment: 'row' })}
+                  onBlur={() => setHoveredCell(null)}
+                >
+                  <span className="pv-gigw-skeleton-hint">Awaiting first batch</span>
+                </div>
+              )}
+
+              <div className="pv-gigw-val tabular">
+                <strong>{fmtPct(obsPct)}</strong>
+                <span>{foundTag.label}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Access-Limitation Summary Pills */}
+      <div className="pv-reasons-bar">
+        <span className="kicker">Why sites were {unreachableTag.label.toLowerCase()}</span>
+        {reasonEntries.length > 0 ? (
+          <div className="pv-reason-pills" onMouseLeave={() => setHoveredReason(null)}>
+            {reasonEntries.map(([key, count]) => {
+              const shareOfHosts = calcPct(count, Math.max(1, hostsTotal));
+              const shareOfUnass = calcPct(count, Math.max(1, hostsUnassessable));
+              return (
+                <span
+                  key={key}
+                  className="pv-reason-pill tabular"
+                  tabIndex={0}
+                  role="note"
+                  onMouseEnter={() => setHoveredReason(key)}
+                  onFocus={() => setHoveredReason(key)}
+                  onBlur={() => setHoveredReason(null)}
+                >
+                  {hoveredReason === key ? (
+                    <span className="pv-tooltip pv-tooltip--pill" role="tooltip">
+                      {formatReasonLabel(key)}: {count.toLocaleString('en-IN')} hosts (
+                      {fmtPct(shareOfHosts)} of total · {fmtPct(shareOfUnass)} of{' '}
+                      {unreachableTag.label.toLowerCase()})
+                    </span>
+                  ) : null}
+                  <span>{formatReasonLabel(key)}</span>
+                  <strong>{count.toLocaleString('en-IN')}</strong>
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          <span className="pv-reasons-empty">
+            No {unreachableTag.label.toLowerCase()} sites logged yet (robots.txt blocks, timeouts,
+            and unavailable contact pages are tracked separately from {missingTag.label.toLowerCase()}{' '}
+            items).
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3C. CPI1 Independent India Inflation State/UT Matrix ---------- */
+
+function InflationCoverageVisualizer({
+  mission,
+  visualSummary,
+  onCopyTaskPrompt,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onCopyTaskPrompt?: (taskId: string, title?: string) => void;
+}) {
+  const [hoveredState, setHoveredState] = useState<string | null>(null);
+  const [hoveredRoleIdx, setHoveredRoleIdx] = useState<number | null>(null);
+  const [matrixFilter, setMatrixFilter] = useState<'all' | 'done' | 'open'>('all');
+  const [copiedCellKey, setCopiedCellKey] = useState<string | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  const inflation = visualSummary?.inflation;
+  const roles = inflation?.roles ?? [];
+  const strata = inflation?.strata ?? [];
+  const batchesSubmitted = inflation?.batches_submitted ?? 0;
+
+  const stratumStats = useMemo(() => {
+    let totalSectors = 0;
+    let doneSectors = 0;
+    let openSectors = 0;
+    for (const s of strata) {
+      for (const st of [s.rural_status, s.urban_status]) {
+        const norm = normalizeStratumStatus(st);
+        if (norm === 'none') continue;
+        totalSectors += 1;
+        if (norm === 'completed') doneSectors += 1;
+        if (norm === 'queued') openSectors += 1;
+      }
+    }
+    return { totalSectors, doneSectors, openSectors };
+  }, [strata]);
+
+  const visibleStrata = useMemo(() => {
+    if (matrixFilter === 'all') return strata;
+    return strata.filter((s) => {
+      const r = normalizeStratumStatus(s.rural_status);
+      const u = normalizeStratumStatus(s.urban_status);
+      if (matrixFilter === 'done') return r === 'completed' || u === 'completed';
+      return r === 'queued' || u === 'queued';
+    });
+  }, [strata, matrixFilter]);
+
+  const handleSectorCopy = (
+    taskId: string | null,
+    cellKey: string,
+    label: string,
+    bucket: StatusBucket | 'none',
+  ) => {
+    if (!taskId || bucket !== 'queued' || !onCopyTaskPrompt) return;
+    onCopyTaskPrompt(taskId, label);
+    setCopiedCellKey(cellKey);
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+    copyTimerRef.current = window.setTimeout(() => {
+      setCopiedCellKey(null);
+      copyTimerRef.current = null;
+    }, 1800);
+  };
+
+  return (
+    <section className="card card-pad pv-results" aria-label="Inflation coverage visualiser">
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <TrendingUp size={12} aria-hidden="true" />
+            CPI 2024 panel · {getWorkTypeTag('research', mission.methodology_code).label}
+          </span>
+          <h2 className="pv-results-title">Rural &amp; urban coverage across States and UTs</h2>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className={TASK_TAGS.done.badgeClass}>
+            {stratumStats.doneSectors}/{stratumStats.totalSectors} strata {TASK_TAGS.done.label} (
+            {fmtPct(calcPct(stratumStats.doneSectors, stratumStats.totalSectors))})
+          </span>
+          <span className="tag-mono">
+            {batchesSubmitted.toLocaleString('en-IN')} evidence{' '}
+            {batchesSubmitted === 1 ? 'batch' : 'batches'} submitted
+          </span>
+        </div>
+      </div>
+
+      {/* Collection vs Review Progress Bars */}
+      {roles.length > 0 ? (
+        <div className="pv-cpi-roles" onMouseLeave={() => setHoveredRoleIdx(null)}>
+          <div className="pv-chart-subhead">
+            <h3>
+              <Layers size={14} aria-hidden="true" /> Collection vs. review pipeline
+            </h3>
+            <span className="pv-chart-note">Hover any stage for exact %</span>
+          </div>
+
+          <div className="pv-cpi-roles-grid">
+            {roles.map((role, idx) => {
+              const exactPct = role.total > 0 ? calcPct(role.done, role.total) : role.pct;
+              const remaining = Math.max(0, role.total - role.done);
+              const isHovered = hoveredRoleIdx === idx;
+              return (
+                <div
+                  key={role.role}
+                  className={`pv-group-row${isHovered ? ' is-hovered' : ''}`}
+                  tabIndex={0}
+                  role="note"
+                  aria-label={`${role.label}: ${role.done} of ${role.total} ${TASK_TAGS.done.label} (${fmtPct(exactPct)})`}
+                  onMouseEnter={() => setHoveredRoleIdx(idx)}
+                  onFocus={() => setHoveredRoleIdx(idx)}
+                  onBlur={() => setHoveredRoleIdx(null)}
+                >
+                  {isHovered ? (
+                    <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
+                      <strong>{role.label}:</strong>{' '}
+                      <span className="tabular">
+                        {role.done.toLocaleString('en-IN')} / {role.total.toLocaleString('en-IN')} ·{' '}
+                        {fmtPct(exactPct)} {TASK_TAGS.done.label} (
+                        {remaining.toLocaleString('en-IN')} remaining)
+                      </span>
+                    </div>
+                  ) : null}
+
+                  <div className="pv-group-head">
+                    <span className="pv-group-label">{role.label}</span>
+                    <span className="pv-group-stat tabular">
+                      <strong>{fmtPct(exactPct)}</strong> ({role.done}/{role.total})
+                    </span>
+                  </div>
+                  <div className="pv-hbar-track">
+                    <span
+                      className="pv-hbar-fill"
+                      style={{ width: `${exactPct > 0 ? Math.max(exactPct, 2) : 0}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* State/UT Rural vs Urban Matrix */}
+      <div className="pv-cpi-matrix-section">
+        <div className="pv-cpi-matrix-head">
+          <div className="pv-cpi-matrix-legend">
+            <span>
+              <i className="pv-dot pv-dot--verified" /> {TASK_TAGS.done.label}
+            </span>
+            <span>
+              <i className="pv-dot pv-dot--claimed" /> {TASK_TAGS.in_progress.label}
+            </span>
+            <span>
+              <i className="pv-dot pv-dot--open" /> {TASK_TAGS.open.label} (click to copy 1 line)
+            </span>
+          </div>
+
+          <div className="pv-cpi-filters" role="group" aria-label="Filter states by coverage">
+            {(['all', 'done', 'open'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                className={`btn btn-xs ${matrixFilter === f ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setMatrixFilter(f)}
+              >
+                {f === 'all'
+                  ? `All (${strata.length})`
+                  : f === 'done'
+                    ? TASK_TAGS.done.label
+                    : TASK_TAGS.open.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {visibleStrata.length > 0 ? (
+          <div className="pv-cpi-matrix" onMouseLeave={() => setHoveredState(null)}>
+            {visibleStrata.map((s) => {
+              const rBucket = normalizeStratumStatus(s.rural_status);
+              const uBucket = normalizeStratumStatus(s.urban_status);
+              const activeSectors = (rBucket !== 'none' ? 1 : 0) + (uBucket !== 'none' ? 1 : 0);
+              const doneHere = (rBucket === 'completed' ? 1 : 0) + (uBucket === 'completed' ? 1 : 0);
+              const statePct = calcPct(doneHere, activeSectors);
+              const isHovered = hoveredState === s.state_code;
+              const ruralCellKey = `${s.state_code}-rural`;
+              const urbanCellKey = `${s.state_code}-urban`;
+
+              return (
+                <div
+                  key={s.state_code}
+                  className={`pv-state-card${isHovered ? ' is-hovered' : ''}`}
+                  onMouseEnter={() => setHoveredState(s.state_code)}
+                >
+                  {isHovered ? (
+                    <div className="pv-tooltip pv-tooltip--state" role="tooltip">
+                      <div className="pv-tooltip-title">
+                        {s.state_name} <span className="tabular">({s.state_code})</span>
+                      </div>
+                      <div className="pv-tooltip-row tabular">
+                        <span>
+                          Rural:{' '}
+                          <strong>
+                            {rBucket === 'none' ? 'N/A' : STATUS_META[rBucket].label}
+                          </strong>
+                        </span>
+                        <span>·</span>
+                        <span>
+                          Urban:{' '}
+                          <strong>
+                            {uBucket === 'none' ? 'N/A' : STATUS_META[uBucket].label}
+                          </strong>
+                        </span>
+                      </div>
+                      <div className="pv-tooltip-row tabular">
+                        Coverage: {doneHere}/{activeSectors} ({fmtPct(statePct)})
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="pv-state-info">
+                    <span className="pv-state-code tabular">{s.state_code}</span>
+                    <span className="pv-state-name">{s.state_name}</span>
+                  </div>
+
+                  <div className="pv-state-cells">
+                    <button
+                      type="button"
+                      disabled={rBucket !== 'queued' || !s.rural_task_id || !onCopyTaskPrompt}
+                      className={`pv-sector-cell pv-sector-cell--${rBucket}${copiedCellKey === ruralCellKey ? ' is-copied' : ''}`}
+                      onFocus={() => setHoveredState(s.state_code)}
+                      onBlur={() => setHoveredState(null)}
+                      onClick={() =>
+                        handleSectorCopy(
+                          s.rural_task_id,
+                          ruralCellKey,
+                          `${s.state_name} (rural)`,
+                          rBucket,
+                        )
+                      }
+                      aria-label={`${s.state_name} Rural: ${rBucket === 'none' ? 'Not applicable' : STATUS_META[rBucket].label}${rBucket === 'queued' && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
+                      title={
+                        rBucket === 'queued' && s.rural_task_id
+                          ? `Click to copy 1-line prompt for ${s.state_name} (rural)`
+                          : `${s.state_name} Rural: ${rBucket === 'none' ? 'N/A' : STATUS_META[rBucket].label}`
+                      }
+                    >
+                      {copiedCellKey === ruralCellKey ? (
+                        <Check size={11} aria-hidden="true" />
+                      ) : rBucket === 'none' ? (
+                        '—'
+                      ) : (
+                        'R'
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={uBucket !== 'queued' || !s.urban_task_id || !onCopyTaskPrompt}
+                      className={`pv-sector-cell pv-sector-cell--${uBucket}${copiedCellKey === urbanCellKey ? ' is-copied' : ''}`}
+                      onFocus={() => setHoveredState(s.state_code)}
+                      onBlur={() => setHoveredState(null)}
+                      onClick={() =>
+                        handleSectorCopy(
+                          s.urban_task_id,
+                          urbanCellKey,
+                          `${s.state_name} (urban)`,
+                          uBucket,
+                        )
+                      }
+                      aria-label={`${s.state_name} Urban: ${uBucket === 'none' ? 'Not applicable' : STATUS_META[uBucket].label}${uBucket === 'queued' && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
+                      title={
+                        uBucket === 'queued' && s.urban_task_id
+                          ? `Click to copy 1-line prompt for ${s.state_name} (urban)`
+                          : `${s.state_name} Urban: ${uBucket === 'none' ? 'N/A' : STATUS_META[uBucket].label}`
+                      }
+                    >
+                      {copiedCellKey === urbanCellKey ? (
+                        <Check size={11} aria-hidden="true" />
+                      ) : uBucket === 'none' ? (
+                        '—'
+                      ) : (
+                        'U'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            {strata.length === 0
+              ? 'State and UT strata coverage will appear here once CPI tasks are loaded.'
+              : 'No states match the selected filter.'}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

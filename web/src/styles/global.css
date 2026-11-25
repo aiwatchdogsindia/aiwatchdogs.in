@@ -398,6 +398,12 @@ code.font-mono {
   font-weight: 500;
 }
 
+.mobile-nav-agent {
+  padding: 6px 0 2px;
+  display: flex;
+  align-items: center;
+}
+
 .mobile-nav-socials {
   margin-top: 14px;
   padding-top: 12px;
@@ -408,6 +414,10 @@ code.font-mono {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.mobile-social-grid .mobile-social-link:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .mobile-social-link {
@@ -668,12 +678,15 @@ code.font-mono {
   font-size: 12px;
   font-weight: 400;
   letter-spacing: 0.02em;
+  line-height: 1.35;
   padding: 2px 8px;
   border-radius: var(--r-4);
   background: var(--sunk-2);
   color: var(--ink-2);
   border: 1px solid var(--rule);
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .tag-method {
@@ -3243,7 +3256,7 @@ code.font-mono {
 
 .community-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 16px;
 }
 
@@ -3411,15 +3424,16 @@ code.font-mono {
   position: relative;
   background: var(--sunk-2);
   border-top: 1px solid var(--rule-verify);
-  padding: 65px var(--gutter) 0;
+  padding: 56px var(--gutter) 0;
   font-size: 14px;
   color: var(--ink-3);
 }
 
 .foot-top {
   display: grid;
-  grid-template-columns: minmax(0, 322px) minmax(0, 0.9fr) minmax(0, 0.9fr) minmax(0, 1.26fr) minmax(0, 1.12fr);
-  gap: 24px;
+  grid-template-columns: minmax(272px, 1.32fr) minmax(140px, 0.85fr) minmax(150px, 0.88fr) minmax(210px, 1.12fr) minmax(220px, 1.13fr);
+  gap: 28px 28px;
+  align-items: start;
   padding-bottom: 40px;
 }
 
@@ -3427,21 +3441,32 @@ code.font-mono {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-width: 0;
+}
+
+.foot-blurb {
+  margin: 0;
+  line-height: 1.55;
+  font-size: 13.5px;
+  color: var(--ink-3);
+  max-width: 30ch;
 }
 
 .foot-brand-row {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  align-self: flex-start;
 }
 
 .foot-brand {
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 400;
-  font-size: 29px;
-  line-height: 1;
+  font-size: 23px;
+  line-height: 1.1;
   color: var(--ink);
+  white-space: nowrap;
 }
 
 .foot-live {
@@ -3462,6 +3487,11 @@ code.font-mono {
   white-space: nowrap;
 }
 
+.foot-col {
+  min-width: 0;
+  padding-top: 4px;
+}
+
 .foot-col h4 {
   margin: 0 0 14px;
   font-family: var(--font-serif);
@@ -3470,11 +3500,13 @@ code.font-mono {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-4);
+  line-height: 1.25;
 }
 
 .foot-links {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 10px;
 }
 
@@ -3486,9 +3518,20 @@ code.font-mono {
   text-align: left;
   color: var(--ink-2);
   font-size: 14px;
+  line-height: 1.4;
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.foot-links button svg,
+.foot-links a svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+
+.foot-copy-btn {
+  white-space: nowrap;
 }
 
 .foot-links a:hover,
@@ -3501,7 +3544,7 @@ code.font-mono {
 .foot-social-links {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .foot-social-item {
@@ -3576,21 +3619,29 @@ code.font-mono {
 
 .foot-bottom {
   border-top: 1px solid var(--rule-verify);
-  padding: 22px 0;
+  padding: 20px 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px 24px;
-  flex-wrap: wrap;
+  gap: 16px 32px;
   font-size: 12.5px;
+  line-height: 1.5;
   color: var(--ink-4);
+}
+
+.foot-bottom-legal {
+  margin: 0;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 78ch;
 }
 
 .foot-bottom-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 /* =========================================================================
@@ -3760,6 +3811,7 @@ code.font-mono {
   overflow: hidden;
 }
 
+.kpi-strip.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .kpi-strip.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .kpi-strip.cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
@@ -4385,6 +4437,28 @@ code.font-mono {
     grid-column: auto;
     max-width: none;
   }
+  .foot-col {
+    padding-top: 0;
+  }
+  .foot-brand {
+    white-space: normal;
+  }
+  .foot-live {
+    white-space: normal;
+  }
+  .foot-copy-btn {
+    white-space: normal;
+  }
+  .foot-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+  .foot-bottom-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
   .community-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4396,6 +4470,7 @@ code.font-mono {
     grid-template-columns: minmax(0, 1fr);
   }
   .kpi-strip,
+  .kpi-strip.cols-3,
   .kpi-strip.cols-4,
   .kpi-strip.cols-5 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5585,19 +5660,27 @@ code.font-mono {
   letter-spacing: 0 !important;
 }
 
-/* Masthead: large emblem. The artwork has ~11% blank margin on each side, so the
-   negative margins line the map itself up with the page gutter and the text. */
+/* Masthead: large emblem. Keep zero vertical negative margins on .brand-logo so
+   nothing overflows the .brand box and keyboard focus outlines stay straight. */
 .site-header {
-  padding-top: 19px;
-  padding-bottom: 8px;
+  padding-top: 17px;
+  padding-bottom: 6px;
 }
 .brand {
   gap: 4px;
 }
+.brand:focus {
+  outline: none;
+}
+.brand:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+  border-radius: var(--r-6);
+}
 .brand-logo {
   width: 128px;
   height: 128px;
-  margin: -2px 4px -2px 0;
+  margin: 0 4px 0 0;
 }
 .brand-text {
   gap: 5px;

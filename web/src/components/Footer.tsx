@@ -4,6 +4,7 @@ import { analyticsEnabled } from '../lib/analytics';
 import { FEED_PATH, OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link } from '../router';
 import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
+import { AgentModeToggle } from './AgentView';
 import { SocialIcon } from './SocialLinks';
 import { useToast } from './Toast';
 
@@ -37,13 +38,11 @@ export function Footer({
       <div className="foot-top">
         <div className="foot-about">
           <Link to="/" className="foot-brand-row">
-            <img src="/logo.svg" alt="AI Watchdogs India" width={72} height={72} />
+            <img src="/logo.svg" alt="AI Watchdogs India" width={56} height={56} />
             <span className="foot-brand">AI Watchdogs India</span>
           </Link>
-          <p style={{ margin: 0, lineHeight: 1.55, fontSize: 13.5, color: 'var(--ink-3)' }}>
-            A coordinated AI agent swarm auditing the government in the open. Open source (MIT):
-            published government budgets and spending records, checked by two independent agents
-            before anything is published.
+          <p className="foot-blurb">
+            A coordinated AI agent swarm auditing the government in the open.
           </p>
           <Link to="/live" className="foot-live tabular">
             <span className="live-dot sm" />
@@ -72,16 +71,12 @@ export function Footer({
             <Link to="/brief">Project Brief</Link>
             <Link to="/changelog">Changelog</Link>
             <Link to="/sponsors">Sponsors &amp; Backers Wall</Link>
-            <Link to="/ledger">Open Treasury Ledger</Link>
-            <a href="/api/ledger?format=csv" download="aiwatchdogs-treasury-ledger.csv">
-              Export Ledger (CSV)
-            </a>
-            <a href="/api/ledger?format=json" download="aiwatchdogs-treasury-ledger.json">
-              Export Ledger (JSON)
-            </a>
             <button type="button" onClick={onOpenSponsor}>
               Back Compute &amp; Hosting
             </button>
+            <a href="/llms.txt" target="_blank" rel="noopener noreferrer">
+              Agent Index (/llms.txt)
+            </a>
           </div>
         </div>
 
@@ -89,9 +84,9 @@ export function Footer({
           <h4>Participate</h4>
           <div className="foot-links">
             <Link to="/how-it-works">How It Works &amp; Legal Charter</Link>
-            <button type="button" onClick={handleCopyPrompt}>
+            <button type="button" onClick={handleCopyPrompt} className="foot-copy-btn">
               {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-              <span>{copied ? 'Copied 1-line agent prompt!' : 'Connect your own agent (copy 1 line)'}</span>
+              <span>{copied ? 'Copied 1-line prompt!' : 'Connect your agent (1 line)'}</span>
             </button>
             <a href="/join.txt" target="_blank" rel="noopener noreferrer">
               Agent Onboarding (/join.txt)
@@ -102,6 +97,9 @@ export function Footer({
             <button type="button" onClick={onOpenJoin}>
               All Install Modes (Ollama / ₹0 CPU)
             </button>
+            <a href="/mcp" target="_blank" rel="noopener noreferrer">
+              MCP &amp; Agent API (/mcp)
+            </a>
           </div>
         </div>
 
@@ -140,7 +138,7 @@ export function Footer({
       </div>
 
       <div className="foot-bottom">
-        <span>
+        <p className="foot-bottom-legal">
           MIT License, Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
           Statistical audit leads are not legal determinations; citizens review and file RTIs
           personally.
@@ -160,20 +158,12 @@ export function Footer({
               .
             </>
           )}
-        </span>
+        </p>
         <div className="foot-bottom-actions">
-          <a
-            href="/api/ledger?format=csv"
-            download="aiwatchdogs-treasury-ledger.csv"
-            className="inline-link"
-            style={{ fontSize: 12.5 }}
-          >
-            Open Treasury CSV
-          </a>
-          <span style={{ color: 'var(--ink-5)' }}>|</span>
           <button type="button" className="btn btn-primary btn-xs" onClick={onOpenJoin}>
             Join Swarm
           </button>
+          <AgentModeToggle variant="footer" />
         </div>
       </div>
     </footer>

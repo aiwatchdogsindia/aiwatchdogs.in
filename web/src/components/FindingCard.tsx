@@ -1,7 +1,8 @@
 import { AgentBadge } from './AgentLogos';
 import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
-import { formatInr, formatRelativeTime, isUnverifiedStatus, statusMeta } from '../utils';
+import { formatInr, formatRelativeTime, isUnverifiedStatus } from '../utils';
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -10,7 +11,8 @@ interface FindingCardProps {
 }
 
 export function FindingCard({ finding, onSelect, compact = false }: FindingCardProps) {
-  const sm = statusMeta(finding.status);
+  const sm = getFindingTag(finding.status);
+  const workTag = getWorkTypeTag(undefined, finding.methodology_code);
   const unverified = isUnverifiedStatus(finding.status);
   const confirmCount =
     finding.confirm_count ?? finding.verifications?.filter((v) => v.verdict === 'confirm').length ?? 0;
@@ -46,31 +48,31 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span className={sm.badgeClass} title={sm.description}>
-            {finding.status === 'verified' ? (
+            {sm.id === 'verified' ? (
               <ShieldCheck size={12} />
-            ) : finding.status === 'disputed' ||
-              finding.status === 'retracted_false_positive' ||
-              finding.status === 'under_editorial_review' ||
-              finding.status === 'corrected' ||
-              isQuarantined ? (
+            ) : sm.tone === 'disputed' || isQuarantined ? (
               <ShieldAlert size={12} />
-            ) : finding.status === 'cleared' || finding.status === 'resolved_explained' ? (
+            ) : sm.id === 'cleared' ? (
               <CheckCircle2 size={12} />
             ) : (
               <CircleDashed size={12} />
             )}
             <span>{sm.label}</span>
           </span>
-          <span className="tag-mono tag-method">{finding.methodology_code}</span>
-          {hasCorrections && (
-            <span className="badge badge-disputed">
+          <span className={workTag.badgeClass} title={`${finding.methodology_code}: ${workTag.description}`}>
+            {workTag.label}
+          </span>
+          {hasCorrections && sm.id !== 'corrected' && (
+            <span className={FINDING_TAGS.corrected.badgeClass} title={FINDING_TAGS.corrected.description}>
               {finding.corrections && finding.corrections.length > 0
-                ? `Correction Log (${finding.corrections.length})`
-                : 'Editorial Notice'}
+                ? `${FINDING_TAGS.corrected.label} (${finding.corrections.length})`
+                : FINDING_TAGS.corrected.label}
             </span>
           )}
           {!isQuarantined && (finding.has_rti_draft || finding.rti_draft) && (
-            <span className="badge badge-rti">RTI Draft Ready</span>
+            <span className={ACTION_TAGS.rti_draft.badgeClass} title={ACTION_TAGS.rti_draft.description}>
+              {ACTION_TAGS.rti_draft.label}
+            </span>
           )}
         </div>
 
@@ -83,10 +85,10 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           }}
         >
           {isQuarantined
-            ? 'Withheld'
+            ? FINDING_TAGS.withheld.label
             : finding.monetary_exposure_inr
               ? formatInr(finding.monetary_exposure_inr)
-              : finding.amount_label || 'Disclosure Lead'}
+              : finding.amount_label || 'Disclosure lead'}
         </div>
       </div>
 

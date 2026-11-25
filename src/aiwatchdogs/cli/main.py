@@ -257,6 +257,12 @@ def _make_event_printer() -> Any:
                 "[yellow]The hub would not hand out another task right now (address rate limit, or this handle "
                 "already holds two unfinished tasks). Nothing is lost; run again in a few minutes.[/yellow]"
             )
+        elif event == "task_claim_rejected":
+            status_code = data.get("status_code")
+            label = "Task not found" if status_code == 404 else "Task unavailable"
+            tid = _safe_rich(data.get("task_id") or "", max_len=128)
+            detail = _safe_rich(data.get("detail") or "The hub could not claim that task.", max_len=240)
+            console.print(f"[yellow]{label} ({tid}): {detail}[/yellow]")
         elif event == "sources_unreachable":
             console.print(
                 "[yellow]Stopping: this machine could not download the official source files "
@@ -360,7 +366,17 @@ _HANDLE_OPTION_HELP = "Which saved agent to use, when several are saved on this 
 
 @app.command()
 def join(
-    project: str | None = typer.Option(None, "--project", help="Use gov-in-public-information to volunteer for website review."),
+    project: str | None = typer.Option(
+        None,
+        "--project",
+        help="Optional project slug (e.g. gov-in-public-information, police-finances).",
+    ),
+    task_id: str | None = typer.Option(
+        None,
+        "--task-id",
+        "--task",
+        help="Claim and run one specific task ID (caps this run to 1 task).",
+    ),
     hub: str = typer.Option(
         DEFAULT_HUB_URL,
         "--hub",
@@ -552,23 +568,26 @@ def join(
 
     cfg_path = _resolve_config_path(cfg.handle)
     daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
+    target_task_id = (task_id or "").strip() or None
+    effective_run_max = 1 if target_task_id else cfg.max_tasks
     _render_outbound_destinations(
         cfg.normalized_hub_url,
         selected_prov,
         allow_paid_provider=cfg.allow_paid_provider,
         max_usd=cfg.max_usd,
         daily_max_usd=cfg.effective_daily_max_usd,
-        max_tasks=cfg.max_tasks,
+        max_tasks=effective_run_max,
         daily_spent_usd=daily_spent,
     )
 
     if dry_run:
+        task_note = f" · Task ID: [bold]{_safe_rich(target_task_id)}[/bold]" if target_task_id else ""
         console.print(
             Panel(
                 f"[bold cyan]Dry-run complete.[/bold cyan] No Hub requests were sent and "
                 f"[bold]{cfg_path}[/bold] was not modified.\n"
                 f"Handle: [bold]{cfg.handle}[/bold] · Token reuse: "
-                f"{'matching origin+handle' if reused_token else 'new registration'}",
+                f"{'matching origin+handle' if reused_token else 'new registration'}{task_note}",
                 border_style="cyan",
             )
         )
@@ -607,7 +626,15 @@ def join(
 
         _release_on_termination()
         try:
-            summary = runner.run_loop(max_tasks=cfg.max_tasks, continuous=continuous, **({"preferred_mission": project} if project else {}))
+            run_kwargs: dict[str, Any] = {
+                "max_tasks": effective_run_max,
+                "continuous": False if target_task_id else continuous,
+            }
+            if project:
+                run_kwargs["preferred_mission"] = project
+            if target_task_id:
+                run_kwargs["task_id"] = target_task_id
+            summary = runner.run_loop(**run_kwargs)
         except KeyboardInterrupt:
             console.print("\n[yellow]Stopped. Any task in progress was handed back to the queue.[/yellow]")
             return
@@ -651,7 +678,13 @@ def run(
     coding_agent_model: str | None = typer.Option(
         None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
     ),
-    mission: str | None = typer.Option(None, "--project", "--mission", help="Use gov-in-public-information for the website audit. Other public projects follow the team's priorities."),
+    mission: str | None = typer.Option(None, "--project", "--mission", help="Optional project slug (e.g. gov-in-public-information, police-finances)."),
+    task_id: str | None = typer.Option(
+        None,
+        "--task-id",
+        "--task",
+        help="Claim and run one specific task ID (caps this run to 1 task).",
+    ),
     allow_insecure_http: bool = typer.Option(
         False,
         "--allow-insecure-http",
@@ -740,6 +773,9 @@ def run(
         allow_paid_provider=cfg.allow_paid_provider,
     )
 
+    target_task_id = (task_id or "").strip() or None
+    effective_run_max = 1 if target_task_id else cfg.max_tasks
+
     if dry_run:
         daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
         _render_outbound_destinations(
@@ -748,14 +784,15 @@ def run(
             allow_paid_provider=cfg.allow_paid_provider,
             max_usd=cfg.max_usd,
             daily_max_usd=cfg.effective_daily_max_usd,
-            max_tasks=cfg.max_tasks,
+            max_tasks=effective_run_max,
             daily_spent_usd=daily_spent,
         )
+        task_note = f" · Task ID: [bold]{_safe_rich(target_task_id)}[/bold]" if target_task_id else ""
         console.print(
             Panel(
                 f"[bold cyan]Dry-run complete.[/bold cyan] Handle: [bold]{cfg.handle}[/bold] · "
-                f"Mode: [bold]{cfg.mode}[/bold] · Continuous: [bold]{continuous}[/bold] · "
-                f"Project filter: [bold]{mission or 'any'}[/bold]",
+                f"Mode: [bold]{cfg.mode}[/bold] · Continuous: [bold]{False if target_task_id else continuous}[/bold] · "
+                f"Project filter: [bold]{mission or 'any'}[/bold]{task_note}",
                 border_style="cyan",
             )
         )
@@ -775,9 +812,10 @@ def run(
         _release_on_termination()
         try:
             summary = runner.run_loop(
-                max_tasks=cfg.max_tasks,
-                continuous=continuous,
+                max_tasks=effective_run_max,
+                continuous=False if target_task_id else continuous,
                 preferred_mission=mission,
+                task_id=target_task_id,
                 save_on_register=save_on_reg,
             )
         except KeyboardInterrupt:

@@ -14,6 +14,7 @@ import type {
   MissionRung,
   PaginatedFindings,
   PeerVerification,
+  ProjectVisualSummary,
   PublicSource,
   RecordEvent,
   RtiDraft,
@@ -541,6 +542,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     priority: Number(raw.priority ?? 1),
     total_tasks: Number(raw.total_tasks ?? 0),
     completed_tasks: Number(raw.completed_tasks ?? 0),
+    claimed_tasks: raw.claimed_tasks !== undefined ? Number(raw.claimed_tasks) : undefined,
     queued_tasks: raw.queued_tasks !== undefined ? Number(raw.queued_tasks) : undefined,
     progress_pct: raw.progress_pct !== undefined ? Number(raw.progress_pct) : undefined,
     verified_findings_count: Number(raw.verified_findings_count ?? 0),
@@ -602,6 +604,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
           title: t.title ? String(t.title) : undefined,
           status: String(t.status || 'queued'),
           claimed_by: (t.claimed_by_handle || t.claimed_by || null) as string | null,
+          claimed_by_handle: (t.claimed_by_handle || null) as string | null,
           depends_on: Array.isArray(t.depends_on) ? t.depends_on.map(String) : undefined,
           attempt_count: Number(t.attempt_count ?? 0),
           created_at: t.created_at ? String(t.created_at) : undefined,
@@ -611,6 +614,16 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
           usage: t.usage ? normalizeUsage(asRecord(t.usage)) : undefined,
         }))
       : undefined,
+    contributors_all: raw.contributors_all
+      ? asArray<Record<string, unknown>>(raw.contributors_all).map(normalizeAgent)
+      : undefined,
+    contributors_hour: raw.contributors_hour
+      ? asArray<Record<string, unknown>>(raw.contributors_hour).map(normalizeAgent)
+      : undefined,
+    visual_summary:
+      raw.visual_summary && typeof raw.visual_summary === 'object' && !Array.isArray(raw.visual_summary)
+        ? (raw.visual_summary as ProjectVisualSummary)
+        : undefined,
   };
 }
 
@@ -995,6 +1008,9 @@ export const api = {
         sources: raw.sources ?? m.sources,
         findings: raw.findings ?? m.findings,
         tasks: raw.tasks ?? m.tasks,
+        contributors_all: raw.contributors_all ?? m.contributors_all,
+        contributors_hour: raw.contributors_hour ?? m.contributors_hour,
+        visual_summary: raw.visual_summary ?? m.visual_summary,
       });
     }
     return normalizeMission(raw);

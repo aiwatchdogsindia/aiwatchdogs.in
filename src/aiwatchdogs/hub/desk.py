@@ -179,6 +179,46 @@ _SHARED_DATASET_NOTES: dict[str, str] = {
     "ocds-cost-escalation-watch": "Shares the 43,669-release Assam OCDS JSON package with M3; deduplicated in coverage totals.",
 }
 
+_W1_CHECKPOINT_DEFS: tuple[tuple[str, str], ...] = (
+    ("contact_link", "Contact link"),
+    ("email", "Email"),
+    ("postal_address", "Postal address"),
+    ("telephone", "Telephone"),
+    ("about_link", "About link"),
+    ("updated_date", "Updated date"),
+    ("help_link", "Help link"),
+)
+_W1_REASON_KEYS: tuple[str, ...] = (
+    "robots_restricted",
+    "fetch_failed",
+    "unsupported_page",
+    "contact_unavailable",
+)
+_CPI1_ROLE_DEFS: tuple[tuple[str, str], ...] = (
+    ("collection", "State & UT price collection"),
+    ("method", "Basket & methodology specs"),
+    ("specialist", "Specialist sectors"),
+    ("review", "Coverage & index review"),
+)
+_CPI1_STRATUM_TITLE_RE = re.compile(r"^(.+?)\s*\((?:rural|urban)\)", re.IGNORECASE)
+_P1_DELHI_UT_RE = re.compile(
+    r"\b(?:delhi|jammu and kashmir|j&k|puducherry|andaman|nicobar|chandigarh|"
+    r"dadra|nagar haveli|daman|diu|ladakh|lakshadweep)\b",
+    re.IGNORECASE,
+)
+_P1_UNION_CENTRAL_RE = re.compile(
+    r"(?:police-union-|\bunion demand 51\b|\bcentral reserve police\b|\bborder security force\b|"
+    r"\bcentral industrial security\b|\bindo-tibetan border\b|\bsashastra seema bal\b|"
+    r"\bassam rifles\b|\bnational security guard\b|\bspecial protection group\b|"
+    r"\bintelligence bureau\b|\bcentral police organisations\b|\bcapf\b|\(union\))",
+    re.IGNORECASE,
+)
+_P1_GROUP_ORDER: tuple[str, ...] = (
+    "Union & Central Forces",
+    "Delhi & Union Territories",
+    "State Police",
+)
+
 
 def _parse_iso(ts: str | None) -> datetime | None:
     if not ts:
@@ -533,6 +573,7 @@ class DeskService:
     def _serialize_mission(
         row: Any,
         queued_tasks: int = 0,
+        claimed_tasks: int = 0,
         peer_review_count: int = 0,
         rungs: list[dict[str, Any]] | None = None,
         unique_coverage_inr: float | None = None,
@@ -572,6 +613,7 @@ class DeskService:
             "priority": row["priority"],
             "total_tasks": total,
             "completed_tasks": completed,
+            "claimed_tasks": int(claimed_tasks),
             "queued_tasks": queued_tasks,
             "progress_pct": progress_pct,
             "verified_findings_count": int(row["verified_findings_count"] or 0),
@@ -2093,12 +2135,16 @@ class DeskService:
     def _fetch_missions_with_coverage(
         self, conn: Any
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        queued_map = {
-            r["mission_id"]: int(r["c"])
-            for r in conn.execute(
-                "SELECT mission_id, COUNT(*) AS c FROM tasks WHERE status = 'queued' GROUP BY mission_id"
-            ).fetchall()
-        }
+        queued_map: dict[str, int] = {}
+        claimed_map: dict[str, int] = {}
+        for r in conn.execute(
+            "SELECT mission_id, status, COUNT(*) AS c FROM tasks "
+            "WHERE status IN ('queued', 'claimed') GROUP BY mission_id, status"
+        ).fetchall():
+            if r["status"] == "queued":
+                queued_map[r["mission_id"]] = int(r["c"])
+            elif r["status"] == "claimed":
+                claimed_map[r["mission_id"]] = int(r["c"])
         pr_map = {
             r["mission_id"]: int(r["c"])
             for r in conn.execute(
@@ -2127,6 +2173,7 @@ class DeskService:
             self._serialize_mission(
                 r,
                 queued_tasks=queued_map.get(r["id"], 0),
+                claimed_tasks=claimed_map.get(r["id"], 0),
                 peer_review_count=pr_map.get(r["id"], 0),
                 rungs=rungs_map.get(r["id"], []),
                 unique_coverage_inr=mission_unique_inr.get(str(r["id"]), 0.0),
@@ -2150,6 +2197,528 @@ class DeskService:
             "coverage_summary": coverage_summary,
         }
 
+    def _compute_mission_contributors(
+        self, conn: Any, mission_id: str
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        cutoff = (
+            (datetime.now(timezone.utc) - timedelta(hours=1))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        all_handles: set[str] = set()
+        hour_handles: set[str] = set()
+
+        tasks_all: dict[str, int] = {}
+        tasks_hour: dict[str, int] = {}
+        cleared_task_ids_all: dict[str, set[str]] = {}
+        cleared_task_ids_hour: dict[str, set[str]] = {}
+
+        for tr in conn.execute(
+            "SELECT id, claimed_by_handle, task_type, completed_at, updated_at, output_json "
+            "FROM tasks WHERE mission_id = ? AND status = 'completed' AND claimed_by_handle IS NOT NULL",
+            (mission_id,),
+        ).fetchall():
+            h = str(tr["claimed_by_handle"] or "").strip()
+            if not h:
+                continue
+            all_handles.add(h)
+            tasks_all[h] = tasks_all.get(h, 0) + 1
+            ts = str(tr["completed_at"] or tr["updated_at"] or "")
+            in_hour = bool(ts and ts >= cutoff)
+            if in_hour:
+                hour_handles.add(h)
+                tasks_hour[h] = tasks_hour.get(h, 0) + 1
+            if tr["task_type"] != "peer_verify" and tr["output_json"]:
+                out = loads_json(tr["output_json"], {})
+                if isinstance(out, dict) and out.get("outcome") == "cleared":
+                    tid = str(tr["id"])
+                    cleared_task_ids_all.setdefault(h, set()).add(tid)
+                    if in_hour:
+                        cleared_task_ids_hour.setdefault(h, set()).add(tid)
+
+        findings_all: dict[str, int] = {}
+        findings_hour: dict[str, int] = {}
+        verified_all: dict[str, int] = {}
+        verified_hour: dict[str, int] = {}
+        for fr in conn.execute(
+            "SELECT submitted_by, status, created_at, verified_at FROM findings "
+            "WHERE mission_id = ? AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined'",
+            (mission_id,),
+        ).fetchall():
+            h = str(fr["submitted_by"] or "").strip()
+            if not h:
+                continue
+            all_handles.add(h)
+            findings_all[h] = findings_all.get(h, 0) + 1
+            if fr["created_at"] and str(fr["created_at"]) >= cutoff:
+                hour_handles.add(h)
+                findings_hour[h] = findings_hour.get(h, 0) + 1
+            if fr["status"] == "verified":
+                verified_all[h] = verified_all.get(h, 0) + 1
+                v_ts = str(fr["verified_at"] or fr["created_at"] or "")
+                if v_ts and v_ts >= cutoff:
+                    hour_handles.add(h)
+                    verified_hour[h] = verified_hour.get(h, 0) + 1
+
+        verifs_all: dict[str, int] = {}
+        verifs_hour: dict[str, int] = {}
+        for vr in conn.execute(
+            "SELECT pv.verifier_handle, pv.created_at "
+            "FROM peer_verifications pv "
+            "JOIN findings f ON f.id = pv.finding_id "
+            "WHERE f.mission_id = ? AND COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'",
+            (mission_id,),
+        ).fetchall():
+            h = str(vr["verifier_handle"] or "").strip()
+            if not h:
+                continue
+            all_handles.add(h)
+            verifs_all[h] = verifs_all.get(h, 0) + 1
+            if vr["created_at"] and str(vr["created_at"]) >= cutoff:
+                hour_handles.add(h)
+                verifs_hour[h] = verifs_hour.get(h, 0) + 1
+
+        se_all: dict[str, int] = {}
+        se_hour: dict[str, int] = {}
+        for sr in conn.execute(
+            """
+            SELECT se.agent_handle, se.event_type, se.points, se.ref_id, se.created_at
+            FROM score_events se
+            WHERE (
+                se.event_type IN ('finding_submitted', 'finding_verified_author_bonus')
+                AND EXISTS (
+                    SELECT 1 FROM findings f
+                    WHERE f.id = se.ref_id AND f.mission_id = ?
+                      AND COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
+                )
+            ) OR (
+                se.event_type = 'peer_verification'
+                AND EXISTS (
+                    SELECT 1 FROM peer_verifications pv
+                    JOIN findings f ON f.id = pv.finding_id
+                    WHERE pv.id = se.ref_id AND f.mission_id = ?
+                      AND COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
+                )
+            ) OR (
+                se.event_type = 'cleared_scan'
+                AND EXISTS (
+                    SELECT 1 FROM tasks t
+                    WHERE t.id = se.ref_id AND t.mission_id = ?
+                )
+            )
+            """,
+            (mission_id, mission_id, mission_id),
+        ).fetchall():
+            h = str(sr["agent_handle"] or "").strip()
+            if not h:
+                continue
+            pts = int(sr["points"] or 0)
+            all_handles.add(h)
+            se_all[h] = se_all.get(h, 0) + pts
+            in_hour = bool(sr["created_at"] and str(sr["created_at"]) >= cutoff)
+            if in_hour:
+                hour_handles.add(h)
+                se_hour[h] = se_hour.get(h, 0) + pts
+            if sr["event_type"] == "cleared_scan" and sr["ref_id"]:
+                ref_id = str(sr["ref_id"])
+                cleared_task_ids_all.setdefault(h, set()).add(ref_id)
+                if in_hour:
+                    cleared_task_ids_hour.setdefault(h, set()).add(ref_id)
+
+        if not all_handles:
+            return [], []
+
+        agent_rows: dict[str, Any] = {}
+        sorted_handles = sorted(all_handles)
+        for i in range(0, len(sorted_handles), 200):
+            chunk = sorted_handles[i : i + 200]
+            ph = ",".join("?" for _ in chunk)
+            for ar in conn.execute(f"SELECT * FROM agents WHERE handle IN ({ph})", chunk).fetchall():
+                agent_rows[str(ar["handle"])] = ar
+
+        def _build_entry(handle: str, *, hourly: bool) -> dict[str, Any]:
+            t_done = tasks_hour.get(handle, 0) if hourly else tasks_all.get(handle, 0)
+            f_sub = findings_hour.get(handle, 0) if hourly else findings_all.get(handle, 0)
+            f_ver = verified_hour.get(handle, 0) if hourly else verified_all.get(handle, 0)
+            v_done = verifs_hour.get(handle, 0) if hourly else verifs_all.get(handle, 0)
+            c_sub = (
+                len(cleared_task_ids_hour.get(handle, ()))
+                if hourly
+                else len(cleared_task_ids_all.get(handle, ()))
+            )
+            all_pts = se_all.get(handle, 0)
+            all_score = all_pts if all_pts > 0 else tasks_all.get(handle, 0)
+            hr_pts = se_hour.get(handle, 0)
+            hr_score = hr_pts if hr_pts > 0 else tasks_hour.get(handle, 0)
+            eff_score = hr_score if hourly else all_score
+
+            ar = agent_rows.get(handle)
+            if ar is not None:
+                base = self._serialize_agent(
+                    ar,
+                    window_score=eff_score,
+                    all_time_score=all_score,
+                    hourly_event_score=hr_score,
+                )
+            else:
+                base = {
+                    "id": handle,
+                    "agent_id": handle,
+                    "handle": handle,
+                    "display_name": handle,
+                    "provider": "rule-engine",
+                    "model": "deterministic-cpu-v1",
+                    "coding_agent": "",
+                    "coding_agent_model": "",
+                    "mode": "auto",
+                    "region": "IN",
+                    "capabilities": [],
+                    "status": "idle",
+                    "is_active": False,
+                    "heartbeat_age_seconds": 999999,
+                    "current_task_id": None,
+                    "joined_at": None,
+                    "last_heartbeat_at": None,
+                    "profile_url": f"/a/{handle}",
+                }
+            base["tasks_completed"] = int(t_done)
+            base["findings_submitted"] = int(f_sub)
+            base["findings_verified"] = int(f_ver)
+            base["verifications_done"] = int(v_done)
+            base["cleared_submitted"] = int(c_sub)
+            base["compute_score"] = int(all_score)
+            base["score"] = int(eff_score)
+            base["window_score"] = int(eff_score)
+            base["hourly_score"] = int(hr_score)
+            return base
+
+        contributors_all = [_build_entry(h, hourly=False) for h in all_handles]
+        contributors_all.sort(key=lambda c: (-c["score"], -c["tasks_completed"], c["handle"]))
+
+        contributors_hour = [_build_entry(h, hourly=True) for h in hour_handles]
+        contributors_hour.sort(key=lambda c: (-c["score"], -c["tasks_completed"], c["handle"]))
+
+        return contributors_all[:100], contributors_hour[:100]
+
+    @staticmethod
+    def _classify_p1_group(task_id: str, title: str, jurisdiction: str) -> str:
+        combined = f"{title} {jurisdiction}"
+        if _P1_DELHI_UT_RE.search(combined):
+            return "Delhi & Union Territories"
+        if _P1_UNION_CENTRAL_RE.search(f"{task_id} {combined}"):
+            return "Union & Central Forces"
+        return "State Police"
+
+    def _build_visual_summary(
+        self,
+        conn: Any,
+        *,
+        mission_row: Any,
+        mission: dict[str, Any],
+        parsed_tasks: list[tuple[Any, dict[str, Any]]],
+        findings: list[dict[str, Any]],
+        cleared_findings_count: int,
+    ) -> dict[str, Any]:
+        methodology_code = str(mission_row["methodology_code"] or "").strip()
+        is_inflation = methodology_code == INFLATION_METHODOLOGY
+        completed_ids = {str(t["id"]) for t, _ in parsed_tasks if t["status"] == "completed"}
+
+        completed_cnt = 0
+        claimed_cnt = 0
+        queued_cnt = 0
+        waiting_cnt = 0
+        audits_done = 0
+        audits_total = 0
+        checks_done = 0
+        checks_total = 0
+
+        effective_status_by_id: dict[str, str] = {}
+        for t, t_payload in parsed_tasks:
+            st = str(t["status"] or "")
+            deps = t_payload.get("depends_on") if is_inflation and isinstance(t_payload.get("depends_on"), list) else []
+            has_unmet = bool(deps and any(str(d) not in completed_ids for d in deps))
+            if st == "completed":
+                completed_cnt += 1
+                eff_st = "completed"
+            elif st == "claimed":
+                claimed_cnt += 1
+                eff_st = "claimed"
+            elif st == "queued" and has_unmet:
+                waiting_cnt += 1
+                eff_st = "waiting"
+            elif st == "queued":
+                queued_cnt += 1
+                eff_st = "queued"
+            else:
+                eff_st = st
+            effective_status_by_id[str(t["id"])] = eff_st
+
+            if t["task_type"] == "peer_verify":
+                checks_total += 1
+                if st == "completed":
+                    checks_done += 1
+            else:
+                audits_total += 1
+                if st == "completed":
+                    audits_done += 1
+
+        total_cnt = len(parsed_tasks)
+        planned_cnt = len(mission.get("planned_tasks") or [])
+        pct_complete = round((completed_cnt / total_cnt) * 100.0, 2) if total_cnt > 0 else 0.0
+
+        summary: dict[str, Any] = {
+            "methodology_code": methodology_code,
+            "status_counts": {
+                "completed": completed_cnt,
+                "claimed": claimed_cnt,
+                "queued": queued_cnt,
+                "waiting": waiting_cnt,
+                "planned": planned_cnt,
+                "total": total_cnt,
+                "pct_complete": pct_complete,
+                "audits_done": audits_done,
+                "audits_total": audits_total,
+                "checks_done": checks_done,
+                "checks_total": checks_total,
+            },
+        }
+
+        mid = str(mission_row["id"])
+        if methodology_code == "W1":
+            hosts_observed = 0
+            hosts_unassessable = 0
+            cp_counts: dict[str, dict[str, int]] = {
+                key: {"observed": 0, "not_observed": 0, "unassessable": 0}
+                for key, _ in _W1_CHECKPOINT_DEFS
+            }
+            reasons: dict[str, int] = {k: 0 for k in _W1_REASON_KEYS}
+
+            obs_rows = conn.execute(
+                "SELECT output_json FROM tasks WHERE mission_id = ? AND methodology_code = 'W1' AND status = 'completed'",
+                (mid,),
+            ).fetchall()
+            for orow in obs_rows:
+                out = loads_json(orow["output_json"], {})
+                obs_list = out.get("observations") if isinstance(out, dict) else None
+                if not isinstance(obs_list, list):
+                    continue
+                for item in obs_list:
+                    if not isinstance(item, dict):
+                        continue
+                    outcome = str(item.get("outcome") or "").strip().lower()
+                    if outcome == "observed":
+                        hosts_observed += 1
+                    elif outcome == "unassessable":
+                        hosts_unassessable += 1
+                    reason = item.get("reason")
+                    if isinstance(reason, str) and reason.strip():
+                        rkey = reason.strip()
+                        reasons[rkey] = reasons.get(rkey, 0) + 1
+                    checks = item.get("checks")
+                    if isinstance(checks, dict):
+                        for key, _ in _W1_CHECKPOINT_DEFS:
+                            val = str(checks.get(key) or "").strip().lower()
+                            if val in ("observed", "not_observed", "unassessable"):
+                                cp_counts[key][val] += 1
+
+            checkpoints: list[dict[str, Any]] = []
+            for key, label in _W1_CHECKPOINT_DEFS:
+                c = cp_counts[key]
+                denom = c["observed"] + c["not_observed"] + c["unassessable"]
+                checkpoints.append(
+                    {
+                        "key": key,
+                        "label": label,
+                        "observed": c["observed"],
+                        "not_observed": c["not_observed"],
+                        "unassessable": c["unassessable"],
+                        "observed_pct": round((c["observed"] / denom) * 100.0, 2) if denom > 0 else 0.0,
+                        "not_observed_pct": round((c["not_observed"] / denom) * 100.0, 2) if denom > 0 else 0.0,
+                        "unassessable_pct": round((c["unassessable"] / denom) * 100.0, 2) if denom > 0 else 0.0,
+                    }
+                )
+
+            summary["website_audit"] = {
+                "batches_done": completed_cnt,
+                "batches_total": total_cnt,
+                "hosts_observed": hosts_observed,
+                "hosts_unassessable": hosts_unassessable,
+                "hosts_total": hosts_observed + hosts_unassessable,
+                "checkpoints": checkpoints,
+                "reasons": reasons,
+            }
+            return summary
+
+        if is_inflation:
+            batch_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM research_batches b "
+                "JOIN tasks t ON t.id = b.task_id AND t.lease_id = b.lease_id "
+                "WHERE t.mission_id = ? AND t.task_type = 'research' AND t.status = 'completed'",
+                (mid,),
+            ).fetchone()
+            batches_submitted = int(batch_row["c"] or 0) if batch_row else 0
+
+            role_totals: dict[str, list[int]] = {}
+            strata_map: dict[str, dict[str, Any]] = {}
+            for t, t_payload in parsed_tasks:
+                ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                scope = ctx.get("inflation_scope") if isinstance(ctx.get("inflation_scope"), dict) else {}
+                role_key = str(scope.get("role") or "collection").strip().lower()
+                bucket = role_totals.setdefault(role_key, [0, 0])
+                bucket[1] += 1
+                if t["status"] == "completed":
+                    bucket[0] += 1
+
+                state_code = str(scope.get("state_code") or "").strip()
+                sector = str(scope.get("sector") or "").strip().lower()
+                if state_code and sector in ("rural", "urban"):
+                    title = str(t["title"] or "")
+                    state_name = str(scope.get("state_name") or "").strip()
+                    if not state_name:
+                        m = _CPI1_STRATUM_TITLE_RE.match(title)
+                        state_name = m.group(1).strip() if m else f"State {state_code}"
+                    st_entry = strata_map.setdefault(
+                        state_code,
+                        {
+                            "state_code": state_code,
+                            "state_name": state_name,
+                            "rural_status": None,
+                            "urban_status": None,
+                            "rural_task_id": None,
+                            "urban_task_id": None,
+                        },
+                    )
+                    eff_st = effective_status_by_id.get(str(t["id"]), str(t["status"] or "queued"))
+                    if sector == "rural":
+                        st_entry["rural_status"] = eff_st
+                        st_entry["rural_task_id"] = str(t["id"])
+                    else:
+                        st_entry["urban_status"] = eff_st
+                        st_entry["urban_task_id"] = str(t["id"])
+
+            role_labels = dict(_CPI1_ROLE_DEFS)
+            ordered_role_keys = [k for k, _ in _CPI1_ROLE_DEFS if k in role_totals] + sorted(
+                k for k in role_totals if k not in role_labels
+            )
+            roles = [
+                {
+                    "role": rk,
+                    "label": role_labels.get(rk, rk.replace("_", " ").title()),
+                    "done": role_totals[rk][0],
+                    "total": role_totals[rk][1],
+                    "pct": round((role_totals[rk][0] / role_totals[rk][1]) * 100.0, 2)
+                    if role_totals[rk][1] > 0
+                    else 0.0,
+                }
+                for rk in ordered_role_keys
+            ]
+            strata = sorted(
+                strata_map.values(),
+                key=lambda s: (int(s["state_code"]) if s["state_code"].isdigit() else 999, s["state_code"]),
+            )
+            summary["inflation"] = {
+                "batches_submitted": batches_submitted,
+                "roles": roles,
+                "strata": strata,
+            }
+            return summary
+
+        # Budget / procurement / audit projects (P1, M1-M8, etc.)
+        verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
+        peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
+        disputed_cnt = sum(1 for f in findings if f.get("status") in ("disputed", "needs_adjudication"))
+        cleared_scans_cnt = int(mission_row["cleared_count"] or 0)
+        cleared_cnt = cleared_scans_cnt + int(cleared_findings_count)
+
+        total_exposure_inr = sum(
+            _safe_finite_float(f.get("monetary_exposure_inr"), 0.0)
+            for f in findings
+            if f.get("status") not in ("retracted", "retracted_false_positive")
+        )
+
+        divergences: list[dict[str, Any]] = []
+        for f in findings:
+            am = f.get("anomaly_metrics") if isinstance(f.get("anomaly_metrics"), dict) else {}
+            pct_diff: float | None = None
+            for pkey in ("pct_difference", "variance_pct", "escalation_pct", "pct_variance"):
+                raw_pct = am.get(pkey)
+                if raw_pct is not None and not isinstance(raw_pct, bool):
+                    try:
+                        val = float(raw_pct)
+                        if math.isfinite(val):
+                            pct_diff = round(val, 2)
+                            break
+                    except (TypeError, ValueError):
+                        pass
+            divergences.append(
+                {
+                    "finding_id": str(f.get("id") or ""),
+                    "entity_name": str(f.get("entity_name") or ""),
+                    "title": str(f.get("title") or ""),
+                    "pct_difference": pct_diff,
+                    "monetary_exposure_inr_cr": _safe_finite_float(f.get("monetary_exposure_inr_cr"), 0.0),
+                    "status": str(f.get("status") or ""),
+                    "severity": str(f.get("severity") or ""),
+                    "fiscal_year": str(f.get("fiscal_year") or ""),
+                    "rule_triggered": str(f.get("rule_triggered") or ""),
+                }
+            )
+        divergences.sort(
+            key=lambda d: (
+                1 if d["pct_difference"] is not None else 0,
+                abs(d["pct_difference"]) if d["pct_difference"] is not None else 0.0,
+                d["monetary_exposure_inr_cr"],
+            ),
+            reverse=True,
+        )
+
+        group_counts: dict[str, list[int]] = {}
+        mission_juris = str(mission_row["jurisdiction"] or "").strip() or "All jurisdictions"
+        for t, t_payload in parsed_tasks:
+            if t["task_type"] == "peer_verify":
+                continue
+            ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+            t_juris = str(t_payload.get("jurisdiction") or ctx.get("jurisdiction") or "").strip()
+            if methodology_code == "P1":
+                glabel = self._classify_p1_group(str(t["id"]), str(t["title"] or ""), t_juris)
+            else:
+                glabel = t_juris or mission_juris
+            gb = group_counts.setdefault(glabel, [0, 0])
+            gb[1] += 1
+            if t["status"] == "completed":
+                gb[0] += 1
+
+        if methodology_code == "P1":
+            ordered_groups = [g for g in _P1_GROUP_ORDER if g in group_counts] + sorted(
+                g for g in group_counts if g not in _P1_GROUP_ORDER
+            )
+        else:
+            ordered_groups = sorted(group_counts.keys(), key=lambda k: (-group_counts[k][1], k))
+
+        groups = [
+            {
+                "label": g,
+                "done": group_counts[g][0],
+                "total": group_counts[g][1],
+                "pct": round((group_counts[g][0] / group_counts[g][1]) * 100.0, 2)
+                if group_counts[g][1] > 0
+                else 0.0,
+            }
+            for g in ordered_groups
+        ]
+
+        summary["budget_audit"] = {
+            "verified_count": verified_cnt,
+            "peer_review_count": peer_review_cnt,
+            "cleared_count": cleared_cnt,
+            "disputed_count": disputed_cnt,
+            "total_exposure_inr_cr": _inr_to_cr(total_exposure_inr),
+            "top_divergences": divergences[:12],
+            "groups": groups,
+        }
+        return summary
+
     def get_mission_detail(self, slug: str) -> dict[str, Any]:
         slug = self.resolve_slug(slug)
         with self.db.read() as conn:
@@ -2157,11 +2726,16 @@ class DeskService:
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Mission '{slug}' not found")
             mid = row["id"]
-            queued_cnt = int(
-                conn.execute(
-                    "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND status = 'queued'", (mid,)
-                ).fetchone()["c"]
-            )
+            status_map = {
+                str(r["status"]): int(r["c"])
+                for r in conn.execute(
+                    "SELECT status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+                    "AND status IN ('queued', 'claimed') GROUP BY status",
+                    (mid,),
+                ).fetchall()
+            }
+            queued_cnt = status_map.get("queued", 0)
+            claimed_cnt = status_map.get("claimed", 0)
             pr_cnt = int(
                 conn.execute(
                     "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? "
@@ -2181,6 +2755,7 @@ class DeskService:
             mission = self._serialize_mission(
                 row,
                 queued_tasks=queued_cnt,
+                claimed_tasks=claimed_cnt,
                 peer_review_count=pr_cnt,
                 rungs=rungs,
                 unique_coverage_inr=mission_unique_inr.get(str(mid), 0.0),
@@ -2242,9 +2817,11 @@ class DeskService:
                 """,
                 (mid, MAX_PROJECT_TASKS_LISTED),
             ).fetchall()
+            parsed_tasks: list[tuple[Any, dict[str, Any]]] = [
+                (t, loads_json(t["payload_json"], {})) for t in t_rows
+            ]
             tasks = []
-            for t in t_rows:
-                t_payload = loads_json(t["payload_json"], {})
+            for t, t_payload in parsed_tasks:
                 tasks.append(
                     {
                         "id": t["id"],
@@ -2280,7 +2857,25 @@ class DeskService:
                     }
                 )
 
-        return {**mission, "sources": sources, "findings": findings, "tasks": tasks}
+            contributors_all, contributors_hour = self._compute_mission_contributors(conn, str(mid))
+            visual_summary = self._build_visual_summary(
+                conn,
+                mission_row=row,
+                mission=mission,
+                parsed_tasks=parsed_tasks,
+                findings=findings,
+                cleared_findings_count=cf_cnt,
+            )
+
+        return {
+            **mission,
+            "sources": sources,
+            "findings": findings,
+            "tasks": tasks,
+            "contributors_all": contributors_all,
+            "contributors_hour": contributors_hour,
+            "visual_summary": visual_summary,
+        }
 
     def website_observations(self, slug: str, task_id: str) -> dict[str, Any]:
         with self.db.read() as conn:
@@ -3732,8 +4327,10 @@ class DeskService:
         preferred_mission: str | None = None,
         max_estimated_tokens: int | None = None,
         website_observations: bool = False,
+        task_id: str | None = None,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
+        requested_task_id = (task_id or "").strip()
         with self.db.transaction() as conn:
             agent = self._authenticate_agent(conn, token, required=True)
             assert agent is not None
@@ -3766,124 +4363,288 @@ class DeskService:
                 )
 
             now = utc_now_iso()
-            escaped_handle = escape_like(agent_handle)
-            clauses = [
-                "t.status = 'queued'",
-                "(t.available_at IS NULL OR t.available_at <= ?)",
-                "t.excluded_handles_json NOT LIKE ? ESCAPE '\\'",
-                # Exclude self-authored findings, quarantined findings, already-verified findings,
-                # and findings this agent already holds an active lease on (pure SQL NOT EXISTS — no bind limit!).
-                """(t.target_finding_id IS NULL OR (
-                    NOT EXISTS (
-                        SELECT 1 FROM findings f
-                        WHERE f.id = t.target_finding_id
-                          AND (f.submitted_by = ? OR COALESCE(f.quarantined, 0) = 1 OR f.status = 'quarantined')
+            cand: Any = None
+            if requested_task_id:
+                row_lock = " FOR UPDATE" if self.db.is_postgres else ""
+                cand = conn.execute(
+                    f"SELECT * FROM tasks WHERE id = ?{row_lock}",
+                    (requested_task_id,),
+                ).fetchone()
+                if cand is None and not requested_task_id.startswith(("prj-", "tsk-")):
+                    cand = conn.execute(
+                        f"SELECT * FROM tasks WHERE id = ?{row_lock}",
+                        (f"prj-{requested_task_id}",),
+                    ).fetchone()
+                if cand is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Task '{requested_task_id}' not found",
                     )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM peer_verifications pv
-                        WHERE pv.finding_id = t.target_finding_id
-                          AND (pv.contributor_id = ? OR pv.verifier_handle = ?)
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM tasks t2
-                        WHERE t2.status = 'claimed'
-                          AND t2.claimed_by_handle = ?
-                          AND t2.target_finding_id = t.target_finding_id
-                    )
-                ))""",
-            ]
-            params: list[Any] = [
-                now,
-                f'%"{escaped_handle}"%',
-                agent_handle,
-                agent_handle,
-                agent_handle,
-                agent_handle,
-            ]
 
-            # New scans only for live projects; peer verification of existing leads may still finish.
-            clauses.append(
-                "(t.task_type = 'peer_verify' OR t.mission_id IN "
-                "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
-            )
+                resolved_tid = str(cand["id"])
+                cand_status = str(cand["status"] or "")
+                if cand_status == "claimed":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Task '{resolved_tid}' is already claimed by an active lease.",
+                    )
+                if cand_status == "completed":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Task '{resolved_tid}' is already completed.",
+                    )
+                if cand_status != "queued":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Task '{resolved_tid}' is not queued (status: {cand_status}).",
+                    )
 
-            if not website_observations:
-                clauses.append("t.methodology_code != 'W1'")
-            preferred_slug = (preferred_mission or "").strip()[:120]
-            if preferred_slug == INFLATION_PROJECT_SLUG:
-                clauses.extend(("t.task_type = 'research'", "t.mission_slug = ?"))
-                params.append(INFLATION_PROJECT_SLUG)
-                if self.db.is_postgres:
-                    relation = "jsonb_array_elements_text(t.payload_json::jsonb -> 'depends_on') AS dep(id)"
-                    dependency_id = "dep.id"
-                    dependency_count = "jsonb_array_length(t.payload_json::jsonb -> 'depends_on')"
-                else:
-                    relation = "json_each(t.payload_json, '$.depends_on') AS dep"
-                    dependency_id = "dep.value"
-                    dependency_count = "json_array_length(t.payload_json, '$.depends_on')"
-                clauses.append(
-                    f"""NOT EXISTS (
-                        SELECT 1 FROM {relation}
-                        WHERE NOT EXISTS (
-                            SELECT 1 FROM tasks done
-                            WHERE done.id = {dependency_id} AND done.mission_id = t.mission_id
-                              AND done.task_type = 'research' AND done.status = 'completed'
-                              AND ({dependency_count} != 1 OR done.claimed_by_agent_id IS NULL
-                                   OR done.claimed_by_agent_id != ?)
+                if cand["task_type"] != "peer_verify":
+                    m_row = conn.execute(
+                        "SELECT status FROM missions WHERE id = ?",
+                        (cand["mission_id"],),
+                    ).fetchone()
+                    m_status = str(m_row["status"] or "") if m_row is not None else ""
+                    if m_row is None or m_status in ("archived", "paused", "needs_data"):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Task '{resolved_tid}' belongs to a project that is not accepting "
+                                f"new scans (status: {m_status or 'unknown'})."
+                            ),
                         )
-                    )"""
-                )
-                params.append(agent["id"])
+
+                avail_at = cand["available_at"]
+                if avail_at:
+                    avail_dt = _parse_iso(str(avail_at))
+                    now_dt = _parse_iso(now)
+                    not_ready = (avail_dt > now_dt) if (avail_dt and now_dt) else (str(avail_at) > now)
+                    if not_ready:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Task '{resolved_tid}' is not claimable until {avail_at}.",
+                        )
+
+                if cand["methodology_code"] == "W1" and not website_observations:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Task '{resolved_tid}' is a W1 website review batch and requires "
+                            "website_observations=true."
+                        ),
+                    )
+
+                if max_estimated_tokens is not None and cand["estimated_tokens"] is not None:
+                    if int(cand["estimated_tokens"]) > int(max_estimated_tokens):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Task '{resolved_tid}' exceeds max_estimated_tokens "
+                                f"({cand['estimated_tokens']} > {int(max_estimated_tokens)})."
+                            ),
+                        )
+
+                target_fid = cand["target_finding_id"]
+                if target_fid:
+                    f_row = conn.execute(
+                        "SELECT submitted_by, status, quarantined FROM findings WHERE id = ?",
+                        (target_fid,),
+                    ).fetchone()
+                    if f_row is not None:
+                        if bool(f_row["quarantined"]) or str(f_row["status"] or "") == "quarantined":
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail=f"Task '{resolved_tid}' targets a quarantined finding and cannot be claimed.",
+                            )
+                        if str(f_row["submitted_by"] or "") == agent_handle:
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail=f"Agent '{agent_handle}' cannot peer-verify its own finding '{target_fid}'.",
+                            )
+                    dup_pv = conn.execute(
+                        "SELECT 1 FROM peer_verifications WHERE finding_id = ? "
+                        "AND (contributor_id = ? OR verifier_handle = ?) LIMIT 1",
+                        (target_fid, agent_handle, agent_handle),
+                    ).fetchone()
+                    if dup_pv is not None:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Agent '{agent_handle}' has already verified finding '{target_fid}'.",
+                        )
+                    dup_lease = conn.execute(
+                        "SELECT 1 FROM tasks WHERE status = 'claimed' AND claimed_by_handle = ? "
+                        "AND target_finding_id = ? LIMIT 1",
+                        (agent_handle, target_fid),
+                    ).fetchone()
+                    if dup_lease is not None:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"Agent '{agent_handle}' already holds an active verification lease for finding '{target_fid}'.",
+                        )
+
+                excluded = set(loads_json(cand["excluded_handles_json"], []))
+                if agent_handle in excluded:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Agent '{agent_handle}' is excluded from claiming task '{resolved_tid}'.",
+                    )
+
+                if cand["task_type"] == "research":
+                    cand_payload = loads_json(cand["payload_json"], {})
+                    raw_deps = cand_payload.get("depends_on") if isinstance(cand_payload, dict) else None
+                    deps = [str(d) for d in raw_deps if isinstance(d, str)] if isinstance(raw_deps, list) else []
+                    if deps:
+                        ph = ",".join("?" for _ in deps)
+                        dep_rows = {
+                            str(r["id"]): r
+                            for r in conn.execute(
+                                f"SELECT id, status, claimed_by_agent_id FROM tasks "
+                                f"WHERE mission_id = ? AND task_type = 'research' AND id IN ({ph})",
+                                (cand["mission_id"], *deps),
+                            ).fetchall()
+                        }
+                        unmet = [
+                            d for d in deps
+                            if d not in dep_rows or str(dep_rows[d]["status"] or "") != "completed"
+                        ]
+                        if unmet:
+                            preview = ", ".join(unmet[:3]) + ("..." if len(unmet) > 3 else "")
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail=(
+                                    f"Task '{resolved_tid}' is waiting on {len(unmet)} incomplete "
+                                    f"prerequisite task(s) ({preview})."
+                                ),
+                            )
+                        if len(deps) == 1:
+                            sole_dep = dep_rows[deps[0]]
+                            if sole_dep["claimed_by_agent_id"] is not None and sole_dep["claimed_by_agent_id"] == agent["id"]:
+                                raise HTTPException(
+                                    status_code=status.HTTP_409_CONFLICT,
+                                    detail=(
+                                        f"Task '{resolved_tid}' requires an independent reviewer "
+                                        f"(cannot follow your own prerequisite task '{deps[0]}')."
+                                    ),
+                                )
             else:
-                clauses.append("t.task_type != 'research'")
-                if preferred_slug and (_agents_may_choose_project() or preferred_slug == "gov-in-public-information"):
-                    clauses.append("t.mission_slug = ?")
-                    params.append(preferred_slug)
+                escaped_handle = escape_like(agent_handle)
+                clauses = [
+                    "t.status = 'queued'",
+                    "(t.available_at IS NULL OR t.available_at <= ?)",
+                    "t.excluded_handles_json NOT LIKE ? ESCAPE '\\'",
+                    # Exclude self-authored findings, quarantined findings, already-verified findings,
+                    # and findings this agent already holds an active lease on (pure SQL NOT EXISTS — no bind limit!).
+                    """(t.target_finding_id IS NULL OR (
+                        NOT EXISTS (
+                            SELECT 1 FROM findings f
+                            WHERE f.id = t.target_finding_id
+                              AND (f.submitted_by = ? OR COALESCE(f.quarantined, 0) = 1 OR f.status = 'quarantined')
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM peer_verifications pv
+                            WHERE pv.finding_id = t.target_finding_id
+                              AND (pv.contributor_id = ? OR pv.verifier_handle = ?)
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM tasks t2
+                            WHERE t2.status = 'claimed'
+                              AND t2.claimed_by_handle = ?
+                              AND t2.target_finding_id = t.target_finding_id
+                        )
+                    ))""",
+                ]
+                params: list[Any] = [
+                    now,
+                    f'%"{escaped_handle}"%',
+                    agent_handle,
+                    agent_handle,
+                    agent_handle,
+                    agent_handle,
+                ]
 
-            if eff_mode == "verify":
-                clauses.append("t.task_type = 'peer_verify'")
-            elif eff_mode == "investigate":
-                clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse', 'research')")
-            if max_estimated_tokens is not None:
-                clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
-                params.append(int(max_estimated_tokens))
-
-            # Live projects before archived ones, then the team's project priority (1 first), then peer
-            # checks before new scans, then oldest first.
-            # Atomic single-row claim: on Postgres lock at most 1 eligible row (FOR UPDATE SKIP LOCKED LIMIT 1)
-            lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
-            cand = conn.execute(
-                f"""
-                SELECT t.* FROM tasks t
-                WHERE {' AND '.join(clauses)}
-                ORDER BY
-                    (SELECT CASE WHEN m.status = 'archived' THEN 1 ELSE 0 END
-                     FROM missions m WHERE m.id = t.mission_id) ASC,
-                    (SELECT m.priority FROM missions m WHERE m.id = t.mission_id) ASC,
-                    CASE t.task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
-                    COALESCE(t.available_at, t.created_at) ASC,
-                    t.created_at ASC,
-                    t.id ASC
-                LIMIT 1{lock_clause}
-                """,
-                params,
-            ).fetchone()
-
-            if cand is None:
-                conn.execute(
-                    "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
-                    (now, agent["id"]),
+                # New scans only for live projects; peer verification of existing leads may still finish.
+                clauses.append(
+                    "(t.task_type = 'peer_verify' OR t.mission_id IN "
+                    "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
                 )
-                return None
 
-            # Defense-in-depth exclusion verification
-            excluded = set(loads_json(cand["excluded_handles_json"], []))
-            if agent_handle in excluded:
-                conn.execute(
-                    "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
-                    (now, agent["id"]),
-                )
-                return None
+                if not website_observations:
+                    clauses.append("t.methodology_code != 'W1'")
+                preferred_slug = (preferred_mission or "").strip()[:120]
+                if preferred_slug == INFLATION_PROJECT_SLUG:
+                    clauses.extend(("t.task_type = 'research'", "t.mission_slug = ?"))
+                    params.append(INFLATION_PROJECT_SLUG)
+                    if self.db.is_postgres:
+                        relation = "jsonb_array_elements_text(t.payload_json::jsonb -> 'depends_on') AS dep(id)"
+                        dependency_id = "dep.id"
+                        dependency_count = "jsonb_array_length(t.payload_json::jsonb -> 'depends_on')"
+                    else:
+                        relation = "json_each(t.payload_json, '$.depends_on') AS dep"
+                        dependency_id = "dep.value"
+                        dependency_count = "json_array_length(t.payload_json, '$.depends_on')"
+                    clauses.append(
+                        f"""NOT EXISTS (
+                            SELECT 1 FROM {relation}
+                            WHERE NOT EXISTS (
+                                SELECT 1 FROM tasks done
+                                WHERE done.id = {dependency_id} AND done.mission_id = t.mission_id
+                                  AND done.task_type = 'research' AND done.status = 'completed'
+                                  AND ({dependency_count} != 1 OR done.claimed_by_agent_id IS NULL
+                                       OR done.claimed_by_agent_id != ?)
+                            )
+                        )"""
+                    )
+                    params.append(agent["id"])
+                else:
+                    clauses.append("t.task_type != 'research'")
+                    if preferred_slug and (_agents_may_choose_project() or preferred_slug == "gov-in-public-information"):
+                        clauses.append("t.mission_slug = ?")
+                        params.append(preferred_slug)
+
+                if eff_mode == "verify":
+                    clauses.append("t.task_type = 'peer_verify'")
+                elif eff_mode == "investigate":
+                    clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse', 'research')")
+                if max_estimated_tokens is not None:
+                    clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
+                    params.append(int(max_estimated_tokens))
+
+                # Live projects before archived ones, then the team's project priority (1 first), then peer
+                # checks before new scans, then oldest first.
+                # Atomic single-row claim: on Postgres lock at most 1 eligible row (FOR UPDATE SKIP LOCKED LIMIT 1)
+                lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
+                cand = conn.execute(
+                    f"""
+                    SELECT t.* FROM tasks t
+                    WHERE {' AND '.join(clauses)}
+                    ORDER BY
+                        (SELECT CASE WHEN m.status = 'archived' THEN 1 ELSE 0 END
+                         FROM missions m WHERE m.id = t.mission_id) ASC,
+                        (SELECT m.priority FROM missions m WHERE m.id = t.mission_id) ASC,
+                        CASE t.task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
+                        COALESCE(t.available_at, t.created_at) ASC,
+                        t.created_at ASC,
+                        t.id ASC
+                    LIMIT 1{lock_clause}
+                    """,
+                    params,
+                ).fetchone()
+
+                if cand is None:
+                    conn.execute(
+                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                        (now, agent["id"]),
+                    )
+                    return None
+
+                # Defense-in-depth exclusion verification
+                excluded = set(loads_json(cand["excluded_handles_json"], []))
+                if agent_handle in excluded:
+                    conn.execute(
+                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                        (now, agent["id"]),
+                    )
+                    return None
 
             lease_id = f"lease-{secrets.token_hex(8)}"
             lease_expires = _future_iso(LEASE_MINUTES)
@@ -3898,9 +4659,19 @@ class DeskService:
                     """,
                     (agent["id"], agent_handle, lease_id, now, lease_expires, now, cand["id"]),
                 )
-            except DB_INTEGRITY_ERRORS:
+            except DB_INTEGRITY_ERRORS as exc:
+                if requested_task_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Task '{cand['id']}' could not be claimed due to a concurrent lease conflict.",
+                    ) from exc
                 return None
             if cur.rowcount != 1:
+                if requested_task_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Task '{cand['id']}' was claimed concurrently and is no longer queued.",
+                    )
                 return None
 
             conn.execute(

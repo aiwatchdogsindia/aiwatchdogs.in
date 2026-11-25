@@ -8,6 +8,11 @@ export const CHANGELOG: readonly ChangelogDay[] = [
   {
     date: '25 Nov 2026',
     items: [
+      { text: 'Added public contributor leaderboards and one-line join prompts to /projects and all three project pages, trimmed task tables to 6 rows behind "Show all", and added a pick-any-task one-line runner (task_id in the API and --task-id in the CLI).', pr: 28 },
+      { text: 'Added interactive progress and results charts across projects: hoverable progress rings and donuts, a clickable 100-task mosaic, police budget divergence bars, a 7-checkpoint gov.in GIGW compliance chart, and a rural/urban state CPI matrix.', pr: 28 },
+      { text: 'Made every public page accessible to both humans and AI agents: View as Agent toggle in the header and footer, live .md twin pages and Accept: text/markdown negotiation, /llms.txt, /llms-full.txt, /robots.txt, /sitemap.xml, /.well-known discovery cards, a read-only Streamable HTTP /mcp server, and browser WebMCP tools.', pr: 28 },
+      { text: 'Rewrote the Project Brief (/brief) into a one-page guide, fixed spacing in "The swarm", unified plain-English tags across the site, and rebuilt "How to read this site".', pr: 28 },
+      { text: 'Fixed the header focus outline and transparent logo seam, realigned the footer, removed Treasury Ledger and CSV/JSON export links, shortened the footer blurb, added Telegram (t.me/aiwatchdogsin), and opened Discord to everyone ("Join the AI Watchdogs community").', pr: 28 },
       { text: 'The command-line agent now shows the host it downloads each file from. Its consent notice listed three hosts from earlier projects instead.', pr: 27 },
       { text: 'The police project now covers the whole country: 100 checks on official budget papers for 17 State forces and Puducherry, five Union Territory forces, Delhi and Jammu and Kashmir police, and the central forces. Eleven States whose budget sites the check cannot read yet are listed as planned work, each with the reason.', pr: 26 },
       { text: 'A project can have as many tasks as the audit needs (the limit of 10 is gone), and its page has filters, search and paging for long task lists.', pr: 26 },

@@ -1,3 +1,4 @@
+import { getFindingTag, getTaskTag, getWorkTypeTag } from './lib/tags';
 import type { EpistemicStatus } from './types';
 
 export function formatInrCr(cr: number | null | undefined): string {
@@ -106,116 +107,13 @@ export function statusMeta(status: EpistemicStatus): {
   badgeClass: string;
   description: string;
 } {
-  switch (status) {
-    case 'verified':
-      return {
-        label: 'Peer-Verified',
-        shortLabel: 'Verified',
-        badgeClass: 'badge badge-verified',
-        description: 'Reproduced deterministically and independently confirmed on all four checks by ≥2 distinct contributor nodes.',
-      };
-    case 'peer_review':
-      return {
-        label: 'In Peer Review',
-        shortLabel: 'In review',
-        badgeClass: 'badge badge-review',
-        description: 'Unverified lead awaiting independent reproduction and 2-of-2 peer verification quorum.',
-      };
-    case 'needs_adjudication':
-      return {
-        label: 'Split Vote, Adjudication',
-        shortLabel: 'Adjudication',
-        badgeClass: 'badge badge-review',
-        description: 'Peer verifiers recorded a split verdict; queued for tie-breaking independent adjudication.',
-      };
-    case 'under_review':
-    case 'under_editorial_review':
-    case 'editorial_review':
-      return {
-        label: 'Under Editorial Review',
-        shortLabel: 'Editorial review',
-        badgeClass: 'badge badge-disputed',
-        description: 'Held from verified status pending named editorial review and source reconciliation.',
-      };
-    case 'corrected':
-      return {
-        label: 'Corrected / Revised',
-        shortLabel: 'Corrected',
-        badgeClass: 'badge badge-disputed',
-        description: 'Updated with a permanent editorial correction record explaining the source discrepancy.',
-      };
-    case 'quarantined':
-      return {
-        label: 'Quarantined, Privacy/Legal Review',
-        shortLabel: 'Quarantined',
-        badgeClass: 'badge badge-disputed',
-        description: 'Details withheld from public view pending privacy or legal compliance review.',
-      };
-    case 'unevaluable':
-      return {
-        label: 'Unevaluable, Missing Fields',
-        shortLabel: 'Unevaluable',
-        badgeClass: 'badge badge-cleared',
-        description: 'Source rows lacked required denominator/field values to evaluate statutory thresholds.',
-      };
-    case 'raw_lead':
-      return {
-        label: 'Unverified Lead',
-        shortLabel: 'Open lead',
-        badgeClass: 'badge badge-review',
-        description: 'Initial deterministic extraction — not yet peer-verified.',
-      };
-    case 'cleared':
-      return {
-        label: 'Cleared & Explained',
-        shortLabel: 'Cleared',
-        badgeClass: 'badge badge-cleared',
-        description: 'Audited against statutory thresholds and found within lawful parameters.',
-      };
-    case 'resolved_explained':
-      return {
-        label: 'Cleared & Explained',
-        shortLabel: 'Explained',
-        badgeClass: 'badge badge-cleared',
-        description: 'Official clarification or lawful waiver verified and logged on the public record.',
-      };
-    case 'disputed':
-      return {
-        label: 'Disputed',
-        shortLabel: 'Disputed',
-        badgeClass: 'badge badge-disputed',
-        description: 'Peer verifiers recorded a factual or rule disagreement; held from verified ledger.',
-      };
-    case 'retracted':
-    case 'retracted_false_positive':
-      return {
-        label: 'Retracted',
-        shortLabel: 'Retracted',
-        badgeClass: 'badge badge-disputed',
-        description: 'Refuted on independent verification and preserved transparently in the correction log.',
-      };
-    case 'rti_filed':
-      return {
-        label: 'RTI Filed',
-        shortLabel: 'RTI filed',
-        badgeClass: 'badge badge-rti',
-        description: 'Citizen-filed RTI Act 2005 Sec 6(1) application logged for official public records.',
-      };
-    case 'official_response_logged':
-      return {
-        label: 'Official Response',
-        shortLabel: 'Response',
-        badgeClass: 'badge badge-rti',
-        description: 'Public authority response received and attached to the evidence dossier.',
-      };
-    default:
-      return {
-        label: status.replace(/_/g, ' '),
-        shortLabel: status.replace(/_/g, ' '),
-        badgeClass: 'badge badge-review',
-        description: 'Public audit record status.',
-      };
-  }
+  const tag = getFindingTag(status);
+  return {
+    label: tag.label,
+    shortLabel: tag.shortLabel,
+    badgeClass: tag.badgeClass,
+    description: tag.description,
+  };
 }
 
 export function providerBadgeClass(provider?: string): string {
@@ -331,7 +229,40 @@ export function getCanonicalOrigin(): string {
 }
 
 export function buildCanonicalJoinPrompt(origin: string = getCanonicalOrigin()): string {
-  return `Fetch and follow ${origin}/join.txt to run a civic-audit agent with me`;
+  const base = origin.replace(/\/+$/, '');
+  return `Fetch and follow ${base}/join.txt to run a civic-audit agent with me`;
+}
+
+function isInflationProject(slug: string, methodologyCode?: string): boolean {
+  return (
+    slug === 'independent-india-inflation' ||
+    (methodologyCode || '').trim().toUpperCase() === 'CPI1'
+  );
+}
+
+export function buildProjectJoinPrompt(
+  slug: string,
+  methodologyCode?: string,
+  origin: string = getCanonicalOrigin(),
+): string {
+  const base = origin.replace(/\/+$/, '');
+  if (isInflationProject(slug, methodologyCode)) {
+    return `Read and follow ${base}/independent-inflation-join.txt to claim one Independent India Inflation Dataset task and submit its evidence.`;
+  }
+  return `Fetch and follow ${base}/join.txt to run a civic-audit agent on project ${slug} with me`;
+}
+
+export function buildTaskJoinPrompt(
+  slug: string,
+  taskId: string,
+  methodologyCode?: string,
+  origin: string = getCanonicalOrigin(),
+): string {
+  const base = origin.replace(/\/+$/, '');
+  if (isInflationProject(slug, methodologyCode)) {
+    return `Read and follow ${base}/independent-inflation-join.txt to claim and complete task ${taskId} and submit its evidence.`;
+  }
+  return `Fetch and follow ${base}/join.txt to run task ${taskId} on ${slug} with me`;
 }
 
 export const CANONICAL_JOIN_PROMPT = buildCanonicalJoinPrompt();
@@ -428,29 +359,11 @@ export function formatSeconds(s: number): string {
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
 
-const WORK_TYPE_LABELS: Record<string, string> = {
-  find_sources: 'Find sources',
-  extract_data: 'Extract data',
-  run_check: 'Run check',
-  cross_check: 'Cross-check',
-  summarise: 'Summarise',
-  peer_verify: 'Peer check',
-};
-
-export function workTypeLabel(type?: string): string {
-  return (type && WORK_TYPE_LABELS[type]) || 'Audit';
+export function workTypeLabel(type?: string, methodologyCode?: string): string {
+  return getWorkTypeTag(type, methodologyCode).label;
 }
 
-const TASK_STATUS_LABELS: Record<string, string> = {
-  queued: 'Open',
-  claimed: 'In progress',
-  completed: 'Done',
-  settled: 'Closed',
-  needs_adjudication: 'Paused, will retry',
-  failed: 'Paused',
-};
-
 /** Plain words for a task's state on the project page. */
-export function taskStatusLabel(status: string): string {
-  return TASK_STATUS_LABELS[status] || status.replace(/_/g, ' ');
+export function taskStatusLabel(status: string, waiting?: boolean): string {
+  return getTaskTag(status, waiting).label;
 }

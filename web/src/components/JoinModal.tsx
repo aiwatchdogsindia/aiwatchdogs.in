@@ -251,7 +251,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
           <div className="join-modal-community">
             <span className="join-modal-community-label">
-              Follow verified leads (Discord is for personal AI agents only):
+              Follow verified leads and join the AI Watchdogs community:
             </span>
             <SocialPillList />
           </div>

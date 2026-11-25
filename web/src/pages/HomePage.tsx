@@ -7,6 +7,14 @@ import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
 import { useToast } from '../components/Toast';
 import type { SseStatus } from '../hooks/useSwarmStream';
+import {
+  FINDING_TAGS,
+  TASK_TAGS,
+  getFindingTag,
+  getRecordEventTag,
+  getRungTag,
+  getWorkTypeTag,
+} from '../lib/tags';
 import { Link, useRouter } from '../router';
 import type {
   AgentRecord,
@@ -32,7 +40,6 @@ import {
   isClearedStatus,
   isUnverifiedStatus,
   isVerifiedStatus,
-  statusMeta,
 } from '../utils';
 
 const ObservatoryMap = lazy(() =>
@@ -88,21 +95,6 @@ function fallbackRungsForMission(m: MissionItem): MissionRung[] {
     }
   }
   return out;
-}
-
-function eventChipClass(kind: string): string {
-  switch (kind) {
-    case 'verified':
-      return 'chip chip-verified';
-    case 'cleared':
-      return 'chip chip-cleared';
-    case 'disputed':
-      return 'chip chip-disputed';
-    case 'rti':
-      return 'chip chip-rti';
-    default:
-      return 'chip chip-review';
-  }
 }
 
 export function HomePage({
@@ -275,7 +267,7 @@ export function HomePage({
             : f.status === 'disputed' || f.status === 'retracted_false_positive'
               ? 'disputed'
               : 'peer_review',
-      tag: statusMeta(f.status).shortLabel,
+      tag: getFindingTag(f.status).shortLabel,
       title: f.title,
       actor: f.submitted_by ?? null,
       methodology_code: f.methodology_code,
@@ -466,7 +458,7 @@ export function HomePage({
             </div>
             <div className="hero-stat">
               <dt className="tabular">{isLoadingHead ? '—' : peerReviewLeads.toLocaleString('en-IN')}</dt>
-              <dd>in peer review</dd>
+              <dd>in review</dd>
             </div>
             <div className="hero-stat">
               <dt className="tabular">{isLoadingHead ? '—' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
@@ -554,13 +546,13 @@ export function HomePage({
                 <div
                   className="tug-left"
                   style={{ width: `${tugLeftPct}%` }}
-                  title={`Peer-Verified (${verifiedLeads}) + In Review (${peerReviewLeads})`}
+                  title={`${FINDING_TAGS.verified.label} (${verifiedLeads}) + ${FINDING_TAGS.in_review.label} (${peerReviewLeads})`}
                 />
                 <div className="tug-mark" aria-hidden="true" />
                 <div
                   className="tug-right"
                   style={{ width: `${tugRightPct}%` }}
-                  title={`Cleared & Explained (${clearedRecords})`}
+                  title={`${FINDING_TAGS.cleared.label} (${clearedRecords})`}
                 />
               </div>
             </div>
@@ -621,7 +613,7 @@ export function HomePage({
             </span>
             {head?.started_at && <span>running since {formatDateShort(head.started_at)}</span>}
             <span className="tag-mono">
-              {stats?.tasks_queued ?? 0} queued tasks ready
+              {stats?.tasks_queued ?? 0} open tasks ready
             </span>
             <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5 }}>
               Verification protocol
@@ -635,7 +627,8 @@ export function HomePage({
           </div>
           {mentionedFindings.length > 0 ? (
             mentionedFindings.map((f) => {
-              const sm = statusMeta(f.status);
+              const sm = getFindingTag(f.status);
+              const workTag = getWorkTypeTag(undefined, f.methodology_code);
               const unverified = isUnverifiedStatus(f.status);
               return (
                 <button
@@ -645,7 +638,7 @@ export function HomePage({
                   onClick={() => onSelectFinding(f.id)}
                 >
                   <div className="mentioned-card-top">
-                    <span className={sm.badgeClass}>{sm.shortLabel}</span>
+                    <span className={sm.badgeClass} title={sm.description}>{sm.label}</span>
                     <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
                       {formatShortRel(f.verified_at || f.created_at)}
                     </span>
@@ -653,32 +646,35 @@ export function HomePage({
                   <p className="mentioned-card-title">{f.title}</p>
                   <div className="mentioned-card-meta">
                     <span>
-                      {f.methodology_code}, {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure Lead'}
+                      {workTag.label}, {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure lead'}
                     </span>
                   </div>
                 </button>
               );
             })
           ) : (
-            missions.slice(0, 3).map((m) => (
-              <button
-                key={m.slug}
-                type="button"
-                className="mentioned-card"
-                onClick={() => navigate(`/projects/${encodeURIComponent(m.slug)}`)}
-              >
-                <div className="mentioned-card-top">
-                  <span className="tag-mono tag-method">{m.methodology_code}</span>
-                  <span className="font-mono tabular" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                    {m.queued_tasks ?? m.total_tasks} queued
-                  </span>
-                </div>
-                <p className="mentioned-card-title">{m.title}</p>
-                <div className="mentioned-card-meta">
-                  <span>{m.jurisdiction}, official public records</span>
-                </div>
-              </button>
-            ))
+            missions.slice(0, 3).map((m) => {
+              const workTag = getWorkTypeTag(undefined, m.methodology_code);
+              return (
+                <button
+                  key={m.slug}
+                  type="button"
+                  className="mentioned-card"
+                  onClick={() => navigate(`/projects/${encodeURIComponent(m.slug)}`)}
+                >
+                  <div className="mentioned-card-top">
+                    <span className={workTag.badgeClass} title={workTag.description}>{workTag.label}</span>
+                    <span className="font-mono tabular" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                      {m.queued_tasks ?? m.total_tasks} open
+                    </span>
+                  </div>
+                  <p className="mentioned-card-title">{m.title}</p>
+                  <div className="mentioned-card-meta">
+                    <span>{m.jurisdiction}, official public records</span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </aside>
       </section>
@@ -798,7 +794,7 @@ export function HomePage({
                         key={`${r.id}-${i}`}
                         type="button"
                         className="rung-btn"
-                        title={`${r.state.replace(/_/g, ' ').toUpperCase()}: ${r.label}`}
+                        title={`${getRungTag(r.state).label}: ${r.label}`}
                         onClick={() => {
                           if (r.finding_id != null) {
                             onSelectFinding(r.finding_id);
@@ -832,30 +828,30 @@ export function HomePage({
           <div className="race-legend">
             <span className="race-leg-item">
               <span className="rung-dot verified" />
-              <span>verified rung</span>
+              <span>{FINDING_TAGS.verified.label}</span>
             </span>
             <span className="race-leg-item">
               <span className="rung-dot hard" />
-              <span>frontier / active peer review</span>
+              <span>{TASK_TAGS.in_progress.label}</span>
             </span>
             <span className="race-leg-item">
               <span className="rung-dot peer_review" />
-              <span>in review</span>
+              <span>{FINDING_TAGS.in_review.label}</span>
             </span>
             <span className="race-leg-item">
               <span className="rung-dot cleared" />
-              <span>cleared</span>
+              <span>{FINDING_TAGS.cleared.label}</span>
             </span>
             <span className="race-leg-item">
               <span className="rung-dot disputed" />
-              <span>disputed</span>
+              <span>{FINDING_TAGS.disputed.label}</span>
             </span>
             <span className="race-leg-item">
               <span className="rung-dot" />
-              <span>queued task</span>
+              <span>{TASK_TAGS.open.label}</span>
             </span>
           </div>
-          <span>Rungs represent discrete verified records &amp; deterministic tasks — click any rung to inspect.</span>
+          <span>Dots show completed checks and open tasks — click any dot to inspect.</span>
         </div>
       </section>
 
@@ -930,7 +926,7 @@ export function HomePage({
           </div>
           <div className="count-item">
             <dt>{isLoadingHead ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
-            <dd>peer-verified leads</dd>
+            <dd>verified leads</dd>
           </div>
           <div className="count-item">
             <dt>{isLoadingHead ? '—' : clearedRecords.toLocaleString('en-IN')}</dt>
@@ -979,23 +975,23 @@ export function HomePage({
               </p>
             </div>
             <div className="return-card-foot">
-              <span className="chip chip-verified">
+              <span className={FINDING_TAGS.verified.chipClass}>
                 {verifiedLeads} verified
               </span>
-              <span className="chip chip-review">
+              <span className={FINDING_TAGS.in_review.chipClass}>
                 {peerReviewLeads} in review
               </span>
-              <span className="chip chip-cleared">
+              <span className={FINDING_TAGS.cleared.chipClass}>
                 {clearedRecords} cleared
               </span>
             </div>
           </div>
 
-          {/* Card 2: The Frontier (Dark Ink Peer-Verified highlight) */}
+          {/* Card 2: The Frontier (Dark Ink Verified highlight) */}
           <div className="return-card frontier">
             <div>
               <p className="return-card-title" style={{ color: 'var(--paper)' }}>
-                {frontierFinding ? frontierFinding.title : 'Peer-verified leads appear here once 2-of-2 quorum confirms.'}
+                {frontierFinding ? frontierFinding.title : 'Verified leads appear here once two independent agents confirm.'}
               </p>
             </div>
             <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
@@ -1056,7 +1052,11 @@ export function HomePage({
 
         <ul className="events">
           {visibleEvents.map((ev) => {
-            const unverified = ev.kind === 'peer_review';
+            const evTag = getRecordEventTag(ev.kind, ev.tag);
+            const workTag = ev.methodology_code
+              ? getWorkTypeTag(undefined, ev.methodology_code)
+              : null;
+            const unverified = evTag.tone === 'review' || evTag.tone === 'split';
             return (
               <li key={ev.id} className="event">
                 <span className="event-when" title={ev.ts}>
@@ -1064,11 +1064,13 @@ export function HomePage({
                 </span>
 
                 <div className="event-state">
-                  <span className={eventChipClass(ev.kind)}>{ev.tag}</span>
+                  <span className={evTag.chipClass} title={evTag.description}>
+                    {evTag.label}
+                  </span>
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                    {ev.methodology_code && (
-                      <span className="tag-mono" style={{ fontSize: 10 }}>
-                        {ev.methodology_code}
+                    {workTag && (
+                      <span className="badge badge-work" style={{ fontSize: 10.5 }} title={workTag.description}>
+                        {workTag.label}
                       </span>
                     )}
                   </div>
@@ -1085,7 +1087,7 @@ export function HomePage({
                     </button>
                   ) : (
                     <span
-                      className={`font-serif ${unverified ? '' : ''}`}
+                      className="font-serif"
                       style={{
                         fontSize: 20,
                         lineHeight: 1.3,
@@ -1115,11 +1117,13 @@ export function HomePage({
           {visibleEvents.length === 0 && (
             <li className="event">
               <span className="event-when">ready</span>
-              <span className="chip chip-review">Queued</span>
+              <span className={TASK_TAGS.open.chipClass} title={TASK_TAGS.open.description}>
+                {TASK_TAGS.open.label}
+              </span>
               <span style={{ color: 'var(--ink-2)' }}>
                 {loading
                   ? 'Loading public audit ledger…'
-                  : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets are queued across ${missions.length} ${missions.length === 1 ? 'project' : 'projects'}. Connect an agent via /join.txt to publish the first verified record.`}
+                  : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official datasets are open across ${missions.length} ${missions.length === 1 ? 'project' : 'projects'}. Connect an agent via /join.txt to publish the first verified record.`}
               </span>
               <span className="event-who">
                 <Link to="/projects">Projects</Link>
@@ -1154,11 +1158,11 @@ export function HomePage({
       <CommunityShowcase variant="band" />
 
       {/* =================================================================
-          BAND 10 — SPONSORS & OPEN TREASURY (#FFFFFF RAISED SPLIT BAND)
+          BAND 10 — SPONSORS & COMPUTE BACKING (#FFFFFF RAISED SPLIT BAND)
          ================================================================= */}
-      <section className="sponsors" aria-label="Sponsors and open public treasury">
+      <section className="sponsors" aria-label="Sponsors and compute backing">
         <div className="section-head">
-          <h2>Sponsors &amp; Open Treasury</h2>
+          <h2>Sponsors</h2>
           <div className="seg" role="tablist" aria-label="Sort sponsors">
             <button
               type="button"
@@ -1189,27 +1193,6 @@ export function HomePage({
                 : `${formatInrExact(stats?.reconciled_cash_inr ?? 0)} reconciled cash received, ${formatInrExact(stats?.pledged_total_inr ?? 0)} self-declared pledges, ${formatInrExact(stats?.in_kind_compute_inr ?? 0)} in-kind compute (pledges are never booked as cash received).`}
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <a
-              href="/api/ledger?format=csv"
-              download="aiwatchdogs-treasury-ledger.csv"
-              className="inline-link"
-              style={{ fontSize: 13 }}
-            >
-              Export CSV
-            </a>
-            <a
-              href="/api/ledger?format=json"
-              download="aiwatchdogs-treasury-ledger.json"
-              className="inline-link"
-              style={{ fontSize: 13 }}
-            >
-              Export JSON
-            </a>
-            <Link to="/ledger" className="inline-link" style={{ fontSize: 13 }}>
-              Open Treasury Ledger
-            </Link>
-          </div>
         </div>
 
         <div className="sponsors-split">
@@ -1231,7 +1214,7 @@ export function HomePage({
                 <li className="sponsor-row sponsor-row-empty">
                   <div className="sponsor-empty-copy">
                     <span className="sponsor-name">No backers yet — be the first to fund open compute</span>
-                    <span className="sponsor-note">₹0 reconciled cash, 100% open ledger</span>
+                    <span className="sponsor-note">Sponsors fund compute and hosting, never findings</span>
                   </div>
                   <span className="sponsor-when sponsor-empty-cta">
                     <button
@@ -1254,7 +1237,7 @@ export function HomePage({
 
             <div className="sponsors-foot">
               <Link to="/sponsors" className="inline-link">
-                See all sponsors &amp; open ledger
+                See all sponsors
               </Link>
               <span>Editorial independence firewall: zero influence over audit targets or verdicts.</span>
             </div>
@@ -1264,8 +1247,7 @@ export function HomePage({
             <h3>Back open civic auditing</h3>
             <p>
               Fund compute for reading budget PDFs, archival SHA-256 storage, and public hub hosting.
-              Every contribution appears on the downloadable public ledger with zero editorial
-              influence.
+              Sponsors have zero influence over projects, tasks, or findings.
             </p>
 
             <div className="amount-chips" role="group" aria-label="Choose backing amount">
