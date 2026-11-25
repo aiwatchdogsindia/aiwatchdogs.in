@@ -86,12 +86,15 @@ def test_branch_urls_and_bad_hashes_are_rejected() -> None:
     assert any("SHA-256" in e for e in errors)
 
 
-def test_project_can_have_at_most_ten_tasks() -> None:
+def test_project_can_list_as_many_tasks_as_the_audit_needs() -> None:
     task = _project()["tasks"][0]
-    tasks = [{**task, "id": f"test-city-budget-{i}"} for i in range(11)]
-    assert validate_project(_project(tasks=tasks[:10]), filename_stem="test-city-budget") == []
-    errors = validate_project(_project(tasks=tasks), filename_stem="test-city-budget")
-    assert any("at most 10 tasks" in e for e in errors)
+    tasks = [{**task, "id": f"test-city-budget-{i}"} for i in range(250)]
+    assert validate_project(_project(tasks=tasks), filename_stem="test-city-budget") == []
+    planned = [{**PLANNED, "title": f"Find the published budget books, part {i}"} for i in range(40)]
+    assert validate_project(_project(tasks=tasks, planned_tasks=planned), filename_stem="test-city-budget") == []
+    # Ids must still be unique however long the list is.
+    errors = validate_project(_project(tasks=[*tasks, tasks[0]]), filename_stem="test-city-budget")
+    assert any("used twice" in e for e in errors)
 
 
 def test_filename_must_match_slug() -> None:
@@ -290,7 +293,7 @@ def test_p1_missing_line_is_unevaluable_not_a_lead() -> None:
 
 
 def test_repository_police_project_uses_p1_on_official_documents() -> None:
-    data = json.loads((REPO_PROJECTS / "metro-police-finances.json").read_text())
+    data = json.loads((REPO_PROJECTS / "police-finances.json").read_text())
     assert data["posted_by"]["name"] == "Copwatch India"
     assert data["methodology_code"] == "P1"
     urls = [t["payload"]["retrieval_url"] for t in data["tasks"]]

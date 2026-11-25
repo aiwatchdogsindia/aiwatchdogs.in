@@ -7,6 +7,9 @@ internally so the existing agent protocol keeps working).
 
 This module owns the file format, validation (used by CI and by
 ``aiwatchdogs project validate``) and the database sync.
+
+A project may be renamed: list its earlier slugs under ``formerly`` and the sync moves the
+existing record (tasks, findings, history) to the new slug instead of starting a new one.
 """
 
 from __future__ import annotations
@@ -74,7 +77,8 @@ VALID_QUANTITY_TYPES = {
     "electoral_bond_disclosures",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
-MAX_TASKS_PER_PROJECT = 10
+MAX_FORMER_SLUGS = 10
+MAX_PART_WINDOW_LINES = 12
 DEFAULT_PRIORITY = 5
 SYNC_STATE_KEY = "community_projects"
 
@@ -178,6 +182,10 @@ def _validate_p1_context(ctx: dict[str, Any], where: str, errors: list[str]) -> 
                 idx = part.get("index", 0)
                 if isinstance(idx, bool) or not isinstance(idx, int) or idx < 0 or idx > 50:
                     errors.append(f"{pwhere}.index must be a non-negative integer <= 50.")
+                for wkey in ("lines_before", "lines_after"):
+                    win = part.get(wkey, 0)
+                    if isinstance(win, bool) or not isinstance(win, int) or not 0 <= win <= MAX_PART_WINDOW_LINES:
+                        errors.append(f"{pwhere}.{wkey} must be a whole number from 0 to {MAX_PART_WINDOW_LINES}.")
         refs = spec.get("references") or {}
         if refs and not isinstance(refs, dict):
             errors.append(f"{bwhere}.references must be an object.")
@@ -225,6 +233,20 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(f"'slug' '{slug}' is reserved for a built-in mission; choose a distinct slug.")
         if filename_stem is not None and filename_stem != slug:
             errors.append(f"File name must match the slug: rename it to '{slug}.json'.")
+
+    formerly = data.get("formerly", [])
+    if not isinstance(formerly, list) or len(formerly) > MAX_FORMER_SLUGS:
+        errors.append(f"'formerly' must be a list of at most {MAX_FORMER_SLUGS} earlier slugs.")
+    else:
+        for old in formerly:
+            if not isinstance(old, str) or not SLUG_RE.match(old) or len(old) > 64:
+                errors.append("'formerly' entries must be slugs (lowercase words joined by hyphens).")
+            elif old == slug:
+                errors.append("'formerly' must not repeat the project's current slug.")
+            elif old in RESERVED_MISSION_SLUGS:
+                errors.append(f"'formerly' entry '{old}' is reserved for a built-in mission.")
+        if len({x for x in formerly if isinstance(x, str)}) != len(formerly):
+            errors.append("'formerly' lists the same slug twice.")
 
     for key, limit in (("title", 120), ("summary", 600)):
         val = data.get(key)
@@ -292,10 +314,6 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     if not isinstance(planned, list):
         errors.append("'planned_tasks' must be a list.")
         planned = []
-    if len(tasks) + len(planned) > MAX_TASKS_PER_PROJECT:
-        errors.append(
-            f"A project can list at most {MAX_TASKS_PER_PROJECT} tasks ('tasks' and 'planned_tasks' together)."
-        )
     if not tasks and not planned:
         errors.append("'planned_tasks' must list at least one task with a type and estimated_tokens.")
     for i, item in enumerate(planned):
@@ -451,6 +469,16 @@ def load_project_files(directory: Path | None = None) -> list[ProjectFile]:
             pf.errors.append(f"Slug '{pf.slug}' is already used by {slugs[pf.slug].name}.")
         else:
             slugs[pf.slug] = pf.path
+    former: dict[str, Path] = {}
+    for pf in files:
+        for old in former_slugs(pf.data):
+            if old in slugs and slugs[old] != pf.path:
+                pf.errors.append(f"'formerly' entry '{old}' is the current slug of {slugs[old].name}.")
+            elif old in former and former[old] != pf.path:
+                pf.errors.append(f"'formerly' entry '{old}' is also claimed by {former[old].name}.")
+            else:
+                former[old] = pf.path
+    for pf in files:
         for task in pf.data.get("tasks", []) if isinstance(pf.data.get("tasks"), list) else []:
             tid = task.get("id") if isinstance(task, dict) else None
             if isinstance(tid, str):
@@ -462,6 +490,57 @@ def load_project_files(directory: Path | None = None) -> list[ProjectFile]:
 
 def project_mission_id(slug: str) -> str:
     return f"{PROJECT_ID_PREFIX}{slug}"
+
+
+def former_slugs(data: Any) -> list[str]:
+    """Earlier slugs of a project, as listed under ``formerly`` (invalid entries are ignored)."""
+    raw = data.get("formerly") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    return [x for x in raw if isinstance(x, str) and SLUG_RE.match(x) and len(x) <= 64]
+
+
+def slug_aliases(directory: Path | None = None) -> dict[str, str]:
+    """Map every earlier slug to the project's current slug, so old links keep working."""
+    out: dict[str, str] = {}
+    for pf in load_project_files(directory):
+        if pf.errors or not pf.slug:
+            continue
+        for old in former_slugs(pf.data):
+            out.setdefault(old, pf.slug)
+    return out
+
+
+def _rename_project(conn: Any, db: Any, old_slug: str, new_slug: str) -> bool:
+    """Move a project's record from ``old_slug`` to ``new_slug``, keeping its tasks and findings.
+
+    ``missions.id`` is referenced by tasks, findings and evidence artifacts, so the row is copied
+    under the new key, the children are repointed, and the old row is removed, all inside the
+    caller's transaction.
+    """
+    from aiwatchdogs.hub.database import _get_table_columns
+
+    old_id, new_id = project_mission_id(old_slug), project_mission_id(new_slug)
+    if conn.execute("SELECT id FROM missions WHERE id = ?", (old_id,)).fetchone() is None:
+        return False
+    if conn.execute("SELECT id FROM missions WHERE id = ? OR slug = ?", (new_id, new_slug)).fetchone() is not None:
+        return False  # the new project already exists; never merge two records
+    columns = sorted(_get_table_columns(conn, "missions", is_postgres=bool(getattr(db, "is_postgres", False))))
+    copied = [c for c in columns if c not in ("id", "slug")]
+    col_sql = ", ".join(copied)
+    conn.execute(
+        f"INSERT INTO missions (id, slug, {col_sql}) SELECT ?, ?, {col_sql} FROM missions WHERE id = ?",
+        (new_id, new_slug, old_id),
+    )
+    for table in ("tasks", "findings"):
+        conn.execute(
+            f"UPDATE {table} SET mission_id = ?, mission_slug = ? WHERE mission_id = ?",
+            (new_id, new_slug, old_id),
+        )
+    conn.execute("UPDATE evidence_artifacts SET mission_id = ? WHERE mission_id = ?", (new_id, old_id))
+    conn.execute("UPDATE whispers SET mission_slug = ? WHERE mission_slug = ?", (new_slug, old_slug))
+    conn.execute("DELETE FROM missions WHERE id = ?", (old_id,))
+    return True
 
 
 def project_task_id(task_id: str) -> str:
@@ -532,6 +611,8 @@ def sync_projects(
         for pf in valid:
             d = pf.data
             priority = d.get("priority", DEFAULT_PRIORITY)
+            for old_slug in former_slugs(d):
+                _rename_project(conn, db, old_slug, d["slug"])
             mid = project_mission_id(d["slug"])
             posted = d["posted_by"]
             tasks = d.get("tasks", [])

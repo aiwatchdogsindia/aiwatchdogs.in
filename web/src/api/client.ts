@@ -597,6 +597,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
       ? asArray<Record<string, unknown>>(raw.tasks).map((t) => ({
           id: (t.id ?? '') as string | number,
           task_type: String(t.task_type || 'anomaly_scan'),
+          role: optStr(t.role) ?? (String(t.task_type) === 'peer_verify' ? 'peer_verifier' : 'auditor'),
           title: t.title ? String(t.title) : undefined,
           status: String(t.status || 'queued'),
           claimed_by: (t.claimed_by_handle || t.claimed_by || null) as string | null,

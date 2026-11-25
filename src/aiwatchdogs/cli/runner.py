@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import inspect
+import json
+import logging
 import math
+import os
+import random
 import re
 import time
 from collections.abc import Callable
@@ -48,6 +52,21 @@ CHECK_FAIL = "fail"
 CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
+# Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.3"
+# How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
+MAX_RATE_LIMIT_WAITS = 8
+MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
+MAX_TRANSPORT_RETRIES = 3
+RETRYABLE_HUB_STATUS = frozenset({502, 503, 504})
+# After this many source-fetch failures in a row the node stops claiming: the trouble is its own
+# network, and every further claim would only take a task away from nodes that can reach the source.
+MAX_CONSECUTIVE_SOURCE_FAILURES = 2
+SOURCE_FAILURE_REASONS = frozenset({"network_error", "policy_blocked"})
+ROLE_LABELS = {"auditor": "AUDITOR", "peer_verifier": "PEER VERIFIER", "adjudicator": "ADJUDICATOR"}
+
+# pypdf logs harmless font-table warnings for some government PDFs; they only confuse a reader.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 MAX_INLINE_RECORDS = 5_000
 _SAFE_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SAFE_HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
@@ -150,6 +169,32 @@ class DigestMismatchFailure(ValueError):
     """Raised when a primary or secondary artifact SHA-256 digest fails verification."""
 
 
+class UnevaluableSourceFailure(ValueError):
+    """Raised when the check could not read any of the figures it was asked to compare."""
+
+
+def role_of(lease: dict[str, Any]) -> str:
+    """The role the Hub assigned with this lease (older Hubs send none; derive it from the task)."""
+    role = lease.get("role") if isinstance(lease, dict) else None
+    if isinstance(role, dict) and str(role.get("name") or "") in ROLE_LABELS:
+        return str(role["name"])
+    task = lease.get("task") if isinstance(lease, dict) and isinstance(lease.get("task"), dict) else {}
+    if str(task.get("task_type") or "").strip().lower() == "peer_verify":
+        payload = task.get("payload") if isinstance(task.get("payload"), dict) else {}
+        return "adjudicator" if payload.get("review_type") == "adjudication" else "peer_verifier"
+    return "auditor"
+
+
+def _retry_after_seconds(resp: httpx.Response) -> float | None:
+    raw = resp.headers.get("Retry-After")
+    if raw is None:
+        return None
+    try:
+        return max(1.0, min(float(raw.strip()), MAX_RATE_LIMIT_WAIT_SECONDS))
+    except ValueError:
+        return None
+
+
 class RunSummary(BaseModel):
     """Aggregate telemetry returned when an AgentRunner loop finishes."""
 
@@ -163,6 +208,8 @@ class RunSummary(BaseModel):
     verifications_submitted: int = 0
     aborted_410: int = 0
     errors: int = 0
+    roles: dict[str, int] = Field(default_factory=dict)
+    stopped_reason: str = ""
     session_spent_usd: float = 0.0
     budget: dict[str, Any] = Field(default_factory=dict)
     results: list[dict[str, Any]] = Field(default_factory=list)
@@ -1044,7 +1091,7 @@ class AgentRunner:
         self._client = http_client or httpx.Client(
             base_url=config.normalized_hub_url,
             timeout=httpx.Timeout(request_timeout),
-            headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.2"},
+            headers={"User-Agent": CLI_USER_AGENT},
             follow_redirects=False,
         )
         self.on_event = on_event
@@ -1063,6 +1110,121 @@ class AgentRunner:
         self._task_started: float | None = None
         self._task_input_tokens = 0
         self._task_output_tokens = 0
+        self._sleep: Callable[[float], None] = time.sleep
+        self._lease_note_enabled = True
+
+    # ------------------------------------------------------------------
+    # Lease note: lets the next run hand back a lease an interrupted run left behind
+    # ------------------------------------------------------------------
+
+    def _lease_note_path(self) -> Path | None:
+        if self.config_path is None or not self._lease_note_enabled:
+            return None
+        return Path(f"{self.config_path}.lease")
+
+    def _note_lease(self, lease_id: str) -> None:
+        path = self._lease_note_path()
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump({"hub": self.config.normalized_hub_origin, "handle": self.config.handle, "lease_id": lease_id}, fh)
+        except OSError:
+            pass
+
+    def _clear_lease_note(self) -> None:
+        path = self._lease_note_path()
+        if path is None:
+            return
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+    def recover_interrupted_lease(self) -> bool:
+        """Release the lease a previous run of this handle was holding when it was killed, if any."""
+        path = self._lease_note_path()
+        if path is None or not path.is_file() or not self.config.api_token:
+            return False
+        try:
+            note = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            note = None
+        self._clear_lease_note()
+        if not isinstance(note, dict):
+            return False
+        lease_id = str(note.get("lease_id") or "").strip()
+        same_identity = (
+            str(note.get("hub") or "") == self.config.normalized_hub_origin
+            and str(note.get("handle") or "") == self.config.handle
+        )
+        if not lease_id or len(lease_id) > 128 or not same_identity:
+            return False
+        released = self.release(lease_id, reason="interrupted", notes="Earlier run was interrupted; returning the task.")
+        if released is not None:
+            self._emit("lease_recovered", {"lease_id": lease_id})
+        return released is not None
+
+    # ------------------------------------------------------------------
+    # Hub transport: wait out rate limits, retry short outages
+    # ------------------------------------------------------------------
+
+    def _hub_send(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str] | None = None,
+        json_body: dict[str, Any] | None = None,
+        what: str = "request",
+        rate_limit_waits: int = MAX_RATE_LIMIT_WAITS,
+        transport_retries: int = MAX_TRANSPORT_RETRIES,
+        retry_read_errors: bool = True,
+    ) -> httpx.Response:
+        """Send one Hub request, waiting out HTTP 429 (Retry-After) and retrying brief outages.
+
+        Many volunteer nodes can sit behind one public address and share its rate limit, so a 429
+        with ``Retry-After`` is normal traffic control, not a failure. A 429 without that header is
+        a real refusal (for example the two-lease cap) and is returned at once.
+        """
+        waited = 0
+        retried = 0
+        while True:
+            try:
+                resp = self._client.request(
+                    method,
+                    self._url(path),
+                    headers=headers,
+                    json=json_body,
+                    **self._request_kwargs(),
+                )
+            except httpx.TransportError as exc:
+                connect_phase = isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
+                if retried >= transport_retries or not (retry_read_errors or connect_phase):
+                    raise
+                retried += 1
+                delay = min(20.0, 2.0 * (2 ** (retried - 1))) + random.uniform(0.0, 1.0)
+                self._emit("hub_retry", {"what": what, "reason": type(exc).__name__, "delay": round(delay, 1)})
+                self._sleep(delay)
+                continue
+            if resp.status_code == 429:
+                pause = _retry_after_seconds(resp)
+                if pause is None or waited >= rate_limit_waits:
+                    return resp
+                waited += 1
+                delay = pause + random.uniform(0.2, 3.0)  # spread nodes that share one address
+                self._emit("hub_retry", {"what": what, "reason": "rate_limited", "delay": round(delay, 1)})
+                self._sleep(delay)
+                continue
+            if resp.status_code in RETRYABLE_HUB_STATUS and retried < transport_retries and retry_read_errors:
+                retried += 1
+                delay = min(20.0, 2.0 * (2 ** (retried - 1))) + random.uniform(0.0, 1.0)
+                self._emit("hub_retry", {"what": what, "reason": f"HTTP {resp.status_code}", "delay": round(delay, 1)})
+                self._sleep(delay)
+                continue
+            return resp
 
     def close(self) -> None:
         if not self._external_client:
@@ -1121,11 +1283,15 @@ class AgentRunner:
             "coding_agent_model": getattr(self.config, "coding_agent_model", "") or "",
         }
         headers = self._auth_headers() if self.config.api_token else {"Accept": "application/json"}
-        resp = self._client.post(
-            self._url("/api/agents/register"),
+        # A lost reply to a first registration would orphan the handle, so only failures that
+        # happen before the request is sent are retried.
+        resp = self._hub_send(
+            "POST",
+            "/api/agents/register",
             headers=headers,
-            json=payload,
-            **self._request_kwargs(),
+            json_body=payload,
+            what="register",
+            retry_read_errors=False,
         )
         resp.raise_for_status()
         data = self._parse_hub_json(resp)
@@ -1171,17 +1337,14 @@ class AgentRunner:
         if preferred_mission:
             body["preferred_mission"] = preferred_mission
 
-        resp = self._client.post(
-            self._url("/api/desk/next"),
-            headers=self._auth_headers(),
-            json=body,
-            **self._request_kwargs(),
-        )
+        resp = self._hub_send("POST", "/api/desk/next", headers=self._auth_headers(), json_body=body, what="claim")
         if resp.status_code == 204 or not resp.content.strip():
             self._emit("queue_empty", {"handle": self.config.handle})
             return None
         resp.raise_for_status()
         lease = self._parse_hub_json(resp)
+        if isinstance(lease, dict) and lease.get("lease_id"):
+            self._note_lease(str(lease["lease_id"]))
         self._emit("task_claimed", lease)
         return lease
 
@@ -1199,15 +1362,27 @@ class AgentRunner:
         if progress_pct is not None:
             body["progress_pct"] = progress_pct
 
-        resp = self._client.post(
-            self._url("/api/desk/beat"),
-            headers=self._auth_headers(),
-            json=body,
-            **self._request_kwargs(),
-        )
+        # A heartbeat only reports progress; the lease itself runs 45 minutes. If the Hub is
+        # throttling or briefly unreachable, skip the beat and keep working rather than fail the task.
+        try:
+            resp = self._hub_send(
+                "POST",
+                "/api/desk/beat",
+                headers=self._auth_headers(),
+                json_body=body,
+                what="heartbeat",
+                rate_limit_waits=0,
+                transport_retries=1,
+            )
+        except httpx.TransportError:
+            self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": "hub unreachable"})
+            return True
         if resp.status_code == 410:
             self._emit("lease_gone", {"lease_id": lease_id})
             return False
+        if resp.status_code == 429 or resp.status_code >= 500:
+            self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": f"HTTP {resp.status_code}"})
+            return True
         resp.raise_for_status()
         self._emit(
             "heartbeat",
@@ -1227,16 +1402,20 @@ class AgentRunner:
         if notes:
             body["notes"] = notes[:500]
         try:
-            resp = self._client.post(
-                self._url("/api/desk/release"),
+            resp = self._hub_send(
+                "POST",
+                "/api/desk/release",
                 headers=self._auth_headers(),
-                json=body,
-                **self._request_kwargs(),
+                json_body=body,
+                what="release",
+                rate_limit_waits=2,
             )
-            if resp.status_code == 410:
+            if resp.status_code in (404, 410):
+                self._clear_lease_note()
                 return None
             resp.raise_for_status()
             data = resp.json() if resp.content.strip() else {"status": "released"}
+            self._clear_lease_note()
             self._emit("task_released", {"lease_id": lease_id, "reason": reason})
             return data
         except httpx.HTTPError:
@@ -1283,14 +1462,17 @@ class AgentRunner:
         if usage is not None:
             body["usage"] = usage
 
-        resp = self._client.post(
-            self._url("/api/desk/submit"),
+        # Safe to repeat: the Hub replays the stored answer for the same idempotency key.
+        resp = self._hub_send(
+            "POST",
+            "/api/desk/submit",
             headers=self._auth_headers(extra={"Idempotency-Key": idem_key}),
-            json=body,
-            **self._request_kwargs(),
+            json_body=body,
+            what="submit",
         )
         resp.raise_for_status()
         data = resp.json() if resp.content.strip() else {"status": "submitted"}
+        self._clear_lease_note()
         self._emit("task_submitted", {"lease_id": lease_id, "outcome": outcome, "response": data})
         return data
 
@@ -1589,6 +1771,14 @@ class AgentRunner:
             "is_demo_sample": False,
             "pii_redactions_count": len(dataset.pii_redactions),
         }
+
+        if not engine_res.leads and unevaluable_count > 0 and int(engine_res.cleared_count or 0) == 0:
+            # Nothing was read, so nothing was checked. Reporting that as "cleared" would put a false
+            # clean result on the public record; hand the task back instead.
+            raise UnevaluableSourceFailure(
+                f"{methodology_code} could not read any of the {unevaluable_count} figure set(s) it was asked "
+                "to compare in this file (the printed lines were not found as specified)."
+            )
 
         if not engine_res.leads:
             clean_summary, _ = scrub_pii(engine_res.summary)
@@ -2099,10 +2289,18 @@ class AgentRunner:
                 "outcome": "released",
                 "reason": "unsupported_task_type",
             }
+        except (KeyboardInterrupt, SystemExit):
+            # Ctrl-C, a terminal hang-up or a harness timeout: give the task back before leaving so it
+            # is not locked for the rest of its 45-minute lease.
+            self.release(lease_id, reason="interrupted", notes="Run was interrupted before the task finished.")
+            raise
         except Exception as exc:
             if _is_digest_mismatch_exception(exc):
                 release_reason = "digest_mismatch"
                 safe_release_note = "Artifact SHA-256 digest mismatch."
+            elif isinstance(exc, UnevaluableSourceFailure):
+                release_reason = "unevaluable_source"
+                safe_release_note = "The check could not read the figures it was asked to compare."
             elif isinstance(exc, PermissionError):
                 release_reason = "policy_blocked"
                 safe_release_note = "Dataset source disallowed by local runner security policy."
@@ -2144,8 +2342,11 @@ class AgentRunner:
         save_on_register: bool = True,
     ) -> RunSummary:
         """Run the claim -> audit/verify -> submit loop, strictly enforcing max_tasks even in continuous mode."""
+        # A run with a borrowed identity must not leave files beside someone else's credentials.
+        self._lease_note_enabled = bool(save_on_register)
         if auto_register and not self.config.api_token:
             self.register(save=save_on_register)
+        self.recover_interrupted_lease()
 
         effective_max = max_tasks if max_tasks is not None else self.config.max_tasks
         effective_max = max(0, int(effective_max))
@@ -2155,23 +2356,41 @@ class AgentRunner:
             hub_url=self.config.normalized_hub_url,
             profile_url=self.config.profile_url,
         )
+        source_failures = 0
 
         # Strictly enforce effective_max in BOTH normal and continuous modes.
         # In continuous mode, an empty queue sleeps & retries until effective_max tasks are claimed.
         while summary.tasks_claimed < effective_max:
-            lease = self.claim_next(preferred_mission=preferred_mission)
+            try:
+                lease = self.claim_next(preferred_mission=preferred_mission)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429:
+                    # Still refused after waiting: either the address is saturated or this handle
+                    # already holds its two leases. Stop cleanly; nothing is lost.
+                    summary.stopped_reason = "hub_busy_or_lease_cap"
+                    self._emit("claim_refused", {"detail": exc.response.text[:300]})
+                    break
+                raise
             if lease is None:
                 if continuous:
-                    time.sleep(self.poll_interval)
+                    self._sleep(self.poll_interval)
                     continue
                 break
 
             summary.tasks_claimed += 1
+            role = role_of(lease)
             result = self.execute_task(lease)
+            result.setdefault("role", role)
             summary.results.append(result)
 
             outcome = result.get("outcome")
             status = result.get("status")
+            if status == "completed":
+                summary.roles[role] = summary.roles.get(role, 0) + 1
+            if status == "error" and result.get("reason") in SOURCE_FAILURE_REASONS:
+                source_failures += 1
+            else:
+                source_failures = 0
             if status == "aborted_410":
                 summary.aborted_410 += 1
             elif status == "error":
@@ -2184,6 +2403,11 @@ class AgentRunner:
                     summary.cleared_submitted += 1
                 elif outcome == "verification":
                     summary.verifications_submitted += 1
+
+            if source_failures >= MAX_CONSECUTIVE_SOURCE_FAILURES:
+                summary.stopped_reason = "sources_unreachable"
+                self._emit("sources_unreachable", {"failures": source_failures})
+                break
 
         budget_snap = self.budget_tracker.snapshot()
         summary.session_spent_usd = float(budget_snap.get("session_spent_usd", 0.0))

@@ -2209,24 +2209,33 @@ def test_lease_auth_server_authoritative_binding_idempotency_and_backoff_adjudic
                 json={"lease_id": exp_lease, "outcome": "cleared"},
             ).status_code == 410
 
-            # 6. Retry backoff -> needs_adjudication after max_retries (3) releases!
-            for attempt in range(1, 4):
+            # 6. Retry backoff -> needs_adjudication once a task has been released max_retries (3) times.
+            # The mission queues two scans and the desk serves the least recently released one first, so
+            # which task comes back depends on whether the clock ticked between releases. Count releases
+            # per task rather than assuming the same task returns every time.
+            releases: dict[str, int] = {}
+            for _ in range(6):
                 c_rel = client.post(
                     "/api/desk/next",
                     headers={"X-Agent-Token": a1["api_token"]},
                     json={"handle": "ops-agent-1", "mode": "investigate", "preferred_mission": "ocds-vendor-concentration"},
                 )
                 assert c_rel.status_code == 200
+                released_id = c_rel.json()["task"]["id"]
                 rel = client.post(
                     "/api/desk/release",
                     headers={"X-Agent-Token": a1["api_token"]},
                     json={"lease_id": c_rel.json()["lease_id"], "reason": "transient_err"},
                 )
                 assert rel.status_code == 200
-                if attempt < 3:
+                releases[released_id] = releases.get(released_id, 0) + 1
+                if releases[released_id] < 3:
                     assert rel.json()["task_status"] == "queued"
                 else:
                     assert rel.json()["task_status"] == "needs_adjudication"
+                    break
+            else:
+                pytest.fail("No task was parked after repeated releases.")
     finally:
         app.state.db.close()
 

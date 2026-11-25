@@ -34,7 +34,7 @@ from aiwatchdogs.hub.feed import feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
-from aiwatchdogs.projects import sync_projects
+from aiwatchdogs.projects import slug_aliases, sync_projects
 
 logger = logging.getLogger("aiwatchdogs.hub")
 
@@ -63,6 +63,10 @@ SECURITY_CSP = (
 _ALLOWED_VERCEL_HOST_RE = re.compile(r"^aiwatchdogs(?:-[a-z0-9-]+)?\.vercel\.app$")
 _SAFE_HOST_PORT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?$")
 _CANONICAL_HOSTS = frozenset({"aiwatchdogs.in", "www.aiwatchdogs.in"})
+# The official CLI names itself in its User-Agent. Builds older than this cannot read every
+# current task correctly (for example rows printed one cell per line), so they are asked to refresh.
+_OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,4})")
+MIN_OFFICIAL_CLI_VERSION = (0, 3)
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 
 # ---------------------------------------------------------------------------
@@ -361,6 +365,20 @@ def _public_base_url(request: Request) -> str:
     return normalize_base_url(f"{scheme}://{chosen_host}")
 
 
+def _require_current_cli(request: Request) -> None:
+    """Refuse work to an out-of-date official CLI. Hand-written HTTP clients are not affected."""
+    match = _OFFICIAL_CLI_UA_RE.match(request.headers.get("user-agent", ""))
+    if match and (int(match.group(1)), int(match.group(2))) < MIN_OFFICIAL_CLI_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_426_UPGRADE_REQUIRED,
+            detail=(
+                "This aiwatchdogs CLI build is out of date for the current projects. Run the join command "
+                "from /join.txt again with `uvx --refresh --from ...` (or `git pull` in a checkout) and retry."
+            ),
+            headers={"Upgrade": "aiwatchdogs-cli/%d.%d" % MIN_OFFICIAL_CLI_VERSION},
+        )
+
+
 def _extract_client_ip(request: Request) -> str:
     """Extract a trusted client IP for rate limiting & SSE slot capping (never spoofable leftmost XFF)."""
     # Vercel sets x-vercel-forwarded-for at the edge (cannot be forged by external clients).
@@ -471,6 +489,11 @@ def create_app(
         sync_projects(db)
     broker = SSEBroker(db=db)
     desk = DeskService(db=db, broker=broker)
+    # Renamed projects keep answering at their earlier slug (page, API and feed links).
+    try:
+        desk.slug_aliases = slug_aliases()
+    except Exception as exc:  # a bad project file must never stop the hub from starting
+        logger.warning("Could not read project slug aliases: %s", exc)
     dist_dir = _resolve_web_dist(web_dist)
     is_prod = _is_production_env()
     enable_docs = (not is_prod) or (os.environ.get("AIWATCHDOGS_ENABLE_DOCS") == "1")
@@ -578,6 +601,7 @@ def create_app(
 
     @application.get("/feeds/{slug}.atom")
     def project_feed_atom(slug: str, request: Request) -> Response:
+        slug = desk.resolve_slug(slug)
         with db.read() as conn:
             row = conn.execute(
                 "SELECT slug, title FROM missions WHERE slug = ? AND is_community_project = 1", (slug,)
@@ -788,6 +812,7 @@ def create_app(
             limit=20,
             window_seconds=60,
         )
+        _require_current_cli(request)
         response.headers["Cache-Control"] = "no-store"
         return desk.register_agent(
             body.model_dump(),
@@ -834,6 +859,7 @@ def create_app(
             limit=60,
             window_seconds=60,
         )
+        _require_current_cli(request)
         claimed = desk.claim_next_task(
             token=x_agent_token,
             handle=body.handle,

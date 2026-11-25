@@ -67,6 +67,52 @@ MAX_MONETARY_INR = 1e14
 MAX_PLEDGE_INR = 1e12
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 30
+# A task parked after repeated failed attempts returns to the queue after this long.
+DEFAULT_PARKED_REQUEUE_MINUTES = 120
+# Most tasks one project page lists (audits and the peer checks they spawn).
+MAX_PROJECT_TASKS_LISTED = 2000
+
+# What the desk asks an agent to be for one task. Sent with every claim so that any agent,
+# whatever tool runs it, knows its job without reading the task type.
+TASK_ROLES: dict[str, dict[str, str]] = {
+    "auditor": {
+        "name": "auditor",
+        "title": "Auditor",
+        "brief": (
+            "You are the first agent on this check. Download the pinned official file, verify its "
+            "SHA-256, run the deterministic check, and submit either a neutral lead or a cleared "
+            "result. Two other agents will repeat your work independently."
+        ),
+        "submit_outcomes": "finding | cleared",
+    },
+    "peer_verifier": {
+        "name": "peer_verifier",
+        "title": "Peer verifier",
+        "brief": (
+            "Another agent submitted this lead. Independently download the same pinned file, verify "
+            "its SHA-256, re-run the check and submit an explicit verdict with all four checks. "
+            "You can never verify your own lead."
+        ),
+        "submit_outcomes": "verification",
+    },
+    "adjudicator": {
+        "name": "adjudicator",
+        "title": "Adjudicator",
+        "brief": (
+            "Two agents disagreed on this lead. Independently download the same pinned file, verify "
+            "its SHA-256, re-run the check and submit the tie-breaking verdict with all four checks."
+        ),
+        "submit_outcomes": "verification",
+    },
+}
+
+
+def task_role(task_type: Any, payload: Any = None) -> dict[str, str]:
+    """The role a claimed task puts its agent in: auditor, peer verifier or adjudicator."""
+    if str(task_type or "").strip().lower() == "peer_verify":
+        review = str(payload.get("review_type") or "") if isinstance(payload, dict) else ""
+        return dict(TASK_ROLES["adjudicator" if review == "adjudication" else "peer_verifier"])
+    return dict(TASK_ROLES["auditor"])
 
 VALID_VERDICTS: frozenset[str] = frozenset(
     {"confirm", "dispute", "needs_review", "reject_false_positive", "flag_pii_or_legal"}
@@ -408,7 +454,13 @@ def _agents_may_choose_project() -> bool:
 class DeskService:
     """Implements Coordinator Hub read-plane queries and Desk write-plane coordination."""
 
+    def resolve_slug(self, slug: str) -> str:
+        """Follow a renamed project's earlier slug to its current one."""
+        return self.slug_aliases.get(slug, slug)
+
     def __init__(self, db: Database, broker: SSEBroker) -> None:
+        # Earlier slug -> current slug for renamed projects (filled by the app from projects/).
+        self.slug_aliases: dict[str, str] = {}
         self.db = db
         self.broker = broker
 
@@ -1121,7 +1173,39 @@ class DeskService:
                     "UPDATE agents SET current_task_id = NULL WHERE id = ? AND current_task_id = ?",
                     (row["claimed_by_agent_id"], row["id"]),
                 )
+        self._requeue_parked_tasks(conn, now)
         return len(expired)
+
+    @staticmethod
+    def _requeue_parked_tasks(conn: Any, now: str) -> None:
+        """Put tasks parked after repeated failed attempts back on the queue once they have cooled down.
+
+        Three releases or lapsed leases park a task. On a volunteer swarm those are usually a node's
+        own trouble (a blocked network, a killed session), not the task's, so parking is temporary.
+        Peer checks keep their exclusion list; nobody can come back to verify their own lead.
+        """
+        try:
+            minutes = int(os.environ.get("AIWATCHDOGS_PARKED_REQUEUE_MINUTES", str(DEFAULT_PARKED_REQUEUE_MINUTES)))
+        except ValueError:
+            minutes = DEFAULT_PARKED_REQUEUE_MINUTES
+        if minutes <= 0:
+            return
+        now_dt = _parse_iso(now)
+        if now_dt is None:
+            return
+        cutoff = (now_dt - timedelta(minutes=minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'queued', retry_count = 0, available_at = NULL, updated_at = ?
+            WHERE status = 'needs_adjudication' AND updated_at < ?
+              AND task_type IN ('anomaly_scan', 'ingest_parse', 'peer_verify')
+              AND (target_finding_id IS NULL OR target_finding_id IN (
+                  SELECT id FROM findings WHERE status = 'peer_review' AND COALESCE(quarantined, 0) = 0
+              ))
+            """,
+            (now, cutoff),
+        )
 
     def _authenticate_agent(
         self,
@@ -2040,6 +2124,7 @@ class DeskService:
         }
 
     def get_mission_detail(self, slug: str) -> dict[str, Any]:
+        slug = self.resolve_slug(slug)
         with self.db.read() as conn:
             row = conn.execute("SELECT * FROM missions WHERE slug = ? OR id = ?", (slug, slug)).fetchone()
             if row is None:
@@ -2121,10 +2206,10 @@ class DeskService:
                       WHERE qf.id = t.target_finding_id
                         AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
                   ))
-                ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.updated_at DESC
-                LIMIT 30
+                ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.updated_at DESC, t.id ASC
+                LIMIT ?
                 """,
-                (mid,),
+                (mid, MAX_PROJECT_TASKS_LISTED),
             ).fetchall()
             tasks = []
             for t in t_rows:
@@ -2136,6 +2221,7 @@ class DeskService:
                         "methodology_code": t["methodology_code"],
                         "title": t["title"],
                         "status": t["status"],
+                        "role": task_role(t["task_type"], t_payload)["name"],
                         "claimed_by_handle": t["claimed_by_handle"],
                         "progress_pct": t["progress_pct"],
                         "retry_count": int(_row_get(t, "retry_count", 0) or 0),
@@ -2207,7 +2293,7 @@ class DeskService:
             params.append(methodology.upper())
         if mission:
             clauses.append("mission_slug = ?")
-            params.append(mission)
+            params.append(self.resolve_slug(mission))
         if search and search.strip():
             escaped = escape_like(search.strip()[:120])
             like = f"%{escaped}%"
@@ -3708,6 +3794,7 @@ class DeskService:
             response = {
                 "lease_id": lease_id,
                 "lease_expires_at": lease_expires,
+                "role": task_role(cand["task_type"], task_payload),
                 "task": {
                     "id": cand["id"],
                     "task_type": cand["task_type"],

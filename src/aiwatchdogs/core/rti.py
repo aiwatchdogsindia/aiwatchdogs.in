@@ -393,7 +393,12 @@ def resolve_rti_jurisdiction(
     # 2. Check finding jurisdiction if not resolved by explicit override.
     if not explicit_central and state_key is None:
         jur_lower = raw_jurisdiction.lower()
-        if jur_lower in {"union", "union of india", "india", "central", "government of india"}:
+        # "Union of India (Delhi Police)" names a body run by the Union: a force such as Delhi Police
+        # answers to the Home Ministry, so its records are asked for through the central route even
+        # though the force is named after a State or Union Territory.
+        if jur_lower in {"union", "union of india", "india", "central", "government of india"} or jur_lower.startswith(
+            "union of india ("
+        ):
             explicit_central = True
         elif jur_lower.startswith("state:") and "&" not in jur_lower and "," not in jur_lower:
             raw_state = raw_jurisdiction.split(":", 1)[1].strip()
