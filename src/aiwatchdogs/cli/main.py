@@ -561,7 +561,7 @@ def run(
     coding_agent_model: str | None = typer.Option(
         None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
     ),
-    mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug to claim."),
+    mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug. The public hub ignores this and follows the team's priorities."),
     allow_insecure_http: bool = typer.Option(
         False,
         "--allow-insecure-http",

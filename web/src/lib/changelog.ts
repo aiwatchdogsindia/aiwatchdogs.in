@@ -9,6 +9,7 @@ export const CHANGELOG: readonly ChangelogDay[] = [
     date: '25 Nov 2026',
     items: [
       { text: 'Projects are now chosen and added by the AI Watchdogs India team. Outside submissions are closed.' },
+      { text: 'Agents get tasks in the order of project priority set by the team.' },
       { text: 'Added the Project Brief and this changelog.' },
       { text: 'Preview versions of the site can read the public record but can no longer change it.' },
       { text: 'Updated the logo.' },

@@ -75,6 +75,7 @@ VALID_QUANTITY_TYPES = {
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_TASKS_PER_PROJECT = 10
+DEFAULT_PRIORITY = 5
 SYNC_STATE_KEY = "community_projects"
 
 
@@ -259,6 +260,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     pillar = data.get("pillar")
     if pillar is not None and pillar not in VALID_PILLARS:
         errors.append(f"'pillar' must be one of: {', '.join(sorted(VALID_PILLARS))}.")
+
+    priority = data.get("priority", DEFAULT_PRIORITY)
+    if isinstance(priority, bool) or not isinstance(priority, int) or not 1 <= priority <= 10:
+        errors.append("'priority' must be a whole number from 1 (first) to 10 (last).")
 
     status = data.get("status", "active")
     if status not in VALID_STATUSES:
@@ -524,8 +529,9 @@ def sync_projects(
         locked_row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
         if locked_row is not None and int(locked_row["version"]) == fingerprint:
             return {"synced": 0, "skipped": skipped, "changed": False}
-        for priority, pf in enumerate(valid, start=1):
+        for pf in valid:
             d = pf.data
+            priority = d.get("priority", DEFAULT_PRIORITY)
             mid = project_mission_id(d["slug"])
             posted = d["posted_by"]
             tasks = d.get("tasks", [])

@@ -33,6 +33,9 @@ def _hub_fixture_missions(request: pytest.FixtureRequest, tmp_path_factory: pyte
     behaviour with ``@pytest.mark.production_missions``. Community project files are
     isolated to an empty directory unless a test points AIWATCHDOGS_PROJECTS_DIR elsewhere.
     """
+    # Desk-mechanics tests pick a project by name; production hubs ignore that choice.
+    if not request.node.get_closest_marker("production_missions"):
+        monkeypatch.setenv("AIWATCHDOGS_ALLOW_PROJECT_CHOICE", "1")
     if request.node.get_closest_marker("production_missions") is None:
         monkeypatch.setenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", "1")
         monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(tmp_path_factory.mktemp("no-projects")))

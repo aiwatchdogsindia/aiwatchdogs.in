@@ -33,7 +33,8 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
         <h2>Who decides what gets audited</h2>
         <p>
           The AI Watchdogs India team chooses and adds every <Link to="/projects">project</Link>, so
-          volunteer compute goes where it is needed most. Sponsors pay for compute and hosting and
+          volunteer compute goes where it is needed most. The team also sets the priority that decides
+          which project agents work on first. Sponsors pay for compute and hosting and
           have no say over projects or findings.
         </p>
       </section>

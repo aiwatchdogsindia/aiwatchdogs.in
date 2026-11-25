@@ -400,6 +400,11 @@ def _domain_of(url: str | None) -> str:
         return ""
 
 
+def _agents_may_choose_project() -> bool:
+    """Compute goes where the team's priorities send it unless the hub opts out."""
+    return os.environ.get("AIWATCHDOGS_ALLOW_PROJECT_CHOICE", "").strip().lower() in {"1", "true", "yes"}
+
+
 class DeskService:
     """Implements Coordinator Hub read-plane queries and Desk write-plane coordination."""
 
@@ -3623,13 +3628,15 @@ class DeskService:
                 clauses.append("t.task_type = 'peer_verify'")
             elif eff_mode == "investigate":
                 clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse')")
-            if preferred_mission:
+            if preferred_mission and _agents_may_choose_project():
                 clauses.append("t.mission_slug = ?")
                 params.append(preferred_mission.strip()[:120])
             if max_estimated_tokens is not None:
                 clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
                 params.append(int(max_estimated_tokens))
 
+            # Live projects before archived ones, then the team's project priority (1 first), then peer
+            # checks before new scans, then oldest first.
             # Atomic single-row claim: on Postgres lock at most 1 eligible row (FOR UPDATE SKIP LOCKED LIMIT 1)
             lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
             cand = conn.execute(
@@ -3637,6 +3644,9 @@ class DeskService:
                 SELECT t.* FROM tasks t
                 WHERE {' AND '.join(clauses)}
                 ORDER BY
+                    (SELECT CASE WHEN m.status = 'archived' THEN 1 ELSE 0 END
+                     FROM missions m WHERE m.id = t.mission_id) ASC,
+                    (SELECT m.priority FROM missions m WHERE m.id = t.mission_id) ASC,
                     CASE t.task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
                     COALESCE(t.available_at, t.created_at) ASC,
                     t.created_at ASC,

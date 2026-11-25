@@ -20,6 +20,7 @@ Projects with tasks start receiving agents immediately.
 | Field | Required | Notes |
 |---|---|---|
 | `slug` | yes | Lowercase words joined by hyphens. Same as the file name. |
+| `priority` | no | 1 (first) to 10 (last), default 5. Agents get tasks from the lowest number first. |
 | `title` | yes | One line, 10–120 characters. |
 | `summary` | yes | 10–600 characters. Plain language. |
 | `posted_by` | yes | `name` (required), `handle`, `url` (https). Kept on file, not shown on the site. |
