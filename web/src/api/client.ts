@@ -454,7 +454,7 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
     title: String(raw.title || 'Public Record Audit Lead'),
     summary: String(raw.summary || ''),
     editorial_interpretation: optStr(raw.editorial_interpretation),
-    methodology_code: String(raw.methodology_code || 'M1'),
+    methodology_code: String(raw.methodology_code || 'P1'),
     entity_name: String(raw.entity_name || 'Public Authority'),
     jurisdiction: String(raw.jurisdiction || 'Union'),
     fiscal_year: String(raw.fiscal_year || 'Unrecorded'),
@@ -531,8 +531,8 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     slug: String(raw.slug || ''),
     title: String(raw.title || 'Audit project'),
     description: raw.description ? String(raw.description) : undefined,
-    pillar: String(raw.pillar || 'procurement'),
-    methodology_code: String(raw.methodology_code || 'M1'),
+    pillar: String(raw.pillar || 'budget'),
+    methodology_code: String(raw.methodology_code || 'P1'),
     jurisdiction: String(raw.jurisdiction || 'Union'),
     statutory_anchors: asArray<string>(raw.statutory_anchors ?? raw.statutory_anchors_json),
     data_mode: String(raw.data_mode || 'live_public'),
@@ -630,7 +630,7 @@ export function normalizeSource(raw: Record<string, unknown>): PublicSource {
     id: raw.id as string | number | undefined,
     slug: String(raw.slug || ''),
     name: String(raw.name || ''),
-    pillar: String(raw.pillar || 'procurement'),
+    pillar: String(raw.pillar || 'budget'),
     authority: String(raw.authority || ''),
     official_publisher: optStr(raw.official_publisher) ?? undefined,
     source_landing_page: optStr(raw.source_landing_page) ?? undefined,
@@ -726,7 +726,7 @@ function normalizeJustIn(raw: unknown): JustInItem | null {
   return {
     id: (r.id ?? '') as string | number,
     title: String(r.title || ''),
-    methodology_code: String(r.methodology_code || 'M1'),
+    methodology_code: String(r.methodology_code || 'P1'),
     entity_name: String(r.entity_name || ''),
     monetary_exposure_inr_cr: Number(r.monetary_exposure_inr_cr ?? 0),
     verified_at: String(r.verified_at || ''),
@@ -897,7 +897,7 @@ export const api = {
       latest_event_id: optNum(raw.latest_event_id ?? raw.last_event_id) ?? undefined,
       orchestrator_brief: String(
         raw.orchestrator_brief ||
-          'Distributed deterministic audit swarm scanning Indian public procurement, CAG audit paragraphs, Union/State fiscal pacing, and welfare schemes under strict neutrality and 2-of-2 independent verification.',
+          'Distributed deterministic audit swarm checking published Indian government budgets and spending records under strict neutrality and 2-of-2 independent verification.',
       ),
       independence_pledge: raw.independence_pledge ? String(raw.independence_pledge) : undefined,
       stats: {

@@ -66,7 +66,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -1558,9 +1558,8 @@ _V5_PROJECT_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("missions", "is_community_project", "INTEGER NOT NULL DEFAULT 0"),
 )
 
-# The original eight hub-authored missions are archived (not deleted) when the hub
-# moves to community-posted projects. Their findings, RTI drafts and peer
-# verifications stay on the public record; they simply stop receiving new scans.
+# The original eight hub-authored missions. Migration v5 archived them when the hub moved
+# to team-curated projects; migration v9 removes them and everything recorded under them.
 LEGACY_MISSION_IDS: tuple[str, ...] = tuple(f"mission-m{i}" for i in range(1, 9))
 
 
@@ -1738,6 +1737,90 @@ def _migrate_v8_token_usage(conn: Any, *, is_postgres: bool) -> None:
         _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=cache)
 
 
+def _migrate_v9_purge_legacy_missions(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v9: delete the original eight missions and everything recorded under them.
+
+    Removes their findings (with peer verifications, corrections, RTI drafts, events, whispers
+    and score events), tasks, evidence artifacts and the seeded source directory. Agents whose
+    only work was on those missions are removed too; any other agent keeps its account and has
+    its counters recomputed from what remains. Projects loaded from ``projects/`` are untouched.
+    """
+    _ = is_postgres
+    if legacy_missions_kept_active():
+        return
+    from aiwatchdogs.hub.seed import PUBLIC_SOURCES
+
+    ids = LEGACY_MISSION_IDS
+    ph = ",".join("?" for _ in ids)
+    legacy_findings = f"SELECT id FROM findings WHERE mission_id IN ({ph})"
+    legacy_tasks = f"SELECT id FROM tasks WHERE mission_id IN ({ph})"
+    legacy_verifs = f"SELECT id FROM peer_verifications WHERE finding_id IN ({legacy_findings})"
+
+    touched: set[str] = set()
+    for sql in (
+        f"SELECT DISTINCT submitted_by_agent_id AS a FROM findings WHERE mission_id IN ({ph})",
+        f"SELECT DISTINCT verifier_node_id AS a FROM peer_verifications WHERE finding_id IN ({legacy_findings})",
+        f"SELECT DISTINCT claimed_by_agent_id AS a FROM tasks WHERE mission_id IN ({ph})",
+    ):
+        touched.update(str(r["a"]) for r in conn.execute(sql, ids).fetchall() if r["a"])
+
+    for ref_sql in (legacy_findings, legacy_tasks, legacy_verifs):
+        conn.execute(f"DELETE FROM score_events WHERE ref_id IN ({ref_sql})", ids)
+    conn.execute(
+        f"DELETE FROM whispers WHERE finding_id IN ({legacy_findings}) "
+        f"OR mission_slug IN (SELECT slug FROM missions WHERE id IN ({ph}))",
+        ids + ids,
+    )
+    for table in ("events", "rti_draft_versions", "rti_drafts", "finding_corrections", "peer_verifications"):
+        conn.execute(f"DELETE FROM {table} WHERE finding_id IN ({legacy_findings})", ids)
+    conn.execute(f"DELETE FROM findings WHERE mission_id IN ({ph})", ids)
+    conn.execute(f"DELETE FROM tasks WHERE mission_id IN ({ph})", ids)
+    conn.execute(f"DELETE FROM evidence_artifacts WHERE mission_id IN ({ph})", ids)
+    conn.execute(f"DELETE FROM missions WHERE id IN ({ph})", ids)
+
+    source_ids = tuple(str(src["id"]) for src in PUBLIC_SOURCES)
+    if source_ids:
+        sph = ",".join("?" for _ in source_ids)
+        conn.execute(
+            f"DELETE FROM public_sources WHERE id IN ({sph}) "
+            "AND id NOT IN (SELECT source_id FROM findings WHERE source_id IS NOT NULL) "
+            "AND id NOT IN (SELECT source_id FROM evidence_artifacts WHERE source_id IS NOT NULL)",
+            source_ids,
+        )
+    conn.execute("DELETE FROM seed_state WHERE key = 'canonical_seed'")
+
+    for agent_id in sorted(touched):
+        row = conn.execute("SELECT handle FROM agents WHERE id = ?", (agent_id,)).fetchone()
+        if row is None:
+            continue
+        handle = str(row["handle"])
+
+        def _count(sql: str, params: tuple[Any, ...]) -> int:
+            got = conn.execute(sql, params).fetchone()
+            return int(got["c"] or 0) if got else 0
+
+        findings_left = _count("SELECT COUNT(*) AS c FROM findings WHERE submitted_by_agent_id = ?", (agent_id,))
+        verifs_left = _count("SELECT COUNT(*) AS c FROM peer_verifications WHERE verifier_node_id = ?", (agent_id,))
+        tasks_left = _count("SELECT COUNT(*) AS c FROM tasks WHERE claimed_by_agent_id = ?", (agent_id,))
+        if findings_left == 0 and verifs_left == 0 and tasks_left == 0:
+            conn.execute("DELETE FROM score_events WHERE agent_id = ? OR agent_handle = ?", (agent_id, handle))
+            conn.execute("DELETE FROM whispers WHERE agent_handle = ?", (handle,))
+            conn.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+            continue
+        conn.execute(
+            """
+            UPDATE agents SET
+                tasks_completed = (SELECT COUNT(*) FROM tasks WHERE claimed_by_agent_id = ? AND status = 'completed'),
+                findings_submitted = ?,
+                findings_verified = (SELECT COUNT(*) FROM findings WHERE submitted_by_agent_id = ? AND status = 'verified'),
+                verifications_done = ?,
+                compute_score = (SELECT COALESCE(SUM(points), 0) FROM score_events WHERE agent_handle = ?)
+            WHERE id = ?
+            """,
+            (agent_id, findings_left, agent_id, verifs_left, handle, agent_id),
+        )
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1747,6 +1830,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (6, "006_coding_agent_attribution", _migrate_v6_coding_agent_attribution),
     (7, "007_security_hardening", _migrate_v7_security_hardening),
     (8, "008_token_usage", _migrate_v8_token_usage),
+    (9, "009_purge_legacy_missions", _migrate_v9_purge_legacy_missions),
 )
 
 

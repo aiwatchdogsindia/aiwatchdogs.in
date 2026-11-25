@@ -53,7 +53,7 @@ export const OFFICIAL_SOCIALS: readonly SocialLink[] = [
     handle: 'aiwatchdogsindia/aiwatchdogs.in',
     footerSub: 'aiwatchdogsindia',
     href: 'https://github.com/aiwatchdogsindia/aiwatchdogs.in',
-    tagline: 'Inspect MIT-licensed M1–M8 engines, open issues & submit PRs.',
+    tagline: 'Inspect the MIT-licensed code, open issues & submit PRs.',
     cta: 'Contribute on GitHub',
     ariaLabel: 'View and contribute to AI Watchdogs India on GitHub (aiwatchdogsindia/aiwatchdogs.in)',
   },

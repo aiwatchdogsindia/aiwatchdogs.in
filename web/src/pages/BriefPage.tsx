@@ -13,8 +13,7 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
       <section className="how-section">
         <h2>The problem</h2>
         <p>
-          India publishes millions of public records: tenders, CAG audit reports, budgets and welfare
-          scheme data. Almost no newsroom or civil-society team has the time or compute to
+          India publishes millions of pages of public budget and spending records. Almost no newsroom or civil-society team has the time or compute to
           cross-check them all.
         </p>
       </section>
