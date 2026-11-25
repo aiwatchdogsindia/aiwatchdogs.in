@@ -609,7 +609,7 @@ export function HomePage({
 
           <p className="status-note-body">
             {head?.orchestrator_brief ||
-              'Swarm focus: the community projects posted on the Projects page.'}
+              'Swarm focus: the open projects on the Projects page.'}
           </p>
 
           <div className="status-note-foot tabular">

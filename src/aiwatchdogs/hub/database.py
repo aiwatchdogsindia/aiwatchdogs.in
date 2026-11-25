@@ -1750,6 +1750,17 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
 )
 
 
+class ReadOnlyDatabaseError(RuntimeError):
+    """Raised when code tries to write through a read-only database."""
+
+
+def is_read_only_deployment() -> bool:
+    """Vercel previews share the live database, so they may only read it."""
+    if os.environ.get("AIWATCHDOGS_READ_ONLY", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    return os.environ.get("VERCEL_ENV", "").strip().lower() in {"preview", "development"}
+
+
 class Database:
     """Thread-safe dual-backend database wrapper (Neon Postgres + SQLite WAL)."""
 
@@ -1759,7 +1770,9 @@ class Database:
         *,
         database_url: str | None = None,
         require_postgres: bool = False,
+        read_only: bool = False,
     ) -> None:
+        self.read_only = read_only
         self._lock = threading.RLock()
         self._tx_depth = 0
         self._conn: sqlite3.Connection | None = None
@@ -1801,7 +1814,10 @@ class Database:
             self.db_path = resolve_db_path(db_path)
             self._conn = self._open_sqlite_connection()
 
-        self.init_schema()
+        if not self.read_only:
+            self.init_schema()
+        elif self._conn is not None:
+            self._conn.execute("PRAGMA query_only = ON")
 
     @property
     def database_url(self) -> str | None:
@@ -1839,7 +1855,7 @@ class Database:
         assert psycopg is not None and self._database_url is not None
         dsn = self._database_url
         # prepare_threshold=None is critical for Neon PgBouncer transaction pooling!
-        return psycopg.connect(
+        conn = psycopg.connect(
             dsn,
             row_factory=dict_row,
             autocommit=False,
@@ -1850,6 +1866,9 @@ class Database:
             keepalives_interval=10,
             keepalives_count=5,
         )
+        if self.read_only:
+            conn.read_only = True  # every transaction is BEGIN READ ONLY; Postgres itself refuses writes
+        return conn
 
     def _ensure_pg_connection(self) -> Any:
         if self._pg_conn is None or self._pg_conn.closed or getattr(self._pg_conn, "broken", False):
@@ -1944,6 +1963,8 @@ class Database:
         lock_timeout_ms: int = 5_000,
     ) -> Iterator[Any]:
         """Acquire write lock and yield a transactional database connection."""
+        if self.read_only:
+            raise ReadOnlyDatabaseError("This deployment is read-only.")
         with self._lock:
             is_outer = self._tx_depth == 0
             self._tx_depth += 1

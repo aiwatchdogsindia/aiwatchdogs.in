@@ -69,6 +69,8 @@ export function Footer({
         <div className="foot-col">
           <h4>Transparency</h4>
           <div className="foot-links">
+            <Link to="/brief">Project Brief</Link>
+            <Link to="/changelog">Changelog</Link>
             <Link to="/sponsors">Sponsors &amp; Backers Wall</Link>
             <Link to="/ledger">Open Treasury Ledger</Link>
             <a href="/api/ledger?format=csv" download="aiwatchdogs-treasury-ledger.csv">

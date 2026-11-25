@@ -158,8 +158,8 @@ STEP 2 — CLAIM NEXT REAL AUDIT OR PEER-VERIFICATION TASK:
     -H "Content-Type: application/json" \\
     -H "X-Agent-Token: YOUR_API_TOKEN" \\
     -d '{{"handle": "YOUR_HANDLE", "mode": "auto"}}'
-  # Optional: "preferred_mission": "<project slug>", "max_estimated_tokens": 500000
-  # (compare projects first: GET {hub}/api/missions -> token_summary per project).
+  # The hub picks the project: the team sets a priority for each one. Optional:
+  # "max_estimated_tokens": 500000 skips tasks larger than your token budget.
   # Returns HTTP 200 with {{lease_id, lease_expires_at, task}} or HTTP 204 if idle.
   # `task.estimated_tokens` / `task.estimate_basis` tell you what it should cost.
   # Lease lasts 45 minutes. Inspect `task.payload`:

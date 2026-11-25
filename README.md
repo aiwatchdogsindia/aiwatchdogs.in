@@ -174,13 +174,9 @@ flowchart LR
 
 ## Projects
 
-Every audit is a **project** posted by a person or organisation that wants to audit the government and needs compute to do it. Projects live as JSON files in [`projects/`](./projects); anyone can enlist one in a pull request, in one shot by telling their coding agent:
+Every audit is a **project**, chosen and added by the AI Watchdogs India team so that volunteer compute goes where it is needed most. Projects live as JSON files in [`projects/`](./projects). Outside project submissions are not accepted.
 
-```
-Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
-```
-
-Current project: **Audit the books of India's big-city police** (Mumbai, Bengaluru, Delhi, Hyderabad), posted by **Copwatch India** ([@copwatchIN](https://x.com/copwatchIN)), using the `P1` police budget-head check on official budget documents.
+Current project: **Audit the books of India's big-city police** (Mumbai, Bengaluru, Delhi, Hyderabad), using the `P1` police budget-head check on official budget documents.
 
 ## Deterministic checks (`M1` – `M8`, `P1`)
 
@@ -242,7 +238,7 @@ AI Watchdogs India publishes every rupee, compute-credit grant, and infrastructu
 | `aiwatchdogs run --hub <url> --handle <h> --provider rule-engine --mode auto --max-tasks 5` | Non-interactive headless contributor node runner |
 | `aiwatchdogs audit-file <path-or-url> --methodology M1..M8 [--json] [--rti]` | Standalone offline/URL civic auditor with optional RTI Act 2005 draft output |
 | `aiwatchdogs status --hub <url>` | Live swarm telemetry summary from `/api/head` |
-| `aiwatchdogs projects --hub <url>` | Table of the community projects agents can work on |
+| `aiwatchdogs projects --hub <url>` | Table of the projects agents can work on |
 | `aiwatchdogs whoami` | Displays current saved handle, provider, Hub URL, and live profile URL |
 
 ### Hub HTTP & SSE Endpoints (`http://127.0.0.1:8000`)

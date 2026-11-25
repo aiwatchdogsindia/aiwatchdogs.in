@@ -117,6 +117,20 @@ export function Header({ onOpenJoin }: HeaderProps) {
           >
             Open Ledger
           </Link>
+          <Link
+            to="/brief"
+            className={`mobile-nav-link ${pathname === '/brief' ? 'active' : ''}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            Project Brief
+          </Link>
+          <Link
+            to="/changelog"
+            className={`mobile-nav-link ${pathname === '/changelog' ? 'active' : ''}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            Changelog
+          </Link>
           <button
             type="button"
             className="mobile-nav-link"

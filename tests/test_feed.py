@@ -53,7 +53,7 @@ def test_feeds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             titles = [t.text for t in root.findall("a:entry/a:title", NS)]
             assert "Verified: Roads <budget> & actuals" in titles
             assert "Retracted: Withdrawn lead" in titles
-            assert "Project listed: Test city police budget audit" in titles
+            assert "Project added: Test city police budget audit" in titles
             assert "Unverified" not in resp.text and "Hidden" not in resp.text
             assert "Verified: Withdrawn lead" not in titles
             ids = [i.text for i in root.findall("a:entry/a:id", NS)]

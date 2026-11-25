@@ -20,6 +20,10 @@ const MissionsPage = lazy(() =>
 const FindingsPage = lazy(() =>
   import('./pages/FindingsPage').then((m) => ({ default: m.FindingsPage })),
 );
+const BriefPage = lazy(() => import('./pages/BriefPage').then((m) => ({ default: m.BriefPage })));
+const ChangelogPage = lazy(() =>
+  import('./pages/ChangelogPage').then((m) => ({ default: m.ChangelogPage })),
+);
 const LiveSwarmPage = lazy(() =>
   import('./pages/LiveSwarmPage').then((m) => ({ default: m.LiveSwarmPage })),
 );
@@ -341,6 +345,22 @@ function AppShell() {
             onOpenSponsor={openSponsor}
             refreshTick={refreshTick}
           />
+        </Suspense>
+      );
+    }
+
+    if (cleanPath === '/brief') {
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <BriefPage onOpenJoin={() => setJoinOpen(true)} />
+        </Suspense>
+      );
+    }
+
+    if (cleanPath === '/changelog') {
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <ChangelogPage />
         </Suspense>
       );
     }

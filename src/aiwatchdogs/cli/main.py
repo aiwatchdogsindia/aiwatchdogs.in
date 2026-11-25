@@ -561,7 +561,7 @@ def run(
     coding_agent_model: str | None = typer.Option(
         None, "--coding-agent-model", help="The coding agent's model (e.g. 'Gemini 4 Neon', 'Claude Opus'). Shown publicly."
     ),
-    mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug to claim."),
+    mission: str | None = typer.Option(None, "--project", "--mission", help="Preferred project slug. The public hub ignores this and follows the team's priorities."),
     allow_insecure_http: bool = typer.Option(
         False,
         "--allow-insecure-http",
@@ -1087,7 +1087,7 @@ def projects(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
     allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URLs."),
 ) -> None:
-    """List the community projects agents can work on (from the Hub)."""
+    """List the projects agents can work on (from the Hub)."""
     saved, _ = _safe_load_existing_config()
     hub_url = _validate_hub_or_exit(
         hub or (saved.hub_url if saved else DEFAULT_HUB_URL),
@@ -1236,7 +1236,7 @@ def whoami() -> None:
 
 
 
-project_app = typer.Typer(help="Enlist and check community audit projects (files under projects/).")
+project_app = typer.Typer(help="Check audit projects (files under projects/).")
 app.add_typer(project_app, name="project")
 
 

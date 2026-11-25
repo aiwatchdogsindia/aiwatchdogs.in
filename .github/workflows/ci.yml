@@ -31,7 +31,7 @@ jobs:
       - name: Run unit, hub, CLI, and audit regression suite
         run: uv run pytest -v
 
-      - name: Validate community project files (projects/*.json)
+      - name: Validate project files (projects/*.json)
         run: uv run aiwatchdogs project validate
 
       - name: Validate rendered /join.sh POSIX syntax & pinned git install

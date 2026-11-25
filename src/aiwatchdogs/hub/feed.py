@@ -106,13 +106,13 @@ def feed_entries(conn: Any, *, slug: str | None = None, limit: int = FEED_LIMIT)
 
     where, params = scoped("m.slug")
     for r in conn.execute(
-        "SELECT m.slug, m.title, m.created_at, m.posted_by_name FROM missions m "
+        "SELECT m.slug, m.title, m.created_at, m.jurisdiction FROM missions m "
         f"WHERE m.is_community_project = 1 AND m.status != 'archived'{where} ORDER BY m.created_at DESC LIMIT ?",
         params,
     ).fetchall():
         add(
-            f"project-{r['slug']}", r["created_at"], "project_listed", "Project listed", r["title"],
-            project_path(r["slug"]), f"Posted by {r['posted_by_name'] or 'AI Watchdogs India'}",
+            f"project-{r['slug']}", r["created_at"], "project_listed", "Project added", r["title"],
+            project_path(r["slug"]), str(r["jurisdiction"]),
         )
 
     entries.sort(key=lambda e: (e["updated"], e["key"]), reverse=True)
