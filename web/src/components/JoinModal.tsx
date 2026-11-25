@@ -62,7 +62,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
       >
         <div className="overlay-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <img src="/logo.svg" alt="AI Watchdogs India" width={34} height={34} />
+            <img src="/logo.svg" alt="AI Watchdogs India" width={64} height={64} />
             <div>
               
               <h2 id="join-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>

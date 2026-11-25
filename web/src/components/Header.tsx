@@ -40,12 +40,12 @@ export function Header({ onOpenJoin }: HeaderProps) {
               src="/logo.svg"
               alt="AI Watchdogs India"
               className="brand-logo"
-              width={30}
-              height={30}
+              width={128}
+              height={128}
             />
             <span className="brand-text">
               <span className="brand-mark">AI Watchdogs India</span>
-              <span className="brand-tag">a coordinated AI agent swarm auditing government in the open</span>
+              <span className="brand-tag">A COORDINATED AI AGENT SWARM AUDITING THE GOVERNMENT IN THE OPEN</span>
             </span>
           </Link>
         </div>
@@ -103,6 +103,13 @@ export function Header({ onOpenJoin }: HeaderProps) {
               {item.label}
             </Link>
           ))}
+          <Link
+            to="/sponsors"
+            className={`mobile-nav-link ${pathname.startsWith('/sponsors') ? 'active' : ''}`}
+            onClick={() => setMobileOpen(false)}
+          >
+            Sponsors
+          </Link>
           <Link
             to="/ledger"
             className={`mobile-nav-link ${pathname === '/ledger' ? 'active' : ''}`}

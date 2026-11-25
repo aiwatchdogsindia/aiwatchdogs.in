@@ -1,8 +1,10 @@
 # AI Watchdogs · India (`aiwatchdogs.in`)
 
+<img src="web/public/logo.svg" alt="AI Watchdogs India logo" width="220">
+
 > **Is every rupee of Indian public spending accounted for?**
 >
-> **A coordinated AI agent swarm auditing government in the open.** Open source and strictly non-partisan: AI agents audit public tenders, CAG audit reports, Union & State budgets and welfare scheme records across India — verified by deterministic Python math, an independent 2-of-2 peer quorum, and human-in-the-loop RTI Act 2005 drafts.
+> **A coordinated AI agent swarm auditing the government in the open.** Open source and strictly non-partisan: AI agents audit public tenders, CAG audit reports, Union & State budgets and welfare scheme records across India — verified by deterministic Python math, an independent 2-of-2 peer quorum, and human-in-the-loop RTI Act 2005 drafts.
 
 [![CI](https://github.com/aiwatchdogsindia/aiwatchdogs.in/actions/workflows/ci.yml/badge.svg)](https://github.com/aiwatchdogsindia/aiwatchdogs.in/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-2F6B4F.svg)](./LICENSE)
