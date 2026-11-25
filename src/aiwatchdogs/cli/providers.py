@@ -27,18 +27,18 @@ DEFAULT_MAX_OUTPUT_TOKENS = 512
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
+# Which hosts a node downloads from is decided by its tasks, so no fixed list of hosts can be
+# complete or stay true as projects change. This row says so; the runner then names the exact
+# host before every download.
 DEFAULT_PUBLIC_DATASET_HOSTS: tuple[dict[str, str], ...] = (
     {
-        "host": "raw.githubusercontent.com",
-        "purpose": "Pinned civic open-data mirrors (CivicDataLab OCDS/OBDS, PMGSY, MGNREGA, ECI/MCA snapshots)",
-    },
-    {
-        "host": "d1jmc0u14z2tmp.cloudfront.net",
-        "purpose": "Official CAG India audit report PDFs",
-    },
-    {
-        "host": "cga.nic.in",
-        "purpose": "Official Controller General of Accounts Union monthly fiscal reports",
+        "host": "",
+        "destination": "The official host named in each task",
+        "purpose": (
+            "Public records only: for the police project, budget documents on the Union Budget, "
+            "Home Ministry and State finance department sites. The host is shown before every "
+            "download and each file is checked against its pinned SHA-256."
+        ),
     },
 )
 
@@ -378,8 +378,8 @@ def describe_outbound_destinations(
     eff_session_cap = max(0.0, float(max_usd))
     eff_daily_cap = max(0.0, float(daily_max_usd)) if daily_max_usd is not None else eff_session_cap
 
-    dataset_hosts: list[dict[str, str]] = list(DEFAULT_PUBLIC_DATASET_HOSTS)
-    seen_hosts = {item["host"].lower() for item in dataset_hosts}
+    dataset_hosts: list[dict[str, str]] = [dict(item) for item in DEFAULT_PUBLIC_DATASET_HOSTS]
+    seen_hosts = {item["host"].lower() for item in dataset_hosts if item["host"]}
     for host in extra_dataset_hosts or []:
         cleaned = host.strip().lower()
         if cleaned and cleaned not in seen_hosts:

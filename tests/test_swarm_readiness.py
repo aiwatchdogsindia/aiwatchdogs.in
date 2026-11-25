@@ -18,7 +18,8 @@ from fastapi.testclient import TestClient
 from test_projects import SHA, _project
 
 from aiwatchdogs.cli.config import AgentConfig
-from aiwatchdogs.cli.runner import CLI_USER_AGENT, AgentRunner, role_of
+from aiwatchdogs.cli.providers import describe_outbound_destinations, rule_engine_provider
+from aiwatchdogs.cli.runner import CLI_USER_AGENT, AgentRunner, _source_host, role_of
 from aiwatchdogs.engines.registry import run_engine
 from aiwatchdogs.hub.app import create_app
 from aiwatchdogs.hub.desk import task_role
@@ -214,6 +215,67 @@ def test_node_that_cannot_reach_sources_stops_after_two_failures(monkeypatch: py
     assert (summary.tasks_claimed, summary.errors, summary.stopped_reason) == (2, 2, "sources_unreachable")
     assert [b["reason"] for b in hub.bodies("/api/desk/release")] == ["network_error", "network_error"]
     assert len(hub.leases) == 2  # the other two tasks were never taken from the queue
+
+
+def test_the_network_notice_is_true_whatever_the_current_projects_are() -> None:
+    plan = describe_outbound_destinations("https://aiwatchdogs.in", rule_engine_provider())
+    rows = plan["dataset_hosts"]
+    # The tasks decide which hosts a node contacts, so the notice names no fixed list.
+    assert [r.get("destination") for r in rows] == ["The official host named in each task"]
+    # Hosts of projects that no longer exist must not be shown as destinations.
+    assert not any(h in json.dumps(rows) for h in ("cga.nic.in", "cloudfront.net", "raw.githubusercontent.com"))
+    # A host the operator adds is still listed by name.
+    extra = describe_outbound_destinations("https://aiwatchdogs.in", rule_engine_provider(), extra_dataset_hosts=["Example.org"])
+    assert extra["dataset_hosts"][-1]["host"] == "example.org"
+
+
+@pytest.mark.parametrize(
+    ("ref", "host"),
+    [
+        ("https://www.indiabudget.gov.in/doc/eb/sbe51.pdf", "www.indiabudget.gov.in"),
+        ("https://www.mahalegislature.org.in/performance-report/2026/भाग-4 पोलीस.pdf", "www.mahalegislature.org.in"),
+        ("https://user:secret@finance.example.gov.in:8443/a.pdf", "finance.example.gov.in"),
+        ("/tmp/local.csv", "public source"),
+        ("http://[not-a-host/a.pdf", "public source"),
+        ("https://", "public source"),
+        ("", "public source"),
+        (None, "public source"),
+    ],
+)
+def test_the_host_is_named_before_each_download(ref: str | None, host: str) -> None:
+    assert _source_host(ref) == host
+
+
+def test_every_download_is_announced_with_its_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    import aiwatchdogs.cli.runner as runner_mod
+    from aiwatchdogs.core.models import LoadedDataset
+
+    lease = _lease("a")
+    lease["task"]["payload"].pop("records")
+    lease["task"]["payload"]["retrieval_url"] = "https://www.indiabudget.gov.in/doc/eb/sbe51.pdf"
+    seen: list[tuple[str, dict[str, Any]]] = []
+    order: list[str] = []
+
+    def fake_load(ref: str, **_: Any) -> LoadedDataset:
+        order.append("download")
+        return LoadedDataset(records=[{"page": 1, "raw_text": _PAGE}], raw_text=_PAGE, sha256="0" * 64, byte_size=len(_PAGE), format="pdf", source_ref=ref)
+
+    monkeypatch.setattr(runner_mod, "load_dataset", fake_load)
+    hub = _Hub([lease])
+    runner, _ = _runner(hub)
+    runner.on_event = lambda event, data: (seen.append((event, data)), order.append(event))[0]
+    assert runner.run_loop(max_tasks=1).tasks_completed == 1
+    assert ("source_download", {"hosts": ["www.indiabudget.gov.in"]}) in seen
+    assert order.index("source_download") < order.index("download")  # announced first, then fetched
+    assert any(b.get("whisper", "").endswith("from www.indiabudget.gov.in") for b in hub.bodies("/api/desk/beat"))
+
+
+def test_a_task_without_a_link_still_says_where_its_data_came_from() -> None:
+    hub = _Hub([_lease("a")])
+    runner, _ = _runner(hub)
+    assert runner.run_loop(max_tasks=1).tasks_completed == 1
+    fetch_lines = [b["whisper"] for b in hub.bodies("/api/desk/beat") if b.get("whisper", "").startswith("Fetching")]
+    assert fetch_lines and all(line.endswith("from public source") for line in fetch_lines)
 
 
 def test_role_comes_from_the_hub_and_is_counted() -> None:
