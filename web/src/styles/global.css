@@ -5763,3 +5763,12 @@ code.font-mono {
 .compute-title ~ .table-wrap td:first-child {
   min-width: 220px;
 }
+
+.community-sub a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.foot-social-handle {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}

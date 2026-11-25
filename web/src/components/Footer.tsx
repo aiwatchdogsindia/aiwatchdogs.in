@@ -1,7 +1,7 @@
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, Rss } from 'lucide-react';
 import { useState } from 'react';
 import { analyticsEnabled } from '../lib/analytics';
-import { OFFICIAL_SOCIALS } from '../lib/socials';
+import { FEED_PATH, OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link } from '../router';
 import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
 import { SocialIcon } from './SocialLinks';
@@ -104,7 +104,7 @@ export function Footer({
         </div>
 
         <div className="foot-col">
-          <h4>Community</h4>
+          <h4>Socials</h4>
           <div className="foot-social-links">
             {OFFICIAL_SOCIALS.map((social) => (
               <a
@@ -124,6 +124,15 @@ export function Footer({
                 </span>
               </a>
             ))}
+            <a href={FEED_PATH} className="foot-social-item" type="application/atom+xml">
+              <span className="foot-social-icon" aria-hidden="true">
+                <Rss size={15} />
+              </span>
+              <span className="foot-social-meta">
+                <span className="foot-social-name">RSS</span>
+                <span className="foot-social-handle font-mono">Every change of state</span>
+              </span>
+            </a>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { ArrowUpRight } from 'lucide-react';
-import { OFFICIAL_SOCIALS, type SocialId } from '../lib/socials';
+import { FEED_PATH, OFFICIAL_SOCIALS, type SocialId } from '../lib/socials';
 
 interface SocialIconProps {
   id: SocialId;
@@ -90,7 +90,7 @@ export function SocialIconRow({
   iconSize = 15,
 }: SocialIconRowProps) {
   return (
-    <div className={className} role="group" aria-label="Official AI Watchdogs India social and community channels">
+    <div className={className} role="group" aria-label="Official AI Watchdogs India socials">
       {OFFICIAL_SOCIALS.map((social) => (
         <a
           key={social.id}
@@ -98,7 +98,7 @@ export function SocialIconRow({
           target="_blank"
           rel="noopener noreferrer"
           aria-label={social.ariaLabel}
-          title={`${social.name}, ${social.handle}`}
+          title={`${social.name}, ${social.footerSub}`}
           className={linkClassName}
         >
           <SocialIcon id={social.id} size={iconSize} />
@@ -114,7 +114,7 @@ interface SocialPillListProps {
 
 export function SocialPillList({ className = 'social-pills' }: SocialPillListProps) {
   return (
-    <div className={className} role="group" aria-label="Official community channels">
+    <div className={className} role="group" aria-label="Official socials">
       {OFFICIAL_SOCIALS.map((social) => (
         <a
           key={social.id}
@@ -141,7 +141,7 @@ export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) 
   return (
     <section
       className={variant === 'band' ? 'community-band' : 'community-embedded'}
-      aria-label="Community and official social channels"
+      aria-label="Socials"
     >
       <div className="community-head">
         <div>
@@ -149,8 +149,8 @@ export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) 
             Follow verified dispatches &amp; build in the open
           </h2>
           <p className="community-sub">
-            Track peer-verified public spending leads, coordinate volunteer audit agents, discuss
-            RTI Act 2005 drafts, or contribute to the MIT-licensed codebase on GitHub.
+            Follow verified leads on X and Instagram, or contribute on GitHub. The Discord server is
+            for personal AI agents only. Or subscribe to the <a href={FEED_PATH}>RSS feed</a>.
           </p>
         </div>
       </div>
@@ -174,7 +174,9 @@ export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) 
 
             <div className="community-card-body">
               <h3 className="community-name">{social.name}</h3>
-              <div className="community-handle font-mono">{social.handle}</div>
+              <div className="community-handle font-mono">
+                {social.id === 'discord' ? social.footerSub : social.handle}
+              </div>
               <p className="community-desc">{social.tagline}</p>
             </div>
 

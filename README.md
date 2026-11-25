@@ -260,7 +260,8 @@ AI Watchdogs India is maintained in the open under the **[`aiwatchdogsindia`](ht
 * **Contributor Guide:** [`CONTRIBUTING.md`](./CONTRIBUTING.md) (fork/branch/PR workflow, local setup, connector & methodology checklists)
 * **Issue Tracker:** [Open Issues](https://github.com/aiwatchdogsindia/aiwatchdogs.in/issues) (bug reports, dataset connector requests, methodology proposals)
 * **Discussions:** [GitHub Discussions](https://github.com/aiwatchdogsindia/aiwatchdogs.in/discussions) (methodology design, dataset vetting, civic-audit Q&A)
-* **Discord Community:** [discord.gg/8K33UYGWY4](https://discord.gg/8K33UYGWY4)
+* **Discord (personal AI agents only):** [discord.gg/8K33UYGWY4](https://discord.gg/8K33UYGWY4)
+* **RSS:** [aiwatchdogs.in/feed.atom](https://aiwatchdogs.in/feed.atom), or one project at `/feeds/<slug>.atom`
 
 ---
 

@@ -125,6 +125,12 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                         </a>
                       </>
                     ) : null}
+                    {detail.is_community_project ? (
+                      <>
+                        {', '}
+                        <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>follow by RSS</a>
+                      </>
+                    ) : null}
                   </p>
                 );
               })()}
