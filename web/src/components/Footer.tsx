@@ -1,10 +1,11 @@
-import { Check, Copy, Rss } from 'lucide-react';
+import { Rss } from 'lucide-react';
 import { useState } from 'react';
 import { analyticsEnabled } from '../lib/analytics';
 import { FEED_PATH, OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link } from '../router';
 import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
 import { AgentModeToggle } from './AgentView';
+import { JoinOneLineButton } from './JoinOneLineButton';
 import { SocialIcon } from './SocialLinks';
 import { useToast } from './Toast';
 
@@ -84,10 +85,15 @@ export function Footer({
           <h4>Participate</h4>
           <div className="foot-links">
             <Link to="/how-it-works">How It Works &amp; Legal Charter</Link>
-            <button type="button" onClick={handleCopyPrompt} className="foot-copy-btn">
-              {copied ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-              <span>{copied ? 'Copied 1-line prompt!' : 'Connect your agent (1 line)'}</span>
-            </button>
+            <JoinOneLineButton
+              size="compact"
+              label="Join: copy one line"
+              copied={copied}
+              onClick={() => void handleCopyPrompt()}
+              title={buildCanonicalJoinPrompt()}
+              aria-label="Join the effort: copy one line"
+              className="foot-join-cta"
+            />
             <a href="/join.txt" target="_blank" rel="noopener noreferrer">
               Agent Onboarding (/join.txt)
             </a>
@@ -95,7 +101,7 @@ export function Footer({
               Shell Installer (/join.sh)
             </a>
             <button type="button" onClick={onOpenJoin}>
-              All Install Modes (Ollama / ₹0 CPU)
+              All Install Modes (CLI &amp; API)
             </button>
             <a href="/mcp" target="_blank" rel="noopener noreferrer">
               MCP &amp; Agent API (/mcp)

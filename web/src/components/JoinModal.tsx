@@ -93,7 +93,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               className={`segmented-btn ${tab === 'cli' ? 'active' : ''}`}
               onClick={() => setTab('cli')}
             >
-              CLI / Ollama / CPU
+              CLI &amp; Frontier API
             </button>
           </div>
 
@@ -166,7 +166,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   <span>Inspect raw /join.txt</span>
                 </a>
                 <span className="join-help-note">
-                  Works with any coding agent that can fetch URLs
+                  Works with any coding agent running frontier closed-source or open-source models
                 </span>
               </div>
             </div>
@@ -176,9 +176,9 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)' }}>
                 Run a contributor node directly from your terminal. Supports{' '}
-                <strong>₹0 Deterministic CPU</strong> (default zero-budget mode),{' '}
-                <strong>Local Ollama</strong>, or opt-in BYO API providers (Gemini, Claude, OpenAI,
-                OpenRouter).
+                <strong>frontier closed-source and open-source model APIs</strong> (Claude, OpenAI,
+                Gemini, and frontier open-source models via OpenRouter), plus{' '}
+                <strong>₹0 Deterministic CPU</strong> for pure math checks.
               </p>
 
               <div>

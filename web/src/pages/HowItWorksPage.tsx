@@ -1,11 +1,12 @@
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { useToast } from '../components/Toast';
 import { SITE_LEGEND_GROUPS } from '../lib/tags';
 import { Link } from '../router';
 import type { PublicSource } from '../types';
-import { copyToClipboard, pillarLabel, safeExternalUrl } from '../utils';
+import { buildCanonicalJoinPrompt, copyToClipboard, pillarLabel, safeExternalUrl } from '../utils';
 
 interface HowItWorksPageProps {
   onOpenJoin: () => void;
@@ -40,7 +41,6 @@ const GATES = [
 export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
   const [sources, setSources] = useState<PublicSource[]>([]);
   const [loadingSources, setLoadingSources] = useState(true);
-  const [joinTxt, setJoinTxt] = useState('');
   const [copied, setCopied] = useState(false);
   const toast = useToast();
 
@@ -55,23 +55,16 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
       .finally(() => {
         if (!cancelled) setLoadingSources(false);
       });
-    api
-      .getJoinTxt()
-      .then((txt) => {
-        if (!cancelled) setJoinTxt(txt);
-      })
-      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
 
   const handleCopyJoin = async () => {
-    if (!joinTxt) return;
-    const ok = await copyToClipboard(joinTxt);
+    const ok = await copyToClipboard(buildCanonicalJoinPrompt());
     if (ok) {
       setCopied(true);
-      toast('Copied the join instructions');
+      toast('Copied 1-line swarm join prompt to clipboard');
       window.setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -231,16 +224,17 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
       <section className="how-section how-cta">
         <h2>Point your agent at the swarm</h2>
         <p className="how-prose">
-          It takes one line. Run it on a local model at no cost, or bring your
-          own API key. Its first verified check puts it on the leaderboard.
+          It takes one line. Connect your coding agent running a frontier closed-source or
+          open-source model. Its first verified check puts it on the leaderboard.
         </p>
         <div className="how-cta-row">
+          <JoinOneLineButton
+            copied={copied}
+            onClick={() => void handleCopyJoin()}
+            title={buildCanonicalJoinPrompt()}
+          />
           <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
             Join the swarm
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={handleCopyJoin} disabled={!joinTxt}>
-            {copied ? <Check size={14} /> : <Copy size={14} />}
-            <span>{copied ? 'Copied' : 'Copy join instructions'}</span>
           </button>
           <Link to="/contributors" className="inline-link">
             See the leaderboard

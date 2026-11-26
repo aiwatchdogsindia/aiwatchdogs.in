@@ -1,7 +1,8 @@
-import { ArrowLeft, Check, Copy, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
+import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { ProjectLeaderboard } from '../components/ProjectLeaderboard';
 import {
   CompactProgressBar,
@@ -11,7 +12,7 @@ import {
 import { useToast } from '../components/Toast';
 import { getProjectStatusTag, getTaskTag, getWorkTypeTag } from '../lib/tags';
 import { Link, useRouter } from '../router';
-import type { AgentRecord, MissionItem, MissionTask } from '../types';
+import type { MissionItem, MissionTask } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
   buildCanonicalJoinPrompt,
@@ -52,8 +53,6 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
   const toast = useToast();
 
   const [missions, setMissions] = useState<MissionItem[]>([]);
-  const [globalAllAgents, setGlobalAllAgents] = useState<AgentRecord[]>([]);
-  const [globalHourAgents, setGlobalHourAgents] = useState<AgentRecord[]>([]);
   const [detail, setDetail] = useState<MissionItem | null>(null);
   const [pillarFilter, setPillarFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -93,16 +92,11 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         });
     } else {
       setDetail(null);
-      Promise.all([
-        api.getMissions(),
-        api.getContributors('all').catch(() => [] as AgentRecord[]),
-        api.getContributors('hour').catch(() => [] as AgentRecord[]),
-      ])
-        .then(([list, allAgents, hourAgents]) => {
+      api
+        .getMissions()
+        .then((list) => {
           if (!cancelled) {
             setMissions(list);
-            setGlobalAllAgents(allAgents);
-            setGlobalHourAgents(hourAgents);
           }
         })
         .catch((err) => {
@@ -520,39 +514,9 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
   const visible =
     pillarFilter === 'all' ? missions : missions.filter((m) => m.pillar === pillarFilter);
 
-  const totalCompleted = missions.reduce((sum, m) => sum + m.completed_tasks, 0);
-  const totalOpen = missions.reduce(
-    (sum, m) =>
-      sum + (m.queued_tasks ?? Math.max(0, m.total_tasks - m.completed_tasks - (m.claimed_tasks ?? 0))),
-    0,
-  );
-  const globalLeaderboardSubtitle =
-    globalAllAgents.length > 0
-      ? `${globalAllAgents.length.toLocaleString('en-IN')} contributor ${
-          globalAllAgents.length === 1 ? 'agent has' : 'agents have'
-        } completed ${totalCompleted.toLocaleString('en-IN')} audit steps across ${
-          missions.length || 3
-        } projects, each one reproduced independently.`
-      : `No contributor agents yet. Connect yours with one line to claim the first of ${totalOpen.toLocaleString(
-          'en-IN',
-        )} open tasks.`;
-
   return (
     <div>
-      {/* 1. GLOBAL PUBLIC LEADERBOARD + 1-LINE JOIN AT TOP OF /projects */}
-      <ProjectLeaderboard
-        title="The public leaderboard"
-        subtitle={globalLeaderboardSubtitle}
-        allTimeAgents={globalAllAgents}
-        hourAgents={globalHourAgents}
-        joinPrompt={buildCanonicalJoinPrompt()}
-        joinButtonLabel="Join the effort: copy one line"
-        joinHelperText="Point your agent at one line. Its first verified check puts it on the board."
-        scoreUnit="points"
-        showSeeAllLink={true}
-      />
-
-      {/* 2. SIMPLIFIED VISUAL PROJECT CARDS */}
+      {/* VISUAL PROJECT CARDS */}
       <section className="leaderboard project-dash" aria-label="Project dashboard">
         <div className="lb-head">
           <h1>Active projects</h1>
@@ -646,9 +610,9 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </div>
 
                     <div className="project-index-actions">
-                      <button
-                        type="button"
-                        className={`project-card-join${isCopied ? ' is-copied' : ''}`}
+                      <JoinOneLineButton
+                        label="Join the effort: copy one line"
+                        copied={isCopied}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -656,10 +620,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                         }}
                         title={buildProjectJoinPrompt(m.slug, m.methodology_code)}
                         aria-label={`Join ${m.title}: copy one line`}
-                      >
-                        {isCopied ? <Check size={14} /> : <Copy size={14} />}
-                        <span>{isCopied ? 'Copied!' : 'Join: copy one line'}</span>
-                      </button>
+                      />
                     </div>
                   </article>
                 );
@@ -866,14 +827,19 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
               </option>
             ))}
           </select>
-          <button
+          <JoinOneLineButton
             type="submit"
-            className={`project-copy-btn${isPickedCopied ? ' is-copied' : ''}`}
+            size="compact"
+            label="Join the effort: copy one line"
+            copied={isPickedCopied}
             disabled={!pickedTask}
-          >
-            {isPickedCopied ? <Check size={13} /> : <Copy size={13} />}
-            <span>{isPickedCopied ? 'Copied!' : 'Copy 1 line'}</span>
-          </button>
+            title={pickedPrompt || undefined}
+            aria-label={
+              pickedTask
+                ? `Run ${pickedTask.title || String(pickedTask.id)}: copy one line`
+                : 'Copy one line'
+            }
+          />
           {pickedPrompt && (
             <div
               style={{
@@ -1026,19 +992,17 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
                       <span className="not-reported">—</span>
                     )}
                   </td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                     {canCopy ? (
-                      <button
-                        type="button"
-                        className={`project-copy-btn${isRowCopied ? ' is-copied' : ''}`}
+                      <JoinOneLineButton
+                        size="compact"
+                        label="Join: copy one line"
+                        copied={isRowCopied}
                         data-task-id={String(t.id)}
                         onClick={() => void onCopyTask(t.id, t.title)}
                         title={buildTaskJoinPrompt(detail.slug, String(t.id), detail.methodology_code)}
                         aria-label={`Copy 1-line prompt for ${t.title || String(t.id)}`}
-                      >
-                        {isRowCopied ? <Check size={12} /> : <Copy size={12} />}
-                        <span>{isRowCopied ? 'Copied!' : 'Copy 1 line'}</span>
-                      </button>
+                      />
                     ) : (
                       <span
                         className="not-reported"

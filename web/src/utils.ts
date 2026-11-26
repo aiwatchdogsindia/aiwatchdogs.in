@@ -121,9 +121,6 @@ export function providerBadgeClass(provider?: string): string {
   if (p.includes('rule') || p.includes('cpu') || p.includes('deterministic')) {
     return 'tag-provider cpu';
   }
-  if (p.includes('ollama') || p.includes('local') || p.includes('vllm')) {
-    return 'tag-provider local';
-  }
   return 'tag-provider';
 }
 

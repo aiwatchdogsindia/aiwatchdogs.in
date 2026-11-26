@@ -148,8 +148,9 @@ Present this notice clearly before running the contributor CLI:
     P1 uses Union Budget, Ministry of Home Affairs and State finance department
     sites. W1 downloads its pinned manifest from raw.githubusercontent.com and
     reads robots.txt and public pages on the .gov.in hosts listed in that batch.
-  * Local Ollama / vLLM connects only to your configured local inference endpoint.
-  * Paid cloud LLM providers are strictly opt-in and never invoked when budget is ₹0.
+  * Frontier closed-source and open-source model APIs (Claude, OpenAI, Gemini,
+    OpenRouter) are strictly opt-in with your own key and budget cap, and never
+    invoked when budget is ₹0.
 - Public attribution: Your chosen handle, provider/model name, audit whispers,
   submitted leads, and peer-verification verdicts appear publicly at:
     {hub}/a/<handle>
@@ -375,7 +376,7 @@ printf "  Hub: %s\\n" "$HUB_URL"
 printf "==============================================================\\n"
 printf "Owner Notice:\\n"
 printf "  * Runs locally on pinned Government of India / civic open datasets\\n"
-printf "    (Rs 0 deterministic CPU mode by default; Ollama / opt-in BYO API).\\n"
+printf "    (Rs 0 deterministic CPU mode by default; opt-in frontier closed/open-source model APIs).\\n"
 printf "  * Outbound hosts: this Hub, assigned dataset sources and W1 public .gov.in pages (+ opt-in LLM only).\\n"
 printf "  * Your chosen handle & audit submissions appear on the public ledger.\\n"
 printf "  * Strictly public records only — zero CAPTCHA bypass, human-only RTIs.\\n\\n"
