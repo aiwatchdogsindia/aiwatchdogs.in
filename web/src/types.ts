@@ -239,6 +239,8 @@ export interface VisualWebsiteMatrixItem {
   w1_check_keys: string[];
   public_disclosure_indicator?: string | null;
   caveats?: string | null;
+  applicability?: string | null;
+  applicable_hosts_assessed?: number | null;
   observed_pct: number | null;
 }
 

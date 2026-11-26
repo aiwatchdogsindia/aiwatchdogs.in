@@ -3,9 +3,23 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 32,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/32",
+      "mergedAt": "2026-11-26T06:55:00Z",
+      "title": "Security & audit-accuracy fixes for P2 conformity matrix, Aadhaar redaction, legacy lease retirement, RTI timeouts, and changelog workflow",
+      "items": [
+        "Hardened Aadhaar PII redaction in safety.py to catch checksum-valid numbers glued directly to English/Hindi labels or underscores while excluding whole cryptographic hex digests (MD5/SHA-1/SHA-256/SHA-512) by span.",
+        "Eliminated proxy mappings in the 159-checkpoint P2 matrix: added 4 direct W1 checks (stqc_cqw_badge, no_legacy_plugins, hindi_english_bilingual, open_data_link — 46 total), restricted observed_pct strictly to directly measured automated_http_html checkpoints, and left all 96 agent-inspection and 15 internal-governance checkpoints pending (null).",
+        "Enforced per-host statutory applicability scoping during matrix rollup using deterministic Data Libertarian host-scopes.json (Union/Central bodies for OLA-3-3-web with Hindi-specific detection, Ministries/Departments for NDSAP-01, and non-exempt authorities for RTI Act checkpoints).",
+        "Safely retired superseded non-completed primary tasks (including active claimed legacy 3-digit batch leases) during project sync and lease expiry/release so removed manifests never cause HTTP 503 failures or return broken tasks to the queue.",
+        "Handled the per-site timeout budget inside the W1 page-fetch flow so slow RTI subpages cleanly emit rti_unavailable with unassessable RTI checks instead of mislabelling contact_unavailable and failing batch validation.",
+        "Hardened .github/workflows/changelog.yml to support optional CHANGELOG_BOT_TOKEN and gracefully warn with a one-click compare URL when GitHub organization policy blocks Actions PR creation."
+      ]
+    },
+    {
       "pr": 31,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/31",
-      "mergedAt": "2026-11-26T05:45:00Z",
+      "mergedAt": "2026-11-26T06:30:20Z",
       "title": "Exhaustive 159-checkpoint .gov.in conformity matrix (GIGW 3.0 + RTI Act 2005 + GoI statutory norms) across 1,000 tasks & automated changelog",
       "items": [
         "Upgraded gov-in-public-information from 7 checks / 100 batches to a unified 159-checkpoint conformity matrix combining GIGW 3.0 Annexure II & Full Guidelines (88), RTI Act 2005 & DoPT Suo Motu Guidelines (42), and other verified GoI statutory norms (RPwD Rule 15, Official Languages, State Emblem, MeitY Domain/Email, CERT-In/STQC, DARPG Citizen's Charter & CPGRAMS, IT Act/DPDP, Open Standards/NDSAP — 29).",

@@ -555,7 +555,7 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
         out.extend(
             [
                 "",
-                "### Automated P2 Checks (42 Deterministic Indicators)",
+                "### Automated P2 Checks (46 Deterministic Indicators)",
                 "",
                 "| Check | Section | Observed | Not Observed | Unassessable | N/A |",
                 "| :--- | :--- | :---: | :---: | :---: | :---: |",

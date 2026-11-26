@@ -94,7 +94,7 @@ _CANONICAL_HOSTS = frozenset({"aiwatchdogs.in", "www.aiwatchdogs.in"})
 # The official CLI names itself in its User-Agent. Builds older than this cannot read every
 # current task correctly (for example rows printed one cell per line), so they are asked to refresh.
 _OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,4})")
-MIN_OFFICIAL_CLI_VERSION = (0, 4)
+MIN_OFFICIAL_CLI_VERSION = (0, 5)
 _WEBSITE_BATCH_FILENAME_RE = re.compile(r"^batch-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|1000)\.csv\Z")
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 

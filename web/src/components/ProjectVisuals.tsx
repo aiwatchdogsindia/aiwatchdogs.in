@@ -1253,6 +1253,24 @@ const AUTOMATION_COVERAGE_LABELS: Record<string, string> = {
   none: 'Manual / qualitative or internal only',
 };
 
+const APPLICABILITY_LABELS: Record<string, string> = {
+  all_gov_in_websites: 'All .gov.in websites',
+  all_public_authorities_non_exempt:
+    'All non-exempt public authorities (excluding RTI Sec 24 Second Schedule)',
+  appropriate_government_central_and_state: 'Central & State governments',
+  central_govt_and_union_bodies: 'Union & Central Government bodies',
+  ministries_and_departments: 'Ministries & Departments',
+  portals_collecting_citizen_data: 'Portals collecting citizen data',
+};
+
+function formatApplicabilityLabel(raw?: string | null): string {
+  const key = (raw || '').trim();
+  if (!key) return '';
+  if (APPLICABILITY_LABELS[key]) return APPLICABILITY_LABELS[key];
+  const spaced = key.replace(/_/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function classifyFramework(framework?: string | null): Exclude<FrameworkFilter, 'all'> {
   const f = (framework || '').trim().toLowerCase();
   if (f.includes('gigw')) return 'gigw';
@@ -2115,6 +2133,19 @@ function WebsiteAuditVisualizer({
                           <div>
                             <dt>Public indicator</dt>
                             <dd>{item.public_disclosure_indicator}</dd>
+                          </div>
+                        ) : null}
+
+                        {item.applicability ? (
+                          <div>
+                            <dt>Applies to</dt>
+                            <dd>
+                              {formatApplicabilityLabel(item.applicability)}
+                              {item.applicable_hosts_assessed != null &&
+                              item.applicable_hosts_assessed > 0
+                                ? ` (${item.applicable_hosts_assessed.toLocaleString('en-IN')} applicable ${item.applicable_hosts_assessed === 1 ? 'host' : 'hosts'} assessed)`
+                                : ''}
+                            </dd>
                           </div>
                         ) : null}
 

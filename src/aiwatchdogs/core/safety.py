@@ -47,8 +47,15 @@ _DASH_SEP_RE = re.compile(r"[\s\-\u2010-\u2015]")
 _SEP = r"[\s\-\u2010-\u2015]"
 
 # Candidate 12-digit Aadhaar (UIDAI numbers always begin with digits 2-9).
-# Numbers glued to letters are not Aadhaar numbers: keeps digit runs inside hex digests intact.
-_AADHAAR_CANDIDATE_RE = re.compile(rf"(?<![\w])([2-9]\d{{3}}{_SEP}?\d{{4}}{_SEP}?\d{{4}})(?![\w])")
+# Digit-only boundaries ensure labelled values (e.g. "Aadhaar234567890123", "aadhaar_234567890123",
+# "आधार234567890123") are still caught; whole cryptographic hex digests are excluded separately.
+_AADHAAR_CANDIDATE_RE = re.compile(rf"(?<!\d)([2-9]\d{{3}}{_SEP}?\d{{4}}{_SEP}?\d{{4}})(?!\d)")
+
+# Whole cryptographic hex digests (MD5 32, SHA-1 40, SHA-224 56, SHA-256 64, SHA-384 96, SHA-512 128)
+# containing at least one hex letter A-F, so embedded 12-digit runs inside hashes are never misclassified.
+_HEX_DIGEST_RE = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{32,128}(?![0-9A-Fa-f])")
+_HEX_DIGEST_LENGTHS = frozenset({32, 40, 56, 64, 96, 128})
+_HAS_HEX_ALPHA_RE = re.compile(r"[A-Fa-f]")
 
 # Standalone 10-character Indian PAN (case-insensitive; excludes embedded 15-char GSTIN / 21-char CIN).
 _PAN_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{5}[0-9]{4}[A-Za-z](?![A-Za-z0-9])")
@@ -403,8 +410,17 @@ def scrub_pii(text: str) -> tuple[str, list[str]]:
     redactions: list[str] = []
     cleaned = text
 
-    # 1. Aadhaar (12-digit Verhoeff-validated)
+    hex_digest_spans = [
+        (m.start(), m.end())
+        for m in _HEX_DIGEST_RE.finditer(cleaned)
+        if len(m.group(0)) in _HEX_DIGEST_LENGTHS and _HAS_HEX_ALPHA_RE.search(m.group(0))
+    ]
+
+    # 1. Aadhaar (12-digit Verhoeff-validated), skipping substrings inside whole hex digests
     def _replace_aadhaar(match: re.Match[str]) -> str:
+        start, end = match.span(1)
+        if any(h_start <= start and end <= h_end for h_start, h_end in hex_digest_spans):
+            return match.group(0)
         raw = match.group(1)
         if _is_valid_aadhaar(raw):
             _record_redaction(redactions, "aadhaar")

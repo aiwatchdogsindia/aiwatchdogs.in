@@ -32,13 +32,16 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         assert len({task["id"] for task in dashboard["tasks"]}) == 1000
         assert all(task["status"] == "queued" for task in dashboard["tasks"])
 
-        # Matrix endpoint returns all 159 checkpoints, 8 sections, 42 W1 checks
+        # Matrix endpoint returns all 159 checkpoints, 8 sections, 46 W1 checks
         mat_resp = client.get(f"{public_url}/matrix")
         assert mat_resp.status_code == 200
         mat = mat_resp.json()
         assert mat["matrix_version"] == "gigw-3.0-rti-2005-v1"
         assert mat["summary"]["total_checkpoints"] == 159
-        assert mat["summary"]["w1_automated_checks_count"] == 42
+        assert mat["summary"]["w1_automated_checks_count"] == 46
+        assert mat["summary"]["automated_http_html"] == 48
+        assert mat["summary"]["agent_inspection"] == 96
+        assert mat["summary"]["internal_governance"] == 15
         assert len(mat["checkpoints"]) == 159
         assert len(mat["sections"]) == 8
         assert client.get("/api/missions/police-finances/matrix").status_code == 404

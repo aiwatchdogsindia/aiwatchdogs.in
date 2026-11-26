@@ -490,9 +490,12 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         assert wa0["matrix_summary"]["gigw_checkpoints"] == 88
         assert wa0["matrix_summary"]["rti_checkpoints"] == 42
         assert wa0["matrix_summary"]["statutory_other_checkpoints"] == 29
-        assert wa0["matrix_summary"]["w1_automated_checks_count"] == 42
+        assert wa0["matrix_summary"]["w1_automated_checks_count"] == 46
+        assert wa0["matrix_summary"]["automated_http_html"] == 48
+        assert wa0["matrix_summary"]["agent_inspection"] == 96
+        assert wa0["matrix_summary"]["internal_governance"] == 15
         assert len(wa0["sections"]) == 8
-        assert len(wa0["checkpoints"]) == 42
+        assert len(wa0["checkpoints"]) == 46
         assert len(wa0["matrix"]) == 159
         assert set(wa0["reasons"].keys()) == {
             "robots_restricted",
@@ -702,3 +705,164 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         inf_strata = {s["state_code"]: s for s in inf["strata"]}
         assert inf_strata["32"]["rural_status"] == "completed"
         assert inf_strata["32"]["urban_status"] == "queued"
+
+
+def test_matrix_rollup_enforces_direct_checks_and_per_host_applicability() -> None:
+    """P1 regressions:
+    1. Non-automated (agent_inspection & internal_governance) checkpoints never receive observed_pct.
+    2. STQC-CQW-01 & OPENSTD-01 use their own direct checks, never ownership_statement or viewport.
+    3. OLA-3-3-web scopes strictly to Union/Central hosts (excluding State portals).
+    4. NDSAP-01 scopes strictly to Ministries/Departments; RTI checkpoints exclude Sec 24 exempt hosts.
+    """
+    from aiwatchdogs.engines.gigw_matrix import W1_CHECKS, build_website_audit_visual_payload, load_conformity_matrix
+
+    # Static invariant on conformity-matrix.json: zero proxy keys on non-automated checkpoints
+    mat_doc = load_conformity_matrix()
+    for cp in mat_doc["checkpoints"]:
+        if cp["verification_mode"] != "automated_http_html":
+            assert cp.get("w1_check_keys") == [], f"Proxy w1_check_keys leaked on {cp['id']}"
+
+    # State, municipal, and judiciary domains must NEVER appear in Union-only host scope
+    from aiwatchdogs.engines.gigw_matrix import host_matches_applicability, load_host_scopes
+
+    union_hosts = load_host_scopes()["union_hosts"]
+    for non_union in (
+        "forests.tn.gov.in",
+        "portal.mcgm.gov.in",
+        "ukpcb.uk.gov.in",
+        "pcb.ap.gov.in",
+        "rera.delhi.gov.in",
+        "hcservices.ecourts.gov.in",
+    ):
+        assert non_union not in union_hosts, f"Non-Union host leaked into union_hosts: {non_union}"
+        assert not host_matches_applicability(non_union, "central_govt_and_union_bodies")
+
+    def _obs(domain: str, overrides: dict[str, str]) -> dict[str, Any]:
+        checks = dict.fromkeys(W1_CHECKS, "not_observed")
+        checks.update(overrides)
+        return {"domain": domain, "outcome": "observed", "reason": None, "checks": checks}
+
+    # Case 1: Only a State portal (rajasthan.gov.in) audited:
+    # - ownership_statement & responsive_viewport are observed, but STQC badge & no_legacy_plugins are NOT
+    # - hindi_english_bilingual is observed on the State portal, but OLA-3-3-web only applies to Union bodies!
+    state_only = _obs(
+        "rajasthan.gov.in",
+        {
+            "ownership_statement": "observed",
+            "responsive_viewport": "observed",
+            "stqc_cqw_badge": "not_observed",
+            "no_legacy_plugins": "not_observed",
+            "hindi_english_bilingual": "observed",
+            "open_data_link": "observed",
+            "rti_link": "observed",
+        },
+    )
+    payload_state = build_website_audit_visual_payload(
+        batches_done=1,
+        batches_total=1000,
+        hosts_observed=1,
+        hosts_unassessable=0,
+        cp_counts={},
+        reasons={},
+        host_observations=[state_only],
+    )
+    by_id_state = {row["id"]: row for row in payload_state["matrix"]}
+    assert by_id_state["STQC-CQW-01"]["observed_pct"] == 0.0
+    assert by_id_state["OPENSTD-01"]["observed_pct"] == 0.0
+    # OLA-3-3-web MUST stay pending (None) when only a State portal was observed!
+    assert by_id_state["OLA-3-3-web"]["applicable_hosts_assessed"] == 0
+    assert by_id_state["OLA-3-3-web"]["observed_pct"] is None
+    # Every agent_inspection and internal_governance checkpoint MUST remain None!
+    for row in payload_state["matrix"]:
+        if row["verification_mode"] != "automated_http_html":
+            assert row["observed_pct"] is None, f"{row['id']} ({row['verification_mode']}) leaked observed_pct"
+
+    # Case 2: Mix of State portal (rajasthan.gov.in), Union portal (gst.gov.in),
+    # Union Department (dord.gov.in), and RTI Sec 24 exempt agency (bsf.gov.in).
+    union_portal = _obs(
+        "gst.gov.in",
+        {
+            "hindi_english_bilingual": "not_observed",
+            "open_data_link": "observed",
+            "rti_link": "observed",
+        },
+    )
+    union_dept = _obs(
+        "dord.gov.in",
+        {
+            "hindi_english_bilingual": "observed",
+            "open_data_link": "not_observed",
+            "rti_link": "not_observed",
+        },
+    )
+    exempt_agency = _obs(
+        "bsf.gov.in",
+        {
+            "hindi_english_bilingual": "observed",
+            "rti_link": "not_applicable",
+            "pio_faa_disclosure": "not_applicable",
+        },
+    )
+    payload_mix = build_website_audit_visual_payload(
+        batches_done=1,
+        batches_total=1000,
+        hosts_observed=4,
+        hosts_unassessable=0,
+        cp_counts={},
+        reasons={},
+        host_observations=[state_only, union_portal, union_dept, exempt_agency],
+    )
+    by_id_mix = {row["id"]: row for row in payload_mix["matrix"]}
+    # OLA-3-3-web: Union hosts only -> gst.gov.in (0), dord.gov.in (1), bsf.gov.in (1) = 2/3 = 66.67% (rajasthan excluded!)
+    assert by_id_mix["OLA-3-3-web"]["applicable_hosts_assessed"] == 3
+    assert by_id_mix["OLA-3-3-web"]["observed_pct"] == 66.67
+    # NDSAP-01: ministries_and_departments -> rajasthan.gov.in (department, 1) + dord.gov.in (department, 0) = 1/2 = 50.0%
+    # (gst.gov.in is kind='portal', bsf.gov.in is kind='agency', both excluded!)
+    assert by_id_mix["NDSAP-01"]["applicable_hosts_assessed"] == 2
+    assert by_id_mix["NDSAP-01"]["observed_pct"] == 50.0
+    # RTI-4-2: all_public_authorities_non_exempt -> excludes bsf.gov.in -> rajasthan(1), gst(1), dord(0) = 2/3 = 66.67%
+    assert by_id_mix["RTI-4-2"]["applicable_hosts_assessed"] == 3
+    assert by_id_mix["RTI-4-2"]["observed_pct"] == 66.67
+
+    # Per-checkpoint denominator: when download_metadata is not_applicable on all hosts,
+    # GIGW-Q-06 / OPENSTD-02 must report BOTH observed_pct=None AND applicable_hosts_assessed=0!
+    no_downloads = [
+        _obs("gst.gov.in", {"download_metadata": "not_applicable", "ownership_statement": "observed"}),
+        _obs("dord.gov.in", {"download_metadata": "not_applicable", "ownership_statement": "observed"}),
+    ]
+    payload_na = build_website_audit_visual_payload(
+        batches_done=1,
+        batches_total=1000,
+        hosts_observed=2,
+        hosts_unassessable=0,
+        cp_counts={},
+        reasons={},
+        host_observations=no_downloads,
+    )
+    by_id_na = {row["id"]: row for row in payload_na["matrix"]}
+    assert by_id_na["GIGW-Q-06"]["observed_pct"] is None
+    assert by_id_na["GIGW-Q-06"]["applicable_hosts_assessed"] == 0
+    assert by_id_na["OPENSTD-02"]["observed_pct"] is None
+    assert by_id_na["OPENSTD-02"]["applicable_hosts_assessed"] == 0
+    assert by_id_na["GIGW-Q-02"]["observed_pct"] == 100.0
+    assert by_id_na["GIGW-Q-02"]["applicable_hosts_assessed"] == 2
+
+    # Offline/unassessable Union host must NOT drag OLA-3-3-web down to 0% when no Union host was assessable
+    offline_union = {
+        "domain": "uidai.gov.in",
+        "outcome": "unassessable",
+        "reason": "fetch_failed",
+        "checks": dict.fromkeys(W1_CHECKS, "unassessable"),
+    }
+    payload_offline = build_website_audit_visual_payload(
+        batches_done=1,
+        batches_total=1000,
+        hosts_observed=0,
+        hosts_unassessable=1,
+        cp_counts={},
+        reasons={"fetch_failed": 1},
+        host_observations=[offline_union],
+    )
+    ola_offline = next(r for r in payload_offline["matrix"] if r["id"] == "OLA-3-3-web")
+    assert ola_offline["applicable_hosts_assessed"] == 0
+    assert ola_offline["observed_pct"] is None

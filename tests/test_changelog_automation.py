@@ -192,3 +192,10 @@ def test_repo_canonical_changelog_is_valid_and_in_sync() -> None:
     mod = _load_script()
     errs = mod.validate_changelog_files(mod.DEFAULT_BACKEND_PATH, mod.DEFAULT_WEB_PATH)
     assert errs == [], errs
+
+
+def test_changelog_workflow_handles_org_pr_restriction_gracefully() -> None:
+    wf = (REPO_ROOT / ".github" / "workflows" / "changelog.yml").read_text(encoding="utf-8")
+    assert "secrets.CHANGELOG_BOT_TOKEN || secrets.GITHUB_TOKEN" in wf
+    assert "not permitted to create or approve pull requests" in wf
+    assert "::warning" in wf

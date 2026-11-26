@@ -1220,11 +1220,56 @@ class DeskService:
             "created_at": created,
         }
 
+    @staticmethod
+    def _is_orphaned_w1_task(task_row: Any) -> bool:
+        """Return True if a W1 task references a batch CSV manifest that is no longer deployed."""
+        if str(_row_get(task_row, "methodology_code", "") or "").strip() != "W1":
+            return False
+        payload = loads_json(_row_get(task_row, "payload_json", "{}"), {})
+        if not isinstance(payload, dict):
+            return False
+        retrieval_url = str(payload.get("retrieval_url") or "").strip()
+        if not retrieval_url:
+            return False
+        from urllib.parse import urlsplit
+
+        filename = urlsplit(retrieval_url).path.rsplit("/", 1)[-1]
+        if not re.fullmatch(r"batch-[0-9]{3,4}\.csv", filename):
+            return False
+        from aiwatchdogs.projects import default_projects_dir
+
+        return not (default_projects_dir() / "gov-in-public-information" / filename).is_file()
+
+    @staticmethod
+    def _retire_orphaned_task(conn: Any, task_id: str, mission_id: str, now: str) -> None:
+        has_finding = conn.execute("SELECT 1 FROM findings WHERE task_id = ? LIMIT 1", (task_id,)).fetchone()
+        if has_finding is not None:
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'retired', claimed_by_agent_id = NULL, claimed_by_handle = NULL,
+                    lease_id = NULL, lease_started_at = NULL, lease_expires_at = NULL,
+                    available_at = NULL, updated_at = ?
+                WHERE id = ? AND status != 'completed'
+                """,
+                (now, task_id),
+            )
+        else:
+            conn.execute("DELETE FROM tasks WHERE id = ? AND status != 'completed'", (task_id,))
+        cnt = conn.execute(
+            "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired'",
+            (mission_id,),
+        ).fetchone()
+        if cnt is not None:
+            conn.execute("UPDATE missions SET total_tasks = ? WHERE id = ?", (int(cnt["c"]), mission_id))
+
     def _reclaim_expired_leases(self, conn: Any) -> int:
         now = utc_now_iso()
         lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
         expired = conn.execute(
-            f"SELECT id, task_type, lease_id, claimed_by_agent_id, retry_count, max_retries FROM tasks "
+            f"SELECT id, mission_id, task_type, methodology_code, payload_json, lease_id, "
+            f"claimed_by_agent_id, retry_count, max_retries FROM tasks "
             f"WHERE status = 'claimed' AND lease_expires_at IS NOT NULL AND lease_expires_at < ? "
             f"ORDER BY lease_expires_at ASC LIMIT 50{lock_clause}",
             (now,),
@@ -1233,6 +1278,14 @@ class DeskService:
         for row in expired:
             if row["task_type"] == "research":
                 conn.execute("DELETE FROM research_batches WHERE task_id = ? AND lease_id = ?", (row["id"], row["lease_id"]))
+            if self._is_orphaned_w1_task(row):
+                if row["claimed_by_agent_id"]:
+                    conn.execute(
+                        "UPDATE agents SET current_task_id = NULL WHERE id = ? AND current_task_id = ?",
+                        (row["claimed_by_agent_id"], row["id"]),
+                    )
+                self._retire_orphaned_task(conn, str(row["id"]), str(row["mission_id"]), now)
+                continue
             next_retry = int(_row_get(row, "retry_count", 0) or 0) + 1
             max_retries = int(_row_get(row, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
             if next_retry >= max_retries:
@@ -2074,7 +2127,7 @@ class DeskService:
             ).fetchall()
             t_rows = conn.execute(
                 f"SELECT t.id, t.mission_id, t.title, t.task_type, t.status, t.target_finding_id, t.created_at "
-                f"FROM tasks t WHERE t.mission_id = ? AND {quarantine_task_guard} "
+                f"FROM tasks t WHERE t.mission_id = ? AND t.status != 'retired' AND {quarantine_task_guard} "
                 f"ORDER BY t.created_at DESC LIMIT 300",
                 (mission_id,),
             ).fetchall()
@@ -2086,7 +2139,7 @@ class DeskService:
             ).fetchall()
             t_rows = conn.execute(
                 f"SELECT t.id, t.mission_id, t.title, t.task_type, t.status, t.target_finding_id, t.created_at "
-                f"FROM tasks t WHERE {quarantine_task_guard} "
+                f"FROM tasks t WHERE t.status != 'retired' AND {quarantine_task_guard} "
                 f"ORDER BY t.created_at DESC LIMIT 500"
             ).fetchall()
 
@@ -2160,7 +2213,7 @@ class DeskService:
         pv_open_map: dict[str, int] = {}
         for r in conn.execute(
             "SELECT mission_id, CASE WHEN task_type = 'peer_verify' THEN 1 ELSE 0 END AS is_pv, "
-            "status, COUNT(*) AS c FROM tasks GROUP BY mission_id, is_pv, status"
+            "status, COUNT(*) AS c FROM tasks WHERE status != 'retired' GROUP BY mission_id, is_pv, status"
         ).fetchall():
             mid = r["mission_id"]
             cnt = int(r["c"])
@@ -2538,9 +2591,14 @@ class DeskService:
                 for key in W1_CHECKS
             }
             reasons: dict[str, int] = {k: 0 for k in _W1_REASON_KEYS}
+            # Deduplicate by normalized domain (latest completed observation wins) so applicability-scoped
+            # checkpoint rollups never double-count a host across legacy and upgraded batches.
+            by_domain: dict[str, dict[str, Any]] = {}
+            unnamed_obs: list[dict[str, Any]] = []
 
             obs_rows = conn.execute(
-                "SELECT output_json FROM tasks WHERE mission_id = ? AND methodology_code = 'W1' AND status = 'completed'",
+                "SELECT output_json FROM tasks WHERE mission_id = ? AND methodology_code = 'W1' "
+                "AND status = 'completed' ORDER BY COALESCE(completed_at, updated_at) ASC, id ASC",
                 (mid,),
             ).fetchall()
             for orow in obs_rows:
@@ -2551,22 +2609,30 @@ class DeskService:
                 for item in obs_list:
                     if not isinstance(item, dict):
                         continue
-                    outcome = str(item.get("outcome") or "").strip().lower()
-                    if outcome == "observed":
-                        hosts_observed += 1
-                    elif outcome == "unassessable":
-                        hosts_unassessable += 1
-                    reason = item.get("reason")
-                    if isinstance(reason, str) and reason.strip():
-                        rkey = reason.strip()
-                        reasons[rkey] = reasons.get(rkey, 0) + 1
-                    checks = item.get("checks")
-                    if isinstance(checks, dict):
-                        # Supports both legacy 7-key and upgraded 42-key observations gracefully.
-                        for key in W1_CHECKS:
-                            val = str(checks.get(key) or "").strip().lower()
-                            if val in W1_VALID_CHECK_STATES:
-                                cp_counts[key][val] += 1
+                    dom = str(item.get("domain") or "").strip().lower()
+                    if dom:
+                        by_domain[dom] = item
+                    else:
+                        unnamed_obs.append(item)
+
+            host_observations = list(by_domain.values()) + unnamed_obs
+            for item in host_observations:
+                outcome = str(item.get("outcome") or "").strip().lower()
+                if outcome == "observed":
+                    hosts_observed += 1
+                elif outcome == "unassessable":
+                    hosts_unassessable += 1
+                reason = item.get("reason")
+                if isinstance(reason, str) and reason.strip():
+                    rkey = reason.strip()
+                    reasons[rkey] = reasons.get(rkey, 0) + 1
+                checks = item.get("checks")
+                if isinstance(checks, dict):
+                    # Supports legacy 7-key, 42-key, and current 46-key observations gracefully.
+                    for key in W1_CHECKS:
+                        val = str(checks.get(key) or "").strip().lower()
+                        if val in W1_VALID_CHECK_STATES:
+                            cp_counts[key][val] += 1
 
             summary["website_audit"] = build_website_audit_visual_payload(
                 batches_done=completed_cnt,
@@ -2575,6 +2641,7 @@ class DeskService:
                 hosts_unassessable=hosts_unassessable,
                 cp_counts=cp_counts,
                 reasons=reasons,
+                host_observations=host_observations,
             )
             return summary
 
@@ -2763,7 +2830,7 @@ class DeskService:
             pv_open = 0
             for r in conn.execute(
                 "SELECT CASE WHEN task_type = 'peer_verify' THEN 1 ELSE 0 END AS is_pv, "
-                "status, COUNT(*) AS c FROM tasks WHERE mission_id = ? GROUP BY is_pv, status",
+                "status, COUNT(*) AS c FROM tasks WHERE mission_id = ? AND status != 'retired' GROUP BY is_pv, status",
                 (mid,),
             ).fetchall():
                 cnt = int(r["c"])
@@ -2859,6 +2926,7 @@ class DeskService:
                        t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis,
                        t.usage_json, t.lease_started_at, t.attempt_count
                 FROM tasks t WHERE t.mission_id = ?
+                  AND t.status != 'retired'
                   AND (t.target_finding_id IS NULL OR NOT EXISTS (
                       SELECT 1 FROM findings qf
                       WHERE qf.id = t.target_finding_id
@@ -4921,6 +4989,21 @@ class DeskService:
 
         with self.db.transaction() as conn:
             authed, task, _ = self._lock_and_verify_lease(conn, lease_id=lease_id, token=token, now=now)
+            if self._is_orphaned_w1_task(task):
+                conn.execute(
+                    "UPDATE agents SET current_task_id = NULL, last_heartbeat_at = ? WHERE id = ?",
+                    (now, authed["id"]),
+                )
+                self._retire_orphaned_task(conn, str(task["id"]), str(task["mission_id"]), now)
+                return {
+                    "status": "retired",
+                    "task_status": "retired",
+                    "task_id": str(task["id"]),
+                    "reason": clean_reason,
+                    "retry_count": int(_row_get(task, "retry_count", 0) or 0),
+                    "max_retries": int(_row_get(task, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES),
+                    "available_at": None,
+                }
             clean_notes, _ = scrub_pii(str(notes or "")[:2000])
             new_retry = int(_row_get(task, "retry_count", 0) or 0) + 1
             max_retries = int(_row_get(task, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
@@ -5261,7 +5344,11 @@ class DeskService:
         return [p for p in planned if isinstance(p, dict)] if isinstance(planned, list) else []
 
     def _token_rows(self, conn: Any, mission_id: str | None = None) -> dict[str, list[tuple[str, int | None, Any]]]:
-        where, params = ("WHERE mission_id = ?", (mission_id,)) if mission_id else ("", ())
+        where, params = (
+            ("WHERE mission_id = ? AND status != 'retired'", (mission_id,))
+            if mission_id
+            else ("WHERE status != 'retired'", ())
+        )
         out: dict[str, list[tuple[str, int | None, Any]]] = {}
         for r in conn.execute(
             f"SELECT mission_id, status, estimated_tokens, usage_json FROM tasks {where}", params
