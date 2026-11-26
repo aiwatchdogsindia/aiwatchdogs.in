@@ -116,6 +116,7 @@ export function routeToMarkdownPath(pathname: string): string {
   if (normalized === '/how-it-works') return '/how-it-works.md';
   if (normalized === '/brief') return '/brief.md';
   if (normalized === '/changelog') return '/changelog.md';
+  if (normalized === '/graveyard') return '/graveyard.md';
 
   return '/index.md';
 }

@@ -6,6 +6,7 @@ import type {
   FindingItem,
   FindingProvenance,
   GraphData,
+  GraveyardResponse,
   HeadData,
   JustInItem,
   LiveData,
@@ -1030,6 +1031,33 @@ export const api = {
       ? raw
       : asArray<Record<string, unknown>>(asRecord(raw).sources ?? asRecord(raw).items);
     return list.map((s) => normalizeSource(asRecord(s)));
+  },
+
+  async getGraveyard(
+    params: {
+      cause?: string;
+      project?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<GraveyardResponse> {
+    const sp = new URLSearchParams();
+    if (params.cause) sp.set('cause', params.cause);
+    if (params.project) sp.set('project', params.project);
+    if (params.limit != null) sp.set('limit', String(params.limit));
+    if (params.offset != null) sp.set('offset', String(params.offset));
+    const qs = sp.toString();
+    const raw = await fetchJson<Record<string, unknown>>(`/api/graveyard${qs ? `?${qs}` : ''}`);
+    const entries = asArray<GraveyardResponse['entries'][number]>(raw.entries);
+    return {
+      total: Number(raw.total ?? entries.length),
+      offset: Number(raw.offset ?? params.offset ?? 0),
+      limit: Number(raw.limit ?? params.limit ?? 24),
+      has_more: Boolean(raw.has_more),
+      counts_by_cause: (raw.counts_by_cause as Record<string, number>) || {},
+      projects: asArray<{ slug: string; title: string }>(raw.projects),
+      entries,
+    };
   },
 
   async getJoinTxt(): Promise<string> {

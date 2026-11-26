@@ -161,6 +161,7 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
 
 # Record-level identifier keys that must match exactly when present on both submitted and candidate leads.
 RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
+    "line_key",
     "source_locator",
     "ocid",
     "tender_id",
@@ -1463,6 +1464,7 @@ class AgentRunner:
         outcome: str,
         whisper: str | None = None,
         finding: dict[str, Any] | None = None,
+        findings: list[dict[str, Any]] | None = None,
         observations: list[dict[str, Any]] | None = None,
         verification: dict[str, Any] | None = None,
         metrics: dict[str, Any] | None = None,
@@ -1481,6 +1483,8 @@ class AgentRunner:
             body["observations"] = observations
         if finding is not None:
             body["finding"] = finding
+        if findings is not None:
+            body["findings"] = findings
         if verification is not None:
             body["verification"] = verification
         if metrics is not None:
@@ -1854,129 +1858,151 @@ class AgentRunner:
                 "response": resp,
             }
 
-        top_lead = _select_top_lead(engine_res.leads)
-        enriched = enrich_finding_summary(
-            top_lead,
-            self.provider_cfg,
-            allow_paid_provider=self.config.allow_paid_provider,
-            max_usd=self.config.max_usd,
-            budget_tracker=self.budget_tracker,
-        )
-        self._task_input_tokens += int(enriched.get("input_tokens") or 0)
-        self._task_output_tokens += int(enriched.get("output_tokens") or 0)
-
-        # Deterministic verified numbers/summary NEVER overwritten by LLM prose!
-        clean_title, _ = scrub_pii(enriched["title"])
-        clean_summary = enriched["summary"]
-        clean_entity, _ = scrub_pii(str(top_lead.entity_name))
-        clean_benign = [scrub_pii(b)[0] for b in enriched["benign_explanations"] if str(b).strip()]
-        editorial_interpretation = enriched.get("editorial_interpretation")
-
-        lint_res = lint_neutrality(clean_title, clean_summary, clean_benign)
-        if not lint_res.passed:
-            raise ValueError(f"Neutrality lint rejected lead before submission: {lint_res.violations}")
-
-        lead_ruleset_version = str(getattr(top_lead, "ruleset_version", None) or ruleset_version)
-        lead_source_locator = _extract_source_locator(top_lead, dataset)
-        lead_metrics_clean, _ = scrub_pii_in_obj(dict(top_lead.anomaly_metrics or {}))
-        lead_fy_start = getattr(top_lead, "fiscal_year_start", None) or lead_metrics_clean.get("fiscal_year_start")
-        lead_fy_end = getattr(top_lead, "fiscal_year_end", None) or lead_metrics_clean.get("fiscal_year_end")
-
-        finding_payload: dict[str, Any] = {
-            "title": clean_title,
-            "summary": clean_summary,
-            "editorial_interpretation": editorial_interpretation,
-            "methodology_code": top_lead.methodology_code,
-            "entity_name": clean_entity,
-            "jurisdiction": top_lead.jurisdiction,
-            "fiscal_year": top_lead.fiscal_year,
-            "fiscal_year_start": lead_fy_start,
-            "fiscal_year_end": lead_fy_end,
-            "monetary_exposure_inr": float(top_lead.monetary_exposure_inr),
-            "severity": top_lead.severity,
-            "anomaly_metrics": lead_metrics_clean,
-            "rule_triggered": top_lead.rule_triggered,
-            "engine_version": engine_version,
-            "ruleset_version": lead_ruleset_version,
-            "as_of_date": effective_as_of or None,
-            "source_locator": lead_source_locator,
-            "citations": _scrub_citations(
-                list(top_lead.citations),
-                dataset,
-                canonical_url=canonical_url,
-                source_url=source_url,
-                secondary_url=secondary_url,
-                secondary_sha256=observed_secondary_sha or None,
+        sorted_leads = sorted(
+            engine_res.leads,
+            key=lambda lead: (
+                SEVERITY_RANK.get(str(getattr(lead, "severity", "low")).lower(), 0),
+                float(getattr(lead, "monetary_exposure_inr", 0.0) or 0.0),
             ),
-            "benign_explanations": clean_benign,
-            "suggested_authority": top_lead.suggested_authority,
-            "artifact_id": payload.get("artifact_id"),
-            "artifact_title": artifact_label,
-            "artifact_sha256": dataset.sha256,
-            "byte_size": dataset.byte_size,
-            "fetched_at": getattr(dataset, "fetched_at", None),
-            "official_publisher": getattr(dataset, "official_publisher", None) or payload.get("official_publisher"),
-            "source_landing_page": getattr(dataset, "source_landing_page", None) or payload.get("source_landing_page") or source_url,
-            "mirror_name": getattr(dataset, "mirror_name", None) or payload.get("mirror_name"),
-            "mirror_catalog_url": payload.get("mirror_catalog_url"),
-            "retrieval_url": retrieval_url,
-            "archive_url": payload.get("archive_url"),
-            "source_id": payload.get("source_id"),
-            "dataset_path": canonical_url,
-            "canonical_url": canonical_url,
-            "source_ref": canonical_url,
-            "source_url": source_url,
-            "is_demo_sample": False,
-            "agent_trace": {
-                "handle": self.config.handle,
-                "provider": self.config.provider,
-                "model": self.config.model,
-                "enriched_by": enriched["enriched_by"],
-                "used_llm": enriched["used_llm"],
+            reverse=True,
+        )
+        leads_to_submit = sorted_leads[:25]
+
+        def _build_finding_payload(lead: Any) -> dict[str, Any]:
+            enriched = enrich_finding_summary(
+                lead,
+                self.provider_cfg,
+                allow_paid_provider=self.config.allow_paid_provider,
+                max_usd=self.config.max_usd,
+                budget_tracker=self.budget_tracker,
+            )
+            self._task_input_tokens += int(enriched.get("input_tokens") or 0)
+            self._task_output_tokens += int(enriched.get("output_tokens") or 0)
+
+            # Deterministic verified numbers/summary NEVER overwritten by LLM prose!
+            clean_title, _ = scrub_pii(enriched["title"])
+            clean_summary = enriched["summary"]
+            clean_entity, _ = scrub_pii(str(lead.entity_name))
+            clean_benign = [scrub_pii(b)[0] for b in enriched["benign_explanations"] if str(b).strip()]
+            editorial_interpretation = enriched.get("editorial_interpretation")
+
+            lint_res = lint_neutrality(clean_title, clean_summary, clean_benign)
+            if not lint_res.passed:
+                raise ValueError(f"Neutrality lint rejected lead before submission: {lint_res.violations}")
+
+            lead_ruleset_version = str(getattr(lead, "ruleset_version", None) or ruleset_version)
+            lead_source_locator = _extract_source_locator(lead, dataset)
+            lead_metrics_clean, _ = scrub_pii_in_obj(dict(lead.anomaly_metrics or {}))
+            lead_fy_start = getattr(lead, "fiscal_year_start", None) or lead_metrics_clean.get("fiscal_year_start")
+            lead_fy_end = getattr(lead, "fiscal_year_end", None) or lead_metrics_clean.get("fiscal_year_end")
+
+            item_payload: dict[str, Any] = {
+                "title": clean_title,
+                "summary": clean_summary,
                 "editorial_interpretation": editorial_interpretation,
-                "budget_blocked": enriched.get("budget_blocked", False),
-                "enrichment_fallback_reason": enriched.get("fallback_reason"),
-                "enrichment_cost_usd": enriched.get("actual_cost_usd", 0.0),
-                "verifier_script_hash": engine_res.script_hash,
+                "methodology_code": lead.methodology_code,
+                "entity_name": clean_entity,
+                "jurisdiction": lead.jurisdiction,
+                "fiscal_year": lead.fiscal_year,
+                "fiscal_year_start": lead_fy_start,
+                "fiscal_year_end": lead_fy_end,
+                "monetary_exposure_inr": float(lead.monetary_exposure_inr),
+                "severity": lead.severity,
+                "anomaly_metrics": lead_metrics_clean,
+                "rule_triggered": lead.rule_triggered,
                 "engine_version": engine_version,
                 "ruleset_version": lead_ruleset_version,
                 "as_of_date": effective_as_of or None,
                 "source_locator": lead_source_locator,
+                "citations": _scrub_citations(
+                    list(lead.citations),
+                    dataset,
+                    canonical_url=canonical_url,
+                    source_url=source_url,
+                    secondary_url=secondary_url,
+                    secondary_sha256=observed_secondary_sha or None,
+                ),
+                "benign_explanations": clean_benign,
+                "suggested_authority": lead.suggested_authority,
+                "artifact_id": payload.get("artifact_id"),
+                "artifact_title": artifact_label,
                 "artifact_sha256": dataset.sha256,
-                "expected_sha256_matched": primary_matched,
-                "secondary_sha256": observed_secondary_sha or None,
-                "secondary_sha256_matched": secondary_matched,
-                "canonical_url": canonical_url,
+                "byte_size": dataset.byte_size,
+                "fetched_at": getattr(dataset, "fetched_at", None),
+                "official_publisher": getattr(dataset, "official_publisher", None) or payload.get("official_publisher"),
+                "source_landing_page": getattr(dataset, "source_landing_page", None) or payload.get("source_landing_page") or source_url,
+                "mirror_name": getattr(dataset, "mirror_name", None) or payload.get("mirror_name"),
+                "mirror_catalog_url": payload.get("mirror_catalog_url"),
                 "retrieval_url": retrieval_url,
-                "records_scanned": engine_res.records_scanned,
-                "monetary_audited_inr": engine_res.monetary_audited_inr,
-                "unevaluable_count": unevaluable_count,
-                **({"dataset_url": canonical_url} if _is_http_url(canonical_url) else {}),
-                **({"secondary_url": secondary_url} if secondary_url else {}),
-            },
-        }
-        if _is_http_url(canonical_url):
-            finding_payload["dataset_url"] = canonical_url
-        if secondary_url:
-            finding_payload["secondary_url"] = secondary_url
-        if observed_secondary_sha:
-            finding_payload["secondary_sha256"] = observed_secondary_sha
+                "archive_url": payload.get("archive_url"),
+                "source_id": payload.get("source_id"),
+                "dataset_path": canonical_url,
+                "canonical_url": canonical_url,
+                "source_ref": canonical_url,
+                "source_url": source_url,
+                "is_demo_sample": False,
+                "agent_trace": {
+                    "handle": self.config.handle,
+                    "provider": self.config.provider,
+                    "model": self.config.model,
+                    "enriched_by": enriched["enriched_by"],
+                    "used_llm": enriched["used_llm"],
+                    "editorial_interpretation": editorial_interpretation,
+                    "budget_blocked": enriched.get("budget_blocked", False),
+                    "enrichment_fallback_reason": enriched.get("fallback_reason"),
+                    "enrichment_cost_usd": enriched.get("actual_cost_usd", 0.0),
+                    "verifier_script_hash": engine_res.script_hash,
+                    "engine_version": engine_version,
+                    "ruleset_version": lead_ruleset_version,
+                    "as_of_date": effective_as_of or None,
+                    "source_locator": lead_source_locator,
+                    "artifact_sha256": dataset.sha256,
+                    "expected_sha256_matched": primary_matched,
+                    "secondary_sha256": observed_secondary_sha or None,
+                    "secondary_sha256_matched": secondary_matched,
+                    "canonical_url": canonical_url,
+                    "retrieval_url": retrieval_url,
+                    "records_scanned": engine_res.records_scanned,
+                    "monetary_audited_inr": engine_res.monetary_audited_inr,
+                    "unevaluable_count": unevaluable_count,
+                    **({"dataset_url": canonical_url} if _is_http_url(canonical_url) else {}),
+                    **({"secondary_url": secondary_url} if secondary_url else {}),
+                },
+            }
+            if _is_http_url(canonical_url):
+                item_payload["dataset_url"] = canonical_url
+            if secondary_url:
+                item_payload["secondary_url"] = secondary_url
+            if observed_secondary_sha:
+                item_payload["secondary_sha256"] = observed_secondary_sha
+            return item_payload
+
+        finding_payloads = [_build_finding_payload(lead) for lead in leads_to_submit]
+        finding_payload = finding_payloads[0]
+        clean_entity = str(finding_payload["entity_name"])
+        clean_title = str(finding_payload["title"])
 
         if not self.heartbeat(
             lease_id,
             whisper=(
                 f"Submitting {methodology_code} lead for {clean_entity} "
-                f"({len(engine_res.leads)} lead(s) from {engine_res.records_scanned:,} records; peer review pending)"
+                f"({len(finding_payloads)} of {len(engine_res.leads)} lead(s) from {engine_res.records_scanned:,} records; peer review pending)"
             ),
             progress_pct=90,
         ):
             return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
 
+        whisper_msg = (
+            f"{methodology_code} submitted {len(finding_payloads)} leads (top: {clean_title})"
+            if len(finding_payloads) > 1
+            else f"{methodology_code} lead submitted: {clean_title}"
+        )
         resp = self.submit(
             lease_id,
             outcome="finding",
-            whisper=f"{methodology_code} lead submitted: {clean_title}",
+            whisper=whisper_msg,
             finding=finding_payload,
+            findings=finding_payloads if len(finding_payloads) > 1 else None,
             metrics=metrics,
         )
         return {
@@ -1984,6 +2010,7 @@ class AgentRunner:
             "task_id": task_id,
             "outcome": "finding",
             "finding": finding_payload,
+            "findings": finding_payloads,
             "metrics": metrics,
             "response": resp,
         }
@@ -2470,7 +2497,14 @@ class AgentRunner:
             elif status == "completed":
                 summary.tasks_completed += 1
                 if outcome == "finding":
-                    summary.findings_submitted += 1
+                    resp_obj = result.get("response") if isinstance(result.get("response"), dict) else {}
+                    created = resp_obj.get("findings_created")
+                    if isinstance(created, int) and created > 0:
+                        summary.findings_submitted += created
+                    elif isinstance(result.get("findings"), list) and result["findings"]:
+                        summary.findings_submitted += len(result["findings"])
+                    else:
+                        summary.findings_submitted += 1
                 elif outcome == "cleared":
                     summary.cleared_submitted += 1
                 elif outcome == "verification":

@@ -279,8 +279,10 @@ export interface VisualUnionBudgetYear {
   leads: number;
   /** Rs crore, sum of those leads' shortfalls. */
   below_estimate_cr: number;
-  /** 'revised' when actuals are not yet published for that year. */
+  /** 'revised' when actuals are unavailable or could not be matched for that year. */
   compares: 'actual' | 'revised';
+  /** Why actuals were not compared ('not_published' | 'unmatched'), or null when compares === 'actual'. */
+  actuals_reason?: 'not_published' | 'unmatched' | null;
 }
 
 export interface VisualUnionBudgetLead {
@@ -297,6 +299,8 @@ export interface VisualUnionBudgetLead {
   below_estimate_pct: number | null;
   /** 'actual_vs_budget_estimate' | 'revised_vs_budget_estimate'. */
   compare: string;
+  /** Why actuals were not compared ('not_published' | 'unmatched'), or null when actuals were compared. */
+  actuals_reason?: 'not_published' | 'unmatched' | null;
 }
 
 export interface VisualUnionBudget {
@@ -707,4 +711,46 @@ export interface ContributorProfile {
   submitted_findings: FindingItem[];
   verifications: PeerVerification[];
   recent_whispers: WhisperItem[];
+}
+
+export type GraveyardCause =
+  | 'false_positive'
+  | 'editorial_retraction'
+  | 'peer_dispute'
+  | 'withdrawn_review';
+
+export interface GraveyardEntry {
+  id: string;
+  title: string;
+  status: string;
+  cause: GraveyardCause;
+  cause_label: string;
+  methodology_code: string;
+  entity_name: string;
+  jurisdiction: string;
+  fiscal_year: string;
+  monetary_exposure_inr_cr: number;
+  mission_slug: string;
+  project_title: string;
+  proposed_at: string;
+  ended_at: string;
+  lived_seconds: number;
+  claimed: string;
+  cause_detail: string;
+  source_evidence_url?: string | null;
+  survived: string;
+  confirm_count: number;
+  dispute_count: number;
+  corrections_count: number;
+  rti_on_hold: boolean;
+}
+
+export interface GraveyardResponse {
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+  counts_by_cause: Record<string, number>;
+  projects: Array<{ slug: string; title: string }>;
+  entries: GraveyardEntry[];
 }

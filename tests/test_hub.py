@@ -777,3 +777,121 @@ def test_postgres_sql_translation_and_vercel_defaults(
             assert "event: connected" in body
             assert ": keepalive" in body
     application.state.db.close()
+
+
+def test_graveyard_api_atom_markdown_and_quarantine_exclusion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(Path(__file__).resolve().parents[1] / "projects"))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+    dist_dir = tmp_path / "web_dist"
+    dist_dir.mkdir(parents=True)
+    (dist_dir / "index.html").write_text("<html><body>SPA</body></html>", encoding="utf-8")
+
+    application = create_app(db_path=tmp_path / "graveyard.db", seed=True, web_dist=dist_dir)
+    with application.state.db.transaction() as conn:
+        mid_p1 = str(conn.execute("SELECT id FROM missions WHERE slug = 'police-finances'").fetchone()["id"])
+        mid_ub = str(
+            conn.execute("SELECT id FROM missions WHERE slug = 'union-budget-unspent-funds'").fetchone()["id"]
+        )
+        conn.execute(
+            """
+            INSERT INTO findings (
+                id, mission_id, mission_slug, pillar, title, summary, methodology_code,
+                entity_name, jurisdiction, fiscal_year, monetary_exposure_inr, severity,
+                submitted_by, status, quarantined, created_at
+            ) VALUES
+                ('fnd-gy-fp', ?, 'police-finances', 'budget', 'False positive lead',
+                 'Claimed shortfall', 'P1', 'State Police', 'Goa', 'FY2024-25', 1e7, 'low',
+                 'node-a', 'retracted_false_positive', 0, '2026-11-20T00:00:00Z'),
+                ('fnd-gy-ret', ?, 'union-budget-unspent-funds', 'budget', 'Retracted lead',
+                 'Claimed unspent funds', 'UB1', 'Ministry X', 'Union of India', 'FY2023-24', 5e7, 'high',
+                 'node-a', 'retracted', 0, '2026-11-21T00:00:00Z'),
+                ('fnd-gy-disp', ?, 'police-finances', 'budget', 'Disputed lead',
+                 'Claimed discrepancy', 'P1', 'State Police', 'Assam', 'FY2024-25', 2e7, 'medium',
+                 'node-a', 'disputed', 0, '2026-11-22T00:00:00Z'),
+                ('fnd-gy-quar', ?, 'police-finances', 'budget', 'Quarantined secret',
+                 'Must never appear', 'P1', 'Private Person', 'Goa', 'FY2024-25', 1e7, 'high',
+                 'node-a', 'retracted', 1, '2026-11-25T00:00:00Z')
+            """,
+            (mid_p1, mid_ub, mid_p1, mid_p1),
+        )
+        conn.execute(
+            """
+            INSERT INTO finding_corrections (
+                id, finding_id, correction_type, previous_status, new_status, summary,
+                details, source_evidence_url, reviewed_by, created_at
+            ) VALUES (
+                'cor-gy-1', 'fnd-gy-ret', 'retraction', 'verified', 'retracted',
+                'Matched wrong budget column.', 'Verified against PDF p.4',
+                'https://www.indiabudget.gov.in/', 'editorial-audit', '2026-11-24T12:00:00Z'
+            )
+            """
+        )
+
+    with TestClient(application) as tc:
+        all_gy = tc.get("/api/graveyard?limit=2").json()
+        assert all_gy["total"] == 3
+        assert all_gy["has_more"] is True
+        assert [e["id"] for e in all_gy["entries"]] == ["fnd-gy-ret", "fnd-gy-disp"]
+        assert all_gy["counts_by_cause"]["false_positive"] == 1
+        assert all_gy["counts_by_cause"]["editorial_retraction"] == 1
+        assert all_gy["counts_by_cause"]["peer_dispute"] == 1
+
+        page2 = tc.get("/api/graveyard?limit=2&offset=2").json()
+        assert page2["has_more"] is False
+        assert [e["id"] for e in page2["entries"]] == ["fnd-gy-fp"]
+
+        by_cause = tc.get("/api/graveyard?cause=editorial_retraction").json()
+        assert by_cause["total"] == 1
+        assert "Matched wrong budget column." in by_cause["entries"][0]["cause_detail"]
+        assert by_cause["entries"][0]["source_evidence_url"] == "https://www.indiabudget.gov.in/"
+
+        by_proj = tc.get("/api/graveyard?project=police-finances").json()
+        assert by_proj["total"] == 2
+        assert all(e["mission_slug"] == "police-finances" for e in by_proj["entries"])
+
+        # Quarantined item never appears in API, Atom feed, or Markdown
+        atom = tc.get("/graveyard.atom")
+        assert atom.status_code == 200
+        assert "application/atom+xml" in atom.headers["content-type"]
+        assert "fnd-gy-ret" in atom.text
+        assert "Must never appear" not in atom.text
+
+        md = tc.get("/graveyard.md")
+        assert md.status_code == 200
+        assert "The Graveyard" in md.text
+        assert "fnd-gy-ret" in md.text
+        assert "Must never appear" not in md.text
+
+        neg = tc.get("/graveyard", headers={"Accept": "text/markdown"})
+        assert neg.status_code == 200
+        assert "text/markdown" in neg.headers["content-type"]
+        assert "fnd-gy-ret" in neg.text
+
+        html_page = tc.get("/graveyard", headers={"Accept": "text/html"})
+        assert html_page.status_code == 200
+        assert "SPA" in html_page.text
+    application.state.db.close()
+
+
+def test_extract_client_ip_cloudflare_trust_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+    from starlette.requests import Request
+    from aiwatchdogs.hub.app import _extract_client_ip
+
+    def _req(headers: dict[str, str]) -> Request:
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/head",
+            "headers": [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in headers.items()],
+            "client": ("10.0.0.1", 12345),
+        }
+        return Request(scope)
+
+    monkeypatch.delenv("AIWATCHDOGS_TRUST_CLOUDFLARE", raising=False)
+    r = _req({"CF-Connecting-IP": "203.0.113.5", "x-vercel-forwarded-for": "198.51.100.9"})
+    assert _extract_client_ip(r) == "198.51.100.9"
+
+    monkeypatch.setenv("AIWATCHDOGS_TRUST_CLOUDFLARE", "1")
+    assert _extract_client_ip(r) == "203.0.113.5"

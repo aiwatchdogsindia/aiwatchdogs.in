@@ -119,6 +119,62 @@ def feed_entries(conn: Any, *, slug: str | None = None, limit: int = FEED_LIMIT)
     return entries[:limit]
 
 
+_GRAVEYARD_STATUSES = (
+    "('retracted_false_positive', 'retracted', 'disputed', "
+    "'under_review', 'under_editorial_review', 'corrected')"
+)
+_GRAVEYARD_LABELS = {
+    "retracted_false_positive": ("False positive", "graveyard_false_positive"),
+    "retracted": ("Retracted", "graveyard_retracted"),
+    "disputed": ("Peer dispute", "graveyard_disputed"),
+    "under_review": ("Withdrawn for review", "graveyard_withdrawn"),
+    "under_editorial_review": ("Withdrawn for review", "graveyard_withdrawn"),
+    "corrected": ("Withdrawn for review", "graveyard_withdrawn"),
+}
+
+
+def graveyard_feed_entries(conn: Any, *, limit: int = FEED_LIMIT) -> list[dict[str, str]]:
+    """Collect non-quarantined graveyard entries (false positives, retractions, disputes, withdrawals)."""
+    rows = conn.execute(
+        f"""
+        SELECT * FROM (
+            SELECT f.id, f.title, f.status, f.jurisdiction, f.methodology_code, f.created_at,
+                   (SELECT c.created_at FROM finding_corrections c WHERE c.finding_id = f.id
+                    ORDER BY c.created_at DESC LIMIT 1) AS correction_at,
+                   (SELECT c.summary FROM finding_corrections c WHERE c.finding_id = f.id
+                    ORDER BY c.created_at DESC LIMIT 1) AS correction_summary,
+                   (SELECT MAX(v.created_at) FROM peer_verifications v WHERE v.finding_id = f.id
+                    AND v.verdict != 'confirm') AS dispute_at
+            FROM findings f
+            WHERE f.status IN {_GRAVEYARD_STATUSES} AND {_VISIBLE}
+        ) AS sub
+        ORDER BY COALESCE(sub.correction_at, sub.dispute_at, sub.created_at) DESC, sub.id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+    entries: list[dict[str, str]] = []
+    for r in rows:
+        fid = str(r["id"])
+        st = str(r["status"] or "").lower()
+        label, term = _GRAVEYARD_LABELS.get(st, ("Retired", "graveyard_retired"))
+        when = str(r["correction_at"] or r["dispute_at"] or r["created_at"] or EPOCH)
+        detail = str(r["correction_summary"] or "").strip()
+        summary = f"{r['methodology_code']} · {r['jurisdiction']}" + (f" · {detail}" if detail else "")
+        entries.append(
+            {
+                "key": f"graveyard-{fid}",
+                "updated": when,
+                "term": term,
+                "title": f"{label}: {r['title']}",
+                "path": f"/findings?finding={quote(fid, safe='')}",
+                "summary": summary,
+            }
+        )
+    entries.sort(key=lambda e: (e["updated"], e["key"]), reverse=True)
+    return entries[:limit]
+
+
 def render_atom(entries: list[dict[str, str]], *, base_url: str, path: str, title: str, page: str) -> bytes:
     """Render entries as an Atom 1.0 document."""
     ET.register_namespace("", ATOM)

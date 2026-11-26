@@ -59,6 +59,7 @@ export function Footer({
             <Link to="/#map">Observatory Map</Link>
             <Link to="/projects">Projects</Link>
             <Link to="/findings">Findings &amp; Evidence Wall</Link>
+            <Link to="/graveyard">The Graveyard</Link>
             <Link to="/live">Live Fleet Telemetry</Link>
             <Link to="/contributors">Public Leaderboard</Link>
           </div>

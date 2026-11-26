@@ -39,6 +39,7 @@ from aiwatchdogs.hub.agent_access import (
     render_contributor_md,
     render_finding_detail_md,
     render_findings_md,
+    render_graveyard_md,
     render_how_it_works_md,
     render_index_md,
     render_leaderboard_md,
@@ -63,7 +64,7 @@ from aiwatchdogs.hub.database import (
     utc_now_iso,
 )
 from aiwatchdogs.hub.desk import MAX_TASK_PAGE, DeskService
-from aiwatchdogs.hub.feed import feed_entries, render_atom
+from aiwatchdogs.hub.feed import feed_entries, graveyard_feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
@@ -289,6 +290,7 @@ class DeskSubmitRequest(BaseModel):
     observations: list[dict[str, Any]] | None = Field(default=None, max_length=126)
     whisper: str | None = Field(default=None, max_length=600)
     finding: dict[str, Any] | None = None
+    findings: list[dict[str, Any]] | None = Field(default=None, max_length=25)
     verification: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
     usage: UsageReport | None = None
@@ -427,6 +429,11 @@ def _require_current_cli(request: Request) -> None:
 
 def _extract_client_ip(request: Request) -> str:
     """Extract a trusted client IP for rate limiting & SSE slot capping (never spoofable leftmost XFF)."""
+    # Only trust CF-Connecting-IP when explicitly deployed behind Cloudflare proxy.
+    if os.environ.get("AIWATCHDOGS_TRUST_CLOUDFLARE", "").strip().lower() in {"1", "true", "yes"}:
+        cf_ip = request.headers.get("cf-connecting-ip", "").strip()
+        if cf_ip:
+            return cf_ip.split(",")[0].strip()[:64]
     # Vercel sets x-vercel-forwarded-for at the edge (cannot be forged by external clients).
     vercel_ip = request.headers.get("x-vercel-forwarded-for", "").strip()
     if vercel_ip:
@@ -754,6 +761,18 @@ def create_app(
             entries = feed_entries(conn)
         return _atom(request, "/feed.atom", "AI Watchdogs India: every change of state", "/", entries)
 
+    @application.get("/graveyard.atom")
+    def graveyard_atom(request: Request) -> Response:
+        with db.read() as conn:
+            entries = graveyard_feed_entries(conn)
+        return _atom(
+            request,
+            "/graveyard.atom",
+            "AI Watchdogs India: the graveyard",
+            "/graveyard",
+            entries,
+        )
+
     @application.get("/feeds/{slug}.atom")
     def project_feed_atom(slug: str, request: Request) -> Response:
         slug = desk.resolve_slug(slug)
@@ -936,6 +955,15 @@ def create_app(
     @application.get("/api/findings/{finding_id}")
     def api_finding_detail(finding_id: str) -> dict[str, Any]:
         return desk.get_finding_detail(finding_id)
+
+    @application.get("/api/graveyard")
+    def api_graveyard(
+        cause: str | None = Query(default=None, max_length=40),
+        project: str | None = Query(default=None, max_length=120),
+        limit: int = Query(default=24, ge=1, le=100),
+        offset: int = Query(default=0, ge=0, le=50_000),
+    ) -> dict[str, Any]:
+        return desk.list_graveyard(cause=cause, project=project, limit=limit, offset=offset)
 
     @application.post("/api/findings/{finding_id}/rti-draft")
     def api_finding_rti_draft(
@@ -1307,6 +1335,10 @@ def create_app(
     @application.get("/changelog.md")
     def md_changelog(request: Request) -> Response:
         return markdown_response(render_changelog_md(_public_base_url(request)), md_path="/changelog.md")
+
+    @application.get("/graveyard.md")
+    def md_graveyard(request: Request) -> Response:
+        return markdown_response(render_graveyard_md(desk, _public_base_url(request)), md_path="/graveyard.md")
 
     @application.get("/back.md")
     @application.get("/sponsors.md")

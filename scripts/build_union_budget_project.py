@@ -414,7 +414,7 @@ def _absorbed(unit: Unit, others: list[Unit], grew: int, empty: int) -> bool:
 def link_year(year: str, by_budget: dict[str, dict[int, Statement]], left_out: collections.Counter[str]) -> list[Item]:
     est_budget, act_budget = ub.shift_year(year, 1), ub.shift_year(year, 2)
     est_docs = by_budget.get(est_budget, {})
-    act_docs = {n: st for n, st in by_budget.get(act_budget, {}).items() if st.readable}
+    act_docs = {n: st for n, st in by_budget.get(act_budget, {}).items() if st.readable and st.closed}
     # Union Budget 2017-18 dropped the Plan / Non-Plan split and regrouped the schemes: the lines of
     # the budget before it cannot be followed into it by name, so no actual is compared for 2015-16.
     if est_docs and act_docs:
@@ -439,6 +439,9 @@ def link_year(year: str, by_budget: dict[str, dict[int, Statement]], left_out: c
             continue
         units = units_of(st)
         allocation = [unit for unit in units if (unit.values[COL_BP] or 0.0) > 0]
+        if not st.closed:
+            left_out["statement does not add up to its Grand Total"] += len(allocation)
+            continue
         target: Statement | None = None
         if act_docs:
             votes: collections.Counter[int] = collections.Counter()
@@ -523,13 +526,13 @@ def link_year(year: str, by_budget: dict[str, dict[int, Statement]], left_out: c
                 actual = found_values[COL_A]
                 continues = values[COL_B] is not None and found_values[COL_BP] is not None
                 written_down = revised <= ub.NIL_ACTUAL_MAX_REVISED_SHARE * budget_estimate
-                # A name-only match is trusted only inside a statement that adds up. A negative
-                # actual (recoveries above spending) cannot be compared with an estimate. A nil
-                # actual is read as nothing spent only under the engine's own conditions. And an
-                # actual is not compared when a line of a longer, similar name carries one too.
+                # Both estimates and actuals statements are already verified to add up to their Grand
+                # Totals. A negative actual (recoveries above spending) cannot be compared with an
+                # estimate. A nil actual is read as nothing spent only under the engine's own
+                # conditions. And an actual is not compared when a line of a longer, similar name
+                # carries one too.
                 if (
-                    (basis != "name" or target.closed)
-                    and (actual is None or actual >= 0)
+                    (actual is None or actual >= 0)
                     and (actual is not None or (continues and written_down))
                     and not _absorbed(found, act_units[target.number], COL_A, COL_BP)
                 ):
@@ -537,11 +540,7 @@ def link_year(year: str, by_budget: dict[str, dict[int, Statement]], left_out: c
             if item.act is None and values[COL_RP] is None and values[COL_B] is None:
                 left_out["no revised estimate and no following year"] += 1
                 continue
-            # A statement that does not add up is used only for lines proven by the common figure.
-            if st.closed or item.link == "name+figure":
-                items.append(item)
-            else:
-                left_out["statement does not add up to its Grand Total"] += 1
+            items.append(item)
     return items
 
 
