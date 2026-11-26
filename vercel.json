@@ -80,7 +80,7 @@
       ]
     },
     {
-      "source": "/(projects|missions|findings|live|leaderboard|contributors|how-it-works|brief|changelog|back|sponsors|ledger)",
+      "source": "/(projects|missions|findings|graveyard|live|leaderboard|contributors|how-it-works|brief|changelog|back|sponsors|ledger)",
       "headers": [
         {
           "key": "Vary",
@@ -262,6 +262,17 @@
       "destination": "/changelog.md"
     },
     {
+      "source": "/graveyard",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/graveyard.md"
+    },
+    {
       "source": "/back",
       "has": [
         {
@@ -352,6 +363,10 @@
     },
     {
       "source": "/changelog",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/graveyard",
       "destination": "/index.html"
     },
     {

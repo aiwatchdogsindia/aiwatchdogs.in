@@ -2329,7 +2329,13 @@ function UnionBudgetVisualizer({
                             <span>{y.year}</span>
                           )}
                           {isRevised ? (
-                            <span className="pv-ub-note">Revised vs budget; actuals not published yet</span>
+                            <span className="pv-ub-note">
+                              {y.actuals_reason === 'not_published'
+                                ? 'Revised vs budget; actuals not published yet'
+                                : y.actuals_reason === 'unmatched'
+                                  ? 'Revised vs budget; actuals not matched after regrouping'
+                                  : 'Revised vs budget; actuals unavailable or unmatched'}
+                            </span>
                           ) : null}
                         </th>
                         <td>
@@ -2468,6 +2474,18 @@ function UnionBudgetVisualizer({
                 {topLeads.map((lead) => {
                   const tag = getFindingTag(lead.status);
                   const noActuals = lead.compare === 'revised_vs_budget_estimate';
+                  const noActualsLabel =
+                    lead.actuals_reason === 'not_published'
+                      ? 'not published yet'
+                      : lead.actuals_reason === 'unmatched'
+                        ? 'not matched'
+                        : 'not available';
+                  const noActualsTitle =
+                    lead.actuals_reason === 'not_published'
+                      ? 'Actuals not published yet'
+                      : lead.actuals_reason === 'unmatched'
+                        ? 'Actuals were published but this line could not be matched after budget regrouping'
+                        : 'Actuals not published yet or line could not be matched';
                   return (
                     <tr key={lead.finding_id}>
                       <td className="pv-ub-line">
@@ -2489,9 +2507,9 @@ function UnionBudgetVisualizer({
                       <td className="tabular">{plainFiscalYear(lead.fiscal_year)}</td>
                       <td className="num">{formatInrCr(lead.budget_estimate_cr)}</td>
                       <td className="num">{formatInrCr(lead.revised_estimate_cr)}</td>
-                      <td className="num" title={noActuals ? 'Actuals not published yet' : undefined}>
+                      <td className="num" title={noActuals ? noActualsTitle : undefined}>
                         {formatInrCr(lead.actual_cr)}
-                        {noActuals ? <span className="pv-ub-sub">not published yet</span> : null}
+                        {noActuals ? <span className="pv-ub-sub">{noActualsLabel}</span> : null}
                       </td>
                       <td className="num">
                         <strong>{formatInrCr(lead.below_estimate_cr)}</strong>

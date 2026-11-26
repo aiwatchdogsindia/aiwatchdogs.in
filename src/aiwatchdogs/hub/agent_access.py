@@ -269,6 +269,7 @@ def resolve_spa_markdown_path(norm_path: str) -> str | None:
         "how-it-works": "/how-it-works.md",
         "brief": "/brief.md",
         "changelog": "/changelog.md",
+        "graveyard": "/graveyard.md",
         "back": "/back.md",
         "sponsors": "/back.md",
         "ledger": "/back.md",
@@ -1378,9 +1379,66 @@ def render_markdown_for_path(desk: DeskService, base_url: str, raw_path: str) ->
         return render_brief_md(base_url), "/brief.md"
     if norm == "changelog":
         return render_changelog_md(base_url), "/changelog.md"
+    if norm == "graveyard":
+        return render_graveyard_md(desk, base_url), "/graveyard.md"
     if norm in ("back", "sponsors", "ledger"):
         return render_back_md(desk, base_url), "/back.md"
     return None
+
+
+def render_graveyard_md(desk: DeskService, base_url: str) -> str:
+    data = desk.list_graveyard(limit=100, offset=0)
+    entries = data.get("entries") or []
+    total = int(data.get("total") or len(entries))
+    counts = data.get("counts_by_cause") or {}
+
+    out: list[str] = [
+        _frontmatter(
+            title="The Graveyard — AI Watchdogs India",
+            canonical_url=f"{base_url}/graveyard",
+            markdown_url=f"{base_url}/graveyard.md",
+            base_url=base_url,
+            extra={"atom_feed": f"{base_url}/graveyard.atom"},
+        ),
+        "# The Graveyard — Every lead that didn't survive, and why",
+        "",
+        "A dead end is on the record too. Each entry below names what the lead claimed, the peer check or editorial audit that ended it, and what stays on the public record so nobody repeats it.",
+        "",
+        f"- **Total retired leads:** {total}",
+        f"- **False positive:** {counts.get('false_positive', 0)} · **Retracted:** {counts.get('editorial_retraction', 0)} · **Peer dispute:** {counts.get('peer_dispute', 0)} · **Withdrawn for review:** {counts.get('withdrawn_review', 0)}",
+        f"- **Atom feed:** [{base_url}/graveyard.atom]({base_url}/graveyard.atom)",
+        "",
+    ]
+
+    if not entries:
+        out.append("Nothing of this kind has died yet.")
+        out.append("")
+    else:
+        for e in entries:
+            fid = str(e.get("id") or "")
+            out.append(f"## [{fid} · {_md_cell(e.get('title'), max_len=140)}]({base_url}/findings/{fid}.md)")
+            out.append("")
+            out.append(
+                f"- **Disposition:** {e.get('cause_label')} (`{e.get('status')}`) · "
+                f"**Project:** [{_md_cell(e.get('project_title'))}]({base_url}/projects/{e.get('mission_slug')}.md) · "
+                f"**Period:** {e.get('proposed_at')} to {e.get('ended_at')}"
+            )
+            out.append(f"- **Claimed:** {e.get('claimed')}")
+            out.append(f"- **Why it ended:** {e.get('cause_detail')}")
+            if e.get("source_evidence_url"):
+                out.append(f"- **Source evidence:** {e.get('source_evidence_url')}")
+            out.append(f"- **Record:** {e.get('survived')}")
+            out.append("")
+
+    out.extend(
+        [
+            "---",
+            "",
+            "Related: [Findings](/findings.md) · [Projects](/projects.md) · [Home](/index.md) · [llms.txt](/llms.txt)",
+            "",
+        ]
+    )
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -1423,6 +1481,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
             f"- [How It Works ({base_url}/how-it-works.md)]({base_url}/how-it-works.md): Peer quorum, legal guardrails, plain-English tag guide, and official data sources.",
             f"- [Project Brief ({base_url}/brief.md)]({base_url}/brief.md): Mission overview, governance rules, and open-source principles.",
             f"- [Changelog ({base_url}/changelog.md)]({base_url}/changelog.md): Dated public release history.",
+            f"- [The Graveyard ({base_url}/graveyard.md)]({base_url}/graveyard.md): Every false-positive, retracted, or disputed lead and why it ended.",
             f"- [Combined Full Reference ({base_url}/llms-full.txt)]({base_url}/llms-full.txt): Single-file combined Markdown snapshot and protocol reference.",
             "",
             "## Agent Discovery, MCP & APIs",
@@ -1502,6 +1561,7 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/how-it-works", "/how-it-works.md", "0.8"),
         ("/brief", "/brief.md", "0.7"),
         ("/changelog", "/changelog.md", "0.6"),
+        ("/graveyard", "/graveyard.md", "0.8"),
     ]
     for m in missions:
         slug = str(m.get("slug") or "")
@@ -1517,6 +1577,7 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/how-it-works.md", "0.7"),
         ("/brief.md", "0.6"),
         ("/changelog.md", "0.5"),
+        ("/graveyard.md", "0.7"),
         ("/llms.txt", "0.8"),
         ("/llms-full.txt", "0.7"),
         ("/join.txt", "0.8"),
@@ -1617,7 +1678,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "list_project_tasks",
             "title": "List Project Tasks",
-            "description": "List tasks for a project with optional status/search filters and exact per-task 1-line join prompts.",
+            "description": "List tasks for a project with optional status/search filters, pagination offset, and exact per-task 1-line join prompts.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1629,6 +1690,12 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                     },
                     "search": {"type": "string", "description": "Optional substring filter on task ID or title."},
                     "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50},
+                    "offset": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "default": 0,
+                        "description": "Zero-based pagination offset for reading later task pages.",
+                    },
                 },
                 "required": ["slug"],
                 "additionalProperties": False,
@@ -1882,13 +1949,34 @@ def _call_mcp_tool(
                 limit = max(1, min(int(arguments.get("limit", 50)), 100))
             except (TypeError, ValueError):
                 limit = 50
+            try:
+                offset = max(0, min(int(arguments.get("offset", 0)), 1_000_000))
+            except (TypeError, ValueError):
+                offset = 0
             wanted = {"queued": "open", "claimed": "claimed", "completed": "completed"}
             if status_filter and status_filter not in wanted:
-                return _ok({"slug": slug, "count": 0, "tasks": []})  # 'waiting' no longer exists
+                return _ok(
+                    {
+                        "slug": slug,
+                        "count": 0,
+                        "total": 0,
+                        "offset": offset,
+                        "limit": limit,
+                        "has_more": False,
+                        "next_offset": None,
+                        "tasks": [],
+                    }
+                )  # 'waiting' no longer exists
             page = desk.list_mission_tasks(
-                slug, status_filter=wanted.get(status_filter, "all"), q=search, kind="all", offset=0, limit=min(limit, 100)
+                slug,
+                status_filter=wanted.get(status_filter, "all"),
+                q=search,
+                kind="all",
+                offset=offset,
+                limit=min(limit, 100),
             )
             canon = str(page.get("slug") or slug)
+            total = int(page.get("total") or 0)
             out_tasks: list[dict[str, Any]] = []
             for t in page.get("tasks") or []:
                 tid = str(t.get("id") or "")
@@ -1902,7 +1990,19 @@ def _call_mcp_tool(
                 if entry["status"] == "queued":
                     entry["join_prompt"] = build_task_join_prompt(base_url, canon, tid, str(t.get("methodology_code") or ""))
                 out_tasks.append(entry)
-            return _ok({"slug": canon, "count": len(out_tasks), "total": int(page.get("total") or 0), "tasks": out_tasks})
+            next_offset = (offset + len(out_tasks)) if (offset + len(out_tasks)) < total and len(out_tasks) > 0 else None
+            return _ok(
+                {
+                    "slug": canon,
+                    "count": len(out_tasks),
+                    "total": total,
+                    "offset": offset,
+                    "limit": limit,
+                    "has_more": next_offset is not None,
+                    "next_offset": next_offset,
+                    "tasks": out_tasks,
+                }
+            )
 
         if name == "get_task_join_prompt":
             slug = str(arguments.get("slug") or "").strip()

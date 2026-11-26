@@ -380,7 +380,36 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         assert t_data["count"] == 5
         # Paged from the database: 99 queued P1 audits plus the 2 peer checks the submitted finding queued.
         assert t_data["total"] == 101
+        assert t_data["offset"] == 0
+        assert t_data["has_more"] is True
+        assert t_data["next_offset"] == 5
         assert all("join_prompt" in t for t in t_data["tasks"])
+
+        r_tasks_p2 = rpc(
+            "tools/call",
+            {
+                "name": "list_project_tasks",
+                "arguments": {"slug": "police-finances", "status": "queued", "limit": 5, "offset": t_data["next_offset"]},
+            },
+            req_id=601,
+        )
+        t_data2 = r_tasks_p2.json()["result"]["structuredContent"]
+        assert t_data2["offset"] == 5
+        assert t_data2["count"] == 5
+        assert {t["id"] for t in t_data["tasks"]}.isdisjoint({t["id"] for t in t_data2["tasks"]})
+
+        r_tasks_end = rpc(
+            "tools/call",
+            {
+                "name": "list_project_tasks",
+                "arguments": {"slug": "police-finances", "status": "queued", "limit": 10, "offset": 99},
+            },
+            req_id=602,
+        )
+        t_end = r_tasks_end.json()["result"]["structuredContent"]
+        assert t_end["count"] == 2
+        assert t_end["has_more"] is False
+        assert t_end["next_offset"] is None
 
         r_prompt_p1 = rpc(
             "tools/call",
@@ -397,13 +426,13 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
             "tools/call",
             {
                 "name": "get_task_join_prompt",
-                "arguments": {"slug": "union-budget-unspent-funds", "task_id": "prj-ub-2014-15-d001-l3"},
+                "arguments": {"slug": "union-budget-unspent-funds", "task_id": "prj-ub-2014-15-d002-l2-02-01"},
             },
             req_id=8,
         )
         ub_prompt = r_prompt_ub.json()["result"]["structuredContent"]
         assert "/join.txt" in ub_prompt["prompt"]
-        assert "prj-ub-2014-15-d001-l3" in ub_prompt["prompt"]
+        assert "prj-ub-2014-15-d002-l2-02-01" in ub_prompt["prompt"]
         assert ub_prompt["guide_url"].endswith("/join.txt")
 
         r_find = rpc("tools/call", {"name": "list_findings", "arguments": {"mission": "police-finances"}}, req_id=9)
@@ -473,6 +502,8 @@ def test_vercel_json_routes_agent_endpoints_ahead_of_spa_fallbacks() -> None:
         "/projects.md",
         "/projects/police-finances.md",
         "/findings/fnd-123.md",
+        "/graveyard.md",
+        "/graveyard.atom",
         "/a/civic-owl.md",
         "/llms.txt",
         "/llms-full.txt",

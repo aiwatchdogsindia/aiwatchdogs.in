@@ -3002,16 +3002,26 @@ class DeskService:
 
     def _union_budget_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
         """Year-by-year progress and the largest shortfalls reported so far, for the Union Budget project."""
+        from aiwatchdogs.engines.union_budget import _YEAR_RE, shift_year
+
         mid = str(mission_row["id"])
         slug = str(mission_row["slug"])
         coverage = _project_coverage(slug)
         by_year = coverage.get("by_year") if isinstance(coverage.get("by_year"), dict) else {}
+        financial_years = [y for y in coverage.get("financial_years") or [] if isinstance(y, str)]
+        latest_budget = shift_year(max(financial_years), 1) if financial_years else ""
         years: dict[str, dict[str, Any]] = {}
+
+        def _actuals_reason_for(year: str) -> str | None:
+            if not latest_budget or not _YEAR_RE.match(year):
+                return "not_published"
+            return "unmatched" if shift_year(year, 2) <= latest_budget else "not_published"
 
         def year_row(year: str) -> dict[str, Any]:
             planned = by_year.get(year) if isinstance(by_year.get(year), dict) else {}
             lines = int(planned.get("lines") or 0)
             with_actuals = int(planned.get("with_actuals") or 0)
+            compares = "actual" if with_actuals > 0 or not lines else "revised"
             return years.setdefault(
                 year,
                 {
@@ -3026,7 +3036,8 @@ class DeskService:
                     "budget_estimate_cr": _safe_finite_float(planned.get("budget_estimate_crore"), 0.0),
                     "leads": 0,
                     "below_estimate_cr": 0.0,
-                    "compares": "actual" if with_actuals > 0 or not lines else "revised",
+                    "compares": compares,
+                    "actuals_reason": _actuals_reason_for(year) if compares == "revised" else None,
                 },
             )
 
@@ -3092,6 +3103,7 @@ class DeskService:
                 return float(value)
 
             compare = str(metrics.get("compare") or "")
+            lead_year = str(r["fiscal_year"] or "").removeprefix("FY")
             top_leads.append(
                 {
                     "finding_id": str(r["id"]),
@@ -3105,6 +3117,7 @@ class DeskService:
                     "below_estimate_cr": round(_safe_finite_float(r["monetary_exposure_inr"], 0.0) / 1e7, 2),
                     "below_estimate_pct": figure("unspent_pct" if compare != "revised_vs_budget_estimate" else "revised_cut_pct"),
                     "compare": compare,
+                    "actuals_reason": _actuals_reason_for(lead_year) if compare == "revised_vs_budget_estimate" else None,
                 }
             )
         return {
@@ -3229,6 +3242,285 @@ class DeskService:
             "limit": eff_limit,
             "offset": eff_offset,
             "has_more": (eff_offset + len(findings)) < total,
+        }
+
+    def list_graveyard(
+        self,
+        *,
+        cause: str | None = None,
+        project: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Every lead that did not survive (false positive, retracted, disputed, or withdrawn), newest death first."""
+        valid_causes = {
+            "false_positive": "False positive",
+            "editorial_retraction": "Retracted",
+            "peer_dispute": "Peer dispute",
+            "withdrawn_review": "Withdrawn for review",
+        }
+        clean_cause = str(cause or "").strip().lower()
+        if clean_cause and clean_cause not in valid_causes:
+            raise HTTPException(
+                status_code=422,
+                detail=f"cause must be one of: {', '.join(sorted(valid_causes))}",
+            )
+        clean_project = str(project or "").strip()
+        resolved_project = self.resolve_slug(clean_project) if clean_project else ""
+        eff_limit = max(1, min(int(limit), 100))
+        eff_offset = max(0, min(int(offset), 50_000))
+
+        cause_statuses: dict[str, tuple[str, ...]] = {
+            "false_positive": ("retracted_false_positive",),
+            "editorial_retraction": ("retracted",),
+            "peer_dispute": ("disputed",),
+            "withdrawn_review": ("under_review", "under_editorial_review", "corrected"),
+        }
+        graveyard_statuses = tuple(s for group in cause_statuses.values() for s in group)
+        placeholders = ",".join("?" for _ in graveyard_statuses)
+        page_statuses = cause_statuses[clean_cause] if clean_cause else graveyard_statuses
+        page_placeholders = ",".join("?" for _ in page_statuses)
+
+        def _parse_iso(val: Any) -> float | None:
+            raw = str(val or "").strip()
+            if not raw:
+                return None
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            except ValueError:
+                return None
+
+        def _classify_cause(st: str) -> str:
+            if st == "retracted_false_positive":
+                return "false_positive"
+            if st == "retracted":
+                return "editorial_retraction"
+            if st == "disputed":
+                return "peer_dispute"
+            return "withdrawn_review"
+
+        with self.db.read() as conn:
+            mission_rows = conn.execute(
+                "SELECT slug, title, is_community_project, status, priority, created_at "
+                "FROM missions ORDER BY priority ASC, created_at ASC"
+            ).fetchall()
+            mission_titles = {str(m["slug"]): str(m["title"]) for m in mission_rows}
+            project_list: list[dict[str, str]] = [
+                {"slug": str(m["slug"]), "title": str(m["title"])}
+                for m in mission_rows
+                if int(m["is_community_project"] or 0) == 1 and str(m["status"] or "") != "archived"
+            ]
+            listed_slugs = {p["slug"] for p in project_list}
+
+            for srow in conn.execute(
+                f"""
+                SELECT DISTINCT mission_slug
+                FROM findings
+                WHERE COALESCE(quarantined, 0) = 0
+                  AND status != 'quarantined'
+                  AND status IN ({placeholders})
+                """,
+                graveyard_statuses,
+            ).fetchall():
+                mslug = str(srow["mission_slug"] or "")
+                if mslug and mslug not in listed_slugs:
+                    project_list.append({"slug": mslug, "title": mission_titles.get(mslug, mslug)})
+                    listed_slugs.add(mslug)
+
+            count_params: list[Any] = list(graveyard_statuses)
+            project_clause = ""
+            if resolved_project:
+                project_clause = " AND mission_slug = ?"
+                count_params.append(resolved_project)
+
+            counts_by_cause: dict[str, int] = {"all": 0, **{k: 0 for k in valid_causes}}
+            for crow in conn.execute(
+                f"""
+                SELECT LOWER(status) AS st, COUNT(*) AS c
+                FROM findings
+                WHERE COALESCE(quarantined, 0) = 0
+                  AND status != 'quarantined'
+                  AND status IN ({placeholders}){project_clause}
+                GROUP BY LOWER(status)
+                """,
+                count_params,
+            ).fetchall():
+                c_val = int(crow["c"] or 0)
+                c_key = _classify_cause(str(crow["st"] or ""))
+                counts_by_cause[c_key] = counts_by_cause.get(c_key, 0) + c_val
+                counts_by_cause["all"] += c_val
+
+            total = counts_by_cause[clean_cause] if clean_cause else counts_by_cause["all"]
+
+            page_params: list[Any] = list(page_statuses)
+            f_project_clause = ""
+            if resolved_project:
+                f_project_clause = " AND f.mission_slug = ?"
+                page_params.append(resolved_project)
+            page_params.extend([eff_limit, eff_offset])
+
+            rows = conn.execute(
+                f"""
+                SELECT * FROM (
+                    SELECT f.id, f.mission_slug, f.title, f.summary, f.methodology_code, f.entity_name,
+                           f.jurisdiction, f.fiscal_year, f.monetary_exposure_inr, f.status,
+                           f.editorial_status, f.confirm_count, f.dispute_count, f.created_at,
+                           (SELECT MAX(c.created_at) FROM finding_corrections c
+                            WHERE c.finding_id = f.id AND COALESCE(c.created_at, '') != '') AS corr_at,
+                           (SELECT MAX(v.created_at) FROM peer_verifications v
+                            WHERE v.finding_id = f.id
+                              AND LOWER(COALESCE(v.verdict, '')) != 'confirm'
+                              AND COALESCE(v.created_at, '') != '') AS disp_at
+                    FROM findings f
+                    WHERE COALESCE(f.quarantined, 0) = 0
+                      AND f.status != 'quarantined'
+                      AND f.status IN ({page_placeholders}){f_project_clause}
+                ) AS sub
+                ORDER BY
+                    CASE
+                        WHEN sub.corr_at IS NOT NULL AND sub.disp_at IS NOT NULL THEN
+                            CASE WHEN sub.corr_at >= sub.disp_at THEN sub.corr_at ELSE sub.disp_at END
+                        ELSE COALESCE(sub.corr_at, sub.disp_at, sub.created_at)
+                    END DESC,
+                    sub.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                page_params,
+            ).fetchall()
+
+            fids = [str(r["id"]) for r in rows]
+            corr_map = self._fetch_corrections_map(conn, fids)
+            verifs_map: dict[str, list[Any]] = {}
+            rti_map: dict[str, str] = {}
+            if fids:
+                ph = ",".join("?" for _ in fids)
+                for vr in conn.execute(
+                    f"""
+                    SELECT finding_id, verifier_handle, verdict, checks_json, notes, created_at
+                    FROM peer_verifications
+                    WHERE finding_id IN ({ph})
+                    ORDER BY created_at DESC, id DESC
+                    """,
+                    fids,
+                ).fetchall():
+                    verifs_map.setdefault(str(vr["finding_id"]), []).append(vr)
+                for rr in conn.execute(
+                    f"SELECT finding_id, status, editorial_notice FROM rti_drafts "
+                    f"WHERE status != 'quarantined' AND finding_id IN ({ph})",
+                    fids,
+                ).fetchall():
+                    rti_map[str(rr["finding_id"])] = str(rr["editorial_notice"] or rr["status"] or "")
+
+        page_items: list[dict[str, Any]] = []
+        for r in rows:
+            fid = str(r["id"])
+            st = str(r["status"] or "").lower()
+            entry_cause = _classify_cause(st)
+            mslug = str(r["mission_slug"] or "")
+
+            corrs = corr_map.get(fid, [])
+            verifs = verifs_map.get(fid, [])
+            non_confirm_verifs = [v for v in verifs if str(v["verdict"] or "").lower() != "confirm"]
+
+            proposed_at = str(r["created_at"] or "")
+            ended_candidates = [str(c.get("created_at") or "") for c in corrs if c.get("created_at")]
+            ended_candidates.extend(str(v["created_at"] or "") for v in non_confirm_verifs if v["created_at"])
+            ended_at = max(ended_candidates) if ended_candidates else proposed_at
+
+            start_ts = _parse_iso(proposed_at)
+            end_ts = _parse_iso(ended_at)
+            lived_seconds = max(0, int(end_ts - start_ts)) if (start_ts is not None and end_ts is not None) else 0
+
+            latest_corr = corrs[-1] if corrs else None
+            source_evidence_url: str | None = None
+            if latest_corr is not None:
+                raw_ev = latest_corr.get("source_evidence_url")
+                if isinstance(raw_ev, str) and raw_ev.strip():
+                    try:
+                        source_evidence_url = validate_safe_http_url(raw_ev.strip())
+                    except ValueError:
+                        source_evidence_url = None
+                corr_summary = str(latest_corr.get("summary") or "").strip()
+                corr_details = str(latest_corr.get("details") or "").strip()
+                reviewer = str(latest_corr.get("reviewed_by") or "editorial-review").strip()
+                cause_detail = corr_summary or corr_details or "Retracted after independent editorial review."
+                if reviewer and reviewer not in cause_detail:
+                    cause_detail = f"{cause_detail} (reviewed by {reviewer})"
+            elif non_confirm_verifs:
+                notes_list = [str(v["notes"] or "").strip() for v in non_confirm_verifs if str(v["notes"] or "").strip()]
+                verdicts_str = ", ".join(
+                    sorted({str(v["verdict"] or "").replace("_", " ") for v in non_confirm_verifs})
+                )
+                if notes_list:
+                    cause_detail = notes_list[0]
+                else:
+                    cause_detail = (
+                        f"Ended in independent peer verification ({len(non_confirm_verifs)} non-confirm review(s): "
+                        f"{verdicts_str})."
+                    )
+            elif entry_cause == "false_positive":
+                cause_detail = "Independent peer verifiers re-ran the deterministic check and found zero breach."
+            elif entry_cause == "peer_dispute":
+                cause_detail = "Disputed during independent peer verification and excluded from verified results."
+            elif entry_cause == "editorial_retraction":
+                cause_detail = "Retracted from the public record after review."
+            else:
+                cause_detail = "Withdrawn from verified results for editorial reconciliation."
+
+            confirm_n = int(r["confirm_count"] or 0)
+            dispute_n = int(r["dispute_count"] or 0)
+            rti_notice = rti_map.get(fid)
+            rti_on_hold = fid in rti_map and ("hold" in (rti_notice or "").lower() or st in ("retracted", "under_review", "disputed"))
+            if rti_on_hold:
+                survived = "RTI draft placed on editorial hold. Recorded so nobody files or repeats it."
+            elif verifs or confirm_n or dispute_n:
+                total_reviews = max(len(verifs), confirm_n + dispute_n)
+                survived = (
+                    f"Peer checks: {total_reviews} independent review(s) "
+                    f"({confirm_n} confirmed, {dispute_n} disputed). Recorded so nobody repeats it."
+                )
+            else:
+                survived = "0 verified findings rest on it. Recorded so nobody repeats it."
+
+            page_items.append(
+                {
+                    "id": fid,
+                    "title": str(r["title"] or ""),
+                    "status": st,
+                    "cause": entry_cause,
+                    "cause_label": valid_causes[entry_cause],
+                    "methodology_code": str(r["methodology_code"] or ""),
+                    "entity_name": str(r["entity_name"] or ""),
+                    "jurisdiction": str(r["jurisdiction"] or ""),
+                    "fiscal_year": str(r["fiscal_year"] or ""),
+                    "monetary_exposure_inr_cr": round(_safe_finite_float(r["monetary_exposure_inr"], 0.0) / 1e7, 2),
+                    "mission_slug": mslug,
+                    "project_title": mission_titles.get(mslug, mslug or "Civic Audit"),
+                    "proposed_at": proposed_at,
+                    "ended_at": ended_at,
+                    "lived_seconds": lived_seconds,
+                    "claimed": str(r["summary"] or ""),
+                    "cause_detail": cause_detail,
+                    "source_evidence_url": source_evidence_url,
+                    "survived": survived,
+                    "confirm_count": confirm_n,
+                    "dispute_count": dispute_n,
+                    "corrections_count": len(corrs),
+                    "rti_on_hold": rti_on_hold,
+                }
+            )
+
+        return {
+            "total": total,
+            "offset": eff_offset,
+            "limit": eff_limit,
+            "has_more": (eff_offset + len(page_items)) < total,
+            "counts_by_cause": counts_by_cause,
+            "projects": project_list,
+            "entries": page_items,
         }
 
     def get_finding_detail(self, finding_id: str) -> dict[str, Any]:
@@ -5157,6 +5449,7 @@ class DeskService:
                     agent=agent,
                     mission=mission,
                     finding_in=payload.get("finding"),
+                    findings_in=payload.get("findings"),
                     whisper_text=whisper_text,
                     metrics=metrics,
                     idempotency_key=eff_idem,
@@ -5299,28 +5592,21 @@ class DeskService:
                 detail="Task was already settled or lease ownership changed concurrently.",
             )
 
-    def _handle_submit_finding(
+    def _prepare_finding_submission(
         self,
         *,
-        conn: Any,
         task: Any,
-        lease_id: str,
+        task_payload: dict[str, Any],
         agent: Any,
         mission: Any,
         finding_in: Any,
-        whisper_text: str,
         metrics: dict[str, Any],
-        idempotency_key: str | None,
         now: str,
-        envelopes: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        """Validate, PII-scrub, lint, and normalize one finding submission payload before DB mutation."""
         if not isinstance(finding_in, dict):
-            raise HTTPException(status_code=422, detail="'finding' object is required when outcome='finding'")
+            raise HTTPException(status_code=422, detail="Each finding must be a JSON object when outcome='finding'")
         _validate_json_blob(finding_in, field_name="finding", max_depth=10, max_nodes=400, max_bytes=65_536)
-
-        task_payload = loads_json(task["payload_json"], {})
-        if not isinstance(task_payload, dict):
-            task_payload = {}
 
         raw_title = str(finding_in.get("title") or "").strip()[:300]
         raw_summary = str(finding_in.get("summary") or "").strip()[:4000]
@@ -5548,110 +5834,6 @@ class DeskService:
         # Submitters can never spoof is_demo_sample=False on a demo task
         is_demo = 1 if (task_payload.get("is_demo_sample", False) or finding_in.get("is_demo_sample", False)) else 0
 
-        # Resolve exact source_id without blindly choosing mission.source_ids[0]
-        resolved_source_id = self._resolve_source_id(
-            conn,
-            requested_source_id=finding_in.get("source_id") or task_payload.get("source_id"),
-            source_landing_page=source_landing_page,
-            source_url=source_url,
-            dataset_url=retrieval_url,
-        )
-
-        # Preserve full artifact record
-        requested_artifact_id = finding_in.get("artifact_id") or task_payload.get("artifact_id")
-        artifact_id: str | None = None
-        if requested_artifact_id:
-            existing_art = conn.execute(
-                "SELECT id FROM evidence_artifacts WHERE id = ?",
-                (str(requested_artifact_id),),
-            ).fetchone()
-            if existing_art is not None:
-                artifact_id = existing_art["id"]
-
-        if artifact_id is None and (retrieval_url or source_url or artifact_sha256):
-            artifact_id = f"art-{finding_id}"
-            canonical_ref = retrieval_url or source_url or dataset_path
-            lower_ref = canonical_ref.lower()
-            if lower_ref.endswith(".pdf"):
-                fmt = "pdf"
-            elif lower_ref.endswith(".xlsx") or lower_ref.endswith(".xls"):
-                fmt = "xlsx"
-            elif lower_ref.endswith(".zip"):
-                fmt = "json.zip"
-            elif lower_ref.endswith(".json"):
-                fmt = "json"
-            elif lower_ref.endswith(".aspx") or lower_ref.endswith(".html"):
-                fmt = "html"
-            else:
-                fmt = "csv"
-            art_title, _ = scrub_pii(
-                str(
-                    task_payload.get("artifact_title")
-                    or finding_in.get("artifact_title")
-                    or f"{method_code} Official Public Dataset ({jurisdiction})"
-                ).strip()[:240]
-            )
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO evidence_artifacts (
-                    id, source_id, mission_id, title, canonical_url, archive_url,
-                    official_publisher, source_landing_page, mirror_name, retrieval_url,
-                    secondary_url, secondary_sha256, local_path, file_format, sha256,
-                    byte_size, is_demo_sample, pii_scrubbed, fetched_at, parsed_metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-                """,
-                (
-                    artifact_id,
-                    resolved_source_id,
-                    mission["id"],
-                    art_title,
-                    canonical_ref,
-                    archive_url,
-                    official_publisher,
-                    source_landing_page,
-                    mirror_name,
-                    retrieval_url or canonical_ref,
-                    secondary_url,
-                    secondary_sha256,
-                    dataset_path or None,
-                    fmt,
-                    artifact_sha256,
-                    byte_size,
-                    is_demo,
-                    fetched_at,
-                    dumps_json(
-                        {
-                            "official_publisher": official_publisher,
-                            "source_landing_page": source_landing_page,
-                            "mirror_name": mirror_name,
-                            "mirror_catalog_url": mirror_catalog_url,
-                            "retrieval_url": retrieval_url or canonical_ref,
-                            "source_url": source_url,
-                            "dataset_url": retrieval_url,
-                            "secondary_url": secondary_url,
-                            "secondary_sha256": secondary_sha256,
-                            "secondary_source_id": task_payload.get("secondary_source_id"),
-                            "methodology_code": method_code,
-                        }
-                    ),
-                ),
-            )
-
-        provenance_obj = {
-            "official_publisher": official_publisher,
-            "source_landing_page": source_landing_page,
-            "mirror_name": mirror_name,
-            "mirror_catalog_url": mirror_catalog_url,
-            "retrieval_url": retrieval_url or source_url,
-            "archive_url": archive_url,
-            "sha256": artifact_sha256,
-            "byte_size": byte_size,
-            "fetched_at": fetched_at,
-            "secondary_url": secondary_url,
-            "secondary_sha256": secondary_sha256,
-            "secondary_source_id": task_payload.get("secondary_source_id"),
-        }
-
         # Server-attested identity fields MUST overwrite any client-supplied trace keys
         agent_trace: dict[str, Any] = {
             **(trace_clean if isinstance(trace_clean, dict) else {}),
@@ -5660,24 +5842,119 @@ class DeskService:
             "model_id": agent["model"],
         }
 
-        # Atomic settlement guard FIRST before creating finding/tasks/counters
-        audited_delta = _parse_float_422(
-            metrics.get("monetary_audited_inr")
-            if metrics.get("monetary_audited_inr") not in (None, "")
-            else exposure_inr,
-            field="metrics.monetary_audited_inr",
-            min_value=0.0,
-            max_value=MAX_MONETARY_INR,
-            default=0.0,
-        )
-        pv_task_ids = [f"tsk-pv-{finding_id}-1", f"tsk-pv-{finding_id}-2"]
+        return {
+            "finding_id": finding_id,
+            "pv_task_ids": [f"tsk-pv-{finding_id}-1", f"tsk-pv-{finding_id}-2"],
+            "title": title,
+            "summary": summary,
+            "entity_name": entity_name,
+            "suggested_authority": suggested_authority,
+            "editorial_interp": editorial_interp,
+            "benign_clean": benign_clean,
+            "citations_clean": citations_clean,
+            "anomaly_metrics": anomaly_metrics,
+            "locator_clean": locator_clean,
+            "all_redactions": all_redactions,
+            "method_code": method_code,
+            "jurisdiction": jurisdiction,
+            "fiscal_year": fiscal_year,
+            "fiscal_year_start": fiscal_year_start,
+            "fiscal_year_end": fiscal_year_end,
+            "exposure_inr": exposure_inr,
+            "severity": severity,
+            "rule_triggered": rule_triggered,
+            "engine_version": engine_version,
+            "ruleset_version": ruleset_version,
+            "as_of_date": as_of_date,
+            "retrieval_url": retrieval_url,
+            "source_landing_page": source_landing_page,
+            "official_publisher": official_publisher,
+            "mirror_name": mirror_name,
+            "mirror_catalog_url": mirror_catalog_url,
+            "archive_url": archive_url,
+            "source_url": source_url,
+            "dataset_path": dataset_path,
+            "artifact_sha256": artifact_sha256,
+            "secondary_url": secondary_url,
+            "secondary_sha256": secondary_sha256,
+            "byte_size": byte_size,
+            "fetched_at": fetched_at,
+            "is_demo": is_demo,
+            "requested_source_id": finding_in.get("source_id") or task_payload.get("source_id"),
+            "requested_artifact_id": finding_in.get("artifact_id") or task_payload.get("artifact_id"),
+            "artifact_title_hint": finding_in.get("artifact_title"),
+            "agent_trace": agent_trace,
+        }
+
+    def _handle_submit_finding(
+        self,
+        *,
+        conn: Any,
+        task: Any,
+        lease_id: str,
+        agent: Any,
+        mission: Any,
+        finding_in: Any,
+        findings_in: Any = None,
+        whisper_text: str,
+        metrics: dict[str, Any],
+        idempotency_key: str | None,
+        now: str,
+        envelopes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if findings_in is not None:
+            if not isinstance(findings_in, list) or not 1 <= len(findings_in) <= 25:
+                raise HTTPException(
+                    status_code=422,
+                    detail="'findings' must be a list of 1 to 25 finding objects when provided",
+                )
+            raw_items = findings_in
+        elif isinstance(finding_in, dict):
+            raw_items = [finding_in]
+        else:
+            raise HTTPException(status_code=422, detail="'finding' object is required when outcome='finding'")
+
+        task_payload = loads_json(task["payload_json"], {})
+        if not isinstance(task_payload, dict):
+            task_payload = {}
+
+        prepared = [
+            self._prepare_finding_submission(
+                task=task,
+                task_payload=task_payload,
+                agent=agent,
+                mission=mission,
+                finding_in=item,
+                metrics=metrics,
+                now=now,
+            )
+            for item in raw_items
+        ]
+
+        # Atomic settlement guard FIRST before creating findings/tasks/counters
+        if metrics.get("monetary_audited_inr") not in (None, ""):
+            audited_delta = _parse_float_422(
+                metrics.get("monetary_audited_inr"),
+                field="metrics.monetary_audited_inr",
+                min_value=0.0,
+                max_value=MAX_MONETARY_INR,
+                default=0.0,
+            )
+        else:
+            audited_delta = min(MAX_MONETARY_INR, sum(float(p["exposure_inr"]) for p in prepared))
+
+        finding_ids = [str(p["finding_id"]) for p in prepared]
+        all_pv_task_ids = [str(pid) for p in prepared for pid in p["pv_task_ids"]]
+        all_redactions = sorted({r for p in prepared for r in p["all_redactions"]})
         response_obj = {
             "status": "accepted",
             "outcome": "finding",
-            "finding_id": finding_id,
+            "finding_id": finding_ids[0],
+            "finding_ids": finding_ids,
+            "findings_created": len(finding_ids),
             "finding_status": "peer_review",
-            "peer_verify_tasks_created": len(pv_task_ids),
-            "peer_verify_task_ids": pv_task_ids,
+            "peer_verify_tasks_created": len(all_pv_task_ids),
+            "peer_verify_task_ids": all_pv_task_ids,
             "pii_redactions": all_redactions,
         }
         self._settle_task_atomically(
@@ -5685,167 +5962,330 @@ class DeskService:
             task_id=str(task["id"]),
             lease_id=lease_id,
             agent_id=str(agent["id"]),
-            output_obj={"outcome": "finding", "finding_id": finding_id},
+            output_obj={
+                "outcome": "finding",
+                "finding_id": finding_ids[0],
+                "finding_ids": finding_ids,
+            },
             idempotency_key=idempotency_key,
             response_obj=response_obj,
             monetary_audited_inr=audited_delta,
             now=now,
         )
 
-        conn.execute(
-            """
-            INSERT INTO findings (
-                id, mission_id, mission_slug, pillar, task_id, artifact_id, source_id,
-                title, summary, editorial_interpretation, methodology_code, entity_name,
-                jurisdiction, fiscal_year, fiscal_year_start, fiscal_year_end,
-                monetary_exposure_inr, severity, anomaly_metrics_json, rule_triggered,
-                engine_version, ruleset_version, as_of_date, source_locator_json,
-                provenance_json, source_url, artifact_sha256, secondary_sha256,
-                dataset_path, is_demo_sample, citations_json, benign_explanations_json,
-                suggested_authority, submitted_by, submitted_by_agent_id,
-                agent_trace_json, legal_lint_passed, pii_scrubbed, status,
-                editorial_status, quarantined, quarantine_reason,
-                verification_score, confirm_count, dispute_count, required_quorum,
-                created_at, verified_at
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?,
-                ?, 1, 1, 'peer_review',
-                'none', 0, '',
-                0.0, 0, 0, 2,
-                ?, NULL
-            )
-            """,
-            (
-                finding_id,
-                mission["id"],
-                mission["slug"],
-                mission["pillar"],
-                task["id"],
-                artifact_id,
-                resolved_source_id,
-                title,
-                summary,
-                editorial_interp,
-                method_code,
-                entity_name,
-                jurisdiction,
-                fiscal_year,
-                fiscal_year_start,
-                fiscal_year_end,
-                exposure_inr,
-                severity,
-                dumps_json(anomaly_metrics),
-                rule_triggered,
-                engine_version,
-                ruleset_version,
-                as_of_date,
-                dumps_json(locator_clean),
-                dumps_json(provenance_obj),
-                source_url,
-                artifact_sha256,
-                secondary_sha256,
-                dataset_path,
-                is_demo,
-                dumps_json(citations_clean),
-                dumps_json(benign_clean),
-                suggested_authority,
-                agent["handle"],
-                agent["id"],
-                dumps_json(agent_trace),
-                now,
-            ),
-        )
-
-        # Record which coding agent produced this lead (public attribution).
-        conn.execute(
-            "UPDATE findings SET submitted_coding_agent = ?, submitted_coding_agent_model = ? WHERE id = ?",
-            (
-                str(_row_get(agent, "coding_agent", "") or ""),
-                str(_row_get(agent, "coding_agent_model", "") or ""),
-                finding_id,
-            ),
-        )
-
-        # Auto-create 2 independent peer_verify tasks with full bound manifest
-        pv_payload = {
-            "finding_id": finding_id,
-            "submitted_by": agent["handle"],
-            "review_type": "computational_reproduction",
-            "methodology_code": method_code,
-            "dataset_url": retrieval_url,
-            "retrieval_url": retrieval_url,
-            "secondary_url": secondary_url,
-            "secondary_sha256": secondary_sha256,
-            "dataset_path": dataset_path,
-            "source_url": source_url,
-            "source_landing_page": source_landing_page,
-            "official_publisher": official_publisher,
-            "mirror_name": mirror_name,
-            "canonical_url": retrieval_url or source_url,
-            "artifact_id": artifact_id,
-            "artifact_sha256": artifact_sha256,
-            "expected_sha256": task_payload.get("expected_sha256") or artifact_sha256,
-            "engine_version": engine_version,
-            "ruleset_version": ruleset_version,
-            "as_of_date": as_of_date,
-            "source_locator": locator_clean,
-            "title": title,
-            "summary": summary,
-            "entity_name": entity_name,
-            "jurisdiction": jurisdiction,
-            "fiscal_year": fiscal_year,
-            "fiscal_year_start": fiscal_year_start,
-            "fiscal_year_end": fiscal_year_end,
-            "monetary_exposure_inr": exposure_inr,
-            "anomaly_metrics": anomaly_metrics,
-            "rule_triggered": rule_triggered,
-            "citations": citations_clean,
-            "benign_explanations": benign_clean,
-            "is_demo_sample": bool(is_demo),
-        }
-        # Verifiers must re-run the engine with the same server-side configuration the original
-        # task carried (e.g. P1 page/line specs from a reviewed project file). This comes from the
-        # hub's own task record, never from the submitting agent.
         server_ctx = task_payload.get("context")
-        if isinstance(server_ctx, dict) and server_ctx:
-            pv_payload["context"] = server_ctx
-        for slot, pv_id in enumerate(pv_task_ids, start=1):
+        coding_agent_name = str(_row_get(agent, "coding_agent", "") or "")
+        coding_agent_model = str(_row_get(agent, "coding_agent_model", "") or "")
+
+        for idx, item in enumerate(prepared):
+            finding_id = str(item["finding_id"])
+            method_code = str(item["method_code"])
+            retrieval_url = str(item["retrieval_url"])
+            source_landing_page = str(item["source_landing_page"])
+            source_url = str(item["source_url"])
+            dataset_path = str(item["dataset_path"])
+            artifact_sha256 = item["artifact_sha256"]
+            secondary_url = item["secondary_url"]
+            secondary_sha256 = item["secondary_sha256"]
+            official_publisher = str(item["official_publisher"])
+            mirror_name = str(item["mirror_name"])
+            mirror_catalog_url = str(item["mirror_catalog_url"])
+            archive_url = item["archive_url"]
+            byte_size = int(item["byte_size"])
+            fetched_at = str(item["fetched_at"])
+            is_demo = int(item["is_demo"])
+            jurisdiction = str(item["jurisdiction"])
+            title = str(item["title"])
+
+            # Resolve exact source_id without blindly choosing mission.source_ids[0]
+            resolved_source_id = self._resolve_source_id(
+                conn,
+                requested_source_id=item["requested_source_id"],
+                source_landing_page=source_landing_page,
+                source_url=source_url,
+                dataset_url=retrieval_url,
+            )
+
+            # Preserve full artifact record
+            requested_artifact_id = item["requested_artifact_id"]
+            artifact_id: str | None = None
+            if requested_artifact_id:
+                existing_art = conn.execute(
+                    "SELECT id FROM evidence_artifacts WHERE id = ?",
+                    (str(requested_artifact_id),),
+                ).fetchone()
+                if existing_art is not None:
+                    artifact_id = existing_art["id"]
+
+            if artifact_id is None and (retrieval_url or source_url or artifact_sha256):
+                artifact_id = f"art-{finding_id}"
+                canonical_ref = retrieval_url or source_url or dataset_path
+                lower_ref = canonical_ref.lower()
+                if lower_ref.endswith(".pdf"):
+                    fmt = "pdf"
+                elif lower_ref.endswith(".xlsx") or lower_ref.endswith(".xls"):
+                    fmt = "xlsx"
+                elif lower_ref.endswith(".zip"):
+                    fmt = "json.zip"
+                elif lower_ref.endswith(".json"):
+                    fmt = "json"
+                elif lower_ref.endswith(".aspx") or lower_ref.endswith(".html"):
+                    fmt = "html"
+                else:
+                    fmt = "csv"
+                art_title, _ = scrub_pii(
+                    str(
+                        task_payload.get("artifact_title")
+                        or item["artifact_title_hint"]
+                        or f"{method_code} Official Public Dataset ({jurisdiction})"
+                    ).strip()[:240]
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO evidence_artifacts (
+                        id, source_id, mission_id, title, canonical_url, archive_url,
+                        official_publisher, source_landing_page, mirror_name, retrieval_url,
+                        secondary_url, secondary_sha256, local_path, file_format, sha256,
+                        byte_size, is_demo_sample, pii_scrubbed, fetched_at, parsed_metadata_json
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+                    """,
+                    (
+                        artifact_id,
+                        resolved_source_id,
+                        mission["id"],
+                        art_title,
+                        canonical_ref,
+                        archive_url,
+                        official_publisher,
+                        source_landing_page,
+                        mirror_name,
+                        retrieval_url or canonical_ref,
+                        secondary_url,
+                        secondary_sha256,
+                        dataset_path or None,
+                        fmt,
+                        artifact_sha256,
+                        byte_size,
+                        is_demo,
+                        fetched_at,
+                        dumps_json(
+                            {
+                                "official_publisher": official_publisher,
+                                "source_landing_page": source_landing_page,
+                                "mirror_name": mirror_name,
+                                "mirror_catalog_url": mirror_catalog_url,
+                                "retrieval_url": retrieval_url or canonical_ref,
+                                "source_url": source_url,
+                                "dataset_url": retrieval_url,
+                                "secondary_url": secondary_url,
+                                "secondary_sha256": secondary_sha256,
+                                "secondary_source_id": task_payload.get("secondary_source_id"),
+                                "methodology_code": method_code,
+                            }
+                        ),
+                    ),
+                )
+
+            provenance_obj = {
+                "official_publisher": official_publisher,
+                "source_landing_page": source_landing_page,
+                "mirror_name": mirror_name,
+                "mirror_catalog_url": mirror_catalog_url,
+                "retrieval_url": retrieval_url or source_url,
+                "archive_url": archive_url,
+                "sha256": artifact_sha256,
+                "byte_size": byte_size,
+                "fetched_at": fetched_at,
+                "secondary_url": secondary_url,
+                "secondary_sha256": secondary_sha256,
+                "secondary_source_id": task_payload.get("secondary_source_id"),
+            }
+
             conn.execute(
                 """
-                INSERT INTO tasks (
-                    id, mission_id, mission_slug, methodology_code, task_type,
-                    title, instructions, payload_json, target_finding_id,
-                    excluded_handles_json, status, dataset_key, financial_quantity_type,
-                    created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+                INSERT INTO findings (
+                    id, mission_id, mission_slug, pillar, task_id, artifact_id, source_id,
+                    title, summary, editorial_interpretation, methodology_code, entity_name,
+                    jurisdiction, fiscal_year, fiscal_year_start, fiscal_year_end,
+                    monetary_exposure_inr, severity, anomaly_metrics_json, rule_triggered,
+                    engine_version, ruleset_version, as_of_date, source_locator_json,
+                    provenance_json, source_url, artifact_sha256, secondary_sha256,
+                    dataset_path, is_demo_sample, citations_json, benign_explanations_json,
+                    suggested_authority, submitted_by, submitted_by_agent_id,
+                    agent_trace_json, legal_lint_passed, pii_scrubbed, status,
+                    editorial_status, quarantined, quarantine_reason,
+                    verification_score, confirm_count, dispute_count, required_quorum,
+                    created_at, verified_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?,
+                    ?, 1, 1, 'peer_review',
+                    'none', 0, '',
+                    0.0, 0, 0, 2,
+                    ?, NULL
+                )
                 """,
                 (
-                    pv_id,
+                    finding_id,
                     mission["id"],
                     mission["slug"],
+                    mission["pillar"],
+                    task["id"],
+                    artifact_id,
+                    resolved_source_id,
+                    title,
+                    item["summary"],
+                    item["editorial_interp"],
                     method_code,
-                    f"Peer Verify ({slot}/2): {title[:96]}",
-                    (
-                        "Independently load the pinned source dataset, verify primary & secondary SHA-256 "
-                        "digests, re-run deterministic calculations with the bound engine/ruleset/as-of date, "
-                        "validate neutrality & zero-PII, and submit explicit pass/fail/unrecorded checks."
-                    ),
-                    dumps_json(pv_payload),
-                    finding_id,
-                    dumps_json([agent["handle"]]),
-                    _row_get(task, "dataset_key", ""),
-                    _row_get(task, "financial_quantity_type", ""),
-                    now,
+                    item["entity_name"],
+                    jurisdiction,
+                    item["fiscal_year"],
+                    item["fiscal_year_start"],
+                    item["fiscal_year_end"],
+                    item["exposure_inr"],
+                    item["severity"],
+                    dumps_json(item["anomaly_metrics"]),
+                    item["rule_triggered"],
+                    item["engine_version"],
+                    item["ruleset_version"],
+                    item["as_of_date"],
+                    dumps_json(item["locator_clean"]),
+                    dumps_json(provenance_obj),
+                    source_url,
+                    artifact_sha256,
+                    secondary_sha256,
+                    dataset_path,
+                    is_demo,
+                    dumps_json(item["citations_clean"]),
+                    dumps_json(item["benign_clean"]),
+                    item["suggested_authority"],
+                    agent["handle"],
+                    agent["id"],
+                    dumps_json(item["agent_trace"]),
                     now,
                 ),
             )
+
+            # Record which coding agent produced this lead (public attribution).
+            conn.execute(
+                "UPDATE findings SET submitted_coding_agent = ?, submitted_coding_agent_model = ? WHERE id = ?",
+                (coding_agent_name, coding_agent_model, finding_id),
+            )
+
+            # Auto-create 2 independent peer_verify tasks with full bound manifest
+            pv_payload: dict[str, Any] = {
+                "finding_id": finding_id,
+                "submitted_by": agent["handle"],
+                "review_type": "computational_reproduction",
+                "methodology_code": method_code,
+                "dataset_url": retrieval_url,
+                "retrieval_url": retrieval_url,
+                "secondary_url": secondary_url,
+                "secondary_sha256": secondary_sha256,
+                "dataset_path": dataset_path,
+                "source_url": source_url,
+                "source_landing_page": source_landing_page,
+                "official_publisher": official_publisher,
+                "mirror_name": mirror_name,
+                "canonical_url": retrieval_url or source_url,
+                "artifact_id": artifact_id,
+                "artifact_sha256": artifact_sha256,
+                "expected_sha256": task_payload.get("expected_sha256") or artifact_sha256,
+                "engine_version": item["engine_version"],
+                "ruleset_version": item["ruleset_version"],
+                "as_of_date": item["as_of_date"],
+                "source_locator": item["locator_clean"],
+                "title": title,
+                "summary": item["summary"],
+                "entity_name": item["entity_name"],
+                "jurisdiction": jurisdiction,
+                "fiscal_year": item["fiscal_year"],
+                "fiscal_year_start": item["fiscal_year_start"],
+                "fiscal_year_end": item["fiscal_year_end"],
+                "monetary_exposure_inr": item["exposure_inr"],
+                "anomaly_metrics": item["anomaly_metrics"],
+                "rule_triggered": item["rule_triggered"],
+                "citations": item["citations_clean"],
+                "benign_explanations": item["benign_clean"],
+                "is_demo_sample": bool(is_demo),
+            }
+            # Verifiers must re-run the engine with the same server-side configuration the original
+            # task carried (e.g. P1 page/line specs from a reviewed project file). This comes from the
+            # hub's own task record, never from the submitting agent.
+            if isinstance(server_ctx, dict) and server_ctx:
+                pv_payload["context"] = server_ctx
+            for slot, pv_id in enumerate(item["pv_task_ids"], start=1):
+                conn.execute(
+                    """
+                    INSERT INTO tasks (
+                        id, mission_id, mission_slug, methodology_code, task_type,
+                        title, instructions, payload_json, target_finding_id,
+                        excluded_handles_json, status, dataset_key, financial_quantity_type,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)
+                    """,
+                    (
+                        pv_id,
+                        mission["id"],
+                        mission["slug"],
+                        method_code,
+                        f"Peer Verify ({slot}/2): {title[:96]}",
+                        (
+                            "Independently load the pinned source dataset, verify primary & secondary SHA-256 "
+                            "digests, re-run deterministic calculations with the bound engine/ruleset/as-of date, "
+                            "validate neutrality & zero-PII, and submit explicit pass/fail/unrecorded checks."
+                        ),
+                        dumps_json(pv_payload),
+                        finding_id,
+                        dumps_json([agent["handle"]]),
+                        _row_get(task, "dataset_key", ""),
+                        _row_get(task, "financial_quantity_type", ""),
+                        now,
+                        now,
+                    ),
+                )
+
+            self._record_score_event(
+                conn,
+                agent_id=str(agent["id"]),
+                agent_handle=str(agent["handle"]),
+                event_type="finding_submitted",
+                ref_id=finding_id,
+                now=now,
+            )
+
+            default_whisper = f"Submitted neutral {method_code} lead '{title[:85]}' for 2-of-2 peer verification."
+            whisper = self._insert_whisper(
+                conn,
+                agent_handle=agent["handle"],
+                provider=agent["provider"],
+                model=agent["model"],
+                mission_slug=mission["slug"],
+                finding_id=finding_id,
+                event_type="finding_submitted",
+                message=(whisper_text if idx == 0 and whisper_text else default_whisper),
+            )
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "finding_submitted",
+                {
+                    "finding_id": finding_id,
+                    "mission_slug": mission["slug"],
+                    "methodology_code": method_code,
+                    "title": title,
+                    "submitted_by": agent["handle"],
+                    "status": "peer_review",
+                },
+                now=now,
+            )
+            self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
 
         uneval_delta = _parse_int_422(
             metrics.get("unevaluable_count"),
@@ -5868,47 +6308,14 @@ class DeskService:
             """
             UPDATE agents
             SET tasks_completed = tasks_completed + 1,
-                findings_submitted = findings_submitted + 1,
+                findings_submitted = findings_submitted + ?,
                 current_task_id = NULL,
                 last_heartbeat_at = ?
             WHERE id = ?
             """,
-            (now, agent["id"]),
-        )
-        self._record_score_event(
-            conn,
-            agent_id=str(agent["id"]),
-            agent_handle=str(agent["handle"]),
-            event_type="finding_submitted",
-            ref_id=finding_id,
-            now=now,
+            (len(prepared), now, agent["id"]),
         )
 
-        whisper = self._insert_whisper(
-            conn,
-            agent_handle=agent["handle"],
-            provider=agent["provider"],
-            model=agent["model"],
-            mission_slug=mission["slug"],
-            finding_id=finding_id,
-            event_type="finding_submitted",
-            message=whisper_text or f"Submitted neutral {method_code} lead '{title[:85]}' for 2-of-2 peer verification.",
-        )
-        self._emit_durable_event(
-            conn,
-            envelopes,
-            "finding_submitted",
-            {
-                "finding_id": finding_id,
-                "mission_slug": mission["slug"],
-                "methodology_code": method_code,
-                "title": title,
-                "submitted_by": agent["handle"],
-                "status": "peer_review",
-            },
-            now=now,
-        )
-        self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
         return response_obj
 
     def _handle_submit_verification(

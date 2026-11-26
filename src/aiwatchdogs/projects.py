@@ -807,6 +807,32 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _ub_line_keys(payload_obj: Any) -> set[tuple[str, str, str]]:
+    """Extract canonical (financial_year, demand_no, line_key) tuples from a UB1 payload."""
+    if not isinstance(payload_obj, dict):
+        return set()
+    ctx = payload_obj.get("context")
+    if not isinstance(ctx, dict):
+        return set()
+    ub = ctx.get("union_budget")
+    if not isinstance(ub, dict):
+        return set()
+    fy = str(ub.get("financial_year") or "").strip()
+    est_doc = ub.get("estimates_document")
+    demand = str(est_doc.get("demand_no") if isinstance(est_doc, dict) else "").strip()
+    lines = ub.get("lines")
+    if not isinstance(lines, list):
+        return set()
+    keys: set[tuple[str, str, str]] = set()
+    for line in lines:
+        if not isinstance(line, dict):
+            continue
+        lkey = str(line.get("key") or "").strip()
+        if lkey:
+            keys.add((fy, demand, lkey))
+    return keys
+
+
 def _run_sync_in_tx(
     conn: Any,
     *,
@@ -912,6 +938,7 @@ def _run_sync_in_tx(
         ).fetchall()
         existing_by_id: dict[str, Any] = {}
         existing_pv_by_key: dict[str, list[tuple[Any, Any]]] = {}
+        completed_ub_keys: set[tuple[str, str, str]] = set()
         for erow in existing_rows:
             if erow["task_type"] == "peer_verify":
                 dkey = str(erow["dataset_key"] or "")
@@ -920,9 +947,17 @@ def _run_sync_in_tx(
                 )
             else:
                 existing_by_id[str(erow["id"])] = erow
+                if erow["status"] == "completed" and str(erow["methodology_code"] or "") == "UB1":
+                    try:
+                        existing_payload = json.loads(str(erow["payload_json"] or "{}"))
+                    except (ValueError, TypeError):
+                        existing_payload = None
+                    completed_ub_keys.update(_ub_line_keys(existing_payload))
 
         to_insert: list[tuple[Any, ...]] = []
         to_update_queued: list[tuple[Any, ...]] = []
+        to_reset_claimed: list[tuple[Any, ...]] = []
+        reset_claimed_ids: list[str] = []
         to_update_estimates: list[tuple[Any, ...]] = []
         to_update_pv: list[tuple[Any, ...]] = []
         seen_pv_keys: set[str] = set()
@@ -946,6 +981,27 @@ def _run_sync_in_tx(
 
             existing = existing_by_id.get(tid)
             if existing is None:
+                if code == "UB1" and completed_ub_keys:
+                    new_keys = _ub_line_keys(payload)
+                    if new_keys and (new_keys & completed_ub_keys):
+                        ub_ctx = payload["context"]["union_budget"]
+                        fy = str(ub_ctx.get("financial_year") or "").strip()
+                        est_doc = ub_ctx.get("estimates_document")
+                        demand = str(est_doc.get("demand_no") if isinstance(est_doc, dict) else "").strip()
+                        remaining_lines = [
+                            line
+                            for line in ub_ctx.get("lines", [])
+                            if not isinstance(line, dict)
+                            or not str(line.get("key") or "").strip()
+                            or (fy, demand, str(line.get("key") or "").strip()) not in completed_ub_keys
+                        ]
+                        if not remaining_lines:
+                            continue
+                        payload["context"] = dict(
+                            payload["context"],
+                            union_budget=dict(ub_ctx, lines=remaining_lines),
+                        )
+                        payload_str = dumps_json(payload)
                 to_insert.append(
                     (
                         tid,
@@ -994,8 +1050,33 @@ def _run_sync_in_tx(
                             tid,
                         )
                     )
-            else:
+            elif existing["status"] in ("completed", "retired"):
                 if (
+                    existing["work_type"] != work_type
+                    or existing["estimated_tokens"] != est_tokens
+                    or existing["estimate_basis"] != est_basis
+                ):
+                    to_update_estimates.append((work_type, est_tokens, est_basis, tid))
+            else:
+                if existing["payload_json"] != payload_str:
+                    reset_claimed_ids.append(tid)
+                    to_reset_claimed.append(
+                        (
+                            task["title"],
+                            task["instructions"],
+                            payload_str,
+                            code,
+                            task_type,
+                            task["dataset_key"],
+                            task["financial_quantity_type"],
+                            work_type,
+                            est_tokens,
+                            est_basis,
+                            now,
+                            tid,
+                        )
+                    )
+                elif (
                     existing["work_type"] != work_type
                     or existing["estimated_tokens"] != est_tokens
                     or existing["estimate_basis"] != est_basis
@@ -1030,6 +1111,25 @@ def _run_sync_in_tx(
                 WHERE id = ? AND status = 'queued'
                 """,
                 to_update_queued,
+            )
+        if to_reset_claimed:
+            for idx in range(0, len(reset_claimed_ids), 200):
+                chunk = reset_claimed_ids[idx : idx + 200]
+                ph = ",".join("?" for _ in chunk)
+                conn.execute(
+                    f"UPDATE agents SET current_task_id = NULL WHERE current_task_id IN ({ph})",
+                    tuple(chunk),
+                )
+            conn.executemany(
+                """
+                UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?, task_type = ?,
+                    dataset_key = ?, financial_quantity_type = ?, work_type = ?, estimated_tokens = ?,
+                    estimate_basis = ?, status = 'queued', claimed_by_agent_id = NULL,
+                    claimed_by_handle = NULL, lease_id = NULL, lease_started_at = NULL,
+                    lease_expires_at = NULL, available_at = NULL, updated_at = ?
+                WHERE id = ? AND status NOT IN ('completed', 'retired')
+                """,
+                to_reset_claimed,
             )
         if to_update_estimates:
             conn.executemany(

@@ -346,15 +346,19 @@ def test_repository_project_is_ten_thousand_pinned_ub1_tasks() -> None:
     assert len(tasks) == 10_000 and len({t["id"] for t in tasks}) == 10_000
 
     with (REPO_PROJECTS / "union-budget-unspent-funds" / "documents.csv").open(encoding="utf-8") as handle:
-        documents = {row["url"]: row["sha256"] for row in csv.DictReader(handle)}
+        rows = list(csv.DictReader(handle))
+    documents = {row["url"]: row["sha256"] for row in rows}
+    healthy_urls = {row["url"] for row in rows if row["status"] == "adds up to the Grand Total"}
     lines = 0
     years: dict[str, int] = {}
     for task in tasks:
         payload = task["payload"]
         spec = payload["context"]["union_budget"]
         assert payload["retrieval_url"].startswith("https://www.indiabudget.gov.in/")
+        assert payload["retrieval_url"] in healthy_urls
         assert documents[payload["retrieval_url"]] == payload["expected_sha256"]
         if "secondary_url" in payload:
+            assert payload["secondary_url"] in healthy_urls
             assert documents[payload["secondary_url"]] == payload["secondary_expected_sha256"]
             assert payload["context"]["secondary_document"] == "pages"
         assert task["id"].startswith(f"ub-{spec['financial_year']}-")  # the project page groups by this
@@ -365,3 +369,287 @@ def test_repository_project_is_ten_thousand_pinned_ub1_tasks() -> None:
     assert coverage["tasks"] == 10_000 and coverage["lines"] == lines
     assert {year: row["tasks"] for year, row in coverage["by_year"].items()} == years
     assert sorted(years) == [ub.financial_year(y) for y in range(2014, 2026)]
+
+
+def test_link_year_rejects_unclosed_estimates_and_actuals_statements() -> None:
+    import collections
+    import importlib.util
+
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "build_union_budget_project.py"
+    spec_mod = importlib.util.spec_from_file_location("build_union_budget_project", script_path)
+    assert spec_mod and spec_mod.loader
+    mod = importlib.util.module_from_spec(spec_mod)
+    import sys
+
+    sys.modules["build_union_budget_project"] = mod
+    spec_mod.loader.exec_module(mod)
+
+    est_doc = ub.parse_statement({1: "\n".join(ESTIMATES)})
+    act_doc = ub.parse_statement({1: "\n".join(ACTUALS)})
+    est_lines = ub.numbered_lines(est_doc)
+    act_lines = ub.numbered_lines(act_doc)
+
+    def _make_stmt(budget: str, num: int, url: str, doc: ub.SbeDocument, lines: list[ub.LineReading], closed: bool):
+        return mod.Statement(
+            budget=budget,
+            number=num,
+            url=url,
+            path=Path(f"sbe{num}.pdf"),
+            sha256="a" * 64,
+            doc=doc,
+            lines=lines,
+            closed=closed,
+        )
+
+    # 1. Unclosed estimates statement must be rejected completely even when name+figure matches.
+    left_out_est: collections.Counter[str] = collections.Counter()
+    items_est_unclosed = mod.link_year(
+        "2019-20",
+        {
+            "2020-21": {42: _make_stmt("2020-21", 42, EST_URL, est_doc, est_lines, closed=False)},
+            "2021-22": {44: _make_stmt("2021-22", 44, ACT_URL, act_doc, act_lines, closed=True)},
+        },
+        left_out_est,
+    )
+    assert items_est_unclosed == []
+    assert left_out_est["statement does not add up to its Grand Total"] > 0
+
+    # 2. Unclosed actuals statement must NOT be linked even when name+figure matches.
+    left_out_act: collections.Counter[str] = collections.Counter()
+    items_act_unclosed = mod.link_year(
+        "2019-20",
+        {
+            "2020-21": {42: _make_stmt("2020-21", 42, EST_URL, est_doc, est_lines, closed=True)},
+            "2021-22": {44: _make_stmt("2021-22", 44, ACT_URL, act_doc, act_lines, closed=False)},
+        },
+        left_out_act,
+    )
+    assert len(items_act_unclosed) > 0
+    assert all(it.actuals is None and it.act is None for it in items_act_unclosed)
+
+
+def test_shared_ub1_task_submits_and_verifies_every_qualifying_shortfall(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from aiwatchdogs.cli.config import AgentConfig
+    from aiwatchdogs.cli.runner import AgentRunner
+    from aiwatchdogs.core.safety import compute_sha256
+    from aiwatchdogs.hub.app import create_app
+
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(REPO_PROJECTS))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+
+    est_pdf = tmp_path / "sbe42.pdf"
+    act_pdf = tmp_path / "sbe44.pdf"
+    est_pdf.write_bytes(_pdf(ESTIMATES))
+    act_pdf.write_bytes(_pdf(ACTUALS))
+    est_sha = compute_sha256(est_pdf.read_bytes())
+    act_sha = compute_sha256(act_pdf.read_bytes())
+
+    app = create_app(db_path=tmp_path / "ub1_shared.db", seed=True)
+    with app.state.db.transaction() as conn:
+        # Clear non-UB1 open tasks and point one UB1 task to our local multi-lead fixture.
+        conn.execute("DELETE FROM tasks WHERE mission_slug != 'union-budget-unspent-funds'")
+        row = conn.execute(
+            "SELECT id, payload_json FROM tasks WHERE mission_slug = 'union-budget-unspent-funds' LIMIT 1"
+        ).fetchone()
+        assert row is not None
+        task_id = str(row["id"])
+        conn.execute("DELETE FROM tasks WHERE id != ?", (task_id,))
+        payload = {
+            "retrieval_url": str(est_pdf),
+            "expected_sha256": est_sha,
+            "secondary_url": str(act_pdf),
+            "secondary_expected_sha256": act_sha,
+            "official_publisher": "Ministry of Finance, Government of India",
+            "source_landing_page": "https://www.indiabudget.gov.in/",
+            "artifact_title": "Notes on Demands for Grants 2020-21, Demand No. 42",
+            "fiscal_year": "FY2019-20",
+            "context": {"secondary_document": "pages", "union_budget": _spec()},
+        }
+        conn.execute("UPDATE tasks SET payload_json = ? WHERE id = ?", (json.dumps(payload), task_id))
+        conn.execute("UPDATE missions SET total_tasks = 1 WHERE slug = 'union-budget-unspent-funds'")
+
+    with TestClient(app, base_url="http://testserver") as client:
+        auditor = AgentRunner(
+            AgentConfig(
+                handle="ub1-shared-auditor",
+                hub_url="http://testserver",
+                provider="rule-engine",
+                model="deterministic-cpu-v1",
+                mode="investigate",
+                max_tasks=1,
+            ),
+            http_client=client,
+            config_path=tmp_path / "aud.json",
+            allow_local_files=True,
+        )
+        res = auditor.run_loop(max_tasks=1, preferred_mission="union-budget-unspent-funds")
+        assert res.tasks_completed == 1
+        assert res.findings_submitted == 3
+        assert res.errors == 0
+        resp = res.results[0]["response"]
+        assert resp["findings_created"] == 3
+        assert len(resp["finding_ids"]) == 3
+        assert resp["peer_verify_tasks_created"] == 6
+
+        # Both independent verifiers confirm all 3 findings (6 peer_verify tasks total).
+        for idx, handle in enumerate(("ub1-verifier-1", "ub1-verifier-2"), start=1):
+            ver = AgentRunner(
+                AgentConfig(
+                    handle=handle,
+                    hub_url="http://testserver",
+                    provider="rule-engine",
+                    model="deterministic-cpu-v1",
+                    mode="verify",
+                    max_tasks=3,
+                ),
+                http_client=client,
+                config_path=tmp_path / f"ver_{idx}.json",
+                allow_local_files=True,
+            )
+            vres = ver.run_loop(max_tasks=3, preferred_mission="union-budget-unspent-funds")
+            assert vres.tasks_completed == 3
+            assert vres.verifications_submitted == 3
+            assert all(r["verification"]["verdict"] == "confirm" for r in vres.results)
+
+        for fid in resp["finding_ids"]:
+            f_detail = client.get(f"/api/findings/{fid}").json()
+            assert f_detail["status"] == "verified"
+            assert f_detail["confirm_count"] == 2
+
+        # Also verify actuals_reason distinction on _union_budget_summary (2015-16 unmatched vs 2025-26 not_published)
+        with app.state.db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO findings (
+                    id, mission_id, mission_slug, pillar, title, summary, methodology_code,
+                    entity_name, jurisdiction, fiscal_year, monetary_exposure_inr, severity,
+                    anomaly_metrics_json, rule_triggered, submitted_by, status, created_at
+                ) VALUES
+                    ('fnd-ub-1516', (SELECT id FROM missions WHERE slug='union-budget-unspent-funds'),
+                     'union-budget-unspent-funds', 'budget', '2015-16 shortfall', 'Summary', 'UB1',
+                     'Dept A', 'Union of India', 'FY2015-16', 5000000000.0, 'high',
+                     '{"compare":"revised_vs_budget_estimate","budget_estimate":100.0,"revised_estimate":50.0,"revised_cut_pct":50.0}',
+                     'UB1-RE-BELOW-BE>10%', 'ub1-shared-auditor', 'peer_review', '2026-11-26T00:00:00Z'),
+                    ('fnd-ub-2526', (SELECT id FROM missions WHERE slug='union-budget-unspent-funds'),
+                     'union-budget-unspent-funds', 'budget', '2025-26 shortfall', 'Summary', 'UB1',
+                     'Dept B', 'Union of India', 'FY2025-26', 4000000000.0, 'high',
+                     '{"compare":"revised_vs_budget_estimate","budget_estimate":100.0,"revised_estimate":60.0,"revised_cut_pct":40.0}',
+                     'UB1-RE-BELOW-BE>10%', 'ub1-shared-auditor', 'peer_review', '2026-11-26T00:00:00Z')
+                """
+            )
+        detail = client.get("/api/missions/union-budget-unspent-funds").json()
+        ub_vis = detail["visual_summary"]["union_budget"]
+        years_by_y = {y["year"]: y for y in ub_vis["years"]}
+        assert years_by_y["2015-16"]["compares"] == "revised"
+        assert years_by_y["2015-16"]["actuals_reason"] == "unmatched"
+        assert years_by_y["2025-26"]["compares"] == "revised"
+        assert years_by_y["2025-26"]["actuals_reason"] == "not_published"
+        assert years_by_y["2019-20"]["compares"] == "actual"
+        assert years_by_y["2019-20"]["actuals_reason"] is None
+        leads_by_id = {ld["finding_id"]: ld for ld in ub_vis["top_leads"]}
+        assert leads_by_id["fnd-ub-1516"]["actuals_reason"] == "unmatched"
+        assert leads_by_id["fnd-ub-2526"]["actuals_reason"] == "not_published"
+    app.state.db.close()
+
+
+def test_sync_projects_ub1_split_releases_stale_lease_and_skips_completed_lines(tmp_path: Path) -> None:
+    """When a shared UB1 task splits, claimed leases are reset with the new payload and completed lines are not duplicated."""
+    from aiwatchdogs.hub.database import Database
+    from aiwatchdogs.projects import project_task_id, sync_projects
+
+    full_proj = json.loads((REPO_PROJECTS / "union-budget-unspent-funds.json").read_text(encoding="utf-8"))
+    shared_task = next(
+        t for t in full_proj["tasks"] if len(t["payload"]["context"]["union_budget"]["lines"]) >= 2
+    )
+    lines = list(shared_task["payload"]["context"]["union_budget"]["lines"])
+    half = len(lines) // 2
+    first_half = lines[:half]
+    second_half = lines[half:]
+
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    proj_v1 = {k: v for k, v in full_proj.items() if k != "tasks"}
+    proj_v1["tasks"] = [shared_task]
+    (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v1), encoding="utf-8")
+
+    # Scenario A: task is claimed when manifest splits -> stale lease is released and payload updated.
+    db_claimed = Database(db_path=tmp_path / "claimed_split.db")
+    try:
+        assert sync_projects(db_claimed, pdir)["changed"] is True
+        tid1 = project_task_id(shared_task["id"])
+        with db_claimed.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO agents (
+                    id, handle, display_name, provider, model, api_token_hash, status,
+                    current_task_id, joined_at, last_heartbeat_at
+                ) VALUES (
+                    'agt-1', 'ub-claimer', 'UB Claimer', 'rule-engine', 'deterministic-cpu-v1',
+                    'tok-hash-1', 'active', ?, '2026-11-26T00:00:00Z', '2026-11-26T00:00:00Z'
+                )
+                """,
+                (tid1,),
+            )
+            conn.execute(
+                """
+                UPDATE tasks SET status = 'claimed', claimed_by_agent_id = 'agt-1',
+                    claimed_by_handle = 'ub-claimer', lease_id = 'lease-old'
+                WHERE id = ?
+                """,
+                (tid1,),
+            )
+
+        task_a = json.loads(json.dumps(shared_task))
+        task_a["payload"]["context"]["union_budget"]["lines"] = first_half
+        task_b = json.loads(json.dumps(shared_task))
+        task_b["id"] = f"{shared_task['id']}-split-b"
+        task_b["dataset_key"] = task_b["id"]
+        task_b["payload"]["context"]["union_budget"]["lines"] = second_half
+
+        proj_v2 = {k: v for k, v in full_proj.items() if k != "tasks"}
+        proj_v2["tasks"] = [task_a, task_b]
+        (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v2), encoding="utf-8")
+
+        assert sync_projects(db_claimed, pdir)["changed"] is True
+        with db_claimed.read() as conn:
+            row_a = conn.execute("SELECT status, lease_id, payload_json FROM tasks WHERE id = ?", (tid1,)).fetchone()
+            row_b = conn.execute(
+                "SELECT id FROM tasks WHERE id = ?", (project_task_id(task_b["id"]),)
+            ).fetchone()
+            agt = conn.execute("SELECT current_task_id FROM agents WHERE id = 'agt-1'").fetchone()
+        assert row_a["status"] == "queued"
+        assert row_a["lease_id"] is None
+        assert agt["current_task_id"] is None
+        updated_lines = json.loads(row_a["payload_json"])["context"]["union_budget"]["lines"]
+        assert [l["key"] for l in updated_lines] == [l["key"] for l in first_half]
+        assert row_b is not None
+    finally:
+        db_claimed.close()
+
+    # Scenario B: original multi-line task is completed -> split sibling covering completed lines is skipped.
+    (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v1), encoding="utf-8")
+    db_done = Database(db_path=tmp_path / "done_split.db")
+    try:
+        assert sync_projects(db_done, pdir)["changed"] is True
+        tid1 = project_task_id(shared_task["id"])
+        with db_done.transaction() as conn:
+            conn.execute(
+                "UPDATE tasks SET status = 'completed', completed_at = '2026-11-26T00:05:00Z' WHERE id = ?",
+                (tid1,),
+            )
+
+        (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v2), encoding="utf-8")
+        assert sync_projects(db_done, pdir)["changed"] is True
+        with db_done.read() as conn:
+            row_a = conn.execute("SELECT status FROM tasks WHERE id = ?", (tid1,)).fetchone()
+            row_b = conn.execute(
+                "SELECT id FROM tasks WHERE id = ?", (project_task_id(task_b["id"]),)
+            ).fetchone()
+        assert row_a["status"] == "completed"
+        assert row_b is None
+    finally:
+        db_done.close()

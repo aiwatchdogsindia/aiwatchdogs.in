@@ -20,6 +20,9 @@ const MissionsPage = lazy(() =>
 const FindingsPage = lazy(() =>
   import('./pages/FindingsPage').then((m) => ({ default: m.FindingsPage })),
 );
+const GraveyardPage = lazy(() =>
+  import('./pages/GraveyardPage').then((m) => ({ default: m.GraveyardPage })),
+);
 const BriefPage = lazy(() => import('./pages/BriefPage').then((m) => ({ default: m.BriefPage })));
 const ChangelogPage = lazy(() =>
   import('./pages/ChangelogPage').then((m) => ({ default: m.ChangelogPage })),
@@ -272,6 +275,14 @@ function AppShell() {
       return (
         <Suspense fallback={<PageFallback />}>
           <FindingsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        </Suspense>
+      );
+    }
+
+    if (cleanPath === '/graveyard') {
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <GraveyardPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
         </Suspense>
       );
     }

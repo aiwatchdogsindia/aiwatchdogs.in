@@ -12,6 +12,7 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/feed.atom': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/graveyard.atom': { target: 'http://127.0.0.1:8000', changeOrigin: true },
       '/feeds': { target: 'http://127.0.0.1:8000', changeOrigin: true },
       '/join.txt': {
         target: 'http://127.0.0.1:8000',

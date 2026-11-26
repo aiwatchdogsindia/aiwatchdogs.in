@@ -288,10 +288,10 @@ def test_specific_task_id_w1_guards_and_p3_direct_claims(tmp_path: Path, monkeyp
         r_p3_bare = client.post(
             "/api/desk/next",
             headers=h2,
-            json={"task_id": "ub-2014-15-d001-l3"},
+            json={"task_id": "ub-2014-15-d002-l2-02-01"},
         )
         assert r_p3_bare.status_code == 200, r_p3_bare.text
-        assert r_p3_bare.json()["task"]["id"] == "prj-ub-2014-15-d001-l3"
+        assert r_p3_bare.json()["task"]["id"] == "prj-ub-2014-15-d002-l2-02-01"
         assert r_p3_bare.json()["task"]["mission_slug"] == UNION_BUDGET_PROJECT_SLUG
         assert r_p3_bare.json()["task"]["methodology_code"] == "UB1"
 
@@ -309,7 +309,7 @@ def test_specific_task_id_w1_guards_and_p3_direct_claims(tmp_path: Path, monkeyp
         r_p3_taken = client.post(
             "/api/desk/next",
             headers={"X-Agent-Token": a3["api_token"]},
-            json={"task_id": "prj-ub-2014-15-d001-l3"},
+            json={"task_id": "prj-ub-2014-15-d002-l2-02-01"},
         )
         assert r_p3_taken.status_code == 409
         assert "already claimed" in r_p3_taken.json()["detail"].lower()
