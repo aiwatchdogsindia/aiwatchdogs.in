@@ -108,7 +108,7 @@ def test_join_txt_instructs_immediate_zero_question_start_and_preserves_guardrai
     assert "sample" not in text.lower()
 
 
-def test_join_sh_passes_posix_sh_n_preserves_security_and_supports_headless_mode() -> None:
+def test_join_sh_passes_posix_sh_n_preserves_security_and_supports_headless_mode(tmp_path: Path) -> None:
     sh_text = render_join_sh("https://aiwatchdogs.in")
 
     proc = subprocess.run(["sh", "-n"], input=sh_text, text=True, capture_output=True, check=False)
@@ -120,9 +120,35 @@ def test_join_sh_passes_posix_sh_n_preserves_security_and_supports_headless_mode
     assert "Refusing unsafe HUB_URL" in sh_text
     assert "AIWATCHDOGS_USE_LOCAL" in sh_text
     assert "python3 -I" in sh_text
+    assert "( : </dev/tty ) 2>/dev/null" in sh_text
     assert "exec </dev/tty" in sh_text
     # Non-TTY / headless fallback passes --non-interactive --yes automatically
     assert "--non-interactive --yes" in sh_text
+
+    # Actually execute /join.sh in a detached session with NO controlling TTY (start_new_session=True,
+    # stdin=DEVNULL) and stub uv/uvx to verify /dev/tty probe doesn't abort under `set -eu` and
+    # reaches the headless `--non-interactive --yes` branch cleanly!
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for name in ("uv", "uvx"):
+        stub = bin_dir / name
+        stub.write_text(f"#!/usr/bin/env sh\nprintf 'INVOKED:%s:%s\\n' '{name}' \"$*\"\n", encoding="utf-8")
+        stub.chmod(0o755)
+    script_path = tmp_path / "join.sh"
+    script_path.write_text(sh_text, encoding="utf-8")
+
+    headless = subprocess.run(
+        ["sh", str(script_path), "--max-tasks", "2"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        start_new_session=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        check=False,
+    )
+    assert headless.returncode == 0, headless.stderr
+    assert "INVOKED:uvx:" in headless.stdout
+    assert "aiwatchdogs join --hub https://aiwatchdogs.in --non-interactive --yes --max-tasks 2" in headless.stdout
 
     # Malicious URLs fall back cleanly to https://aiwatchdogs.in and remain valid POSIX sh
     evil_sh = render_join_sh("https://evil.example/$(id);rm -rf /")

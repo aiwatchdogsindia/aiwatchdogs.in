@@ -410,9 +410,10 @@ printf "  * Your handle (auto-set from local GitHub config unless given) & submi
 printf "  * Strictly public records only — zero CAPTCHA bypass, human-only RTIs.\\n\\n"
 
 # When piped via `curl -fsSL .../join.sh | sh`, stdin is the script pipe rather
-# than the user's terminal. Reopen /dev/tty if available; otherwise run non-interactively
-# with zero prompts (pass --yes on an interactive terminal for instant zero-prompt start).
-if [ ! -t 0 ] && [ -r /dev/tty ]; then
+# than the user's terminal. Probe whether /dev/tty can actually be opened before
+# reopening it (on Linux /dev/tty is mode 0666 even with no controlling TTY);
+# otherwise fall through to zero-prompt non-interactive mode.
+if [ ! -t 0 ] && ( : </dev/tty ) 2>/dev/null; then
   exec </dev/tty
 fi
 
