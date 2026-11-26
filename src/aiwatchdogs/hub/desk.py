@@ -73,6 +73,10 @@ MAX_LEASE_TOTAL_MINUTES = 180
 MAX_CONCURRENT_LEASES_PER_AGENT = 2
 MAX_ADJUDICATION_ROUNDS = 3
 MAX_WHISPERS_PER_LEASE = 25
+LIVE_AGENT_WINDOW_SECONDS = 900
+MAX_LIVE_SWARM_NODES = 50
+MAX_LIVE_RECENT_JOINS = 15
+MAX_LIVE_SWARM_WHISPERS = 20
 MAX_MONETARY_INR = 1e14
 MAX_PLEDGE_INR = 1e12
 DEFAULT_MAX_RETRIES = 3
@@ -1843,7 +1847,8 @@ class DeskService:
             active_agents = [a for a in serialized_agents if a["is_active"]]
 
             just_joined_rows = conn.execute(
-                "SELECT handle, display_name, provider, model, joined_at FROM agents ORDER BY joined_at DESC LIMIT 6"
+                "SELECT handle, display_name, provider, model, coding_agent, coding_agent_model, joined_at "
+                "FROM agents ORDER BY joined_at DESC LIMIT 6"
             ).fetchall()
             just_joined = [
                 {
@@ -1851,6 +1856,8 @@ class DeskService:
                     "display_name": r["display_name"],
                     "provider": r["provider"],
                     "model": r["model"],
+                    "coding_agent": str(_row_get(r, "coding_agent", "") or "").strip() or None,
+                    "coding_agent_model": str(_row_get(r, "coding_agent_model", "") or "").strip() or None,
                     "joined_at": r["joined_at"],
                 }
                 for r in just_joined_rows
@@ -4361,6 +4368,474 @@ class DeskService:
             "latest_event_id": latest_event_id,
         }
 
+    def get_swarm_live(self) -> dict[str, Any]:
+        """Fast read-only snapshot of live swarm telemetry for the Live Swarm Viewer & Hero Showcase."""
+        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        generated_at = now_dt.isoformat().replace("+00:00", "Z")
+        live_cutoff = (now_dt - timedelta(seconds=LIVE_AGENT_WINDOW_SECONDS)).isoformat().replace("+00:00", "Z")
+        hour_cutoff = (now_dt - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+
+        with self.db.read() as conn:
+            # 1. Active non-expired claimed leases (ordered newest activity first; quarantine-aware).
+            active_lease_rows = conn.execute(
+                """
+                SELECT
+                    t.id,
+                    t.mission_slug,
+                    t.task_type,
+                    t.title,
+                    t.payload_json,
+                    t.target_finding_id,
+                    t.claimed_by_agent_id,
+                    t.claimed_by_handle,
+                    t.progress_pct,
+                    t.lease_started_at,
+                    t.lease_expires_at,
+                    t.updated_at,
+                    CASE
+                        WHEN t.target_finding_id IS NOT NULL AND EXISTS (
+                            SELECT 1 FROM findings qf
+                            WHERE qf.id = t.target_finding_id
+                              AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
+                        )
+                        THEN 1
+                        ELSE 0
+                    END AS target_quarantined
+                FROM tasks t
+                WHERE t.status = 'claimed'
+                  AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
+                ORDER BY COALESCE(t.updated_at, t.lease_started_at) DESC, t.id ASC
+                LIMIT 200
+                """,
+                (generated_at,),
+            ).fetchall()
+
+            lease_by_agent_id: dict[str, dict[str, Any]] = {}
+            lease_by_handle: dict[str, dict[str, Any]] = {}
+            for lr in active_lease_rows:
+                is_quar = bool(int(_row_get(lr, "target_quarantined", 0) or 0))
+                payload_obj = {} if is_quar else loads_json(lr["payload_json"], {})
+                if not isinstance(payload_obj, dict):
+                    payload_obj = {}
+                t_type = str(lr["task_type"] or "").strip().lower()
+                role_name = task_role(t_type, payload_obj)["name"]
+                lease_info = {
+                    "task_id": str(lr["id"]),
+                    "task_title": "Withheld pending privacy/legal review" if is_quar else str(lr["title"] or ""),
+                    "project_slug": str(lr["mission_slug"] or "").strip() or None,
+                    "target_finding_id": None if is_quar else (str(lr["target_finding_id"] or "").strip() or None),
+                    "progress_pct": max(0, min(100, int(lr["progress_pct"] or 0))),
+                    "role": role_name,
+                    "node_status": "verifying" if t_type == "peer_verify" else "working",
+                }
+                aid = str(lr["claimed_by_agent_id"] or "").strip()
+                if aid and aid not in lease_by_agent_id:
+                    lease_by_agent_id[aid] = lease_info
+                ahandle = str(lr["claimed_by_handle"] or "").strip()
+                if ahandle and ahandle not in lease_by_handle:
+                    lease_by_handle[ahandle] = lease_info
+
+            # 2. Aggregate agent totals & live working_now count (active lease OR heartbeat within live window).
+            agent_agg = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_agents,
+                    COALESCE(SUM(CASE
+                        WHEN a.revoked_at IS NULL AND a.status != 'revoked' AND (
+                            a.last_heartbeat_at >= ?
+                            OR EXISTS (
+                                SELECT 1 FROM tasks t
+                                WHERE t.claimed_by_agent_id = a.id
+                                  AND t.status = 'claimed'
+                                  AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
+                            )
+                        )
+                        THEN 1 ELSE 0
+                    END), 0) AS working_now,
+                    MAX(CASE
+                        WHEN a.revoked_at IS NULL AND a.status != 'revoked'
+                        THEN a.last_heartbeat_at
+                        ELSE NULL
+                    END) AS last_agent_heartbeat_at
+                FROM agents a
+                """,
+                (live_cutoff, generated_at),
+            ).fetchone()
+            total_agents = int(agent_agg["total_agents"] or 0) if agent_agg is not None else 0
+            working_now = int(agent_agg["working_now"] or 0) if agent_agg is not None else 0
+            last_agent_hb = str(agent_agg["last_agent_heartbeat_at"] or "").strip() or None if agent_agg is not None else None
+
+            # 3. Prioritized active/recent/idle agent nodes (active lease holders first).
+            node_rows = conn.execute(
+                """
+                SELECT
+                    a.id,
+                    a.handle,
+                    a.display_name,
+                    a.provider,
+                    a.model,
+                    a.coding_agent,
+                    a.coding_agent_model,
+                    a.tasks_completed,
+                    a.verifications_done,
+                    a.findings_submitted,
+                    a.joined_at,
+                    a.last_heartbeat_at,
+                    CASE
+                        WHEN EXISTS (
+                            SELECT 1 FROM tasks t
+                            WHERE t.claimed_by_agent_id = a.id
+                              AND t.status = 'claimed'
+                              AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
+                        ) THEN 0
+                        WHEN a.last_heartbeat_at >= ? THEN 1
+                        ELSE 2
+                    END AS activity_rank
+                FROM agents a
+                WHERE a.revoked_at IS NULL AND a.status != 'revoked'
+                ORDER BY activity_rank ASC, a.last_heartbeat_at DESC, a.tasks_completed DESC, a.handle ASC
+                LIMIT ?
+                """,
+                (generated_at, live_cutoff, MAX_LIVE_SWARM_NODES),
+            ).fetchall()
+
+            # 4. Batch-fetch latest non-quarantined whisper per displayed agent (zero N+1).
+            whisper_stage_expr = (
+                "CASE w.event_type "
+                "WHEN 'finding_verified' THEN 5 "
+                "WHEN 'verification_recorded' THEN 4 "
+                "WHEN 'finding_submitted' THEN 4 "
+                "WHEN 'cleared' THEN 4 "
+                "WHEN 'website_batch_observed' THEN 4 "
+                "WHEN 'whisper' THEN 3 "
+                "WHEN 'task_claimed' THEN 2 "
+                "WHEN 'agent_joined' THEN 1 "
+                "ELSE 0 END"
+            )
+            latest_whisper_by_handle: dict[str, str] = {}
+            node_handles = [str(r["handle"]) for r in node_rows if r["handle"]]
+            if node_handles:
+                ph = ",".join("?" for _ in node_handles)
+                lw_rows = conn.execute(
+                    f"""
+                    SELECT agent_handle, message
+                    FROM (
+                        SELECT
+                            w.agent_handle,
+                            w.message,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY w.agent_handle
+                                ORDER BY w.created_at DESC, {whisper_stage_expr} DESC, w.id DESC
+                            ) AS rn
+                        FROM whispers w
+                        WHERE w.agent_handle IN ({ph})
+                          AND (
+                              w.finding_id IS NULL
+                              OR NOT EXISTS (
+                                  SELECT 1 FROM findings qf
+                                  WHERE qf.id = w.finding_id
+                                    AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
+                              )
+                          )
+                    ) ranked
+                    WHERE rn = 1
+                    """,
+                    node_handles,
+                ).fetchall()
+                for lwr in lw_rows:
+                    msg = str(lwr["message"] or "").strip()
+                    if msg:
+                        latest_whisper_by_handle[str(lwr["agent_handle"])] = msg
+
+            active_nodes: list[dict[str, Any]] = []
+            for nr in node_rows:
+                aid = str(nr["id"])
+                handle = str(nr["handle"])
+                rank = int(nr["activity_rank"] if nr["activity_rank"] is not None else 2)
+                lease = lease_by_agent_id.get(aid) or lease_by_handle.get(handle)
+                if lease is not None:
+                    node_status = lease["node_status"]
+                    role_val: str | None = lease["role"]
+                    cur_task_id: str | None = lease["task_id"]
+                    cur_task_title: str | None = lease["task_title"]
+                    cur_project_slug: str | None = lease["project_slug"]
+                    prog_pct: int | None = lease["progress_pct"]
+                elif rank == 0:
+                    node_status = "working"
+                    role_val = "auditor"
+                    cur_task_id = None
+                    cur_task_title = None
+                    cur_project_slug = None
+                    prog_pct = None
+                elif rank == 1:
+                    node_status = "recent"
+                    role_val = None
+                    cur_task_id = None
+                    cur_task_title = None
+                    cur_project_slug = None
+                    prog_pct = None
+                else:
+                    node_status = "idle"
+                    role_val = None
+                    cur_task_id = None
+                    cur_task_title = None
+                    cur_project_slug = None
+                    prog_pct = None
+
+                active_nodes.append(
+                    {
+                        "handle": handle,
+                        "display_name": str(nr["display_name"] or handle),
+                        "status": node_status,
+                        "role": role_val,
+                        "coding_agent": str(_row_get(nr, "coding_agent", "") or "").strip() or None,
+                        "coding_agent_model": str(_row_get(nr, "coding_agent_model", "") or "").strip() or None,
+                        "provider": str(nr["provider"] or "rule-engine"),
+                        "model": str(nr["model"] or "deterministic-cpu-v1"),
+                        "current_task_id": cur_task_id,
+                        "current_task_title": cur_task_title,
+                        "current_project_slug": cur_project_slug,
+                        "progress_pct": prog_pct,
+                        "latest_whisper": latest_whisper_by_handle.get(handle),
+                        "tasks_completed": int(nr["tasks_completed"] or 0),
+                        "verifications_done": int(nr["verifications_done"] or 0),
+                        "findings_submitted": int(nr["findings_submitted"] or 0),
+                        "last_seen_at": str(nr["last_heartbeat_at"] or nr["joined_at"]),
+                        "created_at": str(nr["joined_at"]),
+                    }
+                )
+
+            # 5. Most recently joined agents for the hero ticker.
+            join_rows = conn.execute(
+                """
+                SELECT
+                    a.handle,
+                    a.display_name,
+                    a.coding_agent,
+                    a.coding_agent_model,
+                    a.joined_at,
+                    a.last_heartbeat_at,
+                    CASE
+                        WHEN a.last_heartbeat_at >= ?
+                          OR EXISTS (
+                              SELECT 1 FROM tasks t
+                              WHERE t.claimed_by_agent_id = a.id
+                                AND t.status = 'claimed'
+                                AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
+                          )
+                        THEN 1 ELSE 0
+                    END AS is_working
+                FROM agents a
+                WHERE a.revoked_at IS NULL AND a.status != 'revoked'
+                ORDER BY a.joined_at DESC, a.id DESC
+                LIMIT ?
+                """,
+                (live_cutoff, generated_at, MAX_LIVE_RECENT_JOINS),
+            ).fetchall()
+            recent_joins = [
+                {
+                    "handle": str(jr["handle"]),
+                    "display_name": str(jr["display_name"] or jr["handle"]),
+                    "coding_agent": str(_row_get(jr, "coding_agent", "") or "").strip() or None,
+                    "coding_agent_model": str(_row_get(jr, "coding_agent_model", "") or "").strip() or None,
+                    "created_at": str(jr["joined_at"]),
+                    "last_seen_at": str(jr["last_heartbeat_at"] or jr["joined_at"]),
+                    "is_working": bool(int(jr["is_working"] or 0)),
+                }
+                for jr in join_rows
+            ]
+
+            # 6. Latest non-quarantined live whispers enriched with agent coding_agent & role.
+            whisper_rows = conn.execute(
+                f"""
+                SELECT
+                    w.id,
+                    w.event_type,
+                    w.agent_handle,
+                    w.mission_slug,
+                    w.finding_id,
+                    w.message,
+                    w.created_at,
+                    a.coding_agent,
+                    f.task_id AS finding_task_id
+                FROM whispers w
+                LEFT JOIN agents a ON a.handle = w.agent_handle
+                LEFT JOIN findings f ON f.id = w.finding_id
+                WHERE w.finding_id IS NULL
+                   OR NOT EXISTS (
+                       SELECT 1 FROM findings qf
+                       WHERE qf.id = w.finding_id
+                         AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
+                   )
+                ORDER BY w.created_at DESC, {whisper_stage_expr} DESC, w.id DESC
+                LIMIT ?
+                """,
+                (MAX_LIVE_SWARM_WHISPERS,),
+            ).fetchall()
+
+            live_whispers: list[dict[str, Any]] = []
+            for wr in whisper_rows:
+                ev_type = str(wr["event_type"] or "whisper").strip().lower()
+                handle = str(wr["agent_handle"] or "")
+                msg = str(wr["message"] or "")
+                project_slug = str(wr["mission_slug"] or "").strip() or None
+                finding_id = str(wr["finding_id"] or "").strip() or None
+                finding_task_id = str(_row_get(wr, "finding_task_id", "") or "").strip() or None
+                active_lease = lease_by_handle.get(handle)
+
+                w_role: str | None = None
+                if ev_type in ("verification_recorded", "finding_verified"):
+                    if active_lease is not None and active_lease["role"] == "adjudicator":
+                        w_role = "adjudicator"
+                    elif "adjudicat" in msg.lower():
+                        w_role = "adjudicator"
+                    else:
+                        w_role = "peer_verifier"
+                elif ev_type in ("finding_submitted", "cleared", "scan_cleared", "website_batch_observed"):
+                    w_role = "auditor"
+                elif ev_type == "task_claimed":
+                    msg_low = msg.lower()
+                    if "adjudicat" in msg_low:
+                        w_role = "adjudicator"
+                    elif "peer_verify" in msg_low:
+                        w_role = "peer_verifier"
+                    elif active_lease is not None and (
+                        project_slug is None or active_lease["project_slug"] == project_slug
+                    ):
+                        w_role = active_lease["role"]
+                    else:
+                        w_role = "auditor"
+                elif ev_type == "whisper":
+                    if active_lease is not None and (
+                        project_slug is None or active_lease["project_slug"] == project_slug
+                    ):
+                        w_role = active_lease["role"]
+                    elif finding_id is not None:
+                        w_role = "peer_verifier"
+                    else:
+                        w_role = "auditor"
+
+                w_task_id: str | None = None
+                if active_lease is not None and (
+                    (finding_id is not None and active_lease["target_finding_id"] == finding_id)
+                    or (
+                        ev_type in ("whisper", "task_claimed")
+                        and (project_slug is None or active_lease["project_slug"] == project_slug)
+                    )
+                ):
+                    w_task_id = active_lease["task_id"]
+                elif finding_task_id:
+                    w_task_id = finding_task_id
+
+                live_whispers.append(
+                    {
+                        "id": str(wr["id"]),
+                        "event_type": ev_type,
+                        "handle": handle,
+                        "coding_agent": str(_row_get(wr, "coding_agent", "") or "").strip() or None,
+                        "role": w_role,
+                        "task_id": w_task_id,
+                        "project_slug": project_slug,
+                        "finding_id": finding_id,
+                        "whisper": msg,
+                        "created_at": str(wr["created_at"]),
+                    }
+                )
+
+            # 7. Task & finding progress aggregates + latest event cursor (single pass each).
+            task_agg = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN t.status IN ('completed', 'settled') THEN 1 ELSE 0 END), 0) AS tasks_completed,
+                    COALESCE(SUM(CASE
+                        WHEN t.status = 'claimed'
+                         AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
+                        THEN 1 ELSE 0
+                    END), 0) AS tasks_in_progress,
+                    COALESCE(SUM(CASE
+                        WHEN t.status = 'queued'
+                         AND (t.task_type = 'peer_verify' OR COALESCE(m.status, 'active') NOT IN ('archived', 'paused', 'needs_data'))
+                        THEN 1 ELSE 0
+                    END), 0) AS tasks_queued,
+                    COALESCE(SUM(CASE
+                        WHEN t.status IN ('completed', 'settled')
+                         AND COALESCE(t.completed_at, t.updated_at) >= ?
+                        THEN 1 ELSE 0
+                    END), 0) AS tasks_last_hour,
+                    COALESCE(SUM(t.attempt_count), 0) AS total_attempts,
+                    MAX(CASE
+                        WHEN t.status IN ('claimed', 'completed', 'settled')
+                        THEN COALESCE(t.completed_at, t.updated_at)
+                        ELSE NULL
+                    END) AS last_task_activity_at
+                FROM tasks t
+                LEFT JOIN missions m ON m.id = t.mission_id
+                WHERE t.status != 'retired'
+                """,
+                (generated_at, hour_cutoff),
+            ).fetchone()
+            tasks_completed = int(task_agg["tasks_completed"] or 0) if task_agg is not None else 0
+            tasks_in_progress = int(task_agg["tasks_in_progress"] or 0) if task_agg is not None else 0
+            tasks_queued = int(task_agg["tasks_queued"] or 0) if task_agg is not None else 0
+            tasks_last_hour = int(task_agg["tasks_last_hour"] or 0) if task_agg is not None else 0
+            total_attempts = int(task_agg["total_attempts"] or 0) if task_agg is not None else 0
+            last_task_at = (
+                str(task_agg["last_task_activity_at"] or "").strip() or None
+                if task_agg is not None
+                else None
+            )
+
+            finding_agg = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(CASE WHEN status IN ('verified', 'rti_filed') THEN 1 ELSE 0 END), 0) AS findings_verified,
+                    COALESCE(SUM(CASE WHEN status IN ('peer_review', 'raw_lead') THEN 1 ELSE 0 END), 0) AS findings_in_review
+                FROM findings
+                WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined'
+                """
+            ).fetchone()
+            findings_verified = int(finding_agg["findings_verified"] or 0) if finding_agg is not None else 0
+            findings_in_review = int(finding_agg["findings_in_review"] or 0) if finding_agg is not None else 0
+
+            latest_ev = conn.execute("SELECT COALESCE(MAX(id), 0) AS max_id FROM events").fetchone()
+            latest_event_id = int(latest_ev["max_id"] or 0) if latest_ev is not None else 0
+
+        activity_candidates: list[tuple[datetime, str]] = []
+        for ts_str in (
+            last_agent_hb,
+            last_task_at,
+            live_whispers[0]["created_at"] if live_whispers else None,
+        ):
+            parsed = _parse_iso(ts_str)
+            if parsed is not None and ts_str:
+                activity_candidates.append((parsed, ts_str))
+        last_activity_at = (
+            max(activity_candidates, key=lambda item: item[0])[1] if activity_candidates else None
+        )
+
+        return {
+            "generated_at": generated_at,
+            "latest_event_id": latest_event_id,
+            "live_window_seconds": LIVE_AGENT_WINDOW_SECONDS,
+            "working_now": working_now,
+            "active_leases_count": tasks_in_progress,
+            "total_agents": total_agents,
+            "total_sessions": max(total_attempts, tasks_completed),
+            "tasks_completed_total": tasks_completed,
+            "tasks_last_hour": tasks_last_hour,
+            "last_activity_at": last_activity_at,
+            "active_nodes": active_nodes,
+            "recent_joins": recent_joins,
+            "live_whispers": live_whispers,
+            "progress": {
+                "tasks_total": tasks_completed + tasks_in_progress + tasks_queued,
+                "tasks_completed": tasks_completed,
+                "tasks_in_progress": tasks_in_progress,
+                "findings_verified": findings_verified,
+                "findings_in_review": findings_in_review,
+            },
+        }
+
     def list_events(
         self,
         *,
@@ -4965,8 +5440,11 @@ class DeskService:
                 {
                     "agent_id": agent_id,
                     "handle": raw_handle,
+                    "display_name": display_name,
                     "provider": provider,
                     "model": model,
+                    "coding_agent": coding_agent or None,
+                    "coding_agent_model": coding_agent_model or None,
                     "mode": mode,
                     "profile_url": profile_url,
                 },
@@ -5427,14 +5905,25 @@ class DeskService:
                 "task_claimed",
                 {
                     "agent_handle": agent_handle,
+                    "coding_agent": str(_row_get(agent, "coding_agent", "") or "").strip() or None,
                     "task_id": response["task"]["id"],
                     "task_type": response["task"]["task_type"],
+                    "task_title": response["task"]["title"],
+                    "role": response["role"]["name"],
                     "mission_slug": response["task"]["mission_slug"],
                     "methodology_code": response["task"]["methodology_code"],
                 },
                 now=now,
+                finding_id=cand["target_finding_id"],
             )
-            self._emit_durable_event(conn, envelopes, "whisper", whisper, now=now)
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "whisper",
+                whisper,
+                now=now,
+                finding_id=cand["target_finding_id"],
+            )
 
         self._broadcast_envelopes(envelopes)
         return response
@@ -5551,7 +6040,12 @@ class DeskService:
                         conn,
                         envelopes,
                         "whisper",
-                        whisper_obj,
+                        {
+                            **whisper_obj,
+                            "task_id": str(task["id"]),
+                            "progress_pct": pct,
+                            "coding_agent": str(_row_get(authed, "coding_agent", "") or "").strip() or None,
+                        },
                         now=now,
                         finding_id=task["target_finding_id"],
                     )
@@ -5630,6 +6124,20 @@ class DeskService:
                 (now, authed["id"]),
             )
             task_id = str(task["id"])
+            self._emit_durable_event(
+                conn,
+                envelopes,
+                "task_released",
+                {
+                    "agent_handle": str(authed["handle"]),
+                    "task_id": task_id,
+                    "mission_slug": str(task["mission_slug"] or "") or None,
+                    "reason": clean_reason,
+                    "task_status": next_status,
+                },
+                now=now,
+                finding_id=task["target_finding_id"],
+            )
             if next_status in ("needs_adjudication", "failed"):
                 self._emit_durable_event(
                     conn,
