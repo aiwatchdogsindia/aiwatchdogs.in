@@ -473,80 +473,273 @@ code.font-mono {
 }
 
 /* =========================================================================
-   2. JUST-IN BAR (Full-Bleed Tiranga Ticker Strip Directly Under Header)
-   Saffron stripe on top, white field with navy text, green stripe below.
+   2. JUST-IN BAR (Full-Bleed Tiranga TV News Ticker Strip Under Header)
+   Saffron stripe on top, white field with pinned live badge + scrolling
+   broadcast chyron marquee, green stripe below.
    ========================================================================= */
 .just-in {
   margin: 0;
   width: 100%;
+  max-width: 100%;
   background: var(--flag-white);
   color: var(--ink);
-  border-top: 5px solid var(--flag-saffron);
-  border-bottom: 5px solid var(--flag-green);
-  padding: 8px var(--gutter);
-  min-height: 47px;
+  border-top: 3px solid var(--flag-saffron);
+  border-bottom: 3px solid var(--flag-green);
+  padding: 0;
+  height: 44px;
+  min-height: 44px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  align-items: stretch;
   flex-wrap: nowrap;
+  overflow: hidden;
   font-family: var(--font-serif);
   font-size: 14px;
   font-weight: 400;
   line-height: 20px;
-  text-align: center;
 }
 
-.just-in-content,
-.just-in-top {
-  display: contents;
-}
-
-.just-in-kicker {
+.just-in-badge {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  color: var(--green);
+  gap: 8px;
+  padding: 0 16px 0 max(20px, var(--gutter));
+  background: var(--flag-white);
+  border-right: 1px solid var(--rule-strong);
+  color: var(--flag-green-deep);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.just-in--review .just-in-badge,
+.just-in--latest .just-in-badge,
+.just-in--queue .just-in-badge {
+  color: var(--in-work-ink);
+}
+
+.just-in-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--live);
+  flex-shrink: 0;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(31, 163, 25, 0.55);
+  animation: justInDotPulse 2.2s ease-in-out infinite;
+}
+
+.just-in--review .just-in-dot,
+.just-in--latest .just-in-dot,
+.just-in--queue .just-in-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(255, 153, 51, 0.55);
+  animation-name: justInDotPulseAmber;
+}
+
+@keyframes justInDotPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(31, 163, 25, 0.55);
+  }
+  60% {
+    box-shadow: 0 0 0 5px rgba(31, 163, 25, 0);
+  }
+}
+
+@keyframes justInDotPulseAmber {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 153, 51, 0.55);
+  }
+  60% {
+    box-shadow: 0 0 0 5px rgba(255, 153, 51, 0);
+  }
+}
+
+.just-in-badge-label {
   font-family: var(--font-serif);
-  font-size: 11.5px;
-  font-weight: 400;
+  font-size: 11px;
+  font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  white-space: nowrap;
+  line-height: 1;
+}
+
+.just-in-viewport {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 36px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 36px),
+    transparent 100%
+  );
+}
+
+.just-in-track {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  width: max-content;
+  height: 100%;
+  will-change: transform;
+  animation: justInTicker var(--ticker-duration, 45s) linear infinite;
+}
+
+.just-in:hover .just-in-track,
+.just-in:focus-within .just-in-track {
+  animation-play-state: paused;
+}
+
+@keyframes justInTicker {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.just-in-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
   flex-shrink: 0;
+  height: 100%;
+}
+
+.just-in-entry {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+  height: 100%;
+  padding-left: 18px;
+}
+
+.just-in-item {
+  appearance: none;
+  background: transparent;
+  border: none;
+  margin: 0;
+  padding: 0 6px;
+  height: 100%;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.just-in-item--static {
+  cursor: default;
+}
+
+.just-in-item:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -3px;
+  border-radius: var(--r-4);
 }
 
 .just-in-title {
   color: var(--ink);
   font-weight: 400;
-  max-width: min(56ch, 46vw);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  text-decoration: none;
+}
+
+.just-in-item:hover .just-in-title,
+.just-in-item:focus-visible .just-in-title {
+  text-decoration: underline;
+  text-decoration-color: var(--flag-saffron);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
+
+.just-in-amount {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--r-4);
+  background: var(--green-bg);
+  border: 1px solid #C4DFC0;
+  color: var(--flag-green-deep);
+  font-family: var(--font-serif);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.just-in--review .just-in-amount,
+.just-in--latest .just-in-amount {
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+  color: var(--ink-2);
 }
 
 .just-in-meta {
   font-family: var(--font-serif);
   font-variant-numeric: tabular-nums;
   font-size: 12.5px;
-  color: var(--ink-3);
+  color: var(--ink-4);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .just-in-cta {
-  background: none;
-  border: none;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--accent-deep);
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 400;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration: none;
   white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s ease;
 }
 
-.just-in-cta:hover {
+.just-in-item:hover .just-in-cta,
+.just-in-item:focus-visible .just-in-cta {
   color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.just-in-sep {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 0 0 18px;
+  font-size: 8px;
+  line-height: 1;
+  color: var(--flag-saffron);
+  opacity: 0.88;
+  flex-shrink: 0;
+  user-select: none;
 }
 
 /* =========================================================================
@@ -3645,17 +3838,6 @@ code.font-mono {
   .brand-mark {
     font-size: 19px;
   }
-  .just-in {
-    justify-content: flex-start;
-    text-align: left;
-    font-size: 12.5px;
-    gap: 6px 8px;
-    flex-wrap: wrap;
-  }
-  .just-in-title {
-    white-space: normal;
-    max-width: 100%;
-  }
   .eyebrow-row {
     flex-direction: column;
     align-items: stretch;
@@ -4083,8 +4265,25 @@ code.font-mono {
   .pulse-dot,
   .gate-disc.pulsing::after,
   .arrive,
-  .just-in.arriving {
+  .just-in.arriving,
+  .just-in-dot,
+  .just-in-track {
     animation: none !important;
+  }
+  .just-in-viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .just-in-track {
+    transform: none !important;
+    will-change: auto;
+  }
+  .just-in-group--clone,
+  .just-in-entry--repeat {
+    display: none;
   }
 }
 
@@ -4723,8 +4922,7 @@ code.font-mono {
   display: none !important;
 }
 
-/* No breathing, flashing or marquee motion. */
-.just-in.arriving,
+/* No breathing or flashing ambient motion. */
 .arrive,
 .gate-disc.pulsing::after {
   animation: none !important;
@@ -4767,8 +4965,7 @@ code.font-mono {
 .section-kicker,
 .how-eyebrow,
 .foot-col-title,
-.foot-heading,
-.just-in-kicker {
+.foot-heading {
   text-transform: none !important;
   letter-spacing: 0 !important;
   font-size: 13px !important;
@@ -5369,7 +5566,6 @@ code.font-mono {
   /* Safe-area horizontal padding on full-bleed bands */
   .band,
   .site-header,
-  .just-in,
   .hero-swarm,
   .home-telemetry,
   .leaderboard,
@@ -5486,68 +5682,72 @@ code.font-mono {
     padding: 10px 12px;
   }
 
-  /* 2. Ultra-compact 2-row Just-In bar (~62-68px height, >=44px CTA tap target) */
+  /* 2. Crisp single-line TV news ticker strip (44px height, >=40px tap target) */
   .just-in {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0 10px;
-    border-top-width: 3px;
-    border-bottom-width: 3px;
-    padding-top: 6px;
-    padding-bottom: 6px;
-    min-height: 48px;
-    text-align: left;
-    font-size: 13px;
-    line-height: 1.32;
+    border-top-width: 2px;
+    border-bottom-width: 2px;
+    height: 44px;
+    min-height: 44px;
+    font-size: 13.5px;
+    line-height: 18px;
   }
 
-  .just-in-content {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+  .just-in-badge {
+    gap: 6px;
+    padding: 0 12px 0 max(14px, var(--safe-left));
   }
 
-  .just-in-top {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2px 8px;
-    min-width: 0;
+  .just-in-badge-label {
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
   }
 
-  .just-in-kicker {
-    font-size: 11.5px !important;
-    font-weight: 500;
-    line-height: 1.25;
+  .just-in-viewport {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 14px,
+      #000 calc(100% - 22px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 14px,
+      #000 calc(100% - 22px),
+      transparent 100%
+    );
+  }
+
+  .just-in-item {
+    min-height: 40px;
+    gap: 8px;
+    padding: 0 4px;
   }
 
   .just-in-title {
-    max-width: 100%;
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    font-size: 13px;
-    line-height: 1.32;
+    font-size: 13.5px;
+  }
+
+  .just-in-amount {
+    font-size: 11.5px;
+    padding: 1px 6px;
   }
 
   .just-in-meta {
     font-size: 11.5px;
-    line-height: 1.25;
   }
 
   .just-in-cta {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 44px;
-    padding: 0 4px;
     font-size: 12.5px;
-    font-weight: 500;
-    flex-shrink: 0;
+  }
+
+  .just-in-entry {
+    padding-left: 14px;
+  }
+
+  .just-in-sep {
+    margin: 0 0 0 14px;
   }
 
   .offline-banner .btn {
@@ -6532,5 +6732,39 @@ code.font-mono {
 
   .hero-stat dt {
     font-size: 21px;
+  }
+}
+
+@media (max-width: 560px) {
+  .just-in-badge {
+    gap: 5px;
+    padding: 0 10px 0 max(10px, var(--safe-left));
+  }
+
+  .just-in-dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .just-in-badge-label {
+    font-size: 9.5px;
+    letter-spacing: 0.07em;
+  }
+
+  .just-in-viewport {
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 10px,
+      #000 calc(100% - 16px),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 10px,
+      #000 calc(100% - 16px),
+      transparent 100%
+    );
   }
 }

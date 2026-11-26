@@ -427,6 +427,7 @@ function AppShell() {
 
       <JustInBar
         justIn={head?.just_in}
+        recentFindings={head?.recent_findings}
         fallbackFinding={fallbackVerified}
         queuedTasks={head?.stats.tasks_queued ?? 0}
         missionsCount={head?.missions.length ?? 0}
