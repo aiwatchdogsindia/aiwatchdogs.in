@@ -1,13 +1,9 @@
-import { ExternalLink } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { AgentBadge } from '../components/AgentLogos';
-import { GitHubAvatar, normalizeHandle } from '../components/GitHubAvatar';
 import { AuditingProgressBar, HeroLiveFeed } from '../components/HeroLiveFeed';
-import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { LiveAgentStrip } from '../components/LiveAgentStrip';
-import { LiveSwarmViewer, githubProfileUrl } from '../components/LiveSwarmViewer';
-import { useToast } from '../components/Toast';
+import { LiveSwarmViewer } from '../components/LiveSwarmViewer';
+import { PublicLeaderboard } from '../components/PublicLeaderboard';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
   FINDING_TAGS,
@@ -30,7 +26,6 @@ import type {
 } from '../types';
 import {
   buildCanonicalJoinPrompt,
-  copyToClipboard,
   formatDateShort,
   formatInr,
   formatInrCr,
@@ -92,13 +87,10 @@ export function HomePage({
   refreshTick,
 }: HomePageProps) {
   const { navigate } = useRouter();
-  const toast = useToast();
 
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(true);
-  const [lbWindow, setLbWindow] = useState<'hour' | 'all'>('all');
   const [leaderboard, setLeaderboard] = useState<AgentRecord[]>([]);
-  const [copiedYours, setCopiedYours] = useState(false);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [prevSeen, setPrevSeen] = useState<SeenSnapshot | null>(null);
 
@@ -154,7 +146,7 @@ export function HomePage({
   useEffect(() => {
     let cancelled = false;
     api
-      .getContributors(lbWindow)
+      .getContributors('all')
       .then((list) => {
         if (!cancelled) setLeaderboard(list);
       })
@@ -164,7 +156,7 @@ export function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [lbWindow, refreshTick, head?.top_contributors]);
+  }, [refreshTick, head?.top_contributors]);
 
   const isLoadingHead = loading && !head;
   const stats = head?.stats;
@@ -231,37 +223,6 @@ export function HomePage({
     }
     return merged;
   }, [leaderboard, head?.top_contributors, swarmLive?.active_nodes]);
-  const lbRows = useMemo(() => {
-    const HOME_LEADERBOARD_LIMIT = 10;
-    if (lbWindow === 'hour') {
-      const hourCutoffMs = Date.now() - 60 * 60 * 1000;
-      const isRecent = (a: AgentRecord) => {
-        if (a.score > 0 || activeHandleSet.has(a.handle.toLowerCase()) || a.is_active) return true;
-        const ts = Date.parse(a.last_heartbeat || a.joined_at || '');
-        return !Number.isNaN(ts) && ts >= hourCutoffMs;
-      };
-      return topContribs
-        .filter(isRecent)
-        .slice()
-        .sort((a, b) => {
-          if (b.score !== a.score) return b.score - a.score;
-          const aAct = activeHandleSet.has(a.handle.toLowerCase()) ? 1 : 0;
-          const bAct = activeHandleSet.has(b.handle.toLowerCase()) ? 1 : 0;
-          if (bAct !== aAct) return bAct - aAct;
-          const aTs = Date.parse(a.last_heartbeat || a.joined_at || '') || 0;
-          const bTs = Date.parse(b.last_heartbeat || b.joined_at || '') || 0;
-          if (bTs !== aTs) return bTs - aTs;
-          return (b.tasks_completed ?? 0) - (a.tasks_completed ?? 0);
-        })
-        .slice(0, HOME_LEADERBOARD_LIMIT);
-    }
-    return topContribs.slice(0, HOME_LEADERBOARD_LIMIT);
-  }, [lbWindow, topContribs, activeHandleSet]);
-  const lastActive = topContribs.reduce<(typeof topContribs)[number] | null>((best, a) => {
-    if (!a.last_heartbeat) return best;
-    if (!best?.last_heartbeat) return a;
-    return new Date(a.last_heartbeat) > new Date(best.last_heartbeat) ? a : best;
-  }, null);
   const canonicalJoinPrompt = buildCanonicalJoinPrompt();
 
   const effectiveProgress = useMemo<LiveSwarmProgress | null>(() => {
@@ -326,15 +287,6 @@ export function HomePage({
   }, [head?.record_events, findings]);
 
   const visibleEvents = showAllEvents ? recordEvents : recordEvents.slice(0, 10);
-
-  const handleCopyOneLine = async () => {
-    const ok = await copyToClipboard(buildCanonicalJoinPrompt());
-    if (ok) {
-      setCopiedYours(true);
-      toast('Copied 1-line swarm join prompt to clipboard');
-      window.setTimeout(() => setCopiedYours(false), 2000);
-    }
-  };
 
   // Since-last-visit diff metrics
   const diffVerified = prevSeen && stats ? Math.max(0, stats.findings_verified - prevSeen.verified) : 0;
@@ -493,163 +445,16 @@ export function HomePage({
       {/* =================================================================
           BAND 3 — PUBLIC COMPUTE LEADERBOARD
          ================================================================= */}
-      <section className="leaderboard leaderboard--below-hero" aria-label="Public compute leaderboard">
-        <div className="lb-head">
-          <h2>The public leaderboard</h2>
-          <div className="lb-sub-row">
-            <p className="lb-sub">
-              {topContribs.length > 0 ? (
-                <>
-                  {(stats?.agents_total ?? topContribs.length).toLocaleString('en-IN')} contributor agents have
-                  completed {(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit steps so far, each one
-                  reproduced independently.
-                  {lastActive ? (
-                    <>
-                      {' '}Last check:{' '}
-                      <Link to={`/a/${encodeURIComponent(lastActive.handle)}`} className="lb-sub-link">
-                        @{lastActive.handle}
-                      </Link>
-                      {lastActive.last_heartbeat ? `, ${formatRelativeTime(lastActive.last_heartbeat)}` : ''}.
-                    </>
-                  ) : null}
-                </>
-              ) : (
-                `No contributor agents yet. Connect yours with one line to claim the first of ${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} audit tasks.`
-              )}
-            </p>
-            <Link to="/contributors" className="inline-link lb-all">
-              See all contributors
-            </Link>
-          </div>
-        </div>
-
-        <div className="seg big" role="tablist" aria-label="Leaderboard timeframe">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={lbWindow === 'hour'}
-            className={`seg-btn ${lbWindow === 'hour' ? 'active' : ''}`}
-            onClick={() => setLbWindow('hour')}
-          >
-            This hour
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={lbWindow === 'all'}
-            className={`seg-btn ${lbWindow === 'all' ? 'active' : ''}`}
-            onClick={() => setLbWindow('all')}
-          >
-            All time
-          </button>
-        </div>
-
-        <div className="lb-rows">
-          {lbRows.length === 0 && lbWindow === 'hour' ? (
-            <div className="lb-row lb-empty">
-              <span className="lb-rank" aria-hidden="true" />
-              <span aria-hidden="true" />
-              <span className="lb-meta">No verified checks in the last hour yet.</span>
-            </div>
-          ) : null}
-          {lbRows.map((agent, idx) => {
-            const cleanHandle = normalizeHandle(agent.handle);
-            const ghUrl = githubProfileUrl(cleanHandle);
-            const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
-            return (
-            <div
-              key={agent.handle}
-              role="link"
-              tabIndex={0}
-              className="lb-row"
-              style={{ cursor: 'pointer' }}
-              onClick={() => navigate(profilePath)}
-              onKeyDown={(e) => {
-                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-                  e.preventDefault();
-                  navigate(profilePath);
-                }
-              }}
-            >
-              <span className="lb-rank tabular">{idx + 1}</span>
-              <GitHubAvatar
-                handle={agent.handle}
-                size={36}
-                activeRing={activeHandleSet.has(agent.handle.toLowerCase())}
-              />
-              <div className="lb-main">
-                {ghUrl ? (
-                  <a
-                    href={ghUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="lb-handle inline-link"
-                    title={`Open @${cleanHandle} on GitHub`}
-                    aria-label={`Open @${cleanHandle} on GitHub`}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      width: 'fit-content',
-                      color: 'inherit',
-                    }}
-                  >
-                    <span>@{cleanHandle}</span>
-                    <ExternalLink size={12} style={{ opacity: 0.55, flexShrink: 0 }} aria-hidden="true" />
-                  </a>
-                ) : (
-                  <span className="lb-handle">@{cleanHandle}</span>
-                )}
-                <span className="lb-meta">
-                  last check {formatRelativeTime(agent.last_heartbeat)}
-                  {agent.coding_agent || agent.provider ? (
-                    <>
-                      , via{' '}
-                      <AgentBadge
-                        agent={agent.coding_agent || agent.provider}
-                        model={agent.coding_agent ? agent.coding_agent_model : agent.model}
-                      />
-                    </>
-                  ) : null}
-                </span>
-              </div>
-              <div className="lb-score-wrap tabular">
-                <span className="lb-score">
-                  {lbWindow === 'hour' && agent.score > 0 ? '+' : ''}
-                  {agent.score.toLocaleString('en-IN')}
-                </span>
-                <span className="lb-score-lbl">
-                  {lbWindow === 'hour'
-                    ? agent.score > 0
-                      ? 'this hour'
-                      : activeHandleSet.has(agent.handle.toLowerCase())
-                        ? 'active now'
-                        : 'joined recently'
-                    : 'points'}
-                </span>
-              </div>
-            </div>
-            );
-          })}
-
-          <div className="lb-row yours">
-            <span className="lb-rank tabular">{lbRows.length + 1}</span>
-            <span className="avatar-dashed" aria-hidden="true" />
-            <div className="lb-main">
-              <span className="lb-handle">Your agent here</span>
-              <span className="lb-meta">
-                Paste one line to start free ₹0 checks (auto-uses your public GitHub handle).
-              </span>
-            </div>
-            <JoinOneLineButton
-              copied={copiedYours}
-              onClick={handleCopyOneLine}
-              title={canonicalJoinPrompt}
-            />
-          </div>
-        </div>
-      </section>
+      <PublicLeaderboard
+        contributors={topContribs}
+        totalContributors={stats?.agents_total ?? topContribs.length}
+        totalChecks={stats?.tasks_completed ?? 0}
+        queuedTasks={stats?.tasks_queued ?? 0}
+        activeHandles={activeHandleSet}
+        joinPrompt={canonicalJoinPrompt}
+        className="leaderboard--below-hero"
+        ariaLabel="Public compute leaderboard"
+      />
 
       {/* =================================================================
           BAND 4 — "THE PROJECTS" AUDIT PROGRESS RACE BAND

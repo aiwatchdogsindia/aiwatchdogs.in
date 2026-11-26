@@ -225,6 +225,8 @@ function toCheckState(val: unknown): VerificationCheckState {
 }
 
 export function normalizeAgent(raw: Record<string, unknown>): AgentRecord {
+  const rawPts36h = asArray<unknown>(raw.hourly_points_36h);
+  const rawChk36h = asArray<unknown>(raw.hourly_checks_36h);
   return {
     id: raw.id as string | number | undefined,
     handle: String(raw.handle || 'unknown-node'),
@@ -247,6 +249,16 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentRecord {
     verifications_completed: Number(raw.verifications_done ?? raw.verifications_completed ?? 0),
     cleared_records: Number(raw.cleared_submitted ?? raw.cleared_records ?? 0),
     score: Number(raw.score ?? raw.compute_score ?? raw.hourly_score ?? 0),
+    hourly_score: optNum(raw.hourly_score) ?? undefined,
+    score_10m: optNum(raw.score_10m) ?? undefined,
+    score_1h: optNum(raw.score_1h) ?? optNum(raw.hourly_score) ?? undefined,
+    checks_10m: optNum(raw.checks_10m) ?? undefined,
+    checks_1h: optNum(raw.checks_1h) ?? undefined,
+    checks_total: optNum(raw.checks_total) ?? optNum(raw.tasks_completed) ?? undefined,
+    hourly_points_36h:
+      rawPts36h.length > 0 ? rawPts36h.map((v) => Math.max(0, Number(v) || 0)) : undefined,
+    hourly_checks_36h:
+      rawChk36h.length > 0 ? rawChk36h.map((v) => Math.max(0, Number(v) || 0)) : undefined,
     current_task: (raw.current_task || raw.current_task_title || raw.current_task_id || null) as string | null,
   };
 }

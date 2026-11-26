@@ -29,13 +29,13 @@
   padding-bottom: 40px;
 }
 
-/* Inside a .container (project detail page) or compact mode, sit flush as a broadsheet card */
+/* Inside a .container (project detail page) or compact mode, sit flush as a warm-ivory broadsheet card */
 .container .leaderboard.project-leaderboard,
 .leaderboard.project-leaderboard--compact {
-  padding: 22px 24px;
-  border: 1px solid var(--rule);
+  padding: 24px 24px;
+  border: 1px solid #E5E2DC;
   border-radius: var(--r-8);
-  background: var(--raised);
+  background: #FAF8F4;
 }
 
 .leaderboard.project-leaderboard--compact .lb-head {

@@ -1,13 +1,6 @@
-import { ExternalLink } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useRouter } from '../router';
+import { useMemo } from 'react';
 import type { AgentRecord } from '../types';
-import { copyToClipboard, formatRelativeTime } from '../utils';
-import { AgentBadge } from './AgentLogos';
-import { GitHubAvatar, normalizeHandle } from './GitHubAvatar';
-import { JoinOneLineButton } from './JoinOneLineButton';
-import { githubProfileUrl } from './LiveSwarmViewer';
-import { useToast } from './Toast';
+import { PublicLeaderboard } from './PublicLeaderboard';
 
 export interface ProjectLeaderboardProps {
   title?: string;
@@ -22,30 +15,6 @@ export interface ProjectLeaderboardProps {
   compact?: boolean;
 }
 
-function resolveScore(agent: AgentRecord, unit: 'points' | 'tasks'): number {
-  if (unit === 'tasks') {
-    return agent.tasks_completed > 0 ? agent.tasks_completed : agent.score;
-  }
-  return agent.score;
-}
-
-function resolveScoreLabel(
-  value: number,
-  windowKind: 'hour' | 'all',
-  unit: 'points' | 'tasks',
-): string {
-  if (windowKind === 'hour') {
-    if (unit === 'tasks') {
-      return value === 1 ? 'task this hour' : 'tasks this hour';
-    }
-    return 'this hour';
-  }
-  if (unit === 'tasks') {
-    return value === 1 ? 'task' : 'tasks';
-  }
-  return value === 1 ? 'point' : 'points';
-}
-
 export function ProjectLeaderboard({
   title = 'The public leaderboard',
   subtitle,
@@ -58,226 +27,75 @@ export function ProjectLeaderboard({
   showSeeAllLink = true,
   compact = false,
 }: ProjectLeaderboardProps) {
-  const { navigate } = useRouter();
-  const toast = useToast();
-  const [lbWindow, setLbWindow] = useState<'hour' | 'all'>('all');
-  const [copiedYours, setCopiedYours] = useState(false);
-  const copyTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current !== null) {
-        window.clearTimeout(copyTimerRef.current);
+  const mergedContributors = useMemo(() => {
+    const hourByHandle = new Map<string, AgentRecord>();
+    for (const agent of hourAgents) {
+      const key = (agent.handle || '').trim().toLowerCase();
+      if (key && !hourByHandle.has(key)) {
+        hourByHandle.set(key, agent);
       }
-    };
-  }, []);
+    }
 
-  const maxRows = compact ? 5 : 10;
-
-  const lbRows = useMemo(() => {
-    const source = lbWindow === 'hour' ? hourAgents : allTimeAgents;
     const seen = new Set<string>();
-    const deduped: AgentRecord[] = [];
-    for (const agent of source) {
-      const key = agent.handle.trim().toLowerCase();
+    const out: AgentRecord[] = [];
+
+    for (const agent of allTimeAgents) {
+      const key = (agent.handle || '').trim().toLowerCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
-      deduped.push(agent);
+      const hr = hourByHandle.get(key);
+      out.push({
+        ...agent,
+        score_10m: agent.score_10m ?? hr?.score_10m,
+        score_1h: agent.score_1h ?? agent.hourly_score ?? hr?.score_1h ?? hr?.hourly_score ?? hr?.score ?? 0,
+        checks_10m: agent.checks_10m ?? hr?.checks_10m,
+        checks_1h: agent.checks_1h ?? hr?.checks_1h ?? hr?.tasks_completed ?? 0,
+        checks_total: agent.checks_total ?? agent.tasks_completed,
+        hourly_points_36h: agent.hourly_points_36h ?? hr?.hourly_points_36h,
+        hourly_checks_36h: agent.hourly_checks_36h ?? hr?.hourly_checks_36h,
+      });
     }
-    if (lbWindow === 'hour') {
-      return deduped.filter((a) => resolveScore(a, scoreUnit) > 0).slice(0, maxRows);
-    }
-    return deduped.slice(0, maxRows);
-  }, [allTimeAgents, hourAgents, lbWindow, maxRows, scoreUnit]);
 
-  const lastActive = useMemo(() => {
-    return allTimeAgents.reduce<AgentRecord | null>((best, agent) => {
-      if (!agent.last_heartbeat) return best;
-      if (!best?.last_heartbeat) return agent;
-      return Date.parse(agent.last_heartbeat) > Date.parse(best.last_heartbeat) ? agent : best;
-    }, null);
-  }, [allTimeAgents]);
+    for (const hr of hourAgents) {
+      const key = (hr.handle || '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        ...hr,
+        score_1h: hr.score_1h ?? hr.hourly_score ?? hr.score,
+        checks_1h: hr.checks_1h ?? hr.tasks_completed,
+        checks_total: hr.checks_total ?? hr.tasks_completed,
+      });
+    }
+
+    return out;
+  }, [allTimeAgents, hourAgents]);
 
   const totalTasks = useMemo(
-    () => allTimeAgents.reduce((sum, a) => sum + (a.tasks_completed || 0), 0),
-    [allTimeAgents],
+    () =>
+      mergedContributors.reduce(
+        (sum, a) => sum + Math.max(0, Number(a.checks_total ?? a.tasks_completed ?? 0) || 0),
+        0,
+      ),
+    [mergedContributors],
   );
 
-  const handleCopyOneLine = async () => {
-    const ok = await copyToClipboard(joinPrompt);
-    if (ok) {
-      setCopiedYours(true);
-      toast('Copied 1-line join prompt to clipboard');
-      if (copyTimerRef.current !== null) {
-        window.clearTimeout(copyTimerRef.current);
-      }
-      copyTimerRef.current = window.setTimeout(() => {
-        setCopiedYours(false);
-        copyTimerRef.current = null;
-      }, 2000);
-    } else {
-      toast('Could not copy automatically — please copy the command manually.');
-    }
-  };
-
   return (
-    <section
-      className={`leaderboard project-leaderboard${compact ? ' project-leaderboard--compact' : ''}`}
-      aria-label={title}
-    >
-      <div className="lb-head">
-        <h2>{title}</h2>
-        <div className="lb-sub-row">
-          <p className="lb-sub">
-            {subtitle ? (
-              subtitle
-            ) : allTimeAgents.length > 0 ? (
-              <>
-                {allTimeAgents.length.toLocaleString('en-IN')} contributor{' '}
-                {allTimeAgents.length === 1 ? 'agent has' : 'agents have'} completed{' '}
-                {totalTasks.toLocaleString('en-IN')} {totalTasks === 1 ? 'task' : 'tasks'} so far.
-                {lastActive ? (
-                  <>
-                    {' '}
-                    Last check:{' '}
-                    <Link to={`/a/${encodeURIComponent(lastActive.handle)}`} className="lb-sub-link">
-                      @{lastActive.handle}
-                    </Link>
-                    {lastActive.last_heartbeat ? `, ${formatRelativeTime(lastActive.last_heartbeat)}` : ''}.
-                  </>
-                ) : null}
-              </>
-            ) : (
-              'No contributor agents yet. Connect yours with one line to claim the first open task.'
-            )}
-          </p>
-          {showSeeAllLink ? (
-            <Link to="/contributors" className="inline-link lb-all">
-              See all contributors
-            </Link>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="seg big" role="tablist" aria-label="Leaderboard timeframe">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={lbWindow === 'hour'}
-          className={`seg-btn ${lbWindow === 'hour' ? 'active' : ''}`}
-          onClick={() => setLbWindow('hour')}
-        >
-          This hour
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={lbWindow === 'all'}
-          className={`seg-btn ${lbWindow === 'all' ? 'active' : ''}`}
-          onClick={() => setLbWindow('all')}
-        >
-          All time
-        </button>
-      </div>
-
-      <div className="lb-rows">
-        {lbRows.length === 0 && lbWindow === 'hour' ? (
-          <div className="lb-row lb-empty">
-            <span className="lb-rank lb-empty-spacer" aria-hidden="true" />
-            <span className="lb-empty-spacer" aria-hidden="true" />
-            <span className="lb-meta">No verified checks in the last hour yet.</span>
-          </div>
-        ) : null}
-
-        {lbRows.map((agent, idx) => {
-          const figure = resolveScore(agent, scoreUnit);
-          const cleanHandle = normalizeHandle(agent.handle);
-          const ghUrl = githubProfileUrl(cleanHandle);
-          const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
-          return (
-            <div
-              key={agent.handle}
-              role="link"
-              tabIndex={0}
-              className="lb-row"
-              style={{ cursor: 'pointer' }}
-              onClick={() => navigate(profilePath)}
-              onKeyDown={(e) => {
-                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
-                  e.preventDefault();
-                  navigate(profilePath);
-                }
-              }}
-            >
-              <span className="lb-rank tabular">{idx + 1}</span>
-              <GitHubAvatar handle={agent.handle} size={36} />
-              <div className="lb-main">
-                {ghUrl ? (
-                  <a
-                    href={ghUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="lb-handle inline-link"
-                    title={`Open @${cleanHandle} on GitHub`}
-                    aria-label={`Open @${cleanHandle} on GitHub`}
-                    onClick={(e) => e.stopPropagation()}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      width: 'fit-content',
-                      color: 'inherit',
-                    }}
-                  >
-                    <span>@{cleanHandle}</span>
-                    <ExternalLink size={12} style={{ opacity: 0.55, flexShrink: 0 }} aria-hidden="true" />
-                  </a>
-                ) : (
-                  <span className="lb-handle">@{cleanHandle}</span>
-                )}
-                <span className="lb-meta">
-                  <span className="lb-meta-time">
-                    last check {formatRelativeTime(agent.last_heartbeat)}
-                  </span>
-                  {agent.coding_agent || agent.provider ? (
-                    <span className="lb-meta-via">
-                      , via{' '}
-                      <AgentBadge
-                        agent={agent.coding_agent || agent.provider}
-                        model={agent.coding_agent ? agent.coding_agent_model : agent.model}
-                      />
-                    </span>
-                  ) : null}
-                </span>
-              </div>
-              <div className="lb-score-wrap tabular">
-                <span className="lb-score">
-                  {lbWindow === 'hour' ? '+' : ''}
-                  {figure.toLocaleString('en-IN')}
-                </span>
-                <span className="lb-score-lbl">
-                  {resolveScoreLabel(figure, lbWindow, scoreUnit)}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-
-        <div className="lb-row yours">
-          <span className="lb-rank tabular">{lbRows.length + 1}</span>
-          <span className="avatar-dashed" aria-hidden="true" />
-          <div className="lb-main">
-            <span className="lb-handle">Your agent here</span>
-            <span className="lb-meta">{joinHelperText}</span>
-          </div>
-          <JoinOneLineButton
-            label={joinButtonLabel}
-            copied={copiedYours}
-            onClick={() => void handleCopyOneLine()}
-            title={joinPrompt}
-          />
-        </div>
-      </div>
-    </section>
+    <PublicLeaderboard
+      title={title}
+      subtitle={subtitle}
+      contributors={mergedContributors}
+      totalContributors={mergedContributors.length}
+      totalChecks={totalTasks}
+      maxRows={compact ? 5 : 10}
+      defaultMetric={scoreUnit === 'tasks' ? 'checks' : 'points'}
+      showSeeAllLink={showSeeAllLink}
+      joinPrompt={joinPrompt}
+      joinButtonLabel={joinButtonLabel}
+      joinHelperText={joinHelperText}
+      compact={compact}
+      className={`project-leaderboard${compact ? ' project-leaderboard--compact' : ''}`}
+      ariaLabel={title}
+    />
   );
 }

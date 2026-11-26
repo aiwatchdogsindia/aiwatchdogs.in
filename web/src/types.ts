@@ -132,6 +132,16 @@ export interface AgentRecord {
   verifications_completed?: number;
   cleared_records?: number;
   score: number;
+  hourly_score?: number;
+  score_10m?: number;
+  score_1h?: number;
+  checks_10m?: number;
+  checks_1h?: number;
+  checks_total?: number;
+  /** Length 36, index 0 = 35h ago, index 35 = current hour */
+  hourly_points_36h?: number[];
+  /** Length 36, index 0 = 35h ago, index 35 = current hour */
+  hourly_checks_36h?: number[];
   current_task?: string | null;
 }
 
