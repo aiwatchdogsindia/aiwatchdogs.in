@@ -201,9 +201,116 @@ const ROLE_VISUALS: Record<RoleVisual['key'], RoleVisual> = {
   },
 };
 
+export const DEFAULT_LIVE_WINDOW_SECONDS = 120;
+const LIVE_CLOCK_SKEW_GRACE_MS = 15_000;
+
+/**
+ * Resolve the effective live heartbeat window in milliseconds (defaults to 120s).
+ */
+export function resolveLiveWindowMs(liveWindowSeconds?: number | null): number {
+  const sec =
+    typeof liveWindowSeconds === 'number' && Number.isFinite(liveWindowSeconds) && liveWindowSeconds > 0
+      ? liveWindowSeconds
+      : DEFAULT_LIVE_WINDOW_SECONDS;
+  return sec * 1000;
+}
+
+/**
+ * Return true when an ISO timestamp is within `live_window_seconds + 15s` clock-skew grace of `nowMs`.
+ */
+export function isTimestampFreshlyLive(
+  iso: string | null | undefined,
+  nowMs: number,
+  liveWindowSeconds?: number | null,
+): boolean {
+  if (!iso) return false;
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return false;
+  const maxAgeMs = resolveLiveWindowMs(liveWindowSeconds) + LIVE_CLOCK_SKEW_GRACE_MS;
+  return nowMs - ts <= maxAgeMs;
+}
+
 function isNodeActivelyWorking(node: LiveSwarmNode): boolean {
   const s = (node.status || '').toLowerCase();
   return s === 'working' || s === 'verifying' || s === 'active';
+}
+
+/**
+ * Return true ONLY when a node is actively working/verifying AND its last heartbeat
+ * is still within `live_window_seconds` (+15s clock-skew grace) of `nowMs`.
+ */
+export function isNodeFreshlyLive(
+  node: LiveSwarmNode,
+  nowMs: number,
+  liveWindowSeconds?: number | null,
+): boolean {
+  if (!isNodeActivelyWorking(node)) return false;
+  return isTimestampFreshlyLive(node.last_seen_at, nowMs, liveWindowSeconds);
+}
+
+/**
+ * Downgrade any node whose heartbeat has aged past `live_window_seconds` to calm standby (`idle`),
+ * hiding stale lease labels and frozen progress bars.
+ */
+export function normalizeNodeLiveState(
+  node: LiveSwarmNode,
+  nowMs: number,
+  liveWindowSeconds?: number | null,
+): LiveSwarmNode {
+  const s = (node.status || '').toLowerCase();
+  const fresh = isTimestampFreshlyLive(node.last_seen_at, nowMs, liveWindowSeconds);
+  if (s === 'working' || s === 'verifying' || s === 'active') {
+    if (fresh) return node;
+    return {
+      ...node,
+      status: 'idle',
+      role: null,
+      current_task_id: null,
+      current_task_title: null,
+      current_project_slug: null,
+      progress_pct: null,
+    };
+  }
+  if (s === 'recent' && !fresh) {
+    return {
+      ...node,
+      status: 'idle',
+      role: null,
+      progress_pct: null,
+    };
+  }
+  return node;
+}
+
+/**
+ * Recompute effective live working agent count from freshly-heartbeating nodes so
+ * stalled or cached snapshots smoothly drop to 0 without waiting for a new fetch.
+ */
+export function computeEffectiveWorkingNow(
+  snapshot: LiveSwarmSnapshot | null | undefined,
+  nowMs: number,
+): number {
+  if (!snapshot) return 0;
+  const windowSec = snapshot.live_window_seconds ?? DEFAULT_LIVE_WINDOW_SECONDS;
+  const nodes = snapshot.active_nodes ?? [];
+  if (nodes.length > 0) {
+    const freshWorking = nodes.filter((n) => isNodeFreshlyLive(n, nowMs, windowSec)).length;
+    const totalAgents = snapshot.total_agents ?? nodes.length;
+    if (nodes.length >= totalAgents) {
+      return freshWorking;
+    }
+    if (freshWorking === 0 || !isTimestampFreshlyLive(snapshot.generated_at, nowMs, windowSec)) {
+      return freshWorking;
+    }
+    const rawWorkingInNodes = nodes.filter(isNodeActivelyWorking).length;
+    const agedOut = Math.max(0, rawWorkingInNodes - freshWorking);
+    const overflow = Math.max(0, (snapshot.working_now ?? 0) - nodes.length);
+    return freshWorking + (agedOut === 0 ? overflow : 0);
+  }
+  if ((snapshot.working_now ?? 0) <= 0) return 0;
+  return isTimestampFreshlyLive(snapshot.last_activity_at ?? snapshot.generated_at, nowMs, windowSec)
+    ? snapshot.working_now
+    : 0;
 }
 
 function resolveRoleVisual(node: LiveSwarmNode): RoleVisual {
@@ -569,11 +676,18 @@ export function LiveSwarmViewer({
 
   const animateActive = inView && tabVisible && !reducedMotion;
   const joinCommand = oneLiner ?? buildCanonicalJoinPrompt();
+  const liveWindowSeconds = snapshot?.live_window_seconds ?? DEFAULT_LIVE_WINDOW_SECONDS;
 
-  // Deduplicate and sort nodes: active workers/verifiers first, then recency (last_seen_at / created_at DESC)
+  // Downgrade stalled nodes whose heartbeats aged past live_window_seconds, then deduplicate and sort:
+  // freshly-live workers/verifiers first, then recency (last_seen_at / created_at DESC).
   const sortedNodes = useMemo(
-    () => sortLiveSwarmNodes(snapshot?.active_nodes ?? []),
-    [snapshot?.active_nodes],
+    () =>
+      sortLiveSwarmNodes(
+        (snapshot?.active_nodes ?? []).map((n) =>
+          normalizeNodeLiveState(n, nowMs, liveWindowSeconds),
+        ),
+      ),
+    [snapshot?.active_nodes, nowMs, liveWindowSeconds],
   );
 
   const orbitItems: OrbitSeatItem[] = useMemo(() => {
@@ -651,8 +765,11 @@ export function LiveSwarmViewer({
   const displayedRealCount = Math.min(sortedNodes.length, 6);
   const totalKnownNodes = Math.max(sortedNodes.length, snapshot?.total_agents ?? 0);
   const overflowCount = Math.max(0, totalKnownNodes - displayedRealCount);
-  const workingNow = snapshot?.working_now ?? sortedNodes.filter(isNodeActivelyWorking).length;
-  const activeLeases = snapshot?.active_leases_count ?? workingNow;
+  const workingNow = useMemo(
+    () => computeEffectiveWorkingNow(snapshot, nowMs),
+    [snapshot, nowMs],
+  );
+  const activeLeases = workingNow > 0 ? (snapshot?.active_leases_count ?? workingNow) : 0;
   const totalTasksDone = snapshot?.tasks_completed_total ?? snapshot?.progress?.tasks_completed ?? 0;
 
   const updatedLabel = snapshot?.generated_at
@@ -893,8 +1010,12 @@ export function LiveSwarmViewer({
           <div className={`lsv-hub-rings${workingNow > 0 && animateActive ? ' is-pulsing' : ''}`}>
             <div className="lsv-hub-disc">
               <span className="lsv-hub-word">SWARM</span>
-              {workingNow > 0 && (
+              {workingNow > 0 ? (
                 <span className="lsv-hub-count tabular">{workingNow} live</span>
+              ) : (
+                <span className="lsv-hub-count tabular" style={{ color: '#A39D92' }}>
+                  standby
+                </span>
               )}
             </div>
           </div>
@@ -1205,7 +1326,9 @@ export function LiveSwarmViewer({
               statusDot={
                 isNodeActivelyWorking(selectedNode)
                   ? (selectedNode.status as 'working' | 'verifying')
-                  : 'recent'
+                  : selectedNode.status === 'recent'
+                    ? 'recent'
+                    : 'idle'
               }
             />
             <div className="lsv-inspector-info">
@@ -1248,7 +1371,9 @@ export function LiveSwarmViewer({
                       ? 'Peer verifying'
                       : isNodeActivelyWorking(selectedNode)
                         ? 'Working live'
-                        : 'Recently active'}
+                        : selectedNode.status === 'recent'
+                          ? 'Recently active'
+                          : 'Standby'}
                 </span>
                 <ProviderModelBadge
                   codingAgent={selectedNode.coding_agent}

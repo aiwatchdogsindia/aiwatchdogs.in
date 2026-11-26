@@ -1,10 +1,16 @@
 import { Check, Copy, Info } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
 import { AgentLogoStack } from './AgentLogos';
 import { GitHubAvatar, normalizeHandle } from './GitHubAvatar';
-import type { LiveRecentJoin, LiveSwarmSnapshot } from './LiveSwarmViewer';
+import {
+  DEFAULT_LIVE_WINDOW_SECONDS,
+  computeEffectiveWorkingNow,
+  isTimestampFreshlyLive,
+  type LiveRecentJoin,
+  type LiveSwarmSnapshot,
+} from './LiveSwarmViewer';
 import { useToast } from './Toast';
 import '../styles/live-swarm-viewer.css';
 
@@ -35,11 +41,11 @@ export interface LiveAgentStripProps {
   className?: string;
 }
 
-function formatJoinedRel(iso?: string | null): string {
+function formatJoinedRel(iso: string | null | undefined, nowMs: number): string {
   if (!iso) return 'just now';
   const parsed = Date.parse(iso);
   if (Number.isNaN(parsed)) return 'just now';
-  const diffSec = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+  const diffSec = Math.max(0, Math.floor((nowMs - parsed) / 1000));
   if (diffSec < 60) return 'just now';
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin} min`;
@@ -70,6 +76,10 @@ export function LiveAgentStrip({
   const toast = useToast();
   const [copied, setCopied] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [tabVisible, setTabVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
 
   const pillWrapRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -80,9 +90,35 @@ export function LiveAgentStrip({
     moved: false,
   });
 
-  const workingNow =
-    workingNowProp !== undefined ? workingNowProp : (snapshot?.working_now ?? null);
-  const activeLeases = leasesProp ?? snapshot?.active_leases_count ?? workingNow ?? 0;
+  useEffect(() => {
+    const onVis = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (!tabVisible) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [tabVisible]);
+
+  const liveWindowSeconds = snapshot?.live_window_seconds ?? DEFAULT_LIVE_WINDOW_SECONDS;
+  const workingNow = useMemo(() => {
+    if (workingNowProp !== undefined) {
+      if (workingNowProp == null || workingNowProp <= 0) return workingNowProp;
+      if (snapshot) {
+        return Math.min(workingNowProp, computeEffectiveWorkingNow(snapshot, nowMs));
+      }
+      return workingNowProp;
+    }
+    if (!snapshot) return null;
+    return computeEffectiveWorkingNow(snapshot, nowMs);
+  }, [workingNowProp, snapshot, nowMs]);
+  const activeLeases =
+    workingNow != null && workingNow > 0
+      ? (leasesProp ?? snapshot?.active_leases_count ?? workingNow)
+      : 0;
   const totalAgents = totalAgentsProp ?? snapshot?.total_agents ?? 0;
   const recentJoins = joinsProp ?? snapshot?.recent_joins ?? [];
   const promptText = oneLiner ?? buildCanonicalJoinPrompt();
@@ -245,12 +281,16 @@ export function LiveAgentStrip({
         {recentJoins.length > 0 ? (
           recentJoins.map((join) => {
             const cleanHandle = normalizeHandle(join.handle);
-            const rel = formatJoinedRel(join.created_at);
+            const rel = formatJoinedRel(join.created_at, nowMs);
+            const isJoinLive = Boolean(
+              join.is_working &&
+                isTimestampFreshlyLive(join.last_seen_at ?? join.created_at, nowMs, liveWindowSeconds),
+            );
             return (
               <Link
                 key={`${cleanHandle}-${join.created_at}`}
                 to={`/a/${encodeURIComponent(cleanHandle)}`}
-                className={`lsv-join-chip${join.is_working ? ' is-working' : ''}`}
+                className={`lsv-join-chip${isJoinLive ? ' is-working' : ''}`}
                 title={`@${cleanHandle}${join.coding_agent ? ` via ${join.coding_agent}` : ''} · joined ${rel}`}
                 onClick={(e) => {
                   if (dragRef.current.moved) {
@@ -262,7 +302,7 @@ export function LiveAgentStrip({
                 <GitHubAvatar
                   handle={cleanHandle}
                   size={22}
-                  statusDot={join.is_working ? 'working' : null}
+                  statusDot={isJoinLive ? 'working' : null}
                 />
                 <span className="lsv-join-handle">@{cleanHandle}</span>
                 <span className="lsv-join-time">

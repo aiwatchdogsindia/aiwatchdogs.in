@@ -10,9 +10,11 @@ import os
 import random
 import re
 import secrets
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -71,6 +73,7 @@ RETRYABLE_HUB_STATUS = frozenset({502, 503, 504})
 MAX_CONSECUTIVE_SOURCE_FAILURES = 5
 SOURCE_FAILURE_BACKOFF_SECONDS = 1.0
 SOURCE_FAILURE_REASONS = frozenset({"network_error", "policy_blocked", "source_http_forbidden"})
+LEASE_KEEPALIVE_INTERVAL_SECONDS = 45.0
 ROLE_LABELS = {
     "auditor": "AUDITOR",
     "peer_verifier": "PEER VERIFIER",
@@ -1133,6 +1136,7 @@ class AgentRunner:
         allow_local_files: bool = False,
         allow_insecure_http: bool = False,
         budget_tracker: BudgetTracker | None = None,
+        keepalive_interval: float = LEASE_KEEPALIVE_INTERVAL_SECONDS,
     ) -> None:
         self.config = config
         self.allow_local_files = bool(allow_local_files)
@@ -1155,6 +1159,10 @@ class AgentRunner:
         self.poll_interval = poll_interval
         self.request_timeout = request_timeout
         self.config_path = config_path
+        self.keepalive_interval = float(keepalive_interval)
+        self._beat_lock = threading.RLock()
+        self._last_heartbeat_monotonic: float = 0.0
+        self._active_keepalive_stop: Callable[[], None] | None = None
 
         ledger_path = get_spend_ledger_path(config_path) if config_path is not None else None
         self.budget_tracker = budget_tracker or BudgetTracker(
@@ -1485,32 +1493,109 @@ class AgentRunner:
 
         # A heartbeat only reports progress; the lease itself runs 45 minutes. If the Hub is
         # throttling or briefly unreachable, skip the beat and keep working rather than fail the task.
-        try:
-            resp = self._hub_send(
-                "POST",
-                "/api/desk/beat",
-                headers=self._auth_headers(),
-                json_body=body,
-                what="heartbeat",
-                rate_limit_waits=0,
-                transport_retries=1,
+        with self._beat_lock:
+            try:
+                resp = self._hub_send(
+                    "POST",
+                    "/api/desk/beat",
+                    headers=self._auth_headers(),
+                    json_body=body,
+                    what="heartbeat",
+                    rate_limit_waits=0,
+                    transport_retries=1,
+                )
+            except httpx.TransportError:
+                self._last_heartbeat_monotonic = time.monotonic()
+                self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": "hub unreachable"})
+                return True
+            self._last_heartbeat_monotonic = time.monotonic()
+            if resp.status_code == 410:
+                self._clear_lease_note(lease_id=lease_id)
+                self._emit("lease_gone", {"lease_id": lease_id})
+                return False
+            if resp.status_code == 429 or resp.status_code >= 500:
+                self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": f"HTTP {resp.status_code}"})
+                return True
+            resp.raise_for_status()
+            self._emit(
+                "heartbeat",
+                {"lease_id": lease_id, "progress_pct": progress_pct, "whisper": whisper},
             )
-        except httpx.TransportError:
-            self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": "hub unreachable"})
             return True
-        if resp.status_code == 410:
-            self._clear_lease_note(lease_id=lease_id)
-            self._emit("lease_gone", {"lease_id": lease_id})
-            return False
-        if resp.status_code == 429 or resp.status_code >= 500:
-            self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": f"HTTP {resp.status_code}"})
-            return True
-        resp.raise_for_status()
-        self._emit(
-            "heartbeat",
-            {"lease_id": lease_id, "progress_pct": progress_pct, "whisper": whisper},
+
+    @contextmanager
+    def _lease_keepalive(self, lease_id: str) -> Iterator[Callable[[], None]]:
+        """Send periodic bare heartbeats while a slow download or audit holds a lease.
+
+        The first wait is ``self.keepalive_interval`` seconds (default 45s), so short tasks
+        and unit tests using non-threadsafe fake clients never send background requests.
+        Call the yielded ``stop`` callback before ``submit()`` (and guaranteed via ``finally``)
+        so no keepalive beat can race with task settlement or release.
+        """
+        interval = self.keepalive_interval
+        if interval <= 0 or not lease_id:
+            yield lambda: None
+            return
+
+        stop_event = threading.Event()
+        self._last_heartbeat_monotonic = time.monotonic()
+
+        def _loop() -> None:
+            wait_for = interval
+            while not stop_event.wait(wait_for):
+                if stop_event.is_set():
+                    break
+                elapsed = time.monotonic() - self._last_heartbeat_monotonic
+                if elapsed < interval * 0.75:
+                    wait_for = max(0.01, interval - elapsed)
+                    continue
+                wait_for = interval
+                with self._beat_lock:
+                    if stop_event.is_set():
+                        break
+                    elapsed = time.monotonic() - self._last_heartbeat_monotonic
+                    if elapsed < interval * 0.75:
+                        wait_for = max(0.01, interval - elapsed)
+                        continue
+                    try:
+                        alive = self.heartbeat(lease_id)
+                    except Exception:
+                        break
+                    self._last_heartbeat_monotonic = time.monotonic()
+                    if not alive:
+                        break
+
+        thread = threading.Thread(
+            target=_loop,
+            name=f"aiwatchdogs-keepalive-{lease_id[:12]}",
+            daemon=True,
         )
-        return True
+        thread.start()
+
+        stopped = False
+
+        def _stop() -> None:
+            nonlocal stopped
+            if stopped:
+                return
+            stopped = True
+            stop_event.set()
+            if thread.is_alive() and threading.current_thread() is not thread:
+                thread.join(timeout=min(5.0, max(1.0, float(self.request_timeout))))
+
+        prev_stop = self._active_keepalive_stop
+        self._active_keepalive_stop = _stop
+        try:
+            yield _stop
+        finally:
+            _stop()
+            if self._active_keepalive_stop is _stop:
+                self._active_keepalive_stop = prev_stop
+
+    def _stop_active_keepalive(self) -> None:
+        stop = getattr(self, "_active_keepalive_stop", None)
+        if stop is not None:
+            stop()
 
     def release(
         self,
@@ -1520,6 +1605,7 @@ class AgentRunner:
         notes: str | None = None,
     ) -> dict[str, Any] | None:
         """Release a claimed lease cleanly so tasks never stall on error."""
+        self._stop_active_keepalive()
         body: dict[str, Any] = {"lease_id": lease_id, "reason": reason}
         if notes:
             body["notes"] = notes[:500]
@@ -1568,6 +1654,7 @@ class AgentRunner:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         """Submit task outcome (finding | cleared | verification) to POST /api/desk/submit."""
+        self._stop_active_keepalive()
         idem_key = idempotency_key or f"settle-{lease_id}-{outcome}"
         body: dict[str, Any] = {
             "lease_id": lease_id,
@@ -1792,6 +1879,10 @@ class AgentRunner:
         return (CHECK_PASS, True, secondary_matched, observed_secondary, None)
 
     def _handle_anomaly_scan(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
+        with self._lease_keepalive(lease_id):
+            return self._run_anomaly_scan(lease_id, task)
+
+    def _run_anomaly_scan(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
         task_id = task.get("id")
         mission_slug = str(task.get("mission_slug", ""))
         methodology_code = str(task.get("methodology_code", "")).upper().strip()
@@ -2122,6 +2213,10 @@ class AgentRunner:
     _execute_anomaly_scan = _handle_anomaly_scan
 
     def _handle_peer_verify(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
+        with self._lease_keepalive(lease_id):
+            return self._run_peer_verify(lease_id, task)
+
+    def _run_peer_verify(self, lease_id: str, task: dict[str, Any]) -> dict[str, Any]:
         task_id = task.get("id")
         payload = task.get("payload") or {}
         finding_id = str(

@@ -376,8 +376,8 @@ def test_swarm_live_recent_joins_ordering_idle_expired_lease_and_revoked(tmp_pat
         t_oldest = _iso_offset(minutes=-120)
         t_mid_join = _iso_offset(minutes=-90)
         t_exp_join = _iso_offset(minutes=-60)
-        t_newest_join = _iso_offset(minutes=-2)
-        t_stale_hb = _iso_offset(minutes=-25)  # outside 15m live window
+        t_newest_join = _iso_offset(seconds=-45)  # inside 120s live window
+        t_stale_hb = _iso_offset(minutes=-25)  # outside 120s live window
         t_expired_lease = _iso_offset(minutes=-5)
 
         with app.state.db.transaction() as conn:
@@ -404,19 +404,21 @@ def test_swarm_live_recent_joins_ordering_idle_expired_lease_and_revoked(tmp_pat
 
         snap = client.get("/api/swarm/live").json()
 
-        # total_agents includes all rows; revoked excluded from working_now, active_nodes, and recent_joins
+        # total_agents includes all rows; revoked and stale-heartbeat agents excluded from working_now
         assert snap["total_agents"] == 5
         assert snap["active_leases_count"] == 1  # only non-expired lease counts
-        assert snap["working_now"] == 2  # mid-lease-holder (active lease despite 25m hb) + newest-recent (2m hb)
+        assert snap["working_now"] == 1  # ONLY newest-recent (45s hb); stalled mid-lease-holder excluded!
 
         node_handles = [n["handle"] for n in snap["active_nodes"]]
         assert "revoked-bot" not in node_handles
-        assert node_handles[0] == "mid-lease-holder"  # active lease holder first
-        assert node_handles[1] == "newest-recent"  # recent second
-        assert set(node_handles[2:]) == {"expired-holder", "oldest-idle"}  # idle last
+        assert node_handles[0] == "newest-recent"  # fresh heartbeat comes ahead of stalled lease holder
+        assert set(node_handles[1:]) == {"mid-lease-holder", "expired-holder", "oldest-idle"}
 
         nodes = {n["handle"]: n for n in snap["active_nodes"]}
-        assert nodes["mid-lease-holder"]["status"] == "working"
+        assert nodes["mid-lease-holder"]["status"] == "idle"
+        assert nodes["mid-lease-holder"]["role"] is None
+        assert nodes["mid-lease-holder"]["progress_pct"] is None
+        assert nodes["mid-lease-holder"]["current_task_id"] is None
         assert nodes["newest-recent"]["status"] == "recent"
         assert nodes["expired-holder"]["status"] == "idle"
         assert nodes["expired-holder"]["current_task_id"] is None
@@ -434,7 +436,7 @@ def test_swarm_live_recent_joins_ordering_idle_expired_lease_and_revoked(tmp_pat
         assert joins_by_handle["newest-recent"]["is_working"] is True
         assert joins_by_handle["newest-recent"]["coding_agent"] == "Antigravity"
         assert joins_by_handle["newest-recent"]["coding_agent_model"] == "Gemini 2.5"
-        assert joins_by_handle["mid-lease-holder"]["is_working"] is True
+        assert joins_by_handle["mid-lease-holder"]["is_working"] is False
         assert joins_by_handle["expired-holder"]["is_working"] is False
         assert joins_by_handle["oldest-idle"]["is_working"] is False
     app.state.db.close()
@@ -608,3 +610,324 @@ def test_csp_img_src_allows_github_avatars_in_app_and_vercel_json(tmp_path: Path
     csp_entries = [h["value"] for h in root_headers if h["key"].lower() == "content-security-policy"]
     assert len(csp_entries) == 1
     assert csp_entries[0] == SECURITY_CSP
+
+
+def test_swarm_live_stalled_lease_downgrades_to_idle_and_recovers_on_heartbeat(tmp_path: Path) -> None:
+    """Stalled agents holding unexpired 45m leases MUST downgrade to idle once heartbeat > 120s old."""
+    assert LIVE_AGENT_WINDOW_SECONDS == 120
+    app = create_app(db_path=tmp_path / "stalled_lease.db", seed=True)
+    with TestClient(app) as client:
+        stalled = _register(client, "stalled-auditor", coding_agent="Cursor")
+        claim = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": stalled["api_token"]},
+            json={"handle": stalled["handle"], "mode": "investigate"},
+        )
+        assert claim.status_code == 200, claim.text
+        lease_id = claim.json()["lease_id"]
+        task_id = claim.json()["task"]["id"]
+
+        beat = client.post(
+            "/api/desk/beat",
+            headers={"X-Agent-Token": stalled["api_token"]},
+            json={"lease_id": lease_id, "progress_pct": 20, "whisper": "Downloading dataset..."},
+        )
+        assert beat.status_code == 200, beat.text
+
+        # Fresh heartbeat (< 120s): actively working with progress_pct=20
+        snap_live = client.get("/api/swarm/live").json()
+        assert snap_live["live_window_seconds"] == 120
+        assert snap_live["working_now"] == 1
+        node_live = snap_live["active_nodes"][0]
+        assert node_live["handle"] == "stalled-auditor"
+        assert node_live["status"] == "working"
+        assert node_live["role"] == "auditor"
+        assert node_live["progress_pct"] == 20
+        assert node_live["current_task_id"] == task_id
+        assert snap_live["recent_joins"][0]["is_working"] is True
+
+        # Backdate heartbeat to 180s ago (> 120s) while the 45-minute lease is still unexpired
+        stale_hb = _iso_offset(seconds=-180)
+        with app.state.db.transaction() as conn:
+            conn.execute(
+                "UPDATE agents SET last_heartbeat_at = ? WHERE handle = ?",
+                (stale_hb, stalled["handle"]),
+            )
+
+        snap_stalled = client.get("/api/swarm/live").json()
+        assert snap_stalled["working_now"] == 0
+        assert snap_stalled["active_leases_count"] == 1
+        node_stalled = snap_stalled["active_nodes"][0]
+        assert node_stalled["handle"] == "stalled-auditor"
+        assert node_stalled["status"] == "idle"
+        assert node_stalled["role"] is None
+        assert node_stalled["progress_pct"] is None
+        assert node_stalled["current_task_id"] is None
+        assert node_stalled["current_task_title"] is None
+        assert node_stalled["current_project_slug"] is None
+        assert snap_stalled["recent_joins"][0]["is_working"] is False
+
+        # A second freshly heartbeating agent is reported as working and sorted ahead of stalled agent
+        fresh = _register(client, "fresh-auditor", coding_agent="Claude Code")
+        claim2 = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": fresh["api_token"]},
+            json={"handle": fresh["handle"], "mode": "investigate"},
+        )
+        assert claim2.status_code == 200, claim2.text
+        beat2 = client.post(
+            "/api/desk/beat",
+            headers={"X-Agent-Token": fresh["api_token"]},
+            json={"lease_id": claim2.json()["lease_id"], "progress_pct": 40},
+        )
+        assert beat2.status_code == 200, beat2.text
+
+        snap_mixed = client.get("/api/swarm/live").json()
+        assert snap_mixed["working_now"] == 1
+        assert [n["handle"] for n in snap_mixed["active_nodes"]] == ["fresh-auditor", "stalled-auditor"]
+        assert snap_mixed["active_nodes"][0]["status"] == "working"
+        assert snap_mixed["active_nodes"][0]["progress_pct"] == 40
+        assert snap_mixed["active_nodes"][1]["status"] == "idle"
+        assert snap_mixed["active_nodes"][1]["progress_pct"] is None
+
+        # Once stalled-auditor sends a new keepalive heartbeat, it immediately returns to working
+        revive = client.post(
+            "/api/desk/beat",
+            headers={"X-Agent-Token": stalled["api_token"]},
+            json={"lease_id": lease_id},
+        )
+        assert revive.status_code == 200, revive.text
+        snap_revived = client.get("/api/swarm/live").json()
+        assert snap_revived["working_now"] == 2
+        revived_map = {n["handle"]: n for n in snap_revived["active_nodes"]}
+        assert revived_map["stalled-auditor"]["status"] == "working"
+        assert revived_map["stalled-auditor"]["progress_pct"] == 20
+        assert revived_map["stalled-auditor"]["current_task_id"] == task_id
+    app.state.db.close()
+
+
+def test_runner_lease_keepalive_keeps_long_tasks_live_and_stops_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AgentRunner sends periodic bare keepalive beats during long tasks and stops before submit/release."""
+    import threading
+    import time
+
+    import httpx
+
+    from aiwatchdogs.cli.config import AgentConfig
+    from aiwatchdogs.cli.runner import AgentRunner
+    from aiwatchdogs.connectors.loader import LoadedDataset
+    from aiwatchdogs.core.models import EngineRunResult
+
+    events_lock = threading.Lock()
+    recorded_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8")) if request.content else {}
+        with events_lock:
+            recorded_calls.append((request.url.path, body))
+        if request.url.path == "/api/desk/beat":
+            return httpx.Response(200, json={"status": "active", "progress_pct": body.get("progress_pct") or 15})
+        if request.url.path == "/api/desk/submit":
+            return httpx.Response(200, json={"status": "completed"})
+        if request.url.path == "/api/desk/release":
+            return httpx.Response(200, json={"status": "released"})
+        return httpx.Response(404, json={"detail": "not found"})
+
+    def fake_slow_load_dataset(*_args: Any, **_kwargs: Any) -> LoadedDataset:
+        time.sleep(0.18)
+        return LoadedDataset(
+            records=[{"tender_id": "T1"}],
+            raw_text="tender_id\nT1\n",
+            sha256="a" * 64,
+            byte_size=13,
+            format="csv",
+            is_demo_sample=False,
+            source_ref="https://example.gov.in/slow.csv",
+            pii_redactions=[],
+        )
+
+    def fake_run_engine(*_args: Any, **_kwargs: Any) -> EngineRunResult:
+        return EngineRunResult(
+            methodology_code="M1",
+            records_scanned=1,
+            monetary_audited_inr=0.0,
+            leads=[],
+            cleared_count=1,
+            summary="Cleared 1 record.",
+            script_hash="b" * 64,
+        )
+
+    monkeypatch.setattr("aiwatchdogs.cli.runner.load_dataset", fake_slow_load_dataset)
+    monkeypatch.setattr("aiwatchdogs.cli.runner.run_engine", fake_run_engine)
+
+    cfg = AgentConfig(
+        handle="keepalive-bot",
+        hub_url="https://hub.example.test",
+        api_token="tok-test-123",
+    )
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://hub.example.test")
+    runner = AgentRunner(cfg, http_client=client, keepalive_interval=0.05)
+
+    lease = {
+        "lease_id": "lease-slow-1",
+        "task": {
+            "id": "task-slow-1",
+            "task_type": "anomaly_scan",
+            "mission_slug": "assam-ocds-single-bid",
+            "methodology_code": "M1",
+            "title": "Slow Gov PDF",
+            "payload": {"dataset_url": "https://example.gov.in/slow.csv", "expected_sha256": "a" * 64},
+        },
+    }
+    res = runner.execute_task(lease)
+    assert res["status"] == "completed"
+    assert res["outcome"] == "cleared"
+
+    # Wait briefly to prove no keepalive fires after submit()
+    time.sleep(0.10)
+
+    with events_lock:
+        calls = list(recorded_calls)
+    submit_idx = next(i for i, (p, _) in enumerate(calls) if p == "/api/desk/submit")
+    # Zero beats may arrive after submit
+    assert all(p != "/api/desk/beat" for p, _ in calls[submit_idx + 1 :])
+    # At least 2 bare keepalive beats (no whisper, no progress_pct) fired while download slept
+    keepalive_beats = [
+        body for p, body in calls[:submit_idx]
+        if p == "/api/desk/beat" and "whisper" not in body and "progress_pct" not in body
+    ]
+    assert len(keepalive_beats) >= 2, f"Expected >=2 keepalive beats, got {calls}"
+
+    # Verify error path stops keepalive cleanly before release()
+    with events_lock:
+        recorded_calls.clear()
+
+    def failing_load(*_args: Any, **_kwargs: Any) -> LoadedDataset:
+        time.sleep(0.08)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("aiwatchdogs.cli.runner.load_dataset", failing_load)
+    err_res = runner.execute_task(lease)
+    assert err_res["status"] == "error"
+    time.sleep(0.10)
+    with events_lock:
+        err_calls = list(recorded_calls)
+    rel_idx = next(i for i, (p, _) in enumerate(err_calls) if p == "/api/desk/release")
+    assert all(p != "/api/desk/beat" for p, _ in err_calls[rel_idx + 1 :])
+    client.close()
+
+
+def test_leaderboard_activity_telemetry_windows_and_36h_sparklines(tmp_path: Path) -> None:
+    """Contributors API, /api/head, profile, and mission leaderboard expose 10m/1h windows & 36h sparklines."""
+    app = create_app(db_path=tmp_path / "telemetry_lb.db", seed=True)
+    with TestClient(app) as client:
+        alpha = _register(client, "alpha-bot", coding_agent="Claude Code")
+        idle_bot = _register(client, "quiet-bot", coding_agent="Cursor")
+
+        # Seed deterministic score_events & completed tasks across sliding windows and 36h buckets
+        t_5m = _iso_offset(minutes=-5)             # inside 10m, 1h, bucket 35
+        t_30m = _iso_offset(minutes=-30)           # inside 1h, bucket 35 (NOT 10m)
+        t_2h15m = _iso_offset(minutes=-135)        # bucket 33 (NOT 10m/1h)
+        t_35h20m = _iso_offset(minutes=-(35 * 60 + 20))  # bucket 0 (oldest 36h slot)
+        t_40h = _iso_offset(minutes=-(40 * 60))    # older than 36h (all-time only)
+
+        with app.state.db.transaction() as conn:
+            mission_row = conn.execute("SELECT id, slug FROM missions LIMIT 1").fetchone()
+            assert mission_row is not None
+            mission_id = str(mission_row["id"])
+            mission_slug = str(mission_row["slug"])
+
+            # Insert 5 completed tasks + matching score_events for alpha-bot
+            samples = [
+                ("t-5m", t_5m, 10),
+                ("t-30m", t_30m, 25),
+                ("t-2h", t_2h15m, 15),
+                ("t-35h", t_35h20m, 40),
+                ("t-40h", t_40h, 100),
+            ]
+            for tid, ts, pts in samples:
+                conn.execute(
+                    """
+                    INSERT INTO tasks (
+                        id, mission_id, mission_slug, methodology_code, task_type,
+                        title, instructions, status, claimed_by_agent_id, claimed_by_handle,
+                        created_at, updated_at, completed_at
+                    )
+                    VALUES (?, ?, ?, 'M1', 'anomaly_scan', ?, 'run check', 'completed', ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tid,
+                        mission_id,
+                        mission_slug,
+                        f"Task {tid}",
+                        alpha["agent_id"],
+                        alpha["handle"],
+                        ts,
+                        ts,
+                        ts,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO score_events (id, agent_id, agent_handle, event_type, points, ref_id, created_at)
+                    VALUES (?, ?, ?, 'cleared_scan', ?, ?, ?)
+                    """,
+                    (f"se-{tid}", alpha["agent_id"], alpha["handle"], pts, tid, ts),
+                )
+            conn.execute(
+                "UPDATE agents SET tasks_completed = 5, compute_score = 190 WHERE handle = ?",
+                (alpha["handle"],),
+            )
+
+        def _assert_alpha(rec: dict[str, Any]) -> None:
+            assert rec["score_10m"] == 10
+            assert rec["score_1h"] == 35
+            assert rec["hourly_score"] == 35
+            assert rec["checks_10m"] == 1
+            assert rec["checks_1h"] == 2
+            assert rec["checks_total"] == 5
+            pts36 = rec["hourly_points_36h"]
+            chk36 = rec["hourly_checks_36h"]
+            assert isinstance(pts36, list) and len(pts36) == 36
+            assert isinstance(chk36, list) and len(chk36) == 36
+            assert pts36[35] == 35
+            assert pts36[33] == 15
+            assert pts36[0] == 40
+            assert sum(pts36) == 90  # 40h-old 100pts excluded from 36h sparkline
+            assert chk36[35] == 2
+            assert chk36[33] == 1
+            assert chk36[0] == 1
+            assert sum(chk36) == 4  # 40h-old task excluded from 36h sparkline
+
+        # 1. GET /api/contributors
+        contrib_resp = client.get("/api/contributors").json()
+        by_handle = {c["handle"]: c for c in contrib_resp["contributors"]}
+        _assert_alpha(by_handle[alpha["handle"]])
+        quiet = by_handle[idle_bot["handle"]]
+        assert quiet["score_10m"] == 0
+        assert quiet["score_1h"] == 0
+        assert quiet["checks_10m"] == 0
+        assert quiet["checks_1h"] == 0
+        assert quiet["checks_total"] == 0
+        assert quiet["hourly_points_36h"] == [0] * 36
+        assert quiet["hourly_checks_36h"] == [0] * 36
+
+        # 2. GET /api/head top_contributors
+        head_resp = client.get("/api/head").json()
+        head_by_handle = {c["handle"]: c for c in head_resp["top_contributors"]}
+        _assert_alpha(head_by_handle[alpha["handle"]])
+
+        # 3. GET /api/contributors/{handle}
+        prof_resp = client.get(f"/api/contributors/{alpha['handle']}").json()
+        _assert_alpha(prof_resp["agent"])
+        _assert_alpha(prof_resp)
+
+        # 4. GET /api/missions/{slug} project leaderboard
+        mission_resp = client.get(f"/api/missions/{mission_slug}").json()
+        proj_by_handle = {c["handle"]: c for c in mission_resp["contributors_all"]}
+        _assert_alpha(proj_by_handle[alpha["handle"]])
+        proj_hr_by_handle = {c["handle"]: c for c in mission_resp["contributors_hour"]}
+        _assert_alpha(proj_hr_by_handle[alpha["handle"]])
+    app.state.db.close()
