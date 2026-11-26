@@ -11,8 +11,12 @@ import type {
   LiveData,
   MissionItem,
   MissionRung,
+  MissionTask,
   PaginatedFindings,
   PeerVerification,
+  ProjectTaskKindFilter,
+  ProjectTaskPage,
+  ProjectTaskStatusFilter,
   ProjectVisualSummary,
   PublicSource,
   RecordEvent,
@@ -532,7 +536,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
       ? 'P1'
       : slug === 'gov-in-public-information' || methodologyCode.toUpperCase() === 'W1'
         ? 'P2'
-        : slug === 'independent-india-inflation' || methodologyCode.toUpperCase() === 'CPI1'
+        : slug === 'union-budget-unspent-funds' || methodologyCode.toUpperCase() === 'UB1'
           ? 'P3'
           : methodologyCode;
   return {
@@ -607,25 +611,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     rungs: raw.rungs ? asArray<Record<string, unknown>>(raw.rungs).map(normalizeRung) : undefined,
     sources: raw.sources ? asArray<Record<string, unknown>>(raw.sources).map(normalizeSource) : undefined,
     findings: raw.findings ? asArray<Record<string, unknown>>(raw.findings).map(normalizeFinding) : undefined,
-    tasks: raw.tasks
-      ? asArray<Record<string, unknown>>(raw.tasks).map((t) => ({
-          id: (t.id ?? '') as string | number,
-          retrieval_url: optStr(t.retrieval_url) ?? undefined,
-          task_type: String(t.task_type || 'anomaly_scan'),
-          role: optStr(t.role) ?? (String(t.task_type) === 'peer_verify' ? 'peer_verifier' : 'auditor'),
-          title: t.title ? String(t.title) : undefined,
-          status: String(t.status || 'queued'),
-          claimed_by: (t.claimed_by_handle || t.claimed_by || null) as string | null,
-          claimed_by_handle: (t.claimed_by_handle || null) as string | null,
-          depends_on: Array.isArray(t.depends_on) ? t.depends_on.map(String) : undefined,
-          attempt_count: Number(t.attempt_count ?? 0),
-          created_at: t.created_at ? String(t.created_at) : undefined,
-          work_type: optStr(t.work_type) ?? undefined,
-          estimated_tokens: optNum(t.estimated_tokens) ?? undefined,
-          estimate_basis: optStr(t.estimate_basis) ?? undefined,
-          usage: t.usage ? normalizeUsage(asRecord(t.usage)) : undefined,
-        }))
-      : undefined,
+    tasks: raw.tasks ? asArray<Record<string, unknown>>(raw.tasks).map(normalizeTask) : undefined,
+    tasks_listed: optNum(raw.tasks_listed) ?? undefined,
+    tasks_truncated: raw.tasks_truncated !== undefined ? Boolean(raw.tasks_truncated) : undefined,
     contributors_all: raw.contributors_all
       ? asArray<Record<string, unknown>>(raw.contributors_all).map(normalizeAgent)
       : undefined,
@@ -636,6 +624,25 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
       raw.visual_summary && typeof raw.visual_summary === 'object' && !Array.isArray(raw.visual_summary)
         ? (raw.visual_summary as ProjectVisualSummary)
         : undefined,
+  };
+}
+
+function normalizeTask(t: Record<string, unknown>): MissionTask {
+  return {
+    id: (t.id ?? '') as string | number,
+    retrieval_url: optStr(t.retrieval_url) ?? undefined,
+    task_type: String(t.task_type || 'anomaly_scan'),
+    role: optStr(t.role) ?? (String(t.task_type) === 'peer_verify' ? 'peer_verifier' : 'auditor'),
+    title: t.title ? String(t.title) : undefined,
+    status: String(t.status || 'queued'),
+    claimed_by: (t.claimed_by_handle || t.claimed_by || null) as string | null,
+    claimed_by_handle: (t.claimed_by_handle || null) as string | null,
+    attempt_count: Number(t.attempt_count ?? 0),
+    created_at: t.created_at ? String(t.created_at) : undefined,
+    work_type: optStr(t.work_type) ?? undefined,
+    estimated_tokens: optNum(t.estimated_tokens) ?? undefined,
+    estimate_basis: optStr(t.estimate_basis) ?? undefined,
+    usage: t.usage ? normalizeUsage(asRecord(t.usage)) : undefined,
   };
 }
 
@@ -825,12 +832,55 @@ export const api = {
         sources: raw.sources ?? m.sources,
         findings: raw.findings ?? m.findings,
         tasks: raw.tasks ?? m.tasks,
+        tasks_listed: raw.tasks_listed ?? m.tasks_listed,
+        tasks_truncated: raw.tasks_truncated ?? m.tasks_truncated,
         contributors_all: raw.contributors_all ?? m.contributors_all,
         contributors_hour: raw.contributors_hour ?? m.contributors_hour,
         visual_summary: raw.visual_summary ?? m.visual_summary,
       });
     }
     return normalizeMission(raw);
+  },
+
+  /** One server-side page of a project's tasks (`limit` is capped at 100 by the hub). */
+  async getProjectTasks(
+    slug: string,
+    params: {
+      status?: ProjectTaskStatusFilter;
+      q?: string;
+      kind?: ProjectTaskKindFilter;
+      offset?: number;
+      limit?: number;
+    } = {},
+    signal?: AbortSignal,
+  ): Promise<ProjectTaskPage> {
+    const sp = new URLSearchParams();
+    sp.set('status', params.status ?? 'all');
+    const q = (params.q ?? '').trim();
+    if (q) sp.set('q', q);
+    sp.set('kind', params.kind ?? 'all');
+    sp.set('offset', String(Math.max(0, params.offset ?? 0)));
+    sp.set('limit', String(Math.min(100, Math.max(1, params.limit ?? 25))));
+    const raw = await fetchJson<Record<string, unknown>>(
+      `/api/missions/${encodeURIComponent(slug)}/tasks?${sp.toString()}`,
+      { signal },
+    );
+    const tasks = asArray<Record<string, unknown>>(raw.tasks).map(normalizeTask);
+    const c = asRecord(raw.counts);
+    const total = Number(raw.total ?? tasks.length);
+    return {
+      slug: String(raw.slug || slug),
+      total,
+      offset: Number(raw.offset ?? params.offset ?? 0),
+      limit: Number(raw.limit ?? params.limit ?? 25),
+      counts: {
+        all: Number(c.all ?? total),
+        open: Number(c.open ?? 0),
+        claimed: Number(c.claimed ?? 0),
+        completed: Number(c.completed ?? 0),
+      },
+      tasks,
+    };
   },
 
   async getFindings(

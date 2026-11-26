@@ -1,0 +1,118 @@
+{
+  "generated_on": "2026-11-26",
+  "financial_years": [
+    "2014-15",
+    "2015-16",
+    "2016-17",
+    "2017-18",
+    "2018-19",
+    "2019-20",
+    "2020-21",
+    "2021-22",
+    "2022-23",
+    "2023-24",
+    "2024-25",
+    "2025-26"
+  ],
+  "tasks": 10000,
+  "lines": 19391,
+  "lines_with_actuals": 15028,
+  "lines_alone": 8310,
+  "alone_from_crore": 98.26,
+  "set_size": 10,
+  "links": {
+    "estimates_only": 4363,
+    "name": 787,
+    "name+figure": 14241
+  },
+  "lines_left_out": {
+    "money moved to a line of a similar name": 15,
+    "no revised estimate and no following year": 498,
+    "statement does not add up to its Grand Total": 227
+  },
+  "rows_added_together": 537,
+  "statements": 1218,
+  "statements_used": 1173,
+  "statements_unreadable": 6,
+  "statements_not_closed": 11,
+  "by_year": {
+    "2014-15": {
+      "lines": 1815,
+      "with_actuals": 1634,
+      "tasks": 792,
+      "budget_estimate_crore": 1209938.46
+    },
+    "2015-16": {
+      "lines": 1678,
+      "with_actuals": 0,
+      "tasks": 712,
+      "budget_estimate_crore": 1240726.78
+    },
+    "2016-17": {
+      "lines": 1656,
+      "with_actuals": 1515,
+      "tasks": 767,
+      "budget_estimate_crore": 1391451.35
+    },
+    "2017-18": {
+      "lines": 1651,
+      "with_actuals": 1535,
+      "tasks": 793,
+      "budget_estimate_crore": 1525758.41
+    },
+    "2018-19": {
+      "lines": 1607,
+      "with_actuals": 1505,
+      "tasks": 822,
+      "budget_estimate_crore": 1761095.45
+    },
+    "2019-20": {
+      "lines": 1661,
+      "with_actuals": 1555,
+      "tasks": 858,
+      "budget_estimate_crore": 1998536.96
+    },
+    "2020-21": {
+      "lines": 1599,
+      "with_actuals": 1498,
+      "tasks": 868,
+      "budget_estimate_crore": 2175186.03
+    },
+    "2021-22": {
+      "lines": 1557,
+      "with_actuals": 1450,
+      "tasks": 851,
+      "budget_estimate_crore": 2431182.86
+    },
+    "2022-23": {
+      "lines": 1556,
+      "with_actuals": 1452,
+      "tasks": 875,
+      "budget_estimate_crore": 2789147.58
+    },
+    "2023-24": {
+      "lines": 1553,
+      "with_actuals": 1464,
+      "tasks": 889,
+      "budget_estimate_crore": 3063635.43
+    },
+    "2024-25": {
+      "lines": 1544,
+      "with_actuals": 1420,
+      "tasks": 899,
+      "budget_estimate_crore": 3208111.5
+    },
+    "2025-26": {
+      "lines": 1514,
+      "with_actuals": 0,
+      "tasks": 874,
+      "budget_estimate_crore": 3289555.97
+    }
+  },
+  "dry_run": {
+    "tasks_with_a_lead": 5015,
+    "tasks_cleared": 4985,
+    "lines_below_threshold": 8125,
+    "lines_within_threshold": 11266
+  }
+}

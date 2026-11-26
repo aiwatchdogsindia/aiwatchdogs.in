@@ -44,7 +44,7 @@ from aiwatchdogs.engines.gigw_matrix import (
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
-from aiwatchdogs.projects import CANONICAL_PROJECT_CODES, INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG
+from aiwatchdogs.projects import CANONICAL_PROJECT_CODES, UNION_BUDGET_METHODOLOGY, UNION_BUDGET_PROJECT_SLUG
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -76,14 +76,14 @@ MAX_MONETARY_INR = 1e14
 MAX_PLEDGE_INR = 1e12
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 30
-MAX_RESEARCH_BATCHES = 64
-MAX_RESEARCH_BATCH_BYTES = 128 * 1024
-MAX_RESEARCH_PAGE_BATCHES = 20
-RESEARCH_CURSOR_RE = re.compile(r"(prj-[a-z0-9-]{1,60}):([1-9][0-9]?)\Z")
-# A task parked after repeated failed attempts returns to the queue after this long.
 DEFAULT_PARKED_REQUEUE_MINUTES = 120
 # Most tasks one project page lists (audits and the peer checks they spawn).
 MAX_PROJECT_TASKS_LISTED = 2000
+# A project with more tasks than that lists only its first open ones; the rest are paged.
+LARGE_PROJECT_TASKS_LISTED = 200
+MAX_TASK_PAGE = 100
+# Projects an agent may ask for by name even when the hub hands work out by priority.
+OPEN_CHOICE_PROJECTS = frozenset({"gov-in-public-information", UNION_BUDGET_PROJECT_SLUG})
 
 # What the desk asks an agent to be for one task. Sent with every claim so that any agent,
 # whatever tool runs it, knows its job without reading the task type.
@@ -117,20 +117,11 @@ TASK_ROLES: dict[str, dict[str, str]] = {
         ),
         "submit_outcomes": "verification",
     },
-    "researcher": {
-        "name": "researcher",
-        "title": "Researcher",
-        "brief": (
-            "You asked for this research project by name. Do the assignment in the task's instructions "
-            "and submit a structured research report, in batches if it is large."
-        ),
-        "submit_outcomes": "research",
-    },
 }
 
 
 def task_role(task_type: Any, payload: Any = None) -> dict[str, str]:
-    """The role a claimed task puts its agent in: auditor, peer verifier, adjudicator or researcher."""
+    """The role a claimed task puts its agent in: auditor, peer verifier or adjudicator."""
     kind = str(task_type or "").strip().lower()
     if kind == "anomaly_scan" and isinstance(payload, dict) and payload.get("methodology_code") == "W1":
         return {
@@ -139,12 +130,87 @@ def task_role(task_type: Any, payload: Any = None) -> dict[str, str]:
             "brief": "Verify the batch checksum, review the assigned public pages and submit one dated observation for every host.",
             "submit_outcomes": "observations",
         }
-    if kind == "research":
-        return dict(TASK_ROLES["researcher"])
     if kind == "peer_verify":
         review = str(payload.get("review_type") or "") if isinstance(payload, dict) else ""
         return dict(TASK_ROLES["adjudicator" if review == "adjudication" else "peer_verifier"])
     return dict(TASK_ROLES["auditor"])
+
+_TASK_LIST_COLUMNS = (
+    "t.id, t.task_type, t.methodology_code, t.title, t.status, t.claimed_by_handle, "
+    "t.progress_pct, t.retry_count, t.available_at, t.target_finding_id, t.payload_json, "
+    "t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis, "
+    "t.usage_json, t.lease_started_at, t.attempt_count"
+)
+# A peer check of a lead that is held for privacy or legal review is not listed.
+_TASK_NOT_QUARANTINED = (
+    "(t.target_finding_id IS NULL OR NOT EXISTS ("
+    "SELECT 1 FROM findings qf WHERE qf.id = t.target_finding_id "
+    "AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')))"
+)
+
+
+def _public_task(t: Any, t_payload: dict[str, Any]) -> dict[str, Any]:
+    """One task as a project page lists it."""
+    return {
+        "id": t["id"],
+        "task_type": t["task_type"],
+        "methodology_code": t["methodology_code"],
+        "title": t["title"],
+        "status": t["status"],
+        "role": task_role(t["task_type"], t_payload)["name"],
+        "claimed_by_handle": t["claimed_by_handle"],
+        "progress_pct": t["progress_pct"],
+        "retry_count": int(_row_get(t, "retry_count", 0) or 0),
+        "available_at": _row_get(t, "available_at", None),
+        "target_finding_id": t["target_finding_id"],
+        "dataset_url": t_payload.get("dataset_url"),
+        "retrieval_url": t_payload.get("retrieval_url") or t_payload.get("dataset_url"),
+        "official_publisher": t_payload.get("official_publisher"),
+        "source_landing_page": t_payload.get("source_landing_page") or t_payload.get("source_url"),
+        "mirror_name": t_payload.get("mirror_name"),
+        "source_url": t_payload.get("source_url"),
+        "expected_sha256": t_payload.get("expected_sha256"),
+        "created_at": t["created_at"],
+        "completed_at": t["completed_at"],
+        "work_type": t["work_type"] or ("peer_verify" if t["task_type"] == "peer_verify" else None),
+        "estimated_tokens": t["estimated_tokens"],
+        "estimate_basis": t["estimate_basis"] or None,
+        "usage": public_usage(
+            loads_json(t["usage_json"] or "{}", {}),
+            started_at=_row_get(t, "lease_started_at", None),
+            completed_at=t["completed_at"] if t["status"] == "completed" else None,
+            attempts=int(_row_get(t, "attempt_count", 0) or 0),
+        ),
+    }
+
+
+_COVERAGE_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_COVERAGE_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+
+def _project_coverage(slug: str) -> dict[str, Any]:
+    """The coverage summary a project publishes beside its file (empty when it has none)."""
+    from aiwatchdogs.projects import default_projects_dir
+
+    if not _COVERAGE_SLUG_RE.match(slug or ""):
+        return {}
+    path = default_projects_dir() / slug / "coverage.json"
+    try:
+        stamp = path.stat().st_mtime
+    except OSError:
+        return {}
+    cached = _COVERAGE_CACHE.get(str(path))
+    if cached is not None and cached[0] == stamp:
+        return cached[1]
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    _COVERAGE_CACHE[str(path)] = (stamp, data)
+    return data
+
 
 VALID_VERDICTS: frozenset[str] = frozenset(
     {"confirm", "dispute", "needs_review", "reject_false_positive", "flag_pii_or_legal"}
@@ -188,13 +254,6 @@ _SHARED_DATASET_NOTES: dict[str, str] = {
 }
 
 _W1_REASON_KEYS: tuple[str, ...] = W1_REASON_KEYS
-_CPI1_ROLE_DEFS: tuple[tuple[str, str], ...] = (
-    ("collection", "State & UT price collection"),
-    ("method", "Basket & methodology specs"),
-    ("specialist", "Specialist sectors"),
-    ("review", "Coverage & index review"),
-)
-_CPI1_STRATUM_TITLE_RE = re.compile(r"^(.+?)\s*\((?:rural|urban)\)", re.IGNORECASE)
 _P1_DELHI_UT_RE = re.compile(
     r"\b(?:delhi|jammu and kashmir|j&k|puducherry|andaman|nicobar|chandigarh|"
     r"dadra|nagar haveli|daman|diu|ladakh|lakshadweep)\b",
@@ -1276,8 +1335,6 @@ class DeskService:
         ).fetchall()
         base_delay = int(os.environ.get("AIWATCHDOGS_RETRY_BASE_SECONDS", str(DEFAULT_RETRY_BASE_SECONDS)))
         for row in expired:
-            if row["task_type"] == "research":
-                conn.execute("DELETE FROM research_batches WHERE task_id = ? AND lease_id = ?", (row["id"], row["lease_id"]))
             if self._is_orphaned_w1_task(row):
                 if row["claimed_by_agent_id"]:
                     conn.execute(
@@ -2169,7 +2226,7 @@ class DeskService:
             st = str(r["status"] or "")
             ttype = str(r["task_type"] or "")
             if st in ("completed", "settled"):
-                rung_state = "cleared" if ttype == "research" else "verified"
+                rung_state = "verified"
             elif st == "claimed" or (st == "queued" and ttype == "peer_verify"):
                 rung_state = "hard"
             elif st in ("failed", "needs_adjudication"):
@@ -2512,55 +2569,18 @@ class DeskService:
         parsed_tasks: list[tuple[Any, dict[str, Any]]],
         findings: list[dict[str, Any]],
         cleared_findings_count: int,
+        counts: dict[str, int],
     ) -> dict[str, Any]:
         methodology_code = str(mission_row["methodology_code"] or "").strip()
-        is_inflation = methodology_code == INFLATION_METHODOLOGY
-        completed_ids = {str(t["id"]) for t, _ in parsed_tasks if t["status"] == "completed"}
-
-        completed_cnt = 0
-        claimed_cnt = 0
-        queued_cnt = 0
+        # Counted over every task of the project in SQL: the listed tasks can be a first page only.
+        completed_cnt = counts["audits_done"]
+        claimed_cnt = counts["claimed"]
+        queued_cnt = counts["queued"]
+        total_cnt = audits_total = counts["audits_total"]
+        audits_done = completed_cnt
+        checks_done = counts["checks_done"]
+        checks_total = counts["checks_total"]
         waiting_cnt = 0
-        audits_done = 0
-        audits_total = 0
-        checks_done = 0
-        checks_total = 0
-
-        effective_status_by_id: dict[str, str] = {}
-        for t, t_payload in parsed_tasks:
-            st = str(t["status"] or "")
-            is_pv = t["task_type"] == "peer_verify"
-            deps = t_payload.get("depends_on") if is_inflation and isinstance(t_payload.get("depends_on"), list) else []
-            has_unmet = bool(deps and any(str(d) not in completed_ids for d in deps))
-            if st == "completed":
-                eff_st = "completed"
-            elif st == "claimed":
-                eff_st = "claimed"
-            elif st == "queued" and has_unmet:
-                eff_st = "waiting"
-            elif st == "queued":
-                eff_st = "queued"
-            else:
-                eff_st = st
-            effective_status_by_id[str(t["id"])] = eff_st
-
-            if is_pv:
-                checks_total += 1
-                if st == "completed":
-                    checks_done += 1
-            else:
-                audits_total += 1
-                if eff_st == "completed":
-                    completed_cnt += 1
-                    audits_done += 1
-                elif eff_st == "claimed":
-                    claimed_cnt += 1
-                elif eff_st == "waiting":
-                    waiting_cnt += 1
-                elif eff_st == "queued":
-                    queued_cnt += 1
-
-        total_cnt = audits_total
         planned_cnt = len(mission.get("planned_tasks") or [])
         pct_complete = round((completed_cnt / total_cnt) * 100.0, 2) if total_cnt > 0 else 0.0
 
@@ -2645,78 +2665,8 @@ class DeskService:
             )
             return summary
 
-        if is_inflation:
-            batch_row = conn.execute(
-                "SELECT COUNT(*) AS c FROM research_batches b "
-                "JOIN tasks t ON t.id = b.task_id AND t.lease_id = b.lease_id "
-                "WHERE t.mission_id = ? AND t.task_type = 'research' AND t.status = 'completed'",
-                (mid,),
-            ).fetchone()
-            batches_submitted = int(batch_row["c"] or 0) if batch_row else 0
-
-            role_totals: dict[str, list[int]] = {}
-            strata_map: dict[str, dict[str, Any]] = {}
-            for t, t_payload in parsed_tasks:
-                ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
-                scope = ctx.get("inflation_scope") if isinstance(ctx.get("inflation_scope"), dict) else {}
-                role_key = str(scope.get("role") or "collection").strip().lower()
-                bucket = role_totals.setdefault(role_key, [0, 0])
-                bucket[1] += 1
-                if t["status"] == "completed":
-                    bucket[0] += 1
-
-                state_code = str(scope.get("state_code") or "").strip()
-                sector = str(scope.get("sector") or "").strip().lower()
-                if state_code and sector in ("rural", "urban"):
-                    title = str(t["title"] or "")
-                    state_name = str(scope.get("state_name") or "").strip()
-                    if not state_name:
-                        m = _CPI1_STRATUM_TITLE_RE.match(title)
-                        state_name = m.group(1).strip() if m else f"State {state_code}"
-                    st_entry = strata_map.setdefault(
-                        state_code,
-                        {
-                            "state_code": state_code,
-                            "state_name": state_name,
-                            "rural_status": None,
-                            "urban_status": None,
-                            "rural_task_id": None,
-                            "urban_task_id": None,
-                        },
-                    )
-                    eff_st = effective_status_by_id.get(str(t["id"]), str(t["status"] or "queued"))
-                    if sector == "rural":
-                        st_entry["rural_status"] = eff_st
-                        st_entry["rural_task_id"] = str(t["id"])
-                    else:
-                        st_entry["urban_status"] = eff_st
-                        st_entry["urban_task_id"] = str(t["id"])
-
-            role_labels = dict(_CPI1_ROLE_DEFS)
-            ordered_role_keys = [k for k, _ in _CPI1_ROLE_DEFS if k in role_totals] + sorted(
-                k for k in role_totals if k not in role_labels
-            )
-            roles = [
-                {
-                    "role": rk,
-                    "label": role_labels.get(rk, rk.replace("_", " ").title()),
-                    "done": role_totals[rk][0],
-                    "total": role_totals[rk][1],
-                    "pct": round((role_totals[rk][0] / role_totals[rk][1]) * 100.0, 2)
-                    if role_totals[rk][1] > 0
-                    else 0.0,
-                }
-                for rk in ordered_role_keys
-            ]
-            strata = sorted(
-                strata_map.values(),
-                key=lambda s: (int(s["state_code"]) if s["state_code"].isdigit() else 999, s["state_code"]),
-            )
-            summary["inflation"] = {
-                "batches_submitted": batches_submitted,
-                "roles": roles,
-                "strata": strata,
-            }
+        if methodology_code == UNION_BUDGET_METHODOLOGY:
+            summary["union_budget"] = self._union_budget_summary(conn, mission_row=mission_row)
             return summary
 
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
@@ -2918,64 +2868,23 @@ class DeskService:
                 for r in f_rows
             ]
 
-            is_inflation = row["methodology_code"] == INFLATION_METHODOLOGY
+            all_tasks = primary_total + pv_total
+            truncated = all_tasks > MAX_PROJECT_TASKS_LISTED
             t_rows = conn.execute(
-                """
-                SELECT t.id, t.task_type, t.methodology_code, t.title, t.status, t.claimed_by_handle,
-                       t.progress_pct, t.retry_count, t.available_at, t.target_finding_id, t.payload_json,
-                       t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis,
-                       t.usage_json, t.lease_started_at, t.attempt_count
+                f"""
+                SELECT {_TASK_LIST_COLUMNS}
                 FROM tasks t WHERE t.mission_id = ?
                   AND t.status != 'retired'
-                  AND (t.target_finding_id IS NULL OR NOT EXISTS (
-                      SELECT 1 FROM findings qf
-                      WHERE qf.id = t.target_finding_id
-                        AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')
-                  ))
+                  AND {_TASK_NOT_QUARANTINED}
                 ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.updated_at DESC, t.id ASC
                 LIMIT ?
                 """,
-                (mid, MAX_PROJECT_TASKS_LISTED),
+                (mid, LARGE_PROJECT_TASKS_LISTED if truncated else MAX_PROJECT_TASKS_LISTED),
             ).fetchall()
             parsed_tasks: list[tuple[Any, dict[str, Any]]] = [
                 (t, loads_json(t["payload_json"], {})) for t in t_rows
             ]
-            tasks = []
-            for t, t_payload in parsed_tasks:
-                tasks.append(
-                    {
-                        "id": t["id"],
-                        "task_type": t["task_type"],
-                        "methodology_code": t["methodology_code"],
-                        "title": t["title"],
-                        "status": t["status"],
-                        "role": task_role(t["task_type"], t_payload)["name"],
-                        "claimed_by_handle": t["claimed_by_handle"],
-                        **({"depends_on": t_payload.get("depends_on", [])} if is_inflation else {}),
-                        "progress_pct": t["progress_pct"],
-                        "retry_count": int(_row_get(t, "retry_count", 0) or 0),
-                        "available_at": _row_get(t, "available_at", None),
-                        "target_finding_id": t["target_finding_id"],
-                        "dataset_url": t_payload.get("dataset_url"),
-                        "retrieval_url": t_payload.get("retrieval_url") or t_payload.get("dataset_url"),
-                        "official_publisher": t_payload.get("official_publisher"),
-                        "source_landing_page": t_payload.get("source_landing_page") or t_payload.get("source_url"),
-                        "mirror_name": t_payload.get("mirror_name"),
-                        "source_url": t_payload.get("source_url"),
-                        "expected_sha256": t_payload.get("expected_sha256"),
-                        "created_at": t["created_at"],
-                        "completed_at": t["completed_at"],
-                        "work_type": t["work_type"] or ("peer_verify" if t["task_type"] == "peer_verify" else None),
-                        "estimated_tokens": t["estimated_tokens"],
-                        "estimate_basis": t["estimate_basis"] or None,
-                        "usage": public_usage(
-                            loads_json(t["usage_json"] or "{}", {}),
-                            started_at=_row_get(t, "lease_started_at", None),
-                            completed_at=t["completed_at"] if t["status"] == "completed" else None,
-                            attempts=int(_row_get(t, "attempt_count", 0) or 0),
-                        ),
-                    }
-                )
+            tasks = [_public_task(t, t_payload) for t, t_payload in parsed_tasks]
 
             contributors_all, contributors_hour = self._compute_mission_contributors(conn, str(mid))
             visual_summary = self._build_visual_summary(
@@ -2985,6 +2894,14 @@ class DeskService:
                 parsed_tasks=parsed_tasks,
                 findings=findings,
                 cleared_findings_count=cf_cnt,
+                counts={
+                    "audits_total": primary_total,
+                    "audits_done": primary_done,
+                    "queued": queued_cnt,
+                    "claimed": claimed_cnt,
+                    "checks_total": pv_total,
+                    "checks_done": pv_done,
+                },
             )
 
         return {
@@ -2992,6 +2909,8 @@ class DeskService:
             "sources": sources,
             "findings": findings,
             "tasks": tasks,
+            "tasks_listed": len(tasks),
+            "tasks_truncated": truncated,
             "contributors_all": contributors_all,
             "contributors_hour": contributors_hour,
             "visual_summary": visual_summary,
@@ -3020,54 +2939,192 @@ class DeskService:
                 "guidelines": "https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/",
                 **loads_json(row["output_json"], {})}
 
-    def get_inflation_dataset(
-        self, slug: str, *, task_id: str | None, after: str | None, limit: int,
+    def list_mission_tasks(
+        self, slug: str, *, status_filter: str = "all", q: str = "", kind: str = "audit", offset: int = 0, limit: int = 25,
     ) -> dict[str, Any]:
-        if slug != INFLATION_PROJECT_SLUG:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-
-        clauses = ["t.mission_id = ?", "t.task_type = 'research'", "t.status = 'completed'"]
+        """One page of a project's tasks. A project with thousands of tasks is searched here, not listed whole."""
+        slug = self.resolve_slug(slug)
+        wanted = {"all": None, "open": "queued", "claimed": "claimed", "completed": "completed"}
+        if status_filter not in wanted:
+            raise HTTPException(status_code=422, detail="status must be one of: all, open, claimed, completed")
+        if kind not in ("audit", "check", "all"):
+            raise HTTPException(status_code=422, detail="kind must be one of: audit, check, all")
+        limit = max(1, min(int(limit), MAX_TASK_PAGE))
+        offset = max(0, int(offset))
+        clauses = ["t.mission_id = ?", "t.status != 'retired'", _TASK_NOT_QUARANTINED]
+        params: list[Any] = []
+        if kind == "audit":
+            clauses.append("t.task_type != 'peer_verify'")
+        elif kind == "check":
+            clauses.append("t.task_type = 'peer_verify'")
+        needle = " ".join(str(q or "").split())[:120].lower()
+        if needle:
+            clauses.append("(LOWER(t.title) LIKE ? ESCAPE '\\' OR LOWER(t.id) LIKE ? ESCAPE '\\')")
+            params.extend([f"%{escape_like(needle)}%"] * 2)
+        where = " AND ".join(clauses)
         with self.db.read() as conn:
-            mission = conn.execute(
-                "SELECT id, methodology_code, total_tasks, completed_tasks FROM missions WHERE slug = ?",
-                (slug,),
-            ).fetchone()
-            if mission is None or mission["methodology_code"] != INFLATION_METHODOLOGY:
-                raise HTTPException(status_code=404, detail="Dataset not found")
-            params: list[Any] = [mission["id"]]
-            if task_id:
-                clauses.append("b.task_id = ?")
-                params.append(task_id)
-            if after:
-                cursor = RESEARCH_CURSOR_RE.fullmatch(after)
-                if cursor is None or int(cursor[2]) > MAX_RESEARCH_BATCHES:
-                    raise HTTPException(status_code=422, detail="Invalid dataset cursor")
-                clauses.append("(b.task_id > ? OR (b.task_id = ? AND b.batch_number > ?))")
-                params.extend((cursor[1], cursor[1], int(cursor[2])))
-            batches = conn.execute(
+            mission = conn.execute("SELECT id FROM missions WHERE slug = ? OR id = ?", (slug, slug)).fetchone()
+            if mission is None:
+                raise HTTPException(status_code=404, detail=f"Mission '{slug}' not found")
+            mid = mission["id"]
+            counts = {"all": 0, "open": 0, "claimed": 0, "completed": 0}
+            for r in conn.execute(
+                f"SELECT t.status AS status, COUNT(*) AS c FROM tasks t WHERE {where} GROUP BY t.status", (mid, *params)
+            ).fetchall():
+                n = int(r["c"])
+                counts["all"] += n
+                st = str(r["status"] or "")
+                if st == "queued":
+                    counts["open"] += n
+                elif st in ("claimed", "completed"):
+                    counts[st] += n
+            page_clauses, page_params = list(clauses), list(params)
+            if wanted[status_filter] is not None:
+                page_clauses.append("t.status = ?")
+                page_params.append(wanted[status_filter])
+            rows = conn.execute(
                 f"""
-                SELECT b.task_id, b.batch_number, b.report_json
-                FROM research_batches b
-                JOIN tasks t ON t.id = b.task_id AND t.lease_id = b.lease_id
-                WHERE {' AND '.join(clauses)}
-                ORDER BY b.task_id, b.batch_number
-                LIMIT ?
+                SELECT {_TASK_LIST_COLUMNS}
+                FROM tasks t WHERE {' AND '.join(page_clauses)}
+                ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.id ASC
+                LIMIT ? OFFSET ?
                 """,
-                (*params, limit + 1),
+                (mid, *page_params, limit, offset),
             ).fetchall()
-
-        more = len(batches) > limit
-        page = batches[:limit]
         return {
             "slug": slug,
-            "methodology_code": mission["methodology_code"],
-            "total_tasks": mission["total_tasks"],
-            "completed_tasks": mission["completed_tasks"],
-            "reports": [
-                {"task_id": row["task_id"], "batch": row["batch_number"], "report": loads_json(row["report_json"], {})}
-                for row in page
-            ],
-            "next_after": f"{page[-1]['task_id']}:{page[-1]['batch_number']}" if more else None,
+            "total": counts[status_filter],
+            "offset": offset,
+            "limit": limit,
+            "counts": counts,
+            "tasks": [_public_task(t, loads_json(t["payload_json"], {})) for t in rows],
+        }
+
+    def _union_budget_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Year-by-year progress and the largest shortfalls reported so far, for the Union Budget project."""
+        mid = str(mission_row["id"])
+        slug = str(mission_row["slug"])
+        coverage = _project_coverage(slug)
+        by_year = coverage.get("by_year") if isinstance(coverage.get("by_year"), dict) else {}
+        years: dict[str, dict[str, Any]] = {}
+
+        def year_row(year: str) -> dict[str, Any]:
+            planned = by_year.get(year) if isinstance(by_year.get(year), dict) else {}
+            lines = int(planned.get("lines") or 0)
+            with_actuals = int(planned.get("with_actuals") or 0)
+            return years.setdefault(
+                year,
+                {
+                    "year": year,
+                    "tasks": 0,
+                    "done": 0,
+                    "claimed": 0,
+                    "open": 0,
+                    "pct": 0.0,
+                    "lines": lines,
+                    "with_actuals": with_actuals,
+                    "budget_estimate_cr": _safe_finite_float(planned.get("budget_estimate_crore"), 0.0),
+                    "leads": 0,
+                    "below_estimate_cr": 0.0,
+                    "compares": "actual" if with_actuals > 0 or not lines else "revised",
+                },
+            )
+
+        for year in coverage.get("financial_years") or []:
+            if isinstance(year, str):
+                year_row(year)
+        # A task id carries its financial year: 'prj-ub-2019-20-d042-l12-03'.
+        for r in conn.execute(
+            "SELECT SUBSTR(id, 8, 7) AS yr, status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired' AND id LIKE 'prj-ub-%' GROUP BY yr, status",
+            (mid,),
+        ).fetchall():
+            entry = year_row(str(r["yr"]))
+            n = int(r["c"])
+            entry["tasks"] += n
+            st = str(r["status"] or "")
+            if st == "completed":
+                entry["done"] += n
+            elif st == "claimed":
+                entry["claimed"] += n
+            elif st == "queued":
+                entry["open"] += n
+        live = (
+            "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+            "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+        )
+        leads = verified = peer_review = 0
+        below_total = 0.0
+        for r in conn.execute(
+            f"SELECT fiscal_year, status, COUNT(*) AS c, COALESCE(SUM(monetary_exposure_inr), 0) AS inr "
+            f"FROM findings WHERE {live} GROUP BY fiscal_year, status",
+            (mid,),
+        ).fetchall():
+            n = int(r["c"])
+            crore = _safe_finite_float(r["inr"], 0.0) / 1e7
+            leads += n
+            below_total += crore
+            st = str(r["status"] or "")
+            if st == "verified":
+                verified += n
+            elif st in ("peer_review", "raw_lead"):
+                peer_review += n
+            year = str(r["fiscal_year"] or "").removeprefix("FY")
+            if year in years:
+                years[year]["leads"] += n
+                years[year]["below_estimate_cr"] = round(years[year]["below_estimate_cr"] + crore, 2)
+        for entry in years.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        top_leads: list[dict[str, Any]] = []
+        for r in conn.execute(
+            f"SELECT id, title, entity_name, fiscal_year, status, monetary_exposure_inr, anomaly_metrics_json "
+            f"FROM findings WHERE {live} ORDER BY monetary_exposure_inr DESC, id ASC LIMIT 10",
+            (mid,),
+        ).fetchall():
+            metrics = loads_json(r["anomaly_metrics_json"], {})
+            metrics = metrics if isinstance(metrics, dict) else {}
+
+            def figure(key: str) -> float | None:
+                value = metrics.get(key)
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+                    return None
+                return float(value)
+
+            compare = str(metrics.get("compare") or "")
+            top_leads.append(
+                {
+                    "finding_id": str(r["id"]),
+                    "title": str(r["title"] or ""),
+                    "entity_name": str(r["entity_name"] or ""),
+                    "fiscal_year": str(r["fiscal_year"] or ""),
+                    "status": str(r["status"] or ""),
+                    "budget_estimate_cr": figure("budget_estimate"),
+                    "revised_estimate_cr": figure("revised_estimate"),
+                    "actual_cr": figure("actual"),
+                    "below_estimate_cr": round(_safe_finite_float(r["monetary_exposure_inr"], 0.0) / 1e7, 2),
+                    "below_estimate_pct": figure("unspent_pct" if compare != "revised_vs_budget_estimate" else "revised_cut_pct"),
+                    "compare": compare,
+                }
+            )
+        return {
+            "lines": int(coverage.get("lines") or 0),
+            "lines_with_actuals": int(coverage.get("lines_with_actuals") or 0),
+            "lines_alone": int(coverage.get("lines_alone") or 0),
+            "alone_from_crore": _safe_finite_float(coverage.get("alone_from_crore"), 0.0),
+            "set_size": int(coverage.get("set_size") or 0),
+            "statements": int(coverage.get("statements_used") or 0),
+            "financial_years": [y for y in coverage.get("financial_years") or [] if isinstance(y, str)],
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0),
+            "below_estimate_cr": round(below_total, 2),
+            "years": [years[y] for y in sorted(years)],
+            "top_leads": top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
         }
 
     def list_findings(
@@ -4619,42 +4676,10 @@ class DeskService:
                     )
 
                 if cand["task_type"] == "research":
-                    cand_payload = loads_json(cand["payload_json"], {})
-                    raw_deps = cand_payload.get("depends_on") if isinstance(cand_payload, dict) else None
-                    deps = [str(d) for d in raw_deps if isinstance(d, str)] if isinstance(raw_deps, list) else []
-                    if deps:
-                        ph = ",".join("?" for _ in deps)
-                        dep_rows = {
-                            str(r["id"]): r
-                            for r in conn.execute(
-                                f"SELECT id, status, claimed_by_agent_id FROM tasks "
-                                f"WHERE mission_id = ? AND task_type = 'research' AND id IN ({ph})",
-                                (cand["mission_id"], *deps),
-                            ).fetchall()
-                        }
-                        unmet = [
-                            d for d in deps
-                            if d not in dep_rows or str(dep_rows[d]["status"] or "") != "completed"
-                        ]
-                        if unmet:
-                            preview = ", ".join(unmet[:3]) + ("..." if len(unmet) > 3 else "")
-                            raise HTTPException(
-                                status_code=status.HTTP_409_CONFLICT,
-                                detail=(
-                                    f"Task '{resolved_tid}' is waiting on {len(unmet)} incomplete "
-                                    f"prerequisite task(s) ({preview})."
-                                ),
-                            )
-                        if len(deps) == 1:
-                            sole_dep = dep_rows[deps[0]]
-                            if sole_dep["claimed_by_agent_id"] is not None and sole_dep["claimed_by_agent_id"] == agent["id"]:
-                                raise HTTPException(
-                                    status_code=status.HTTP_409_CONFLICT,
-                                    detail=(
-                                        f"Task '{resolved_tid}' requires an independent reviewer "
-                                        f"(cannot follow your own prerequisite task '{deps[0]}')."
-                                    ),
-                                )
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"Task '{resolved_tid}' belongs to a project that has ended.",
+                    )
             else:
                 escaped_handle = escape_like(agent_handle)
                 clauses = [
@@ -4700,40 +4725,16 @@ class DeskService:
                 if not website_observations:
                     clauses.append("t.methodology_code != 'W1'")
                 preferred_slug = (preferred_mission or "").strip()[:120]
-                if preferred_slug == INFLATION_PROJECT_SLUG:
-                    clauses.extend(("t.task_type = 'research'", "t.mission_slug = ?"))
-                    params.append(INFLATION_PROJECT_SLUG)
-                    if self.db.is_postgres:
-                        relation = "jsonb_array_elements_text(t.payload_json::jsonb -> 'depends_on') AS dep(id)"
-                        dependency_id = "dep.id"
-                        dependency_count = "jsonb_array_length(t.payload_json::jsonb -> 'depends_on')"
-                    else:
-                        relation = "json_each(t.payload_json, '$.depends_on') AS dep"
-                        dependency_id = "dep.value"
-                        dependency_count = "json_array_length(t.payload_json, '$.depends_on')"
-                    clauses.append(
-                        f"""NOT EXISTS (
-                            SELECT 1 FROM {relation}
-                            WHERE NOT EXISTS (
-                                SELECT 1 FROM tasks done
-                                WHERE done.id = {dependency_id} AND done.mission_id = t.mission_id
-                                  AND done.task_type = 'research' AND done.status = 'completed'
-                                  AND ({dependency_count} != 1 OR done.claimed_by_agent_id IS NULL
-                                       OR done.claimed_by_agent_id != ?)
-                            )
-                        )"""
-                    )
-                    params.append(agent["id"])
-                else:
-                    clauses.append("t.task_type != 'research'")
-                    if preferred_slug and (_agents_may_choose_project() or preferred_slug == "gov-in-public-information"):
-                        clauses.append("t.mission_slug = ?")
-                        params.append(preferred_slug)
+                # Research tasks belonged to a project that has ended; they are never handed out.
+                clauses.append("t.task_type != 'research'")
+                if preferred_slug and (_agents_may_choose_project() or preferred_slug in OPEN_CHOICE_PROJECTS):
+                    clauses.append("t.mission_slug = ?")
+                    params.append(preferred_slug)
 
                 if eff_mode == "verify":
                     clauses.append("t.task_type = 'peer_verify'")
                 elif eff_mode == "investigate":
-                    clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse', 'research')")
+                    clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse')")
                 if max_estimated_tokens is not None:
                     clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
                     params.append(int(max_estimated_tokens))
@@ -5040,9 +5041,6 @@ class DeskService:
             if cur.rowcount != 1:
                 raise HTTPException(status_code=410, detail="Lease is no longer active")
 
-            if task["task_type"] == "research":
-                conn.execute("DELETE FROM research_batches WHERE task_id = ? AND lease_id = ?", (task["id"], lease_id))
-
             conn.execute(
                 "UPDATE agents SET current_task_id = NULL, last_heartbeat_at = ? WHERE id = ?",
                 (now, authed["id"]),
@@ -5083,7 +5081,7 @@ class DeskService:
     ) -> dict[str, Any]:
         lease_id = str(payload.get("lease_id") or "").strip()
         outcome = str(payload.get("outcome") or "").strip().lower()
-        if outcome not in {"finding", "cleared", "verification", "research", "observations"}:
+        if outcome not in {"finding", "cleared", "verification", "observations"}:
             raise HTTPException(
                 status_code=422,
                 detail="Unknown task outcome",
@@ -5108,8 +5106,8 @@ class DeskService:
 
             # Server-authoritative task type enforcement
             assigned_type = str(task["task_type"] or "").strip().lower()
-            if (assigned_type == "research") != (outcome == "research"):
-                raise HTTPException(status_code=422, detail="The research outcome requires a research task lease.")
+            if assigned_type == "research":
+                raise HTTPException(status_code=409, detail="This task belongs to a project that has ended.")
             if assigned_type == "peer_verify" and outcome != "verification":
                 raise HTTPException(
                     status_code=422,
@@ -5151,19 +5149,6 @@ class DeskService:
                     "last_heartbeat_at = ? WHERE id = ?", (now, agent["id"]),
                 )
                 self._emit_durable_event(conn, envelopes, "website_batch_observed", result, now=now)
-            elif outcome == "research":
-                result = self._handle_submit_research(
-                    conn=conn,
-                    task=task,
-                    lease_id=lease_id,
-                    agent=agent,
-                    payload=payload,
-                    idempotency_key=eff_idem,
-                    now=now,
-                    envelopes=envelopes,
-                )
-                if result["status"] == "staged":
-                    return result
             elif outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
@@ -5220,89 +5205,6 @@ class DeskService:
                 self._store_usage(conn, task, report.source, report.counts())
 
         self._broadcast_envelopes(envelopes)
-        return result
-
-    def _handle_submit_research(
-        self,
-        *,
-        conn: Any,
-        task: Any,
-        lease_id: str,
-        agent: Any,
-        payload: dict[str, Any],
-        idempotency_key: str | None,
-        now: str,
-        envelopes: list[dict[str, Any]],
-    ) -> dict[str, Any]:
-        from aiwatchdogs.inflation import validate_report
-
-        report = payload.get("research")
-        if not isinstance(report, dict):
-            raise HTTPException(status_code=422, detail="research must contain a structured report.")
-        _validate_json_blob(
-            report, field_name="research", max_depth=8, max_nodes=8000, max_bytes=MAX_RESEARCH_BATCH_BYTES
-        )
-        try:
-            normalized = validate_report(report, loads_json(task["payload_json"], {}))
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        _validate_json_blob(
-            normalized, field_name="research", max_depth=8, max_nodes=8000, max_bytes=MAX_RESEARCH_BATCH_BYTES
-        )
-
-        task_id = str(task["id"])
-        batch = _parse_int_422(payload.get("research_batch"), field="research_batch", min_value=1,
-                              max_value=MAX_RESEARCH_BATCHES, default=1)
-        final = payload.get("research_final", True)
-        if not isinstance(final, bool):
-            raise HTTPException(status_code=422, detail="research_final must be a boolean.")
-
-        last = conn.execute(
-            "SELECT MAX(batch_number) AS last_batch FROM research_batches WHERE task_id = ? AND lease_id = ?",
-            (task_id, lease_id),
-        ).fetchone()
-        last_batch = int(last["last_batch"] or 0)
-        if batch > last_batch + 1 or (final and batch < last_batch):
-            raise HTTPException(status_code=409, detail="Send research batches in order and finalize the last batch.")
-        if batch <= last_batch:
-            existing = conn.execute(
-                "SELECT report_json FROM research_batches WHERE task_id = ? AND lease_id = ? AND batch_number = ?",
-                (task_id, lease_id, batch),
-            ).fetchone()
-            if not existing or loads_json(existing["report_json"], {}) != normalized:
-                raise HTTPException(status_code=409, detail="This research batch number already has different content.")
-        else:
-            conn.execute(
-                "INSERT INTO research_batches (task_id, lease_id, batch_number, report_json) VALUES (?, ?, ?, ?)",
-                (task_id, lease_id, batch, dumps_json(normalized)),
-            )
-
-        result = {"status": "staged", "outcome": "research", "task_id": task_id, "batch": batch}
-        if not final:
-            return result
-        result.update(status="accepted", batches=batch)
-
-        self._settle_task_atomically(
-            conn,
-            task_id=task_id,
-            lease_id=lease_id,
-            agent_id=str(agent["id"]),
-            output_obj={"outcome": "research", "batches": batch},
-            idempotency_key=idempotency_key,
-            response_obj=result,
-            monetary_audited_inr=0.0,
-            now=now,
-        )
-        conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (task["mission_id"],))
-        conn.execute(
-            "UPDATE agents SET tasks_completed = tasks_completed + 1, last_heartbeat_at = ?, "
-            "current_task_id = CASE WHEN current_task_id = ? THEN NULL ELSE current_task_id END WHERE id = ?",
-            (now, task_id, agent["id"]),
-        )
-        self._emit_durable_event(
-            conn, envelopes, "research_submitted",
-            {"task_id": task_id, "mission_slug": task["mission_slug"], "agent_handle": agent["handle"]}, now=now,
-        )
         return result
 
     @staticmethod

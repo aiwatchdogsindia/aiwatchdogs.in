@@ -113,7 +113,7 @@ def test_markdown_routes_content_negotiation_and_link_headers(
             ("/projects.md", "police-finances"),
             ("/projects/police-finances.md", "Union & Central Forces"),
             ("/projects/gov-in-public-information.md", "Website Information Audit Summary"),
-            ("/projects/independent-india-inflation.md", "State & UT Rural / Urban Coverage"),
+            ("/projects/union-budget-unspent-funds.md", "## Union Budget Lines (UB1)"),
             ("/findings.md", finding_id),
             (f"/findings/{finding_id}.md", "Delhi Police"),
             ("/live.md", "Live Swarm Telemetry"),
@@ -155,11 +155,19 @@ def test_markdown_routes_content_negotiation_and_link_headers(
         assert "Conformity Matrix Sections" in gov_md
         assert "/api/missions/gov-in-public-information/matrix" in gov_md
 
+        # /projects/union-budget-unspent-funds.md shows the UB1 lines and the year-by-year coverage table
+        ub_md = client.get("/projects/union-budget-unspent-funds.md").text
+        assert "## Union Budget Lines (UB1)" in ub_md
+        assert "### Financial Year Coverage" in ub_md
+        assert "2014-15" in ub_md and "2025-26" in ub_md
+
         # /brief.md reflects full explainer, dual human/agent access, Discord + Telegram, and no Treasury Ledger
         brief_md = client.get("/brief.md").text
         assert "police-finances.md" in brief_md
         assert "gov-in-public-information.md" in brief_md
-        assert "independent-india-inflation.md" in brief_md
+        assert "union-budget-unspent-funds.md" in brief_md
+        assert "Union Budget: budgeted but not spent" in brief_md
+        assert "independent-india-inflation" not in brief_md
         assert "WebMCP" in brief_md
         assert "https://t.me/aiwatchdogsin" in brief_md
         assert "https://discord.gg/8K33UYGWY4" in brief_md
@@ -229,7 +237,8 @@ def test_agent_discovery_and_crawlability_endpoints(
         assert "/index.md" in llms.text
         assert "/projects/police-finances.md" in llms.text
         assert "/projects/gov-in-public-information.md" in llms.text
-        assert "/projects/independent-india-inflation.md" in llms.text
+        assert "/projects/union-budget-unspent-funds.md" in llms.text
+        assert "independent-inflation-join.txt" not in llms.text
         assert "/join.txt" in llms.text
         assert "/mcp" in llms.text
         assert "WebMCP" in llms.text
@@ -258,6 +267,8 @@ def test_agent_discovery_and_crawlability_endpoints(
         assert any(loc.endswith("/projects/police-finances") for loc in locs)
         assert any(loc.endswith("/projects/police-finances.md") for loc in locs)
         assert any(loc.endswith("/llms.txt") for loc in locs)
+        assert any(loc.endswith("/projects/union-budget-unspent-funds") for loc in locs)
+        assert not any("independent-inflation-join.txt" in loc for loc in locs)
 
         # /.well-known/api-catalog (RFC 9727)
         cat = client.get("/.well-known/api-catalog")
@@ -352,7 +363,7 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         assert {p["slug"] for p in lp_data["projects"]} == {
             "police-finances",
             "gov-in-public-information",
-            "independent-india-inflation",
+            "union-budget-unspent-funds",
         }
 
         r_gp = rpc("tools/call", {"name": "get_project", "arguments": {"slug": "police-finances"}}, req_id=5)
@@ -367,6 +378,8 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         )
         t_data = r_tasks.json()["result"]["structuredContent"]
         assert t_data["count"] == 5
+        # Paged from the database: 99 queued P1 audits plus the 2 peer checks the submitted finding queued.
+        assert t_data["total"] == 101
         assert all("join_prompt" in t for t in t_data["tasks"])
 
         r_prompt_p1 = rpc(
@@ -380,16 +393,18 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         assert "prj-police-goa-2055-2026-27" in r_prompt_p1.json()["result"]["structuredContent"]["prompt"]
         assert "/join.txt" in r_prompt_p1.json()["result"]["structuredContent"]["prompt"]
 
-        r_prompt_cpi = rpc(
+        r_prompt_ub = rpc(
             "tools/call",
             {
                 "name": "get_task_join_prompt",
-                "arguments": {"slug": "independent-india-inflation", "task_id": "prj-cpi-kerala-rural"},
+                "arguments": {"slug": "union-budget-unspent-funds", "task_id": "prj-ub-2014-15-d001-l3"},
             },
             req_id=8,
         )
-        assert "/independent-inflation-join.txt" in r_prompt_cpi.json()["result"]["structuredContent"]["prompt"]
-        assert "prj-cpi-kerala-rural" in r_prompt_cpi.json()["result"]["structuredContent"]["prompt"]
+        ub_prompt = r_prompt_ub.json()["result"]["structuredContent"]
+        assert "/join.txt" in ub_prompt["prompt"]
+        assert "prj-ub-2014-15-d001-l3" in ub_prompt["prompt"]
+        assert ub_prompt["guide_url"].endswith("/join.txt")
 
         r_find = rpc("tools/call", {"name": "list_findings", "arguments": {"mission": "police-finances"}}, req_id=9)
         f_data = r_find.json()["result"]["structuredContent"]

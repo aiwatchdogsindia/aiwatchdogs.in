@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -11,7 +12,13 @@ from typer.testing import CliRunner
 
 from aiwatchdogs.cli.main import app as cli_app
 from aiwatchdogs.hub.app import create_app
-from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, load_project_files, validate_project
+from aiwatchdogs.projects import (
+    UNION_BUDGET_METHODOLOGY,
+    UNION_BUDGET_PROJECT_SLUG,
+    load_project_files,
+    validate_project,
+)
+from conftest import union_budget_project
 
 REPO_PROJECTS = Path(__file__).resolve().parents[1] / "projects"
 SHA = "a" * 64
@@ -122,83 +129,82 @@ def test_repository_project_files_are_valid() -> None:
         assert pf.errors == [], f"{pf.path.name}: {pf.errors}"
 
 
-def test_inflation_limit_and_dependency_validation(inflation_projects: Path) -> None:
-    source = inflation_projects / f"{INFLATION_PROJECT_SLUG}.json"
-    project = json.loads(source.read_text())
-    collect, review = project["tasks"]
-    project["tasks"] += [{**collect, "id": f"cpi-test-extra-{i}"} for i in range(98)]
-    assert validate_project(project, filename_stem=INFLATION_PROJECT_SLUG) == []
-    project["tasks"].append({**collect, "id": "cpi-too-many"})
-    assert any("at most 100 tasks" in error for error in validate_project(project))
-    project["tasks"].pop()
-    collect["depends_on"] = [review["id"]]
-    assert any("acyclic" in error for error in validate_project(project))
-    collect["depends_on"] = ["outside-the-project"]
-    assert any("distinct prerequisites" in error for error in validate_project(project))
+def test_task_cap_dependencies_and_union_budget_context_rules() -> None:
+    # Any project may list up to 20,000 tasks ('tasks' and 'planned_tasks' together), and no more.
+    task = _project()["tasks"][0]
+    tasks = [{**task, "id": f"test-city-budget-{i}"} for i in range(20_000)]
+    assert validate_project(_project(tasks=tasks), filename_stem="test-city-budget") == []
+    over = validate_project(_project(tasks=tasks, planned_tasks=[PLANNED]), filename_stem="test-city-budget")
+    assert any("at most 20,000 tasks" in e for e in over), over[:3]
+
+    # Every task must stand on its own: depends_on is always an error now.
+    dependent = _project()
+    dependent["tasks"][0]["depends_on"] = []
+    assert any("depends_on is not supported" in e for e in validate_project(dependent, filename_stem="test-city-budget"))
+
+    # The synthetic UB1 project is valid; breaking its union_budget context is not.
+    ub = union_budget_project()
+    assert validate_project(ub, filename_stem=UNION_BUDGET_PROJECT_SLUG) == []
+    broken = copy.deepcopy(ub)
+    broken["tasks"][0]["payload"]["context"]["union_budget"]["estimates_document"]["budget"] = "2019-20"
+    errors = validate_project(broken, filename_stem=UNION_BUDGET_PROJECT_SLUG)
+    assert any("estimates_document.budget must be the budget after 2019-20" in e for e in errors), errors
+    broken = copy.deepcopy(ub)
+    del broken["tasks"][1]["payload"]["context"]["union_budget"]
+    errors = validate_project(broken, filename_stem=UNION_BUDGET_PROJECT_SLUG)
+    assert any("union_budget is required for UB1 tasks" in e for e in errors), errors
+    broken = copy.deepcopy(ub)
+    broken["tasks"][1]["payload"]["context"]["union_budget"]["lines"] = []
+    errors = validate_project(broken, filename_stem=UNION_BUDGET_PROJECT_SLUG)
+    assert any(".lines must list 1 to" in e for e in errors), errors
+    # A UB1 task that pins the actuals statement must read it page by page, and vice versa.
+    broken = copy.deepcopy(ub)
+    del broken["tasks"][0]["payload"]["context"]["secondary_document"]
+    errors = validate_project(broken, filename_stem=UNION_BUDGET_PROJECT_SLUG)
+    assert any("secondary_url and context.secondary_document 'pages' together" in e for e in errors), errors
+
+    # Reading a second document is a UB1-only control.
+    other = _project()
+    other["tasks"][0]["payload"]["context"] = {"secondary_document": "pages"}
+    errors = validate_project(other, filename_stem="test-city-budget")
+    assert any("secondary_document is only 'pages', and only for UB1" in e for e in errors), errors
 
 
 @pytest.mark.production_missions
-def test_inflation_reports_commit_as_one_lease_and_unlock_independent_review(
-    tmp_path: Path, inflation_projects: Path, inflation_gap_report: dict,
+def test_research_outcome_is_rejected_and_union_budget_can_be_chosen_without_project_choice(
+    tmp_path: Path, union_budget_projects: Path,
 ) -> None:
-    (inflation_projects / "test-city-budget.json").write_text(json.dumps(_project(priority=10)))
-    url = f"/api/missions/{INFLATION_PROJECT_SLUG}/dataset"
-    with TestClient(create_app(db_path=tmp_path / "research.db", seed=True)) as client:
+    # A priority-1 project sorts ahead of P3 (priority 5) for a general claim.
+    (union_budget_projects / "test-city-budget.json").write_text(json.dumps(_project(priority=1)))
+    with TestClient(create_app(db_path=tmp_path / "ub-choice.db", seed=True)) as client:
         def register(handle: str) -> dict[str, str]:
             response = client.post("/api/agents/register", json={"handle": handle})
             assert response.is_success, response.text
             return {"X-Agent-Token": response.json()["api_token"]}
 
-        contributor = register("cpi-contributor")
-        reviewer = register("cpi-reviewer")
-        opt_in = {"preferred_mission": INFLATION_PROJECT_SLUG, "mode": "investigate"}
-        general = client.post("/api/desk/next", headers=reviewer, json={"mode": "auto"})
+        general_agent = register("general-agent")
+        ub_agent = register("ub-agent")
+        general = client.post("/api/desk/next", headers=general_agent, json={"mode": "auto"})
+        assert general.status_code == 200, general.text
         assert general.json()["task"]["mission_slug"] == "test-city-budget"
-        invalid = client.post("/api/desk/submit", headers=reviewer, json={
-            "lease_id": general.json()["lease_id"], "outcome": "research", "research": inflation_gap_report,
+        # The research flow is gone: the API model refuses the outcome and its fields.
+        invalid = client.post("/api/desk/submit", headers=general_agent, json={
+            "lease_id": general.json()["lease_id"], "outcome": "research", "research": {"summary": "x"},
         })
-        assert invalid.status_code == 422
-        lease = client.post("/api/desk/next", headers=contributor, json=opt_in).json()
-        assert lease["task"]["task_type"] == "research"
-        assert lease["task"]["payload"]["context"]["inflation_scope"]["role"] == "collection"
-        assert client.post("/api/desk/next", headers=reviewer, json=opt_in).status_code == 204
-        batch = {"lease_id": lease["lease_id"], "outcome": "research", "research": inflation_gap_report}
-        assert client.post("/api/desk/submit", headers=reviewer, json=batch).status_code == 403
-        assert client.post("/api/desk/submit", headers=contributor, json={
-            "lease_id": lease["lease_id"], "outcome": "cleared",
-        }).status_code == 422
-        assert client.post("/api/desk/submit", headers=contributor, json={
-            **batch, "research_batch": 2,
-        }).status_code == 409
-        staged = {**batch, "research_final": False}
-        assert client.post("/api/desk/submit", headers=contributor, json=staged).json()["status"] == "staged"
-        assert client.post("/api/desk/submit", headers=contributor, json=staged).json()["status"] == "staged"
-        assert client.post("/api/desk/beat", headers=contributor, json={
-            "lease_id": lease["lease_id"], "progress_pct": 50,
-        }).is_success
-        assert client.get(url).json()["reports"] == []
-        final = {**batch, "research_batch": 2}
-        headers = {**contributor, "Idempotency-Key": "finish-research-test"}
-        response = client.post("/api/desk/submit", headers=headers, json=final)
-        assert response.json().get("status") == "accepted", response.text
-        assert response.json()["batches"] == 2
-        assert client.post("/api/desk/submit", headers=headers, json=final).json()["idempotent_replay"]
+        assert invalid.status_code == 422, invalid.text
 
-        page = client.get(url, params={"limit": 1}).json()
-        assert page["total_tasks"] == 2
-        assert page["completed_tasks"] == 1
-        rows = page["reports"]
-        assert len(rows) == 1
-        assert rows[0] == {"task_id": lease["task"]["id"], "batch": 1, "report": inflation_gap_report}
-        page2 = client.get(url, params={"limit": 1, "after": page["next_after"], "task_id": rows[0]["task_id"]}).json()
-        assert page2["reports"][0]["batch"] == 2
-        assert page2["next_after"] is None
-        assert client.get(f"{url}/schema").json()["title"] == "InflationReport"
-        assert client.get(url, params={"after": "unparseable-cursor"}).status_code == 422
-        assert client.post("/api/desk/next", headers=contributor, json=opt_in).status_code == 204
-        review = client.post("/api/desk/next", headers=reviewer, json=opt_in).json()["task"]
-        assert review["id"] == "prj-cpi-test-review"
-        assert review["payload"]["depends_on"] == [lease["task"]["id"]]
+        # P3 is honoured as a preferred project even though AIWATCHDOGS_ALLOW_PROJECT_CHOICE is unset.
+        lease = client.post(
+            "/api/desk/next", headers=ub_agent,
+            json={"preferred_mission": UNION_BUDGET_PROJECT_SLUG, "mode": "investigate"},
+        )
+        assert lease.status_code == 200, lease.text
+        task = lease.json()["task"]
+        assert task["mission_slug"] == UNION_BUDGET_PROJECT_SLUG
+        assert task["methodology_code"] == UNION_BUDGET_METHODOLOGY
+        assert task["task_type"] == "anomaly_scan"
+        assert task["id"].startswith("prj-ub-")
+        assert task["payload"]["context"]["union_budget"]["financial_year"] in {"2019-20", "2020-21"}
 
 
 def test_cli_validate_reports_problems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

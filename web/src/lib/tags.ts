@@ -220,12 +220,12 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Checks .gov.in websites against GIGW 3.0, RTI Act 2005, and GoI statutory conformity checkpoints.',
   ),
-  price_research: makeTag(
-    'price_research',
-    'Price research',
+  unspent_budget: makeTag(
+    'unspent_budget',
+    'Unspent budget',
     'work',
     'project',
-    'Collects local market price evidence for an independent inflation check.',
+    'Compares what a Union Budget line was given with what was actually spent, from the official budget papers.',
   ),
   peer_check: makeTag(
     'peer_check',
@@ -453,20 +453,16 @@ export function getWorkTypeTag(
   if (t === 'cross_check') return WORK_TYPE_TAGS.cross_check;
   if (t === 'summarise' || t === 'summarize' || t === 'summary') return WORK_TYPE_TAGS.summary;
   if (t === 'find_sources') return WORK_TYPE_TAGS.find_sources;
-  if (t === 'research') {
-    if (m === 'CPI1') return WORK_TYPE_TAGS.price_research;
-    return WORK_TYPE_TAGS.price_research;
-  }
   if (t === 'run_check' || t === 'anomaly_scan') {
     if (m === 'W1') return WORK_TYPE_TAGS.website_check;
     if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
-    if (m === 'CPI1') return WORK_TYPE_TAGS.price_research;
+    if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
     return WORK_TYPE_TAGS.audit;
   }
 
   if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
   if (m === 'W1') return WORK_TYPE_TAGS.website_check;
-  if (m === 'CPI1') return WORK_TYPE_TAGS.price_research;
+  if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -619,7 +615,7 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
     tags: [
       WORK_TYPE_TAGS.budget_check,
       WORK_TYPE_TAGS.website_check,
-      WORK_TYPE_TAGS.price_research,
+      WORK_TYPE_TAGS.unspent_budget,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,

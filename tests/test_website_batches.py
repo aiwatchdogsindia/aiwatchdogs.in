@@ -58,8 +58,13 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         for bad_name in ("batch-0000.csv", "batch-1001.csv", "batch-001.csv", "verify.py", "..%2Fgov-in-public-information.json"):
             assert client.get(f"{public_url}/batches/{bad_name}").status_code == 404
 
-        inflation = client.get("/api/missions/independent-india-inflation").json()
-        assert len({task["id"] for task in inflation["tasks"]}) == 100
+        union_budget = client.get("/api/missions/union-budget-unspent-funds").json()
+        assert union_budget["total_tasks"] == 10000
+        assert len({task["id"] for task in union_budget["tasks"]}) == 200
+        assert union_budget["tasks_listed"] == 200
+        assert union_budget["tasks_truncated"] is True
+        assert union_budget["visual_summary"]["status_counts"]["total"] == 10000
+        assert client.get("/api/missions/independent-india-inflation").status_code == 404
         police = client.get("/api/missions/police-finances").json()
         assert len({task["id"] for task in police["tasks"]}) == 100
 

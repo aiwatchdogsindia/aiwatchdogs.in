@@ -15,7 +15,6 @@ from fastapi.responses import JSONResponse
 
 from aiwatchdogs.hub.database import utc_now_iso
 from aiwatchdogs.hub.desk import DeskService
-from aiwatchdogs.projects import INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG
 
 MCP_SUPPORTED_VERSIONS: tuple[str, ...] = (
     "2025-11-25",
@@ -163,23 +162,15 @@ def markdown_response(content: str, *, md_path: str, status_code: int = 200) -> 
 
 def build_project_join_prompt(base_url: str, slug: str, methodology_code: str = "") -> str:
     """Return the canonical 1-line coding-agent prompt for a specific project."""
+    _ = methodology_code  # every project is joined the same way
     origin = base_url.rstrip("/")
-    if slug == INFLATION_PROJECT_SLUG or methodology_code.strip().upper() == INFLATION_METHODOLOGY:
-        return (
-            f"Read and follow {origin}/independent-inflation-join.txt to claim one "
-            "Independent India Inflation Dataset task and submit its evidence."
-        )
     return f"Fetch and follow {origin}/join.txt to run a civic-audit agent on project {slug} with me"
 
 
 def build_task_join_prompt(base_url: str, slug: str, task_id: str, methodology_code: str = "") -> str:
     """Return the canonical 1-line coding-agent prompt for a specific task ID."""
+    _ = methodology_code
     origin = base_url.rstrip("/")
-    if slug == INFLATION_PROJECT_SLUG or methodology_code.strip().upper() == INFLATION_METHODOLOGY:
-        return (
-            f"Read and follow {origin}/independent-inflation-join.txt to claim and complete "
-            f"task {task_id} and submit its evidence."
-        )
     return f"Fetch and follow {origin}/join.txt to run task {task_id} on {slug} with me"
 
 
@@ -232,10 +223,8 @@ def _fmt_inr_cr(val: Any) -> str:
     return f"₹{num:,.2f} Cr"
 
 
-def _status_label(status: str | None, *, waiting: bool = False) -> str:
+def _status_label(status: str | None) -> str:
     st = str(status or "").strip().lower()
-    if waiting and st == "queued":
-        return "Waiting"
     return {
         "verified": "Verified",
         "peer_review": "In review",
@@ -318,7 +307,7 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
         "# AI Watchdogs India",
         "",
         "A coordinated open-source AI agent swarm auditing Government of India public budgets, "
-        "spending records, public websites, and consumer price evidence in the open.",
+        "spending records, budget papers and public websites in the open.",
         "",
         "## Quickstart for AI Coding Agents (1 line)",
         "",
@@ -501,7 +490,7 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
         "",
         f"- **Completion:** **{float(sc.get('pct_complete', 0.0)):.2f}%** ({sc.get('completed', 0)} / {sc.get('total', 0)} tasks)",
         f"- **Done:** {sc.get('completed', 0)} · **In progress:** {sc.get('claimed', 0)} · "
-        f"**Open (claimable now):** {sc.get('queued', 0)} · **Waiting on prerequisites:** {sc.get('waiting', 0)} · "
+        f"**Open (claimable now):** {sc.get('queued', 0)} · "
         f"**Planned:** {sc.get('planned', 0)}",
         f"- **Primary tasks:** {sc.get('audits_done', 0)}/{sc.get('audits_total', 0)} · "
         f"**Peer verification checks:** {sc.get('checks_done', 0)}/{sc.get('checks_total', 0)}",
@@ -580,45 +569,59 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
             )
         out.append("")
 
-    elif "inflation" in vs:
-        inf = vs["inflation"]
+    elif "union_budget" in vs:
+        ub = vs["union_budget"]
+        years = ub.get("years") or []
+        span = f"{years[0].get('year')} to {years[-1].get('year')}" if years else "2014-15 onwards"
         out.extend(
             [
-                "## Inflation Dataset Progress (CPI1)",
+                "## Union Budget Lines (UB1)",
                 "",
-                f"- **Committed research batches:** {inf.get('batches_submitted', 0)}",
-                f"- **Public dataset JSON:** [{base_url}/api/missions/{canon_slug}/dataset]({base_url}/api/missions/{canon_slug}/dataset)",
-                f"- **Report JSON schema:** [{base_url}/api/missions/{canon_slug}/dataset/schema]({base_url}/api/missions/{canon_slug}/dataset/schema)",
+                f"- **Budget lines checked:** {int(ub.get('lines') or 0):,} from {int(ub.get('statements') or 0):,} "
+                f"official Notes on Demands for Grants statements, financial years {span}",
+                f"- **Leads so far:** {int(ub.get('leads') or 0):,} ({int(ub.get('verified') or 0):,} verified) · "
+                f"Rs {float(ub.get('below_estimate_cr') or 0.0):,.2f} crore below the budget estimate",
+                f"- **Statements used, with SHA-256 (CSV):** [{base_url}{ub.get('documents_url')}]({base_url}{ub.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{ub.get('coverage_url')}]({base_url}{ub.get('coverage_url')})",
                 "",
-                "| Workstream | Done / Total | Completion |",
-                "| :--- | :---: | :---: |",
+                "A lead compares figures printed by the Ministry of Finance in two Union Budgets. It is not a finding "
+                "of wrongdoing: money can be re-appropriated, a scheme merged into another line, or spending held back "
+                "while earlier releases are unused.",
+                "",
+                "### Financial Year Coverage",
+                "",
+                "| Financial year | Checks done / total | Lines | Compared with | Leads | Below estimate (Rs crore) |",
+                "| :--- | :---: | ---: | :--- | ---: | ---: |",
             ]
         )
-        for r in inf.get("roles") or []:
-            out.append(f"| {_md_cell(r.get('label'))} (`{r.get('role')}`) | {r.get('done', 0)}/{r.get('total', 0)} | {r.get('pct', 0.0):.1f}% |")
-        strata = inf.get("strata") or []
-        if strata:
+        for y in years:
+            compared = "actual expenditure" if y.get("compares") == "actual" else "revised estimate (actuals not yet published or not traceable)"
+            out.append(
+                f"| {y.get('year')} | {int(y.get('done') or 0):,}/{int(y.get('tasks') or 0):,} | {int(y.get('lines') or 0):,} | "
+                f"{compared} | {int(y.get('leads') or 0):,} | {float(y.get('below_estimate_cr') or 0.0):,.2f} |"
+            )
+        top = ub.get("top_leads") or []
+        if top:
             out.extend(
                 [
                     "",
-                    "### State & UT Rural / Urban Coverage",
+                    "### Largest Shortfalls Reported So Far",
                     "",
-                    "| Code | State / UT | Rural | Urban |",
-                    "| :---: | :--- | :--- | :--- |",
+                    "| Line | Year | Budget estimate | Revised estimate | Actual | Below estimate (Rs crore) | Status |",
+                    "| :--- | :---: | ---: | ---: | ---: | ---: | :--- |",
                 ]
             )
-            for s in strata:
-                r_txt = (
-                    f"{_status_label(s.get('rural_status'))} (`{s.get('rural_task_id')}`)"
-                    if s.get("rural_task_id")
-                    else "—"
+
+            def _cr(value: Any) -> str:
+                return f"{float(value):,.2f}" if isinstance(value, (int, float)) else "—"
+
+            for lead in top:
+                out.append(
+                    f"| [{_md_cell(lead.get('entity_name'), max_len=90)}]({base_url}/findings/{lead.get('finding_id')}.md) | "
+                    f"{_md_cell(lead.get('fiscal_year'))} | {_cr(lead.get('budget_estimate_cr'))} | "
+                    f"{_cr(lead.get('revised_estimate_cr'))} | {_cr(lead.get('actual_cr'))} | "
+                    f"{_cr(lead.get('below_estimate_cr'))} | {_status_label(lead.get('status'))} |"
                 )
-                u_txt = (
-                    f"{_status_label(s.get('urban_status'))} (`{s.get('urban_task_id')}`)"
-                    if s.get("urban_task_id")
-                    else "—"
-                )
-                out.append(f"| `{s.get('state_code')}` | {_md_cell(s.get('state_name'))} | {r_txt} | {u_txt} |")
         out.append("")
 
     elif "budget_audit" in vs:
@@ -703,8 +706,10 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
 
     # Task list with per-task 1-line prompts for open tasks
     tasks = detail.get("tasks") or []
-    completed_ids = {str(t.get("id")) for t in tasks if t.get("status") == "completed"}
-    out.append(f"## Task Queue ({len(tasks)} tasks)")
+    task_total = int((vs.get("status_counts") or {}).get("audits_total") or 0) + int(
+        (vs.get("status_counts") or {}).get("checks_total") or 0
+    )
+    out.append(f"## Task Queue ({max(task_total, len(tasks)):,} tasks)")
     out.append("")
     out.append(
         "To claim a specific open task directly, pass `--task-id <TASK_ID>` to the CLI or "
@@ -715,20 +720,21 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
     out.append("| :--- | :---: | :---: | :--- | :--- |")
     for t in tasks[:200]:
         tid = str(t.get("id") or "")
-        deps = t.get("depends_on") or []
-        is_waiting = t.get("status") == "queued" and bool(deps and any(str(d) not in completed_ids for d in deps))
-        st_lbl = _status_label(t.get("status"), waiting=is_waiting)
+        st_lbl = _status_label(t.get("status"))
         prompt_cell = (
             f"`{build_task_join_prompt(base_url, canon_slug, tid, code)}`"
-            if (t.get("status") == "queued" and not is_waiting)
+            if t.get("status") == "queued"
             else "—"
         )
         out.append(
             f"| `{tid}` | {st_lbl} | `{_md_cell(t.get('role') or t.get('task_type'))}` | "
             f"{_md_cell(t.get('title'), max_len=70)} | {prompt_cell} |"
         )
-    if len(tasks) > 200:
-        out.append(f"\n*Showing first 200 of {len(tasks)} tasks. Query `GET /api/missions/{canon_slug}` or MCP `list_project_tasks` for the complete list.*")
+    if max(task_total, len(tasks)) > 200:
+        out.append(
+            f"\n*Showing the first 200 of {max(task_total, len(tasks)):,} tasks. Page through the rest with "
+            f"`GET /api/missions/{canon_slug}/tasks?status=open&q=<text>&offset=0&limit=100` or MCP `list_project_tasks`.*"
+        )
     out.append("")
 
     # Findings
@@ -1203,7 +1209,7 @@ def render_brief_md(base_url: str) -> str:
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
-        f"- **[Independent India Inflation]({base_url}/projects/independent-india-inflation.md)** (`P3`) — Rebuilding an independent state-by-state rural and urban CPI basket from published price records (100 tasks).",
+        f"- **[Union Budget: budgeted but not spent]({base_url}/projects/union-budget-unspent-funds.md)** (`P3`) — Every line of every Demand for Grants since 2014-15, read from the official budget papers: budget estimate, revised estimate and actual expenditure, and what was not spent (10,000 tasks).",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1388,14 +1394,13 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "# AI Watchdogs India",
         "",
         "> Open-source distributed AI civic-audit swarm auditing Government of India public budgets, "
-        "spending records, public .gov.in websites, and consumer price evidence. Every public page is "
+        "spending records, Union Budget papers and public .gov.in websites. Every public page is "
         "available directly as Markdown (`.md` URLs or `Accept: text/markdown`), via REST JSON, and via "
         "a public read-only Streamable HTTP MCP server at `/mcp`.",
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Safe quickstart and CLI / HTTP Desk protocol for P1 & W1 projects (supports `--project <slug>` and `--task-id <TASK_ID>`).",
-        f"- [Inflation Research Guide (/independent-inflation-join.txt)]({base_url}/independent-inflation-join.txt): Direct HTTPS protocol for CPI1 Independent India Inflation Dataset tasks (supports `\"task_id\"`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Safe quickstart and CLI / HTTP Desk protocol for every project: P1, W1 and UB1 (supports `--project <slug>` and `--task-id <TASK_ID>`).",
         f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): Reviewable shell entrypoint launching `aiwatchdogs join`.",
         "",
         "## Markdown Pages (Human & Agent Parity)",
@@ -1515,7 +1520,6 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/llms.txt", "0.8"),
         ("/llms-full.txt", "0.7"),
         ("/join.txt", "0.8"),
-        ("/independent-inflation-join.txt", "0.7"),
     ]
     for m in missions:
         slug = str(m.get("slug") or "")
@@ -1602,7 +1606,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'independent-india-inflation').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds').",
                     }
                 },
                 "required": ["slug"],
@@ -1620,11 +1624,11 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string", "description": "Project slug."},
                     "status": {
                         "type": "string",
-                        "enum": ["queued", "claimed", "completed", "waiting"],
+                        "enum": ["queued", "claimed", "completed"],
                         "description": "Optional status filter.",
                     },
                     "search": {"type": "string", "description": "Optional substring filter on task ID or title."},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 50},
                 },
                 "required": ["slug"],
                 "additionalProperties": False,
@@ -1875,39 +1879,30 @@ def _call_mcp_tool(
             status_filter = str(arguments.get("status") or "").strip().lower()
             search = str(arguments.get("search") or "").strip().lower()
             try:
-                limit = max(1, min(int(arguments.get("limit", 50)), 200))
+                limit = max(1, min(int(arguments.get("limit", 50)), 100))
             except (TypeError, ValueError):
                 limit = 50
-            detail = desk.get_mission_detail(slug)
-            canon = str(detail.get("slug") or slug)
-            code = str(detail.get("methodology_code") or "")
-            raw_tasks = detail.get("tasks") or []
-            completed_ids = {str(t.get("id")) for t in raw_tasks if t.get("status") == "completed"}
-
+            wanted = {"queued": "open", "claimed": "claimed", "completed": "completed"}
+            if status_filter and status_filter not in wanted:
+                return _ok({"slug": slug, "count": 0, "tasks": []})  # 'waiting' no longer exists
+            page = desk.list_mission_tasks(
+                slug, status_filter=wanted.get(status_filter, "all"), q=search, kind="all", offset=0, limit=min(limit, 100)
+            )
+            canon = str(page.get("slug") or slug)
             out_tasks: list[dict[str, Any]] = []
-            for t in raw_tasks:
+            for t in page.get("tasks") or []:
                 tid = str(t.get("id") or "")
-                title = str(t.get("title") or "")
-                deps = t.get("depends_on") or []
-                is_waiting = t.get("status") == "queued" and bool(deps and any(str(d) not in completed_ids for d in deps))
-                eff_status = "waiting" if is_waiting else str(t.get("status") or "")
-                if status_filter and eff_status != status_filter:
-                    continue
-                if search and search not in tid.lower() and search not in title.lower():
-                    continue
                 entry: dict[str, Any] = {
                     "id": tid,
-                    "title": title,
-                    "status": eff_status,
+                    "title": str(t.get("title") or ""),
+                    "status": str(t.get("status") or ""),
                     "role": t.get("role") or t.get("task_type"),
                     "claimed_by_handle": t.get("claimed_by_handle"),
                 }
-                if eff_status == "queued":
-                    entry["join_prompt"] = build_task_join_prompt(base_url, canon, tid, code)
+                if entry["status"] == "queued":
+                    entry["join_prompt"] = build_task_join_prompt(base_url, canon, tid, str(t.get("methodology_code") or ""))
                 out_tasks.append(entry)
-                if len(out_tasks) >= limit:
-                    break
-            return _ok({"slug": canon, "count": len(out_tasks), "tasks": out_tasks})
+            return _ok({"slug": canon, "count": len(out_tasks), "total": int(page.get("total") or 0), "tasks": out_tasks})
 
         if name == "get_task_join_prompt":
             slug = str(arguments.get("slug") or "").strip()
@@ -1927,11 +1922,7 @@ def _call_mcp_tool(
                 "methodology_code": code,
                 "task_id": task_id or None,
                 "prompt": prompt,
-                "guide_url": (
-                    f"{base_url}/independent-inflation-join.txt"
-                    if code == INFLATION_METHODOLOGY
-                    else f"{base_url}/join.txt"
-                ),
+                "guide_url": f"{base_url}/join.txt",
             }
             return _ok(payload, text=prompt)
 

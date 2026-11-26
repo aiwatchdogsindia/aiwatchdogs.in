@@ -7,7 +7,6 @@ import {
   Layers,
   RotateCcw,
   Search,
-  TrendingUp,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -54,7 +53,8 @@ export interface ProjectResultsVisualizerProps {
   visualSummary?: ProjectVisualSummary;
   findings?: FindingItem[];
   onSelectFinding?: (id: string | number) => void;
-  onCopyTaskPrompt?: (taskId: string, title?: string) => void;
+  /** Sets the task table's search text, e.g. to a financial year such as "2019-20". */
+  onFilterTasks?: (text: string) => void;
 }
 
 type StatusBucket = 'completed' | 'claimed' | 'queued' | 'waiting';
@@ -154,21 +154,10 @@ function formatReasonLabel(key: string): string {
   return W1_REASON_LABELS[key] || key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
-function classifyTaskStatus(task: MissionTask, completedIds: Set<string>): StatusBucket {
+function classifyTaskStatus(task: MissionTask): StatusBucket {
   if (task.status === 'completed' || task.status === 'settled') return 'completed';
   if (task.status === 'claimed') return 'claimed';
-  if (task.status === 'queued') {
-    const hasUnmetPrereq = task.depends_on?.some((dep) => !completedIds.has(String(dep))) ?? false;
-    return hasUnmetPrereq ? 'waiting' : 'queued';
-  }
-  return 'waiting';
-}
-
-function normalizeStratumStatus(status: string | null): StatusBucket | 'none' {
-  if (!status) return 'none';
-  if (status === 'completed' || status === 'settled') return 'completed';
-  if (status === 'claimed') return 'claimed';
-  if (status === 'queued' || status === 'open') return 'queued';
+  if (task.status === 'queued') return 'queued';
   return 'waiting';
 }
 
@@ -417,23 +406,20 @@ export function ProjectProgressWidget({
     };
   }, []);
 
-  const completedIds = useMemo(
-    () =>
-      new Set(
-        tasks
-          .filter((t) => t.status === 'completed' || t.status === 'settled')
-          .map((t) => String(t.id)),
-      ),
-    [tasks],
-  );
+  // A large project's detail payload carries only its first open tasks, so the mosaic shows
+  // those and every count comes from the hub's SQL status counts instead of `tasks`.
+  const truncated = Boolean(mission.tasks_truncated);
 
-  // Primary audit/research tasks for the mosaic grid (excluding peer_verify/verify_lead unless only peer checks exist)
+  // Primary audit tasks for the mosaic grid (excluding peer_verify/verify_lead unless only peer checks exist)
   const mosaicTasks = useMemo(() => {
     const primary = tasks.filter(
       (t) => t.task_type !== 'peer_verify' && t.task_type !== 'verify_lead',
     );
-    return primary.length > 0 ? primary : tasks;
-  }, [tasks]);
+    const pool = primary.length > 0 ? primary : tasks;
+    if (!truncated) return pool;
+    const open = pool.filter((t) => t.status === 'queued');
+    return (open.length > 0 ? open : pool).slice(0, MOSAIC_PAGE_SIZE * 2);
+  }, [tasks, truncated]);
 
   const counts = useMemo(() => {
     const sc = visualSummary?.status_counts;
@@ -453,13 +439,13 @@ export function ProjectProgressWidget({
       };
     }
 
-    if (mosaicTasks.length > 0) {
+    if (!truncated && mosaicTasks.length > 0) {
       let completedCount = 0;
       let claimedCount = 0;
       let queuedCount = 0;
       let waitingCount = 0;
       for (const t of mosaicTasks) {
-        const b = classifyTaskStatus(t, completedIds);
+        const b = classifyTaskStatus(t);
         if (b === 'completed') completedCount += 1;
         else if (b === 'claimed') claimedCount += 1;
         else if (b === 'queued') queuedCount += 1;
@@ -489,10 +475,11 @@ export function ProjectProgressWidget({
 
     const totalCount = Math.max(0, mission.total_tasks || 0);
     const completedCount = Math.min(totalCount, mission.completed_tasks || 0);
-    const queuedCount = Math.max(0, totalCount - completedCount);
+    const claimedCount = Math.min(totalCount - completedCount, Math.max(0, mission.claimed_tasks ?? 0));
+    const queuedCount = Math.max(0, totalCount - completedCount - claimedCount);
     return {
       completed: completedCount,
-      claimed: 0,
+      claimed: claimedCount,
       queued: queuedCount,
       waiting: 0,
       planned: mission.planned_tasks?.length ?? 0,
@@ -503,7 +490,7 @@ export function ProjectProgressWidget({
       checksDone: 0,
       checksTotal: 0,
     };
-  }, [visualSummary, mosaicTasks, completedIds, tasks, mission]);
+  }, [visualSummary, truncated, mosaicTasks, tasks, mission]);
 
   const segments = useMemo(() => {
     const order: StatusBucket[] = ['completed', 'claimed', 'queued', 'waiting'];
@@ -547,11 +534,13 @@ export function ProjectProgressWidget({
   );
 
   const hoveredTile = hoveredTileIdx !== null ? mosaicTasks[hoveredTileIdx] ?? null : null;
-  const hoveredTileBucket = hoveredTile ? classifyTaskStatus(hoveredTile, completedIds) : null;
+  const hoveredTileBucket = hoveredTile ? classifyTaskStatus(hoveredTile) : null;
   const hoveredTileTag = hoveredTile
     ? getTaskTag(hoveredTile.status, hoveredTileBucket === 'waiting')
     : null;
-  const tileWeightPct = mosaicTasks.length > 0 ? 100 / mosaicTasks.length : 0;
+  // Each tile's share of the whole project, not of the tiles on screen.
+  const projectTaskTotal = truncated ? counts.auditsTotal || counts.total : mosaicTasks.length;
+  const tileWeightPct = projectTaskTotal > 0 ? 100 / projectTaskTotal : 0;
 
   const handleTileClick = (task: MissionTask, bucket: StatusBucket) => {
     if (bucket !== 'queued' || !onCopyTaskPrompt) return;
@@ -696,8 +685,15 @@ export function ProjectProgressWidget({
         <div className="pv-mosaic-panel">
           <div className="pv-panel-head">
             <div>
-              <span className="kicker">Task progress mosaic</span>
+              <span className="kicker">
+                {truncated
+                  ? `Task mosaic · first ${mosaicTasks.length.toLocaleString('en-IN')} open tasks`
+                  : 'Task progress mosaic'}
+              </span>
               <p className="pv-mosaic-hint">
+                {truncated
+                  ? `${counts.total.toLocaleString('en-IN')} tasks in all; the table below searches every one. `
+                  : ''}
                 Hover any tile for details
                 {onCopyTaskPrompt ? ' · click an open tile to copy its 1-line prompt' : ''}.
               </p>
@@ -730,9 +726,10 @@ export function ProjectProgressWidget({
               {mosaicTasks.length > 120 ? (
                 <div className="pv-mosaic-pager" role="navigation" aria-label="Task mosaic blocks">
                   <span className="pv-mosaic-pager-label tabular">
-                    Tasks {(mosaicStart + 1).toLocaleString('en-IN')}–
+                    {truncated ? 'Open tasks' : 'Tasks'} {(mosaicStart + 1).toLocaleString('en-IN')}–
                     {mosaicEnd.toLocaleString('en-IN')} of{' '}
                     {mosaicTasks.length.toLocaleString('en-IN')}
+                    {truncated ? ' shown' : ''}
                   </span>
                   <div className="pv-mosaic-blocks">
                     {Array.from({ length: mosaicPageCount }, (_, pageIdx) => {
@@ -761,11 +758,15 @@ export function ProjectProgressWidget({
               <div
                 className="pv-mosaic-grid"
                 role="grid"
-                aria-label={`${mosaicTasks.length} project tasks`}
+                aria-label={
+                  truncated
+                    ? `First ${mosaicTasks.length} open tasks of ${counts.total}`
+                    : `${mosaicTasks.length} project tasks`
+                }
               >
                 {visibleMosaicTasks.map((task, localIdx) => {
                   const globalIdx = mosaicStart + localIdx;
-                  const bucket = classifyTaskStatus(task, completedIds);
+                  const bucket = classifyTaskStatus(task);
                   const taskTag = getTaskTag(task.status, bucket === 'waiting');
                   const isOpen = bucket === 'queued';
                   const isCopied = copiedTaskId === String(task.id);
@@ -801,7 +802,7 @@ export function ProjectProgressWidget({
                     <strong>{hoveredTileTag.label}</strong>
                     <span>·</span>
                     <span>
-                      1 / {mosaicTasks.length.toLocaleString('en-IN')} ({fmtPct(tileWeightPct)})
+                      1 / {projectTaskTotal.toLocaleString('en-IN')} ({fmtPct(tileWeightPct)})
                     </span>
                     {hoveredTile.claimed_by_handle || hoveredTile.claimed_by ? (
                       <>
@@ -835,7 +836,7 @@ export function ProjectProgressWidget({
                     <div className="pv-inspector-meta tabular">
                       <span className={hoveredTileTag.badgeClass}>{hoveredTileTag.label}</span>
                       <span>
-                        1 / {mosaicTasks.length.toLocaleString('en-IN')} · {fmtPct(tileWeightPct)} of project
+                        1 / {projectTaskTotal.toLocaleString('en-IN')} · {fmtPct(tileWeightPct)} of project
                       </span>
                       {hoveredTile.claimed_by_handle || hoveredTile.claimed_by ? (
                         <span className="pv-inspector-actor">
@@ -895,7 +896,7 @@ export function ProjectProgressWidget({
 }
 
 /* ============================================================================
-   3. PROJECT RESULTS VISUALISER (P1 Divergences / W1 GIGW / CPI1 Matrix)
+   3. PROJECT RESULTS VISUALISER (P1 Divergences / W1 GIGW / UB1 Union Budget lines)
    ============================================================================ */
 
 export function ProjectResultsVisualizer({
@@ -903,19 +904,20 @@ export function ProjectResultsVisualizer({
   visualSummary,
   findings,
   onSelectFinding,
-  onCopyTaskPrompt,
+  onFilterTasks,
 }: ProjectResultsVisualizerProps) {
   const code = (visualSummary?.methodology_code || mission.methodology_code || '').toUpperCase();
 
   if (code === 'W1') {
     return <WebsiteAuditVisualizer mission={mission} visualSummary={visualSummary} />;
   }
-  if (code === 'CPI1') {
+  if (code === 'UB1') {
     return (
-      <InflationCoverageVisualizer
+      <UnionBudgetVisualizer
         mission={mission}
         visualSummary={visualSummary}
-        onCopyTaskPrompt={onCopyTaskPrompt}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
       />
     );
   }
@@ -2187,311 +2189,331 @@ function WebsiteAuditVisualizer({
   );
 }
 
-/* ---------- 3C. CPI1 Independent India Inflation State/UT Matrix ---------- */
+/* ---------- 3C. UB1 Union Budget lines: budget estimate vs revised estimate vs actual ---------- */
 
-function InflationCoverageVisualizer({
+const UB1_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/union-budget-unspent-funds/METHODOLOGY.md';
+
+/** "FY2019-20" -> "2019-20". */
+function plainFiscalYear(fy: string): string {
+  return fy.replace(/^FY\s*/i, '');
+}
+
+function fmtCount(n: number | null | undefined): string {
+  return Number.isFinite(n) ? Number(n).toLocaleString('en-IN') : '0';
+}
+
+function UnionBudgetVisualizer({
   mission,
   visualSummary,
-  onCopyTaskPrompt,
+  onSelectFinding,
+  onFilterTasks,
 }: {
   mission: MissionItem;
   visualSummary?: ProjectVisualSummary;
-  onCopyTaskPrompt?: (taskId: string, title?: string) => void;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
 }) {
-  const [hoveredState, setHoveredState] = useState<string | null>(null);
-  const [hoveredRoleIdx, setHoveredRoleIdx] = useState<number | null>(null);
-  const [matrixFilter, setMatrixFilter] = useState<'all' | 'done' | 'open'>('all');
-  const [copiedCellKey, setCopiedCellKey] = useState<string | null>(null);
-  const copyTimerRef = useRef<number | null>(null);
+  const ub = visualSummary?.union_budget;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
 
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current !== null) {
-        window.clearTimeout(copyTimerRef.current);
-      }
-    };
-  }, []);
-
-  const inflation = visualSummary?.inflation;
-  const roles = inflation?.roles ?? [];
-  const strata = inflation?.strata ?? [];
-  const batchesSubmitted = inflation?.batches_submitted ?? 0;
-
-  const stratumStats = useMemo(() => {
-    let totalSectors = 0;
-    let doneSectors = 0;
-    let openSectors = 0;
-    for (const s of strata) {
-      for (const st of [s.rural_status, s.urban_status]) {
-        const norm = normalizeStratumStatus(st);
-        if (norm === 'none') continue;
-        totalSectors += 1;
-        if (norm === 'completed') doneSectors += 1;
-        if (norm === 'queued') openSectors += 1;
-      }
-    }
-    return { totalSectors, doneSectors, openSectors };
-  }, [strata]);
-
-  const visibleStrata = useMemo(() => {
-    if (matrixFilter === 'all') return strata;
-    return strata.filter((s) => {
-      const r = normalizeStratumStatus(s.rural_status);
-      const u = normalizeStratumStatus(s.urban_status);
-      if (matrixFilter === 'done') return r === 'completed' || u === 'completed';
-      return r === 'queued' || u === 'queued';
-    });
-  }, [strata, matrixFilter]);
-
-  const handleSectorCopy = (
-    taskId: string | null,
-    cellKey: string,
-    label: string,
-    bucket: StatusBucket | 'none',
-  ) => {
-    if (!taskId || bucket !== 'queued' || !onCopyTaskPrompt) return;
-    onCopyTaskPrompt(taskId, label);
-    setCopiedCellKey(cellKey);
-    if (copyTimerRef.current !== null) {
-      window.clearTimeout(copyTimerRef.current);
-    }
-    copyTimerRef.current = window.setTimeout(() => {
-      setCopiedCellKey(null);
-      copyTimerRef.current = null;
-    }, 1800);
-  };
+  const years = ub?.years ?? [];
+  const topLeads = ub?.top_leads ?? [];
+  const yearCount = ub?.financial_years?.length || years.length;
+  const firstYear = ub?.financial_years?.[0] ?? years[0]?.year;
+  const lastYear =
+    ub?.financial_years?.[ub.financial_years.length - 1] ?? years[years.length - 1]?.year;
+  const leads = ub?.leads ?? 0;
+  const belowCr = ub?.below_estimate_cr ?? 0;
+  const verified = ub?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = ub?.peer_review ?? mission.peer_review_count ?? 0;
+  const documentsUrl = ub?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = ub?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+  const maxYearBelow = Math.max(1, ...years.map((y) => y.below_estimate_cr || 0));
 
   return (
-    <section className="card card-pad pv-results" aria-label="Inflation coverage visualiser">
+    <section className="card card-pad pv-results" aria-label="Union Budget results">
       <div className="pv-results-head">
         <div className="pv-results-title-wrap">
           <span className="kicker">
-            <TrendingUp size={12} aria-hidden="true" />
-            CPI 2024 panel · {getWorkTypeTag('research', mission.methodology_code).label}
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
           </span>
-          <h2 className="pv-results-title">Rural &amp; urban coverage across States and UTs</h2>
+          <h2 className="pv-results-title">Budgeted and spent, line by line</h2>
         </div>
 
         <div className="pv-summary-pills tabular">
-          <span className={TASK_TAGS.done.badgeClass}>
-            {stratumStats.doneSectors}/{stratumStats.totalSectors} strata {TASK_TAGS.done.label} (
-            {fmtPct(calcPct(stratumStats.doneSectors, stratumStats.totalSectors))})
-          </span>
+          <span className="tag-mono">{fmtCount(ub?.lines)} budget lines</span>
+          <span className="tag-mono">{fmtCount(ub?.statements)} statements read</span>
+          {yearCount > 0 ? (
+            <span className="tag-mono">
+              {yearCount} financial years
+              {firstYear && lastYear ? ` (${firstYear} to ${lastYear})` : ''}
+            </span>
+          ) : null}
           <span className="tag-mono">
-            {batchesSubmitted.toLocaleString('en-IN')} evidence{' '}
-            {batchesSubmitted === 1 ? 'batch' : 'batches'} submitted
+            {fmtCount(leads)} {leads === 1 ? 'lead' : 'leads'} · {formatInrCr(belowCr)} below estimate
+            so far
           </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
         </div>
       </div>
 
-      {/* Collection vs Review Progress Bars */}
-      {roles.length > 0 ? (
-        <div className="pv-cpi-roles" onMouseLeave={() => setHoveredRoleIdx(null)}>
+      <div className="pv-results-split">
+        {/* Year-by-year progress */}
+        <div className="pv-chart-card">
           <div className="pv-chart-subhead">
-            <h3>
-              <Layers size={14} aria-hidden="true" /> Collection vs. review pipeline
-            </h3>
-            <span className="pv-chart-note">Hover any stage for exact %</span>
+            <h3>Year by year</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-dot--verified" aria-hidden="true" /> {TASK_TAGS.done.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--claimed" aria-hidden="true" /> {TASK_TAGS.in_progress.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--open" aria-hidden="true" /> {TASK_TAGS.open.label}
+              </span>
+            </div>
           </div>
 
-          <div className="pv-cpi-roles-grid">
-            {roles.map((role, idx) => {
-              const exactPct = role.total > 0 ? calcPct(role.done, role.total) : role.pct;
-              const remaining = Math.max(0, role.total - role.done);
-              const isHovered = hoveredRoleIdx === idx;
-              return (
-                <div
-                  key={role.role}
-                  className={`pv-group-row${isHovered ? ' is-hovered' : ''}`}
-                  tabIndex={0}
-                  role="note"
-                  aria-label={`${role.label}: ${role.done} of ${role.total} ${TASK_TAGS.done.label} (${fmtPct(exactPct)})`}
-                  onMouseEnter={() => setHoveredRoleIdx(idx)}
-                  onFocus={() => setHoveredRoleIdx(idx)}
-                  onBlur={() => setHoveredRoleIdx(null)}
-                >
-                  {isHovered ? (
-                    <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
-                      <strong>{role.label}:</strong>{' '}
-                      <span className="tabular">
-                        {role.done.toLocaleString('en-IN')} / {role.total.toLocaleString('en-IN')} ·{' '}
-                        {fmtPct(exactPct)} {TASK_TAGS.done.label} (
-                        {remaining.toLocaleString('en-IN')} remaining)
-                      </span>
-                    </div>
-                  ) : null}
-
-                  <div className="pv-group-head">
-                    <span className="pv-group-label">{role.label}</span>
-                    <span className="pv-group-stat tabular">
-                      <strong>{fmtPct(exactPct)}</strong> ({role.done}/{role.total})
-                    </span>
-                  </div>
-                  <div className="pv-hbar-track">
-                    <span
-                      className="pv-hbar-fill"
-                      style={{ width: `${exactPct > 0 ? Math.max(exactPct, 2) : 0}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {years.length > 0 ? (
+            <div className="pv-ub-years-wrap">
+              <table className="pv-ub-table pv-ub-years">
+                <caption className="pv-ub-caption">
+                  Checks done per financial year, budget lines read and the amount reported below the
+                  budget estimate so far.
+                  {onFilterTasks ? ' Choose a year to list its tasks.' : ''}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Year</th>
+                    <th scope="col">Checked</th>
+                    <th scope="col" className="num">
+                      Lines
+                    </th>
+                    <th scope="col" className="num">
+                      Below estimate
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {years.map((y) => {
+                    const total = Math.max(0, y.tasks);
+                    const donePct = calcPct(y.done, total);
+                    const claimedPct = calcPct(y.claimed, total);
+                    const isRevised = y.compares === 'revised';
+                    return (
+                      <tr key={y.year}>
+                        <th scope="row" className="pv-ub-year">
+                          {onFilterTasks ? (
+                            <button
+                              type="button"
+                              className="pv-ub-link"
+                              onClick={() => onFilterTasks(y.year)}
+                              aria-label={`Show tasks for ${y.year}`}
+                            >
+                              {y.year}
+                            </button>
+                          ) : (
+                            <span>{y.year}</span>
+                          )}
+                          {isRevised ? (
+                            <span className="pv-ub-note">Revised vs budget; actuals not published yet</span>
+                          ) : null}
+                        </th>
+                        <td>
+                          <span
+                            className="pv-ub-bar"
+                            role="img"
+                            aria-label={`${fmtCount(y.done)} of ${fmtCount(total)} checks ${TASK_TAGS.done.label}, ${fmtCount(y.claimed)} ${TASK_TAGS.in_progress.label}`}
+                          >
+                            {donePct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-ub-bar-seg--done"
+                                style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                              />
+                            ) : null}
+                            {claimedPct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-ub-bar-seg--claimed"
+                                style={{ width: `${Math.max(claimedPct, 1.5)}%` }}
+                              />
+                            ) : null}
+                          </span>
+                          <span className="pv-ub-sub tabular">
+                            {fmtCount(y.done)}/{fmtCount(total)} · {fmtPct(donePct)}
+                            {y.claimed > 0 ? ` · ${fmtCount(y.claimed)} running` : ''}
+                          </span>
+                        </td>
+                        <td className="num">
+                          {fmtCount(y.lines)}
+                          {!isRevised && y.lines > 0 ? (
+                            <span
+                              className="pv-ub-sub"
+                              title="Lines traced to their actual expenditure in the next year's budget"
+                            >
+                              {fmtCount(y.with_actuals)} with actuals
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="num">
+                          {y.below_estimate_cr > 0 ? formatInrCr(y.below_estimate_cr) : '—'}
+                          <span className="pv-ub-sub">
+                            {fmtCount(y.leads)} {y.leads === 1 ? 'lead' : 'leads'}
+                          </span>
+                          {y.below_estimate_cr > 0 ? (
+                            <span className="pv-ub-mini-track" aria-hidden="true">
+                              <span
+                                className="pv-ub-mini-fill"
+                                style={{
+                                  width: `${Math.max(3, (y.below_estimate_cr / maxYearBelow) * 100)}%`,
+                                }}
+                              />
+                            </span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              Year-by-year progress appears here once the hub publishes this project&apos;s coverage.
+            </div>
+          )}
         </div>
-      ) : null}
 
-      {/* State/UT Rural vs Urban Matrix */}
-      <div className="pv-cpi-matrix-section">
-        <div className="pv-cpi-matrix-head">
-          <div className="pv-cpi-matrix-legend">
-            <span>
-              <i className="pv-dot pv-dot--verified" /> {TASK_TAGS.done.label}
-            </span>
-            <span>
-              <i className="pv-dot pv-dot--claimed" /> {TASK_TAGS.in_progress.label}
-            </span>
-            <span>
-              <i className="pv-dot pv-dot--open" /> {TASK_TAGS.open.label} (click to copy 1 line)
-            </span>
+        {/* How to read this + public files */}
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
           </div>
-
-          <div className="pv-cpi-filters" role="group" aria-label="Filter states by coverage">
-            {(['all', 'done', 'open'] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                className={`btn btn-xs ${matrixFilter === f ? 'btn-primary' : 'btn-ghost'}`}
-                onClick={() => setMatrixFilter(f)}
-              >
-                {f === 'all'
-                  ? `All (${strata.length})`
-                  : f === 'done'
-                    ? TASK_TAGS.done.label
-                    : TASK_TAGS.open.label}
-              </button>
-            ))}
+          <p>
+            Each check reads one numbered line of the Union Budget&apos;s Notes on Demands for Grants
+            from two official PDFs: the budget and revised estimates from one year&apos;s budget, and
+            the actual expenditure from the next. A lead is published when 10% or more of the line&apos;s
+            budget estimate, and at least {formatInrCr(1)}, was not spent.
+          </p>
+          <p>
+            A lead compares figures printed by the Ministry of Finance. It is not a finding of
+            wrongdoing. Ordinary reasons include late approvals, lower demand, money re-appropriated
+            to another line, or a scheme merged into another line.
+          </p>
+          <p>Two other agents re-check every lead before it is marked {FINDING_TAGS.verified.label}.</p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Statements used (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={UB1_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
           </div>
+          {ub?.generated_on ? (
+            <p className="pv-chart-note">Statement index built {ub.generated_on}.</p>
+          ) : null}
         </div>
+      </div>
 
-        {visibleStrata.length > 0 ? (
-          <div className="pv-cpi-matrix" onMouseLeave={() => setHoveredState(null)}>
-            {visibleStrata.map((s) => {
-              const rBucket = normalizeStratumStatus(s.rural_status);
-              const uBucket = normalizeStratumStatus(s.urban_status);
-              const activeSectors = (rBucket !== 'none' ? 1 : 0) + (uBucket !== 'none' ? 1 : 0);
-              const doneHere = (rBucket === 'completed' ? 1 : 0) + (uBucket === 'completed' ? 1 : 0);
-              const statePct = calcPct(doneHere, activeSectors);
-              const isHovered = hoveredState === s.state_code;
-              const ruralCellKey = `${s.state_code}-rural`;
-              const urbanCellKey = `${s.state_code}-urban`;
-
-              return (
-                <div
-                  key={s.state_code}
-                  className={`pv-state-card${isHovered ? ' is-hovered' : ''}`}
-                  onMouseEnter={() => setHoveredState(s.state_code)}
-                >
-                  {isHovered ? (
-                    <div className="pv-tooltip pv-tooltip--state" role="tooltip">
-                      <div className="pv-tooltip-title">
-                        {s.state_name} <span className="tabular">({s.state_code})</span>
-                      </div>
-                      <div className="pv-tooltip-row tabular">
-                        <span>
-                          Rural:{' '}
-                          <strong>
-                            {rBucket === 'none' ? 'N/A' : STATUS_META[rBucket].label}
-                          </strong>
+      {/* Largest shortfalls */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>Largest shortfalls reported so far</h3>
+          {topLeads.length > 0 ? (
+            <span className="pv-chart-note">₹ crore, as printed in the budget papers</span>
+          ) : null}
+        </div>
+        {topLeads.length > 0 ? (
+          <div className="table-wrap">
+            <table className="ledger-table pv-ub-table">
+              <caption className="pv-ub-caption">
+                Budget lines with the largest amount reported below their budget estimate.
+                {onSelectFinding ? ' Open a line to see its evidence.' : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Budget line</th>
+                  <th scope="col">Year</th>
+                  <th scope="col" className="num">
+                    Budget estimate
+                  </th>
+                  <th scope="col" className="num">
+                    Revised estimate
+                  </th>
+                  <th scope="col" className="num">
+                    Actual
+                  </th>
+                  <th scope="col" className="num">
+                    Below estimate
+                  </th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const noActuals = lead.compare === 'revised_vs_budget_estimate';
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.entity_name || lead.title}
+                          </button>
+                        ) : (
+                          <span>{lead.entity_name || lead.title}</span>
+                        )}
+                        {lead.entity_name && lead.title && lead.title !== lead.entity_name ? (
+                          <span className="pv-ub-sub">{lead.title}</span>
+                        ) : null}
+                      </td>
+                      <td className="tabular">{plainFiscalYear(lead.fiscal_year)}</td>
+                      <td className="num">{formatInrCr(lead.budget_estimate_cr)}</td>
+                      <td className="num">{formatInrCr(lead.revised_estimate_cr)}</td>
+                      <td className="num" title={noActuals ? 'Actuals not published yet' : undefined}>
+                        {formatInrCr(lead.actual_cr)}
+                        {noActuals ? <span className="pv-ub-sub">not published yet</span> : null}
+                      </td>
+                      <td className="num">
+                        <strong>{formatInrCr(lead.below_estimate_cr)}</strong>
+                        {lead.below_estimate_pct != null ? (
+                          <span className="pv-ub-sub">{lead.below_estimate_pct.toFixed(1)}%</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
                         </span>
-                        <span>·</span>
-                        <span>
-                          Urban:{' '}
-                          <strong>
-                            {uBucket === 'none' ? 'N/A' : STATUS_META[uBucket].label}
-                          </strong>
-                        </span>
-                      </div>
-                      <div className="pv-tooltip-row tabular">
-                        Coverage: {doneHere}/{activeSectors} ({fmtPct(statePct)})
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="pv-state-info">
-                    <span className="pv-state-code tabular">{s.state_code}</span>
-                    <span className="pv-state-name">{s.state_name}</span>
-                  </div>
-
-                  <div className="pv-state-cells">
-                    <button
-                      type="button"
-                      disabled={rBucket !== 'queued' || !s.rural_task_id || !onCopyTaskPrompt}
-                      className={`pv-sector-cell pv-sector-cell--${rBucket}${copiedCellKey === ruralCellKey ? ' is-copied' : ''}`}
-                      onFocus={() => setHoveredState(s.state_code)}
-                      onBlur={() => setHoveredState(null)}
-                      onClick={() =>
-                        handleSectorCopy(
-                          s.rural_task_id,
-                          ruralCellKey,
-                          `${s.state_name} (rural)`,
-                          rBucket,
-                        )
-                      }
-                      aria-label={`${s.state_name} Rural: ${rBucket === 'none' ? 'Not applicable' : STATUS_META[rBucket].label}${rBucket === 'queued' && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
-                      title={
-                        rBucket === 'queued' && s.rural_task_id
-                          ? `Click to copy 1-line prompt for ${s.state_name} (rural)`
-                          : `${s.state_name} Rural: ${rBucket === 'none' ? 'N/A' : STATUS_META[rBucket].label}`
-                      }
-                    >
-                      {copiedCellKey === ruralCellKey ? (
-                        <Check size={11} aria-hidden="true" />
-                      ) : rBucket === 'none' ? (
-                        '—'
-                      ) : (
-                        'R'
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={uBucket !== 'queued' || !s.urban_task_id || !onCopyTaskPrompt}
-                      className={`pv-sector-cell pv-sector-cell--${uBucket}${copiedCellKey === urbanCellKey ? ' is-copied' : ''}`}
-                      onFocus={() => setHoveredState(s.state_code)}
-                      onBlur={() => setHoveredState(null)}
-                      onClick={() =>
-                        handleSectorCopy(
-                          s.urban_task_id,
-                          urbanCellKey,
-                          `${s.state_name} (urban)`,
-                          uBucket,
-                        )
-                      }
-                      aria-label={`${s.state_name} Urban: ${uBucket === 'none' ? 'Not applicable' : STATUS_META[uBucket].label}${uBucket === 'queued' && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
-                      title={
-                        uBucket === 'queued' && s.urban_task_id
-                          ? `Click to copy 1-line prompt for ${s.state_name} (urban)`
-                          : `${s.state_name} Urban: ${uBucket === 'none' ? 'N/A' : STATUS_META[uBucket].label}`
-                      }
-                    >
-                      {copiedCellKey === urbanCellKey ? (
-                        <Check size={11} aria-hidden="true" />
-                      ) : uBucket === 'none' ? (
-                        '—'
-                      ) : (
-                        'U'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         ) : (
           <div className="pv-empty-box">
-            {strata.length === 0
-              ? 'State and UT strata coverage will appear here once CPI tasks are loaded.'
-              : 'No states match the selected filter.'}
+            Leads appear here as agents finish checks. Each one cites the page and printed row of both
+            budget documents.
           </div>
         )}
       </div>

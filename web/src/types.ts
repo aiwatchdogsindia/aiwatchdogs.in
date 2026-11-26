@@ -260,19 +260,65 @@ export interface VisualWebsiteAudit {
   reasons: Record<string, number>;
 }
 
-export interface VisualInflationStratum {
-  state_code: string;
-  state_name: string;
-  rural_status: string | null;
-  urban_status: string | null;
-  rural_task_id: string | null;
-  urban_task_id: string | null;
+export interface VisualUnionBudgetYear {
+  /** Financial year, e.g. "2014-15". */
+  year: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  /** done / tasks * 100. */
+  pct: number;
+  /** Budget lines checked for that year. */
+  lines: number;
+  /** Of those, lines traced to their actual expenditure. */
+  with_actuals: number;
+  /** Rs crore, sum of the lines' budget estimates. */
+  budget_estimate_cr: number;
+  /** Leads published for that year. */
+  leads: number;
+  /** Rs crore, sum of those leads' shortfalls. */
+  below_estimate_cr: number;
+  /** 'revised' when actuals are not yet published for that year. */
+  compares: 'actual' | 'revised';
 }
 
-export interface VisualInflation {
-  batches_submitted: number;
-  roles: Array<{ role: string; label: string; done: number; total: number; pct: number }>;
-  strata: VisualInflationStratum[];
+export interface VisualUnionBudgetLead {
+  finding_id: string;
+  title: string;
+  entity_name: string;
+  /** e.g. "FY2019-20". */
+  fiscal_year: string;
+  status: string;
+  budget_estimate_cr: number | null;
+  revised_estimate_cr: number | null;
+  actual_cr: number | null;
+  below_estimate_cr: number;
+  below_estimate_pct: number | null;
+  /** 'actual_vs_budget_estimate' | 'revised_vs_budget_estimate'. */
+  compare: string;
+}
+
+export interface VisualUnionBudget {
+  lines: number;
+  lines_with_actuals: number;
+  lines_alone: number;
+  alone_from_crore: number;
+  set_size: number;
+  statements: number;
+  financial_years: string[];
+  generated_on: string;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  below_estimate_cr: number;
+  /** One entry per financial year, oldest first. */
+  years: VisualUnionBudgetYear[];
+  /** Up to 10, largest shortfall first. */
+  top_leads: VisualUnionBudgetLead[];
+  documents_url: string;
+  coverage_url: string;
 }
 
 export interface ProjectVisualSummary {
@@ -280,7 +326,7 @@ export interface ProjectVisualSummary {
   status_counts: VisualStatusCounts;
   budget_audit?: VisualBudgetAudit;
   website_audit?: VisualWebsiteAudit;
-  inflation?: VisualInflation;
+  union_budget?: VisualUnionBudget;
 }
 
 export interface MissionItem {
@@ -318,6 +364,10 @@ export interface MissionItem {
   sources?: PublicSource[];
   findings?: FindingItem[];
   tasks?: MissionTask[];
+  /** Number of tasks in the inline `tasks` array. */
+  tasks_listed?: number;
+  /** True when `tasks` holds only the first slice of a large project's tasks. */
+  tasks_truncated?: boolean;
   is_community_project?: boolean;
   posted_by?: ProjectPoster;
   project_sources?: ProjectSource[];
@@ -352,13 +402,25 @@ export interface MissionTask {
   status: string;
   claimed_by?: string | null;
   claimed_by_handle?: string | null;
-  depends_on?: string[];
   attempt_count?: number;
   created_at?: string;
   work_type?: string;
   estimated_tokens?: number;
   estimate_basis?: string;
   usage?: TaskUsage;
+}
+
+export type ProjectTaskStatusFilter = 'all' | 'open' | 'claimed' | 'completed';
+export type ProjectTaskKindFilter = 'all' | 'audit' | 'check';
+
+/** One page of `GET /api/missions/{slug}/tasks`. */
+export interface ProjectTaskPage {
+  slug: string;
+  total: number;
+  offset: number;
+  limit: number;
+  counts: Record<ProjectTaskStatusFilter, number>;
+  tasks: MissionTask[];
 }
 
 /** What a completed task actually took. Missing fields were not reported. */

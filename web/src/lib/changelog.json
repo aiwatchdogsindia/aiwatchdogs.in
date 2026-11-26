@@ -3,6 +3,20 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 36,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/36",
+      "mergedAt": "2026-11-26T11:00:00Z",
+      "title": "P3 is now the Union Budget audit: 10,000 checks on money budgeted but not spent, 2014-15 to 2025-26",
+      "items": [
+        "Replaced P3 (Independent India Inflation) with 'Union Budget since 2014-15: money that was budgeted but not spent, line by line' (projects/union-budget-unspent-funds.json): 10,000 tasks over 19,391 budget lines from 1,173 official Notes on Demands for Grants statements of Union Budgets 2015-16 to 2026-27, each pinned by URL and SHA-256 in documents.csv.",
+        "New deterministic check UB1 (src/aiwatchdogs/engines/union_budget.py): reads a year's budget and revised estimates from one Union Budget and its actual expenditure from the budget two years later, and reports lines where 10% or more of the budget estimate (at least Rs 1 crore) was not spent, citing page and printed row in both documents. Leads are peer-verified like P1.",
+        "Fairness rules: a statement is used only if it adds up to its printed Grand Total; both budgets must print the same estimate for the year in between; schemes split by source of funds or component are compared as a whole; debt, interest, Railways, reserve-fund transfers, lump sums and non-cash provisions are out of scope. Two independent audits of 520 dry-run leads found no figure errors.",
+        "scripts/build_union_budget_project.py rebuilds the tasks, coverage.json and documents.csv from the official PDFs and refuses to write a project in which any listed line cannot be read.",
+        "Hub: project pages count tasks in SQL and list only the first 200 tasks of very large projects; new GET /api/missions/{slug}/tasks pages and searches tasks; project files are validated once per state of the files; the research task flow, the /dataset endpoints and independent-inflation-join.txt are removed.",
+        "Site: new P3 page with year-by-year progress, the largest shortfalls reported so far and links to the statements and coverage; server-side task paging for large projects; inflation-specific pages and styles removed."
+      ]
+    },
+    {
       "pr": 34,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/34",
       "mergedAt": "2026-11-26T07:55:34Z",

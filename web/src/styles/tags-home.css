@@ -100,7 +100,7 @@
   font-weight: 400;
 }
 
-/* Work / check type pill: Budget check, Website check, Price research, Peer check */
+/* Work / check type pill: Budget check, Website check, Unspent budget, Peer check */
 .badge-work,
 .chip-work {
   color: #2A2620;

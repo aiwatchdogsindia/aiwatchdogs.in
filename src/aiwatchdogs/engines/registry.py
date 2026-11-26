@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from aiwatchdogs.connectors import loader as connector_loader
 from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
-from aiwatchdogs.engines import fiscal, police, procurement, proximity, schemes
+from aiwatchdogs.engines import fiscal, police, procurement, proximity, schemes, union_budget
 
 ENGINE_VERSION = "2.0.0"
 
@@ -27,6 +27,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "M7": "M7-2026.11-v2",
     "M8": "M8-2026.11-v2",
     "P1": "P1-2026.11-v1",
+    "UB1": "UB1-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -190,6 +191,21 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://www.indiabudget.gov.in/budget2025-26/doc/eb/sbe51.pdf",
         "module": "aiwatchdogs.engines.police",
     },
+    "UB1": {
+        "code": "UB1",
+        "name": "Union Budget Lines: Budget Estimate vs Revised Estimate vs Actual",
+        "pillar": "budget",
+        "ruleset_version": RULESET_VERSIONS["UB1"],
+        "statutory_anchors": ["Article-112-114-Constitution", "GFR-2017-R62", "FRBM-Act-2003"],
+        "description": (
+            "Reads numbered lines of the Notes on Demands for Grants from two checksummed Union Budget PDFs: "
+            "the budget and revised estimates of a financial year from the budget presented one year later, "
+            "and the actual expenditure from the budget presented two years later. Reports the part of a "
+            "line's budget estimate that was not spent, citing page and printed row for every figure."
+        ),
+        "reference_dataset_url": "https://www.indiabudget.gov.in/budget2025-26/doc/eb/sbe46.pdf",
+        "module": "aiwatchdogs.engines.union_budget",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -202,6 +218,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "M7": (schemes.run_m7_welfare_schemes, schemes),
     "M8": (proximity.run_m8_corporate_proximity, proximity),
     "P1": (police.run_p1_police_budget_heads, police),
+    "UB1": (union_budget.run_ub1_union_budget_lines, union_budget),
 }
 
 
@@ -385,7 +402,7 @@ def run_engine(
     *,
     as_of_date: str | date | datetime | None = None,
 ) -> EngineRunResult:
-    """Run one deterministic civic-audit engine (M1-M8, P1) with full fingerprint manifest, neutrality & recursive PII safety."""
+    """Run one deterministic civic-audit engine (M1-M8, P1, UB1) with full fingerprint manifest, neutrality & recursive PII safety."""
     code = methodology_code.upper().strip()
     if code not in _ENGINE_DISPATCH:
         raise ValueError(

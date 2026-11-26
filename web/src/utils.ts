@@ -160,13 +160,13 @@ export function pillarLabel(pillar?: string): string {
 const SLUG_PROJECT_CODES: Record<string, string> = {
   'police-finances': 'P1',
   'gov-in-public-information': 'P2',
-  'independent-india-inflation': 'P3',
+  'union-budget-unspent-funds': 'P3',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   P1: 'P1',
   W1: 'P2',
-  CPI1: 'P3',
+  UB1: 'P3',
 };
 
 /**
@@ -221,6 +221,10 @@ export function pillarTint(pillar?: string): PillarTint {
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {
   P1: { name: 'Police Budget-Head Variance', rule: 'MH 2055 / 4055, Actuals vs BE vs RE from official budget documents (cited page and line)' },
+  UB1: {
+    name: 'Union Budget lines: budget estimate vs revised estimate vs actual',
+    rule: 'Reads a numbered line of the Notes on Demands for Grants from two checksummed Union Budget PDFs and reports the part of its budget estimate that was not spent, when that is 10% or more and at least Rs 1 crore.',
+  },
 };
 
 const ALLOWED_PRODUCTION_ORIGINS = new Set([
@@ -282,35 +286,22 @@ export function buildCanonicalJoinPrompt(origin: string = getCanonicalOrigin()):
   return `Fetch and follow ${base}/join.txt to run a civic-audit agent with me`;
 }
 
-function isInflationProject(slug: string, methodologyCode?: string): boolean {
-  return (
-    slug === 'independent-india-inflation' ||
-    (methodologyCode || '').trim().toUpperCase() === 'CPI1'
-  );
-}
-
 export function buildProjectJoinPrompt(
   slug: string,
-  methodologyCode?: string,
+  _methodologyCode?: string,
   origin: string = getCanonicalOrigin(),
 ): string {
   const base = origin.replace(/\/+$/, '');
-  if (isInflationProject(slug, methodologyCode)) {
-    return `Read and follow ${base}/independent-inflation-join.txt to claim one Independent India Inflation Dataset task and submit its evidence.`;
-  }
   return `Fetch and follow ${base}/join.txt to run a civic-audit agent on project ${slug} with me`;
 }
 
 export function buildTaskJoinPrompt(
   slug: string,
   taskId: string,
-  methodologyCode?: string,
+  _methodologyCode?: string,
   origin: string = getCanonicalOrigin(),
 ): string {
   const base = origin.replace(/\/+$/, '');
-  if (isInflationProject(slug, methodologyCode)) {
-    return `Read and follow ${base}/independent-inflation-join.txt to claim and complete task ${taskId} and submit its evidence.`;
-  }
   return `Fetch and follow ${base}/join.txt to run task ${taskId} on ${slug} with me`;
 }
 

@@ -62,12 +62,17 @@ from aiwatchdogs.hub.database import (
     resolve_database_url,
     utc_now_iso,
 )
-from aiwatchdogs.hub.desk import MAX_RESEARCH_BATCHES, MAX_RESEARCH_PAGE_BATCHES, DeskService
+from aiwatchdogs.hub.desk import MAX_TASK_PAGE, DeskService
 from aiwatchdogs.hub.feed import feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
-from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, project_codes_by_slug, slug_aliases, sync_projects
+from aiwatchdogs.projects import (
+    UNION_BUDGET_PROJECT_SLUG,
+    project_codes_by_slug,
+    slug_aliases,
+    sync_projects,
+)
 
 logger = logging.getLogger("aiwatchdogs.hub")
 
@@ -280,15 +285,12 @@ class DeskReleaseRequest(BaseModel):
 
 class DeskSubmitRequest(BaseModel):
     lease_id: str = Field(..., min_length=1, max_length=128)
-    outcome: Literal["finding", "cleared", "verification", "research", "observations"]
+    outcome: Literal["finding", "cleared", "verification", "observations"]
     observations: list[dict[str, Any]] | None = Field(default=None, max_length=126)
     whisper: str | None = Field(default=None, max_length=600)
     finding: dict[str, Any] | None = None
     verification: dict[str, Any] | None = None
     metrics: dict[str, Any] | None = None
-    research: dict[str, Any] | None = None
-    research_batch: int = Field(default=1, ge=1, le=MAX_RESEARCH_BATCHES, strict=True)
-    research_final: bool = Field(default=True, strict=True)
     usage: UsageReport | None = None
     idempotency_key: str | None = Field(default=None, max_length=128)
 
@@ -633,8 +635,9 @@ def create_app(
     desk = DeskService(db=db, broker=broker)
     # Renamed projects keep answering at their earlier slug (page, API and feed links).
     try:
-        desk.slug_aliases = slug_aliases()
-        desk.project_codes = project_codes_by_slug()
+        # Project files the sync has already accepted are read here without being validated again.
+        desk.slug_aliases = slug_aliases(db=db)
+        desk.project_codes = project_codes_by_slug(db=db)
     except Exception as exc:  # a bad project file must never stop the hub from starting
         logger.warning("Could not read project slug aliases: %s", exc)
     dist_dir = _resolve_web_dist(web_dist)
@@ -882,22 +885,33 @@ def create_app(
             headers={"Cache-Control": "public, max-age=86400, immutable"},
         )
 
-    @application.get("/api/missions/{slug}/dataset/schema")
-    def api_mission_dataset_schema(slug: str) -> dict[str, Any]:
-        if slug != INFLATION_PROJECT_SLUG:
-            raise HTTPException(status_code=404, detail="Dataset not found")
-        from aiwatchdogs.inflation import report_schema
-
-        return report_schema()
-
-    @application.get("/api/missions/{slug}/dataset")
-    def api_mission_dataset(
+    @application.get("/api/missions/{slug}/tasks")
+    def api_mission_tasks(
         slug: str,
-        task_id: str | None = Query(default=None, max_length=64),
-        after: str | None = Query(default=None, max_length=67),
-        limit: int = Query(default=MAX_RESEARCH_PAGE_BATCHES, ge=1, le=MAX_RESEARCH_PAGE_BATCHES),
+        task_status: str = Query(default="all", alias="status", max_length=12),
+        q: str = Query(default="", max_length=120),
+        kind: str = Query(default="audit", max_length=8),
+        offset: int = Query(default=0, ge=0, le=1_000_000),
+        limit: int = Query(default=25, ge=1, le=MAX_TASK_PAGE),
     ) -> dict[str, Any]:
-        return desk.get_inflation_dataset(slug, task_id=task_id, after=after, limit=limit)
+        return desk.list_mission_tasks(slug, status_filter=task_status, q=q, kind=kind, offset=offset, limit=limit)
+
+    @application.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}/{{filename}}")
+    def api_union_budget_file(filename: str) -> Response:
+        """The statements the Union Budget project reads (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / UNION_BUDGET_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @application.get("/api/findings")
     def api_findings(
