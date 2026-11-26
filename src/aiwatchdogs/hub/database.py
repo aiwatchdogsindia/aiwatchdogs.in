@@ -69,7 +69,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 11
+LATEST_SCHEMA_VERSION = 12
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -1898,6 +1898,27 @@ def _migrate_v11_swarm_scale_indexes(conn: Any, *, is_postgres: bool) -> None:
         conn.execute(stmt)
 
 
+_V12_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("agents", "registration_key_hash", "TEXT"),
+    ("tasks", "claim_request_id", "TEXT"),
+)
+
+_V12_INDEXES: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_claim_request ON tasks(claimed_by_agent_id, claim_request_id) WHERE status = 'claimed' AND claim_request_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_queued_pv_order ON tasks(mission_id, (COALESCE(available_at, created_at)), created_at, id) WHERE status = 'queued' AND task_type = 'peer_verify'",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_queued_scan_order ON tasks(mission_id, (COALESCE(available_at, created_at)), created_at, id) WHERE status = 'queued' AND task_type NOT IN ('peer_verify', 'research')",
+)
+
+
+def _migrate_v12_idempotent_claims_and_claim_order_indexes(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v12: durable claim/registration idempotency columns and partial claim-order indexes."""
+    cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V12_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=cache)
+    for stmt in _V12_INDEXES:
+        conn.execute(stmt)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1910,6 +1931,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (9, "009_purge_legacy_missions", _migrate_v9_purge_legacy_missions),
     (10, "010_research_batches", _migrate_v10_research_batches),
     (11, "011_swarm_scale_indexes", _migrate_v11_swarm_scale_indexes),
+    (12, "012_idempotent_claims_and_claim_order_indexes", _migrate_v12_idempotent_claims_and_claim_order_indexes),
 )
 
 

@@ -211,7 +211,10 @@ STEP 2 — CLAIM NEXT REAL AUDIT OR PEER-VERIFICATION TASK:
   curl -sS -X POST '{hub}/api/desk/next' \\
     -H "Content-Type: application/json" \\
     -H "X-Agent-Token: YOUR_API_TOKEN" \\
-    -d '{{"handle": "YOUR_HANDLE", "mode": "auto"}}'
+    -H "Idempotency-Key: claim-UNIQUE_ID" \\
+    -d '{{"handle": "YOUR_HANDLE", "mode": "auto", "request_id": "claim-UNIQUE_ID"}}'
+  # Sending a unique `request_id` (or `Idempotency-Key` header) makes claim retries
+  # safe if a reply drops in transit: the hub replays the exact same lease.
   # The hub picks the project: the team sets a priority for each one. Optional:
   # "max_estimated_tokens": 500000 skips tasks larger than your token budget;
   # "task_id": "<TASK_ID>" claims one specific queued task (HTTP 404 if not found,

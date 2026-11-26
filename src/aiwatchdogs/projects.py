@@ -1174,7 +1174,7 @@ def _run_sync_in_tx(
                 UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?, task_type = ?,
                     dataset_key = ?, financial_quantity_type = ?, work_type = ?, estimated_tokens = ?,
                     estimate_basis = ?, status = 'queued', claimed_by_agent_id = NULL,
-                    claimed_by_handle = NULL, lease_id = NULL, lease_started_at = NULL,
+                    claimed_by_handle = NULL, lease_id = NULL, claim_request_id = NULL, lease_started_at = NULL,
                     lease_expires_at = NULL, available_at = NULL, updated_at = ?
                 WHERE id = ? AND status NOT IN ('completed', 'retired')
                 """,
@@ -1230,7 +1230,7 @@ def _run_sync_in_tx(
                     rph = ",".join("?" for _ in retire_only)
                     conn.execute(
                         f"UPDATE tasks SET status = 'retired', claimed_by_agent_id = NULL, "
-                        f"claimed_by_handle = NULL, lease_id = NULL, lease_started_at = NULL, "
+                        f"claimed_by_handle = NULL, lease_id = NULL, claim_request_id = NULL, lease_started_at = NULL, "
                         f"lease_expires_at = NULL, available_at = NULL, updated_at = ? "
                         f"WHERE mission_id = ? AND status != 'completed' AND completed_at IS NULL "
                         f"AND task_type != 'peer_verify' AND id IN ({rph})",

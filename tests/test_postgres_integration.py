@@ -8,6 +8,7 @@ service container.
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
@@ -657,3 +658,127 @@ def test_read_only_postgres_refuses_writes() -> None:
             conn.execute("DELETE FROM missions")
     finally:
         db.close()
+
+
+def test_postgres_claim_plan_no_disk_sort_and_concurrent_clear_receipts(pg_schema_url: str) -> None:
+    """Verify PG16 claim query uses partial index without disk sort and 12 concurrent clears emit receipts 1..12."""
+    bootstrap_db = Database(database_url=pg_schema_url)
+    try:
+        seed_database(bootstrap_db)
+        with bootstrap_db.read() as conn:
+            mid = conn.execute("SELECT id FROM missions WHERE status = 'active' ORDER BY priority ASC LIMIT 1").fetchone()["id"]
+            base_task = conn.execute("SELECT * FROM tasks WHERE mission_id = ? LIMIT 1", (mid,)).fetchone()
+            assert base_task is not None
+
+        # Seed 500 realistic wide (~2 KB payload_json) queued tasks in one mission and ANALYZE.
+        wide_payload = json.dumps({"note": "x" * 1800, "dataset_key": "pg-perf"})
+        with bootstrap_db.transaction() as conn:
+            conn.execute("DELETE FROM tasks WHERE id != ?", (base_task["id"],))
+            conn.execute("UPDATE tasks SET status = 'queued', claimed_by_agent_id = NULL, lease_id = NULL WHERE id = ?", (base_task["id"],))
+            conn.execute("UPDATE missions SET cleared_count = 0, completed_tasks = 0 WHERE id = ?", (mid,))
+            rows = [
+                (
+                    f"tsk-pg-perf-{i:04d}",
+                    mid,
+                    base_task["mission_slug"],
+                    base_task["methodology_code"],
+                    "anomaly_scan",
+                    f"Perf Task {i:04d}",
+                    "Verify budget line.",
+                    wide_payload,
+                    "queued",
+                    f"2026-11-26T{(i // 3600):02d}:{((i % 3600) // 60):02d}:{(i % 60):02d}Z",
+                    f"2026-11-26T{(i // 3600):02d}:{((i % 3600) // 60):02d}:{(i % 60):02d}Z",
+                )
+                for i in range(1, 500)
+            ]
+            conn.executemany(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type, title,
+                    instructions, payload_json, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                rows,
+            )
+            conn.execute("ANALYZE tasks")
+
+        # 1. Confirm Postgres EXPLAIN (ANALYZE, FORMAT JSON) does NOT spill a Sort or Seq Scan.
+        with bootstrap_db.transaction() as conn:
+            plan_row = conn.execute(
+                """
+                EXPLAIN (ANALYZE, FORMAT JSON)
+                SELECT t.id FROM tasks t
+                WHERE t.mission_id = ?
+                  AND t.task_type NOT IN ('peer_verify', 'research')
+                  AND t.status = 'queued'
+                  AND (t.available_at IS NULL OR t.available_at <= '2099-01-01T00:00:00Z')
+                  AND t.excluded_handles_json NOT LIKE '%"pg-perf-agent"%' ESCAPE '\\'
+                ORDER BY COALESCE(t.available_at, t.created_at) ASC, t.created_at ASC, t.id ASC
+                LIMIT 1 FOR UPDATE SKIP LOCKED
+                """,
+                (mid,),
+            ).fetchone()
+        plan_json = json.dumps(plan_row)
+        assert "idx_tasks_queued_scan_order" in plan_json
+        assert '"Sort Method": "external' not in plan_json
+        assert '"Node Type": "Sort"' not in plan_json
+
+        # 2. Twelve concurrent clears must return exact receipts 1..12 matching DB cleared_count == 12.
+        bootstrap_desk = DeskService(bootstrap_db, SSEBroker(bootstrap_db))
+        agents = [
+            bootstrap_desk.register_agent(
+                {"handle": f"pg-clear-{i:02d}", "provider": "rule-engine", "model": "v1"},
+                base_url="https://aiwatchdogs.in",
+            )
+            for i in range(12)
+        ]
+        leases = [
+            bootstrap_desk.claim_next_task(
+                token=ag["api_token"],
+                handle=ag["handle"],
+                mode="investigate",
+                request_id=f"pg-clear-req-{i:02d}",
+            )
+            for i, ag in enumerate(agents)
+        ]
+        assert all(ls is not None for ls in leases)
+
+        # Replay of claim request_id returns exact same lease without acquiring a second one.
+        replay0 = bootstrap_desk.claim_next_task(
+            token=agents[0]["api_token"],
+            handle=agents[0]["handle"],
+            mode="investigate",
+            request_id="pg-clear-req-00",
+        )
+        assert replay0 is not None and replay0["lease_id"] == leases[0]["lease_id"]
+
+        clear_barrier = threading.Barrier(12)
+
+        def _clear_worker(idx: int) -> int:
+            w_db = Database(database_url=pg_schema_url)
+            try:
+                w_desk = DeskService(w_db, SSEBroker(w_db))
+                clear_barrier.wait(timeout=15)
+                res = w_desk.submit_task(
+                    {
+                        "lease_id": leases[idx]["lease_id"],
+                        "outcome": "cleared",
+                        "metrics": {"cleared_count": 3},
+                    },
+                    token=agents[idx]["api_token"],
+                    idempotency_key=f"pg-clear-submit-{idx:02d}",
+                )
+                return int(res["mission_cleared_count"])
+            finally:
+                w_db.close()
+
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            receipts = sorted(pool.map(_clear_worker, range(12)))
+
+        assert receipts == list(range(1, 13))
+        with bootstrap_db.read() as conn:
+            final_cnt = conn.execute("SELECT cleared_count FROM missions WHERE id = ?", (mid,)).fetchone()
+        assert int(final_cnt["cleared_count"]) == 12
+    finally:
+        bootstrap_db.close()

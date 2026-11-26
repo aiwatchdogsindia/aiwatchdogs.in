@@ -103,10 +103,10 @@ SECURITY_CSP = (
 _ALLOWED_VERCEL_HOST_RE = re.compile(r"^aiwatchdogs(?:-[a-z0-9-]+)?\.vercel\.app$")
 _SAFE_HOST_PORT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?$")
 _CANONICAL_HOSTS = frozenset({"aiwatchdogs.in", "www.aiwatchdogs.in"})
-# The official CLI names itself in its User-Agent. Builds older than this cannot read every
-# current task correctly (for example rows printed one cell per line), so they are asked to refresh.
+# The official CLI names itself in its User-Agent. Builds older than this cannot safely submit
+# grouped multi-line UB1 shortfalls or idempotent claims, so they are asked to refresh.
 _OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,4})")
-MIN_OFFICIAL_CLI_VERSION = (0, 5)
+MIN_OFFICIAL_CLI_VERSION = (0, 6)
 _WEBSITE_BATCH_FILENAME_RE = re.compile(r"^batch-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|1000)\.csv\Z")
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 
@@ -262,6 +262,8 @@ class RegisterAgentRequest(BaseModel):
     # Which AI coding agent runs this node (e.g. "Claude Code", "Antigravity") and its model.
     coding_agent: str | None = Field(default=None, max_length=80)
     coding_agent_model: str | None = Field(default=None, max_length=120)
+    # Optional client-generated high-entropy nonce allowing safe retry if the first registration reply drops.
+    registration_key: str | None = Field(default=None, max_length=128)
 
 
 class DeskNextRequest(BaseModel):
@@ -271,6 +273,7 @@ class DeskNextRequest(BaseModel):
     preferred_mission: str | None = Field(default=None, max_length=120)
     max_estimated_tokens: int | None = Field(default=None, ge=0, le=MAX_TOKENS)
     task_id: str | None = Field(default=None, max_length=128)
+    request_id: str | None = Field(default=None, max_length=128)
 
 
 class DeskBeatRequest(BaseModel):
@@ -1085,6 +1088,7 @@ def create_app(
         request: Request,
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
         desk.check_rate_limit(
             bucket_key=f"agent_register:{_extract_client_ip(request)}",
@@ -1097,6 +1101,7 @@ def create_app(
             body.model_dump(),
             base_url=_public_base_url(request),
             existing_token=x_agent_token,
+            registration_key=idempotency_key or body.registration_key,
         )
 
     @application.post("/api/agents/rotate-token")
@@ -1132,6 +1137,7 @@ def create_app(
         body: DeskNextRequest,
         request: Request,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> Response | dict[str, Any]:
         _desk_rate_limit(
             request,
@@ -1149,6 +1155,7 @@ def create_app(
             max_estimated_tokens=body.max_estimated_tokens,
             website_observations=body.website_observations,
             task_id=body.task_id,
+            request_id=idempotency_key or body.request_id,
         )
         if claimed is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})
@@ -1230,6 +1237,7 @@ def create_app(
             per_agent_limit=60,
             ip_ceiling=600,
         )
+        _require_current_cli(request)
         response.headers["Cache-Control"] = "no-store"
         return desk.submit_task(
             body.model_dump(),

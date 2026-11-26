@@ -9,6 +9,7 @@ import math
 import os
 import random
 import re
+import secrets
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -54,7 +55,7 @@ CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
-CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.5"
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.6"
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
 MAX_RATE_LIMIT_WAITS = 8
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
@@ -1353,16 +1354,21 @@ class AgentRunner:
             "coding_agent": getattr(self.config, "coding_agent", "") or "",
             "coding_agent_model": getattr(self.config, "coding_agent_model", "") or "",
         }
-        headers = self._auth_headers() if self.config.api_token else {"Accept": "application/json"}
-        # A lost reply to a first registration would orphan the handle, so only failures that
-        # happen before the request is sent are retried.
+        if self.config.api_token:
+            headers = self._auth_headers()
+        else:
+            # Attach a high-entropy per-call registration_key so a dropped first reply can be safely
+            # retried and recovered with a fresh token without stranding the handle.
+            reg_key = f"reg-{secrets.token_urlsafe(24)}"
+            payload["registration_key"] = reg_key
+            headers = {"Accept": "application/json", "Idempotency-Key": reg_key}
         resp = self._hub_send(
             "POST",
             "/api/agents/register",
             headers=headers,
             json_body=payload,
             what="register",
-            retry_read_errors=False,
+            retry_read_errors=True,
         )
         resp.raise_for_status()
         data = self._parse_hub_json(resp)
@@ -1405,9 +1411,11 @@ class AgentRunner:
         task_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Claim the next available audit or verification task via POST /api/desk/next."""
+        claim_request_id = f"claim-{secrets.token_hex(12)}"
         body: dict[str, Any] = {
             "handle": self.config.handle,
             "mode": self.config.mode,
+            "request_id": claim_request_id,
         }
         body["website_observations"] = True
         if preferred_mission:
@@ -1416,11 +1424,19 @@ class AgentRunner:
         if cleaned_task_id:
             body["task_id"] = cleaned_task_id
 
-        resp = self._hub_send("POST", "/api/desk/next", headers=self._auth_headers(), json_body=body, what="claim")
-        if resp.status_code == 204 or not resp.content.strip():
+        resp = self._hub_send(
+            "POST",
+            "/api/desk/next",
+            headers=self._auth_headers(extra={"Idempotency-Key": claim_request_id}),
+            json_body=body,
+            what="claim",
+        )
+        if resp.status_code == 204:
             self._emit("queue_empty", {"handle": self.config.handle})
             return None
         resp.raise_for_status()
+        if not resp.content.strip():
+            raise ValueError("Hub returned an empty 2xx response to task claim.")
         lease = self._parse_hub_json(resp)
         if isinstance(lease, dict) and lease.get("lease_id"):
             self._note_lease(str(lease["lease_id"]))
@@ -2062,7 +2078,7 @@ class AgentRunner:
             outcome="finding",
             whisper=whisper_msg,
             finding=finding_payload,
-            findings=finding_payloads if len(finding_payloads) > 1 else None,
+            findings=finding_payloads,
             metrics=metrics,
         )
         return {

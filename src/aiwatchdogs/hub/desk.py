@@ -1348,7 +1348,7 @@ class DeskService:
                 """
                 UPDATE tasks
                 SET status = 'retired', claimed_by_agent_id = NULL, claimed_by_handle = NULL,
-                    lease_id = NULL, lease_started_at = NULL, lease_expires_at = NULL,
+                    lease_id = NULL, claim_request_id = NULL, lease_started_at = NULL, lease_expires_at = NULL,
                     available_at = NULL, updated_at = ?
                 WHERE id = ? AND status != 'completed'
                 """,
@@ -1397,7 +1397,7 @@ class DeskService:
                 """
                 UPDATE tasks
                 SET status = ?, claimed_by_agent_id = NULL, claimed_by_handle = NULL,
-                    lease_id = NULL, lease_started_at = NULL, lease_expires_at = NULL, progress_pct = 0,
+                    lease_id = NULL, claim_request_id = NULL, lease_started_at = NULL, lease_expires_at = NULL, progress_pct = 0,
                     retry_count = ?, available_at = ?, updated_at = ?
                 WHERE id = ? AND status = 'claimed'
                 """,
@@ -1493,7 +1493,7 @@ class DeskService:
             new_token = f"awd_{secrets.token_urlsafe(24)}"
             new_hash = compute_token_digest(new_token)
             conn.execute(
-                "UPDATE agents SET api_token_hash = ?, token_rotated_at = ?, last_heartbeat_at = ? WHERE id = ?",
+                "UPDATE agents SET api_token_hash = ?, token_rotated_at = ?, registration_key_hash = NULL, last_heartbeat_at = ? WHERE id = ?",
                 (new_hash, now, now, agent["id"]),
             )
             return {
@@ -1511,7 +1511,7 @@ class DeskService:
             agent = self._authenticate_agent(conn, token, required=True)
             assert agent is not None
             conn.execute(
-                "UPDATE agents SET revoked_at = ?, status = 'revoked', current_task_id = NULL WHERE id = ?",
+                "UPDATE agents SET revoked_at = ?, status = 'revoked', current_task_id = NULL, registration_key_hash = NULL WHERE id = ?",
                 (now, agent["id"]),
             )
             return {
@@ -4738,6 +4738,7 @@ class DeskService:
         payload: dict[str, Any],
         base_url: str,
         existing_token: str | None = None,
+        registration_key: str | None = None,
     ) -> dict[str, Any]:
         raw_handle = str(payload.get("handle") or "").strip().lower()
         if not HANDLE_RE.match(raw_handle):
@@ -4774,90 +4775,181 @@ class DeskService:
             coding_agent = _CANONICAL.get(provider, "")
             if coding_agent and not coding_agent_model:
                 coding_agent_model = normalize_coding_agent_model(model)
+        clean_reg_key = (registration_key or str(payload.get("registration_key") or "")).strip()[:128]
+        # Require >=16 characters before storing a recovery digest so weak/guessable keys cannot recover handles.
+        reg_key_hash: str | None = compute_token_digest(clean_reg_key) if len(clean_reg_key) >= 16 else None
         now = utc_now_iso()
         profile_url = f"{base_url.rstrip('/')}/a/{raw_handle}"
         envelopes: list[dict[str, Any]] = []
 
-        with self.db.transaction() as conn:
-            existing = conn.execute("SELECT * FROM agents WHERE handle = ?", (raw_handle,)).fetchone()
-            if existing is not None:
-                if existing_token and verify_token_digest(
-                    existing_token.strip(), str(existing["api_token_hash"] or "")
-                ):
-                    if _row_get(existing, "revoked_at", None) or str(_row_get(existing, "status", "")) == "revoked":
-                        raise HTTPException(
-                            status_code=403,
-                            detail="Agent token has been revoked and cannot reconnect.",
-                        )
-                    conn.execute(
-                        """
-                        UPDATE agents
-                        SET display_name = ?, provider = ?, model = ?, mode = ?, region = ?,
-                            capabilities_json = ?, status = 'active', last_heartbeat_at = ?,
-                            coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
-                            coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
-                        WHERE id = ?
-                        """,
-                        (
-                            display_name,
-                            provider,
-                            model,
-                            mode,
-                            region,
-                            dumps_json(capabilities),
-                            now,
-                            coding_agent,
-                            coding_agent,
-                            coding_agent_model,
-                            coding_agent_model,
-                            existing["id"],
-                        ),
+        def _handle_existing_agent(conn: Any, existing: Any) -> dict[str, Any]:
+            if existing_token and verify_token_digest(
+                existing_token.strip(), str(existing["api_token_hash"] or "")
+            ):
+                if _row_get(existing, "revoked_at", None) or str(_row_get(existing, "status", "")) == "revoked":
+                    raise HTTPException(
+                        status_code=403,
+                        detail="Agent token has been revoked and cannot reconnect.",
                     )
-                    return {
-                        "agent_id": existing["id"],
-                        "handle": raw_handle,
-                        "api_token": existing_token.strip(),
-                        "profile_url": profile_url,
-                        "status": "reconnected",
-                    }
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"Handle '{raw_handle}' is already registered; pass X-Agent-Token to reconnect or pick a different handle.",
-                )
-
-            agent_id = f"agt-{secrets.token_hex(6)}"
-            api_token = f"awd_{secrets.token_urlsafe(24)}"
-            token_hash = compute_token_digest(api_token)
-            try:
                 conn.execute(
                     """
-                    INSERT INTO agents (
-                        id, handle, display_name, provider, model, mode, region,
-                        capabilities_json, api_token_hash, status, joined_at, last_heartbeat_at,
-                        coding_agent, coding_agent_model
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                    UPDATE agents
+                    SET display_name = ?, provider = ?, model = ?, mode = ?, region = ?,
+                        capabilities_json = ?, status = 'active', last_heartbeat_at = ?,
+                        registration_key_hash = NULL,
+                        coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
+                        coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
+                    WHERE id = ?
                     """,
                     (
-                        agent_id,
-                        raw_handle,
                         display_name,
                         provider,
                         model,
                         mode,
                         region,
                         dumps_json(capabilities),
-                        token_hash,
-                        now,
                         now,
                         coding_agent,
+                        coding_agent,
                         coding_agent_model,
+                        coding_agent_model,
+                        existing["id"],
                     ),
                 )
-            except DB_INTEGRITY_ERRORS as exc:
+                return {
+                    "agent_id": existing["id"],
+                    "handle": raw_handle,
+                    "api_token": existing_token.strip(),
+                    "profile_url": profile_url,
+                    "status": "reconnected",
+                }
+
+            # Safe retry recovery for a dropped first registration reply: requires a matching high-entropy
+            # registration_key_hash, zero prior activity/claims, unrevoked & unrotated account, within 15 min.
+            if not existing_token and len(clean_reg_key) >= 16:
+                stored_reg_hash = str(_row_get(existing, "registration_key_hash", "") or "")
+                not_revoked = (
+                    not _row_get(existing, "revoked_at", None)
+                    and str(_row_get(existing, "status", "")) != "revoked"
+                )
+                unused_account = (
+                    int(_row_get(existing, "tasks_completed", 0) or 0) == 0
+                    and int(_row_get(existing, "findings_submitted", 0) or 0) == 0
+                    and int(_row_get(existing, "verifications_done", 0) or 0) == 0
+                    and int(_row_get(existing, "cleared_submitted", 0) or 0) == 0
+                    and _row_get(existing, "current_task_id", None) is None
+                    and _row_get(existing, "token_rotated_at", None) is None
+                )
+                joined_dt = _parse_iso(str(_row_get(existing, "joined_at", "") or ""))
+                now_dt = _parse_iso(now)
+                within_window = (
+                    joined_dt is not None
+                    and now_dt is not None
+                    and -60.0 <= (now_dt - joined_dt).total_seconds() <= 900.0
+                )
+                if (
+                    not_revoked
+                    and unused_account
+                    and within_window
+                    and stored_reg_hash
+                    and verify_token_digest(clean_reg_key, stored_reg_hash)
+                ):
+                    has_any_claim = conn.execute(
+                        "SELECT 1 FROM tasks WHERE claimed_by_agent_id = ? LIMIT 1",
+                        (existing["id"],),
+                    ).fetchone()
+                    if has_any_claim is None:
+                        recovered_token = f"awd_{secrets.token_urlsafe(24)}"
+                        recovered_hash = compute_token_digest(recovered_token)
+                        conn.execute(
+                            """
+                            UPDATE agents
+                            SET display_name = ?, provider = ?, model = ?, mode = ?, region = ?,
+                                capabilities_json = ?, api_token_hash = ?, status = 'active',
+                                last_heartbeat_at = ?,
+                                coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
+                                coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
+                            WHERE id = ?
+                            """,
+                            (
+                                display_name,
+                                provider,
+                                model,
+                                mode,
+                                region,
+                                dumps_json(capabilities),
+                                recovered_hash,
+                                now,
+                                coding_agent,
+                                coding_agent,
+                                coding_agent_model,
+                                coding_agent_model,
+                                existing["id"],
+                            ),
+                        )
+                        return {
+                            "agent_id": existing["id"],
+                            "handle": raw_handle,
+                            "api_token": recovered_token,
+                            "profile_url": profile_url,
+                            "status": "active",
+                        }
+
+            raise HTTPException(
+                status_code=409,
+                detail=f"Handle '{raw_handle}' is already registered; pass X-Agent-Token to reconnect or pick a different handle.",
+            )
+
+        with self.db.transaction() as conn:
+            lock_clause = " FOR UPDATE" if self.db.is_postgres else ""
+            existing = conn.execute(
+                f"SELECT * FROM agents WHERE handle = ?{lock_clause}",
+                (raw_handle,),
+            ).fetchone()
+            if existing is not None:
+                return _handle_existing_agent(conn, existing)
+
+            agent_id = f"agt-{secrets.token_hex(6)}"
+            api_token = f"awd_{secrets.token_urlsafe(24)}"
+            token_hash = compute_token_digest(api_token)
+            cur = conn.execute(
+                """
+                INSERT INTO agents (
+                    id, handle, display_name, provider, model, mode, region,
+                    capabilities_json, api_token_hash, registration_key_hash,
+                    status, joined_at, last_heartbeat_at,
+                    coding_agent, coding_agent_model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                ON CONFLICT(handle) DO NOTHING
+                """,
+                (
+                    agent_id,
+                    raw_handle,
+                    display_name,
+                    provider,
+                    model,
+                    mode,
+                    region,
+                    dumps_json(capabilities),
+                    token_hash,
+                    reg_key_hash,
+                    now,
+                    now,
+                    coding_agent,
+                    coding_agent_model,
+                ),
+            )
+            if cur.rowcount == 0:
+                existing = conn.execute(
+                    f"SELECT * FROM agents WHERE handle = ?{lock_clause}",
+                    (raw_handle,),
+                ).fetchone()
+                if existing is not None:
+                    return _handle_existing_agent(conn, existing)
                 raise HTTPException(
                     status_code=409,
                     detail=f"Handle '{raw_handle}' is already registered; pick a different handle.",
-                ) from exc
+                )
             whisper = self._insert_whisper(
                 conn,
                 agent_handle=raw_handle,
@@ -4891,6 +4983,28 @@ class DeskService:
             "status": "active",
         }
 
+    @staticmethod
+    def _build_claim_response(cand: Any, *, lease_id: str, lease_expires: str) -> dict[str, Any]:
+        task_payload = loads_json(cand["payload_json"], {})
+        return {
+            "lease_id": lease_id,
+            "lease_expires_at": lease_expires,
+            "role": task_role(cand["task_type"], task_payload),
+            "task": {
+                "id": cand["id"],
+                "task_type": cand["task_type"],
+                "mission_slug": cand["mission_slug"],
+                "methodology_code": cand["methodology_code"],
+                "title": cand["title"],
+                "instructions": cand["instructions"],
+                "target_finding_id": cand["target_finding_id"],
+                "payload": task_payload,
+                "work_type": cand["work_type"] or None,
+                "estimated_tokens": cand["estimated_tokens"],
+                "estimate_basis": cand["estimate_basis"] or None,
+            },
+        }
+
     def claim_next_task(
         self,
         *,
@@ -4901,9 +5015,11 @@ class DeskService:
         max_estimated_tokens: int | None = None,
         website_observations: bool = False,
         task_id: str | None = None,
+        request_id: str | None = None,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
         requested_task_id = (task_id or "").strip()
+        clean_request_id = (request_id or "").strip()[:128] or None
         with self.db.transaction() as conn:
             agent = self._authenticate_agent(conn, token, required=True)
             assert agent is not None
@@ -4920,6 +5036,40 @@ class DeskService:
                 conn.execute("SELECT id FROM agents WHERE id = ? FOR UPDATE", (agent["id"],))
 
             self._reclaim_expired_leases(conn)
+            now = utc_now_iso()
+
+            # Durable idempotent claim replay: if the caller retries with the same request_id after
+            # a dropped HTTP reply, return the exact existing active lease instead of acquiring a 2nd one.
+            if clean_request_id:
+                replay_task = conn.execute(
+                    """
+                    SELECT * FROM tasks
+                    WHERE claimed_by_agent_id = ? AND claim_request_id = ? AND status = 'claimed'
+                    LIMIT 1
+                    """,
+                    (agent["id"], clean_request_id),
+                ).fetchone()
+                if replay_task is not None:
+                    if requested_task_id and str(replay_task["id"]) not in (
+                        requested_task_id,
+                        f"prj-{requested_task_id}",
+                    ):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Claim request_id '{clean_request_id}' is already bound to active lease "
+                                f"'{replay_task['lease_id']}' for task '{replay_task['id']}'."
+                            ),
+                        )
+                    conn.execute(
+                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active', registration_key_hash = NULL WHERE id = ?",
+                        (now, agent["id"]),
+                    )
+                    return self._build_claim_response(
+                        replay_task,
+                        lease_id=str(replay_task["lease_id"]),
+                        lease_expires=str(replay_task["lease_expires_at"]),
+                    )
 
             # Enforce strict cap on concurrent active leases per agent (blocks single-agent queue hoarding)
             active_lease_row = conn.execute(
@@ -4935,7 +5085,6 @@ class DeskService:
                     ),
                 )
 
-            now = utc_now_iso()
             cand: Any = None
             if requested_task_id:
                 row_lock = " FOR UPDATE" if self.db.is_postgres else ""
@@ -5069,7 +5218,52 @@ class DeskService:
                     )
             else:
                 escaped_handle = escape_like(agent_handle)
-                clauses = [
+                raw_pref = (preferred_mission or "").strip()[:120]
+                preferred_slug = self.resolve_slug(raw_pref) if raw_pref else ""
+                filter_preferred = bool(
+                    preferred_slug and (_agents_may_choose_project() or preferred_slug in OPEN_CHOICE_PROJECTS)
+                )
+
+                # Resolve mission priority buckets first (tiny table, ~3-10 rows) so each candidate
+                # lookup walks a narrow partial index on `tasks` directly in exact claim order — zero
+                # cross-table sort, zero wide `payload_json` disk sort, and 1-row `FOR UPDATE SKIP LOCKED`.
+                if filter_preferred:
+                    mission_rows = conn.execute(
+                        """
+                        SELECT id, slug, status, priority
+                        FROM missions
+                        WHERE slug = ?
+                        ORDER BY CASE WHEN status = 'archived' THEN 1 ELSE 0 END ASC, priority ASC, id ASC
+                        """,
+                        (preferred_slug,),
+                    ).fetchall()
+                else:
+                    mission_rows = conn.execute(
+                        """
+                        SELECT id, slug, status, priority
+                        FROM missions
+                        ORDER BY CASE WHEN status = 'archived' THEN 1 ELSE 0 END ASC, priority ASC, id ASC
+                        """
+                    ).fetchall()
+
+                mission_buckets: list[list[Any]] = []
+                last_bucket_key: tuple[int, int] | None = None
+                for m_row in mission_rows:
+                    bkey = (1 if str(m_row["status"] or "") == "archived" else 0, int(m_row["priority"] or 1))
+                    if bkey != last_bucket_key:
+                        mission_buckets.append([m_row])
+                        last_bucket_key = bkey
+                    else:
+                        mission_buckets[-1].append(m_row)
+
+                if eff_mode == "verify":
+                    phases: tuple[str, ...] = ("peer_verify",)
+                elif eff_mode == "investigate":
+                    phases = ("investigate",)
+                else:
+                    phases = ("peer_verify", "scan")
+
+                base_clauses = [
                     "t.status = 'queued'",
                     "(t.available_at IS NULL OR t.available_at <= ?)",
                     "t.excluded_handles_json NOT LIKE ? ESCAPE '\\'",
@@ -5094,7 +5288,7 @@ class DeskService:
                         )
                     ))""",
                 ]
-                params: list[Any] = [
+                base_params: list[Any] = [
                     now,
                     f'%"{escaped_handle}"%',
                     agent_handle,
@@ -5102,55 +5296,75 @@ class DeskService:
                     agent_handle,
                     agent_handle,
                 ]
-
-                # New scans only for live projects; peer verification of existing leads may still finish.
-                clauses.append(
-                    "(t.task_type = 'peer_verify' OR m.status NOT IN ('archived', 'paused', 'needs_data'))"
-                )
-
                 if not website_observations:
-                    clauses.append("t.methodology_code != 'W1'")
-                raw_pref = (preferred_mission or "").strip()[:120]
-                preferred_slug = self.resolve_slug(raw_pref) if raw_pref else ""
-                # Research tasks belonged to a project that has ended; they are never handed out.
-                clauses.append("t.task_type != 'research'")
-                if preferred_slug and (_agents_may_choose_project() or preferred_slug in OPEN_CHOICE_PROJECTS):
-                    clauses.append("t.mission_slug = ?")
-                    params.append(preferred_slug)
-
-                if eff_mode == "verify":
-                    clauses.append("t.task_type = 'peer_verify'")
-                elif eff_mode == "investigate":
-                    clauses.append("t.task_type IN ('anomaly_scan', 'ingest_parse')")
+                    base_clauses.append("t.methodology_code != 'W1'")
                 if max_estimated_tokens is not None:
-                    clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
-                    params.append(int(max_estimated_tokens))
+                    base_clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
+                    base_params.append(int(max_estimated_tokens))
 
-                # Live projects before archived ones, then the team's project priority (1 first), then peer
-                # checks before new scans, then oldest first.
-                # Atomic single-row claim: lock ONLY the candidate task row (`FOR UPDATE OF t SKIP LOCKED`)
-                # so concurrent claims never lock-wait on the joined `missions` row.
-                lock_clause = " FOR UPDATE OF t SKIP LOCKED" if self.db.is_postgres else ""
-                cand = conn.execute(
-                    f"""
-                    SELECT t.* FROM tasks t
-                    JOIN missions m ON m.id = t.mission_id
-                    WHERE {' AND '.join(clauses)}
-                    ORDER BY
-                        CASE WHEN m.status = 'archived' THEN 1 ELSE 0 END ASC,
-                        m.priority ASC,
-                        CASE t.task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
-                        COALESCE(t.available_at, t.created_at) ASC,
-                        t.created_at ASC,
-                        t.id ASC
-                    LIMIT 1{lock_clause}
-                    """,
-                    params,
-                ).fetchone()
+                lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
+                for bucket in mission_buckets:
+                    for phase in phases:
+                        if phase == "peer_verify":
+                            # Peer verification of existing leads may still finish on archived/paused/needs_data projects.
+                            eligible_mids = [str(m["id"]) for m in bucket]
+                            phase_clauses = ["t.task_type = 'peer_verify'"]
+                        else:
+                            # New scans only for live projects; research tasks are never handed out.
+                            eligible_mids = [
+                                str(m["id"])
+                                for m in bucket
+                                if str(m["status"] or "") not in ("archived", "paused", "needs_data")
+                            ]
+                            # Repeat the exact partial-index predicate `t.task_type NOT IN ('peer_verify', 'research')`
+                            # so PostgreSQL always matches `idx_tasks_queued_scan_order` even in `investigate` mode.
+                            if phase == "investigate":
+                                phase_clauses = [
+                                    "t.task_type NOT IN ('peer_verify', 'research')",
+                                    "t.task_type IN ('anomaly_scan', 'ingest_parse')",
+                                ]
+                            else:
+                                phase_clauses = ["t.task_type NOT IN ('peer_verify', 'research')"]
+
+                        if not eligible_mids:
+                            continue
+
+                        if len(eligible_mids) == 1:
+                            mission_clause = "t.mission_id = ?"
+                            mission_params: list[Any] = [eligible_mids[0]]
+                        else:
+                            ph = ",".join("?" for _ in eligible_mids)
+                            mission_clause = f"t.mission_id IN ({ph})"
+                            mission_params = eligible_mids
+
+                        all_clauses = [mission_clause, *phase_clauses, *base_clauses]
+                        all_params = [*mission_params, *base_params]
+                        cand_id_row = conn.execute(
+                            f"""
+                            SELECT t.id FROM tasks t
+                            WHERE {' AND '.join(all_clauses)}
+                            ORDER BY
+                                COALESCE(t.available_at, t.created_at) ASC,
+                                t.created_at ASC,
+                                t.id ASC
+                            LIMIT 1{lock_clause}
+                            """,
+                            all_params,
+                        ).fetchone()
+                        if cand_id_row is not None:
+                            # Fetch the single locked row (including payload_json) by primary key.
+                            cand = conn.execute(
+                                "SELECT * FROM tasks WHERE id = ?",
+                                (cand_id_row["id"],),
+                            ).fetchone()
+                            if cand is not None:
+                                break
+                    if cand is not None:
+                        break
 
                 if cand is None:
                     conn.execute(
-                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active', registration_key_hash = NULL WHERE id = ?",
                         (now, agent["id"]),
                     )
                     return None
@@ -5159,7 +5373,7 @@ class DeskService:
                 excluded = set(loads_json(cand["excluded_handles_json"], []))
                 if agent_handle in excluded:
                     conn.execute(
-                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                        "UPDATE agents SET last_heartbeat_at = ?, status = 'active', registration_key_hash = NULL WHERE id = ?",
                         (now, agent["id"]),
                     )
                     return None
@@ -5171,11 +5385,11 @@ class DeskService:
                     """
                     UPDATE tasks
                     SET status = 'claimed', claimed_by_agent_id = ?, claimed_by_handle = ?,
-                        lease_id = ?, lease_started_at = ?, lease_expires_at = ?, progress_pct = 5,
+                        lease_id = ?, claim_request_id = ?, lease_started_at = ?, lease_expires_at = ?, progress_pct = 5,
                         attempt_count = attempt_count + 1, updated_at = ?
                     WHERE id = ? AND status = 'queued'
                     """,
-                    (agent["id"], agent_handle, lease_id, now, lease_expires, now, cand["id"]),
+                    (agent["id"], agent_handle, lease_id, clean_request_id, now, lease_expires, now, cand["id"]),
                 )
             except DB_INTEGRITY_ERRORS as exc:
                 if requested_task_id:
@@ -5193,7 +5407,7 @@ class DeskService:
                 return None
 
             conn.execute(
-                "UPDATE agents SET current_task_id = ?, last_heartbeat_at = ?, status = 'active' WHERE id = ?",
+                "UPDATE agents SET current_task_id = ?, last_heartbeat_at = ?, status = 'active', registration_key_hash = NULL WHERE id = ?",
                 (cand["id"], now, agent["id"]),
             )
             whisper = self._insert_whisper(
@@ -5206,25 +5420,7 @@ class DeskService:
                 event_type="task_claimed",
                 message=f"Claimed {cand['task_type']} task ({cand['methodology_code']}): {cand['title'][:110]}",
             )
-            task_payload = loads_json(cand["payload_json"], {})
-            response = {
-                "lease_id": lease_id,
-                "lease_expires_at": lease_expires,
-                "role": task_role(cand["task_type"], task_payload),
-                "task": {
-                    "id": cand["id"],
-                    "task_type": cand["task_type"],
-                    "mission_slug": cand["mission_slug"],
-                    "methodology_code": cand["methodology_code"],
-                    "title": cand["title"],
-                    "instructions": cand["instructions"],
-                    "target_finding_id": cand["target_finding_id"],
-                    "payload": task_payload,
-                    "work_type": cand["work_type"] or None,
-                    "estimated_tokens": cand["estimated_tokens"],
-                    "estimate_basis": cand["estimate_basis"] or None,
-                },
-            }
+            response = self._build_claim_response(cand, lease_id=lease_id, lease_expires=lease_expires)
             self._emit_durable_event(
                 conn,
                 envelopes,
@@ -5411,7 +5607,7 @@ class DeskService:
                 """
                 UPDATE tasks
                 SET status = ?, claimed_by_agent_id = NULL, claimed_by_handle = NULL,
-                    lease_id = NULL, lease_started_at = NULL, lease_expires_at = NULL, progress_pct = 0,
+                    lease_id = NULL, claim_request_id = NULL, lease_started_at = NULL, lease_expires_at = NULL, progress_pct = 0,
                     retry_count = ?, available_at = ?, output_json = ?, updated_at = ?
                 WHERE id = ? AND lease_id = ? AND claimed_by_agent_id = ? AND status = 'claimed'
                 """,
@@ -6092,6 +6288,15 @@ class DeskService:
         now: str,
         envelopes: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        task_payload = loads_json(task["payload_json"], {})
+        if not isinstance(task_payload, dict):
+            task_payload = {}
+
+        task_ctx = task_payload.get("context") if isinstance(task_payload.get("context"), dict) else {}
+        ub_spec = task_ctx.get("union_budget") if isinstance(task_ctx, dict) else None
+        ub_lines = ub_spec.get("lines") if isinstance(ub_spec, dict) and isinstance(ub_spec.get("lines"), list) else []
+        is_grouped_ub1 = str(task["methodology_code"] or "").upper() == "UB1" and len(ub_lines) > 1
+
         if findings_in is not None:
             if not isinstance(findings_in, list) or not 1 <= len(findings_in) <= 25:
                 raise HTTPException(
@@ -6100,13 +6305,39 @@ class DeskService:
                 )
             raw_items = findings_in
         elif isinstance(finding_in, dict):
+            if is_grouped_ub1:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Grouped multi-line UB1 tasks require submitting findings via the 'findings' list "
+                        "from a batch-capable client (upgrade aiwatchdogs CLI to >= 0.6)."
+                    ),
+                )
             raw_items = [finding_in]
         else:
             raise HTTPException(status_code=422, detail="'finding' object is required when outcome='finding'")
 
-        task_payload = loads_json(task["payload_json"], {})
-        if not isinstance(task_payload, dict):
-            task_payload = {}
+        # Reconcile declared metrics.leads_found against submitted finding items so legacy/buggy clients
+        # that silently drop qualifying shortfalls from multi-lead scans cannot settle the task.
+        if "leads_found" in metrics and metrics["leads_found"] is not None:
+            declared_leads = _parse_int_422(
+                metrics.get("leads_found"),
+                field="metrics.leads_found",
+                min_value=0,
+                max_value=10_000_000,
+                default=0,
+            )
+            if declared_leads > 0:
+                expected_submitted = min(declared_leads, 25)
+                if len(raw_items) != expected_submitted:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"Submitted finding count ({len(raw_items)}) does not match declared "
+                            f"metrics.leads_found ({declared_leads}; expected {expected_submitted}). "
+                            "Submit all qualifying findings via 'findings' or upgrade aiwatchdogs CLI to >= 0.6."
+                        ),
+                    )
 
         prepared = [
             self._prepare_finding_submission(
@@ -6120,6 +6351,40 @@ class DeskService:
             )
             for item in raw_items
         ]
+
+        if is_grouped_ub1:
+            if len(prepared) > len(ub_lines):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Submitted {len(prepared)} findings for a grouped UB1 task covering only "
+                        f"{len(ub_lines)} budget line(s)."
+                    ),
+                )
+            valid_line_keys = {
+                str(line.get("key") or "").strip()
+                for line in ub_lines
+                if isinstance(line, dict) and str(line.get("key") or "").strip()
+            }
+            if valid_line_keys:
+                seen_line_keys: set[str] = set()
+                for p_item in prepared:
+                    am = p_item.get("anomaly_metrics") if isinstance(p_item.get("anomaly_metrics"), dict) else {}
+                    lk = str(am.get("line_key") or "").strip()
+                    if not lk or lk not in valid_line_keys:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=(
+                                f"Grouped UB1 finding is missing a valid anomaly_metrics.line_key "
+                                f"(got {lk!r}; expected one of {sorted(valid_line_keys)})."
+                            ),
+                        )
+                    if lk in seen_line_keys:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=f"Duplicate UB1 finding for line_key {lk!r} in the same submission.",
+                        )
+                    seen_line_keys.add(lk)
 
         # Atomic settlement guard FIRST before creating findings/tasks/counters
         if metrics.get("monetary_audited_inr") not in (None, ""):
@@ -7228,7 +7493,7 @@ class DeskService:
             max_value=10_000_000,
             default=0,
         )
-        new_mission_cleared_scans = int(mission["cleared_count"] or 0) + 1
+        initial_mission_cleared_scans = int(mission["cleared_count"] or 0) + 1
 
         response_obj = {
             "status": "accepted",
@@ -7236,8 +7501,8 @@ class DeskService:
             "task_id": task["id"],
             "cleared_records": cleared_records,
             "unevaluable_records": unevaluable_records,
-            "mission_cleared_count": new_mission_cleared_scans,
-            "mission_cleared_scans_count": new_mission_cleared_scans,
+            "mission_cleared_count": initial_mission_cleared_scans,
+            "mission_cleared_scans_count": initial_mission_cleared_scans,
         }
         self._settle_task_atomically(
             conn,
@@ -7251,7 +7516,9 @@ class DeskService:
             now=now,
         )
 
-        conn.execute(
+        # Read the post-update counter atomically via RETURNING so concurrent clear receipts
+        # reflect the exact monotonic mission total rather than a stale pre-update snapshot.
+        updated_mission = conn.execute(
             """
             UPDATE missions
             SET completed_tasks = completed_tasks + 1,
@@ -7259,9 +7526,19 @@ class DeskService:
                 unevaluable_count = unevaluable_count + ?,
                 monetary_audited_inr = monetary_audited_inr + ?
             WHERE id = ?
+            RETURNING cleared_count
             """,
             (unevaluable_records, audited_delta, mission["id"]),
-        )
+        ).fetchone()
+        if updated_mission is not None:
+            actual_cleared = int(updated_mission["cleared_count"] or initial_mission_cleared_scans)
+            if actual_cleared != initial_mission_cleared_scans:
+                response_obj["mission_cleared_count"] = actual_cleared
+                response_obj["mission_cleared_scans_count"] = actual_cleared
+                conn.execute(
+                    "UPDATE tasks SET settlement_response_json = ? WHERE id = ?",
+                    (dumps_json(response_obj), str(task["id"])),
+                )
         conn.execute(
             """
             UPDATE agents

@@ -494,3 +494,462 @@ def test_pinned_sha256_dataset_reuses_verified_cache_across_tasks(
     ds4 = runner._load_task_dataset({"retrieval_url": unpinned_url})
     assert ds3.sha256 == digest and ds4.sha256 == digest
     assert fetches == 3
+
+
+# ---------------------------------------------------------------------------
+# 8. Durable claim/registration retry idempotency & empty-502 guard
+# ---------------------------------------------------------------------------
+
+
+def test_dropped_claim_reply_replays_exact_lease_without_acquiring_second_lease(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    proj = _project(slug="retry-claim-proj")
+    base = proj["tasks"][0]
+    proj["tasks"] = [
+        {**base, "id": f"retry-claim-t{i}", "dataset_key": f"retry-k{i}", "title": f"Task {i}"}
+        for i in range(1, 5)
+    ]
+    (pdir / "retry-claim-proj.json").write_text(json.dumps(proj), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+
+    app = create_app(db_path=tmp_path / "hub_claim_retry.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as tc:
+        reg = tc.post(
+            "/api/agents/register",
+            json={"handle": "claim-retry-node", "provider": "rule-engine", "model": "v1"},
+        ).json()
+        token = reg["api_token"]
+
+        dropped_once = False
+        seen_attempts = 0
+        first_server_lease: dict[str, Any] = {}
+
+        def _drop_first_claim_reply(request: httpx.Request) -> httpx.Response:
+            nonlocal dropped_once, seen_attempts
+            if request.url.path == "/api/desk/next":
+                seen_attempts += 1
+                raw_resp = tc.request(
+                    request.method,
+                    str(request.url.path),
+                    headers=dict(request.headers),
+                    content=request.content,
+                )
+                if not dropped_once:
+                    dropped_once = True
+                    first_server_lease.update(raw_resp.json())
+                    raise httpx.ReadError("simulated dropped claim reply after commit", request=request)
+                return httpx.Response(
+                    raw_resp.status_code,
+                    headers=raw_resp.headers,
+                    content=raw_resp.content,
+                    request=request,
+                )
+            raw_resp = tc.request(
+                request.method,
+                str(request.url.path),
+                headers=dict(request.headers),
+                content=request.content,
+            )
+            return httpx.Response(
+                raw_resp.status_code,
+                headers=raw_resp.headers,
+                content=raw_resp.content,
+                request=request,
+            )
+
+        cfg = AgentConfig(
+            handle="claim-retry-node",
+            hub_url="http://testserver",
+            api_token=token,
+            mode="investigate",
+        )
+        client = httpx.Client(transport=httpx.MockTransport(_drop_first_claim_reply), base_url="http://testserver")
+        runner = AgentRunner(cfg, http_client=client, config_path=tmp_path / "claim-retry.json")
+        runner._sleep = lambda _s: None
+
+        lease = runner.claim_next()
+        assert lease is not None
+        assert seen_attempts == 2
+        assert lease["lease_id"] == first_server_lease["lease_id"]
+        assert lease["task"]["id"] == first_server_lease["task"]["id"]
+
+        # Must hold ONLY 1 active lease (never 2!) and attempt_count == 1.
+        with app.state.db.read() as conn:
+            active_rows = conn.execute(
+                "SELECT id, lease_id, attempt_count, claim_request_id FROM tasks WHERE status = 'claimed' AND claimed_by_handle = 'claim-retry-node'"
+            ).fetchall()
+            claim_events = conn.execute(
+                "SELECT COUNT(*) AS c FROM events WHERE event_type = 'task_claimed'"
+            ).fetchone()
+        assert len(active_rows) == 1
+        assert active_rows[0]["attempt_count"] == 1
+        assert active_rows[0]["claim_request_id"]
+        assert int(claim_events["c"]) == 1
+
+        # Even at MAX_CONCURRENT_LEASES_PER_AGENT=2, replaying the 2nd claim's request_id returns 200 (not 429).
+        req2 = "claim-at-cap-req-2"
+        second = tc.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": token, "Idempotency-Key": req2},
+            json={"mode": "investigate", "request_id": req2},
+        )
+        assert second.status_code == 200
+        replay_second = tc.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": token, "Idempotency-Key": req2},
+            json={"mode": "investigate", "request_id": req2},
+        )
+        assert replay_second.status_code == 200
+        assert replay_second.json()["lease_id"] == second.json()["lease_id"]
+
+        # A genuinely NEW request_id while holding 2 leases still hits the 429 lease cap.
+        third = tc.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": token, "Idempotency-Key": "claim-over-cap-3"},
+            json={"mode": "investigate", "request_id": "claim-over-cap-3"},
+        )
+        assert third.status_code == 429
+
+
+def test_claim_next_raises_on_empty_502_and_empty_200_instead_of_empty_queue() -> None:
+    events: list[str] = []
+    calls = 0
+
+    def _always_empty_502(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(502, content=b"", request=request)
+
+    cfg = AgentConfig(handle="err-node", hub_url="http://mockhub", api_token="tok-err")
+    client = httpx.Client(transport=httpx.MockTransport(_always_empty_502), base_url="http://mockhub")
+    runner = AgentRunner(cfg, http_client=client, on_event=lambda ev, _d: events.append(ev))
+    runner._sleep = lambda _s: None
+
+    with pytest.raises(httpx.HTTPStatusError) as exc_info:
+        runner.claim_next()
+    assert exc_info.value.response.status_code == 502
+    assert calls == 4  # 1 initial + 3 retries
+    assert "queue_empty" not in events
+
+    # Unexpected empty 200 body must raise ValueError rather than masquerading as 204 empty queue.
+    client_200 = httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"", request=req)),
+        base_url="http://mockhub",
+    )
+    runner_200 = AgentRunner(cfg, http_client=client_200)
+    with pytest.raises(ValueError, match="empty 2xx"):
+        runner_200.claim_next()
+
+    # Legitimate 204 No Content still returns None and emits queue_empty.
+    q_events: list[str] = []
+    client_204 = httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(204, content=b"", request=req)),
+        base_url="http://mockhub",
+    )
+    runner_204 = AgentRunner(cfg, http_client=client_204, on_event=lambda ev, _d: q_events.append(ev))
+    assert runner_204.claim_next() is None
+    assert "queue_empty" in q_events
+
+
+def test_lost_first_registration_reply_recovers_safely_without_stranding_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    (pdir / "reg-retry-proj.json").write_text(json.dumps(_project(slug="reg-retry-proj")), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+
+    app = create_app(db_path=tmp_path / "hub_reg_retry.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as tc:
+        dropped_once = False
+        sent_reg_key: str = ""
+
+        def _drop_first_reg_reply(request: httpx.Request) -> httpx.Response:
+            nonlocal dropped_once, sent_reg_key
+            body_obj = json.loads(request.content.decode("utf-8")) if request.content else {}
+            if request.url.path == "/api/agents/register":
+                sent_reg_key = str(body_obj.get("registration_key") or "")
+            raw_resp = tc.request(
+                request.method,
+                str(request.url.path),
+                headers=dict(request.headers),
+                content=request.content,
+            )
+            if request.url.path == "/api/agents/register" and not dropped_once:
+                dropped_once = True
+                raise httpx.ReadError("simulated lost first registration reply", request=request)
+            return httpx.Response(
+                raw_resp.status_code,
+                headers=raw_resp.headers,
+                content=raw_resp.content,
+                request=request,
+            )
+
+        cfg = AgentConfig(handle="recover-me-node", hub_url="http://testserver", mode="investigate")
+        client = httpx.Client(transport=httpx.MockTransport(_drop_first_reg_reply), base_url="http://testserver")
+        cfg_path = tmp_path / "recover-me-node.json"
+        runner = AgentRunner(cfg, http_client=client, config_path=cfg_path)
+        runner._sleep = lambda _s: None
+
+        reg_data = runner.register(save=True)
+        assert dropped_once is True
+        assert sent_reg_key.startswith("reg-")
+        assert reg_data["handle"] == "recover-me-node"
+        assert reg_data["api_token"].startswith("awd_")
+        assert runner.config.api_token == reg_data["api_token"]
+
+        # Only ONE agent_joined event was recorded despite the retry.
+        with app.state.db.read() as conn:
+            joined_cnt = conn.execute(
+                "SELECT COUNT(*) AS c FROM events WHERE event_type = 'agent_joined'"
+            ).fetchone()
+        assert int(joined_cnt["c"]) == 1
+
+        # A stranger without the matching registration_key still gets 409 Conflict.
+        stranger = tc.post(
+            "/api/agents/register",
+            json={
+                "handle": "recover-me-node",
+                "provider": "rule-engine",
+                "model": "v1",
+                "registration_key": "reg-wrong-key-0123456789abcdef",
+            },
+        )
+        assert stranger.status_code == 409
+
+        # Recovered token works immediately for claiming a task, which scrubs registration_key_hash.
+        lease = runner.claim_next()
+        assert lease is not None
+
+        # Once the handle has been used, even the original registration_key can no longer recover/rotate it.
+        replay_after_use = tc.post(
+            "/api/agents/register",
+            json={
+                "handle": "recover-me-node",
+                "provider": "rule-engine",
+                "model": "v1",
+                "registration_key": sent_reg_key,
+            },
+        )
+        assert replay_after_use.status_code == 409
+
+
+# ---------------------------------------------------------------------------
+# 9. Protect grouped P3/UB1 tasks from older CLI builds & incomplete batches
+# ---------------------------------------------------------------------------
+
+
+def test_grouped_ub1_rejects_old_cli_and_incomplete_finding_submissions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aiwatchdogs.cli.runner import CLI_USER_AGENT
+    from aiwatchdogs.projects import validate_project
+    from test_union_budget import _spec
+
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    proj = _project(slug="union-budget-test", methodology_code="UB1")
+    proj["tasks"][0]["id"] = "ub-2019-20-d042-grouped"
+    proj["tasks"][0]["methodology_code"] = "UB1"
+    proj["tasks"][0]["payload"] = {
+        "retrieval_url": "https://www.indiabudget.gov.in/budget2020-2021/ub2020-21/eb/sbe42.pdf",
+        "expected_sha256": SHA,
+        "secondary_url": "https://www.indiabudget.gov.in/budget2021-2022/ub2021-22/eb/sbe44.pdf",
+        "secondary_expected_sha256": "b" * 64,
+        "official_publisher": "Ministry of Finance, Government of India",
+        "source_landing_page": "https://www.indiabudget.gov.in/",
+        "artifact_title": "Notes on Demands for Grants 2020-21, Demand No. 42",
+        "fiscal_year": "FY2019-20",
+        "context": {"secondary_document": "pages", "union_budget": _spec()},
+    }
+    assert validate_project(proj, filename_stem="union-budget-test") == []
+    (pdir / "union-budget-test.json").write_text(json.dumps(proj), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+
+    app = create_app(db_path=tmp_path / "hub_ub1_guard.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as tc:
+        # 1. Pre-batch 0.5 CLI is rejected with 426 on register, claim, AND submit.
+        old_ua = {"User-Agent": "AIWatchdogs-India-AgentCLI/0.5"}
+        assert tc.post("/api/agents/register", json={"handle": "old-v05"}, headers=old_ua).status_code == 426
+        assert tc.post("/api/desk/next", json={}, headers=old_ua).status_code == 426
+
+        # Current 0.6 CLI registers and claims cleanly.
+        reg = tc.post(
+            "/api/agents/register",
+            json={"handle": "ub-batch-node", "provider": "rule-engine", "model": "v1"},
+            headers={"User-Agent": CLI_USER_AGENT},
+        )
+        assert reg.status_code == 200
+        tok = reg.json()["api_token"]
+        lease = tc.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": tok, "User-Agent": CLI_USER_AGENT},
+            json={"mode": "investigate"},
+        ).json()
+        lease_id = lease["lease_id"]
+
+        def _ub_finding(line_key: str, label: str) -> dict[str, Any]:
+            return {
+                "title": f"Union Budget shortfall on {label}",
+                "summary": "Budget estimate exceeded actual expenditure by over 10 percent for public review, not a finding of wrongdoing.",
+                "methodology_code": "UB1",
+                "entity_name": f"Health Scheme {line_key}",
+                "jurisdiction": "Union of India",
+                "fiscal_year": "FY2019-20",
+                "monetary_exposure_inr": 450_000_000.0,
+                "severity": "medium",
+                "anomaly_metrics": {"line_key": line_key, "budget_estimate": 100.0, "actual": 55.0, "unspent_pct": 45.0},
+                "rule_triggered": "UB1-ACTUAL-BELOW-BE>10%",
+                "benign_explanations": ["Fund release schedules can shift across fiscal years."],
+            }
+
+        # Old 0.5 CLI attempting to submit an already-claimed lease is blocked with 426.
+        old_sub = tc.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": tok, **old_ua},
+            json={"lease_id": lease_id, "outcome": "finding", "finding": _ub_finding("2", "AIDS")},
+        )
+        assert old_sub.status_code == 426
+
+        # 2. Singleton `finding` without `findings` array on grouped multi-line UB1 task is rejected (422).
+        singleton_sub = tc.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": tok},
+            json={
+                "lease_id": lease_id,
+                "outcome": "finding",
+                "finding": _ub_finding("2", "AIDS"),
+                "metrics": {"leads_found": 3},
+            },
+        )
+        assert singleton_sub.status_code == 422
+
+        # 3. Incomplete `findings` batch where metrics.leads_found=3 but only 1 item sent is rejected (422).
+        partial_sub = tc.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": tok},
+            json={
+                "lease_id": lease_id,
+                "outcome": "finding",
+                "findings": [_ub_finding("2", "AIDS")],
+                "metrics": {"leads_found": 3},
+            },
+        )
+        assert partial_sub.status_code == 422
+
+        # 4. Duplicate line_key in the same batch is rejected (422).
+        dup_sub = tc.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": tok},
+            json={
+                "lease_id": lease_id,
+                "outcome": "finding",
+                "findings": [_ub_finding("2", "AIDS"), _ub_finding("2", "AIDS duplicate")],
+                "metrics": {"leads_found": 2},
+            },
+        )
+        assert dup_sub.status_code == 422
+
+        # 5. Unknown line_key not in the task's union_budget.lines is rejected (422).
+        bad_key_sub = tc.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": tok},
+            json={
+                "lease_id": lease_id,
+                "outcome": "finding",
+                "findings": [_ub_finding("999", "Unknown")],
+                "metrics": {"leads_found": 1},
+            },
+        )
+        assert bad_key_sub.status_code == 422
+
+        # 6. Complete 3-item `findings` batch matching metrics.leads_found=3 succeeds and creates 6 peer tasks.
+        ok_sub = tc.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": tok, "User-Agent": CLI_USER_AGENT},
+            json={
+                "lease_id": lease_id,
+                "outcome": "finding",
+                "findings": [
+                    _ub_finding("2", "AIDS"),
+                    _ub_finding("3", "PMSSY"),
+                    _ub_finding("4", "PSU"),
+                ],
+                "metrics": {"leads_found": 3},
+            },
+        )
+        assert ok_sub.status_code == 200
+        ok_body = ok_sub.json()
+        assert ok_body["findings_created"] == 3
+        assert ok_body["peer_verify_tasks_created"] == 6
+
+
+# ---------------------------------------------------------------------------
+# 10. Narrow indexed claim query plan (no temp sort) & atomic clear receipts
+# ---------------------------------------------------------------------------
+
+
+def test_claim_candidate_query_uses_partial_order_index_without_temp_sort(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    proj = _project(slug="indexed-claim-proj")
+    base = proj["tasks"][0]
+    proj["tasks"] = [
+        {**base, "id": f"idx-claim-t{i:03d}", "dataset_key": f"idx-k{i:03d}", "title": f"Task {i:03d}"}
+        for i in range(1, 51)
+    ]
+    (pdir / "indexed-claim-proj.json").write_text(json.dumps(proj), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+
+    app = create_app(db_path=tmp_path / "hub_idx_plan.db", seed=True)
+    with app.state.db.read() as conn:
+        mid = conn.execute("SELECT id FROM missions WHERE slug = 'indexed-claim-proj'").fetchone()["id"]
+        plan_rows = conn.execute(
+            """
+            EXPLAIN QUERY PLAN
+            SELECT t.id FROM tasks t
+            WHERE t.mission_id = ?
+              AND t.task_type NOT IN ('peer_verify', 'research')
+              AND t.status = 'queued'
+              AND (t.available_at IS NULL OR t.available_at <= '2099-01-01T00:00:00Z')
+              AND t.excluded_handles_json NOT LIKE '%"agent-1"%' ESCAPE '\\'
+            ORDER BY COALESCE(t.available_at, t.created_at) ASC, t.created_at ASC, t.id ASC
+            LIMIT 1
+            """,
+            (mid,),
+        ).fetchall()
+    plan_text = " | ".join(str(r["detail"]) for r in plan_rows)
+    assert "idx_tasks_queued_scan_order" in plan_text
+    assert "TEMP B-TREE" not in plan_text.upper()
+
+    # Also verify atomic clear receipts return exact monotonic counts 1..6.
+    with TestClient(app, base_url="http://testserver") as tc:
+        receipts: list[int] = []
+        for idx in range(6):
+            tok = tc.post(
+                "/api/agents/register",
+                json={"handle": f"clear-node-{idx}", "provider": "rule-engine", "model": "v1"},
+            ).json()["api_token"]
+            lease = tc.post(
+                "/api/desk/next",
+                headers={"X-Agent-Token": tok},
+                json={"mode": "investigate"},
+            ).json()
+            sub = tc.post(
+                "/api/desk/submit",
+                headers={"X-Agent-Token": tok},
+                json={"lease_id": lease["lease_id"], "outcome": "cleared", "metrics": {"cleared_count": 5}},
+            )
+            assert sub.status_code == 200
+            receipts.append(int(sub.json()["mission_cleared_count"]))
+        assert receipts == [1, 2, 3, 4, 5, 6]
+    app.state.db.close()
