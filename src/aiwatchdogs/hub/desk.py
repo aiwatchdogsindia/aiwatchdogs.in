@@ -3270,15 +3270,16 @@ class DeskService:
         eff_limit = max(1, min(int(limit), 100))
         eff_offset = max(0, min(int(offset), 50_000))
 
-        graveyard_statuses = (
-            "retracted_false_positive",
-            "retracted",
-            "disputed",
-            "under_review",
-            "under_editorial_review",
-            "corrected",
-        )
+        cause_statuses: dict[str, tuple[str, ...]] = {
+            "false_positive": ("retracted_false_positive",),
+            "editorial_retraction": ("retracted",),
+            "peer_dispute": ("disputed",),
+            "withdrawn_review": ("under_review", "under_editorial_review", "corrected"),
+        }
+        graveyard_statuses = tuple(s for group in cause_statuses.values() for s in group)
         placeholders = ",".join("?" for _ in graveyard_statuses)
+        page_statuses = cause_statuses[clean_cause] if clean_cause else graveyard_statuses
+        page_placeholders = ",".join("?" for _ in page_statuses)
 
         def _parse_iso(val: Any) -> float | None:
             raw = str(val or "").strip()
@@ -3314,17 +3315,80 @@ class DeskService:
             ]
             listed_slugs = {p["slug"] for p in project_list}
 
-            rows = conn.execute(
+            for srow in conn.execute(
                 f"""
-                SELECT id, mission_slug, title, summary, methodology_code, entity_name,
-                       jurisdiction, fiscal_year, monetary_exposure_inr, status,
-                       editorial_status, confirm_count, dispute_count, created_at
+                SELECT DISTINCT mission_slug
                 FROM findings
                 WHERE COALESCE(quarantined, 0) = 0
                   AND status != 'quarantined'
                   AND status IN ({placeholders})
                 """,
                 graveyard_statuses,
+            ).fetchall():
+                mslug = str(srow["mission_slug"] or "")
+                if mslug and mslug not in listed_slugs:
+                    project_list.append({"slug": mslug, "title": mission_titles.get(mslug, mslug)})
+                    listed_slugs.add(mslug)
+
+            count_params: list[Any] = list(graveyard_statuses)
+            project_clause = ""
+            if resolved_project:
+                project_clause = " AND mission_slug = ?"
+                count_params.append(resolved_project)
+
+            counts_by_cause: dict[str, int] = {"all": 0, **{k: 0 for k in valid_causes}}
+            for crow in conn.execute(
+                f"""
+                SELECT LOWER(status) AS st, COUNT(*) AS c
+                FROM findings
+                WHERE COALESCE(quarantined, 0) = 0
+                  AND status != 'quarantined'
+                  AND status IN ({placeholders}){project_clause}
+                GROUP BY LOWER(status)
+                """,
+                count_params,
+            ).fetchall():
+                c_val = int(crow["c"] or 0)
+                c_key = _classify_cause(str(crow["st"] or ""))
+                counts_by_cause[c_key] = counts_by_cause.get(c_key, 0) + c_val
+                counts_by_cause["all"] += c_val
+
+            total = counts_by_cause[clean_cause] if clean_cause else counts_by_cause["all"]
+
+            page_params: list[Any] = list(page_statuses)
+            f_project_clause = ""
+            if resolved_project:
+                f_project_clause = " AND f.mission_slug = ?"
+                page_params.append(resolved_project)
+            page_params.extend([eff_limit, eff_offset])
+
+            rows = conn.execute(
+                f"""
+                SELECT * FROM (
+                    SELECT f.id, f.mission_slug, f.title, f.summary, f.methodology_code, f.entity_name,
+                           f.jurisdiction, f.fiscal_year, f.monetary_exposure_inr, f.status,
+                           f.editorial_status, f.confirm_count, f.dispute_count, f.created_at,
+                           (SELECT MAX(c.created_at) FROM finding_corrections c
+                            WHERE c.finding_id = f.id AND COALESCE(c.created_at, '') != '') AS corr_at,
+                           (SELECT MAX(v.created_at) FROM peer_verifications v
+                            WHERE v.finding_id = f.id
+                              AND LOWER(COALESCE(v.verdict, '')) != 'confirm'
+                              AND COALESCE(v.created_at, '') != '') AS disp_at
+                    FROM findings f
+                    WHERE COALESCE(f.quarantined, 0) = 0
+                      AND f.status != 'quarantined'
+                      AND f.status IN ({page_placeholders}){f_project_clause}
+                ) AS sub
+                ORDER BY
+                    CASE
+                        WHEN sub.corr_at IS NOT NULL AND sub.disp_at IS NOT NULL THEN
+                            CASE WHEN sub.corr_at >= sub.disp_at THEN sub.corr_at ELSE sub.disp_at END
+                        ELSE COALESCE(sub.corr_at, sub.disp_at, sub.created_at)
+                    END DESC,
+                    sub.id DESC
+                LIMIT ? OFFSET ?
+                """,
+                page_params,
             ).fetchall()
 
             fids = [str(r["id"]) for r in rows]
@@ -3350,15 +3414,12 @@ class DeskService:
                 ).fetchall():
                     rti_map[str(rr["finding_id"])] = str(rr["editorial_notice"] or rr["status"] or "")
 
-        all_entries: list[dict[str, Any]] = []
+        page_items: list[dict[str, Any]] = []
         for r in rows:
             fid = str(r["id"])
             st = str(r["status"] or "").lower()
             entry_cause = _classify_cause(st)
             mslug = str(r["mission_slug"] or "")
-            if mslug and mslug not in listed_slugs:
-                project_list.append({"slug": mslug, "title": mission_titles.get(mslug, mslug)})
-                listed_slugs.add(mslug)
 
             corrs = corr_map.get(fid, [])
             verifs = verifs_map.get(fid, [])
@@ -3424,7 +3485,7 @@ class DeskService:
             else:
                 survived = "0 verified findings rest on it. Recorded so nobody repeats it."
 
-            all_entries.append(
+            page_items.append(
                 {
                     "id": fid,
                     "title": str(r["title"] or ""),
@@ -3451,17 +3512,6 @@ class DeskService:
                     "rti_on_hold": rti_on_hold,
                 }
             )
-
-        all_entries.sort(key=lambda e: (e["ended_at"], e["id"]), reverse=True)
-
-        scoped = [e for e in all_entries if not resolved_project or e["mission_slug"] == resolved_project]
-        counts_by_cause: dict[str, int] = {"all": len(scoped), **{k: 0 for k in valid_causes}}
-        for e in scoped:
-            counts_by_cause[e["cause"]] = counts_by_cause.get(e["cause"], 0) + 1
-
-        filtered = [e for e in scoped if not clean_cause or e["cause"] == clean_cause]
-        total = len(filtered)
-        page_items = filtered[eff_offset : eff_offset + eff_limit]
 
         return {
             "total": total,

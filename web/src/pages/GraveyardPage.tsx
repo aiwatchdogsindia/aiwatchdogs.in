@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { FINDING_TAGS, getFindingTag } from '../lib/tags';
 import { Link, useRouter } from '../router';
@@ -71,22 +71,34 @@ export function GraveyardPage({ onSelectFinding, refreshTick }: GraveyardPagePro
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const loadPage = useCallback(
     async (offset: number, limit: number, append: boolean) => {
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const reqId = ++requestSeqRef.current;
+
       if (append) {
         setLoadingMore(true);
       } else {
         setLoading(true);
+        setLoadingMore(false);
       }
       setError(null);
       try {
-        const res = await api.getGraveyard({
-          cause: cause || undefined,
-          project: project || undefined,
-          limit,
-          offset,
-        });
+        const res = await api.getGraveyard(
+          {
+            cause: cause || undefined,
+            project: project || undefined,
+            limit,
+            offset,
+          },
+          { signal: controller.signal },
+        );
+        if (reqId !== requestSeqRef.current) return;
         setEntries((prev) => (append ? [...prev, ...res.entries] : res.entries));
         setTotal(res.total);
         setHasMore(res.has_more);
@@ -94,10 +106,15 @@ export function GraveyardPage({ onSelectFinding, refreshTick }: GraveyardPagePro
           setProjects(res.projects);
         }
       } catch (err) {
+        if (reqId !== requestSeqRef.current || (err instanceof Error && err.name === 'AbortError')) {
+          return;
+        }
         setError(err instanceof Error ? err.message : 'Failed to load graveyard');
       } finally {
-        setLoading(false);
-        setLoadingMore(false);
+        if (reqId === requestSeqRef.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
     [cause, project],
@@ -106,6 +123,10 @@ export function GraveyardPage({ onSelectFinding, refreshTick }: GraveyardPagePro
   useEffect(() => {
     const initialLimit = isWideViewport() ? 6 : 2;
     void loadPage(0, initialLimit, false);
+    return () => {
+      requestSeqRef.current += 1;
+      abortRef.current?.abort();
+    };
   }, [loadPage, refreshTick]);
 
   const handleLoadMore = () => {

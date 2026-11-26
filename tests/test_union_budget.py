@@ -554,3 +554,102 @@ def test_shared_ub1_task_submits_and_verifies_every_qualifying_shortfall(
         assert leads_by_id["fnd-ub-1516"]["actuals_reason"] == "unmatched"
         assert leads_by_id["fnd-ub-2526"]["actuals_reason"] == "not_published"
     app.state.db.close()
+
+
+def test_sync_projects_ub1_split_releases_stale_lease_and_skips_completed_lines(tmp_path: Path) -> None:
+    """When a shared UB1 task splits, claimed leases are reset with the new payload and completed lines are not duplicated."""
+    from aiwatchdogs.hub.database import Database
+    from aiwatchdogs.projects import project_task_id, sync_projects
+
+    full_proj = json.loads((REPO_PROJECTS / "union-budget-unspent-funds.json").read_text(encoding="utf-8"))
+    shared_task = next(
+        t for t in full_proj["tasks"] if len(t["payload"]["context"]["union_budget"]["lines"]) >= 2
+    )
+    lines = list(shared_task["payload"]["context"]["union_budget"]["lines"])
+    half = len(lines) // 2
+    first_half = lines[:half]
+    second_half = lines[half:]
+
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    proj_v1 = {k: v for k, v in full_proj.items() if k != "tasks"}
+    proj_v1["tasks"] = [shared_task]
+    (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v1), encoding="utf-8")
+
+    # Scenario A: task is claimed when manifest splits -> stale lease is released and payload updated.
+    db_claimed = Database(db_path=tmp_path / "claimed_split.db")
+    try:
+        assert sync_projects(db_claimed, pdir)["changed"] is True
+        tid1 = project_task_id(shared_task["id"])
+        with db_claimed.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO agents (
+                    id, handle, display_name, provider, model, api_token_hash, status,
+                    current_task_id, joined_at, last_heartbeat_at
+                ) VALUES (
+                    'agt-1', 'ub-claimer', 'UB Claimer', 'rule-engine', 'deterministic-cpu-v1',
+                    'tok-hash-1', 'active', ?, '2026-11-26T00:00:00Z', '2026-11-26T00:00:00Z'
+                )
+                """,
+                (tid1,),
+            )
+            conn.execute(
+                """
+                UPDATE tasks SET status = 'claimed', claimed_by_agent_id = 'agt-1',
+                    claimed_by_handle = 'ub-claimer', lease_id = 'lease-old'
+                WHERE id = ?
+                """,
+                (tid1,),
+            )
+
+        task_a = json.loads(json.dumps(shared_task))
+        task_a["payload"]["context"]["union_budget"]["lines"] = first_half
+        task_b = json.loads(json.dumps(shared_task))
+        task_b["id"] = f"{shared_task['id']}-split-b"
+        task_b["dataset_key"] = task_b["id"]
+        task_b["payload"]["context"]["union_budget"]["lines"] = second_half
+
+        proj_v2 = {k: v for k, v in full_proj.items() if k != "tasks"}
+        proj_v2["tasks"] = [task_a, task_b]
+        (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v2), encoding="utf-8")
+
+        assert sync_projects(db_claimed, pdir)["changed"] is True
+        with db_claimed.read() as conn:
+            row_a = conn.execute("SELECT status, lease_id, payload_json FROM tasks WHERE id = ?", (tid1,)).fetchone()
+            row_b = conn.execute(
+                "SELECT id FROM tasks WHERE id = ?", (project_task_id(task_b["id"]),)
+            ).fetchone()
+            agt = conn.execute("SELECT current_task_id FROM agents WHERE id = 'agt-1'").fetchone()
+        assert row_a["status"] == "queued"
+        assert row_a["lease_id"] is None
+        assert agt["current_task_id"] is None
+        updated_lines = json.loads(row_a["payload_json"])["context"]["union_budget"]["lines"]
+        assert [l["key"] for l in updated_lines] == [l["key"] for l in first_half]
+        assert row_b is not None
+    finally:
+        db_claimed.close()
+
+    # Scenario B: original multi-line task is completed -> split sibling covering completed lines is skipped.
+    (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v1), encoding="utf-8")
+    db_done = Database(db_path=tmp_path / "done_split.db")
+    try:
+        assert sync_projects(db_done, pdir)["changed"] is True
+        tid1 = project_task_id(shared_task["id"])
+        with db_done.transaction() as conn:
+            conn.execute(
+                "UPDATE tasks SET status = 'completed', completed_at = '2026-11-26T00:05:00Z' WHERE id = ?",
+                (tid1,),
+            )
+
+        (pdir / "union-budget-unspent-funds.json").write_text(json.dumps(proj_v2), encoding="utf-8")
+        assert sync_projects(db_done, pdir)["changed"] is True
+        with db_done.read() as conn:
+            row_a = conn.execute("SELECT status FROM tasks WHERE id = ?", (tid1,)).fetchone()
+            row_b = conn.execute(
+                "SELECT id FROM tasks WHERE id = ?", (project_task_id(task_b["id"]),)
+            ).fetchone()
+        assert row_a["status"] == "completed"
+        assert row_b is None
+    finally:
+        db_done.close()

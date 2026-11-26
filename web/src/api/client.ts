@@ -80,6 +80,11 @@ async function fetchWithTimeout(
       signal: controller.signal,
     });
   } catch (err) {
+    if (externalSignal?.aborted) {
+      const abortErr = new Error('Aborted');
+      abortErr.name = 'AbortError';
+      throw abortErr;
+    }
     if (timedOut) {
       throw new Error(
         import.meta.env.DEV
@@ -1040,6 +1045,7 @@ export const api = {
       limit?: number;
       offset?: number;
     } = {},
+    options?: { signal?: AbortSignal },
   ): Promise<GraveyardResponse> {
     const sp = new URLSearchParams();
     if (params.cause) sp.set('cause', params.cause);
@@ -1047,7 +1053,10 @@ export const api = {
     if (params.limit != null) sp.set('limit', String(params.limit));
     if (params.offset != null) sp.set('offset', String(params.offset));
     const qs = sp.toString();
-    const raw = await fetchJson<Record<string, unknown>>(`/api/graveyard${qs ? `?${qs}` : ''}`);
+    const raw = await fetchJson<Record<string, unknown>>(
+      `/api/graveyard${qs ? `?${qs}` : ''}`,
+      { signal: options?.signal },
+    );
     const entries = asArray<GraveyardResponse['entries'][number]>(raw.entries);
     return {
       total: Number(raw.total ?? entries.length),
