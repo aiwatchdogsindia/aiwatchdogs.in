@@ -3,6 +3,22 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 38,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/38",
+      "mergedAt": "2026-11-26T12:05:05Z",
+      "title": "Resolve PR #36 Greptile findings, add /graveyard, and add Cloudflare proxy IP support",
+      "items": [
+        "Resolve all 4 Greptile review findings from PR #36:",
+        "P1 — Shared tasks submit every qualifying shortfall: Added findings batch support to DeskSubmitRequest, DeskService._handle_submit_finding, and AgentRunner._handle_anomaly_scan so shared UB1 tasks create one finding and two peer_verify tasks per qualifying shortfall before settling the task, with line_key in RECORD_IDENTIFIER_KEYS for exact per-line peer...",
+        "P2 — Reject unbalanced budget tables: Updated link_year in scripts/build_union_budget_project.py to require both st.closed and target.closed before using any statement or linking actuals; updated projects/union-budget-unspent-funds.json and coverage.json to drop the 80 tasks from unclosed primary PDFs, strip actuals from the 81 tasks with unclosed seconda...",
+        "P2 — MCP list_project_tasks pagination: Added offset, has_more, and next_offset to list_project_tasks in src/aiwatchdogs/hub/agent_access.py.",
+        "P2 — Accurate actual-spending labels: Added actuals_reason (not_published vs unmatched) in _union_budget_summary, web/src/types.ts, and ProjectVisuals.tsx so regrouped/unmatched years like FY 2015–16 are not labeled \"actuals not published yet\".",
+        "Add /graveyard (modeled on pequalnp.com/graveyard):",
+        "DeskService.list_graveyard (GET /api/graveyard), graveyard_feed_entries (GET /graveyard.atom), render_graveyard_md (GET /graveyard.md, sitemap, llms.txt, Accept: text/markdown), and GraveyardPage.tsx with cause-pill filtering, project dropdown, live counter, grave cards, Load more, and strict exclusion of quarantined findings.",
+        "Cloudflare proxy support:"
+      ]
+    },
+    {
       "pr": 36,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/36",
       "mergedAt": "2026-11-26T11:02:53Z",
