@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from graphlib import CycleError, TopologicalSorter
@@ -28,6 +30,8 @@ from urllib.parse import urlsplit
 
 from aiwatchdogs.core.safety import contains_pii, scan_forbidden_terms, validate_safe_http_url
 from aiwatchdogs.core.usage import DEFAULT_WORK_TYPE, MAX_TOKENS, PEER_ESTIMATE_BASIS, WORK_TYPES
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ID_PREFIX = "project-"
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -651,11 +655,337 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _run_sync_in_tx(
+    conn: Any,
+    *,
+    db: Any,
+    valid: list[ProjectFile],
+    skipped: list[dict[str, Any]],
+    fingerprint: int,
+    allow_archive_all: bool,
+) -> dict[str, Any]:
+    """Apply all curated project upserts using bulk reads + batched executemany writes."""
+    from aiwatchdogs.hub.database import dumps_json
+
+    # Re-check fingerprint after acquiring advisory lock to prevent redundant cold-start writes.
+    locked_row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
+    if locked_row is not None and int(locked_row["version"]) == fingerprint:
+        return {"synced": 0, "skipped": skipped, "changed": False}
+
+    now = _utc_now_iso()
+    for pf in valid:
+        d = pf.data
+        priority = d.get("priority", DEFAULT_PRIORITY)
+        for old_slug in former_slugs(d):
+            _rename_project(conn, old_slug, d["slug"])
+        mid = project_mission_id(d["slug"])
+        posted = d["posted_by"]
+        tasks = d.get("tasks", [])
+        methodology = str(d.get("methodology_code") or (tasks[0].get("methodology_code") if tasks else "") or "")
+        qty = str(tasks[0].get("financial_quantity_type", "")) if tasks else ""
+        status = d.get("status", "active")
+        conn.execute(
+            """
+            INSERT INTO missions (
+                id, slug, title, description, pillar, methodology_code,
+                jurisdiction, ministry_or_authority, statutory_anchors_json,
+                source_ids_json, sample_dataset_path, data_mode, status,
+                priority, total_tasks, completed_tasks, verified_findings_count,
+                cleared_count, cleared_findings_count, unevaluable_count,
+                monetary_audited_inr, monetary_unit, financial_quantity_type, created_at,
+                posted_by_name, posted_by_handle, posted_by_url, project_sources_json,
+                project_scope_json, enlisted_pr_url, planned_tasks_json, is_community_project
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', 'live_public', ?, ?, ?, 0, 0, 0, 0, 0, 0.0,
+                      'inr', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                pillar = excluded.pillar,
+                methodology_code = excluded.methodology_code,
+                jurisdiction = excluded.jurisdiction,
+                ministry_or_authority = excluded.ministry_or_authority,
+                statutory_anchors_json = excluded.statutory_anchors_json,
+                status = excluded.status,
+                priority = excluded.priority,
+                financial_quantity_type = excluded.financial_quantity_type,
+                posted_by_name = excluded.posted_by_name,
+                posted_by_handle = excluded.posted_by_handle,
+                posted_by_url = excluded.posted_by_url,
+                project_sources_json = excluded.project_sources_json,
+                project_scope_json = excluded.project_scope_json,
+                enlisted_pr_url = excluded.enlisted_pr_url,
+                planned_tasks_json = excluded.planned_tasks_json,
+                is_community_project = 1
+            """,
+            (
+                mid,
+                d["slug"],
+                d["title"].strip(),
+                d["summary"].strip(),
+                d["pillar"],
+                methodology,
+                d["jurisdiction"],
+                d["authority"],
+                dumps_json(d.get("statutory_anchors", [])),
+                status,
+                priority,
+                len(tasks),
+                qty,
+                now,
+                str(posted.get("name", "")).strip(),
+                str(posted.get("handle", "") or "").strip(),
+                str(posted.get("url", "") or "").strip(),
+                dumps_json(d.get("sources", [])),
+                dumps_json({"scope": d.get("scope", []), "out_of_scope": d.get("out_of_scope", [])}),
+                str(d.get("enlisted_pr_url", "") or ""),
+                dumps_json(
+                    [
+                        {k: p[k] for k in ("title", "type", "estimated_tokens", "estimate_basis")}
+                        for p in d.get("planned_tasks", [])
+                    ]
+                ),
+            ),
+        )
+
+        # Bulk-load existing tasks for this mission in 1 query instead of N per-task SELECTs.
+        existing_rows = conn.execute(
+            """
+            SELECT id, status, task_type, title, instructions, payload_json, methodology_code,
+                   dataset_key, financial_quantity_type, work_type, estimated_tokens, estimate_basis
+            FROM tasks WHERE mission_id = ?
+            """,
+            (mid,),
+        ).fetchall()
+        existing_by_id: dict[str, Any] = {}
+        existing_pv_by_key: dict[str, list[tuple[Any, Any]]] = {}
+        for erow in existing_rows:
+            if erow["task_type"] == "peer_verify":
+                dkey = str(erow["dataset_key"] or "")
+                existing_pv_by_key.setdefault(dkey, []).append(
+                    (erow["estimated_tokens"], erow["estimate_basis"])
+                )
+            else:
+                existing_by_id[str(erow["id"])] = erow
+
+        to_insert: list[tuple[Any, ...]] = []
+        to_update_queued: list[tuple[Any, ...]] = []
+        to_update_estimates: list[tuple[Any, ...]] = []
+        to_update_pv: list[tuple[Any, ...]] = []
+        seen_pv_keys: set[str] = set()
+
+        for task in tasks:
+            tid = project_task_id(task["id"])
+            code = task.get("methodology_code", methodology)
+            task_type = "research" if code == INFLATION_METHODOLOGY else "anomaly_scan"
+            work_type = task.get("type", DEFAULT_WORK_TYPE)
+            est_tokens = task["estimated_tokens"]
+            est_basis = task["estimate_basis"]
+            payload = dict(task["payload"])
+            payload.setdefault("methodology_code", code)
+            payload.setdefault("dataset_key", task["dataset_key"])
+            payload.setdefault("financial_quantity_type", task["financial_quantity_type"])
+            payload.setdefault("dataset_url", payload["retrieval_url"])
+            payload.setdefault("source_url", payload.get("source_landing_page", ""))
+            payload.setdefault("is_demo_sample", False)
+            payload["project_slug"] = d["slug"]
+            if task_type == "research":
+                payload["depends_on"] = [project_task_id(dep) for dep in task.get("depends_on", [])]
+            payload_str = dumps_json(payload)
+
+            existing = existing_by_id.get(tid)
+            if existing is None:
+                to_insert.append(
+                    (
+                        tid,
+                        mid,
+                        d["slug"],
+                        code,
+                        task_type,
+                        task["title"],
+                        task["instructions"],
+                        payload_str,
+                        task["dataset_key"],
+                        task["financial_quantity_type"],
+                        work_type,
+                        est_tokens,
+                        est_basis,
+                        now,
+                        now,
+                    )
+                )
+            elif existing["status"] == "queued":
+                if (
+                    existing["title"] != task["title"]
+                    or existing["instructions"] != task["instructions"]
+                    or existing["payload_json"] != payload_str
+                    or existing["methodology_code"] != code
+                    or existing["task_type"] != task_type
+                    or existing["dataset_key"] != task["dataset_key"]
+                    or existing["financial_quantity_type"] != task["financial_quantity_type"]
+                    or existing["work_type"] != work_type
+                    or existing["estimated_tokens"] != est_tokens
+                    or existing["estimate_basis"] != est_basis
+                ):
+                    to_update_queued.append(
+                        (
+                            task["title"],
+                            task["instructions"],
+                            payload_str,
+                            code,
+                            task_type,
+                            task["dataset_key"],
+                            task["financial_quantity_type"],
+                            work_type,
+                            est_tokens,
+                            est_basis,
+                            now,
+                            tid,
+                        )
+                    )
+            else:
+                if (
+                    existing["work_type"] != work_type
+                    or existing["estimated_tokens"] != est_tokens
+                    or existing["estimate_basis"] != est_basis
+                ):
+                    to_update_estimates.append((work_type, est_tokens, est_basis, tid))
+
+            dkey = str(task["dataset_key"])
+            if dkey not in seen_pv_keys and dkey in existing_pv_by_key:
+                seen_pv_keys.add(dkey)
+                if any(tok != est_tokens or basis != PEER_ESTIMATE_BASIS for tok, basis in existing_pv_by_key[dkey]):
+                    to_update_pv.append((est_tokens, PEER_ESTIMATE_BASIS, mid, dkey))
+
+        if to_insert:
+            conn.executemany(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type,
+                    title, instructions, payload_json, target_finding_id,
+                    excluded_handles_json, status, dataset_key, financial_quantity_type,
+                    work_type, estimated_tokens, estimate_basis, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', 'queued', ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                """,
+                to_insert,
+            )
+        if to_update_queued:
+            conn.executemany(
+                """
+                UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?, task_type = ?,
+                    dataset_key = ?, financial_quantity_type = ?, work_type = ?, estimated_tokens = ?,
+                    estimate_basis = ?, updated_at = ?
+                WHERE id = ? AND status = 'queued'
+                """,
+                to_update_queued,
+            )
+        if to_update_estimates:
+            conn.executemany(
+                "UPDATE tasks SET work_type = ?, estimated_tokens = ?, estimate_basis = ? WHERE id = ?",
+                to_update_estimates,
+            )
+        if to_update_pv:
+            conn.executemany(
+                "UPDATE tasks SET estimated_tokens = ?, estimate_basis = ? "
+                "WHERE mission_id = ? AND dataset_key = ? AND task_type = 'peer_verify'",
+                to_update_pv,
+            )
+
+        if getattr(db, "is_postgres", False):
+            conn.execute("SELECT id FROM missions WHERE id = ? FOR UPDATE", (mid,))
+        # Retire all superseded non-completed primary tasks (including active claimed/parked leases
+        # whose underlying manifests were removed/replaced), while strictly preserving completed
+        # work, peer_verify history, and any task referenced by findings.
+        current_task_ids = [project_task_id(t["id"]) for t in tasks]
+        if current_task_ids:
+            existing_unfinished = conn.execute(
+                "SELECT id FROM tasks WHERE mission_id = ? AND status != 'completed' "
+                "AND status != 'retired' AND completed_at IS NULL AND task_type != 'peer_verify'",
+                (mid,),
+            ).fetchall()
+            keep_ids = set(current_task_ids)
+            obsolete_ids = [str(r["id"]) for r in existing_unfinished if str(r["id"]) not in keep_ids]
+            for idx in range(0, len(obsolete_ids), 200):
+                chunk = obsolete_ids[idx : idx + 200]
+                ph = ",".join("?" for _ in chunk)
+                # Unblock any volunteer agent currently holding a superseded lease.
+                conn.execute(
+                    f"UPDATE agents SET current_task_id = NULL WHERE current_task_id IN ({ph})",
+                    tuple(chunk),
+                )
+                # Preserve tasks referenced by findings as 'retired' so FK constraints never fail
+                # and expired/released leases can never return to the live queue.
+                referenced = {
+                    str(r["task_id"])
+                    for r in conn.execute(
+                        f"SELECT DISTINCT task_id FROM findings WHERE task_id IN ({ph})",
+                        tuple(chunk),
+                    ).fetchall()
+                    if r["task_id"] is not None
+                }
+                retire_only = [tid for tid in chunk if tid in referenced]
+                deletable = [tid for tid in chunk if tid not in referenced]
+                if retire_only:
+                    rph = ",".join("?" for _ in retire_only)
+                    conn.execute(
+                        f"UPDATE tasks SET status = 'retired', claimed_by_agent_id = NULL, "
+                        f"claimed_by_handle = NULL, lease_id = NULL, lease_started_at = NULL, "
+                        f"lease_expires_at = NULL, available_at = NULL, updated_at = ? "
+                        f"WHERE mission_id = ? AND status != 'completed' AND completed_at IS NULL "
+                        f"AND task_type != 'peer_verify' AND id IN ({rph})",
+                        (now, mid, *retire_only),
+                    )
+                if deletable:
+                    dph = ",".join("?" for _ in deletable)
+                    conn.execute(
+                        f"DELETE FROM tasks WHERE mission_id = ? AND status != 'completed' "
+                        f"AND completed_at IS NULL AND task_type != 'peer_verify' "
+                        f"AND id IN ({dph})",
+                        (mid, *deletable),
+                    )
+        cnt = conn.execute(
+            "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired'",
+            (mid,),
+        ).fetchone()
+        done_cnt = conn.execute(
+            "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status = 'completed'",
+            (mid,),
+        ).fetchone()
+        conn.execute(
+            "UPDATE missions SET total_tasks = ?, completed_tasks = ? WHERE id = ?",
+            (int(cnt["c"]), int(done_cnt["c"]), mid),
+        )
+
+    # A project whose file was removed from the repository is archived (its record stays).
+    active_ids = [project_mission_id(pf.data["slug"]) for pf in valid]
+    if active_ids:
+        placeholders = ",".join("?" for _ in active_ids)
+        conn.execute(
+            f"UPDATE missions SET status = 'archived' "
+            f"WHERE is_community_project = 1 AND id NOT IN ({placeholders})",
+            active_ids,
+        )
+    elif allow_archive_all:
+        conn.execute("UPDATE missions SET status = 'archived' WHERE is_community_project = 1")
+
+    conn.execute(
+        """
+        INSERT INTO seed_state (key, version, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET version = excluded.version, updated_at = excluded.updated_at
+        """,
+        (SYNC_STATE_KEY, fingerprint, now),
+    )
+    return {"synced": len(valid), "skipped": skipped, "changed": True}
+
+
 def sync_projects(
     db: Any,
     directory: Path | None = None,
     *,
     allow_archive_all: bool = False,
+    lock_wait_seconds: float = 15.0,
 ) -> dict[str, Any]:
     """Upsert valid project files into ``missions``/``tasks``. Invalid files are skipped, never half-loaded.
 
@@ -664,7 +994,7 @@ def sync_projects(
     Fails closed (does not archive live projects) if the projects directory is missing or yields
     zero valid files when community projects already exist unless ``allow_archive_all=True``.
     """
-    from aiwatchdogs.hub.database import PG_SEED_ADVISORY_LOCK_KEY, dumps_json
+    from aiwatchdogs.hub.database import PG_PROJECT_SYNC_ADVISORY_LOCK_KEY
 
     root = directory or default_projects_dir()
     if not root.is_dir():
@@ -691,246 +1021,58 @@ def sync_projects(
                     "warning": "Refusing to archive active community projects when 0 valid project files were loaded.",
                 }
 
-    now = _utc_now_iso()
-    with db.transaction() as conn:
-        if getattr(db, "is_postgres", False):
-            conn.execute(f"SELECT pg_advisory_xact_lock({PG_SEED_ADVISORY_LOCK_KEY})")
-        # Re-check fingerprint after acquiring advisory lock to prevent redundant cold-start writes.
-        locked_row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
-        if locked_row is not None and int(locked_row["version"]) == fingerprint:
-            return {"synced": 0, "skipped": skipped, "changed": False}
-        for pf in valid:
-            d = pf.data
-            priority = d.get("priority", DEFAULT_PRIORITY)
-            for old_slug in former_slugs(d):
-                _rename_project(conn, old_slug, d["slug"])
-            mid = project_mission_id(d["slug"])
-            posted = d["posted_by"]
-            tasks = d.get("tasks", [])
-            methodology = str(d.get("methodology_code") or (tasks[0].get("methodology_code") if tasks else "") or "")
-            qty = str(tasks[0].get("financial_quantity_type", "")) if tasks else ""
-            status = d.get("status", "active")
-            conn.execute(
-                """
-                INSERT INTO missions (
-                    id, slug, title, description, pillar, methodology_code,
-                    jurisdiction, ministry_or_authority, statutory_anchors_json,
-                    source_ids_json, sample_dataset_path, data_mode, status,
-                    priority, total_tasks, completed_tasks, verified_findings_count,
-                    cleared_count, cleared_findings_count, unevaluable_count,
-                    monetary_audited_inr, monetary_unit, financial_quantity_type, created_at,
-                    posted_by_name, posted_by_handle, posted_by_url, project_sources_json,
-                    project_scope_json, enlisted_pr_url, planned_tasks_json, is_community_project
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', '', 'live_public', ?, ?, ?, 0, 0, 0, 0, 0, 0.0,
-                          'inr', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-                ON CONFLICT(id) DO UPDATE SET
-                    title = excluded.title,
-                    description = excluded.description,
-                    pillar = excluded.pillar,
-                    methodology_code = excluded.methodology_code,
-                    jurisdiction = excluded.jurisdiction,
-                    ministry_or_authority = excluded.ministry_or_authority,
-                    statutory_anchors_json = excluded.statutory_anchors_json,
-                    status = excluded.status,
-                    priority = excluded.priority,
-                    financial_quantity_type = excluded.financial_quantity_type,
-                    posted_by_name = excluded.posted_by_name,
-                    posted_by_handle = excluded.posted_by_handle,
-                    posted_by_url = excluded.posted_by_url,
-                    project_sources_json = excluded.project_sources_json,
-                    project_scope_json = excluded.project_scope_json,
-                    enlisted_pr_url = excluded.enlisted_pr_url,
-                    planned_tasks_json = excluded.planned_tasks_json,
-                    is_community_project = 1
-                """,
-                (
-                    mid,
-                    d["slug"],
-                    d["title"].strip(),
-                    d["summary"].strip(),
-                    d["pillar"],
-                    methodology,
-                    d["jurisdiction"],
-                    d["authority"],
-                    dumps_json(d.get("statutory_anchors", [])),
-                    status,
-                    priority,
-                    len(tasks),
-                    qty,
-                    now,
-                    str(posted.get("name", "")).strip(),
-                    str(posted.get("handle", "") or "").strip(),
-                    str(posted.get("url", "") or "").strip(),
-                    dumps_json(d.get("sources", [])),
-                    dumps_json({"scope": d.get("scope", []), "out_of_scope": d.get("out_of_scope", [])}),
-                    str(d.get("enlisted_pr_url", "") or ""),
-                    dumps_json(
-                        [
-                            {k: p[k] for k in ("title", "type", "estimated_tokens", "estimate_basis")}
-                            for p in d.get("planned_tasks", [])
-                        ]
-                    ),
-                ),
-            )
-            for task in tasks:
-                tid = project_task_id(task["id"])
-                code = task.get("methodology_code", methodology)
-                task_type = "research" if code == INFLATION_METHODOLOGY else "anomaly_scan"
-                payload = dict(task["payload"])
-                payload.setdefault("methodology_code", code)
-                payload.setdefault("dataset_key", task["dataset_key"])
-                payload.setdefault("financial_quantity_type", task["financial_quantity_type"])
-                payload.setdefault("dataset_url", payload["retrieval_url"])
-                payload.setdefault("source_url", payload.get("source_landing_page", ""))
-                payload.setdefault("is_demo_sample", False)
-                payload["project_slug"] = d["slug"]
-                if task_type == "research":
-                    payload["depends_on"] = [project_task_id(dep) for dep in task.get("depends_on", [])]
-                payload_str = dumps_json(payload)
-                existing = conn.execute("SELECT status FROM tasks WHERE id = ?", (tid,)).fetchone()
-                if existing is None:
-                    conn.execute(
-                        """
-                        INSERT INTO tasks (
-                            id, mission_id, mission_slug, methodology_code, task_type,
-                            title, instructions, payload_json, target_finding_id,
-                            excluded_handles_json, status, dataset_key, financial_quantity_type,
-                            created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, '[]', 'queued', ?, ?, ?, ?)
-                        """,
-                        (
-                            tid,
-                            mid,
-                            d["slug"],
-                            code,
-                            task_type,
-                            task["title"],
-                            task["instructions"],
-                            payload_str,
-                            task["dataset_key"],
-                            task["financial_quantity_type"],
-                            now,
-                            now,
-                        ),
+    is_pg = bool(getattr(db, "is_postgres", False))
+    deadline = time.monotonic() + max(0.0, float(lock_wait_seconds))
+    while True:
+        with db.transaction(statement_timeout_ms=30_000, lock_timeout_ms=15_000) as conn:
+            if is_pg:
+                lock_row = conn.execute(
+                    f"SELECT pg_try_advisory_xact_lock({PG_PROJECT_SYNC_ADVISORY_LOCK_KEY}) AS acquired"
+                ).fetchone()
+                if isinstance(lock_row, dict):
+                    acquired = bool(lock_row.get("acquired"))
+                elif lock_row is not None:
+                    acquired = bool(lock_row[0])
+                else:
+                    acquired = False
+                if acquired:
+                    return _run_sync_in_tx(
+                        conn,
+                        db=db,
+                        valid=valid,
+                        skipped=skipped,
+                        fingerprint=fingerprint,
+                        allow_archive_all=allow_archive_all,
                     )
-                elif existing["status"] == "queued":
-                    conn.execute(
-                        """
-                        UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?, task_type = ?,
-                            dataset_key = ?, financial_quantity_type = ?, updated_at = ?
-                        WHERE id = ? AND status = 'queued'
-                        """,
-                        (
-                            task["title"],
-                            task["instructions"],
-                            payload_str,
-                            code,
-                            task_type,
-                            task["dataset_key"],
-                            task["financial_quantity_type"],
-                            now,
-                            tid,
-                        ),
-                    )
-                # Estimates are descriptive, so refresh them whatever state the task is in.
-                conn.execute(
-                    "UPDATE tasks SET work_type = ?, estimated_tokens = ?, estimate_basis = ? WHERE id = ?",
-                    (
-                        task.get("type", DEFAULT_WORK_TYPE),
-                        task["estimated_tokens"],
-                        task["estimate_basis"],
-                        tid,
-                    ),
+            else:
+                return _run_sync_in_tx(
+                    conn,
+                    db=db,
+                    valid=valid,
+                    skipped=skipped,
+                    fingerprint=fingerprint,
+                    allow_archive_all=allow_archive_all,
                 )
-                conn.execute(
-                    "UPDATE tasks SET estimated_tokens = ?, estimate_basis = ? "
-                    "WHERE mission_id = ? AND dataset_key = ? AND task_type = 'peer_verify'",
-                    (task["estimated_tokens"], PEER_ESTIMATE_BASIS, mid, task["dataset_key"]),
-                )
-            if getattr(db, "is_postgres", False):
-                conn.execute("SELECT id FROM missions WHERE id = ? FOR UPDATE", (mid,))
-            # Retire all superseded non-completed primary tasks (including active claimed/parked leases
-            # whose underlying manifests were removed/replaced), while strictly preserving completed
-            # work, peer_verify history, and any task referenced by findings.
-            current_task_ids = [project_task_id(t["id"]) for t in tasks]
-            if current_task_ids:
-                existing_unfinished = conn.execute(
-                    "SELECT id FROM tasks WHERE mission_id = ? AND status != 'completed' "
-                    "AND status != 'retired' AND completed_at IS NULL AND task_type != 'peer_verify'",
-                    (mid,),
-                ).fetchall()
-                keep_ids = set(current_task_ids)
-                obsolete_ids = [str(r["id"]) for r in existing_unfinished if str(r["id"]) not in keep_ids]
-                for idx in range(0, len(obsolete_ids), 200):
-                    chunk = obsolete_ids[idx : idx + 200]
-                    ph = ",".join("?" for _ in chunk)
-                    # Unblock any volunteer agent currently holding a superseded lease.
-                    conn.execute(
-                        f"UPDATE agents SET current_task_id = NULL WHERE current_task_id IN ({ph})",
-                        tuple(chunk),
+
+        # Another cold-start instance currently holds the sync lock; wait outside any transaction.
+        with db.read() as rconn:
+            row = rconn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
+            if row is not None and int(row["version"]) == fingerprint:
+                return {"synced": 0, "skipped": skipped, "changed": False}
+            if time.monotonic() >= deadline:
+                existing_active = rconn.execute(
+                    "SELECT COUNT(*) AS c FROM missions WHERE is_community_project = 1 AND status != 'archived'"
+                ).fetchone()
+                if existing_active is not None and int(existing_active["c"]) > 0:
+                    logger.warning(
+                        "Project sync lock still held by another instance after %.1fs; serving existing live projects.",
+                        lock_wait_seconds,
                     )
-                    # Preserve tasks referenced by findings as 'retired' so FK constraints never fail
-                    # and expired/released leases can never return to the live queue.
-                    referenced = {
-                        str(r["task_id"])
-                        for r in conn.execute(
-                            f"SELECT DISTINCT task_id FROM findings WHERE task_id IN ({ph})",
-                            tuple(chunk),
-                        ).fetchall()
-                        if r["task_id"] is not None
+                    return {
+                        "synced": 0,
+                        "skipped": skipped,
+                        "changed": False,
+                        "warning": "Another instance is actively syncing projects.",
                     }
-                    retire_only = [tid for tid in chunk if tid in referenced]
-                    deletable = [tid for tid in chunk if tid not in referenced]
-                    if retire_only:
-                        rph = ",".join("?" for _ in retire_only)
-                        conn.execute(
-                            f"UPDATE tasks SET status = 'retired', claimed_by_agent_id = NULL, "
-                            f"claimed_by_handle = NULL, lease_id = NULL, lease_started_at = NULL, "
-                            f"lease_expires_at = NULL, available_at = NULL, updated_at = ? "
-                            f"WHERE mission_id = ? AND status != 'completed' AND completed_at IS NULL "
-                            f"AND task_type != 'peer_verify' AND id IN ({rph})",
-                            (now, mid, *retire_only),
-                        )
-                    if deletable:
-                        dph = ",".join("?" for _ in deletable)
-                        conn.execute(
-                            f"DELETE FROM tasks WHERE mission_id = ? AND status != 'completed' "
-                            f"AND completed_at IS NULL AND task_type != 'peer_verify' "
-                            f"AND id IN ({dph})",
-                            (mid, *deletable),
-                        )
-            cnt = conn.execute(
-                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
-                "AND task_type != 'peer_verify' AND status != 'retired'",
-                (mid,),
-            ).fetchone()
-            done_cnt = conn.execute(
-                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
-                "AND task_type != 'peer_verify' AND status = 'completed'",
-                (mid,),
-            ).fetchone()
-            conn.execute(
-                "UPDATE missions SET total_tasks = ?, completed_tasks = ? WHERE id = ?",
-                (int(cnt["c"]), int(done_cnt["c"]), mid),
-            )
-
-        # A project whose file was removed from the repository is archived (its record stays).
-        active_ids = [project_mission_id(pf.data["slug"]) for pf in valid]
-        if active_ids:
-            placeholders = ",".join("?" for _ in active_ids)
-            conn.execute(
-                f"UPDATE missions SET status = 'archived' "
-                f"WHERE is_community_project = 1 AND id NOT IN ({placeholders})",
-                active_ids,
-            )
-        elif allow_archive_all:
-            conn.execute("UPDATE missions SET status = 'archived' WHERE is_community_project = 1")
-
-        conn.execute(
-            """
-            INSERT INTO seed_state (key, version, updated_at) VALUES (?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET version = excluded.version, updated_at = excluded.updated_at
-            """,
-            (SYNC_STATE_KEY, fingerprint, now),
-        )
-    return {"synced": len(valid), "skipped": skipped, "changed": True}
+                raise RuntimeError("Timed out waiting for project sync advisory lock on an uninitialized database.")
+        time.sleep(0.25)

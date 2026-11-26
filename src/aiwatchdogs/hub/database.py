@@ -67,6 +67,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
+PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
 LATEST_SCHEMA_VERSION = 10
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
@@ -960,6 +961,29 @@ class _PgConnectionAdapter:
                 cursor = conn.execute(translated)
             self._stmt_count += 1
             return cursor
+
+    def executemany(self, sql: str, params_seq: Sequence[Sequence[Any]]) -> Any:
+        rows = [tuple(p) for p in params_seq]
+        if not rows:
+            return _NoOpCursor()
+        translated = translate_sql_for_postgres(sql, parameterized=True)
+        if translated is None:
+            return _NoOpCursor()
+
+        conn = self._db._ensure_pg_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(translated, rows)
+            self._stmt_count += 1
+            return _NoOpCursor()
+        except _PG_TRANSIENT_ERRORS:
+            if self._stmt_count > 0:
+                raise
+            conn = self._db._reconnect_pg()
+            with conn.cursor() as cur:
+                cur.executemany(translated, rows)
+            self._stmt_count += 1
+            return _NoOpCursor()
 
     def executescript(self, script_sql: str) -> None:
         for stmt in split_sql_statements(script_sql):
