@@ -8,9 +8,42 @@ html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   background-color: var(--paper);
   color: var(--ink);
   scroll-behavior: smooth;
+  overflow-x: clip;
+}
+
+.app-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.offline-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.offline-banner-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 body {
@@ -462,6 +495,11 @@ code.font-mono {
   font-weight: 400;
   line-height: 20px;
   text-align: center;
+}
+
+.just-in-content,
+.just-in-top {
+  display: contents;
 }
 
 .just-in-kicker {
@@ -3503,7 +3541,9 @@ code.font-mono {
 /* Tables */
 .table-wrap {
   width: 100%;
+  max-width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--raised);
   border: 1px solid var(--rule);
   border-radius: var(--r-8);
@@ -3623,6 +3663,8 @@ code.font-mono {
   background: var(--paper);
   border-left: 1px solid var(--rule-strong);
   height: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3632,12 +3674,81 @@ code.font-mono {
   width: 100%;
   max-width: 680px;
   max-height: 90vh;
+  max-height: 90dvh;
   background: var(--paper);
   border: 1px solid var(--rule-strong);
   border-radius: var(--r-12);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.modal-logo {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 400;
+  line-height: 1.2;
+}
+
+.drawer-title {
+  margin: 0;
+  font-size: 23px;
+  line-height: 1.24;
+  font-weight: 400;
+  overflow-wrap: break-word;
+}
+
+.drawer-rti-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.drawer-rti-input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.filter-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+}
+
+.contributor-handle-title {
+  margin: 0 0 4px;
+  font-size: 34px;
+  overflow-wrap: anywhere;
+}
+
+.contributor-share-btn {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.contributor-share-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.map-sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mobile-nav-join {
+  background: none;
+  text-align: left;
+  font-weight: 600;
 }
 
 .overlay-header {
@@ -3653,6 +3764,8 @@ code.font-mono {
 .overlay-body {
   padding: 22px;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3671,6 +3784,17 @@ code.font-mono {
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.code-block-text {
+  padding-right: 80px;
+}
+
+.code-block-copy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
 }
 
 .rti-paper {
@@ -3682,6 +3806,7 @@ code.font-mono {
   font-size: 12.5px;
   line-height: 1.65;
   white-space: pre-wrap;
+  overflow-wrap: break-word;
   color: var(--ink);
 }
 
@@ -5081,6 +5206,43 @@ code.font-mono {
   color: var(--ink) !important;
 }
 
+/* Restore high-contrast light-on-green tokens for .frontier now that UNSLOP removed its solid white card fill */
+.record .return-card.frontier {
+  --ink: #FFFFFF;
+  --ink-2: #F3FAF1;
+  --ink-3: #DCEFD8;
+  --ink-4: #CFE8CA;
+  --ink-6: #DCEFD8;
+  --paper: #FFFFFF;
+  --accent: #FFD7A8;
+  --accent-light: #FFE6C7;
+  --accent-deep: #FFD7A8;
+  --green-on-dark: #C8F5BE;
+}
+
+.record .return-card.frontier * {
+  --ink: #FFFFFF;
+}
+
+.return-card-action {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.return-card.grave .return-card-action {
+  color: var(--ink);
+}
+
+.contrib-mobile-list {
+  display: none;
+}
+
 .mentioned-card {
   background: none;
   border: 0;
@@ -5257,6 +5419,8 @@ code.font-mono {
   border: 1px solid #CFCBC2;
   vertical-align: middle;
   max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   line-height: 1.25;
   white-space: nowrap;
 }
@@ -5271,6 +5435,8 @@ code.font-mono {
   gap: 5px;
   vertical-align: middle;
   max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   white-space: nowrap;
 }
 .brand-logo-variant {
@@ -5469,4 +5635,1191 @@ code.font-mono {
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
+}
+
+/* =========================================================================
+   PHONE & MOBILE RESPONSIVE POLISH (<= 1023px / <= 760px / <= 480px)
+   Placed last in global.css so UNSLOP & later desktop overrides never break
+   phone dimensions, alignment, touch targets, or horizontal scroll bounds.
+   Desktop (>= 1024px) remains completely untouched.
+   ========================================================================= */
+
+@media (max-width: 1023px) {
+  .kpi-strip {
+    gap: 1px;
+    background: var(--rule);
+  }
+  .kpi-cell {
+    background: var(--raised);
+    border-right: none;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Safe-area horizontal padding on full-bleed bands */
+  .band,
+  .site-header,
+  .just-in,
+  .hero,
+  .leaderboard,
+  .status-note,
+  .home-live,
+  .race,
+  .numbers,
+  .record,
+  .offline-banner {
+    padding-left: max(var(--gutter), var(--safe-left));
+    padding-right: max(var(--gutter), var(--safe-right));
+  }
+
+  .container {
+    padding-left: max(16px, var(--safe-left));
+    padding-right: max(16px, var(--safe-right));
+  }
+
+  /* 1. Compact, aligned masthead header (fixes UNSLOP 88-104px logo override) */
+  .site-header {
+    padding-top: calc(14px + var(--safe-top));
+    padding-bottom: 10px;
+    min-height: 60px;
+  }
+
+  .site-header::before,
+  .site-footer::before {
+    height: 6px;
+  }
+
+  .site-header-row {
+    gap: 10px;
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
+  .brand-logo {
+    width: 44px;
+    height: 44px;
+    margin: 0;
+  }
+
+  .brand-text {
+    gap: 2px;
+  }
+
+  .brand-mark {
+    font-size: 20px;
+    line-height: 1.12;
+    white-space: normal;
+    max-width: none;
+  }
+
+  .brand-tag {
+    display: none;
+  }
+
+  .header-socials,
+  .header-divider {
+    display: none;
+  }
+
+  .header-right {
+    gap: 8px;
+  }
+
+  .mobile-menu-btn {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+
+  .mobile-nav-drawer {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+
+  .mobile-nav-list {
+    gap: 8px;
+  }
+
+  .mobile-nav-link {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+    border-radius: var(--r-6);
+    border-color: var(--rule-soft);
+    background: var(--paper);
+  }
+
+  .mobile-nav-link.active {
+    background: var(--sunk);
+    border-color: var(--rule-strong);
+  }
+
+  .mobile-nav-join {
+    width: 100%;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    justify-content: center;
+  }
+
+  .mobile-nav-agent {
+    padding: 0;
+    width: 100%;
+  }
+
+  .mobile-social-link {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  /* 2. Ultra-compact 2-row Just-In bar (~62-68px height, >=44px CTA tap target) */
+  .just-in {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0 10px;
+    border-top-width: 3px;
+    border-bottom-width: 3px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    min-height: 48px;
+    text-align: left;
+    font-size: 13px;
+    line-height: 1.32;
+  }
+
+  .just-in-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .just-in-top {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    min-width: 0;
+  }
+
+  .just-in-kicker {
+    font-size: 11.5px !important;
+    font-weight: 500;
+    line-height: 1.25;
+  }
+
+  .just-in-title {
+    max-width: 100%;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.32;
+  }
+
+  .just-in-meta {
+    font-size: 11.5px;
+    line-height: 1.25;
+  }
+
+  .just-in-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0 4px;
+    font-size: 12.5px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+
+  .offline-banner .btn {
+    min-height: 40px;
+    padding: 6px 12px;
+  }
+
+  /* 3. Hero band — balanced mobile type scale & compact vertical rhythm */
+  .hero {
+    padding-top: 16px;
+    padding-bottom: 28px;
+    row-gap: 18px;
+  }
+
+  .hero-main {
+    gap: 12px;
+  }
+
+  .hero-q {
+    font-size: clamp(17.5px, 4.6vw, 20px);
+    line-height: 1.24;
+  }
+
+  .hero-q span {
+    padding-block: 7px;
+  }
+
+  .hero-a {
+    font-size: 17.5px;
+    line-height: 1.36;
+  }
+
+  .hero-line {
+    font-size: 15px;
+    line-height: 1.54;
+  }
+
+  .hero-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 14px;
+    padding-top: 12px;
+    max-width: 100%;
+  }
+
+  .hero-stat dt {
+    font-size: 24px;
+  }
+
+  .hero-stat dd {
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+
+  .hero-cta {
+    gap: 10px;
+  }
+
+  .hero-cta .btn {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 14px;
+    flex: 1 1 auto;
+  }
+
+  .hero-side {
+    gap: 20px;
+  }
+
+  .tug-heads {
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+
+  .tug-info {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  /* 4. Prevent .inline-link from causing 360px/375px horizontal overflow */
+  .inline-link {
+    white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 1.4;
+  }
+
+  .home-live-foot .inline-link,
+  .race-link,
+  .return-card-action {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  /* 5. Leaderboard — spacious handle column, full-width join CTA, 44px tabs */
+  .leaderboard {
+    padding-top: 28px;
+    padding-bottom: 32px;
+  }
+
+  .lb-head h2,
+  .hub-head h2,
+  .project-dash .lb-head h1 {
+    font-size: clamp(26px, 7.2vw, 32px);
+  }
+
+  .leaderboard .lb-sub {
+    flex: 1 1 100%;
+    font-size: 15px;
+  }
+
+  .lb-all {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  .seg,
+  .segmented {
+    max-width: 100%;
+  }
+
+  .seg.big .seg-btn,
+  .segmented-btn {
+    min-height: 44px;
+    padding: 8px 16px;
+  }
+
+  .leaderboard .lb-rows {
+    margin-top: 18px;
+  }
+
+  .leaderboard .lb-row {
+    grid-template-columns: 20px 34px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 10px 12px;
+    min-height: 58px;
+  }
+
+  .leaderboard .lb-row .lb-handle {
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .leaderboard .lb-row.yours {
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .leaderboard .lb-row.yours .join-cta {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+
+  .join-cta {
+    min-height: 44px;
+  }
+
+  .join-reveal-code {
+    overflow-wrap: anywhere;
+  }
+
+  /* 6. Status note & mentioned cards */
+  .status-note {
+    row-gap: 24px;
+  }
+
+  .status-note-body {
+    font-size: 19px;
+    line-height: 1.42;
+  }
+
+  .mentioned-card-top,
+  .mentioned-card-meta {
+    flex-wrap: wrap;
+  }
+
+  /* 7. Live organism fallback polish */
+  .gate-verdict {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .org-mobile-chip {
+    flex: 0 0 min(230px, 78vw);
+    min-height: 44px;
+  }
+
+  .org-pop-close {
+    min-width: 38px;
+    min-height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* 8. Race / The Projects band — zero overflow on dense rungs & readable titles */
+  .race {
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+
+  .race-logo-dark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .race-head h2 {
+    font-size: 23px;
+  }
+
+  .lane-track {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+    padding: 12px 0;
+  }
+
+  .lane-name {
+    align-items: baseline;
+  }
+
+  .lane-title-text {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: break-word;
+    line-height: 1.35;
+  }
+
+  .lane-line {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding: 8px 4px;
+    max-width: 100%;
+  }
+
+  .lane-line::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lane-rungs {
+    gap: 6px;
+    min-width: max-content;
+  }
+
+  .lane-stat {
+    text-align: left;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.4;
+  }
+
+  .race-legend {
+    gap: 8px 14px;
+  }
+
+  /* 9. Interactive Observatory Map — compact header + spacious centered mobile canvas */
+  .map {
+    height: auto;
+    min-height: 540px;
+    display: flex;
+    flex-direction: column;
+    padding: 14px max(var(--gutter), var(--safe-right)) 14px max(var(--gutter), var(--safe-left));
+    gap: 8px;
+  }
+
+  .map-head {
+    position: relative;
+    left: auto;
+    top: auto;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .map-head-inner {
+    gap: 5px;
+  }
+
+  .map-head-logo {
+    width: 28px;
+    height: 28px;
+  }
+
+  .map-head h2 {
+    font-size: 17px;
+    line-height: 1.24;
+  }
+
+  .map-mobile-missions {
+    margin-top: 4px;
+  }
+
+  .map-mobile-label {
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+
+  .map-mobile-select {
+    min-height: 40px;
+    font-size: 15px;
+    padding: 5px 10px;
+  }
+
+  .map-search {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: 100%;
+    z-index: 20;
+  }
+
+  .map-search-input {
+    height: 42px;
+    font-size: 15px;
+    padding: 0 32px 0 36px;
+  }
+
+  .map-search-kbd {
+    display: none;
+  }
+
+  .map-search-results {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    max-height: 220px;
+    z-index: 25;
+  }
+
+  .map-search-item {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .map-bottom-left {
+    position: relative;
+    left: auto;
+    bottom: auto;
+    margin-top: 250px;
+    max-width: calc(100% - 56px);
+    pointer-events: none;
+  }
+
+  .map-legend {
+    pointer-events: auto;
+    font-size: 10.5px;
+    padding: 7px 10px;
+    gap: 6px 10px;
+  }
+
+  .map-zoom {
+    right: max(var(--gutter), var(--safe-right));
+    bottom: 14px;
+  }
+
+  .map-zoom button {
+    width: 44px;
+    height: 42px;
+  }
+
+  .map-sheet {
+    left: 12px;
+    right: 12px;
+    top: auto;
+    bottom: 12px;
+    width: auto;
+    max-height: 68%;
+    padding: 14px 16px;
+    z-index: 30;
+  }
+
+  .map-sheet-title {
+    font-size: 18px;
+  }
+
+  .map-sheet-actions .btn {
+    min-width: 38px;
+    min-height: 38px;
+    padding: 0;
+  }
+
+  /* 10. Numbers Strip — clean 2-col editorial data grid */
+  .numbers {
+    padding-top: 22px;
+    padding-bottom: 22px;
+    gap: 16px;
+  }
+
+  .counts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+    width: 100%;
+  }
+
+  .count-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .count-item dt {
+    font-size: 22px;
+  }
+
+  .count-item dd {
+    font-size: 12.5px;
+    line-height: 1.35;
+  }
+
+  .numbers-side {
+    width: 100%;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    justify-content: space-between;
+    gap: 10px 14px;
+  }
+
+  .numbers-side .btn {
+    min-height: 44px;
+  }
+
+  /* 11. Latest from the record (Green band) */
+  .record h2 {
+    font-size: clamp(26px, 7.5vw, 34px);
+  }
+
+  .returns {
+    margin-top: 24px;
+    gap: 20px;
+  }
+
+  .return-card {
+    min-height: auto;
+  }
+
+  .return-card-title {
+    font-size: 18px;
+  }
+
+  .event {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 14px 0;
+  }
+
+  .event-state {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .event-title-btn {
+    font-size: 17.5px;
+    line-height: 1.36;
+    overflow-wrap: break-word;
+  }
+
+  .event-who {
+    grid-column: 1;
+    white-space: normal;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+  }
+
+  .record-more {
+    gap: 12px 16px;
+  }
+
+  .record-more .btn {
+    min-height: 44px;
+  }
+
+  /* 12. Footer — structured, non-cramped mobile grid */
+  .site-footer {
+    padding-top: 34px;
+    padding-left: max(var(--gutter), var(--safe-left));
+    padding-right: max(var(--gutter), var(--safe-right));
+    padding-bottom: var(--safe-bottom);
+  }
+
+  .foot-top {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24px 16px;
+    padding-bottom: 28px;
+  }
+
+  .foot-about {
+    grid-column: 1 / -1;
+    gap: 10px;
+  }
+
+  .foot-col:nth-child(4),
+  .foot-col:nth-child(5) {
+    grid-column: 1 / -1;
+  }
+
+  .foot-brand-row img {
+    width: 40px;
+    height: 40px;
+  }
+
+  .foot-brand {
+    font-size: 20px;
+    white-space: normal;
+  }
+
+  .foot-col h4 {
+    margin-bottom: 10px;
+  }
+
+  .foot-links {
+    gap: 0;
+  }
+
+  .foot-links a,
+  .foot-links button {
+    min-height: 42px;
+    padding: 8px 0;
+    align-items: center;
+  }
+
+  .foot-links button.join-cta {
+    min-height: 44px;
+    padding: 7px 10px;
+    margin: 4px 0;
+  }
+
+  .foot-social-links {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+  }
+
+  .foot-social-item {
+    min-height: 44px;
+    padding: 6px 0;
+  }
+
+  .foot-bottom {
+    padding: 18px 0 22px;
+  }
+
+  .foot-bottom-actions .btn {
+    min-height: 44px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+  }
+
+  /* 13. Secondary pages, tables, cards, filters & KPI strips */
+  .section-header {
+    margin-bottom: 18px;
+    gap: 12px;
+  }
+
+  .section-title {
+    font-size: 26px;
+    line-height: 1.15;
+  }
+
+  .section-subtitle {
+    font-size: 14px;
+  }
+
+  .card-pad {
+    padding: 15px;
+  }
+
+  .finding-card {
+    padding: 14px 15px;
+  }
+
+  .filter-bar {
+    padding: 12px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-search-wrap {
+    min-width: 0;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .input-field,
+  .select-field,
+  .textarea-field {
+    max-width: 100%;
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .filter-bar .select-field,
+  .filter-bar .input-field,
+  .filter-bar .btn {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .kpi-strip,
+  .kpi-strip.cols-3,
+  .kpi-strip.cols-4,
+  .kpi-strip.cols-5 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpi-cell {
+    padding: 12px;
+  }
+
+  .kpi-cell:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .kpi-value {
+    font-size: 20px;
+  }
+
+  .ledger-table th,
+  .ledger-table td {
+    padding: 9px 10px;
+    font-size: 13px;
+  }
+
+  .contributor-handle-title {
+    font-size: 25px;
+  }
+
+  /* Mobile card list for /contributors leaderboard & /a/:handle peer reviews */
+  .contrib-desktop-table {
+    display: none;
+  }
+
+  .contrib-mobile-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .contrib-mobile-card {
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-radius: var(--r-8);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .contrib-mobile-card--link:hover,
+  .contrib-mobile-card--link:focus-visible {
+    border-color: var(--ink);
+    outline: none;
+  }
+
+  .contrib-mobile-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .contrib-mobile-identity {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .contrib-mobile-rank {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-4);
+    flex-shrink: 0;
+  }
+
+  .contrib-mobile-handle {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--ink);
+    overflow-wrap: break-word;
+    word-break: normal;
+    min-width: 0;
+  }
+
+  .contrib-mobile-score {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    flex-shrink: 0;
+    color: var(--ink);
+  }
+
+  .contrib-mobile-score strong {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .contrib-mobile-score span {
+    font-size: 12px;
+    color: var(--ink-4);
+  }
+
+  .contrib-mobile-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .contrib-mobile-beat {
+    font-size: 12px;
+    color: var(--ink-4);
+    white-space: nowrap;
+  }
+
+  .contrib-mobile-stats {
+    margin: 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--rule-soft);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .contrib-mobile-stats > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .contrib-mobile-stats dt {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.15;
+  }
+
+  .contrib-mobile-stats dd {
+    margin: 0;
+    font-size: 11.5px;
+    color: var(--ink-4);
+    line-height: 1.2;
+  }
+
+  .contrib-mobile-finding-btn {
+    background: none;
+    border: none;
+    padding: 4px 0;
+    min-height: 40px;
+    text-align: left;
+    font-size: 15.5px;
+    line-height: 1.35;
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    overflow-wrap: break-word;
+  }
+
+  .contrib-mobile-notes {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.48;
+    color: var(--ink-2);
+    overflow-wrap: break-word;
+  }
+
+  .drawer-panel .btn-xs {
+    min-height: 36px;
+    padding: 6px 11px;
+  }
+
+  .pagination-bar {
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .pagination-bar .btn {
+    min-height: 44px;
+  }
+
+  /* 14. Modals, Drawers & Toasts */
+  .overlay-backdrop.centered {
+    padding: 12px;
+    padding-bottom: max(12px, var(--safe-bottom));
+  }
+
+  .modal-panel {
+    max-height: min(92dvh, calc(100dvh - 24px));
+    border-radius: var(--r-10);
+  }
+
+  .drawer-panel {
+    max-width: 100%;
+    border-left: none;
+  }
+
+  .overlay-header {
+    padding: 14px 16px;
+    gap: 10px;
+  }
+
+  .overlay-close-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  .overlay-body {
+    padding: 15px;
+    padding-bottom: max(20px, var(--safe-bottom));
+    gap: 14px;
+  }
+
+  .modal-logo {
+    width: 44px;
+    height: 44px;
+  }
+
+  .modal-title {
+    font-size: 20px;
+  }
+
+  .drawer-title {
+    font-size: 19px;
+    line-height: 1.28;
+  }
+
+  .drawer-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .drawer-metrics-table .ledger-table td.num {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .drawer-rti-input {
+    min-width: 0;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .drawer-rti-submit {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .rti-paper {
+    padding: 14px;
+    font-size: 12px;
+  }
+
+  .social-pill {
+    min-height: 36px;
+    padding: 6px 11px;
+  }
+
+  .toast-stack {
+    left: max(16px, var(--safe-left));
+    right: max(16px, var(--safe-right));
+    bottom: calc(16px + var(--safe-bottom));
+    align-items: stretch;
+  }
+
+  .toast {
+    width: 100%;
+    max-width: 100%;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+}
+
+@media (max-width: 600px) {
+  .leaderboard .lb-score-wrap {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+  }
+
+  .leaderboard .lb-score {
+    font-size: 19px;
+  }
+
+  .leaderboard .lb-score-lbl {
+    font-size: 11.5px;
+  }
+
+  .code-block {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    font-size: 11.5px;
+  }
+
+  .code-block-text {
+    padding-right: 0;
+  }
+
+  .code-block-copy {
+    position: static;
+    align-self: flex-end;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-logo {
+    width: 38px;
+    height: 38px;
+  }
+
+  .brand-mark {
+    font-size: 18px;
+  }
+
+  .hero-cta .btn:first-child {
+    flex: 1 1 100%;
+  }
+
+  .hero-cta .btn:not(:first-child) {
+    flex: 1 1 calc(50% - 5px);
+  }
+
+  .join-cta-label {
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  .foot-social-links {
+    grid-template-columns: 1fr;
+  }
+
+  .overlay-backdrop.centered {
+    padding: 8px;
+    padding-bottom: max(8px, var(--safe-bottom));
+  }
+
+  .drawer-title {
+    font-size: 18px;
+    line-height: 1.26;
+  }
+
+  .provenance-hash-box {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 380px) {
+  .brand-logo {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand-mark {
+    font-size: 16.5px;
+  }
+
+  .hero-stat dt {
+    font-size: 21px;
+  }
 }

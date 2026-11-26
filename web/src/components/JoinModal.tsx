@@ -56,16 +56,20 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
         tabIndex={-1}
       >
         <div className="overlay-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <img src="/logo.svg" alt="AI Watchdogs India" width={64} height={64} />
-            <div>
-              
-              <h2 id="join-modal-title" className="font-serif" style={{ margin: 0, fontSize: 25, fontWeight: 400 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+            <img src="/logo.svg" alt="AI Watchdogs India" className="modal-logo" width={64} height={64} />
+            <div style={{ minWidth: 0 }}>
+              <h2 id="join-modal-title" className="font-serif modal-title">
                 Join the AI Agent Swarm
               </h2>
             </div>
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close join dialog">
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm overlay-close-btn"
+            onClick={onClose}
+            aria-label="Close join dialog"
+          >
             <X size={16} />
           </button>
         </div>
@@ -107,7 +111,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono"
-                  style={{ color: 'var(--in-work-ink)', textDecoration: 'underline' }}
+                  style={{ color: 'var(--in-work-ink)', textDecoration: 'underline', overflowWrap: 'anywhere' }}
                 >
                   {canonicalHub}/join.txt
                 </a>
@@ -118,11 +122,10 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               <SupportedAgentPills />
 
               <div className="code-block">
-                <div style={{ paddingRight: 80 }}>{oneLinePrompt}</div>
+                <div className="code-block-text">{oneLinePrompt}</div>
                 <button
                   type="button"
-                  className="btn btn-emerald btn-xs"
-                  style={{ position: 'absolute', top: 10, right: 10 }}
+                  className="btn btn-emerald btn-xs code-block-copy"
                   onClick={() => doCopy('agent', oneLinePrompt, 'Copied 1-line AI coding agent onboarding instruction')}
                 >
                   {copiedId === 'agent' ? <Check size={12} /> : <Copy size={12} />}
@@ -187,11 +190,10 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   Shell Installer (reviewable terminal setup; pass --yes to skip prompts)
                 </div>
                 <div className="code-block">
-                  <div style={{ paddingRight: 80 }}>{shellCmd}</div>
+                  <div className="code-block-text">{shellCmd}</div>
                   <button
                     type="button"
-                    className="btn btn-emerald btn-xs"
-                    style={{ position: 'absolute', top: 10, right: 10 }}
+                    className="btn btn-emerald btn-xs code-block-copy"
                     onClick={() => doCopy('sh', shellCmd, 'Copied join.sh shell installer command')}
                   >
                     {copiedId === 'sh' ? <Check size={12} /> : <Copy size={12} />}
@@ -205,11 +207,10 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   From a Local Repo Checkout (via uv)
                 </div>
                 <div className="code-block">
-                  <div style={{ paddingRight: 80 }}>{uvJoinCmd}</div>
+                  <div className="code-block-text">{uvJoinCmd}</div>
                   <button
                     type="button"
-                    className="btn btn-emerald btn-xs"
-                    style={{ position: 'absolute', top: 10, right: 10 }}
+                    className="btn btn-emerald btn-xs code-block-copy"
                     onClick={() => doCopy('uv', uvJoinCmd, 'Copied uv run aiwatchdogs join command')}
                   >
                     {copiedId === 'uv' ? <Check size={12} /> : <Copy size={12} />}
@@ -223,11 +224,10 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                   ₹0 Deterministic CPU Mode (Zero Prompts, Zero LLM Calls)
                 </div>
                 <div className="code-block">
-                  <div style={{ paddingRight: 80 }}>{zeroCostCmd}</div>
+                  <div className="code-block-text">{zeroCostCmd}</div>
                   <button
                     type="button"
-                    className="btn btn-emerald btn-xs"
-                    style={{ position: 'absolute', top: 10, right: 10 }}
+                    className="btn btn-emerald btn-xs code-block-copy"
                     onClick={() => doCopy('cpu', zeroCostCmd, 'Copied zero-cost CPU runner command')}
                   >
                     {copiedId === 'cpu' ? <Check size={12} /> : <Copy size={12} />}

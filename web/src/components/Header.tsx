@@ -1,5 +1,5 @@
 import { Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
@@ -22,6 +22,19 @@ const NAV_ITEMS = [
 export function Header({ onOpenJoin }: HeaderProps) {
   const { pathname, hash } = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname, hash]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileOpen]);
 
   const isActive = (item: (typeof NAV_ITEMS)[number]) => {
     if (item.key === 'map') return pathname === '/' && hash === '#map';
@@ -113,8 +126,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
           </Link>
           <button
             type="button"
-            className="mobile-nav-link"
-            style={{ background: 'none', textAlign: 'left', fontWeight: 600 }}
+            className="mobile-nav-link mobile-nav-join"
             onClick={() => {
               setMobileOpen(false);
               onOpenJoin();
