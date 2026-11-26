@@ -644,9 +644,9 @@ def test_postgres_security_hardening_constraints_indexes_and_races(pg_schema_url
         db.close()
 
 
-def test_read_only_postgres_refuses_writes() -> None:
-    Database(database_url=TEST_POSTGRES_URL).close()
-    db = Database(database_url=TEST_POSTGRES_URL, read_only=True)
+def test_read_only_postgres_refuses_writes(pg_schema_url: str) -> None:
+    Database(database_url=pg_schema_url).close()
+    db = Database(database_url=pg_schema_url, read_only=True)
     try:
         for _ in range(2):  # still read-only after the first transaction ends
             with db.read() as conn:
