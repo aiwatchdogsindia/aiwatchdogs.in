@@ -68,6 +68,25 @@ export function formatDateShort(iso?: string | null): string {
   });
 }
 
+export function formatDateTimeIst(iso?: string | null): string {
+  if (!iso) return '';
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return iso;
+  const datePart = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Kolkata',
+  }).format(parsed);
+  const timePart = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'Asia/Kolkata',
+  }).format(parsed);
+  return `${datePart}, ${timePart} IST`;
+}
+
 export function getInitials(text?: string | null): string {
   if (!text) return 'AW';
   const cleaned = text.replace(/^@/, '').trim();
@@ -129,12 +148,45 @@ export function pillarLabel(pillar?: string): string {
     procurement: 'Procurement & Tenders',
     audit: 'CAG & PAC Audits',
     budget: 'Union & State Budgets',
+    disclosure: 'Public Disclosure',
     scheme: 'Welfare & Social Audits',
     infrastructure: 'Infrastructure & Works',
     corporate_political: 'Disclosures & Governance',
     parliament: 'Parliament & RTI',
   };
   return map[(pillar || '').toLowerCase()] || pillar || 'Public Audit';
+}
+
+const SLUG_PROJECT_CODES: Record<string, string> = {
+  'police-finances': 'P1',
+  'gov-in-public-information': 'P2',
+  'independent-india-inflation': 'P3',
+};
+
+const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
+  P1: 'P1',
+  W1: 'P2',
+  CPI1: 'P3',
+};
+
+/**
+ * Returns the canonical sequential project code (P1, P2, P3, ...) for UI display,
+ * preferring the hub API's `project_code` and falling back cleanly by slug / methodology.
+ */
+export function projectCodeFor(
+  mission?: {
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+  } | null,
+): string {
+  const explicit = (mission?.project_code || '').trim().toUpperCase();
+  if (explicit) return explicit;
+  const slug = (mission?.slug || '').trim().toLowerCase();
+  if (slug && SLUG_PROJECT_CODES[slug]) return SLUG_PROJECT_CODES[slug];
+  const method = (mission?.methodology_code || '').trim().toUpperCase();
+  if (method && METHODOLOGY_PROJECT_CODES[method]) return METHODOLOGY_PROJECT_CODES[method];
+  return method || 'P1';
 }
 
 export interface PillarTint {

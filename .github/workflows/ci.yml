@@ -34,6 +34,9 @@ jobs:
       - name: Validate project files (projects/*.json)
         run: uv run aiwatchdogs project validate
 
+      - name: Verify canonical changelog JSON parity & schema
+        run: python3 scripts/update_changelog.py --check
+
       - name: Validate rendered /join.sh POSIX syntax & pinned git install
         run: |
           uv run python -c "from aiwatchdogs.hub.templates import render_join_sh; s = render_join_sh('https://aiwatchdogs.in'); assert 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' in s and 'uvx aiwatchdogs' not in s and 'exec </dev/tty' in s; print(s)" | sh -n

@@ -382,9 +382,57 @@ def test_repository_police_project_uses_p1_on_official_documents() -> None:
 
 def test_hex_digests_are_not_mistaken_for_phone_numbers() -> None:
     digest = "22db9256b950b843a3ee77627bf9b43fdc5e89390e565d441059f09055412504"
+    aadhaar_run_digest = "016a42d6d0a1c8a52425df43e0061866ab0d890755632223a16cc09799e375bb"
     assert scrub_pii(digest) == (digest, [])
+    assert scrub_pii(aadhaar_run_digest) == (aadhaar_run_digest, [])
     assert scrub_pii("Call 09876543210 now")[1] == ["phone"]
     assert scrub_pii("+91 98765 43210")[1] == ["phone"]
+
+
+@pytest.mark.production_missions
+def test_sync_projects_retires_obsolete_queued_tasks_while_preserving_completed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    base_task = _project()["tasks"][0]
+    v1 = _project(
+        tasks=[
+            {**base_task, "id": "test-city-budget-old-1", "dataset_key": "old-1"},
+            {**base_task, "id": "test-city-budget-old-2", "dataset_key": "old-2"},
+        ]
+    )
+    (pdir / "test-city-budget.json").write_text(json.dumps(v1), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+    db_path = tmp_path / "retire.db"
+
+    app1 = create_app(db_path=db_path, seed=True)
+    with app1.state.db.transaction() as conn:
+        conn.execute(
+            "UPDATE tasks SET status = 'completed', completed_at = '2026-11-26T00:00:00Z' "
+            "WHERE id = 'prj-test-city-budget-old-1'"
+        )
+
+    # Upgrade to new task IDs: unstarted old-2 must be retired, completed old-1 preserved!
+    v2 = _project(
+        title="Upgraded city police budget audit",
+        tasks=[
+            {**base_task, "id": "test-city-budget-new-1", "dataset_key": "new-1"},
+            {**base_task, "id": "test-city-budget-new-2", "dataset_key": "new-2"},
+            {**base_task, "id": "test-city-budget-new-3", "dataset_key": "new-3"},
+        ],
+    )
+    (pdir / "test-city-budget.json").write_text(json.dumps(v2), encoding="utf-8")
+
+    with TestClient(create_app(db_path=db_path, seed=True)) as client:
+        detail = client.get("/api/missions/test-city-budget").json()
+        assert detail["title"] == "Upgraded city police budget audit"
+        task_ids = {t["id"] for t in detail["tasks"]}
+        assert "prj-test-city-budget-old-1" in task_ids  # completed preserved
+        assert "prj-test-city-budget-old-2" not in task_ids  # obsolete queued retired
+        assert {"prj-test-city-budget-new-1", "prj-test-city-budget-new-2", "prj-test-city-budget-new-3"} <= task_ids
+        assert detail["total_tasks"] == 4
 
 
 @pytest.mark.production_missions

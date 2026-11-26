@@ -128,6 +128,17 @@ The check used by the live police finances project (`engines/police.py`, ruleset
 * **Column order is verified when a task is written, not assumed:** PDF text extraction can return a row's figures in a different order from the printed columns (several State books come out reversed). Every task in the project was checked against the page's visual layout before it was added.
 * **Mandatory Benign Explanations Considered:** pay revisions and dearness allowance, posts sanctioned mid-year, capital works re-phased across years, supplementary grants and re-appropriations, savings on vacant posts, late release of funds, and budget books that carry the budget estimate forward as the revised estimate.
 
+### `W1` — `.gov.in` GIGW 3.0, RTI Act 2005 & GoI Statutory Conformity Audit
+
+The read-only website observation engine used by `gov-in-public-information` (`engines/gov_pages.py`, `engines/gigw_matrix.py`, matrix version `gigw-3.0-rti-2005-v1`). It audits all 12,537 web `.gov.in` hostnames from Data Libertarian's pinned snapshot across **1,000 batches** (12–13 domains per task) against a unified **159-checkpoint conformity matrix**:
+
+* **Authoritative Frameworks (159 Checkpoints across 8 Sections):**
+  1. **GIGW 3.0 Annexure II & Full Guidelines (88 checkpoints):** Quality Guidelines (25), Lifecycle Management (10), Accessibility / WCAG 2.1 Level AA (50: 30 Level A + 20 Level AA), and Cyber Security & Privacy (3).
+  2. **RTI Act, 2005 & DoPT / CIC Suo Motu Disclosure Guidelines (42 checkpoints):** Section 4(1)(a), all 17 clauses of Section 4(1)(b)(i)–(xvii) plus annual updating, Sections 4(1)(c)–(d), 4(2)–(4), 5(1)–(2) (CPIO/SPIO/CAPIO), 6(1), 7(4)–(5), 8(1)(i) proviso, 19(1) (FAA), 25, and 26 (34 checkpoints) + DoPT OMs & CIC transparency audit proforma (8 checkpoints).
+  3. **Other Verified GoI Statutory & Policy Norms (29 checkpoints):** RPwD Act 2016 & Rules 2017 Rule 15 / BIS IS 17802 (5), Official Languages Act 1963 & Rules 1976 — Union portals only (3), State Emblem of India Act 2005 & Rules 2007 (2), DARPG Citizen's Charter, CPGRAMS & WIM (4), MeitY Domain & E-mail Policy, CERT-In & STQC CQW (7), IT Act SPDI Rules 2011 & DPDP Act 2023 / Rules 2025 (4), and MeitY Open Standards Policy & DST NDSAP (4).
+* **Honest Verification Modes:** `57` checkpoints have deterministic automated HTTP/HTML/TLS indicators (measured by **42 W1 checks** across landing page + up to 2 linked public pages: Contact/Directory and RTI/Proactive Disclosure), `87` require qualitative frontier-agent inspection (e.g. substantive 17-point RTI Sec 4(1)(b) content and WCAG 2.1 AA semantics), and `15` are internal-governance controls not verifiable from public HTML alone.
+* **Privacy, Safety & Legal Boundaries:** Strictly honors `robots.txt` (`Protego`), pins resolved public IPv4/IPv6 addresses (zero SSRF), never bypasses CAPTCHAs or login walls, never submits forms, never stores personal emails/phones/names or raw server banners, publishes only generic navigation URLs, marks RTI Sec 24 / Second Schedule intelligence & security organisations as `not_applicable` when unobserved, and keeps inaccessible hosts (`robots_restricted`, `fetch_failed`, `unsupported_page`) strictly separate from observed gaps.
+
 ---
 
 ## 3. Epistemic Lifecycle, 4-Check Quorum & Jurisdiction-Aware RTI Drafts

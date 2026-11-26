@@ -47,7 +47,8 @@ _DASH_SEP_RE = re.compile(r"[\s\-\u2010-\u2015]")
 _SEP = r"[\s\-\u2010-\u2015]"
 
 # Candidate 12-digit Aadhaar (UIDAI numbers always begin with digits 2-9).
-_AADHAAR_CANDIDATE_RE = re.compile(rf"(?<!\d)([2-9]\d{{3}}{_SEP}?\d{{4}}{_SEP}?\d{{4}})(?!\d)")
+# Numbers glued to letters are not Aadhaar numbers: keeps digit runs inside hex digests intact.
+_AADHAAR_CANDIDATE_RE = re.compile(rf"(?<![\w])([2-9]\d{{3}}{_SEP}?\d{{4}}{_SEP}?\d{{4}})(?![\w])")
 
 # Standalone 10-character Indian PAN (case-insensitive; excludes embedded 15-char GSTIN / 21-char CIN).
 _PAN_RE = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]{5}[0-9]{4}[A-Za-z](?![A-Za-z0-9])")

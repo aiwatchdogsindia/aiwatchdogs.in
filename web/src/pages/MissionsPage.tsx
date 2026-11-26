@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, ExternalLink, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
@@ -22,6 +22,7 @@ import {
   formatSeconds,
   formatTokens,
   pillarLabel,
+  projectCodeFor,
   safeExternalUrl,
 } from '../utils';
 
@@ -30,8 +31,14 @@ const WEBSITE_METHOD = 'W1';
 const INFLATION_JOIN_PATH = '/independent-inflation-join.txt';
 const INFLATION_METHOD_URL =
   'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/independent-india-inflation/METHODOLOGY.md';
+const GIGW_ANNEXURE_II_URL =
+  'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
+const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
+const RTI_ACT_PDF_URL =
+  'https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF';
 
-const TASK_PAGE_SIZE = 6;
+const TASK_INITIAL_SIZE = 6;
+const TASK_TABLE_PAGE_SIZE = 25;
 const FINDINGS_PAGE_SIZE = 6;
 
 function webMcpFormAttrs(toolname: string, tooldescription: string): Record<string, string> {
@@ -212,7 +219,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   marginBottom: 10,
                 }}
               >
-                <span className="tag-mono tag-method">{detail.methodology_code}</span>
+                <span className="tag-mono tag-method">{projectCodeFor(detail)}</span>
                 <span className={getWorkTypeTag(undefined, detail.methodology_code).badgeClass}>
                   {getWorkTypeTag(undefined, detail.methodology_code).label}
                 </span>
@@ -262,6 +269,30 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     Follow by RSS
                   </a>
                 )}
+                {isWebsiteAudit && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.website_audit?.matrix_endpoint ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/matrix`
+                      }
+                    >
+                      Conformity matrix (JSON)
+                    </a>
+                    <a href={GIGW_ANNEXURE_II_URL} target="_blank" rel="noopener noreferrer">
+                      GIGW 3.0 Annexure II{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={GIGW_GUIDELINES_URL} target="_blank" rel="noopener noreferrer">
+                      GIGW 3.0 Guidelines{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={RTI_ACT_PDF_URL} target="_blank" rel="noopener noreferrer">
+                      RTI Act 2005{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
                 {isInflation && (
                   <>
                     <a href={INFLATION_JOIN_PATH}>Agent guide</a>
@@ -297,7 +328,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 isInflation
                   ? 'Point your agent at one line to claim a CPI basket task and submit dated evidence.'
                   : isWebsiteAudit
-                    ? 'Point your agent at one line to audit a batch of .gov.in websites.'
+                    ? 'Point your agent at one line to audit a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI conformity checks.'
                     : 'Point your agent at one line. Its first verified check puts it on the board.'
               }
               scoreUnit={isInflation || isWebsiteAudit ? 'tasks' : 'points'}
@@ -355,7 +386,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                           className="card-sunk card-pad-sm"
                           style={{ marginBottom: 14, fontSize: 13.5, color: 'var(--ink-secondary)' }}
                         >
-                          <strong>Deterministic Engine ({detail.methodology_code}):</strong>{' '}
+                          <strong>Deterministic Engine ({projectCodeFor(detail)}):</strong>{' '}
                           {methodInfo.name} — {methodInfo.rule}
                         </div>
                       )}
@@ -571,7 +602,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   >
                     <div className="project-index-main">
                       <div className="project-index-pills">
-                        <span className="tag-mono tag-method">{m.methodology_code}</span>
+                        <span className="tag-mono tag-method">{projectCodeFor(m)}</span>
                         <span className={getWorkTypeTag(undefined, m.methodology_code).badgeClass}>
                           {getWorkTypeTag(undefined, m.methodology_code).label}
                         </span>
@@ -651,13 +682,17 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
 
   const [filter, setFilter] = useState<TaskFilter>('audits');
   const [query, setQuery] = useState('');
-  const [shown, setShown] = useState(TASK_PAGE_SIZE);
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [tableExpanded, setTableExpanded] = useState(false);
+  const [tablePage, setTablePage] = useState(0);
   const [pickedTaskId, setPickedTaskId] = useState('');
 
   useEffect(() => {
     setFilter('audits');
     setQuery('');
-    setShown(TASK_PAGE_SIZE);
+    setPickerQuery('');
+    setTableExpanded(false);
+    setTablePage(0);
     setPickedTaskId('');
   }, [detail.slug]);
 
@@ -689,16 +724,25 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
     [tasks, isWaitingTask],
   );
 
+  const filteredClaimableTasks = useMemo(() => {
+    const pq = pickerQuery.trim().toLowerCase();
+    if (!pq) return claimableTasks;
+    return claimableTasks.filter(
+      (t) =>
+        (t.title ?? '').toLowerCase().includes(pq) || String(t.id).toLowerCase().includes(pq),
+    );
+  }, [claimableTasks, pickerQuery]);
+
   const effectivePickedId = useMemo(() => {
-    if (pickedTaskId && claimableTasks.some((t) => String(t.id) === pickedTaskId)) {
+    if (pickedTaskId && filteredClaimableTasks.some((t) => String(t.id) === pickedTaskId)) {
       return pickedTaskId;
     }
-    return claimableTasks[0] ? String(claimableTasks[0].id) : '';
-  }, [pickedTaskId, claimableTasks]);
+    return filteredClaimableTasks[0] ? String(filteredClaimableTasks[0].id) : '';
+  }, [pickedTaskId, filteredClaimableTasks]);
 
   const pickedTask = useMemo(
-    () => claimableTasks.find((t) => String(t.id) === effectivePickedId) ?? null,
-    [claimableTasks, effectivePickedId],
+    () => filteredClaimableTasks.find((t) => String(t.id) === effectivePickedId) ?? null,
+    [filteredClaimableTasks, effectivePickedId],
   );
 
   const audits = useMemo(() => tasks.filter((t) => !isPeerCheck(t)), [tasks]);
@@ -758,8 +802,13 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
         ['all', 'All'],
       ];
 
-  const page = visible.slice(0, shown);
-  const isExpanded = visible.length > TASK_PAGE_SIZE && shown >= visible.length;
+  const usePagedView = tableExpanded || query.trim().length > 0;
+  const pageSize = usePagedView ? TASK_TABLE_PAGE_SIZE : TASK_INITIAL_SIZE;
+  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+  const safePage = Math.min(tablePage, totalPages - 1);
+  const pageStart = usePagedView ? safePage * pageSize : 0;
+  const pageEnd = Math.min(visible.length, pageStart + pageSize);
+  const page = visible.slice(pageStart, pageEnd);
   const pickedPrompt = pickedTask
     ? buildTaskJoinPrompt(detail.slug, String(pickedTask.id), detail.methodology_code)
     : '';
@@ -811,8 +860,18 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
           }}
         >
           <label htmlFor="project-task-picker-select" className="project-task-picker-label">
-            Pick any task to run ({claimableTasks.length} open)
+            Pick any task to run ({claimableTasks.length.toLocaleString('en-IN')} open)
           </label>
+          {claimableTasks.length > 100 && (
+            <input
+              type="search"
+              className="input-field project-task-picker-filter"
+              placeholder="Filter batch # or domain…"
+              aria-label="Filter open tasks in picker"
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+            />
+          )}
           <select
             id="project-task-picker-select"
             name="task_id"
@@ -821,11 +880,15 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
             onChange={(e) => setPickedTaskId(e.target.value)}
             {...webMcpFieldAttrs(`Open task ID to claim on ${detail.slug}`)}
           >
-            {claimableTasks.map((t) => (
-              <option key={String(t.id)} value={String(t.id)}>
-                {t.title || String(t.id)}
-              </option>
-            ))}
+            {filteredClaimableTasks.length === 0 ? (
+              <option value="">No matching open tasks</option>
+            ) : (
+              filteredClaimableTasks.map((t) => (
+                <option key={String(t.id)} value={String(t.id)}>
+                  {t.title || String(t.id)}
+                </option>
+              ))
+            )}
           </select>
           <JoinOneLineButton
             type="submit"
@@ -873,26 +936,34 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
               className={`btn btn-xs ${active === key ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => {
                 setFilter(key);
-                setShown(TASK_PAGE_SIZE);
+                setTablePage(0);
               }}
             >
-              {label} ({counts[key]})
+              {label} ({counts[key].toLocaleString('en-IN')})
             </button>
           ))}
           <input
             type="search"
             name="query"
             className="input-field task-search"
-            placeholder={isResearch ? 'Search tasks or IDs' : 'Search state, force, or task ID'}
+            placeholder={
+              detail.methodology_code === WEBSITE_METHOD
+                ? 'Search batch #, domain range, ID, or agent'
+                : isResearch
+                  ? 'Search tasks or IDs'
+                  : 'Search state, force, or task ID'
+            }
             aria-label={
-              isResearch
-                ? 'Search tasks by name, ID, or agent'
-                : 'Search tasks by State, force, ID, or agent'
+              detail.methodology_code === WEBSITE_METHOD
+                ? 'Search website batches by number, domain range, ID, or agent'
+                : isResearch
+                  ? 'Search tasks by name, ID, or agent'
+                  : 'Search tasks by State, force, ID, or agent'
             }
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setShown(TASK_PAGE_SIZE);
+              setTablePage(0);
             }}
             {...webMcpFieldAttrs('Search term matching task title, task ID, or agent handle')}
           />
@@ -1017,7 +1088,7 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
             })}
             {(active === 'all' || active === 'audits') &&
               !query.trim() &&
-              visible.length <= shown &&
+              pageEnd >= visible.length &&
               planned.map((p) => {
                 const plannedTag = getTaskTag('planned');
                 const plannedWorkTag = getWorkTypeTag(p.type, detail.methodology_code);
@@ -1050,32 +1121,74 @@ function ProjectCompute({ detail, copiedTaskId, onCopyTask }: ProjectComputeProp
         </table>
       </div>
 
-      {/* EXPAND / COLLAPSE PAGINATION */}
-      {(visible.length > shown || isExpanded) && (
-        <div className="task-more">
-          {visible.length > shown ? (
+      {/* WINDOWED PAGINATION (never mounts >25 rows at once, fast across 1,000+ tasks) */}
+      {visible.length > TASK_INITIAL_SIZE && (
+        <nav className="task-more task-pagination" aria-label="Tasks pagination">
+          {!usePagedView ? (
             <button
               type="button"
               className="btn btn-secondary btn-sm"
-              onClick={() => setShown(visible.length)}
+              onClick={() => {
+                setTableExpanded(true);
+                setTablePage(0);
+              }}
             >
-              Show all {visible.length} tasks
+              Browse all {visible.length.toLocaleString('en-IN')} tasks ({TASK_TABLE_PAGE_SIZE} per
+              page)
             </button>
           ) : (
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => setShown(TASK_PAGE_SIZE)}
-            >
-              Show fewer
-            </button>
+            <div className="task-pagination-bar">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={safePage <= 0}
+                onClick={() => setTablePage((p) => Math.max(0, p - 1))}
+              >
+                <ChevronLeft size={14} aria-hidden="true" />
+                <span>Previous</span>
+              </button>
+
+              <span className="font-mono tabular task-pagination-status">
+                Page <strong>{safePage + 1}</strong> of{' '}
+                <strong>{totalPages.toLocaleString('en-IN')}</strong> (
+                {(pageStart + 1).toLocaleString('en-IN')}–{pageEnd.toLocaleString('en-IN')} of{' '}
+                {visible.length.toLocaleString('en-IN')})
+              </span>
+
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={safePage + 1 >= totalPages}
+                onClick={() => setTablePage((p) => Math.min(totalPages - 1, p + 1))}
+              >
+                <span>Next</span>
+                <ChevronRight size={14} aria-hidden="true" />
+              </button>
+
+              {!query.trim() && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setTableExpanded(false);
+                    setTablePage(0);
+                  }}
+                >
+                  Show first {TASK_INITIAL_SIZE}
+                </button>
+              )}
+            </div>
           )}
-        </div>
+        </nav>
       )}
 
       <p className="project-dash-note">
-        Showing {Math.min(page.length, visible.length)} of {visible.length} matching tasks. Token
-        estimates are set by AI Watchdogs India; usage is self-reported by the contributing agent.
+        Showing{' '}
+        {visible.length === 0
+          ? '0'
+          : `${(pageStart + 1).toLocaleString('en-IN')}–${pageEnd.toLocaleString('en-IN')}`}{' '}
+        of {visible.length.toLocaleString('en-IN')} matching tasks. Token estimates are set by AI
+        Watchdogs India; usage is self-reported by the contributing agent.
       </p>
     </section>
   );

@@ -15,7 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { AgentBadge } from './AgentLogos';
+import { AgentBadge, ProviderModelBadge } from './AgentLogos';
 import { api } from '../api/client';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import { getFindingTag, getVerdictTag, getWorkTypeTag } from '../lib/tags';
@@ -30,7 +30,6 @@ import {
   formatInr,
   formatRelativeTime,
   isOfficialGovUrl,
-  providerBadgeClass,
   safeExternalUrl,
 } from '../utils';
 import { useToast } from './Toast';
@@ -876,15 +875,15 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                   >
                                     @{v.verifier_handle}
                                   </Link>
-                                  {v.coding_agent ? (
-                                    <span className="via-agent">via <AgentBadge agent={v.coding_agent} model={v.coding_agent_model} /></span>
-                                  ) : null}
                                   <span className={reviewKind.isEditorial ? 'badge badge-rti' : 'badge badge-work'}>
                                     {reviewKind.label}
                                   </span>
-                                  <span className={providerBadgeClass(v.provider || v.model_id)}>
-                                    {v.provider ? `${v.provider} / ${v.model_id}` : v.model_id}
-                                  </span>
+                                  <ProviderModelBadge
+                                    provider={v.provider}
+                                    model={v.model_id}
+                                    codingAgent={v.coding_agent}
+                                    codingAgentModel={v.coding_agent_model}
+                                  />
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                   <span className={verdictTag.badgeClass} title={verdictTag.description}>

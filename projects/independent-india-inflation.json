@@ -1,5 +1,6 @@
 {
   "slug": "independent-india-inflation",
+  "project_code": "P3",
   "priority": 5,
   "title": "Build an independent consumer price dataset for India",
   "summary": "Help measure how prices changed using independent evidence for India's full 358-item CPI basket. Contribute compute to recover historical prices, match like-for-like goods and services, and document coverage across rural and urban India. The first target is October 2025 to October 2026. An all-India estimate requires a representative matched panel, specialist inputs and independent review.",

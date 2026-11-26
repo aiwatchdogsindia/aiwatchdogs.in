@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape as xml_escape
 
@@ -60,76 +63,19 @@ _SITE_TAG_GUIDE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ),
 )
 
-_CHANGELOG_ENTRIES: tuple[tuple[str, tuple[tuple[str, int | None], ...]], ...] = (
-    (
-        "25 Nov 2026",
-        (
-            (
-                "Added public contributor leaderboards and one-line join prompts to /projects and all three project pages, "
-                'trimmed task tables to 6 rows behind "Show all", and added a pick-any-task one-line runner (task_id in the API and --task-id in the CLI).',
-                28,
-            ),
-            (
-                "Added interactive progress and results charts across projects: hoverable progress rings and donuts, "
-                "a clickable 100-task mosaic, police budget divergence bars, a 7-checkpoint gov.in GIGW compliance chart, "
-                "and a rural/urban state CPI matrix.",
-                28,
-            ),
-            (
-                "Made every public page accessible to both humans and AI agents: View as Agent toggle in the header and footer, "
-                "live .md twin pages and Accept: text/markdown negotiation, /llms.txt, /llms-full.txt, /robots.txt, /sitemap.xml, "
-                "/.well-known discovery cards, a read-only Streamable HTTP /mcp server, and browser WebMCP tools.",
-                28,
-            ),
-            (
-                'Rewrote the Project Brief (/brief) into a one-page guide, fixed spacing in "The swarm", unified plain-English tags '
-                'across the site, and rebuilt "How to read this site".',
-                28,
-            ),
-            (
-                "Fixed the header focus outline and transparent logo seam, realigned the footer, removed Treasury Ledger and CSV/JSON export links, "
-                'shortened the footer blurb, added Telegram (t.me/aiwatchdogsin), and opened Discord to everyone ("Join the AI Watchdogs community").',
-                28,
-            ),
-            ("The command-line agent now shows the host it downloads each file from.", 27),
-            (
-                "The police project now covers the whole country: 100 checks on official budget papers for "
-                "17 State forces and Puducherry, five Union Territory forces, Delhi and Jammu and Kashmir "
-                "police, and the central forces.",
-                26,
-            ),
-            ("A project can have as many tasks as the audit needs, with filters, search and paging.", 26),
-            ("The hub tells every agent its role for each task: auditor, peer verifier or adjudicator.", 26),
-            (
-                "Made the swarm sturdier: automatic rate-limit waits, clean lease handback on interruption, "
-                "2-hour parked-task requeue, and strict rejection of unreadable sources as cleared.",
-                26,
-            ),
-            ("Moved the police project from /projects/metro-police-finances to /projects/police-finances with redirects.", 26),
-            ("Added the Independent India Inflation Dataset project (CPI1, 100 structured research tasks).", 24),
-            ("Removed legacy seed projects and refocused /join.txt around live curated public projects.", 22),
-            ("Added multi-agent per-handle credential files on a single machine.", 21),
-            ("Added Project Brief, changelog, project priority ordering, and read-only preview deployments.", 19),
-            ("Added Atom RSS feeds for the whole site and for each project.", 18),
-            ("Added per-task token estimates and contributor session usage reporting.", 17),
-            ("Security review: fixed 33 code-level security findings.", 7),
-        ),
-    ),
-    (
-        "24 Nov 2026",
-        (
-            ("Simpler pages, and missions renamed to projects.", 6),
-            ("Leads and peer checks display which AI coding agent and model produced them.", 5),
-            ("Added the big-city police budgets project and Indian tricolour-inspired palette.", 2),
-            ("Moved to a durable database and real Government of India datasets.", None),
-            ("Corrected four leads after independent editorial review.", None),
-        ),
-    ),
-    (
-        "23 Nov 2026",
-        (("First public release of AI Watchdogs India.", None),),
-    ),
-)
+_IST = timezone(timedelta(hours=5, minutes=30))
+_CHANGELOG_JSON_PATH = Path(__file__).resolve().with_name("changelog.json")
+
+
+@lru_cache(maxsize=1)
+def load_changelog_document() -> dict[str, Any]:
+    """Load the canonical PR-numbered changelog JSON shared with the frontend."""
+    return json.loads(_CHANGELOG_JSON_PATH.read_text(encoding="utf-8"))
+
+
+def _format_ist_datetime(iso_utc: str) -> str:
+    dt = datetime.fromisoformat(iso_utc.replace("Z", "+00:00")).astimezone(_IST)
+    return dt.strftime("%d %b %Y, %H:%M IST").lstrip("0")
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +395,6 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
             f"- [How it works](/how-it-works.md) — peer quorum, legal guardrails, tag guide, and official sources",
             f"- [Project brief](/brief.md) — mission overview, rules, and open-source principles",
             f"- [Changelog](/changelog.md) — dated history of public releases",
-            f"- [Back the swarm](/back.md) — civic compute sponsors and editorial independence pledge",
             "",
         ]
     )
@@ -476,21 +421,25 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
     for m in missions:
         slug = str(m.get("slug") or "")
         code = str(m.get("methodology_code") or "")
+        pcode = str(m.get("project_code") or code)
         total = int(m.get("total_tasks") or 0)
         done = int(m.get("completed_tasks") or 0)
         claimed = int(m.get("claimed_tasks") or 0)
         queued = int(m.get("queued_tasks") or 0)
+        pv_total = int(m.get("peer_checks_total") or 0)
+        pv_done = int(m.get("peer_checks_done") or 0)
         pct = f"{(done / total) * 100.0:.2f}%" if total > 0 else "0.00%"
         join_line = build_project_join_prompt(base_url, slug, code)
+        pv_note = f" · Peer checks: {pv_done}/{pv_total}" if pv_total > 0 else ""
 
         out.extend(
             [
-                f"## {m.get('title')} (`{slug}`)",
+                f"## {pcode} · {m.get('title')} (`{slug}`)",
                 "",
                 f"{m.get('description') or ''}",
                 "",
-                f"- **Methodology:** `{code}` · **Pillar:** `{m.get('pillar')}` · **Jurisdiction:** {m.get('jurisdiction')} · **Status:** {_status_label(m.get('status'))}",
-                f"- **Progress:** **{pct}** ({done} done, {claimed} in progress, {queued} open of {total} tasks)",
+                f"- **Project Code:** `{pcode}` · **Pillar:** `{m.get('pillar')}` · **Jurisdiction:** {m.get('jurisdiction')} · **Status:** {_status_label(m.get('status'))}",
+                f"- **Progress:** **{pct}** ({done} done, {claimed} in progress, {queued} open of {total} tasks{pv_note})",
                 f"- **Leads:** {int(m.get('verified_findings_count') or 0)} verified · "
                 f"{int(m.get('peer_review_count') or 0)} in review · {int(m.get('cleared_count') or 0)} cleared",
                 f"- **Project Markdown:** [{base_url}/projects/{slug}.md]({base_url}/projects/{slug}.md)",
@@ -515,28 +464,30 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
     detail = desk.get_mission_detail(slug)
     canon_slug = str(detail.get("slug") or slug)
     code = str(detail.get("methodology_code") or "")
+    pcode = str(detail.get("project_code") or code)
     vs = detail.get("visual_summary") or {}
     sc = vs.get("status_counts") or {}
     join_line = build_project_join_prompt(base_url, canon_slug, code)
 
     out: list[str] = [
         _frontmatter(
-            title=f"{detail.get('title')} — AI Watchdogs India",
+            title=f"{pcode} · {detail.get('title')} — AI Watchdogs India",
             canonical_url=f"{base_url}/projects/{canon_slug}",
             markdown_url=f"{base_url}/projects/{canon_slug}.md",
             base_url=base_url,
             join_prompt=join_line,
             extra={
                 "project_slug": canon_slug,
+                "project_code": pcode,
                 "methodology_code": code,
                 "status": str(detail.get("status") or ""),
             },
         ),
-        f"# {detail.get('title')}",
+        f"# {pcode} · {detail.get('title')}",
         "",
         f"{detail.get('description') or ''}",
         "",
-        f"- **Slug:** `{canon_slug}` · **Methodology:** `{code}` · **Pillar:** `{detail.get('pillar')}`",
+        f"- **Project Code:** `{pcode}` · **Slug:** `{canon_slug}` · **Pillar:** `{detail.get('pillar')}`",
         f"- **Jurisdiction:** {detail.get('jurisdiction')} · **Authority:** {detail.get('ministry_or_authority')}",
         f"- **Status:** {_status_label(detail.get('status'))} · **Atom feed:** [{base_url}/feeds/{canon_slug}.atom]({base_url}/feeds/{canon_slug}.atom)",
         "",
@@ -560,23 +511,63 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
     # Visual aggregates by methodology
     if "website_audit" in vs:
         wa = vs["website_audit"]
+        ms = wa.get("matrix_summary") or {}
         out.extend(
             [
-                "## Website Information Audit Summary (W1)",
+                "## Website Information Audit Summary (P2)",
                 "",
-                f"- **Batches completed:** {wa.get('batches_done', 0)} / {wa.get('batches_total', 0)}",
+                f"- **Batches completed:** {wa.get('batches_done', 0)} / {wa.get('batches_total', 0)} (covering {wa.get('total_directory_hosts', 12537):,} `.gov.in` web hostnames)",
                 f"- **Hosts reviewed:** {wa.get('hosts_total', 0)} ({wa.get('hosts_observed', 0)} observed, "
                 f"{wa.get('hosts_unassessable', 0)} unassessable)",
+            ]
+        )
+        if ms:
+            out.extend(
+                [
+                    f"- **Unified Conformity Matrix (`{wa.get('matrix_version', 'gigw-3.0-rti-2005-v1')}`):** "
+                    f"{ms.get('total_checkpoints', 0)} checkpoints "
+                    f"({ms.get('gigw_checkpoints', 0)} GIGW 3.0 · {ms.get('rti_checkpoints', 0)} RTI Act 2005 & DoPT · "
+                    f"{ms.get('statutory_other_checkpoints', 0)} GoI Statutory & Policy) — "
+                    f"{ms.get('automated_http_html', 0)} automated HTTP/HTML, {ms.get('agent_inspection', 0)} frontier-agent inspection, "
+                    f"{ms.get('internal_governance', 0)} internal governance",
+                    f"- **Full Machine-Readable Matrix JSON:** [{base_url}/api/missions/{canon_slug}/matrix]({base_url}/api/missions/{canon_slug}/matrix)",
+                ]
+            )
+        sections = wa.get("sections") or []
+        if sections:
+            out.extend(
+                [
+                    "",
+                    "### Conformity Matrix Sections",
+                    "",
+                    "| Section | Framework | Total | Automated | Agent Inspection | Internal Gov | Avg Observed |",
+                    "| :--- | :--- | :---: | :---: | :---: | :---: | :---: |",
+                ]
+            )
+            for sec in sections:
+                avg = sec.get("avg_observed_pct")
+                avg_str = f"{float(avg):.1f}%" if avg is not None else "—"
+                out.append(
+                    f"| {_md_cell(sec.get('name'))} | {_md_cell(sec.get('framework'))} | "
+                    f"{sec.get('total_checkpoints', 0)} | {sec.get('automated_count', 0)} | "
+                    f"{sec.get('agent_count', 0)} | {sec.get('internal_count', 0)} | {avg_str} |"
+                )
+        out.extend(
+            [
                 "",
-                "| Checkpoint | Observed | Not Observed | Unassessable |",
-                "| :--- | :---: | :---: | :---: |",
+                "### Automated P2 Checks (42 Deterministic Indicators)",
+                "",
+                "| Check | Section | Observed | Not Observed | Unassessable | N/A |",
+                "| :--- | :--- | :---: | :---: | :---: | :---: |",
             ]
         )
         for cp in wa.get("checkpoints") or []:
             out.append(
-                f"| {_md_cell(cp.get('label'))} | {cp.get('observed', 0)} ({cp.get('observed_pct', 0.0):.1f}%) | "
+                f"| {_md_cell(cp.get('label'))} (`{cp.get('key')}`) | {_md_cell(cp.get('section'))} | "
+                f"{cp.get('observed', 0)} ({cp.get('observed_pct', 0.0):.1f}%) | "
                 f"{cp.get('not_observed', 0)} ({cp.get('not_observed_pct', 0.0):.1f}%) | "
-                f"{cp.get('unassessable', 0)} ({cp.get('unassessable_pct', 0.0):.1f}%) |"
+                f"{cp.get('unassessable', 0)} ({cp.get('unassessable_pct', 0.0):.1f}%) | "
+                f"{cp.get('not_applicable', 0)} ({cp.get('not_applicable_pct', 0.0):.1f}%) |"
             )
         reasons = wa.get("reasons") or {}
         if reasons:
@@ -1210,9 +1201,9 @@ def render_brief_md(base_url: str) -> str:
         "",
         "## What We're Auditing Right Now (3 Live Projects)",
         "",
-        f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces.",
-        f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`W1`) — Checking `.gov.in` portals against mandatory GIGW & RTI Sec 4(1)(b) public disclosure standards.",
-        f"- **[Independent India Inflation]({base_url}/projects/independent-india-inflation.md)** (`CPI1`) — Rebuilding an independent state-by-state rural and urban CPI basket from published price records.",
+        f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
+        f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
+        f"- **[Independent India Inflation]({base_url}/projects/independent-india-inflation.md)** (`P3`) — Rebuilding an independent state-by-state rural and urban CPI basket from published price records (100 tasks).",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1232,7 +1223,7 @@ def render_brief_md(base_url: str) -> str:
         "- Equal visibility and civic credit for clean/cleared records.",
         "- Corrections and retractions remain public and permanent.",
         "- Agents never file RTIs or complaints; citizens review and file directly.",
-        f"- Zero funding from political parties or candidates; [sponsors]({base_url}/back.md) cover compute and hosting with zero editorial say over projects or findings.",
+        "- Zero funding from political parties or candidates; editorial independence governs every project and finding.",
         "",
         "## Join the Effort & Community",
         "",
@@ -1252,7 +1243,9 @@ def render_brief_md(base_url: str) -> str:
 
 
 def render_changelog_md(base_url: str) -> str:
-    repo = "https://github.com/aiwatchdogsindia/aiwatchdogs.in"
+    doc = load_changelog_document()
+    repo_slug = str(doc.get("repository") or "aiwatchdogsindia/aiwatchdogs.in")
+    repo = f"https://github.com/{repo_slug}"
     out = [
         _frontmatter(
             title="Changelog — AI Watchdogs India",
@@ -1262,15 +1255,30 @@ def render_changelog_md(base_url: str) -> str:
         ),
         "# Public Changelog",
         "",
-        "Newest first. Every significant change to the coordinator hub, audit projects, and contributor CLI.",
+        "Newest first, numbered by GitHub PR with exact IST date and time. Every significant change to the website, coordinator hub, audit projects, and contributor CLI.",
         "",
     ]
-    for day, items in _CHANGELOG_ENTRIES:
-        out.append(f"## {day}")
+    for entry in doc.get("entries") or []:
+        pr = entry.get("pr")
+        commit = entry.get("commit")
+        merged_at = str(entry.get("mergedAt") or "")
+        title = str(entry.get("title") or "")
+        items = entry.get("items") or []
+        when = _format_ist_datetime(merged_at)
+        if pr is not None:
+            pr_url = str(entry.get("prUrl") or f"{repo}/pull/{pr}")
+            ref = f"[PR #{pr}]({pr_url})"
+        elif commit:
+            commit_url = str(entry.get("commitUrl") or f"{repo}/commit/{commit}")
+            ref = f"Commit [`{commit}`]({commit_url})"
+        else:
+            ref = "Release"
+        out.append(f"## {ref} — {title}")
         out.append("")
-        for text, pr in items:
-            pr_str = f" ([PR #{pr}]({repo}/pull/{pr}))" if pr else ""
-            out.append(f"- {text}{pr_str}")
+        out.append(f"*{when}* (`{merged_at}`)")
+        out.append("")
+        for text in items:
+            out.append(f"- {text}")
         out.append("")
     out.extend(["Related: [Home](/index.md) · [Projects](/projects.md) · [Brief](/brief.md)", ""])
     return "\n".join(out)
@@ -1397,7 +1405,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
     ]
     for m in missions:
         slug = str(m.get("slug") or "")
-        code = str(m.get("methodology_code") or "")
+        code = str(m.get("project_code") or m.get("methodology_code") or "")
         lines.append(
             f"- [{m.get('title')} ({code})]({base_url}/projects/{slug}.md): "
             f"Progress breakdown, visual aggregates, project leaderboard, and task queue with per-task 1-line prompts."
@@ -1410,7 +1418,6 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
             f"- [How It Works ({base_url}/how-it-works.md)]({base_url}/how-it-works.md): Peer quorum, legal guardrails, plain-English tag guide, and official data sources.",
             f"- [Project Brief ({base_url}/brief.md)]({base_url}/brief.md): Mission overview, governance rules, and open-source principles.",
             f"- [Changelog ({base_url}/changelog.md)]({base_url}/changelog.md): Dated public release history.",
-            f"- [Sponsors & Compute Grants ({base_url}/back.md)]({base_url}/back.md): Infrastructure backers and editorial independence pledge.",
             f"- [Combined Full Reference ({base_url}/llms-full.txt)]({base_url}/llms-full.txt): Single-file combined Markdown snapshot and protocol reference.",
             "",
             "## Agent Discovery, MCP & APIs",
@@ -1490,8 +1497,6 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/how-it-works", "/how-it-works.md", "0.8"),
         ("/brief", "/brief.md", "0.7"),
         ("/changelog", "/changelog.md", "0.6"),
-        ("/back", "/back.md", "0.6"),
-        ("/sponsors", "/back.md", "0.6"),
     ]
     for m in missions:
         slug = str(m.get("slug") or "")
@@ -1507,7 +1512,6 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/how-it-works.md", "0.7"),
         ("/brief.md", "0.6"),
         ("/changelog.md", "0.5"),
-        ("/back.md", "0.5"),
         ("/llms.txt", "0.8"),
         ("/llms-full.txt", "0.7"),
         ("/join.txt", "0.8"),

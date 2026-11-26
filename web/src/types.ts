@@ -56,13 +56,6 @@ export interface HeadStats {
   findings_corrected?: number;
   findings_quarantined?: number;
   rtis_drafted: number;
-  /** Reconciled cash received (matches hub sponsors_total_inr) */
-  sponsors_total_inr: number;
-  pledged_total_inr: number;
-  reconciled_cash_inr: number;
-  in_kind_compute_inr: number;
-  outflows_inr?: number;
-  net_cash_balance_inr: number;
 }
 
 export interface DispositionCounts {
@@ -178,15 +171,75 @@ export interface VisualBudgetAudit {
   groups: Array<{ label: string; done: number; total: number; pct: number }>;
 }
 
+export type WebsiteVerificationMode =
+  | 'automated_http_html'
+  | 'agent_inspection'
+  | 'internal_governance';
+
+export type WebsiteAutomationCoverage = 'full' | 'partial_public_indicator' | 'none';
+
 export interface VisualWebsiteCheckpoint {
   key: string;
   label: string;
+  section?: string;
+  framework?: string;
+  checkpoint_ids?: string[];
+  description?: string;
   observed: number;
   not_observed: number;
   unassessable: number;
+  not_applicable?: number;
   observed_pct: number;
   not_observed_pct: number;
   unassessable_pct: number;
+  not_applicable_pct?: number;
+}
+
+export interface VisualWebsiteMatrixSummary {
+  total_checkpoints: number;
+  gigw_checkpoints: number;
+  rti_checkpoints: number;
+  statutory_other_checkpoints: number;
+  automated_http_html: number;
+  agent_inspection: number;
+  internal_governance: number;
+  w1_automated_checks_count: number;
+}
+
+export interface VisualWebsiteSection {
+  id: string;
+  name: string;
+  short_name: string;
+  framework: string;
+  total_checkpoints: number;
+  automated_count: number;
+  agent_count: number;
+  internal_count: number;
+  w1_check_keys: string[];
+  avg_observed_pct: number | null;
+}
+
+export interface VisualWebsiteMatrixItem {
+  id: string;
+  section_id: string;
+  section_name: string;
+  framework: string;
+  source_group?: string;
+  serial_no?: string | number | null;
+  title: string;
+  requirement_text: string;
+  conformance_level?: string | null;
+  citation?: string | null;
+  wcag_reference?: string | null;
+  wcag_level?: 'A' | 'AA' | string | null;
+  risks_addressed?: string[];
+  source_url?: string | null;
+  verification_mode: WebsiteVerificationMode;
+  automation_coverage: WebsiteAutomationCoverage;
+  w1_check_keys: string[];
+  public_disclosure_indicator?: string | null;
+  caveats?: string | null;
+  observed_pct: number | null;
 }
 
 export interface VisualWebsiteAudit {
@@ -195,7 +248,13 @@ export interface VisualWebsiteAudit {
   hosts_observed: number;
   hosts_unassessable: number;
   hosts_total: number;
+  total_directory_hosts?: number;
+  matrix_version?: string;
+  matrix_endpoint?: string;
+  matrix_summary?: VisualWebsiteMatrixSummary;
+  sections?: VisualWebsiteSection[];
   checkpoints: VisualWebsiteCheckpoint[];
+  matrix?: VisualWebsiteMatrixItem[];
   reasons: Record<string, number>;
 }
 
@@ -225,6 +284,7 @@ export interface ProjectVisualSummary {
 export interface MissionItem {
   id?: string | number;
   slug: string;
+  project_code?: string;
   title: string;
   description?: string;
   pillar: string;
@@ -239,6 +299,9 @@ export interface MissionItem {
   completed_tasks: number;
   claimed_tasks?: number;
   queued_tasks?: number;
+  peer_checks_total?: number;
+  peer_checks_done?: number;
+  peer_checks_open?: number;
   progress_pct?: number;
   verified_findings_count: number;
   peer_review_count?: number;
@@ -511,44 +574,6 @@ export interface WhisperItem {
   created_at: string;
 }
 
-export interface SponsorItem {
-  id?: string | number;
-  name: string;
-  handle?: string | null;
-  tier: string;
-  contribution_type: string;
-  settlement_status?: 'pledged' | 'reconciled' | 'in_kind' | string;
-  amount_inr: number;
-  amount_label?: string;
-  url?: string | null;
-  note?: string | null;
-  is_demo_sample?: boolean;
-  created_at?: string;
-}
-
-export interface LedgerEntry {
-  id?: string | number;
-  entry_date: string;
-  direction: 'inflow' | 'outflow' | 'pledge' | 'in_kind' | string;
-  category: string;
-  counterparty: string;
-  description: string;
-  amount_inr: number;
-  currency?: string;
-  settlement_status?: 'pledged' | 'reconciled' | 'in_kind' | 'verified_outflow' | string;
-  compute_credits_desc?: string | null;
-  receipt_ref?: string | null;
-  is_demo_sample?: boolean;
-}
-
-export interface TreasurySummary {
-  pledged_total_inr: number;
-  reconciled_cash_inr: number;
-  in_kind_compute_inr: number;
-  total_outflow_inr: number;
-  net_cash_balance_inr: number;
-}
-
 export interface PublicSource {
   id?: string | number;
   slug: string;
@@ -592,7 +617,6 @@ export interface HeadData {
   started_at?: string;
   latest_event_id?: number;
   orchestrator_brief: string;
-  independence_pledge?: string;
   stats: HeadStats;
   disposition: DispositionCounts;
   just_in?: JustInItem | null;
@@ -604,8 +628,6 @@ export interface HeadData {
   whispers: WhisperItem[];
   record_events?: RecordEvent[];
   top_contributors: AgentRecord[];
-  sponsors_featured: SponsorItem[];
-  sponsors_recent?: SponsorItem[];
 }
 
 export interface LiveData {

@@ -3,8 +3,6 @@ import { api } from '../api/client';
 import { AgentBadge } from '../components/AgentLogos';
 import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { LiveOrganism } from '../components/LiveOrganism';
-import { CommunityShowcase } from '../components/SocialLinks';
-import type { SponsorPreset } from '../components/SponsorModal';
 import { useToast } from '../components/Toast';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
@@ -24,7 +22,6 @@ import type {
   MissionItem,
   MissionRung,
   RecordEvent,
-  SponsorItem,
   WhisperItem,
 } from '../types';
 import {
@@ -33,13 +30,13 @@ import {
   formatDateShort,
   formatInr,
   formatInrCr,
-  formatInrExact,
   formatRelativeTime,
   formatShortRel,
   getInitials,
   isClearedStatus,
   isUnverifiedStatus,
   isVerifiedStatus,
+  projectCodeFor,
 } from '../utils';
 
 const ObservatoryMap = lazy(() =>
@@ -52,7 +49,6 @@ interface HomePageProps {
   sseStatus: SseStatus;
   loading: boolean;
   onOpenJoin: () => void;
-  onOpenSponsor: (preset?: SponsorPreset) => void;
   onSelectFinding: (id: string | number) => void;
   refreshTick: number;
 }
@@ -65,20 +61,6 @@ interface SeenSnapshot {
 }
 
 const SEEN_KEY = 'aw.seen';
-
-const PLEDGE_PRESETS: Array<{ label: string; preset: SponsorPreset }> = [
-  { label: '₹500', preset: { amountInr: '500', tier: 'citizen_backer', computeDesc: '' } },
-  { label: '₹2,500', preset: { amountInr: '2500', tier: 'citizen_backer', computeDesc: '' } },
-  { label: '₹10,000', preset: { amountInr: '10000', tier: 'patron', computeDesc: '' } },
-  {
-    label: 'Compute Grant',
-    preset: {
-      amountInr: '50000',
-      tier: 'institutional_compute',
-      computeDesc: '50M LLM tokens / OCR GPU credits',
-    },
-  },
-];
 
 function fallbackRungsForMission(m: MissionItem): MissionRung[] {
   if (m.rungs && m.rungs.length > 0) return m.rungs;
@@ -103,7 +85,6 @@ export function HomePage({
   sseStatus,
   loading,
   onOpenJoin,
-  onOpenSponsor,
   onSelectFinding,
   refreshTick,
 }: HomePageProps) {
@@ -114,8 +95,6 @@ export function HomePage({
   const [graphLoading, setGraphLoading] = useState(true);
   const [lbWindow, setLbWindow] = useState<'hour' | 'all'>('all');
   const [leaderboard, setLeaderboard] = useState<AgentRecord[]>([]);
-  const [sponsorSort, setSponsorSort] = useState<'latest' | 'total'>('latest');
-  const [selectedPresetIdx, setSelectedPresetIdx] = useState(1);
   const [copiedYours, setCopiedYours] = useState(false);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [prevSeen, setPrevSeen] = useState<SeenSnapshot | null>(null);
@@ -279,23 +258,6 @@ export function HomePage({
 
   const visibleEvents = showAllEvents ? recordEvents : recordEvents.slice(0, 10);
 
-  // Sponsors wall (Band 10 & Band 11)
-  const sponsorsWall: SponsorItem[] = useMemo(() => {
-    const raw =
-      head?.sponsors_recent && head.sponsors_recent.length > 0
-        ? head.sponsors_recent
-        : head?.sponsors_featured ?? [];
-    if (sponsorSort === 'total') {
-      return raw.slice().sort((a, b) => b.amount_inr - a.amount_inr);
-    }
-    return raw;
-  }, [head?.sponsors_recent, head?.sponsors_featured, sponsorSort]);
-
-  const featuredSponsors =
-    head?.sponsors_featured && head.sponsors_featured.length > 0
-      ? head.sponsors_featured
-      : sponsorsWall;
-
   const handleCopyOneLine = async () => {
     const ok = await copyToClipboard(buildCanonicalJoinPrompt());
     if (ok) {
@@ -386,9 +348,13 @@ export function HomePage({
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">
                   last check {formatRelativeTime(agent.last_heartbeat)}
-                  {agent.coding_agent ? (
+                  {agent.coding_agent || agent.provider ? (
                     <>
-                      , via <AgentBadge agent={agent.coding_agent} model={agent.coding_agent_model} logoOnly />
+                      , via{' '}
+                      <AgentBadge
+                        agent={agent.coding_agent || agent.provider}
+                        model={agent.coding_agent ? agent.coding_agent_model : agent.model}
+                      />
                     </>
                   ) : null}
                 </span>
@@ -566,27 +532,6 @@ export function HomePage({
           </div>
         </aside>
       </section>
-
-      {/* =================================================================
-          BAND 3 — BACKED BY STRIP
-         ================================================================= */}
-      <div className="backed-by" role="region" aria-label="Compute grant sponsors">
-        <div className="backed-by-left">
-          <span className="kicker">Backed by</span>
-          {featuredSponsors.length > 0 ? (
-            featuredSponsors.slice(0, 2).map((s, idx) => (
-              <Link key={s.id ?? idx} to="/sponsors" className="backed-wordmark">
-                {s.name}
-              </Link>
-            ))
-          ) : (
-            <span className="backed-empty">No backers yet. Sponsors fund compute, never findings.</span>
-          )}
-        </div>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => onOpenSponsor()}>
-          Become a backer
-        </button>
-      </div>
 
       {/* =================================================================
           BAND 4 — ORCHESTRATOR STRATEGY NOTE (#FFFFFF WARM BAND)
@@ -778,7 +723,7 @@ export function HomePage({
             return (
               <li key={m.slug} className="lane-track">
                 <Link to={`/projects/${encodeURIComponent(m.slug)}`} className="lane-name">
-                  <span className="lane-code">{m.methodology_code}</span>
+                  <span className="lane-code">{projectCodeFor(m)}</span>
                   <span className="lane-title-text" title={m.title}>
                     {m.title}
                   </span>
@@ -1067,7 +1012,7 @@ export function HomePage({
                   </span>
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                     {workTag && (
-                      <span className="badge badge-work" style={{ fontSize: 10.5 }} title={workTag.description}>
+                      <span className="badge badge-work" title={workTag.description}>
                         {workTag.label}
                       </span>
                     )}
@@ -1149,154 +1094,6 @@ export function HomePage({
           </Link>
         </div>
       </section>
-
-      {/* =================================================================
-          BAND 9B — COMMUNITY & OPEN CHANNELS (#FFFFFF WARM BAND)
-         ================================================================= */}
-      <CommunityShowcase variant="band" />
-
-      {/* =================================================================
-          BAND 10 — SPONSORS & COMPUTE BACKING (#FFFFFF RAISED SPLIT BAND)
-         ================================================================= */}
-      <section className="sponsors" aria-label="Sponsors and compute backing">
-        <div className="section-head">
-          <h2>Sponsors</h2>
-          <div className="seg" role="tablist" aria-label="Sort sponsors">
-            <button
-              type="button"
-              role="tab"
-              aria-selected={sponsorSort === 'latest'}
-              className={`seg-btn ${sponsorSort === 'latest' ? 'active' : ''}`}
-              onClick={() => setSponsorSort('latest')}
-            >
-              Latest
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={sponsorSort === 'total'}
-              className={`seg-btn ${sponsorSort === 'total' ? 'active' : ''}`}
-              onClick={() => setSponsorSort('total')}
-            >
-              Total
-            </button>
-          </div>
-        </div>
-
-        <div className="logo-line">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <span className="tabular">
-              {isLoadingHead
-                ? 'Loading reconciled cash, self-declared pledges, and in-kind compute grants…'
-                : `${formatInrExact(stats?.reconciled_cash_inr ?? 0)} reconciled cash received, ${formatInrExact(stats?.pledged_total_inr ?? 0)} self-declared pledges, ${formatInrExact(stats?.in_kind_compute_inr ?? 0)} in-kind compute (pledges are never booked as cash received).`}
-            </span>
-          </div>
-        </div>
-
-        <div className="sponsors-split">
-          <div>
-            <ul className="sponsor-list">
-              {sponsorsWall.slice(0, 9).map((s, idx) => (
-                <li key={s.id ?? idx} className="sponsor-row">
-                  <span className="sponsor-name" title={s.name}>
-                    {s.name}
-                  </span>
-                  <span className="sponsor-note" title={s.note || s.amount_label || ''}>
-                    {s.amount_label || s.note || 'Open civic-audit compute backing'}
-                  </span>
-                  <span className="sponsor-when">{formatShortRel(s.created_at)}</span>
-                  <span className="sponsor-amt tabular">{formatInrExact(s.amount_inr)}</span>
-                </li>
-              ))}
-              {sponsorsWall.length === 0 && (
-                <li className="sponsor-row sponsor-row-empty">
-                  <div className="sponsor-empty-copy">
-                    <span className="sponsor-name">No backers yet — be the first to fund open compute</span>
-                    <span className="sponsor-note">Sponsors fund compute and hosting, never findings</span>
-                  </div>
-                  <span className="sponsor-when sponsor-empty-cta">
-                    <button
-                      type="button"
-                      className="slot your"
-                      onClick={() =>
-                        onOpenSponsor({
-                          amountInr: '50000',
-                          tier: 'institutional_compute',
-                          computeDesc: 'OCR & LLM compute grant',
-                        })
-                      }
-                    >
-                      + Your org / compute here
-                    </button>
-                  </span>
-                </li>
-              )}
-            </ul>
-
-            <div className="sponsors-foot">
-              <Link to="/sponsors" className="inline-link">
-                See all sponsors
-              </Link>
-              <span>Editorial independence firewall: zero influence over audit targets or verdicts.</span>
-            </div>
-          </div>
-
-          <aside className="become" aria-label="Back open civic auditing">
-            <h3>Back open civic auditing</h3>
-            <p>
-              Fund compute for reading budget PDFs, archival SHA-256 storage, and public hub hosting.
-              Sponsors have zero influence over projects, tasks, or findings.
-            </p>
-
-            <div className="amount-chips" role="group" aria-label="Choose backing amount">
-              {PLEDGE_PRESETS.map((item, i) => (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={`amount-chip ${selectedPresetIdx === i ? 'active' : ''}`}
-                  onClick={() => setSelectedPresetIdx(i)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              style={{ width: '100%' }}
-              onClick={() => onOpenSponsor(PLEDGE_PRESETS[selectedPresetIdx].preset)}
-            >
-              Record self-declared pledge ({PLEDGE_PRESETS[selectedPresetIdx].label})
-            </button>
-          </aside>
-        </div>
-      </section>
-
-      {/* =================================================================
-          BAND 11 — RECENT BACKERS MARQUEE (#F4F4F4)
-         ================================================================= */}
-      {sponsorsWall.length > 0 && (
-        <div className="today" role="region" aria-label="Recent backers marquee">
-          <span className="kicker" style={{ flexShrink: 0 }}>
-            Recent backers
-          </span>
-          <div className="today-track-wrap">
-            <div className="today-track">
-              {[...sponsorsWall, ...sponsorsWall].map((s, idx) => (
-                <Link key={`${s.id ?? idx}-${idx}`} to="/sponsors" className="today-item">
-                  <span className="font-serif" style={{ fontSize: 16 }}>
-                    {s.name}
-                  </span>
-                  <span className="today-item-amt tabular">
-                    {s.amount_label ? s.amount_label : formatInrExact(s.amount_inr)}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

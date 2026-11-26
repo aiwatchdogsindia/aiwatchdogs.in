@@ -5,13 +5,16 @@
 
 /* -------------------------------------------------------------------------
    1. UNIFIED TAG & BADGE PALETTE (plain-English Sentence case across site)
+   All tones use explicit, self-contained, opaque light-surface hex values
+   (WCAG AA >= 4.5:1) so every tag renders identically on white, saffron,
+   green, navy, cards, tables, modals, and drawers.
    ------------------------------------------------------------------------- */
 
-/* Split vote (tie-breaker needed): dashed warm amber */
+/* Split vote (tie-breaker needed): solid warm amber tint + dashed border */
 .badge-split,
 .chip-split {
-  color: #8A4200;
-  background: #FFF7EB;
+  color: #7A3A00;
+  background: #FFF6E8;
   border: 1px dashed #D98A2B;
   font-style: normal;
   font-weight: 400;
@@ -20,49 +23,49 @@
 /* Neutral / Not enough data / Unreachable: calm warm stone */
 .badge-neutral,
 .chip-neutral {
-  color: var(--ink-3);
-  background: #F4F3F0;
-  border: 1px solid #D9D5CC;
+  color: #3F3B34;
+  background: #F3F2EE;
+  border: 1px solid #CFCBC2;
   font-style: normal;
   font-weight: 400;
 }
 
-/* Open task: upright dashed stone (distinct from italic In review finding) */
+/* Open task: solid off-white with upright dashed stone border */
 .badge-open,
 .chip-open {
-  color: var(--ink-2);
-  background: transparent;
-  border: 1px dashed #9E988B;
+  color: #2A2620;
+  background: #FAF8F4;
+  border: 1px dashed #8A8478;
   font-style: normal;
   font-weight: 400;
 }
 
-/* In progress task: crisp civic blue */
+/* In progress task / Frontier agent: crisp civic blue */
 .badge-progress,
 .chip-progress {
-  color: #1D4A8A;
+  color: #1A4580;
   background: #EDF3FC;
-  border: 1px solid #B7CEE8;
+  border: 1px solid #B3CBE8;
   font-style: normal;
   font-weight: 400;
 }
 
-/* Waiting / Paused task: muted stone */
+/* Waiting / Paused / Needs data: solid muted stone */
 .badge-waiting,
 .chip-waiting {
-  color: var(--ink-4);
-  background: var(--sunk);
-  border: 1px solid var(--rule-strong);
+  color: #4A463E;
+  background: #EFECE6;
+  border: 1px solid #C9C3B5;
   font-style: normal;
   font-weight: 400;
 }
 
-/* Planned task: subtle muted dashed */
+/* Planned task: solid light stone with muted dashed border */
 .badge-planned,
 .chip-planned {
-  color: var(--ink-4);
-  background: transparent;
-  border: 1px dashed var(--ink-6);
+  color: #4A463E;
+  background: #F7F6F3;
+  border: 1px dashed #A8A296;
   font-style: normal;
   font-weight: 400;
 }
@@ -70,19 +73,19 @@
 /* RTI draft: warm amber-tint ready-to-review draft */
 .badge-rti-draft,
 .chip-rti-draft {
-  color: #8A4200;
+  color: #7A3A00;
   background: #FFF6EB;
-  border: 1px solid #E8BF89;
+  border: 1px solid #E5B97E;
   font-style: normal;
   font-weight: 400;
 }
 
-/* RTI filed / Official reply: clean civic blue (overrides lavender/orange clash) */
+/* RTI filed / Official reply: clean civic blue */
 .badge-rti,
 .chip-rti {
-  color: #1D4A8A;
+  color: #1A4580;
   background: #EDF3FC;
-  border: 1px solid #B7CEE8;
+  border: 1px solid #B3CBE8;
   font-style: normal;
   font-weight: 400;
 }
@@ -90,9 +93,9 @@
 /* Website check: Missing item (page loaded, item not found) */
 .badge-missing,
 .chip-missing {
-  color: #9C3D12;
+  color: #8F350E;
   background: #FDF1EA;
-  border: 1px solid #EBC1AA;
+  border: 1px solid #E8BBA3;
   font-style: normal;
   font-weight: 400;
 }
@@ -100,9 +103,9 @@
 /* Work / check type pill: Budget check, Website check, Price research, Peer check */
 .badge-work,
 .chip-work {
-  color: var(--ink-2);
+  color: #2A2620;
   background: #F4F3F0;
-  border: 1px solid var(--rule-strong);
+  border: 1px solid #CFCBC2;
   border-radius: var(--r-4);
   font-size: 12px;
   font-style: normal;
@@ -528,8 +531,7 @@
 }
 
 .brief-project-card:hover .brief-card-arrow,
-.brief-explore-card:hover .brief-card-arrow,
-.brief-social-card:hover .brief-card-arrow {
+.brief-explore-card:hover .brief-card-arrow {
   color: var(--ink);
   transform: translateX(2px);
 }
@@ -694,56 +696,8 @@
   color: var(--ink-3);
 }
 
-/* Community channels grid on Brief */
-.brief-social-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 14px;
-}
-
-.brief-social-card {
-  background: var(--paper);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-6);
-  padding: 15px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  transition: border-color 0.15s ease;
-}
-
-.brief-social-card:hover,
-.brief-social-card:focus-visible {
-  border-color: var(--ink);
-  outline: none;
-}
-
-.brief-social-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.brief-social-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 15.5px;
-  font-weight: 500;
-  color: var(--ink);
-}
-
-.brief-social-sub {
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--ink-4);
-  overflow-wrap: anywhere;
-}
-
 .how-section > p.brief-colophon {
-  margin: 26px 0 0;
+  margin: 0;
   padding-top: 20px;
   border-top: 1px solid var(--rule);
   font-size: 14.5px;
@@ -787,4 +741,81 @@
     grid-template-columns: 1fr;
     gap: 14px;
   }
+}
+
+/* -------------------------------------------------------------------------
+   6. PR-NUMBERED CHANGELOG WITH DATE + TIME (/changelog)
+   ------------------------------------------------------------------------- */
+.changelog-page {
+  gap: 44px;
+}
+
+.changelog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.changelog-entry {
+  padding-top: 24px;
+  border-top: 1px solid var(--rule);
+}
+
+.changelog-entry:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.changelog-entry-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.changelog-pr-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: var(--r-4);
+  border: 1px solid #1B1A17;
+  background: #1B1A17;
+  color: #FFFFFF;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+  transition: opacity 0.14s ease;
+}
+
+.changelog-pr-badge:hover {
+  opacity: 0.86;
+}
+
+.changelog-pr-badge--milestone {
+  background: #F3F2EE;
+  border-color: #CFCBC2;
+  color: #2A2620;
+}
+
+.changelog-time {
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.changelog-entry-title {
+  margin: 0 0 12px;
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2vw, 24px);
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.changelog-items {
+  margin: 0;
 }

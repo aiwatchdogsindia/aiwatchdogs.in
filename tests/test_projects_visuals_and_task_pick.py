@@ -280,7 +280,7 @@ def test_specific_task_id_w1_and_cpi1_prereq_guards(tmp_path: Path, monkeypatch:
         r_w1_no_flag = client.post(
             "/api/desk/next",
             headers=h1,
-            json={"task_id": "prj-gov-in-public-information-005"},
+            json={"task_id": "prj-gov-in-public-information-0005"},
         )
         assert r_w1_no_flag.status_code == 409
         assert "website_observations" in r_w1_no_flag.json()["detail"]
@@ -289,10 +289,10 @@ def test_specific_task_id_w1_and_cpi1_prereq_guards(tmp_path: Path, monkeypatch:
         r_w1_ok = client.post(
             "/api/desk/next",
             headers=h1,
-            json={"task_id": "prj-gov-in-public-information-005", "website_observations": True},
+            json={"task_id": "prj-gov-in-public-information-0005", "website_observations": True},
         )
         assert r_w1_ok.status_code == 200
-        assert r_w1_ok.json()["task"]["id"] == "prj-gov-in-public-information-005"
+        assert r_w1_ok.json()["task"]["id"] == "prj-gov-in-public-information-0005"
 
         # CPI1 review task with unmet depends_on -> HTTP 409
         r_cpi_wait = client.post(
@@ -460,7 +460,9 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
     with TestClient(app) as client:
         # ---- Baseline schema checks across all 3 real projects ----
         p1_0 = client.get("/api/missions/police-finances").json()
+        assert p1_0["project_code"] == "P1"
         vs_p1 = p1_0["visual_summary"]
+        assert vs_p1["project_code"] == "P1"
         assert vs_p1["methodology_code"] == "P1"
         assert vs_p1["status_counts"]["total"] == 100
         assert vs_p1["status_counts"]["queued"] == 100
@@ -475,20 +477,35 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         assert p1_groups["State Police"]["total"] == 34
 
         w1_0 = client.get("/api/missions/gov-in-public-information").json()
+        assert w1_0["project_code"] == "P2"
         vs_w1 = w1_0["visual_summary"]
+        assert vs_w1["project_code"] == "P2"
         assert vs_w1["methodology_code"] == "W1"
-        assert vs_w1["website_audit"]["batches_total"] == 100
-        assert vs_w1["website_audit"]["batches_done"] == 0
-        assert len(vs_w1["website_audit"]["checkpoints"]) == 7
-        assert set(vs_w1["website_audit"]["reasons"].keys()) == {
+        wa0 = vs_w1["website_audit"]
+        assert wa0["batches_total"] == 1000
+        assert wa0["batches_done"] == 0
+        assert wa0["total_directory_hosts"] == 12537
+        assert wa0["matrix_version"] == "gigw-3.0-rti-2005-v1"
+        assert wa0["matrix_summary"]["total_checkpoints"] == 159
+        assert wa0["matrix_summary"]["gigw_checkpoints"] == 88
+        assert wa0["matrix_summary"]["rti_checkpoints"] == 42
+        assert wa0["matrix_summary"]["statutory_other_checkpoints"] == 29
+        assert wa0["matrix_summary"]["w1_automated_checks_count"] == 42
+        assert len(wa0["sections"]) == 8
+        assert len(wa0["checkpoints"]) == 42
+        assert len(wa0["matrix"]) == 159
+        assert set(wa0["reasons"].keys()) == {
             "robots_restricted",
             "fetch_failed",
             "unsupported_page",
             "contact_unavailable",
+            "rti_unavailable",
         }
 
         cpi_0 = client.get(f"/api/missions/{INFLATION_PROJECT_SLUG}").json()
+        assert cpi_0["project_code"] == "P3"
         vs_cpi = cpi_0["visual_summary"]
+        assert vs_cpi["project_code"] == "P3"
         assert vs_cpi["methodology_code"] == "CPI1"
         assert vs_cpi["status_counts"]["queued"] == 96
         assert vs_cpi["status_counts"]["waiting"] == 4
@@ -563,7 +580,7 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         l_w1 = client.post(
             "/api/desk/next",
             headers={"X-Agent-Token": w1_a["api_token"]},
-            json={"task_id": "prj-gov-in-public-information-001", "website_observations": True},
+            json={"task_id": "prj-gov-in-public-information-0001", "website_observations": True},
         ).json()
         w1_runner = AgentRunner(
             AgentConfig(handle=w1_a["handle"], hub_url="http://testserver", api_token=w1_a["api_token"]),
@@ -615,6 +632,15 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
 
         # ---- Assert P1 detail: scoped leaderboard, hourly filter, divergences, groups ----
         p1_after = client.get("/api/missions/police-finances").json()
+        # Even after a finding spawns 2 dynamic peer_verify tasks, primary total_tasks MUST stay 100!
+        assert p1_after["total_tasks"] == 100
+        assert p1_after["completed_tasks"] == 2
+        assert p1_after["peer_checks_total"] == 2
+        assert p1_after["peer_checks_done"] == 0
+        assert p1_after["peer_checks_open"] == 2
+        assert p1_after["visual_summary"]["status_counts"]["total"] == 100
+        assert p1_after["visual_summary"]["status_counts"]["completed"] == 2
+        assert p1_after["visual_summary"]["status_counts"]["checks_total"] == 2
         p1_all_handles = [c["handle"] for c in p1_after["contributors_all"]]
         p1_hr_handles = [c["handle"] for c in p1_after["contributors_hour"]]
         assert set(p1_all_handles) == {"p1-auditor-alpha", "p1-verifier-beta"}
@@ -647,7 +673,7 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
 
         wa = w1_after["visual_summary"]["website_audit"]
         assert wa["batches_done"] == 1
-        assert wa["batches_total"] == 100
+        assert wa["batches_total"] == 1000
         assert wa["hosts_total"] == len(assignments)
         assert wa["hosts_unassessable"] == 1
         assert wa["hosts_observed"] == len(assignments) - 1
@@ -655,10 +681,14 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         cp_by_key = {cp["key"]: cp for cp in wa["checkpoints"]}
         assert cp_by_key["contact_link"]["observed"] == len(assignments) - 1
         assert cp_by_key["email"]["observed"] == len(assignments) - 1
+        assert cp_by_key["gov_email_domain"]["observed"] == len(assignments) - 1
         assert cp_by_key["telephone"]["observed"] == len(assignments) - 1
         assert cp_by_key["postal_address"]["not_observed"] == len(assignments) - 1
         assert cp_by_key["updated_date"]["observed"] == len(assignments) - 1
         assert cp_by_key["contact_link"]["unassessable"] == 1
+        assert len(wa["matrix"]) == 159
+        q10 = next(row for row in wa["matrix"] if row["id"] == "GIGW-Q-10")
+        assert q10["observed_pct"] is not None and q10["observed_pct"] > 0
 
         # ---- Assert CPI1 detail: strata status, roles, batches_submitted, leaderboard ----
         cpi_after = client.get(f"/api/missions/{INFLATION_PROJECT_SLUG}").json()

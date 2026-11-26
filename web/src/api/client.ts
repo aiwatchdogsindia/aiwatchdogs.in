@@ -8,7 +8,6 @@ import type {
   GraphData,
   HeadData,
   JustInItem,
-  LedgerEntry,
   LiveData,
   MissionItem,
   MissionRung,
@@ -18,8 +17,6 @@ import type {
   PublicSource,
   RecordEvent,
   RtiDraft,
-  SponsorItem,
-  TreasurySummary,
   VerificationCheckState,
   WhisperItem,
   TaskUsage,
@@ -527,13 +524,25 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
         : undefined;
   const workloadCr = optNum(raw.scan_workload_inr_crore ?? raw.scan_workload_inr_cr) ?? monetaryCr;
   const uniqueCr = optNum(raw.unique_coverage_inr_crore ?? raw.unique_coverage_inr_cr);
+  const slug = String(raw.slug || '');
+  const methodologyCode = String(raw.methodology_code || 'P1');
+  const explicitProjectCode = optStr(raw.project_code);
+  const fallbackProjectCode =
+    slug === 'police-finances'
+      ? 'P1'
+      : slug === 'gov-in-public-information' || methodologyCode.toUpperCase() === 'W1'
+        ? 'P2'
+        : slug === 'independent-india-inflation' || methodologyCode.toUpperCase() === 'CPI1'
+          ? 'P3'
+          : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
-    slug: String(raw.slug || ''),
+    slug,
+    project_code: explicitProjectCode || fallbackProjectCode,
     title: String(raw.title || 'Audit project'),
     description: raw.description ? String(raw.description) : undefined,
     pillar: String(raw.pillar || 'budget'),
-    methodology_code: String(raw.methodology_code || 'P1'),
+    methodology_code: methodologyCode,
     jurisdiction: String(raw.jurisdiction || 'Union'),
     statutory_anchors: asArray<string>(raw.statutory_anchors ?? raw.statutory_anchors_json),
     data_mode: String(raw.data_mode || 'live_public'),
@@ -544,6 +553,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     completed_tasks: Number(raw.completed_tasks ?? 0),
     claimed_tasks: raw.claimed_tasks !== undefined ? Number(raw.claimed_tasks) : undefined,
     queued_tasks: raw.queued_tasks !== undefined ? Number(raw.queued_tasks) : undefined,
+    peer_checks_total: optNum(raw.peer_checks_total) ?? undefined,
+    peer_checks_done: optNum(raw.peer_checks_done) ?? undefined,
+    peer_checks_open: optNum(raw.peer_checks_open) ?? undefined,
     progress_pct: raw.progress_pct !== undefined ? Number(raw.progress_pct) : undefined,
     verified_findings_count: Number(raw.verified_findings_count ?? 0),
     peer_review_count: raw.peer_review_count !== undefined ? Number(raw.peer_review_count) : undefined,
@@ -676,65 +688,6 @@ export function normalizeWhisper(raw: Record<string, unknown>): WhisperItem {
   };
 }
 
-export function normalizeSponsor(raw: Record<string, unknown>): SponsorItem {
-  const computeLabel = raw.compute_credits_desc ?? raw.compute_grant;
-  const contribType = String(raw.contribution_type || (computeLabel ? 'compute_grant' : 'financial'));
-  const rawSettlement = optStr(raw.settlement_status ?? raw.reconciliation_status ?? raw.status);
-  const settlement =
-    rawSettlement ?? (contribType === 'compute_grant' || computeLabel ? 'in_kind' : 'pledged');
-  return {
-    id: raw.id as string | number | undefined,
-    name: String(raw.name || 'Anonymous Backer'),
-    handle: (raw.handle_or_org || raw.handle || null) as string | null,
-    tier: String(raw.tier || 'citizen_backer'),
-    contribution_type: contribType,
-    settlement_status: settlement,
-    amount_inr: Number(raw.amount_inr ?? 0),
-    amount_label: computeLabel ? String(computeLabel) : undefined,
-    url: (raw.url || raw.website_url || null) as string | null,
-    note: (raw.message || raw.note || null) as string | null,
-    is_demo_sample:
-      raw.is_demo_entry !== undefined
-        ? Boolean(raw.is_demo_entry)
-        : raw.is_demo !== undefined
-          ? Boolean(raw.is_demo)
-          : Boolean(raw.is_demo_sample),
-    created_at: raw.created_at ? String(raw.created_at) : undefined,
-  };
-}
-
-export function normalizeLedgerEntry(raw: Record<string, unknown>): LedgerEntry {
-  const direction = String(raw.direction || 'pledge');
-  const category = String(raw.category || raw.entry_type || 'pledge');
-  const rawSettlement = optStr(raw.settlement_status ?? raw.reconciliation_status ?? raw.status);
-  const inferredStatus =
-    rawSettlement ??
-    (direction === 'outflow'
-      ? 'verified_outflow'
-      : direction === 'in_kind' || category.includes('compute') || raw.compute_credit_units || raw.compute_credits_desc
-        ? 'in_kind'
-        : direction === 'pledge' || category.includes('pledge')
-          ? 'pledged'
-          : raw.reconciled === true
-            ? 'reconciled'
-            : 'pledged');
-  return {
-    id: raw.id as string | number | undefined,
-    entry_date: String(raw.entry_date || raw.date || ''),
-    direction,
-    category,
-    counterparty: String(raw.counterparty || 'Public Treasury'),
-    description: String(raw.description || ''),
-    amount_inr: Number(raw.amount_inr ?? 0),
-    currency: String(raw.currency || 'INR'),
-    settlement_status: inferredStatus,
-    compute_credits_desc: (raw.compute_credit_units || raw.compute_credits_desc || null) as string | null,
-    receipt_ref: (raw.receipt_ref || null) as string | null,
-    is_demo_sample:
-      raw.is_demo_entry !== undefined ? Boolean(raw.is_demo_entry) : Boolean(raw.is_demo_sample),
-  };
-}
-
 function normalizeJustIn(raw: unknown): JustInItem | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -767,110 +720,11 @@ function normalizeRecordEvent(raw: Record<string, unknown>): RecordEvent {
   };
 }
 
-function isInKindEntry(e: LedgerEntry): boolean {
-  const st = (e.settlement_status || '').toLowerCase();
-  return (
-    st === 'in_kind' ||
-    st === 'in_kind_committed' ||
-    st === 'in_kind_fulfilled' ||
-    e.direction === 'in_kind' ||
-    e.category === 'compute_grant' ||
-    Boolean(e.compute_credits_desc)
-  );
-}
-
-function computeTreasurySummary(
-  entries: LedgerEntry[],
-  rawObj: Record<string, unknown>,
-  rawSummary: Record<string, unknown>,
-): TreasurySummary {
-  const inKindFallback = entries
-    .filter((e) => e.direction !== 'outflow' && isInKindEntry(e))
-    .reduce((acc, e) => acc + e.amount_inr, 0);
-  const reconciledCashFallback = entries
-    .filter((e) => {
-      const st = (e.settlement_status || '').toLowerCase();
-      return (
-        e.direction !== 'outflow' &&
-        !isInKindEntry(e) &&
-        (st === 'received' || st === 'reconciled')
-      );
-    })
-    .reduce((acc, e) => acc + e.amount_inr, 0);
-  const pledgedFallback = entries
-    .filter((e) => {
-      const st = (e.settlement_status || '').toLowerCase();
-      return (
-        e.direction !== 'outflow' &&
-        !isInKindEntry(e) &&
-        st !== 'received' &&
-        st !== 'reconciled' &&
-        (st === 'pledged' || e.direction === 'pledge')
-      );
-    })
-    .reduce((acc, e) => acc + e.amount_inr, 0);
-  const outflowFallback = entries
-    .filter((e) => e.direction === 'outflow')
-    .reduce((acc, e) => acc + e.amount_inr, 0);
-
-  const pledged =
-    optNum(
-      rawObj.pledged_inr ??
-        rawSummary.pledged_inr ??
-        rawObj.pledged_total_inr ??
-        rawSummary.pledged_total_inr ??
-        rawObj.total_pledged_inr ??
-        rawSummary.total_pledged_inr,
-    ) ?? pledgedFallback;
-  const reconciledCash =
-    optNum(
-      rawObj.received_cash_inr ??
-        rawSummary.received_cash_inr ??
-        rawObj.reconciled_cash_inr ??
-        rawSummary.reconciled_cash_inr ??
-        rawObj.cash_received_inr ??
-        rawSummary.cash_received_inr,
-    ) ?? reconciledCashFallback;
-  const inKind =
-    optNum(
-      rawObj.in_kind_compute_inr ??
-        rawSummary.in_kind_compute_inr ??
-        rawObj.compute_grants_inr ??
-        rawSummary.compute_grants_inr ??
-        rawObj.in_kind_total_inr ??
-        rawSummary.in_kind_total_inr,
-    ) ?? inKindFallback;
-  const outflow =
-    optNum(
-      rawObj.total_outflow_inr ??
-        rawSummary.total_outflow_inr ??
-        rawObj.outflows_inr ??
-        rawSummary.outflows_inr,
-    ) ?? outflowFallback;
-  const netCash =
-    optNum(
-      rawObj.net_cash_balance_inr ??
-        rawSummary.net_cash_balance_inr ??
-        rawObj.net_balance_inr ??
-        rawSummary.net_balance_inr,
-    ) ??
-    reconciledCash - outflow;
-
-  return {
-    pledged_total_inr: pledged,
-    reconciled_cash_inr: reconciledCash,
-    in_kind_compute_inr: inKind,
-    total_outflow_inr: outflow,
-    net_cash_balance_inr: netCash,
-  };
-}
-
 export const api = {
   async getHead(): Promise<HeadData> {
     const raw = await fetchJson<Record<string, unknown>>('/api/head');
     const stats = asRecord(raw.stats);
     const disp = asRecord(raw.disposition);
-    const treasury = asRecord(raw.treasury ?? stats.treasury);
 
     const uniqueCoverage = optNum(
       stats.unique_coverage_inr_cr ?? stats.unique_coverage_inr_crore,
@@ -878,34 +732,6 @@ export const api = {
     const scanWorkload =
       optNum(stats.scan_workload_inr_cr ?? stats.scan_workload_inr_crore) ??
       optNum(stats.public_spend_audited_inr_cr);
-
-    const pledgedTotal =
-      optNum(
-        stats.treasury_pledged_inr ??
-          stats.pledged_total_inr ??
-          treasury.pledged_inr ??
-          treasury.pledged_total_inr ??
-          stats.sponsors_pledged_inr,
-      ) ?? 0;
-    const reconciledCash =
-      optNum(
-        stats.treasury_received_cash_inr ??
-          stats.reconciled_cash_inr ??
-          treasury.received_cash_inr ??
-          treasury.reconciled_cash_inr ??
-          stats.cash_received_inr ??
-          treasury.cash_received_inr,
-      ) ?? 0;
-    const inKindCompute =
-      optNum(
-        stats.treasury_in_kind_compute_inr ??
-          stats.in_kind_compute_inr ??
-          treasury.in_kind_compute_inr,
-      ) ?? 0;
-    const outflows = optNum(stats.outflows_inr ?? treasury.total_outflow_inr) ?? 0;
-    const netCash =
-      optNum(stats.net_cash_balance_inr ?? treasury.net_cash_balance_inr) ??
-      reconciledCash - outflows;
 
     return {
       generated_at: String(raw.generated_at || new Date().toISOString()),
@@ -915,7 +741,6 @@ export const api = {
         raw.orchestrator_brief ||
           'Distributed deterministic audit swarm checking published Indian government budgets and spending records under strict neutrality and 2-of-2 independent verification.',
       ),
-      independence_pledge: raw.independence_pledge ? String(raw.independence_pledge) : undefined,
       stats: {
         public_spend_audited_inr_cr: uniqueCoverage,
         unique_coverage_inr_cr: uniqueCoverage,
@@ -950,12 +775,6 @@ export const api = {
         findings_corrected: optNum(stats.findings_corrected ?? disp.corrected) ?? undefined,
         findings_quarantined: optNum(stats.findings_quarantined ?? disp.quarantined) ?? undefined,
         rtis_drafted: Number(stats.rtis_drafted ?? 0),
-        sponsors_total_inr: reconciledCash,
-        pledged_total_inr: pledgedTotal,
-        reconciled_cash_inr: reconciledCash,
-        in_kind_compute_inr: inKindCompute,
-        outflows_inr: outflows,
-        net_cash_balance_inr: netCash,
       },
       disposition: {
         verified_leads: Number(disp.verified_leads ?? stats.findings_verified ?? 0),
@@ -986,8 +805,6 @@ export const api = {
       whispers: asArray<Record<string, unknown>>(raw.whispers).map(normalizeWhisper),
       record_events: asArray<Record<string, unknown>>(raw.record_events).map(normalizeRecordEvent),
       top_contributors: asArray<Record<string, unknown>>(raw.top_contributors).map(normalizeAgent),
-      sponsors_featured: asArray<Record<string, unknown>>(raw.sponsors_featured).map(normalizeSponsor),
-      sponsors_recent: asArray<Record<string, unknown>>(raw.sponsors_recent).map(normalizeSponsor),
     };
   },
 
@@ -1154,108 +971,6 @@ export const api = {
       recent_whispers: asArray<Record<string, unknown>>(raw.recent_whispers ?? raw.whispers).map(
         normalizeWhisper,
       ),
-    };
-  },
-
-  async getSponsors(): Promise<{
-    sponsors: SponsorItem[];
-    pledged_total_inr: number;
-    reconciled_cash_inr: number;
-    in_kind_compute_inr: number;
-    total_inr: number;
-    independence_pledge?: string;
-  }> {
-    const raw = await fetchJson<unknown>('/api/sponsors');
-    if (Array.isArray(raw)) {
-      const sponsors = raw.map((s) => normalizeSponsor(asRecord(s)));
-      const pledged = sponsors.reduce((acc, s) => acc + s.amount_inr, 0);
-      return {
-        sponsors,
-        pledged_total_inr: pledged,
-        reconciled_cash_inr: 0,
-        in_kind_compute_inr: sponsors
-          .filter((s) => s.settlement_status === 'in_kind')
-          .reduce((acc, s) => acc + s.amount_inr, 0),
-        total_inr: pledged,
-      };
-    }
-    const obj = asRecord(raw);
-    const list = asArray<Record<string, unknown>>(
-      obj.sponsors ?? obj.items ?? [...asArray(obj.institutional), ...asArray(obj.citizen_backers)],
-    );
-    const sponsors = list.map((s) => normalizeSponsor(asRecord(s)));
-    const summary = asRecord(obj.summary ?? obj.treasury);
-    const pledged =
-      optNum(obj.pledged_inr ?? summary.pledged_inr ?? obj.pledged_total_inr ?? summary.pledged_total_inr ?? obj.total_pledged_inr) ??
-      sponsors.reduce((acc, s) => acc + s.amount_inr, 0);
-    const reconciled =
-      optNum(obj.received_cash_inr ?? summary.received_cash_inr ?? obj.reconciled_cash_inr ?? summary.reconciled_cash_inr ?? obj.cash_received_inr) ?? 0;
-    const inKind =
-      optNum(obj.in_kind_compute_inr ?? summary.in_kind_compute_inr ?? obj.compute_grants_inr ?? summary.compute_grants_inr) ??
-      sponsors
-        .filter((s) => {
-          const st = (s.settlement_status || '').toLowerCase();
-          return st === 'in_kind' || st === 'in_kind_committed' || st === 'in_kind_fulfilled';
-        })
-        .reduce((acc, s) => acc + s.amount_inr, 0);
-    return {
-      sponsors,
-      pledged_total_inr: pledged,
-      reconciled_cash_inr: reconciled,
-      in_kind_compute_inr: inKind,
-      total_inr: pledged,
-      independence_pledge: obj.independence_pledge ? String(obj.independence_pledge) : undefined,
-    };
-  },
-
-  async pledgeSponsor(payload: {
-    name: string;
-    handle_or_org?: string;
-    tier: string;
-    amount_inr: number;
-    compute_credits_desc?: string;
-    url?: string;
-    message?: string;
-  }): Promise<SponsorItem> {
-    const raw = await fetchJson<Record<string, unknown>>('/api/sponsors/pledge', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: payload.name,
-        handle: payload.handle_or_org || undefined,
-        handle_or_org: payload.handle_or_org || undefined,
-        tier: payload.tier,
-        amount_inr: payload.amount_inr,
-        compute_credits_desc: payload.compute_credits_desc || '',
-        url: payload.url || undefined,
-        message: payload.message || '',
-        note: payload.message || '',
-      }),
-    });
-    return normalizeSponsor((raw.sponsor as Record<string, unknown>) || raw);
-  },
-
-  async getLedger(): Promise<{
-    entries: LedgerEntry[];
-    summary: TreasurySummary;
-    total_inflow_inr: number;
-    total_outflow_inr: number;
-    balance_inr: number;
-  }> {
-    const raw = await fetchJson<unknown>('/api/ledger?format=json');
-    const obj = asRecord(raw);
-    const list = Array.isArray(raw)
-      ? raw
-      : asArray<Record<string, unknown>>(obj.entries ?? obj.items ?? obj.ledger);
-    const entries = list.map((e) => normalizeLedgerEntry(asRecord(e)));
-    const summaryObj = asRecord(obj.summary ?? obj.treasury);
-    const summary = computeTreasurySummary(entries, obj, summaryObj);
-    return {
-      entries,
-      summary,
-      total_inflow_inr: summary.reconciled_cash_inr,
-      total_outflow_inr: summary.total_outflow_inr,
-      balance_inr: summary.net_cash_balance_inr,
     };
   },
 

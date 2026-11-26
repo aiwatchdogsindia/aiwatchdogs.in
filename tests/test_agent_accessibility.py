@@ -143,6 +143,18 @@ def test_markdown_routes_content_negotiation_and_link_headers(
         assert client.get("/projects/does-not-exist.md").status_code == 404
         assert client.get("/findings/fnd-nonexistent.md").status_code == 404
 
+        # /changelog.md shows PR numbers and IST date + time
+        changelog_md = client.get("/changelog.md").text
+        assert "PR #31" in changelog_md
+        assert "PR #30" in changelog_md
+        assert "IST" in changelog_md
+
+        # /projects/gov-in-public-information.md shows 159-checkpoint conformity matrix + 42 W1 checks
+        gov_md = client.get("/projects/gov-in-public-information.md").text
+        assert "159 checkpoints" in gov_md
+        assert "Conformity Matrix Sections" in gov_md
+        assert "/api/missions/gov-in-public-information/matrix" in gov_md
+
         # /brief.md reflects full explainer, dual human/agent access, Discord + Telegram, and no Treasury Ledger
         brief_md = client.get("/brief.md").text
         assert "police-finances.md" in brief_md

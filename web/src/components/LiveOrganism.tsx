@@ -2,7 +2,8 @@ import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import type { AgentRecord, MissionItem, PeerVerification, WhisperItem } from '../types';
-import { formatRelativeTime, formatShortRel, pillarTint } from '../utils';
+import { formatRelativeTime, formatShortRel, pillarTint, projectCodeFor } from '../utils';
+import { ProviderModelBadge } from './AgentLogos';
 
 interface LiveOrganismProps {
   agents: AgentRecord[];
@@ -103,7 +104,7 @@ export function LiveOrganism({
 
       const pillar = matchedMission?.pillar || PILLAR_CYCLE[idx % PILLAR_CYCLE.length];
       const missionLabel = matchedMission
-        ? `${matchedMission.methodology_code}, ${matchedMission.title}`
+        ? `${projectCodeFor(matchedMission)}, ${matchedMission.title}`
         : `${agent.provider}, ${agent.model}`;
       const tint = pillarTint(pillar);
       const activityFactor = Math.max(1, Math.min(8, agent.tasks_completed || 1));
@@ -338,7 +339,7 @@ export function LiveOrganism({
           <div className="org-seat-top">
             <span className="org-seat-id">
               <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
-              <span>{slot.mission.methodology_code}, Open slot</span>
+              <span>{projectCodeFor(slot.mission)}, Open slot</span>
             </span>
             <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
               {slot.queued}q
@@ -376,9 +377,20 @@ export function LiveOrganism({
             <div className="org-seat-pillar">{s.missionLabel}</div>
             <div className="org-seat-act">
               <span className={`live-dot sm ${s.agent.is_active === false ? 'offline' : ''}`} />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {s.latestWhisper?.message || `${s.agent.provider}, ${s.agent.model}`}
-              </span>
+              {s.latestWhisper?.message ? (
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {s.latestWhisper.message}
+                </span>
+              ) : (
+                <ProviderModelBadge
+                  provider={s.agent.provider}
+                  model={s.agent.model}
+                  codingAgent={s.agent.coding_agent}
+                  codingAgentModel={s.agent.coding_agent_model}
+                  inline
+                  size={14}
+                />
+              )}
             </div>
           </button>
         );
@@ -405,9 +417,14 @@ export function LiveOrganism({
             <div className="org-seat-pillar">{s.missionLabel}</div>
             <div className="org-seat-act">
               <span className="live-dot sm" />
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {s.agent.provider} / {s.agent.model}
-              </span>
+              <ProviderModelBadge
+                provider={s.agent.provider}
+                model={s.agent.model}
+                codingAgent={s.agent.coding_agent}
+                codingAgentModel={s.agent.coding_agent_model}
+                inline
+                size={14}
+              />
             </div>
           </button>
         ))}
@@ -421,7 +438,7 @@ export function LiveOrganism({
             <div className="org-seat-top">
               <span className="org-seat-id">
                 <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
-                <span>{slot.mission.methodology_code}, Open slot</span>
+                <span>{projectCodeFor(slot.mission)}, Open slot</span>
               </span>
               <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
                 {slot.queued} queued
@@ -456,10 +473,21 @@ export function LiveOrganism({
               <X size={15} />
             </button>
           </div>
-          <div className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-            {selectedSeat.agent.provider}, {selectedSeat.agent.model},{' '}
-            {selectedSeat.agent.tasks_completed} tasks, score{' '}
-            {selectedSeat.agent.score.toLocaleString('en-IN')}
+          <div
+            className="font-mono"
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11, color: 'var(--ink-4)' }}
+          >
+            <ProviderModelBadge
+              provider={selectedSeat.agent.provider}
+              model={selectedSeat.agent.model}
+              codingAgent={selectedSeat.agent.coding_agent}
+              codingAgentModel={selectedSeat.agent.coding_agent_model}
+              size={14}
+            />
+            <span>
+              {selectedSeat.agent.tasks_completed} tasks, score{' '}
+              {selectedSeat.agent.score.toLocaleString('en-IN')}
+            </span>
           </div>
           {selectedWhispers.length > 0 ? (
             selectedWhispers.map((w, i) => (

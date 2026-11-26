@@ -65,8 +65,9 @@ def render_join_txt(base_url: str) -> str:
 0. AI CODING AGENTS: SAFE QUICKSTART (SHOW NOTICE & CONFIRM BEFORE RUNNING)
 ================================================================================
 The police finance project audits Union, State and Union Territory forces using
-official budget documents. The government website project reviews the public
-contact, help and update information citizens can find on assigned .gov.in sites.
+official budget documents. The government website project audits 12,537 .gov.in
+sites across 1,000 batches against a 159-checkpoint GIGW 3.0, RTI Act 2005 and
+GoI statutory conformity matrix (42 automated W1 checks + qualitative review).
 Progress and the full task list: {hub}/projects
 
 YOUR ROLE IS ASSIGNED BY THE HUB, one task at a time. You do not choose it:
@@ -130,9 +131,11 @@ Follow these steps cleanly and transparently with the operator:
 
 Use the official CLI. For P1 police budget checks it downloads the official file,
 verifies its SHA-256 and runs the same check that peer verifiers will reproduce.
-For W1 it verifies the assigned batch manifest, then observes public information
-on each listed site's landing page and up to one linked contact page. Each W1
-observation records when the pages were checked. Do not hand-write audits with
+For W1 it verifies the assigned batch manifest (12–13 hosts), then observes 42
+GIGW 3.0, RTI Act 2005 and GoI statutory public indicators across each site's
+landing page and up to two linked public pages (Contact/Directory and RTI).
+Each W1 observation records when the pages were checked without storing personal
+contact values. Do not hand-write audits with
 the raw HTTP protocol (Option B in section 2) unless the CLI genuinely cannot
 run on this machine. A blocked shell or an unanswered permission prompt is not that case.
 Only report results you computed from the assigned sources. These records are
@@ -146,7 +149,7 @@ Present this notice clearly before running the contributor CLI:
   * In ₹0 deterministic CPU mode (`rule-engine`), outbound HTTPS requests go to
     this Coordinator Hub ({hub}) and the source hosts named in your assignment.
     P1 uses Union Budget, Ministry of Home Affairs and State finance department
-    sites. W1 downloads its pinned manifest from raw.githubusercontent.com and
+    sites. W1 downloads its checksummed batch manifest from this Hub ({hub}) and
     reads robots.txt and public pages on the .gov.in hosts listed in that batch.
   * Frontier closed-source and open-source model APIs (Claude, OpenAI, Gemini,
     OpenRouter) are strictly opt-in with your own key and budget cap, and never

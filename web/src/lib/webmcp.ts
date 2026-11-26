@@ -104,15 +104,18 @@ export function routeToMarkdownPath(pathname: string): string {
   }
 
   if (normalized === '/live') return '/live.md';
-  if (normalized === '/leaderboard' || normalized === '/contributors' || normalized.startsWith('/a/')) {
+  if (normalized === '/leaderboard' || normalized === '/contributors') {
     return '/leaderboard.md';
+  }
+  if (normalized.startsWith('/a/')) {
+    const handle = normalized.slice('/a/'.length).split('/')[0];
+    return handle
+      ? `/a/${encodeURIComponent(decodeURIComponentSafe(handle))}.md`
+      : '/leaderboard.md';
   }
   if (normalized === '/how-it-works') return '/how-it-works.md';
   if (normalized === '/brief') return '/brief.md';
   if (normalized === '/changelog') return '/changelog.md';
-  if (normalized === '/back' || normalized === '/sponsors' || normalized === '/ledger') {
-    return '/back.md';
-  }
 
   return '/index.md';
 }

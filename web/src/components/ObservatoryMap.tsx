@@ -2,7 +2,7 @@ import { ArrowUpRight, ChevronLeft, ChevronRight, ExternalLink, Minus, Plus, Rot
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../router';
 import type { GraphData, GraphNode } from '../types';
-import { formatInrCr, isUnverifiedStatus, pillarLabel, pillarTint, safeExternalUrl, statusMeta } from '../utils';
+import { formatInrCr, isUnverifiedStatus, pillarLabel, pillarTint, projectCodeFor, safeExternalUrl, statusMeta } from '../utils';
 
 interface ObservatoryMapProps {
   graph: GraphData | null;
@@ -153,7 +153,11 @@ export function ObservatoryMap({
         clusterList.push({
           key: slug,
           label: mn.label,
-          shortCode: String(mn.meta?.methodology_code || 'M'),
+          shortCode: projectCodeFor({
+            project_code: mn.meta?.project_code ? String(mn.meta.project_code) : undefined,
+            slug,
+            methodology_code: mn.meta?.methodology_code ? String(mn.meta.methodology_code) : undefined,
+          }),
           pillar: mn.pillar || 'procurement',
         });
       }
@@ -1316,9 +1320,19 @@ export function ObservatoryMap({
                   {pinnedWn.node.type}
                 </span>
               )}
-              {Boolean(pinnedWn.node.meta?.methodology_code) && (
+              {Boolean(pinnedWn.node.meta?.project_code || pinnedWn.node.meta?.methodology_code) && (
                 <span className="tag-mono tag-method">
-                  {String(pinnedWn.node.meta?.methodology_code)}
+                  {projectCodeFor({
+                    project_code: pinnedWn.node.meta?.project_code
+                      ? String(pinnedWn.node.meta.project_code)
+                      : undefined,
+                    slug: pinnedWn.node.meta?.slug
+                      ? String(pinnedWn.node.meta.slug)
+                      : pinnedWn.node.id.replace(/^mission:/, ''),
+                    methodology_code: pinnedWn.node.meta?.methodology_code
+                      ? String(pinnedWn.node.meta.methodology_code)
+                      : undefined,
+                  })}
                 </span>
               )}
               {pinnedWn.isCommunity && (

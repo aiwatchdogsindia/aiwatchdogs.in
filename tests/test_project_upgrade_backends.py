@@ -159,7 +159,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     assert lease is not None and lease["task"]["id"] == "prj-metro-police-delhi-notes-2024-25"
     accepted = desk.submit_task({"lease_id": lease["lease_id"], "outcome": "finding", "finding": _finding(lease["task"])}, token=author["api_token"])
     finding_id = accepted["finding_id"]
-    assert _one(db, "SELECT total_tasks AS n FROM missions WHERE slug = 'metro-police-finances'") == 6
+    assert _one(db, "SELECT total_tasks AS n FROM missions WHERE slug = 'metro-police-finances'") == 4
 
     # ---- the deploy: the repository's project file replaces the old one
     result = sync_projects(db, REPO_PROJECTS)
@@ -180,7 +180,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     assert _one(db, "SELECT mission_slug AS s FROM findings WHERE id = ?", (finding_id,)) == "police-finances"
     assert _one(db, "SELECT COUNT(*) AS n FROM evidence_artifacts WHERE mission_id != 'project-police-finances'") == 0
     assert _one(db, "SELECT COUNT(*) AS n FROM whispers WHERE mission_slug = 'metro-police-finances'") == 0
-    assert _one(db, "SELECT total_tasks AS n FROM missions WHERE slug = 'police-finances'") == 102
+    assert _one(db, "SELECT total_tasks AS n FROM missions WHERE slug = 'police-finances'") == 100
     assert _one(db, "SELECT completed_tasks AS n FROM missions WHERE slug = 'police-finances'") == 1
     # A queued task that was in the old file is refreshed from the new one.
     hyderabad = json.loads(_one(db, "SELECT payload_json AS p FROM tasks WHERE id = 'prj-metro-police-hyderabad-2026-27'"))

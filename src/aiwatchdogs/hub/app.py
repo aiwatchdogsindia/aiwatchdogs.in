@@ -62,7 +62,7 @@ from aiwatchdogs.hub.feed import feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
-from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, slug_aliases, sync_projects
+from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, project_codes_by_slug, slug_aliases, sync_projects
 
 logger = logging.getLogger("aiwatchdogs.hub")
 
@@ -94,7 +94,8 @@ _CANONICAL_HOSTS = frozenset({"aiwatchdogs.in", "www.aiwatchdogs.in"})
 # The official CLI names itself in its User-Agent. Builds older than this cannot read every
 # current task correctly (for example rows printed one cell per line), so they are asked to refresh.
 _OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,4})")
-MIN_OFFICIAL_CLI_VERSION = (0, 3)
+MIN_OFFICIAL_CLI_VERSION = (0, 4)
+_WEBSITE_BATCH_FILENAME_RE = re.compile(r"^batch-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|1000)\.csv\Z")
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 
 # ---------------------------------------------------------------------------
@@ -530,6 +531,7 @@ def create_app(
     # Renamed projects keep answering at their earlier slug (page, API and feed links).
     try:
         desk.slug_aliases = slug_aliases()
+        desk.project_codes = project_codes_by_slug()
     except Exception as exc:  # a bad project file must never stop the hub from starting
         logger.warning("Could not read project slug aliases: %s", exc)
     dist_dir = _resolve_web_dist(web_dist)
@@ -756,6 +758,26 @@ def create_app(
     @application.get("/api/missions/{slug}/observations/{task_id}")
     def website_observations(slug: str, task_id: str) -> dict[str, Any]:
         return desk.website_observations(slug, task_id)
+
+    @application.get("/api/missions/{slug}/matrix")
+    def api_mission_matrix(slug: str) -> dict[str, Any]:
+        return desk.get_website_matrix(slug)
+
+    @application.get("/api/missions/gov-in-public-information/batches/{filename}")
+    def api_website_batch_csv(filename: str) -> Response:
+        if not _WEBSITE_BATCH_FILENAME_RE.fullmatch(filename):
+            raise HTTPException(status_code=404, detail="Batch manifest not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        expected_dir = (default_projects_dir() / "gov-in-public-information").resolve()
+        batch_path = (expected_dir / filename).resolve()
+        if batch_path.parent != expected_dir or not batch_path.is_file():
+            raise HTTPException(status_code=404, detail="Batch manifest not found")
+        return Response(
+            content=batch_path.read_bytes(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Cache-Control": "public, max-age=86400, immutable"},
+        )
 
     @application.get("/api/missions/{slug}/dataset/schema")
     def api_mission_dataset_schema(slug: str) -> dict[str, Any]:

@@ -1,11 +1,10 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from './api/client';
-import { AgentViewProvider, AgentViewSlot } from './components/AgentView';
+import { AgentViewPanel, AgentViewProvider, useAgentView } from './components/AgentView';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { JustInBar } from './components/JustInBar';
-import type { SponsorPreset } from './components/SponsorModal';
 import { ToastProvider } from './components/Toast';
 import { sseEventToWhisper, useSwarmStream, type SseEventPacket } from './hooks/useSwarmStream';
 import { HomePage } from './pages/HomePage';
@@ -31,9 +30,6 @@ const LiveSwarmPage = lazy(() =>
 const ContributorsPage = lazy(() =>
   import('./pages/ContributorsPage').then((m) => ({ default: m.ContributorsPage })),
 );
-const SponsorsLedgerPage = lazy(() =>
-  import('./pages/SponsorsLedgerPage').then((m) => ({ default: m.SponsorsLedgerPage })),
-);
 const HowItWorksPage = lazy(() =>
   import('./pages/HowItWorksPage').then((m) => ({ default: m.HowItWorksPage })),
 );
@@ -42,9 +38,6 @@ const FindingDrawer = lazy(() =>
 );
 const JoinModal = lazy(() =>
   import('./components/JoinModal').then((m) => ({ default: m.JoinModal })),
-);
-const SponsorModal = lazy(() =>
-  import('./components/SponsorModal').then((m) => ({ default: m.SponsorModal })),
 );
 
 function mergeWhispersNewestFirst(existing: WhisperItem[], incoming: WhisperItem[], limit = 40): WhisperItem[] {
@@ -81,6 +74,7 @@ function PageFallback() {
 
 function AppShell() {
   const { pathname, search } = useRouter();
+  const { isAgentView } = useAgentView();
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
 
   // Google Analytics (no-op unless VITE_GA_MEASUREMENT_ID is set). Page views, including
@@ -101,14 +95,7 @@ function AppShell() {
   const sseRefreshTimerRef = useRef<number | null>(null);
 
   const [joinOpen, setJoinOpen] = useState(false);
-  const [sponsorOpen, setSponsorOpen] = useState(false);
-  const [sponsorPreset, setSponsorPreset] = useState<SponsorPreset | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | number | null>(null);
-
-  const openSponsor = useCallback((preset?: SponsorPreset) => {
-    setSponsorPreset(preset ?? null);
-    setSponsorOpen(true);
-  }, []);
 
   const recordLatestEventId = useCallback((candidate?: number) => {
     if (candidate != null && candidate > latestEventIdRef.current) {
@@ -212,7 +199,6 @@ function AppShell() {
             'finding_corrected',
             'finding_quarantined',
             'rti_drafted',
-            'sponsor_added',
           ].includes(evt.type)
         ) {
           scheduleSseRefresh();
@@ -255,7 +241,6 @@ function AppShell() {
           sseStatus={sseStatus}
           loading={headLoading}
           onOpenJoin={() => setJoinOpen(true)}
-          onOpenSponsor={openSponsor}
           onSelectFinding={setSelectedFindingId}
           refreshTick={refreshTick}
         />
@@ -326,30 +311,6 @@ function AppShell() {
       );
     }
 
-    if (cleanPath === '/sponsors') {
-      return (
-        <Suspense fallback={<PageFallback />}>
-          <SponsorsLedgerPage
-            activeView="sponsors"
-            onOpenSponsor={openSponsor}
-            refreshTick={refreshTick}
-          />
-        </Suspense>
-      );
-    }
-
-    if (cleanPath === '/ledger') {
-      return (
-        <Suspense fallback={<PageFallback />}>
-          <SponsorsLedgerPage
-            activeView="ledger"
-            onOpenSponsor={openSponsor}
-            refreshTick={refreshTick}
-          />
-        </Suspense>
-      );
-    }
-
     if (cleanPath === '/brief') {
       return (
         <Suspense fallback={<PageFallback />}>
@@ -381,12 +342,15 @@ function AppShell() {
         sseStatus={sseStatus}
         loading={headLoading}
         onOpenJoin={() => setJoinOpen(true)}
-        onOpenSponsor={openSponsor}
         onSelectFinding={setSelectedFindingId}
         refreshTick={refreshTick}
       />
     );
   };
+
+  if (isAgentView) {
+    return <AgentViewPanel />;
+  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -435,14 +399,13 @@ function AppShell() {
       )}
 
       <main style={{ flex: 1 }}>
-        <AgentViewSlot>{renderPage()}</AgentViewSlot>
+        {renderPage()}
       </main>
 
       <Footer
         agentsActive={head ? head.stats.agents_active : null}
         verifiedCount={head ? head.stats.findings_verified : null}
         onOpenJoin={() => setJoinOpen(true)}
-        onOpenSponsor={() => openSponsor()}
       />
 
       {selectedFindingId != null && (
@@ -458,17 +421,6 @@ function AppShell() {
       {joinOpen && (
         <Suspense fallback={null}>
           <JoinModal open={joinOpen} onClose={() => setJoinOpen(false)} />
-        </Suspense>
-      )}
-
-      {sponsorOpen && (
-        <Suspense fallback={null}>
-          <SponsorModal
-            open={sponsorOpen}
-            preset={sponsorPreset}
-            onClose={() => setSponsorOpen(false)}
-            onSuccess={triggerFullRefresh}
-          />
         </Suspense>
       )}
     </div>

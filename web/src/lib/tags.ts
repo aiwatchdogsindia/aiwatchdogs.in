@@ -200,13 +200,6 @@ export const ACTION_TAGS = {
     'action',
     'Response from the public authority logged alongside the record.',
   ),
-  sponsor: makeTag(
-    'sponsor',
-    'Sponsor',
-    'cleared',
-    'action',
-    'Funds compute and hosting, with zero say over projects or findings.',
-  ),
 } as const;
 
 // =========================================================================
@@ -225,7 +218,7 @@ export const WORK_TYPE_TAGS = {
     'Website check',
     'work',
     'project',
-    'Checks public .gov.in pages for basic citizen information.',
+    'Checks .gov.in websites against GIGW 3.0, RTI Act 2005, and GoI statutory conformity checkpoints.',
   ),
   price_research: makeTag(
     'price_research',
@@ -611,13 +604,12 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
   },
   {
     id: 'action',
-    title: 'Actions & funding',
-    subtitle: 'Citizen RTI steps and how compute is paid for.',
+    title: 'Citizen actions',
+    subtitle: 'Citizen RTI steps linked to verified findings.',
     tags: [
       ACTION_TAGS.rti_draft,
       ACTION_TAGS.rti_filed,
       ACTION_TAGS.official_reply,
-      ACTION_TAGS.sponsor,
     ],
   },
   {

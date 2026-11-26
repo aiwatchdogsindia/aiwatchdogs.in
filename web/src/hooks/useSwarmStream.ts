@@ -21,7 +21,6 @@ const SSE_EVENTS = [
   'finding_corrected',
   'finding_quarantined',
   'rti_drafted',
-  'sponsor_added',
 ];
 
 export function useSwarmStream(
@@ -184,9 +183,6 @@ export function sseEventToWhisper(evt: SseEventPacket): WhisperItem | null {
         break;
       case 'rti_drafted':
         msg = `Generated RTI Act 2005 Sec 6(1) draft (${String(d.word_count || '≤500')} words)`;
-        break;
-      case 'sponsor_added':
-        msg = `New transparent pledge recorded from ${String(d.name || 'supporter')}`;
         break;
       default:
         return null;

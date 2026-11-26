@@ -33,10 +33,18 @@ from aiwatchdogs.core.safety import (
     verify_token_digest,
 )
 from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usage, summarise_tokens
+from aiwatchdogs.engines.gigw_matrix import (
+    MATRIX_VERSION as W1_MATRIX_VERSION,
+    VALID_CHECK_STATES as W1_VALID_CHECK_STATES,
+    W1_CHECKS,
+    W1_REASON_KEYS,
+    build_website_audit_visual_payload,
+    load_conformity_matrix,
+)
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
-from aiwatchdogs.projects import INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG
+from aiwatchdogs.projects import CANONICAL_PROJECT_CODES, INFLATION_METHODOLOGY, INFLATION_PROJECT_SLUG
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -179,21 +187,7 @@ _SHARED_DATASET_NOTES: dict[str, str] = {
     "ocds-cost-escalation-watch": "Shares the 43,669-release Assam OCDS JSON package with M3; deduplicated in coverage totals.",
 }
 
-_W1_CHECKPOINT_DEFS: tuple[tuple[str, str], ...] = (
-    ("contact_link", "Contact link"),
-    ("email", "Email"),
-    ("postal_address", "Postal address"),
-    ("telephone", "Telephone"),
-    ("about_link", "About link"),
-    ("updated_date", "Updated date"),
-    ("help_link", "Help link"),
-)
-_W1_REASON_KEYS: tuple[str, ...] = (
-    "robots_restricted",
-    "fetch_failed",
-    "unsupported_page",
-    "contact_unavailable",
-)
+_W1_REASON_KEYS: tuple[str, ...] = W1_REASON_KEYS
 _CPI1_ROLE_DEFS: tuple[tuple[str, str], ...] = (
     ("collection", "State & UT price collection"),
     ("method", "Basket & methodology specs"),
@@ -522,9 +516,15 @@ class DeskService:
         """Follow a renamed project's earlier slug to its current one."""
         return self.slug_aliases.get(slug, slug)
 
+    def resolve_project_code(self, slug: str, fallback: str = "") -> str:
+        """Return sequential public project code (P1, P2, P3, ...) for a mission slug."""
+        canon = self.resolve_slug(str(slug or ""))
+        return self.project_codes.get(canon) or CANONICAL_PROJECT_CODES.get(canon) or fallback
+
     def __init__(self, db: Database, broker: SSEBroker) -> None:
         # Earlier slug -> current slug for renamed projects (filled by the app from projects/).
         self.slug_aliases: dict[str, str] = {}
+        self.project_codes: dict[str, str] = dict(CANONICAL_PROJECT_CODES)
         self.db = db
         self.broker = broker
 
@@ -579,10 +579,17 @@ class DeskService:
         unique_coverage_inr: float | None = None,
         cleared_findings_count: int | None = None,
         token_rows: list[tuple[str, int | None, Any]] | None = None,
+        *,
+        project_code: str | None = None,
+        primary_total_tasks: int | None = None,
+        primary_completed_tasks: int | None = None,
+        peer_checks_total: int = 0,
+        peer_checks_done: int = 0,
+        peer_checks_open: int = 0,
     ) -> dict[str, Any]:
         planned = DeskService._planned_tasks(row)
-        total = int(row["total_tasks"] or 0)
-        completed = int(row["completed_tasks"] or 0)
+        total = int(primary_total_tasks if primary_total_tasks is not None else (row["total_tasks"] or 0))
+        completed = int(primary_completed_tasks if primary_completed_tasks is not None else (row["completed_tasks"] or 0))
         progress_pct = round((completed / total) * 100.0, 1) if total > 0 else 0.0
         workload_inr = float(row["monetary_audited_inr"] or 0.0)
         uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
@@ -595,9 +602,15 @@ class DeskService:
             else _row_get(row, "cleared_findings_count", 0)
         )
         unevaluable = int(_row_get(row, "unevaluable_count", 0))
+        resolved_code = (
+            project_code
+            or CANONICAL_PROJECT_CODES.get(str(row["slug"] or ""))
+            or str(row["methodology_code"] or "")
+        )
         return {
             "id": row["id"],
             "slug": row["slug"],
+            "project_code": resolved_code,
             "title": row["title"],
             "description": row["description"],
             "pillar": row["pillar"],
@@ -615,6 +628,9 @@ class DeskService:
             "completed_tasks": completed,
             "claimed_tasks": int(claimed_tasks),
             "queued_tasks": queued_tasks,
+            "peer_checks_total": int(peer_checks_total),
+            "peer_checks_done": int(peer_checks_done),
+            "peer_checks_open": int(peer_checks_open),
             "progress_pct": progress_pct,
             "verified_findings_count": int(row["verified_findings_count"] or 0),
             "peer_review_count": peer_review_count,
@@ -2135,16 +2151,34 @@ class DeskService:
     def _fetch_missions_with_coverage(
         self, conn: Any
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        primary_total_map: dict[str, int] = {}
+        primary_done_map: dict[str, int] = {}
         queued_map: dict[str, int] = {}
         claimed_map: dict[str, int] = {}
+        pv_total_map: dict[str, int] = {}
+        pv_done_map: dict[str, int] = {}
+        pv_open_map: dict[str, int] = {}
         for r in conn.execute(
-            "SELECT mission_id, status, COUNT(*) AS c FROM tasks "
-            "WHERE status IN ('queued', 'claimed') GROUP BY mission_id, status"
+            "SELECT mission_id, CASE WHEN task_type = 'peer_verify' THEN 1 ELSE 0 END AS is_pv, "
+            "status, COUNT(*) AS c FROM tasks GROUP BY mission_id, is_pv, status"
         ).fetchall():
-            if r["status"] == "queued":
-                queued_map[r["mission_id"]] = int(r["c"])
-            elif r["status"] == "claimed":
-                claimed_map[r["mission_id"]] = int(r["c"])
+            mid = r["mission_id"]
+            cnt = int(r["c"])
+            st = str(r["status"] or "")
+            if int(r["is_pv"]) == 1:
+                pv_total_map[mid] = pv_total_map.get(mid, 0) + cnt
+                if st == "completed":
+                    pv_done_map[mid] = pv_done_map.get(mid, 0) + cnt
+                elif st in ("queued", "claimed"):
+                    pv_open_map[mid] = pv_open_map.get(mid, 0) + cnt
+            else:
+                primary_total_map[mid] = primary_total_map.get(mid, 0) + cnt
+                if st == "completed":
+                    primary_done_map[mid] = primary_done_map.get(mid, 0) + cnt
+                elif st == "queued":
+                    queued_map[mid] = queued_map.get(mid, 0) + cnt
+                elif st == "claimed":
+                    claimed_map[mid] = claimed_map.get(mid, 0) + cnt
         pr_map = {
             r["mission_id"]: int(r["c"])
             for r in conn.execute(
@@ -2179,6 +2213,12 @@ class DeskService:
                 unique_coverage_inr=mission_unique_inr.get(str(r["id"]), 0.0),
                 cleared_findings_count=cleared_findings_map.get(r["id"], 0),
                 token_rows=token_rows.get(str(r["id"]), []),
+                project_code=self.resolve_project_code(r["slug"], str(r["methodology_code"] or "")),
+                primary_total_tasks=primary_total_map.get(r["id"], int(r["total_tasks"] or 0)),
+                primary_completed_tasks=primary_done_map.get(r["id"], int(r["completed_tasks"] or 0)),
+                peer_checks_total=pv_total_map.get(r["id"], 0),
+                peer_checks_done=pv_done_map.get(r["id"], 0),
+                peer_checks_open=pv_open_map.get(r["id"], 0),
             )
             for r in rows
         ]
@@ -2436,38 +2476,43 @@ class DeskService:
         effective_status_by_id: dict[str, str] = {}
         for t, t_payload in parsed_tasks:
             st = str(t["status"] or "")
+            is_pv = t["task_type"] == "peer_verify"
             deps = t_payload.get("depends_on") if is_inflation and isinstance(t_payload.get("depends_on"), list) else []
             has_unmet = bool(deps and any(str(d) not in completed_ids for d in deps))
             if st == "completed":
-                completed_cnt += 1
                 eff_st = "completed"
             elif st == "claimed":
-                claimed_cnt += 1
                 eff_st = "claimed"
             elif st == "queued" and has_unmet:
-                waiting_cnt += 1
                 eff_st = "waiting"
             elif st == "queued":
-                queued_cnt += 1
                 eff_st = "queued"
             else:
                 eff_st = st
             effective_status_by_id[str(t["id"])] = eff_st
 
-            if t["task_type"] == "peer_verify":
+            if is_pv:
                 checks_total += 1
                 if st == "completed":
                     checks_done += 1
             else:
                 audits_total += 1
-                if st == "completed":
+                if eff_st == "completed":
+                    completed_cnt += 1
                     audits_done += 1
+                elif eff_st == "claimed":
+                    claimed_cnt += 1
+                elif eff_st == "waiting":
+                    waiting_cnt += 1
+                elif eff_st == "queued":
+                    queued_cnt += 1
 
-        total_cnt = len(parsed_tasks)
+        total_cnt = audits_total
         planned_cnt = len(mission.get("planned_tasks") or [])
         pct_complete = round((completed_cnt / total_cnt) * 100.0, 2) if total_cnt > 0 else 0.0
 
         summary: dict[str, Any] = {
+            "project_code": str(mission.get("project_code") or self.resolve_project_code(mission_row["slug"], methodology_code)),
             "methodology_code": methodology_code,
             "status_counts": {
                 "completed": completed_cnt,
@@ -2489,8 +2534,8 @@ class DeskService:
             hosts_observed = 0
             hosts_unassessable = 0
             cp_counts: dict[str, dict[str, int]] = {
-                key: {"observed": 0, "not_observed": 0, "unassessable": 0}
-                for key, _ in _W1_CHECKPOINT_DEFS
+                key: {"observed": 0, "not_observed": 0, "unassessable": 0, "not_applicable": 0}
+                for key in W1_CHECKS
             }
             reasons: dict[str, int] = {k: 0 for k in _W1_REASON_KEYS}
 
@@ -2517,37 +2562,20 @@ class DeskService:
                         reasons[rkey] = reasons.get(rkey, 0) + 1
                     checks = item.get("checks")
                     if isinstance(checks, dict):
-                        for key, _ in _W1_CHECKPOINT_DEFS:
+                        # Supports both legacy 7-key and upgraded 42-key observations gracefully.
+                        for key in W1_CHECKS:
                             val = str(checks.get(key) or "").strip().lower()
-                            if val in ("observed", "not_observed", "unassessable"):
+                            if val in W1_VALID_CHECK_STATES:
                                 cp_counts[key][val] += 1
 
-            checkpoints: list[dict[str, Any]] = []
-            for key, label in _W1_CHECKPOINT_DEFS:
-                c = cp_counts[key]
-                denom = c["observed"] + c["not_observed"] + c["unassessable"]
-                checkpoints.append(
-                    {
-                        "key": key,
-                        "label": label,
-                        "observed": c["observed"],
-                        "not_observed": c["not_observed"],
-                        "unassessable": c["unassessable"],
-                        "observed_pct": round((c["observed"] / denom) * 100.0, 2) if denom > 0 else 0.0,
-                        "not_observed_pct": round((c["not_observed"] / denom) * 100.0, 2) if denom > 0 else 0.0,
-                        "unassessable_pct": round((c["unassessable"] / denom) * 100.0, 2) if denom > 0 else 0.0,
-                    }
-                )
-
-            summary["website_audit"] = {
-                "batches_done": completed_cnt,
-                "batches_total": total_cnt,
-                "hosts_observed": hosts_observed,
-                "hosts_unassessable": hosts_unassessable,
-                "hosts_total": hosts_observed + hosts_unassessable,
-                "checkpoints": checkpoints,
-                "reasons": reasons,
-            }
+            summary["website_audit"] = build_website_audit_visual_payload(
+                batches_done=completed_cnt,
+                batches_total=total_cnt,
+                hosts_observed=hosts_observed,
+                hosts_unassessable=hosts_unassessable,
+                cp_counts=cp_counts,
+                reasons=reasons,
+            )
             return summary
 
         if is_inflation:
@@ -2726,16 +2754,34 @@ class DeskService:
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Mission '{slug}' not found")
             mid = row["id"]
-            status_map = {
-                str(r["status"]): int(r["c"])
-                for r in conn.execute(
-                    "SELECT status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
-                    "AND status IN ('queued', 'claimed') GROUP BY status",
-                    (mid,),
-                ).fetchall()
-            }
-            queued_cnt = status_map.get("queued", 0)
-            claimed_cnt = status_map.get("claimed", 0)
+            primary_total = 0
+            primary_done = 0
+            queued_cnt = 0
+            claimed_cnt = 0
+            pv_total = 0
+            pv_done = 0
+            pv_open = 0
+            for r in conn.execute(
+                "SELECT CASE WHEN task_type = 'peer_verify' THEN 1 ELSE 0 END AS is_pv, "
+                "status, COUNT(*) AS c FROM tasks WHERE mission_id = ? GROUP BY is_pv, status",
+                (mid,),
+            ).fetchall():
+                cnt = int(r["c"])
+                st = str(r["status"] or "")
+                if int(r["is_pv"]) == 1:
+                    pv_total += cnt
+                    if st == "completed":
+                        pv_done += cnt
+                    elif st in ("queued", "claimed"):
+                        pv_open += cnt
+                else:
+                    primary_total += cnt
+                    if st == "completed":
+                        primary_done += cnt
+                    elif st == "queued":
+                        queued_cnt += cnt
+                    elif st == "claimed":
+                        claimed_cnt += cnt
             pr_cnt = int(
                 conn.execute(
                     "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? "
@@ -2761,6 +2807,12 @@ class DeskService:
                 unique_coverage_inr=mission_unique_inr.get(str(mid), 0.0),
                 cleared_findings_count=cf_cnt,
                 token_rows=self._token_rows(conn, str(mid)).get(str(mid), []),
+                project_code=self.resolve_project_code(row["slug"], str(row["methodology_code"] or "")),
+                primary_total_tasks=primary_total if primary_total > 0 else int(row["total_tasks"] or 0),
+                primary_completed_tasks=primary_done if primary_total > 0 else int(row["completed_tasks"] or 0),
+                peer_checks_total=pv_total,
+                peer_checks_done=pv_done,
+                peer_checks_open=pv_open,
             )
 
             source_ids = mission["source_ids"]
@@ -2877,7 +2929,14 @@ class DeskService:
             "visual_summary": visual_summary,
         }
 
+    def get_website_matrix(self, slug: str) -> dict[str, Any]:
+        slug = self.resolve_slug(slug)
+        if slug != "gov-in-public-information":
+            raise HTTPException(status_code=404, detail="Conformity matrix not found")
+        return load_conformity_matrix()
+
     def website_observations(self, slug: str, task_id: str) -> dict[str, Any]:
+        slug = self.resolve_slug(slug)
         with self.db.read() as conn:
             row = conn.execute(
                 "SELECT output_json, payload_json, completed_at FROM tasks WHERE mission_slug = ? AND id = ? "
@@ -2888,6 +2947,8 @@ class DeskService:
         manifest = loads_json(row["payload_json"], {})
         return {"task_id": task_id, "manifest": manifest["retrieval_url"], "manifest_sha256": manifest["expected_sha256"],
                 "completed_at": row["completed_at"], "review_status": "volunteer_observations",
+                "matrix_version": W1_MATRIX_VERSION,
+                "matrix_endpoint": "/api/missions/gov-in-public-information/matrix",
                 "guidelines": "https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/",
                 **loads_json(row["output_json"], {})}
 
@@ -5808,7 +5869,6 @@ class DeskService:
             """
             UPDATE missions
             SET completed_tasks = completed_tasks + 1,
-                total_tasks = total_tasks + 2,
                 unevaluable_count = unevaluable_count + ?,
                 monetary_audited_inr = monetary_audited_inr + ?
             WHERE id = ?
@@ -6210,10 +6270,6 @@ class DeskService:
                             now,
                         ),
                     )
-                    conn.execute(
-                        "UPDATE missions SET total_tasks = total_tasks + 1 WHERE id = ?",
-                        (finding_row["mission_id"],),
-                    )
                     adjudication_queued = True
                     self._emit_durable_event(
                         conn,
@@ -6284,10 +6340,6 @@ class DeskService:
             ),
         )
 
-        conn.execute(
-            "UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?",
-            (mission["id"],),
-        )
         conn.execute(
             """
             UPDATE agents
