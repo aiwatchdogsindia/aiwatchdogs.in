@@ -5,7 +5,7 @@
     {
       "pr": 32,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/32",
-      "mergedAt": "2026-11-26T06:55:00Z",
+      "mergedAt": "2026-11-26T07:21:35Z",
       "title": "Security & audit-accuracy fixes for P2 conformity matrix, Aadhaar redaction, legacy lease retirement, RTI timeouts, and changelog workflow",
       "items": [
         "Hardened Aadhaar PII redaction in safety.py to catch checksum-valid numbers glued directly to English/Hindi labels or underscores while excluding whole cryptographic hex digests (MD5/SHA-1/SHA-256/SHA-512) by span.",
