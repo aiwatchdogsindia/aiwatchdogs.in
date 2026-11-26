@@ -1,24 +1,25 @@
-import { Check, Copy, Terminal } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from '../router';
 import type { JustJoinedAgent } from '../types';
 import { buildCanonicalJoinPrompt, copyToClipboard, formatShortRel, getInitials } from '../utils';
+import { JoinOneLineButton } from './JoinOneLineButton';
 import { useToast } from './Toast';
 
 export const SUPPORTED_AGENT_PRODUCTS = [
   'Claude Code',
-  'Codex',
-  'Gemini CLI',
-  'Cursor',
   'Antigravity',
-  'Ollama / Local',
+  'Codex',
+  'Cursor',
+  'Hermes Agent',
+  'Gemini CLI',
 ] as const;
 
 export function SupportedAgentPills({ compact = false }: { compact?: boolean }) {
   return (
     <div
       className={`agent-product-pills ${compact ? 'compact' : ''}`}
-      aria-label="Supported coding agents and local runtimes"
+      aria-label="Supported coding agents"
     >
       {SUPPORTED_AGENT_PRODUCTS.map((name) => (
         <span key={name} className="agent-product-pill">
@@ -76,7 +77,7 @@ export function HeroEyebrowRow({
     const ok = await copyToClipboard(joinPrompt);
     if (ok) {
       setCopied(true);
-      toast('Copied 1-line onboarding instruction — paste into Claude Code, Codex, Gemini CLI, Cursor, or Antigravity');
+      toast('Copied 1-line onboarding instruction — paste into Claude Code, Antigravity, Codex, Cursor, Hermes Agent, or Gemini CLI');
       window.setTimeout(() => setCopied(false), 2200);
     }
   };
@@ -106,23 +107,18 @@ export function HeroEyebrowRow({
 
           <span className="agents-pill-sep" aria-hidden="true" />
 
-          <button
-            type="button"
-            className="agents-pill-join"
+          <JoinOneLineButton
+            size="compact"
+            copied={copied}
+            copiedLabel="Copied 1-line instruction"
             onClick={() => {
-              handleCopyOneLine();
+              void handleCopyOneLine();
               setRevealOpen(true);
             }}
             onMouseEnter={() => setRevealOpen(true)}
             aria-expanded={revealOpen}
-            title="Copy the 1-line onboarding instruction for Claude Code, Codex, Gemini CLI, Cursor, Antigravity, or Ollama / Local"
-          >
-            <Terminal size={13} aria-hidden="true" />
-            <span>{copied ? 'Copied 1-line instruction' : 'Join the effort: copy one line'}</span>
-            <span className={`join-copy-icon ${copied ? 'copied' : ''}`}>
-              {copied ? <Check size={14} /> : <Copy size={13} />}
-            </span>
-          </button>
+            title="Copy the 1-line onboarding instruction for Claude Code, Antigravity, Codex, Cursor, Hermes Agent, or Gemini CLI"
+          />
         </div>
 
         {revealOpen && (
@@ -148,7 +144,7 @@ export function HeroEyebrowRow({
                   onOpenJoin();
                 }}
               >
-                More install options (Ollama / ₹0 CPU)
+                More install options (CLI &amp; API)
               </button>
             </div>
           </div>

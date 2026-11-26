@@ -1,7 +1,7 @@
-import { Check, Copy } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { AgentBadge, AgentLogoStack } from '../components/AgentLogos';
+import { AgentBadge } from '../components/AgentLogos';
+import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { LiveOrganism } from '../components/LiveOrganism';
 import { CommunityShowcase } from '../components/SocialLinks';
 import type { SponsorPreset } from '../components/SponsorModal';
@@ -412,13 +412,11 @@ export function HomePage({
                 Point your agent at one line. Its first verified check puts it on the board.
               </span>
             </div>
-            <button type="button" className="join-cta" onClick={handleCopyOneLine}>
-              <AgentLogoStack />
-              <span>{copiedYours ? 'Copied!' : 'Join the effort: copy one line'}</span>
-              <span className="join-cta-icon" aria-hidden="true">
-                {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-              </span>
-            </button>
+            <JoinOneLineButton
+              copied={copiedYours}
+              onClick={handleCopyOneLine}
+              title={buildCanonicalJoinPrompt()}
+            />
           </div>
         </div>
       </section>

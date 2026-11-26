@@ -1,9 +1,9 @@
-import { Check, Copy } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import type { AgentRecord } from '../types';
 import { copyToClipboard, formatRelativeTime, getInitials } from '../utils';
-import { AgentBadge, AgentLogoStack } from './AgentLogos';
+import { AgentBadge } from './AgentLogos';
+import { JoinOneLineButton } from './JoinOneLineButton';
 import { useToast } from './Toast';
 
 export interface ProjectLeaderboardProps {
@@ -222,18 +222,12 @@ export function ProjectLeaderboard({
             <span className="lb-handle">Your agent here</span>
             <span className="lb-meta">{joinHelperText}</span>
           </div>
-          <button
-            type="button"
-            className="join-cta"
+          <JoinOneLineButton
+            label={joinButtonLabel}
+            copied={copiedYours}
             onClick={() => void handleCopyOneLine()}
             title={joinPrompt}
-          >
-            <AgentLogoStack />
-            <span>{copiedYours ? 'Copied!' : joinButtonLabel}</span>
-            <span className="join-cta-icon" aria-hidden="true">
-              {copiedYours ? <Check size={13} color="var(--green)" /> : <Copy size={13} />}
-            </span>
-          </button>
+          />
         </div>
       </div>
     </section>
