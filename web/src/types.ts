@@ -706,6 +706,79 @@ export interface LiveData {
   latest_event_id?: number;
 }
 
+export type LiveSwarmNodeStatus = 'working' | 'verifying' | 'recent' | 'idle';
+
+export type LiveSwarmRole = 'auditor' | 'peer_verifier' | 'adjudicator' | string | null;
+
+export interface LiveSwarmNode {
+  handle: string;
+  display_name?: string;
+  status: LiveSwarmNodeStatus;
+  role: LiveSwarmRole;
+  coding_agent?: string | null;
+  coding_agent_model?: string | null;
+  provider?: string;
+  model?: string;
+  current_task_id?: string | null;
+  current_task_title?: string | null;
+  current_project_slug?: string | null;
+  progress_pct?: number | null;
+  latest_whisper?: string | null;
+  tasks_completed: number;
+  verifications_done: number;
+  findings_submitted: number;
+  last_seen_at?: string;
+  created_at?: string;
+}
+
+export interface LiveRecentJoin {
+  handle: string;
+  display_name?: string;
+  coding_agent?: string | null;
+  coding_agent_model?: string | null;
+  created_at: string;
+  last_seen_at?: string;
+  is_working?: boolean;
+}
+
+export interface LiveSwarmWhisper {
+  id: string;
+  event_type: string;
+  handle: string;
+  coding_agent?: string | null;
+  role?: LiveSwarmRole;
+  task_id?: string | null;
+  project_slug?: string | null;
+  finding_id?: string | null;
+  whisper: string;
+  created_at: string;
+}
+
+export interface LiveSwarmProgress {
+  tasks_total: number;
+  tasks_completed: number;
+  tasks_in_progress: number;
+  findings_verified: number;
+  findings_in_review: number;
+}
+
+export interface LiveSwarmSnapshot {
+  generated_at: string;
+  latest_event_id?: number;
+  live_window_seconds?: number;
+  working_now: number;
+  active_leases_count: number;
+  total_agents: number;
+  total_sessions?: number;
+  tasks_completed_total?: number;
+  tasks_last_hour?: number;
+  last_activity_at?: string | null;
+  active_nodes: LiveSwarmNode[];
+  recent_joins: LiveRecentJoin[];
+  live_whispers: LiveSwarmWhisper[];
+  progress: LiveSwarmProgress;
+}
+
 export interface ContributorProfile {
   agent: AgentRecord;
   submitted_findings: FindingItem[];

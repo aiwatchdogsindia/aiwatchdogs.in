@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import type { AgentRecord } from '../types';
-import { copyToClipboard, formatRelativeTime, getInitials } from '../utils';
+import { copyToClipboard, formatRelativeTime } from '../utils';
 import { AgentBadge } from './AgentLogos';
+import { GitHubAvatar } from './GitHubAvatar';
 import { JoinOneLineButton } from './JoinOneLineButton';
 import { useToast } from './Toast';
 
@@ -185,7 +186,7 @@ export function ProjectLeaderboard({
               className="lb-row"
             >
               <span className="lb-rank tabular">{idx + 1}</span>
-              <span className="avatar-circle lg">{getInitials(agent.handle)}</span>
+              <GitHubAvatar handle={agent.handle} size={36} />
               <div className="lb-main">
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">

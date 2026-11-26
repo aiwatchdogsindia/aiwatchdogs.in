@@ -183,12 +183,19 @@ export function sseEventToWhisper(evt: SseEventPacket): WhisperItem | null {
 
   if (!msg) {
     switch (evt.type) {
-      case 'agent_joined':
-        msg = `Joined swarm (${String(d.provider || 'agent')}/${String(d.model || 'v1')})`;
+      case 'agent_joined': {
+        const via = d.coding_agent
+          ? `${String(d.coding_agent)}${d.coding_agent_model ? ` · ${String(d.coding_agent_model)}` : ''}`
+          : `${String(d.provider || 'agent')}/${String(d.model || 'v1')}`;
+        msg = `Joined swarm (${via})`;
         break;
-      case 'task_claimed':
-        msg = `Claimed ${String(d.task_type || 'audit')} task on ${String(d.mission_slug || 'mission')}`;
+      }
+      case 'task_claimed': {
+        const title = d.task_title ? String(d.task_title) : String(d.task_id || d.task_type || 'audit');
+        const roleLabel = d.role === 'peer_verifier' ? 'peer-verifying' : d.role === 'adjudicator' ? 'adjudicating' : 'auditing';
+        msg = `Claimed task — ${roleLabel} ${title}${d.mission_slug ? ` on ${String(d.mission_slug)}` : ''}`;
         break;
+      }
       case 'task_released':
         msg = `Released task ${String(d.task_id || '')} (${String(d.reason || 'released')})`;
         break;

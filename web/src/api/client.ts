@@ -10,6 +10,11 @@ import type {
   HeadData,
   JustInItem,
   LiveData,
+  LiveRecentJoin,
+  LiveSwarmNode,
+  LiveSwarmNodeStatus,
+  LiveSwarmSnapshot,
+  LiveSwarmWhisper,
   MissionItem,
   MissionRung,
   MissionTask,
@@ -1001,6 +1006,87 @@ export const api = {
     };
   },
 
+  async getSwarmLive(options?: { signal?: AbortSignal }): Promise<LiveSwarmSnapshot> {
+    const raw = await fetchJson<Record<string, unknown>>('/api/swarm/live', {
+      signal: options?.signal,
+    });
+    const normalizeStatus = (val: unknown): LiveSwarmNodeStatus => {
+      const s = String(val || '').toLowerCase();
+      if (s === 'working' || s === 'verifying' || s === 'recent' || s === 'idle') return s;
+      return 'idle';
+    };
+    const activeNodes: LiveSwarmNode[] = asArray<Record<string, unknown>>(raw.active_nodes).map(
+      (n) => ({
+        handle: String(n.handle || 'swarm-node'),
+        display_name: optStr(n.display_name) ?? String(n.handle || 'swarm-node'),
+        status: normalizeStatus(n.status),
+        role: optStr(n.role),
+        coding_agent: optStr(n.coding_agent),
+        coding_agent_model: optStr(n.coding_agent_model),
+        provider: optStr(n.provider) ?? 'rule-engine',
+        model: optStr(n.model) ?? 'deterministic',
+        current_task_id: optStr(n.current_task_id),
+        current_task_title: optStr(n.current_task_title),
+        current_project_slug: optStr(n.current_project_slug),
+        progress_pct: optNum(n.progress_pct),
+        latest_whisper: optStr(n.latest_whisper),
+        tasks_completed: Number(n.tasks_completed ?? 0),
+        verifications_done: Number(n.verifications_done ?? 0),
+        findings_submitted: Number(n.findings_submitted ?? 0),
+        last_seen_at: optStr(n.last_seen_at) ?? undefined,
+        created_at: optStr(n.created_at) ?? undefined,
+      }),
+    );
+    const recentJoins: LiveRecentJoin[] = asArray<Record<string, unknown>>(raw.recent_joins).map(
+      (j) => ({
+        handle: String(j.handle || ''),
+        display_name: optStr(j.display_name) ?? String(j.handle || ''),
+        coding_agent: optStr(j.coding_agent),
+        coding_agent_model: optStr(j.coding_agent_model),
+        created_at: String(j.created_at || raw.generated_at || new Date().toISOString()),
+        last_seen_at: optStr(j.last_seen_at) ?? undefined,
+        is_working: Boolean(j.is_working),
+      }),
+    ).filter((j) => j.handle.length > 0);
+    const liveWhispers: LiveSwarmWhisper[] = asArray<Record<string, unknown>>(raw.live_whispers).map(
+      (w, idx) => ({
+        id: String(w.id ?? `w-${idx}`),
+        event_type: String(w.event_type || 'whisper'),
+        handle: String(w.handle || 'swarm-node'),
+        coding_agent: optStr(w.coding_agent),
+        role: optStr(w.role),
+        task_id: optStr(w.task_id),
+        project_slug: optStr(w.project_slug),
+        finding_id: optStr(w.finding_id),
+        whisper: String(w.whisper || ''),
+        created_at: String(w.created_at || raw.generated_at || new Date().toISOString()),
+      }),
+    ).filter((w) => w.whisper.length > 0);
+    const p = asRecord(raw.progress);
+    return {
+      generated_at: String(raw.generated_at || new Date().toISOString()),
+      latest_event_id: optNum(raw.latest_event_id) ?? undefined,
+      live_window_seconds: optNum(raw.live_window_seconds) ?? 900,
+      working_now: Number(raw.working_now ?? 0),
+      active_leases_count: Number(raw.active_leases_count ?? 0),
+      total_agents: Number(raw.total_agents ?? activeNodes.length),
+      total_sessions: optNum(raw.total_sessions) ?? Number(raw.tasks_completed_total ?? 0),
+      tasks_completed_total: Number(raw.tasks_completed_total ?? p.tasks_completed ?? 0),
+      tasks_last_hour: Number(raw.tasks_last_hour ?? 0),
+      last_activity_at: optStr(raw.last_activity_at),
+      active_nodes: activeNodes,
+      recent_joins: recentJoins,
+      live_whispers: liveWhispers,
+      progress: {
+        tasks_total: Number(p.tasks_total ?? 0),
+        tasks_completed: Number(p.tasks_completed ?? 0),
+        tasks_in_progress: Number(p.tasks_in_progress ?? 0),
+        findings_verified: Number(p.findings_verified ?? 0),
+        findings_in_review: Number(p.findings_in_review ?? 0),
+      },
+    };
+  },
+
   async getContributors(window: 'all' | 'hour' = 'all'): Promise<AgentRecord[]> {
     const raw = await fetchJson<unknown>(`/api/contributors?window=${window}`);
     const list = Array.isArray(raw)
@@ -1075,3 +1161,153 @@ export const api = {
     return res.text();
   },
 };
+
+/**
+ * Derive a best-effort LiveSwarmSnapshot from /api/head + live SSE whispers
+ * while /api/swarm/live is loading or temporarily unavailable.
+ */
+export function deriveLiveSwarmSnapshot(
+  head: HeadData | null,
+  liveWhispers: WhisperItem[] = [],
+): LiveSwarmSnapshot | null {
+  if (!head) return null;
+
+  const mergedWhispers = liveWhispers.length > 0 ? liveWhispers : head.whispers ?? [];
+  const latestByHandle = new Map<string, WhisperItem>();
+  for (const w of mergedWhispers) {
+    if (w.agent_handle && !latestByHandle.has(w.agent_handle)) {
+      latestByHandle.set(w.agent_handle, w);
+    }
+  }
+
+  const activeSet = new Set<string>();
+  const seen = new Set<string>();
+  const activeNodes: LiveSwarmNode[] = [];
+
+  for (const a of head.active_agents ?? []) {
+    if (!a.handle || seen.has(a.handle)) continue;
+    seen.add(a.handle);
+    activeSet.add(a.handle);
+    const w = latestByHandle.get(a.handle);
+    activeNodes.push({
+      handle: a.handle,
+      display_name: a.display_name || a.handle,
+      status: a.mode === 'verify' ? 'verifying' : 'working',
+      role: a.mode === 'verify' ? 'peer_verifier' : 'auditor',
+      coding_agent: a.coding_agent ?? null,
+      coding_agent_model: a.coding_agent_model ?? null,
+      provider: a.provider,
+      model: a.model,
+      current_project_slug: w?.mission_slug ?? null,
+      latest_whisper: w?.message ?? null,
+      tasks_completed: a.tasks_completed ?? 0,
+      verifications_done: a.verifications_completed ?? 0,
+      findings_submitted: a.findings_verified ?? 0,
+      last_seen_at: a.last_heartbeat ?? head.generated_at,
+    });
+  }
+
+  for (const a of head.top_contributors ?? []) {
+    if (!a.handle || seen.has(a.handle)) continue;
+    seen.add(a.handle);
+    const w = latestByHandle.get(a.handle);
+    activeNodes.push({
+      handle: a.handle,
+      display_name: a.display_name || a.handle,
+      status: 'recent',
+      role: null,
+      coding_agent: a.coding_agent ?? null,
+      coding_agent_model: a.coding_agent_model ?? null,
+      provider: a.provider,
+      model: a.model,
+      current_project_slug: w?.mission_slug ?? null,
+      latest_whisper: w?.message ?? null,
+      tasks_completed: a.tasks_completed ?? 0,
+      verifications_done: a.verifications_completed ?? 0,
+      findings_submitted: a.findings_verified ?? 0,
+      last_seen_at: a.last_heartbeat ?? head.generated_at,
+    });
+  }
+
+  const recentJoins: LiveRecentJoin[] = (head.just_joined ?? []).map((j) => ({
+    handle: j.handle,
+    display_name: j.handle,
+    created_at: j.joined_at || head.generated_at,
+    last_seen_at: j.joined_at || head.generated_at,
+    is_working: activeSet.has(j.handle),
+  }));
+
+  const liveSwarmWhispers: LiveSwarmWhisper[] = mergedWhispers.slice(0, 20).map((w, idx) => ({
+    id: String(w.event_id ?? w.id ?? `head-w-${idx}`),
+    event_type: w.event_type || 'whisper',
+    handle: w.agent_handle || 'swarm-node',
+    project_slug: w.mission_slug ?? null,
+    finding_id: w.finding_id != null ? String(w.finding_id) : null,
+    whisper: w.message,
+    created_at: w.created_at || head.generated_at,
+  }));
+
+  const stats = head.stats;
+  const tasksCompleted = stats?.tasks_completed ?? 0;
+  const tasksQueued = stats?.tasks_queued ?? 0;
+
+  return {
+    generated_at: head.generated_at || new Date().toISOString(),
+    latest_event_id: head.latest_event_id,
+    live_window_seconds: 900,
+    working_now: stats?.agents_active ?? activeSet.size,
+    active_leases_count: activeSet.size,
+    total_agents: stats?.agents_total ?? activeNodes.length,
+    total_sessions: tasksCompleted,
+    tasks_completed_total: tasksCompleted,
+    tasks_last_hour: 0,
+    last_activity_at: liveSwarmWhispers[0]?.created_at ?? head.generated_at,
+    active_nodes: activeNodes,
+    recent_joins: recentJoins,
+    live_whispers: liveSwarmWhispers,
+    progress: {
+      tasks_total: tasksCompleted + tasksQueued + activeSet.size,
+      tasks_completed: tasksCompleted,
+      tasks_in_progress: activeSet.size,
+      findings_verified: stats?.findings_verified ?? 0,
+      findings_in_review: stats?.findings_peer_review ?? 0,
+    },
+  };
+}
+
+/**
+ * Prepend fresher SSE whispers onto an already-loaded LiveSwarmSnapshot
+ * so live agent cards react instantaneously without waiting for the next fetch.
+ */
+export function mergeSseWhispersIntoSnapshot(
+  snapshot: LiveSwarmSnapshot,
+  liveWhispers: WhisperItem[],
+): LiveSwarmSnapshot {
+  if (liveWhispers.length === 0) return snapshot;
+  const cursor = snapshot.latest_event_id ?? 0;
+  const existingIds = new Set(snapshot.live_whispers.map((w) => String(w.id)));
+  const incoming: LiveSwarmWhisper[] = [];
+
+  for (const w of liveWhispers) {
+    if (w.event_id != null && cursor > 0 && w.event_id <= cursor) continue;
+    const id = String(w.event_id ?? w.id ?? '');
+    if (id && existingIds.has(id)) continue;
+    if (!w.message) continue;
+    incoming.push({
+      id: id || `sse-${w.created_at}-${incoming.length}`,
+      event_type: w.event_type || 'whisper',
+      handle: w.agent_handle || 'swarm-node',
+      project_slug: w.mission_slug ?? null,
+      finding_id: w.finding_id != null ? String(w.finding_id) : null,
+      whisper: w.message,
+      created_at: w.created_at || new Date().toISOString(),
+    });
+  }
+
+  if (incoming.length === 0) return snapshot;
+  return {
+    ...snapshot,
+    generated_at: incoming[0]?.created_at || snapshot.generated_at,
+    live_whispers: [...incoming, ...snapshot.live_whispers].slice(0, 20),
+  };
+}

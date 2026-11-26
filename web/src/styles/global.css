@@ -5410,3 +5410,63 @@ code.font-mono {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* =========================================================================
+   LIVE AGENT SHOWCASE & LIVE SWARM VIEWER INTEGRATION
+   ========================================================================= */
+.hero {
+  padding-top: 22px;
+  row-gap: 20px;
+}
+
+.hero-main {
+  gap: 14px;
+}
+
+.hero-strip-row {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.hero-watch-live-btn {
+  background: var(--raised);
+  border-color: var(--rule-strong);
+  font-weight: 500;
+}
+
+.hero-watch-live-btn:hover {
+  border-color: var(--ink);
+}
+
+.leaderboard--below-hero {
+  border-top: 1px solid var(--rule);
+}
+
+.home-live-foot {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+}
+
+.home-live .lsv-freshness {
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(27, 26, 23, 0.12);
+  padding: 4px 11px;
+  border-radius: 999px;
+  color: #1B1A17;
+}
+
+.home-live .lsv-summary-stat {
+  color: #2A2620;
+}
+
+.live-fleet-handle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
