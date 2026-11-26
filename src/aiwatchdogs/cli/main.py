@@ -21,7 +21,9 @@ from rich.prompt import Confirm, FloatPrompt, IntPrompt, Prompt
 from rich.table import Table
 
 from aiwatchdogs.cli.config import (
+    DEFAULT_FREE_MAX_TASKS,
     DEFAULT_HUB_URL,
+    DEFAULT_PAID_MAX_TASKS,
     AgentConfig,
     AmbiguousConfigError,
     explicit_config_path,
@@ -141,6 +143,46 @@ def _render_consent_notice(hub_url: str) -> None:
     console.print(Panel(notice, title="AI Watchdogs India · Join Swarm", border_style="green"))
 
 
+def _format_max_tasks(max_tasks: int, *, for_guardrail_table: bool = False) -> str:
+    if max_tasks <= 0:
+        return (
+            "Unlimited (₹0 free mode — runs until queue empty or Ctrl+C)"
+            if for_guardrail_table
+            else "unlimited (₹0 free mode)"
+        )
+    if for_guardrail_table:
+        return f"{max_tasks} (strict in normal & --continuous modes)"
+    return str(max_tasks)
+
+
+def _resolve_max_tasks_or_exit(
+    requested_max_tasks: int | None,
+    *,
+    provider_cfg: ProviderInfo,
+    allow_paid_provider: bool,
+    saved_max_tasks: int | None = None,
+) -> int:
+    """Resolve session max_tasks: 0 (unlimited) by default in ₹0 free mode, strict positive cap for paid LLMs."""
+    paid_prov = is_paid_provider(provider_cfg)
+    if requested_max_tasks is not None:
+        if requested_max_tasks == 0 and paid_prov:
+            err_console.print(
+                "[red]Refusing --max-tasks 0 (unlimited) with a paid cloud LLM provider.[/red]\n"
+                "Unlimited task-after-task runs are restricted to ₹0 free mode (--provider rule-engine / local models). "
+                f"For paid providers, pass an explicit positive cap (e.g. --max-tasks {DEFAULT_PAID_MAX_TASKS}) "
+                "alongside --max-usd."
+            )
+            raise typer.Exit(code=2)
+        return max(0, int(requested_max_tasks))
+
+    if saved_max_tasks is not None:
+        if saved_max_tasks <= 0 and paid_prov:
+            return DEFAULT_PAID_MAX_TASKS
+        return max(0, int(saved_max_tasks))
+
+    return DEFAULT_PAID_MAX_TASKS if paid_prov else DEFAULT_FREE_MAX_TASKS
+
+
 def _render_outbound_destinations(
     hub_url: str,
     provider_cfg: ProviderInfo,
@@ -196,7 +238,7 @@ def _render_outbound_destinations(
     if daily_spent_usd is not None:
         guardrail_parts.append(f"Today's Recorded Spend: ${daily_spent_usd:.4f}")
     if max_tasks is not None:
-        guardrail_parts.append(f"Max Tasks Cap: {max_tasks} (strict in normal & --continuous modes)")
+        guardrail_parts.append(f"Max Tasks Cap: {_format_max_tasks(max_tasks, for_guardrail_table=True)}")
     table.add_row("Guardrails", "Enforced pre-dispatch", " · ".join(guardrail_parts))
 
     console.print(table)
@@ -230,6 +272,20 @@ def _make_event_printer() -> Any:
                     border_style="green",
                 )
             )
+        elif event == "run_started":
+            max_t = int(data.get("max_tasks") or 0)
+            profile = _safe_rich(data.get("profile_url") or "")
+            if max_t <= 0:
+                console.print(
+                    "[bold cyan]Starting continuous task loop[/bold cyan] "
+                    "(unlimited ₹0 tasks until queue empty or Ctrl+C) · "
+                    f"Live profile: [underline cyan]{profile}[/underline cyan]"
+                )
+            else:
+                console.print(
+                    f"[bold cyan]Starting task loop[/bold cyan] (max {max_t} task(s)) · "
+                    f"Live profile: [underline cyan]{profile}[/underline cyan]"
+                )
         elif event == "task_claimed":
             task = data.get("task") or {}
             role = ROLE_LABELS.get(role_of(data), "AUDITOR")
@@ -245,12 +301,30 @@ def _make_event_printer() -> Any:
             console.print(f"  [dim]♥ {pct_str}[/dim] {whisper}")
         elif event == "task_submitted":
             outcome = str(data.get("outcome", "")).upper()
-            color = {"FINDING": "yellow", "CLEARED": "green", "VERIFICATION": "cyan"}.get(outcome, "white")
+            color = {
+                "FINDING": "yellow",
+                "CLEARED": "green",
+                "VERIFICATION": "cyan",
+                "OBSERVATIONS": "green",
+            }.get(outcome, "white")
             console.print(f"  [{color}]✓ Submitted {_safe_rich(outcome)}[/{color}]")
+        elif event == "task_progress":
+            done_n = int(data.get("completed") or 0)
+            max_t = int(data.get("max_tasks") or 0)
+            role = ROLE_LABELS.get(str(data.get("role") or ""), "AUDITOR")
+            outcome = str(data.get("outcome") or "").upper()
+            progress_tag = f"#{done_n}/{max_t}" if max_t > 0 else f"#{done_n} (continuing to next task…)"
+            console.print(
+                f"  [bold green]● Completed task {progress_tag}[/bold green] · "
+                f"[bold]{role}[/bold] · {_safe_rich(outcome)}"
+            )
         elif event == "lease_gone":
-            console.print("  [yellow]⚠ Lease already settled (410 Gone) — stopping cleanly.[/yellow]")
+            console.print("  [yellow]⚠ Lease already settled (410 Gone) — moving to next task.[/yellow]")
         elif event == "task_error":
-            console.print(f"  [red]✗ Task error (lease released cleanly): {_safe_rich(data.get('error'), max_len=240)}[/red]")
+            console.print(
+                f"  [red]✗ Task error (lease released cleanly; moving to next task): "
+                f"{_safe_rich(data.get('error'), max_len=240)}[/red]"
+            )
         elif event == "queue_empty":
             console.print("[dim]No queued tasks available right now.[/dim]")
         elif event == "source_download":
@@ -462,7 +536,12 @@ def join(
     ),
     model: str | None = typer.Option(None, "--model", help="Optional model name override."),
     mode: str = typer.Option("auto", "--mode", help="Task mode: auto, investigate, or verify."),
-    max_tasks: int = typer.Option(5, "--max-tasks", min=1, help="Hard maximum tasks to claim in this session."),
+    max_tasks: int | None = typer.Option(
+        None,
+        "--max-tasks",
+        min=0,
+        help="Max tasks to claim in this session (0 = unlimited in ₹0 free mode; default 0 for free providers, 5 for paid providers).",
+    ),
     max_usd: float = typer.Option(
         0.0,
         "--max-usd",
@@ -662,7 +741,15 @@ def join(
             )
 
         chosen_mode = Prompt.ask("Task mode", choices=list(VALID_MODES), default=mode)
-        chosen_max_tasks = IntPrompt.ask("Hard max tasks per run", default=max_tasks)
+        default_max_tasks = (
+            max_tasks
+            if max_tasks is not None
+            else (DEFAULT_PAID_MAX_TASKS if is_paid_provider(selected_prov) else DEFAULT_FREE_MAX_TASKS)
+        )
+        prompted_max_tasks = IntPrompt.ask(
+            "Max tasks per run (0 = unlimited in ₹0 free mode)",
+            default=default_max_tasks,
+        )
 
         if is_paid_provider(selected_prov):
             if not chosen_allow_paid:
@@ -690,6 +777,12 @@ def join(
         else:
             chosen_max_usd = 0.0
             chosen_daily_max_usd = 0.0
+
+        chosen_max_tasks = _resolve_max_tasks_or_exit(
+            max(0, prompted_max_tasks),
+            provider_cfg=selected_prov,
+            allow_paid_provider=chosen_allow_paid,
+        )
     else:
         detected = detect_providers(probe_local=not dry_run)
         _render_providers_table(detected)
@@ -707,7 +800,11 @@ def join(
                 allow_paid_provider=chosen_allow_paid,
             )
         chosen_mode = mode
-        chosen_max_tasks = max_tasks
+        chosen_max_tasks = _resolve_max_tasks_or_exit(
+            max_tasks,
+            provider_cfg=selected_prov,
+            allow_paid_provider=chosen_allow_paid,
+        )
         chosen_max_usd = max_usd
 
     if model:
@@ -742,7 +839,7 @@ def join(
         provider=selected_prov.provider,
         model=selected_prov.model,
         mode=chosen_mode,
-        max_tasks=max(1, chosen_max_tasks),
+        max_tasks=max(0, chosen_max_tasks),
         max_usd=max(0.0, chosen_max_usd),
         daily_max_usd=max(0.0, chosen_daily_max_usd) if chosen_daily_max_usd is not None else None,
         allow_paid_provider=chosen_allow_paid,
@@ -833,6 +930,8 @@ def join(
             summary = runner.run_loop(**run_kwargs)
         except KeyboardInterrupt:
             console.print("\n[yellow]Stopped. Any task in progress was handed back to the queue.[/yellow]")
+            if runner.last_summary is not None:
+                _print_run_summary(runner.last_summary)
             return
         except httpx.HTTPError as exc:
             err_console.print(f"[red]Hub communication error during run: {exc}[/red]")
@@ -848,7 +947,12 @@ def run(
     provider: str | None = typer.Option(None, "--provider", help="Override provider (rule-engine, ollama, gemini, etc.)."),
     model: str | None = typer.Option(None, "--model", help="Override model name."),
     mode: str | None = typer.Option(None, "--mode", help="Override mode: auto, investigate, or verify."),
-    max_tasks: int | None = typer.Option(None, "--max-tasks", min=1, help="Hard max tasks to claim."),
+    max_tasks: int | None = typer.Option(
+        None,
+        "--max-tasks",
+        min=0,
+        help="Max tasks to claim (0 = unlimited in ₹0 free mode; paid providers default to 5 and require >= 1).",
+    ),
     max_usd: float | None = typer.Option(None, "--max-usd", min=0.0, help="Hard session paid-LLM USD cap."),
     daily_max_usd: float | None = typer.Option(None, "--daily-max-usd", min=0.0, help="Hard daily paid-LLM USD cap."),
     allow_paid_provider: bool | None = typer.Option(
@@ -906,6 +1010,11 @@ def run(
         if not resolved_handle:
             detected_gh, _ = detect_github_handle()
             resolved_handle = detected_gh or fallback_handle(run_coding_agent)
+        resolved_max_tasks = _resolve_max_tasks_or_exit(
+            max_tasks,
+            provider_cfg=resolved_prov,
+            allow_paid_provider=eff_allow_paid,
+        )
         cfg = AgentConfig(
             handle=resolved_handle,
             hub_url=(hub or DEFAULT_HUB_URL).rstrip("/"),
@@ -913,7 +1022,7 @@ def run(
             provider=resolved_prov.provider,
             model=resolved_prov.model,
             mode=mode or "auto",
-            max_tasks=max_tasks or 5,
+            max_tasks=resolved_max_tasks,
             max_usd=max_usd if max_usd is not None else 0.0,
             daily_max_usd=daily_max_usd,
             allow_paid_provider=eff_allow_paid,
@@ -948,8 +1057,6 @@ def run(
             cfg.model = model
         if mode:
             cfg.mode = mode
-        if max_tasks is not None:
-            cfg.max_tasks = max_tasks
         if max_usd is not None:
             cfg.max_usd = max_usd
         if daily_max_usd is not None:
@@ -974,6 +1081,13 @@ def run(
         probe_local=False,
         allow_paid_provider=cfg.allow_paid_provider,
     )
+    if saved is not None:
+        cfg.max_tasks = _resolve_max_tasks_or_exit(
+            max_tasks,
+            provider_cfg=prov_cfg,
+            allow_paid_provider=cfg.allow_paid_provider,
+            saved_max_tasks=cfg.max_tasks,
+        )
 
     target_task_id = (task_id or "").strip() or None
     effective_run_max = 1 if target_task_id else cfg.max_tasks
@@ -1022,6 +1136,8 @@ def run(
             )
         except KeyboardInterrupt:
             console.print("\n[yellow]Stopped. Any task in progress was handed back to the queue.[/yellow]")
+            if runner.last_summary is not None:
+                _print_run_summary(runner.last_summary)
             return
         except httpx.HTTPError as exc:
             err_console.print(f"[red]Failed to communicate with Hub at {_safe_rich(cfg.normalized_hub_url)}: {_safe_rich(exc)}[/red]")
@@ -1333,13 +1449,14 @@ def status(
         allow_paid_provider=saved.allow_paid_provider if saved else False,
     )
     daily_spent = load_daily_spend(get_spend_ledger_path(cfg_path))
+    default_status_max = DEFAULT_PAID_MAX_TASKS if is_paid_provider(prov_cfg) else DEFAULT_FREE_MAX_TASKS
     _render_outbound_destinations(
         hub_url,
         prov_cfg,
         allow_paid_provider=saved.allow_paid_provider if saved else False,
         max_usd=saved.max_usd if saved else 0.0,
         daily_max_usd=saved.effective_daily_max_usd if saved else 0.0,
-        max_tasks=saved.max_tasks if saved else 5,
+        max_tasks=saved.max_tasks if saved else default_status_max,
         daily_spent_usd=daily_spent,
         title="Local Contributor Outbound Destinations & Budget Posture",
     )
@@ -1558,7 +1675,7 @@ def whoami(
         f"[bold]Model:[/bold] {cfg.model}\n"
         f"[bold]Mode:[/bold] {cfg.mode}\n"
         f"[bold]Paid-Provider Opt-In:[/bold] {'enabled' if cfg.allow_paid_provider else 'disabled (strict zero-dollar guardrail)'}\n"
-        f"[bold]Hard Budget Caps:[/bold] max_tasks={cfg.max_tasks}, session=${cfg.max_usd:.2f}, "
+        f"[bold]Hard Budget Caps:[/bold] max_tasks={_format_max_tasks(cfg.max_tasks)}, session=${cfg.max_usd:.2f}, "
         f"daily=${cfg.effective_daily_max_usd:.2f} (today spent=${daily_spent:.4f})\n"
         f"[bold]API Token:[/bold] {mask_token(cfg.api_token)}\n"
         f"[bold]Config File:[/bold] {cfg_path} (permissions {mode_str})"

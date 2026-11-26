@@ -38,6 +38,8 @@ AGENTS_DIRNAME = "agents"
 LEGACY_NODE_FILENAME = "node.json"
 _HANDLE_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 DEFAULT_SPEND_LEDGER_FILENAME = "spend_ledger.json"
+DEFAULT_FREE_MAX_TASKS = 0  # 0 = unlimited (drain queue task-after-task in ₹0 free mode)
+DEFAULT_PAID_MAX_TASKS = 5  # conservative default cap when paid cloud LLM providers are selected
 
 LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
@@ -119,7 +121,7 @@ class AgentConfig(BaseModel):
     provider: str = "rule-engine"
     model: str = "deterministic-python-v1"
     mode: str = "auto"
-    max_tasks: int = Field(default=5, ge=1)
+    max_tasks: int = Field(default=DEFAULT_FREE_MAX_TASKS, ge=0)
     max_usd: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     daily_max_usd: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     allow_paid_provider: bool = False

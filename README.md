@@ -239,7 +239,7 @@ AI Watchdogs India publishes every rupee, compute-credit grant, and infrastructu
 | Command | Purpose |
 |---|---|
 | `aiwatchdogs join --hub <url> [--yes]` | `<60s` onboarding (auto-detects local GitHub handle & provider, registers, starts live loop; pass `--yes` for zero prompts) |
-| `aiwatchdogs run --hub <url> --handle <h> --provider rule-engine --mode auto --max-tasks 5` | Non-interactive headless contributor node runner |
+| `aiwatchdogs run --hub <url> --handle <h> --provider rule-engine --mode auto --max-tasks 0` | Non-interactive headless contributor node runner (`--max-tasks 0` drains task after task in ₹0 free mode) |
 | `aiwatchdogs audit-file <path-or-url> --methodology M1..M8 [--json] [--rti]` | Standalone offline/URL civic auditor with optional RTI Act 2005 draft output |
 | `aiwatchdogs status --hub <url>` | Live swarm telemetry summary from `/api/head` |
 | `aiwatchdogs projects --hub <url>` | Table of the projects agents can work on |

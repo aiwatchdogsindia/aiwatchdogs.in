@@ -22,6 +22,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from aiwatchdogs.cli.config import (
+    DEFAULT_PAID_MAX_TASKS,
     AgentConfig,
     get_spend_ledger_path,
     normalize_hub_origin,
@@ -32,6 +33,7 @@ from aiwatchdogs.cli.providers import (
     BudgetTracker,
     ProviderInfo,
     enrich_finding_summary,
+    is_paid_provider,
     render_deterministic_summary,
     resolve_provider_config,
 )
@@ -61,10 +63,13 @@ MAX_RATE_LIMIT_WAITS = 8
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
 MAX_TRANSPORT_RETRIES = 3
 RETRYABLE_HUB_STATUS = frozenset({502, 503, 504})
-# After this many source-fetch failures in a row the node stops claiming: the trouble is its own
-# network, and every further claim would only take a task away from nodes that can reach the source.
-MAX_CONSECUTIVE_SOURCE_FAILURES = 2
-SOURCE_FAILURE_REASONS = frozenset({"network_error", "policy_blocked"})
+# After this many consecutive source-fetch failures in a row the node stops claiming:
+# the trouble is likely its own network/firewall, and further claims would only churn the queue.
+# A single bad URL (e.g. an upstream HTTP 403 or transient timeout) releases its lease cleanly
+# and moves straight on to the next task; the counter resets as soon as any task succeeds.
+MAX_CONSECUTIVE_SOURCE_FAILURES = 5
+SOURCE_FAILURE_BACKOFF_SECONDS = 1.0
+SOURCE_FAILURE_REASONS = frozenset({"network_error", "policy_blocked", "source_http_forbidden"})
 ROLE_LABELS = {
     "auditor": "AUDITOR",
     "peer_verifier": "PEER VERIFIER",
@@ -1148,6 +1153,7 @@ class AgentRunner:
         self._task_output_tokens = 0
         self._sleep: Callable[[float], None] = time.sleep
         self._lease_note_enabled = True
+        self.last_summary: RunSummary | None = None
 
     # ------------------------------------------------------------------
     # Lease note: lets the next run hand back a lease an interrupted run left behind
@@ -1473,6 +1479,7 @@ class AgentRunner:
             self._emit("heartbeat_skipped", {"lease_id": lease_id, "reason": "hub unreachable"})
             return True
         if resp.status_code == 410:
+            self._clear_lease_note(lease_id=lease_id)
             self._emit("lease_gone", {"lease_id": lease_id})
             return False
         if resp.status_code == 429 or resp.status_code >= 500:
@@ -2446,6 +2453,10 @@ class AgentRunner:
             self.release(lease_id, reason="interrupted", notes="Run was interrupted before the task finished.")
             raise
         except Exception as exc:
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None and exc.response.status_code == 410:
+                self._clear_lease_note(lease_id=lease_id)
+                self._emit("lease_gone", {"lease_id": lease_id})
+                return {"status": "aborted_410", "task_id": task.get("id"), "outcome": "aborted_410"}
             if _is_digest_mismatch_exception(exc):
                 release_reason = "digest_mismatch"
                 safe_release_note = "Artifact SHA-256 digest mismatch."
@@ -2453,8 +2464,13 @@ class AgentRunner:
                 release_reason = "unevaluable_source"
                 safe_release_note = "The check could not read the figures it was asked to compare."
             elif isinstance(exc, PermissionError):
-                release_reason = "policy_blocked"
-                safe_release_note = "Dataset source disallowed by local runner security policy."
+                exc_msg = str(exc)
+                if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:
+                    release_reason = "source_http_forbidden"
+                    safe_release_note = "Remote source returned HTTP 401/403 (access control respected under IT Act Sec 43)."
+                else:
+                    release_reason = "policy_blocked"
+                    safe_release_note = "Dataset source disallowed by local runner security policy."
             elif isinstance(exc, httpx.HTTPError):
                 release_reason = "network_error"
                 safe_release_note = f"Upstream fetch error ({type(exc).__name__})."
@@ -2493,7 +2509,13 @@ class AgentRunner:
         auto_register: bool = True,
         save_on_register: bool = True,
     ) -> RunSummary:
-        """Run the claim -> audit/verify -> submit loop, strictly enforcing max_tasks even in continuous mode."""
+        """Run the claim -> audit/verify -> submit loop.
+
+        ``max_tasks == 0`` drains task after task continuously in ₹0 free mode until the queue is
+        empty (HTTP 204), the user stops with Ctrl+C/SIGTERM, or consecutive source failures hit
+        ``MAX_CONSECUTIVE_SOURCE_FAILURES``. Positive ``max_tasks`` is strictly enforced in BOTH
+        normal and ``--continuous`` modes, and paid LLM providers are always capped.
+        """
         # A run with a borrowed identity must not leave files beside someone else's credentials.
         self._lease_note_enabled = bool(save_on_register)
         if auto_register and not self.config.api_token:
@@ -2501,98 +2523,141 @@ class AgentRunner:
         self.recover_interrupted_lease()
 
         target_task_id = (task_id or "").strip() or None
-        effective_max = max_tasks if max_tasks is not None else self.config.max_tasks
-        effective_max = max(0, int(effective_max))
+        raw_max = max_tasks if max_tasks is not None else self.config.max_tasks
+        effective_max = max(0, int(raw_max))
         if target_task_id:
-            effective_max = min(effective_max, 1)
+            effective_max = 1
+        elif effective_max == 0 and is_paid_provider(self.provider_cfg) and self.config.allow_paid_provider:
+            # Defense-in-depth: never allow an unbounded loop when paid cloud LLM calls are opted in.
+            effective_max = DEFAULT_PAID_MAX_TASKS
 
         summary = RunSummary(
             handle=self.config.handle,
             hub_url=self.config.normalized_hub_url,
             profile_url=self.config.profile_url,
         )
+        self.last_summary = summary
         source_failures = 0
 
-        # Strictly enforce effective_max in BOTH normal and continuous modes.
-        # In continuous mode, an empty queue sleeps & retries until effective_max tasks are claimed.
-        while summary.tasks_claimed < effective_max:
-            try:
-                lease = self.claim_next(preferred_mission=preferred_mission, task_id=target_task_id)
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 429:
-                    # Still refused after waiting: either the address is saturated or this handle
-                    # already holds its two leases. Stop cleanly; nothing is lost.
-                    summary.stopped_reason = "hub_busy_or_lease_cap"
-                    self._emit("claim_refused", {"detail": exc.response.text[:300]})
+        self._emit(
+            "run_started",
+            {
+                "handle": self.config.handle,
+                "profile_url": self.config.profile_url,
+                "max_tasks": effective_max,
+                "mode": self.config.mode,
+                "continuous": bool(continuous and not target_task_id),
+                "task_id": target_task_id,
+            },
+        )
+
+        # Strictly enforce effective_max (> 0) in BOTH normal and continuous modes.
+        # When effective_max == 0 (₹0 free unlimited mode), loop task after task until the queue
+        # empties (or continuous polls), Ctrl+C/SIGTERM interrupts, or consecutive source failures trip.
+        try:
+            while effective_max == 0 or summary.tasks_claimed < effective_max:
+                try:
+                    lease = self.claim_next(preferred_mission=preferred_mission, task_id=target_task_id)
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 429:
+                        # Still refused after waiting: either the address is saturated or this handle
+                        # already holds its two leases. Stop cleanly; nothing is lost.
+                        summary.stopped_reason = "hub_busy_or_lease_cap"
+                        self._emit("claim_refused", {"detail": exc.response.text[:300]})
+                        break
+                    if target_task_id and exc.response.status_code in (404, 409):
+                        detail = ""
+                        try:
+                            err_body = exc.response.json()
+                            if isinstance(err_body, dict) and err_body.get("detail"):
+                                detail = str(err_body["detail"])
+                        except ValueError:
+                            detail = exc.response.text[:300]
+                        summary.stopped_reason = (
+                            "task_not_found" if exc.response.status_code == 404 else "task_unavailable"
+                        )
+                        self._emit(
+                            "task_claim_rejected",
+                            {
+                                "task_id": target_task_id,
+                                "status_code": exc.response.status_code,
+                                "detail": detail or f"HTTP {exc.response.status_code}",
+                            },
+                        )
+                        break
+                    raise
+                if lease is None:
+                    if continuous and not target_task_id:
+                        self._sleep(self.poll_interval)
+                        continue
+                    summary.stopped_reason = "queue_empty"
                     break
-                if target_task_id and exc.response.status_code in (404, 409):
-                    detail = ""
-                    try:
-                        err_body = exc.response.json()
-                        if isinstance(err_body, dict) and err_body.get("detail"):
-                            detail = str(err_body["detail"])
-                    except ValueError:
-                        detail = exc.response.text[:300]
-                    summary.stopped_reason = (
-                        "task_not_found" if exc.response.status_code == 404 else "task_unavailable"
-                    )
+
+                summary.tasks_claimed += 1
+                role = role_of(lease)
+                result = self.execute_task(lease)
+                result.setdefault("role", role)
+                summary.results.append(result)
+
+                outcome = result.get("outcome")
+                status = result.get("status")
+                if status == "completed":
+                    summary.roles[role] = summary.roles.get(role, 0) + 1
+                if status == "error" and result.get("reason") in SOURCE_FAILURE_REASONS:
+                    source_failures += 1
+                else:
+                    source_failures = 0
+                if status == "aborted_410":
+                    summary.aborted_410 += 1
+                elif status == "error":
+                    summary.errors += 1
+                elif status == "completed":
+                    summary.tasks_completed += 1
+                    if outcome == "finding":
+                        resp_obj = result.get("response") if isinstance(result.get("response"), dict) else {}
+                        created = resp_obj.get("findings_created")
+                        if isinstance(created, int) and created > 0:
+                            summary.findings_submitted += created
+                        elif isinstance(result.get("findings"), list) and result["findings"]:
+                            summary.findings_submitted += len(result["findings"])
+                        else:
+                            summary.findings_submitted += 1
+                    elif outcome == "cleared":
+                        summary.cleared_submitted += 1
+                    elif outcome == "verification":
+                        summary.verifications_submitted += 1
                     self._emit(
-                        "task_claim_rejected",
+                        "task_progress",
                         {
-                            "task_id": target_task_id,
-                            "status_code": exc.response.status_code,
-                            "detail": detail or f"HTTP {exc.response.status_code}",
+                            "completed": summary.tasks_completed,
+                            "claimed": summary.tasks_claimed,
+                            "max_tasks": effective_max,
+                            "task_id": result.get("task_id"),
+                            "role": role,
+                            "outcome": outcome,
+                            "errors": summary.errors,
+                            "profile_url": summary.profile_url,
                         },
                     )
+
+                if source_failures >= MAX_CONSECUTIVE_SOURCE_FAILURES:
+                    summary.stopped_reason = "sources_unreachable"
+                    self._emit("sources_unreachable", {"failures": source_failures})
                     break
-                raise
-            if lease is None:
-                if continuous and not target_task_id:
-                    self._sleep(self.poll_interval)
-                    continue
-                break
-
-            summary.tasks_claimed += 1
-            role = role_of(lease)
-            result = self.execute_task(lease)
-            result.setdefault("role", role)
-            summary.results.append(result)
-
-            outcome = result.get("outcome")
-            status = result.get("status")
-            if status == "completed":
-                summary.roles[role] = summary.roles.get(role, 0) + 1
-            if status == "error" and result.get("reason") in SOURCE_FAILURE_REASONS:
-                source_failures += 1
-            else:
-                source_failures = 0
-            if status == "aborted_410":
-                summary.aborted_410 += 1
-            elif status == "error":
-                summary.errors += 1
-            elif status == "completed":
-                summary.tasks_completed += 1
-                if outcome == "finding":
-                    resp_obj = result.get("response") if isinstance(result.get("response"), dict) else {}
-                    created = resp_obj.get("findings_created")
-                    if isinstance(created, int) and created > 0:
-                        summary.findings_submitted += created
-                    elif isinstance(result.get("findings"), list) and result["findings"]:
-                        summary.findings_submitted += len(result["findings"])
-                    else:
-                        summary.findings_submitted += 1
-                elif outcome == "cleared":
-                    summary.cleared_submitted += 1
-                elif outcome == "verification":
-                    summary.verifications_submitted += 1
-
-            if source_failures >= MAX_CONSECUTIVE_SOURCE_FAILURES:
-                summary.stopped_reason = "sources_unreachable"
-                self._emit("sources_unreachable", {"failures": source_failures})
-                break
+                if source_failures > 0 and (effective_max == 0 or summary.tasks_claimed < effective_max):
+                    delay = min(8.0, SOURCE_FAILURE_BACKOFF_SECONDS * source_failures)
+                    self._sleep(delay)
+        except KeyboardInterrupt:
+            summary.stopped_reason = "interrupted"
+            budget_snap = self.budget_tracker.snapshot()
+            summary.session_spent_usd = float(budget_snap.get("session_spent_usd", 0.0))
+            summary.budget = budget_snap
+            self.last_summary = summary
+            raise
 
         budget_snap = self.budget_tracker.snapshot()
         summary.session_spent_usd = float(budget_snap.get("session_spent_usd", 0.0))
         summary.budget = budget_snap
+        self.last_summary = summary
         self._emit("run_finished", summary.model_dump(mode="json"))
         return summary

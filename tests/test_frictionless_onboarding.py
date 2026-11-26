@@ -67,8 +67,12 @@ def test_join_txt_instructs_immediate_zero_question_start_and_preserves_guardrai
     assert (
         "uvx --refresh --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' "
         "aiwatchdogs join --hub 'https://aiwatchdogs.in' --provider rule-engine "
-        "--non-interactive --yes --mode auto --max-tasks 3"
+        "--non-interactive --yes --mode auto --max-tasks 0"
     ) in text
+    assert "--max-tasks 3" not in text
+    assert "--continuous" not in text
+    assert "KEEP IT RUNNING TASK AFTER TASK" in text
+    assert "agent.log" in text
 
     # The Step 1 default command MUST NOT include `--handle '<HANDLE>'` inline (so agents don't pause to ask for one)
     step1_line = next(
@@ -157,6 +161,34 @@ def test_join_sh_passes_posix_sh_n_preserves_security_and_supports_headless_mode
     assert "INVOKED:uvx:" in headless.stdout
     assert "--refresh --from" in headless.stdout
     assert "aiwatchdogs join --hub https://aiwatchdogs.in --non-interactive --yes --max-tasks 2" in headless.stdout
+    assert "--max-tasks 0" not in headless.stdout
+
+    # Headless default (no --max-tasks flag) passes --max-tasks 0 to drain tasks continuously!
+    headless_default = subprocess.run(
+        ["sh", str(script_path)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        start_new_session=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        check=False,
+    )
+    assert headless_default.returncode == 0, headless_default.stderr
+    assert "aiwatchdogs join --hub https://aiwatchdogs.in --non-interactive --yes --max-tasks 0" in headless_default.stdout
+
+    # Headless paid-provider invocation does NOT force --max-tasks 0 (preserves CLI's paid cap!)
+    headless_paid = subprocess.run(
+        ["sh", str(script_path), "--provider", "openai", "--allow-paid-provider", "--max-usd", "1.0"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        start_new_session=True,
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin"},
+        check=False,
+    )
+    assert headless_paid.returncode == 0, headless_paid.stderr
+    assert "--max-tasks 0" not in headless_paid.stdout
+    assert "--provider openai --allow-paid-provider --max-usd 1.0" in headless_paid.stdout
 
     # Malicious URLs fall back cleanly to https://aiwatchdogs.in and remain valid POSIX sh
     evil_sh = render_join_sh("https://evil.example/$(id);rm -rf /")

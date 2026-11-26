@@ -203,18 +203,19 @@ def test_lease_note_is_kept_only_while_a_task_is_held(tmp_path: Path) -> None:
     assert not (tmp_path / "swarm-node.json.lease").exists()
 
 
-def test_node_that_cannot_reach_sources_stops_after_two_failures(monkeypatch: pytest.MonkeyPatch) -> None:
-    hub = _Hub([_lease("a"), _lease("b"), _lease("c"), _lease("d")])
-    runner, _ = _runner(hub)
+def test_node_that_cannot_reach_sources_stops_after_consecutive_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    hub = _Hub([_lease(k) for k in ("a", "b", "c", "d", "e", "f", "g")])
+    runner, sleeps = _runner(hub)
 
     def blocked(*_a: object, **_k: object) -> None:
         raise httpx.ConnectError("government host unreachable from this sandbox")
 
     monkeypatch.setattr(runner, "_load_task_dataset", blocked)
-    summary = runner.run_loop(max_tasks=4)
-    assert (summary.tasks_claimed, summary.errors, summary.stopped_reason) == (2, 2, "sources_unreachable")
-    assert [b["reason"] for b in hub.bodies("/api/desk/release")] == ["network_error", "network_error"]
-    assert len(hub.leases) == 2  # the other two tasks were never taken from the queue
+    summary = runner.run_loop(max_tasks=7)
+    assert (summary.tasks_claimed, summary.errors, summary.stopped_reason) == (5, 5, "sources_unreachable")
+    assert [b["reason"] for b in hub.bodies("/api/desk/release")] == ["network_error"] * 5
+    assert len(hub.leases) == 2  # the remaining two tasks were never taken from the queue
+    assert len(sleeps) == 4  # brief backoff between consecutive failures 1..4 before stopping on #5
 
 
 def test_the_network_notice_is_true_whatever_the_current_projects_are() -> None:

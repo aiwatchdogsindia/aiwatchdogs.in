@@ -29,8 +29,8 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
   const shellCmd = isHttpsHub
     ? `curl --proto '=https' --tlsv1.2 -fsSL "${canonicalHub}/join.sh" -o join.sh && sh join.sh`
     : `curl -fsSL "${canonicalHub}/join.sh" -o join.sh && sh join.sh`;
-  const uvJoinCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --max-tasks 5`;
-  const zeroCostCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --provider rule-engine --mode auto --max-tasks 5 --max-usd 0 --non-interactive --yes`;
+  const uvJoinCmd = `uv run aiwatchdogs join --hub ${canonicalHub}`;
+  const zeroCostCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --provider rule-engine --mode auto --max-tasks 0 --max-usd 0 --non-interactive --yes`;
   const doCopy = async (id: string, text: string, label: string) => {
     const ok = await copyToClipboard(text);
     if (ok) {
@@ -240,7 +240,8 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 <Cpu size={14} style={{ flexShrink: 0, marginTop: 3 }} />
                 <span>
                   Client-side dispatch controls: <code className="font-mono">--max-tasks</code> caps
-                  completed tasks per run, <code className="font-mono">--max-usd</code> caps
+                  completed tasks per run (<code className="font-mono">0</code> = unlimited in ₹0
+                  free mode), <code className="font-mono">--max-usd</code> caps
                   estimated opt-in LLM spend before dispatch (<code className="font-mono">0</code>{' '}
                   blocks paid calls completely), and <code className="font-mono">--mode verify</code>{' '}
                   restricts the node to peer verification.
