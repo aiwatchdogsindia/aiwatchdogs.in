@@ -171,8 +171,8 @@ export function ProjectLeaderboard({
       <div className="lb-rows">
         {lbRows.length === 0 && lbWindow === 'hour' ? (
           <div className="lb-row lb-empty">
-            <span className="lb-rank" aria-hidden="true" />
-            <span aria-hidden="true" />
+            <span className="lb-rank lb-empty-spacer" aria-hidden="true" />
+            <span className="lb-empty-spacer" aria-hidden="true" />
             <span className="lb-meta">No verified checks in the last hour yet.</span>
           </div>
         ) : null}
@@ -190,15 +190,17 @@ export function ProjectLeaderboard({
               <div className="lb-main">
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">
-                  last check {formatRelativeTime(agent.last_heartbeat)}
+                  <span className="lb-meta-time">
+                    last check {formatRelativeTime(agent.last_heartbeat)}
+                  </span>
                   {agent.coding_agent || agent.provider ? (
-                    <>
+                    <span className="lb-meta-via">
                       , via{' '}
                       <AgentBadge
                         agent={agent.coding_agent || agent.provider}
                         model={agent.coding_agent ? agent.coding_agent_model : agent.model}
                       />
-                    </>
+                    </span>
                   ) : null}
                 </span>
               </div>

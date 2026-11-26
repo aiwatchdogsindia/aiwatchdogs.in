@@ -209,8 +209,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
       : allFindings.slice(0, FINDINGS_PAGE_SIZE);
 
     return (
-      <div className="container" style={{ paddingTop: 24, paddingBottom: 48 }}>
-        <div style={{ marginBottom: 14 }}>
+      <div className="container project-detail-page">
+        <div className="project-detail-back">
           <Link to="/projects" className="btn btn-ghost btn-sm">
             <ArrowLeft size={14} />
             <span>All projects</span>
@@ -221,18 +221,10 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         {error && <div className="state-banner">Could not load project: {error}</div>}
 
         {detail && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div className="project-detail-stack">
             {/* 1. CLEAN COMPACT HEADER */}
-            <header className="card card-pad">
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  flexWrap: 'wrap',
-                  marginBottom: 10,
-                }}
-              >
+            <header className="card card-pad project-detail-header">
+              <div className="project-detail-tags">
                 <span className="tag-mono tag-method">{projectCodeFor(detail)}</span>
                 <span className={getWorkTypeTag(undefined, detail.methodology_code).badgeClass}>
                   {getWorkTypeTag(undefined, detail.methodology_code).label}
@@ -256,24 +248,10 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 )}
               </div>
 
-              <h1
-                className="section-title"
-                style={{ fontSize: 'clamp(24px, 2.8vw, 34px)', lineHeight: 1.18, margin: '0 0 8px' }}
-              >
-                {detail.title}
-              </h1>
+              <h1 className="section-title project-detail-title">{detail.title}</h1>
 
               {detail.description && (
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: 15,
-                    color: 'var(--ink-secondary)',
-                    maxWidth: '78ch',
-                  }}
-                >
-                  {detail.description}
-                </p>
+                <p className="project-detail-desc">{detail.description}</p>
               )}
 
               <div className="project-resource-links">
@@ -416,10 +394,10 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       )}
 
                       {detail.statutory_anchors.length > 0 && (
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                        <div className="project-statutory-anchors">
                           {detail.statutory_anchors.map((anc) => (
                             <span key={anc} className="tag-mono">
-                              <ShieldCheck size={11} style={{ marginRight: 4 }} />
+                              <ShieldCheck size={11} style={{ marginRight: 4, flexShrink: 0 }} />
                               {anc}
                             </span>
                           ))}
@@ -458,63 +436,61 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       )}
 
                       {detail.sources && detail.sources.length > 0 && (
-                        <div className="table-wrap" style={{ marginTop: 12 }}>
-                          <table className="ledger-table">
-                            <thead>
-                              <tr>
-                                <th>Source Portal</th>
-                                <th>Authority</th>
-                                <th>Tier</th>
-                                <th>Connector</th>
-                                <th>URL</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {detail.sources.map((s) => {
-                                const safeBaseUrl = safeExternalUrl(s.base_url);
-                                return (
-                                  <tr key={s.slug || s.name}>
-                                    <td style={{ fontWeight: 600 }}>{s.name}</td>
-                                    <td>{s.authority}</td>
-                                    <td>
-                                      <span className="tag-mono">Tier {s.ingestion_tier}</span>
-                                    </td>
-                                    <td className="font-mono" style={{ fontSize: 12 }}>
-                                      {s.connector_type}
-                                    </td>
-                                    <td>
-                                      {safeBaseUrl ? (
-                                        <a
-                                          href={safeBaseUrl}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="font-mono"
-                                          style={{
-                                            color: 'var(--ep-rti-fg)',
-                                            fontSize: 12,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: 4,
-                                          }}
-                                        >
-                                          <span>{safeBaseUrl}</span>
-                                          <ExternalLink size={11} />
-                                        </a>
-                                      ) : (
-                                        <span
-                                          className="font-mono"
-                                          style={{ fontSize: 12, color: 'var(--ink-muted)' }}
-                                        >
-                                          {s.base_url || '—'}
-                                        </span>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+                        <>
+                          <p className="pv-scroll-hint" aria-hidden="true">
+                            Swipe table horizontally to see all columns →
+                          </p>
+                          <div className="table-wrap project-sources-table-wrap">
+                            <table className="ledger-table">
+                              <thead>
+                                <tr>
+                                  <th>Source Portal</th>
+                                  <th>Authority</th>
+                                  <th>Tier</th>
+                                  <th>Connector</th>
+                                  <th>URL</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {detail.sources.map((s) => {
+                                  const safeBaseUrl = safeExternalUrl(s.base_url);
+                                  return (
+                                    <tr key={s.slug || s.name}>
+                                      <td style={{ fontWeight: 600 }}>{s.name}</td>
+                                      <td>{s.authority}</td>
+                                      <td>
+                                        <span className="tag-mono">Tier {s.ingestion_tier}</span>
+                                      </td>
+                                      <td className="font-mono" style={{ fontSize: 12 }}>
+                                        {s.connector_type}
+                                      </td>
+                                      <td>
+                                        {safeBaseUrl ? (
+                                          <a
+                                            href={safeBaseUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="font-mono project-source-url"
+                                          >
+                                            <span>{safeBaseUrl}</span>
+                                            <ExternalLink size={11} style={{ flexShrink: 0 }} />
+                                          </a>
+                                        ) : (
+                                          <span
+                                            className="font-mono"
+                                            style={{ fontSize: 12, color: 'var(--ink-muted)' }}
+                                          >
+                                            {s.base_url || '—'}
+                                          </span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
                       )}
                     </div>
                   </details>
@@ -561,7 +537,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         </div>
 
         {pillars.length > 2 && (
-          <div className="filter-bar">
+          <div className="filter-bar project-pillar-filter">
             {pillars.map((p) => (
               <button
                 key={p}
@@ -720,18 +696,10 @@ function ProjectCompute(props: ProjectComputeProps) {
 function TasksHeading({ detail }: { detail: MissionItem }) {
   const sum = detail.token_summary;
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '6px 16px',
-      }}
-    >
+    <div className="project-tasks-head">
       <h2 className="compute-title">Tasks</h2>
       {sum && sum.estimated_tokens != null && (
-        <div className="tabular" style={{ fontSize: 13, color: 'var(--ink-4)' }}>
+        <div className="tabular project-tasks-tokens">
           Est. {formatTokens(sum.estimated_tokens)} tokens
           {sum.remaining_tokens != null ? ` · ${formatTokens(sum.remaining_tokens)} left` : ''}
           {sum.tokens_used != null ? ` · ${formatTokens(sum.tokens_used)} used` : ''}
@@ -876,14 +844,7 @@ function TaskPicker({
         </p>
       )}
       {pickedPrompt && (
-        <div
-          style={{
-            flexBasis: '100%',
-            fontSize: 12,
-            color: 'var(--ink-3)',
-            overflowWrap: 'anywhere',
-          }}
-        >
+        <div className="project-task-picker-cmd">
           <code>{pickedPrompt}</code>
         </div>
       )}
@@ -929,22 +890,19 @@ function TaskRow({
   const retrievalUrl = safeExternalUrl(t.retrieval_url);
 
   return (
-    <tr>
-      <td style={{ minWidth: 220 }}>
-        <div>{t.title || 'Audit task'}</div>
+    <tr className="project-task-row">
+      <td className="project-task-cell">
+        <div className="project-task-title">{t.title || 'Audit task'}</div>
         {detail.methodology_code === WEBSITE_METHOD && (
-          <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginTop: 3 }}>
+          <div className="project-task-links">
             {retrievalUrl && (
-              <a href={retrievalUrl} style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>
-                Assigned sites (CSV)
-              </a>
+              <a href={retrievalUrl}>Assigned sites (CSV)</a>
             )}
             {t.status === 'completed' && (
               <>
-                {' · '}
+                <span aria-hidden="true">·</span>
                 <a
                   href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(String(t.id))}`}
-                  style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}
                 >
                   Volunteer observations (JSON)
                 </a>
@@ -953,17 +911,17 @@ function TaskRow({
           </div>
         )}
       </td>
-      <td>
+      <td className="project-task-type">
         <span className={workTag.badgeClass} title={workTag.description}>
           {workTag.label}
         </span>
       </td>
-      <td>
+      <td className="project-task-status">
         <span className={statusTag.badgeClass} title={statusTag.description}>
           {statusTag.label}
         </span>
       </td>
-      <td className="tabular" title={t.estimate_basis}>
+      <td className="tabular project-task-compute" data-label="Compute" title={t.estimate_basis}>
         {u && u.tokens_used != null ? (
           <span>
             {formatTokens(u.tokens_used)} used
@@ -975,7 +933,7 @@ function TaskRow({
           <span className="not-reported">—</span>
         )}
       </td>
-      <td>
+      <td className="project-task-agent" data-label="Agent">
         {contributor ? (
           <Link
             to={`/a/${encodeURIComponent(contributor)}`}
@@ -987,7 +945,9 @@ function TaskRow({
           <span className="not-reported">—</span>
         )}
       </td>
-      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+      <td
+        className={`project-task-run${canCopy ? ' project-task-run--action' : ' project-task-run--static'}`}
+      >
         {canCopy ? (
           <JoinOneLineButton
             size="compact"
@@ -1159,13 +1119,16 @@ function ClientFilteredTasks({ detail, copiedTaskId, onCopyTask, filterRequest }
       )}
 
       {/* TASK TABLE */}
-      <div className="table-wrap" style={{ marginTop: 14 }}>
-        <table className="ledger-table">
+      <p className="pv-scroll-hint pv-scroll-hint--tablet-only" aria-hidden="true">
+        Swipe table horizontally for status, compute &amp; run action →
+      </p>
+      <div className="table-wrap project-tasks-table-wrap">
+        <table className="ledger-table project-tasks-table">
           <TaskTableHead />
           <tbody>
             {tasks.length > 0 && page.length === 0 && (
-              <tr>
-                <td colSpan={6} className="not-reported">
+              <tr className="project-task-empty-row">
+                <td colSpan={6} className="not-reported project-task-empty">
                   No tasks match.
                 </td>
               </tr>
@@ -1186,25 +1149,31 @@ function ClientFilteredTasks({ detail, copiedTaskId, onCopyTask, filterRequest }
                 const plannedTag = getTaskTag('planned');
                 const plannedWorkTag = getWorkTypeTag(p.type, detail.methodology_code);
                 return (
-                  <tr key={p.title}>
-                    <td>{p.title}</td>
-                    <td>
+                  <tr key={p.title} className="project-task-row">
+                    <td className="project-task-cell">
+                      <div className="project-task-title">{p.title}</div>
+                    </td>
+                    <td className="project-task-type">
                       <span className={plannedWorkTag.badgeClass} title={plannedWorkTag.description}>
                         {plannedWorkTag.label}
                       </span>
                     </td>
-                    <td>
+                    <td className="project-task-status">
                       <span className={plannedTag.badgeClass} title={plannedTag.description}>
                         {plannedTag.label}
                       </span>
                     </td>
-                    <td className="tabular" title={p.estimate_basis}>
+                    <td
+                      className="tabular project-task-compute"
+                      data-label="Compute"
+                      title={p.estimate_basis}
+                    >
                       <span className="not-reported">~{formatTokens(p.estimated_tokens)} est.</span>
                     </td>
-                    <td>
+                    <td className="project-task-agent" data-label="Agent">
                       <span className="not-reported">—</span>
                     </td>
-                    <td style={{ textAlign: 'right' }}>
+                    <td className="project-task-run project-task-run--static">
                       <span className="not-reported">{plannedTag.label}</span>
                     </td>
                   </tr>
@@ -1430,25 +1399,28 @@ function ServerPagedTasks({ detail, copiedTaskId, onCopyTask, filterRequest }: P
         />
       </form>
 
-      <div className="table-wrap" style={{ marginTop: 14 }} aria-busy={loading}>
-        <table className="ledger-table">
+      <p className="pv-scroll-hint pv-scroll-hint--tablet-only" aria-hidden="true">
+        Swipe table horizontally for status, compute &amp; run action →
+      </p>
+      <div className="table-wrap project-tasks-table-wrap" aria-busy={loading}>
+        <table className="ledger-table project-tasks-table">
           <TaskTableHead />
           <tbody>
             {error ? (
-              <tr>
-                <td colSpan={6} className="not-reported">
+              <tr className="project-task-empty-row">
+                <td colSpan={6} className="not-reported project-task-empty">
                   Could not load tasks: {error}
                 </td>
               </tr>
             ) : !result ? (
-              <tr>
-                <td colSpan={6} className="not-reported">
+              <tr className="project-task-empty-row">
+                <td colSpan={6} className="not-reported project-task-empty">
                   Loading tasks…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="not-reported">
+              <tr className="project-task-empty-row">
+                <td colSpan={6} className="not-reported project-task-empty">
                   No tasks match.
                 </td>
               </tr>

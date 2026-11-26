@@ -542,7 +542,8 @@ export function ProjectProgressWidget({
   const projectTaskTotal = truncated ? counts.auditsTotal || counts.total : mosaicTasks.length;
   const tileWeightPct = projectTaskTotal > 0 ? 100 / projectTaskTotal : 0;
 
-  const handleTileClick = (task: MissionTask, bucket: StatusBucket) => {
+  const handleTileClick = (task: MissionTask, bucket: StatusBucket, globalIdx: number) => {
+    setHoveredTileIdx(globalIdx);
     if (bucket !== 'queued' || !onCopyTaskPrompt) return;
     onCopyTaskPrompt(task);
     const idStr = String(task.id);
@@ -627,7 +628,10 @@ export function ProjectProgressWidget({
                       tabIndex={0}
                       role="button"
                       aria-label={`${seg.label}: ${seg.count} of ${counts.total} (${fmtPct(seg.pct)})`}
-                      onMouseEnter={() => setActiveBucket(seg.key)}
+                      onPointerEnter={(e) => {
+                        if (e.pointerType === 'mouse') setActiveBucket(seg.key);
+                      }}
+                      onClick={() => setActiveBucket((prev) => (prev === seg.key ? null : seg.key))}
                       onFocus={() => setActiveBucket(seg.key)}
                       onBlur={() => setActiveBucket(null)}
                     />
@@ -661,9 +665,15 @@ export function ProjectProgressWidget({
                     key={seg.key}
                     type="button"
                     role="listitem"
+                    aria-pressed={isActive}
                     className={`pv-legend-item${isActive ? ' is-active' : ''}`}
-                    onMouseEnter={() => setActiveBucket(seg.key)}
-                    onMouseLeave={() => setActiveBucket(null)}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType === 'mouse') setActiveBucket(seg.key);
+                    }}
+                    onPointerLeave={(e) => {
+                      if (e.pointerType === 'mouse') setActiveBucket(null);
+                    }}
+                    onClick={() => setActiveBucket((prev) => (prev === seg.key ? null : seg.key))}
                     onFocus={() => setActiveBucket(seg.key)}
                     onBlur={() => setActiveBucket(null)}
                   >
@@ -782,7 +792,7 @@ export function ProjectProgressWidget({
                       onMouseEnter={() => setHoveredTileIdx(globalIdx)}
                       onFocus={() => setHoveredTileIdx(globalIdx)}
                       onBlur={() => setHoveredTileIdx(null)}
-                      onClick={() => handleTileClick(task, bucket)}
+                      onClick={() => handleTileClick(task, bucket, globalIdx)}
                       aria-label={`${task.title || `Task ${globalIdx + 1}`}: ${taskTag.label}, ${fmtPct(tileWeightPct)} of project${contributor ? `, by @${contributor}` : ''}${isOpen && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
                       title={task.title || `Task ${globalIdx + 1}`}
                     >
@@ -1790,7 +1800,18 @@ function WebsiteAuditVisualizer({
                           type="button"
                           className={`pv-gigw-seg pv-gigw-seg--obs${hoveredCell?.key === cp.key && hoveredCell.segment === 'observed' ? ' is-active' : ''}`}
                           style={{ width: `${obsPct}%` }}
-                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
+                          onPointerEnter={(e) => {
+                            if (e.pointerType === 'mouse') {
+                              setHoveredCell({ key: cp.key, segment: 'observed' });
+                            }
+                          }}
+                          onClick={() =>
+                            setHoveredCell((prev) =>
+                              prev?.key === cp.key && prev.segment === 'observed'
+                                ? null
+                                : { key: cp.key, segment: 'observed' },
+                            )
+                          }
                           onFocus={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
                           onBlur={() => setHoveredCell(null)}
                           aria-label={`${cp.label} ${foundTag.label}: ${cp.observed} hosts (${fmtPct(obsPct)})`}
@@ -1801,7 +1822,18 @@ function WebsiteAuditVisualizer({
                           type="button"
                           className={`pv-gigw-seg pv-gigw-seg--notobs${hoveredCell?.key === cp.key && hoveredCell.segment === 'not_observed' ? ' is-active' : ''}`}
                           style={{ width: `${notObsPct}%` }}
-                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
+                          onPointerEnter={(e) => {
+                            if (e.pointerType === 'mouse') {
+                              setHoveredCell({ key: cp.key, segment: 'not_observed' });
+                            }
+                          }}
+                          onClick={() =>
+                            setHoveredCell((prev) =>
+                              prev?.key === cp.key && prev.segment === 'not_observed'
+                                ? null
+                                : { key: cp.key, segment: 'not_observed' },
+                            )
+                          }
                           onFocus={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
                           onBlur={() => setHoveredCell(null)}
                           aria-label={`${cp.label} ${missingTag.label}: ${cp.not_observed} hosts (${fmtPct(notObsPct)})`}
@@ -1812,7 +1844,18 @@ function WebsiteAuditVisualizer({
                           type="button"
                           className={`pv-gigw-seg pv-gigw-seg--unass${hoveredCell?.key === cp.key && hoveredCell.segment === 'unassessable' ? ' is-active' : ''}`}
                           style={{ width: `${unassPct}%` }}
-                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
+                          onPointerEnter={(e) => {
+                            if (e.pointerType === 'mouse') {
+                              setHoveredCell({ key: cp.key, segment: 'unassessable' });
+                            }
+                          }}
+                          onClick={() =>
+                            setHoveredCell((prev) =>
+                              prev?.key === cp.key && prev.segment === 'unassessable'
+                                ? null
+                                : { key: cp.key, segment: 'unassessable' },
+                            )
+                          }
                           onFocus={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
                           onBlur={() => setHoveredCell(null)}
                           aria-label={`${cp.label} ${unreachableTag.label}: ${cp.unassessable} hosts (${fmtPct(unassPct)})`}
@@ -1823,7 +1866,18 @@ function WebsiteAuditVisualizer({
                           type="button"
                           className={`pv-gigw-seg pv-gigw-seg--na${hoveredCell?.key === cp.key && hoveredCell.segment === 'not_applicable' ? ' is-active' : ''}`}
                           style={{ width: `${naPct}%` }}
-                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'not_applicable' })}
+                          onPointerEnter={(e) => {
+                            if (e.pointerType === 'mouse') {
+                              setHoveredCell({ key: cp.key, segment: 'not_applicable' });
+                            }
+                          }}
+                          onClick={() =>
+                            setHoveredCell((prev) =>
+                              prev?.key === cp.key && prev.segment === 'not_applicable'
+                                ? null
+                                : { key: cp.key, segment: 'not_applicable' },
+                            )
+                          }
                           onFocus={() => setHoveredCell({ key: cp.key, segment: 'not_applicable' })}
                           onBlur={() => setHoveredCell(null)}
                           aria-label={`${cp.label} exempt or not applicable: ${naCount} hosts (${fmtPct(naPct)})`}
@@ -1888,7 +1942,10 @@ function WebsiteAuditVisualizer({
                     className="pv-reason-pill tabular"
                     tabIndex={0}
                     role="note"
-                    onMouseEnter={() => setHoveredReason(key)}
+                    onPointerEnter={(e) => {
+                      if (e.pointerType === 'mouse') setHoveredReason(key);
+                    }}
+                    onClick={() => setHoveredReason((prev) => (prev === key ? null : key))}
                     onFocus={() => setHoveredReason(key)}
                     onBlur={() => setHoveredReason(null)}
                   >
@@ -2338,7 +2395,7 @@ function UnionBudgetVisualizer({
                             </span>
                           ) : null}
                         </th>
-                        <td>
+                        <td className="pv-ub-years-checked">
                           <span
                             className="pv-ub-bar"
                             role="img"
@@ -2362,8 +2419,8 @@ function UnionBudgetVisualizer({
                             {y.claimed > 0 ? ` · ${fmtCount(y.claimed)} running` : ''}
                           </span>
                         </td>
-                        <td className="num">
-                          {fmtCount(y.lines)}
+                        <td className="num pv-ub-years-lines" data-label="Lines">
+                          <span className="pv-ub-cell-val">{fmtCount(y.lines)}</span>
                           {!isRevised && y.lines > 0 ? (
                             <span
                               className="pv-ub-sub"
@@ -2373,8 +2430,10 @@ function UnionBudgetVisualizer({
                             </span>
                           ) : null}
                         </td>
-                        <td className="num">
-                          {y.below_estimate_cr > 0 ? formatInrCr(y.below_estimate_cr) : '—'}
+                        <td className="num pv-ub-years-below" data-label="Below estimate">
+                          <span className="pv-ub-cell-val">
+                            {y.below_estimate_cr > 0 ? formatInrCr(y.below_estimate_cr) : '—'}
+                          </span>
                           <span className="pv-ub-sub">
                             {fmtCount(y.leads)} {y.leads === 1 ? 'lead' : 'leads'}
                           </span>
@@ -2445,8 +2504,12 @@ function UnionBudgetVisualizer({
           ) : null}
         </div>
         {topLeads.length > 0 ? (
-          <div className="table-wrap">
-            <table className="ledger-table pv-ub-table">
+          <>
+            <p className="pv-scroll-hint pv-scroll-hint--tablet-only" aria-hidden="true">
+              Swipe table horizontally for estimates, actuals &amp; status →
+            </p>
+            <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
               <caption className="pv-ub-caption">
                 Budget lines with the largest amount reported below their budget estimate.
                 {onSelectFinding ? ' Open a line to see its evidence.' : ''}
@@ -2504,20 +2567,30 @@ function UnionBudgetVisualizer({
                           <span className="pv-ub-sub">{lead.title}</span>
                         ) : null}
                       </td>
-                      <td className="tabular">{plainFiscalYear(lead.fiscal_year)}</td>
-                      <td className="num">{formatInrCr(lead.budget_estimate_cr)}</td>
-                      <td className="num">{formatInrCr(lead.revised_estimate_cr)}</td>
-                      <td className="num" title={noActuals ? noActualsTitle : undefined}>
-                        {formatInrCr(lead.actual_cr)}
+                      <td className="tabular pv-ub-lead-year" data-label="Year">
+                        {plainFiscalYear(lead.fiscal_year)}
+                      </td>
+                      <td className="num pv-ub-lead-be" data-label="Budget est.">
+                        {formatInrCr(lead.budget_estimate_cr)}
+                      </td>
+                      <td className="num pv-ub-lead-re" data-label="Revised est.">
+                        {formatInrCr(lead.revised_estimate_cr)}
+                      </td>
+                      <td
+                        className="num pv-ub-lead-actual"
+                        data-label="Actual"
+                        title={noActuals ? noActualsTitle : undefined}
+                      >
+                        <span className="pv-ub-cell-val">{formatInrCr(lead.actual_cr)}</span>
                         {noActuals ? <span className="pv-ub-sub">{noActualsLabel}</span> : null}
                       </td>
-                      <td className="num">
+                      <td className="num pv-ub-lead-below" data-label="Below est.">
                         <strong>{formatInrCr(lead.below_estimate_cr)}</strong>
                         {lead.below_estimate_pct != null ? (
                           <span className="pv-ub-sub">{lead.below_estimate_pct.toFixed(1)}%</span>
                         ) : null}
                       </td>
-                      <td>
+                      <td className="pv-ub-lead-status">
                         <span className={tag.badgeClass} title={tag.description}>
                           {tag.label}
                         </span>
@@ -2527,7 +2600,8 @@ function UnionBudgetVisualizer({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         ) : (
           <div className="pv-empty-box">
             Leads appear here as agents finish checks. Each one cites the page and printed row of both

@@ -60,6 +60,14 @@
   padding: 9px 16px;
 }
 
+.leaderboard.project-leaderboard .lb-row:not(.yours):not(.lb-empty) {
+  grid-template-columns: 24px 36px minmax(0, 1fr) auto;
+}
+
+.leaderboard.project-leaderboard .lb-meta-via {
+  display: inline;
+}
+
 /* ============================================================================
    2. SHARED HOVER TOOLTIP SYSTEM (Crisp high-contrast broadsheet callouts)
    ============================================================================ */
@@ -306,6 +314,11 @@
   margin-bottom: 14px;
 }
 
+.pv-panel-head > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .pv-count-pill {
   font-size: 12.5px;
   color: #2A2620;
@@ -330,9 +343,13 @@
   margin: 4px auto 14px;
   width: 196px;
   height: 196px;
+  max-width: 100%;
 }
 
 .pv-donut-svg {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
   overflow: visible;
 }
 
@@ -700,6 +717,11 @@
   justify-content: space-between;
   gap: 12px 20px;
   flex-wrap: wrap;
+}
+
+.pv-results-title-wrap {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .pv-results-title-wrap .kicker {
@@ -1102,6 +1124,9 @@
 .pv-gigw-skeleton-hint {
   font-size: 11.5px;
   color: var(--ink-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pv-gigw-seg {
@@ -1363,6 +1388,11 @@
   flex-wrap: wrap;
 }
 
+.pv-matrix-head > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .pv-matrix-title {
   margin: 0;
   font-size: 17px;
@@ -1577,6 +1607,12 @@
   gap: 5px;
 }
 
+.pv-matrix-keys code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
+}
+
 .pv-matrix-source-link {
   display: inline-flex;
   align-items: center;
@@ -1655,6 +1691,15 @@
 .pv-ub-years-wrap {
   width: 100%;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pv-scroll-hint {
+  display: none;
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-4);
 }
 
 .pv-ub-table {
@@ -1824,8 +1869,13 @@
   display: inline;
 }
 
+.pv-ub-leads {
+  min-width: 0;
+}
+
 .pv-ub-leads .table-wrap {
   background: var(--paper);
+  -webkit-overflow-scrolling: touch;
 }
 
 .pv-ub-leads .pv-ub-caption {
@@ -2048,6 +2098,134 @@
   color: var(--ink-2);
 }
 
+/* Project Detail Page Structure & Tasks Helpers */
+.project-detail-page {
+  padding-top: 24px;
+  padding-bottom: 48px;
+}
+
+.project-detail-back {
+  margin-bottom: 14px;
+}
+
+.project-detail-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.project-detail-stack > * {
+  min-width: 0;
+}
+
+.project-detail-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.project-detail-title {
+  font-size: clamp(24px, 2.8vw, 34px);
+  line-height: 1.18;
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+
+.project-detail-desc {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ink-secondary);
+  max-width: 78ch;
+}
+
+.project-statutory-anchors {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.project-sources-table-wrap {
+  margin-top: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.project-source-url {
+  color: var(--ep-rti-fg);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.project-tasks-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+}
+
+.project-tasks-head .compute-title {
+  margin: 0;
+}
+
+.project-tasks-tokens {
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.project-task-picker-cmd {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.project-task-cell {
+  min-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.project-task-run {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.project-task-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-top: 3px;
+}
+
+.project-task-links a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.project-tasks-table-wrap {
+  margin-top: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.project-index-title {
+  overflow-wrap: anywhere;
+}
+
+.project-detail-scope li {
+  overflow-wrap: anywhere;
+}
+
 /* ============================================================================
    7. RESPONSIVE BREAKPOINTS (Zero horizontal overflow on tablet & mobile)
    ============================================================================ */
@@ -2070,12 +2248,12 @@
 
 @media (max-width: 960px) {
   .pv-progress-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 20px;
   }
 
   .pv-results-split {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .pv-matrix-summary {
@@ -2092,19 +2270,526 @@
   }
 
   .pv-matrix-dl {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  /* Mobile scroll hints for genuinely wide ledger tables */
+  .pv-scroll-hint {
+    display: block;
+  }
+
+  .project-sources-table-wrap,
+  .project-tasks-table-wrap {
+    margin-top: 0;
+  }
+
+  .project-detail-back .btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+
+  /* Projects Index & Leaderboard header alignment */
+  .leaderboard.project-dash {
+    padding-top: 24px;
+    padding-bottom: 36px;
+  }
+
+  .project-dash .lb-sub,
+  .project-leaderboard .lb-sub {
+    flex: 1 1 100%;
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+
+  .project-dash .lb-all,
+  .project-leaderboard .lb-all {
+    display: inline-flex;
+    align-items: center;
+    min-height: 40px;
+  }
+
+  /* Touch-friendly >=44px filter pills & tabs */
+  .project-pillar-filter {
+    padding: 10px 12px;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .project-pillar-filter .btn-xs,
+  .pv-w1-filters .btn-xs,
+  .pv-matrix-tabs .btn-xs,
+  .task-filter-bar .btn-xs {
+    min-height: 44px;
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .pv-legend-item {
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+
+  .pv-mosaic-block-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .pv-mosaic-blocks {
+    gap: 6px;
+  }
+
+  /* Task filter bar & search input */
+  .task-filter-bar {
+    padding: 12px;
+    gap: 8px;
+  }
+
+  .task-filter-bar .task-search {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+    margin-left: 0;
+    margin-top: 2px;
+  }
+
+  .task-more .btn,
+  .pv-list-more .btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  /* Union Budget clickable year links & guide links */
+  .pv-ub-years .pv-ub-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 4px 0;
+  }
+
+  .pv-ub-links .inline-link {
+    min-height: 44px;
+    padding: 6px 10px;
+    border-radius: var(--r-6);
+    border: 1px solid var(--rule);
+    background: var(--sunk);
+    text-decoration: none;
+    font-size: 13px;
   }
 }
 
 @media (max-width: 640px) {
-  .pv-matrix-overview,
-  .pv-sections-grid {
-    grid-template-columns: 1fr;
+  /* Hide tablet scroll hint on tables that transform into stacked broadsheet cards */
+  .pv-scroll-hint--tablet-only {
+    display: none;
+  }
+
+  .project-detail-page {
+    padding-top: 12px;
+    padding-bottom: 32px;
+  }
+
+  .project-detail-back {
+    margin-bottom: 8px;
+  }
+
+  .project-detail-back .btn {
+    padding: 6px 12px;
+  }
+
+  .project-detail-stack {
+    gap: 16px;
+  }
+
+  .project-detail-page .card-pad {
+    padding: 15px 14px;
+  }
+
+  .project-detail-header.card-pad {
+    padding: 14px;
+  }
+
+  .project-detail-tags {
+    gap: 5px 6px;
+    margin-bottom: 8px;
+  }
+
+  .project-detail-tags .tag-mono,
+  .project-detail-tags .badge {
+    font-size: 11.5px;
+    padding: 2px 7px;
+  }
+
+  .project-detail-title {
+    font-size: clamp(21px, 5.6vw, 25px);
+    line-height: 1.2;
+    margin-bottom: 6px;
+  }
+
+  .project-detail-desc {
+    font-size: 14.5px;
+    line-height: 1.52;
+  }
+
+  /* Resource links become clean touch-friendly chips on phone */
+  .project-resource-links {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .project-resource-links a {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 44px;
+    padding: 6px 12px;
+    border-radius: var(--r-6);
+    border: 1px solid var(--rule);
+    background: var(--sunk);
+    text-decoration: none;
+    font-size: 13px;
+    color: var(--ink-2);
+  }
+
+  /* Projects Index Cards */
+  .leaderboard.project-dash {
+    padding-top: 20px;
+    padding-bottom: 32px;
+  }
+
+  .project-dash .lb-head {
+    margin-bottom: 12px;
+    gap: 6px;
+  }
+
+  .project-dash .lb-sub-row {
+    gap: 4px 12px;
+  }
+
+  .project-dash .lb-head h1 {
+    font-size: clamp(25px, 6.8vw, 30px);
+    line-height: 1.12;
+  }
+
+  .project-index-list {
+    margin-top: 14px;
+    gap: 12px;
+  }
+
+  .project-index-card {
+    padding: 15px 14px;
+    gap: 11px;
+  }
+
+  .project-index-title {
+    font-size: 18px;
+    line-height: 1.26;
+  }
+
+  .project-index-actions {
+    width: 100%;
+  }
+
+  /* Full-width, touch-safe, safely-wrapping Join CTA on Missions pages */
+  .project-index-actions .join-cta,
+  .project-leaderboard .join-cta,
+  .project-task-picker .join-cta,
+  .project-task-run .join-cta {
+    width: 100%;
+    justify-content: space-between;
+    min-height: 44px;
+    padding: 8px 10px 8px 12px;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .project-index-actions .join-cta-label,
+  .project-leaderboard .join-cta-label,
+  .project-task-picker .join-cta-label,
+  .project-task-run .join-cta-label {
+    white-space: normal;
+    line-height: 1.25;
+    flex: 1 1 auto;
+  }
+
+  /* Compact Progress Bar */
+  .pv-compact-track {
+    height: 12px;
+  }
+
+  /* Donut & Mosaic */
+  .pv-donut-stage {
+    width: 184px;
+    height: 184px;
+    margin: 2px auto 12px;
+  }
+
+  .pv-donut-pct {
+    font-size: 28px;
+  }
+
+  .pv-mosaic-grid {
+    grid-template-columns: repeat(auto-fill, minmax(20px, 1fr));
+    gap: 5px;
+    padding: 10px;
+  }
+
+  .pv-tile {
+    min-height: 0;
+  }
+
+  .pv-mosaic-inspector {
+    padding: 10px 12px;
+  }
+
+  .pv-inspector-title {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+    line-height: 1.32;
+  }
+
+  /* Project Leaderboard on phones */
+  .container .leaderboard.project-leaderboard,
+  .leaderboard.project-leaderboard--compact {
+    padding: 15px 12px;
+  }
+
+  .leaderboard.project-leaderboard .seg.big {
+    display: flex;
+    width: 100%;
+  }
+
+  .leaderboard.project-leaderboard .seg.big .seg-btn {
+    flex: 1 1 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .leaderboard.project-leaderboard .lb-rows {
+    margin-top: 14px;
+  }
+
+  .leaderboard.project-leaderboard .lb-row:not(.yours):not(.lb-empty) {
+    grid-template-columns: 18px 34px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px;
+    align-items: center;
+  }
+
+  .leaderboard.project-leaderboard .lb-row.yours {
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px 10px;
+    padding: 12px 10px;
+  }
+
+  .leaderboard.project-leaderboard .lb-row.yours .join-cta {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .leaderboard.project-leaderboard .lb-row.lb-empty {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 10px;
+  }
+
+  .leaderboard.project-leaderboard .lb-row.lb-empty .lb-empty-spacer {
+    display: none;
+  }
+
+  .leaderboard.project-leaderboard .lb-handle {
+    font-size: 14.5px;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .leaderboard.project-leaderboard .lb-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 4px;
+    font-size: 12px;
+    line-height: 1.4;
+    overflow: visible;
+    text-overflow: unset;
+    white-space: normal;
+  }
+
+  .leaderboard.project-leaderboard .lb-meta-via {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 100%;
+  }
+
+  .leaderboard.project-leaderboard .lb-score-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .leaderboard.project-leaderboard .lb-score {
+    font-size: 19px;
+    line-height: 1.05;
+  }
+
+  .leaderboard.project-leaderboard .lb-score-lbl {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* Results Cards & Conformity Overview */
+  .pv-results {
+    gap: 14px;
+  }
+
+  .pv-results-title {
+    font-size: clamp(20px, 5.4vw, 24px);
+    line-height: 1.2;
+  }
+
+  .pv-summary-pills {
+    gap: 6px;
+  }
+
+  .pv-summary-pills > * {
+    max-width: 100%;
+  }
+
+  .pv-chart-card {
+    padding: 14px 12px;
+  }
+
+  .pv-chart-subhead {
+    gap: 6px 10px;
+    margin-bottom: 12px;
+  }
+
+  /* Stack 3-column bar charts (P1 divergence & W1 GIGW) into 2-row full-width bars */
+  .pv-div-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: 6px 10px;
+    padding: 10px 8px;
+    min-height: 44px;
+  }
+
+  .pv-div-label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .pv-div-entity {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    line-height: 1.3;
+  }
+
+  .pv-div-val {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .pv-div-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    height: 14px;
+  }
+
+  .pv-gigw-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    gap: 6px 10px;
+    padding: 8px 6px;
+  }
+
+  .pv-gigw-label {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .pv-gigw-val {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .pv-gigw-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    height: 22px;
+  }
+
+  /* Keep 2x2 glanceable KPI overview grid on phones */
+  .pv-matrix-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .pv-overview-tile {
+    padding: 11px 11px;
+    gap: 3px;
+  }
+
+  .pv-overview-kicker {
+    font-size: 11.5px;
+    line-height: 1.3;
+    overflow-wrap: break-word;
+  }
+
+  .pv-overview-num {
+    font-size: 24px;
+  }
+
+  .pv-overview-sub {
+    font-size: 11.5px;
+    line-height: 1.32;
+    overflow-wrap: break-word;
+  }
+
+  .pv-section-foot {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  /* Group coverage header wraps safely */
+  .pv-group-head {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+
+  .pv-group-label {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* Conformity Matrix Explorer controls */
+  .pv-matrix-toolbar {
+    padding: 12px;
   }
 
   .pv-matrix-controls {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
   }
 
   .pv-matrix-search-wrap,
@@ -2113,52 +2798,495 @@
     flex: 1 1 auto;
   }
 
-  .container .leaderboard.project-leaderboard,
-  .leaderboard.project-leaderboard--compact {
-    padding: 16px 14px;
+  .pv-matrix-search,
+  .pv-matrix-select,
+  .pv-matrix-controls .btn {
+    min-height: 44px;
+    font-size: 15px;
   }
 
-  .pv-div-row {
-    grid-template-columns: minmax(90px, 118px) minmax(0, 1fr) minmax(58px, 72px);
-    gap: 8px;
-    padding: 6px 4px;
+  .pv-matrix-summary {
+    padding: 12px;
+    min-height: 44px;
   }
 
-  .pv-gigw-row {
-    grid-template-columns: minmax(86px, 108px) minmax(0, 1fr) minmax(68px, 82px);
-    gap: 8px;
-    padding: 6px 4px;
+  .pv-matrix-id {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
+  .pv-matrix-detail {
+    padding: 12px;
+  }
+
+  .pv-matrix-json-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+  }
+
+  /* GIGW legend & Access-Limitation reason pills */
   .pv-gigw-legend-hint {
     margin-left: 0;
     flex-basis: 100%;
   }
 
+  .pv-reasons-bar {
+    position: relative;
+  }
+
+  .pv-reason-pill {
+    position: static;
+    min-height: 40px;
+    padding: 6px 12px;
+  }
+
+  /* Union Budget Year-by-Year: zero-overflow stacked broadsheet ledger rows */
+  .pv-ub-years-wrap {
+    overflow-x: visible;
+  }
+
+  .pv-ub-years,
+  .pv-ub-years tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .pv-ub-years caption {
+    display: block;
+    width: 100%;
+    padding: 0 0 10px;
+  }
+
+  .pv-ub-years thead {
+    display: none;
+  }
+
+  .pv-ub-years tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .pv-ub-years tbody tr:last-child {
+    border-bottom: none;
+    padding-bottom: 2px;
+  }
+
   .pv-ub-years th,
   .pv-ub-years td {
-    padding: 6px 4px;
+    display: block;
+    padding: 0;
+    border-bottom: none;
+    width: auto;
+    min-width: 0;
+  }
+
+  .pv-ub-years th.pv-ub-year {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .pv-ub-years .pv-ub-link {
+    min-height: 36px;
+    padding: 2px 0;
+    font-size: 15px;
+  }
+
+  .pv-ub-note {
+    max-width: none;
+    white-space: normal;
+    margin-top: 2px;
+    line-height: 1.38;
+  }
+
+  .pv-ub-years td:nth-child(2),
+  .pv-ub-years .pv-ub-years-checked {
+    grid-column: 1 / -1;
+    width: auto;
+    min-width: 0;
+  }
+
+  .pv-ub-years .pv-ub-bar {
+    margin-top: 2px;
+  }
+
+  .pv-ub-years .pv-ub-years-lines,
+  .pv-ub-years .pv-ub-years-below {
+    white-space: normal;
+    padding-top: 4px;
+  }
+
+  .pv-ub-years .pv-ub-years-lines {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .pv-ub-years .pv-ub-years-below {
+    grid-column: 2;
+    text-align: right;
+  }
+
+  .pv-ub-years .pv-ub-years-lines::before,
+  .pv-ub-years .pv-ub-years-below::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-4);
+    margin-bottom: 2px;
   }
 
   .pv-ub-mini-track {
     display: none;
   }
 
-  .pv-mosaic-grid {
-    grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
-    gap: 4px;
-    padding: 9px;
+  /* Union Budget Largest Shortfalls: stacked broadsheet ledger cards on phone */
+  .pv-ub-leads .pv-ub-leads-wrap {
+    overflow-x: visible;
+    border: none;
+    background: transparent;
   }
 
-  .pv-tooltip--compact {
+  .pv-ub-leads-table,
+  .pv-ub-leads-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .pv-ub-leads .pv-ub-caption {
+    display: block;
+    padding: 0 0 10px;
+  }
+
+  .pv-ub-leads-table thead {
+    display: none;
+  }
+
+  .pv-ub-leads-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .pv-ub-leads-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px 12px;
+    padding: 13px 12px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-8);
+    background: var(--raised);
+  }
+
+  .pv-ub-leads .ledger-table th,
+  .pv-ub-leads .ledger-table td {
+    display: block;
+    padding: 0;
+    border: none;
+    min-width: 0;
     white-space: normal;
-    max-width: min(260px, 82vw);
   }
 
+  .pv-ub-leads .pv-ub-line {
+    grid-column: 1 / -1;
+    min-width: 0;
+    max-width: none;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+
+  .pv-ub-leads .pv-ub-line .pv-ub-link {
+    display: inline-block;
+    padding: 2px 0;
+    line-height: 1.35;
+  }
+
+  .pv-ub-leads .pv-ub-lead-year {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .pv-ub-leads .pv-ub-lead-status {
+    grid-column: 2;
+    justify-self: end;
+    align-self: center;
+  }
+
+  .pv-ub-leads .pv-ub-lead-be,
+  .pv-ub-leads .pv-ub-lead-actual {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .pv-ub-leads .pv-ub-lead-re,
+  .pv-ub-leads .pv-ub-lead-below {
+    grid-column: 2;
+    text-align: right;
+  }
+
+  .pv-ub-leads td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-4);
+    margin-bottom: 2px;
+  }
+
+  /* Disclosures */
+  .project-disclosure summary {
+    padding: 13px 14px;
+    min-height: 48px;
+    font-size: 14.5px;
+  }
+
+  .project-disclosure-body {
+    padding: 12px 14px 14px;
+  }
+
+  /* Task Picker Bar: clean stacked full-width controls on phone */
+  .project-task-picker {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .project-task-picker-label {
+    white-space: normal;
+    flex-basis: 100%;
+  }
+
+  .project-task-picker-filter,
+  .project-task-picker-select {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+
+  .project-task-picker-cmd {
+    padding: 8px 10px;
+    border-radius: var(--r-4);
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+
+  /* Tasks Table -> Clean Stacked Broadsheet Cards on Phone (zero horizontal hunting!) */
+  .project-tasks-table-wrap {
+    margin-top: 12px;
+    overflow-x: visible;
+    border: none;
+    background: transparent;
+  }
+
+  .project-tasks-table,
+  .project-tasks-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .project-tasks-table thead {
+    display: none;
+  }
+
+  .project-tasks-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .project-tasks-table tbody tr.project-task-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px 10px;
+    padding: 13px 12px;
+    border: 1px solid var(--rule);
+    border-radius: var(--r-8);
+    background: var(--raised);
+  }
+
+  .project-tasks-table tbody tr.project-task-empty-row {
+    display: block;
+    padding: 16px 12px;
+    border: 1px dashed var(--rule-strong);
+    border-radius: var(--r-8);
+    background: var(--raised);
+    text-align: center;
+  }
+
+  .project-tasks-table td {
+    display: block;
+    padding: 0;
+    border-bottom: none;
+    min-width: 0;
+  }
+
+  .project-tasks-table .project-task-cell {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .project-task-title {
+    font-size: 14.5px;
+    font-weight: 500;
+    line-height: 1.38;
+    color: var(--ink);
+  }
+
+  .project-tasks-table .project-task-type {
+    grid-column: 1;
+    align-self: center;
+  }
+
+  .project-tasks-table .project-task-status {
+    grid-column: 2;
+    justify-self: end;
+    align-self: center;
+  }
+
+  .project-tasks-table .project-task-compute {
+    grid-column: 1;
+    font-size: 13px;
+    padding-top: 2px;
+  }
+
+  .project-tasks-table .project-task-agent {
+    grid-column: 2;
+    text-align: right;
+    font-size: 13px;
+    padding-top: 2px;
+    overflow-wrap: anywhere;
+  }
+
+  .project-tasks-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink-4);
+    margin-bottom: 2px;
+  }
+
+  .project-tasks-table .project-task-run {
+    grid-column: 1 / -1;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .project-tasks-table .project-task-run--action {
+    padding-top: 8px;
+    border-top: 1px solid var(--rule-soft);
+  }
+
+  .project-tasks-table .project-task-run--static {
+    display: none;
+  }
+
+  .project-task-links a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+  }
+
+  /* Viewport-safe tooltips on phone: never overflow left/right */
+  .pv-tooltip--compact,
   .pv-tooltip--donut,
-  .pv-tooltip--bar {
+  .pv-tooltip--bar,
+  .pv-tooltip--pill,
+  .pv-tooltip--mosaic {
     left: 0;
+    right: 0;
     transform: none;
-    max-width: min(280px, 84vw);
+    width: auto;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  .pv-tooltip--donut {
+    top: -6px;
+    transform: translateY(-100%);
+  }
+
+  /* Pagination */
+  .task-pagination-bar {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .task-pagination-bar .btn {
+    min-height: 44px;
+    padding: 10px 14px;
+  }
+}
+
+@media (max-width: 560px) {
+  .pv-sections-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pv-list-more .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .container .leaderboard.project-leaderboard,
+  .leaderboard.project-leaderboard--compact {
+    padding: 14px 12px;
+  }
+
+  .leaderboard.project-leaderboard .lb-row:not(.yours):not(.lb-empty) {
+    grid-template-columns: 18px 32px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .leaderboard.project-leaderboard .lb-row .lsv-avatar {
+    width: 32px !important;
+    height: 32px !important;
+  }
+
+  .leaderboard.project-leaderboard .lb-row .lsv-avatar-identicon,
+  .leaderboard.project-leaderboard .lb-row .lsv-avatar-img {
+    width: 100%;
+    height: 100%;
+  }
+
+  .task-pagination-status {
+    order: -1;
+    flex-basis: 100%;
+    text-align: center;
+  }
+
+  .task-pagination-bar .btn {
+    flex: 1 1 0;
+  }
+
+  .task-pagination-bar .btn-ghost {
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .pv-overview-tile {
+    padding: 10px 9px;
+  }
+
+  .pv-overview-num {
+    font-size: 22px;
+  }
+
+  .leaderboard.project-leaderboard .lb-row:not(.yours):not(.lb-empty) {
+    gap: 7px;
+    padding: 9px 8px;
   }
 }
