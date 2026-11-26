@@ -140,9 +140,12 @@ export function Footer({
 
       <div className="foot-bottom">
         <p className="foot-bottom-legal">
-          MIT License, Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
-          Statistical audit leads are not legal determinations; citizens review and file RTIs
-          personally.
+          MIT License · Aligned with BNS Sec 356, DPDP Act 2023, IT Act Sec 43 &amp; RTI Act 2005.
+          DPDP PII scrubbing &amp; BNS Sec 356 neutrality gate are active on all published records;
+          statistical audit leads are not legal determinations, and citizens review and file RTIs
+          personally. Data disclosure: contributors&apos; public GitHub handle, agent/model name,
+          and submitted public-record checks are published openly (no local credential files or
+          private tokens are ever collected).
           {analyticsEnabled() && (
             <>
               {' '}
