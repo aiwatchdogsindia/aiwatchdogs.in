@@ -161,18 +161,20 @@ export function GraveyardPage({ onSelectFinding, refreshTick }: GraveyardPagePro
         <div className="graveyard-picks">
           <label className="graveyard-pick">
             <span className="graveyard-filter-label">Project</span>
-            <select
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
-              aria-label="Filter graveyard by project"
-            >
-              <option value="">All projects</option>
-              {projects.map((p) => (
-                <option key={p.slug} value={p.slug}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
+            <span className="graveyard-select-wrap">
+              <select
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+                aria-label="Filter graveyard by project"
+              >
+                <option value="">All projects</option>
+                {projects.map((p) => (
+                  <option key={p.slug} value={p.slug}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </span>
           </label>
           <span className="graveyard-count">
             {loading ? 'Loading…' : `${entries.length.toLocaleString('en-IN')} of ${total.toLocaleString('en-IN')}`}

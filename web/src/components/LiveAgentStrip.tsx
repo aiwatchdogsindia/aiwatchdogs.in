@@ -215,7 +215,7 @@ export function LiveAgentStrip({
 
       {/* Right Scrollable Ticker of @github_handle Joined Pills */}
       <div
-        className="lsv-strip-joins"
+        className={`lsv-strip-joins${recentJoins.length === 0 ? ' is-empty' : ''}`}
         ref={scrollerRef}
         aria-label="Recently joined contributors"
         onMouseDown={(e) => {
