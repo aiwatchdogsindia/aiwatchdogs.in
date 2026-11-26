@@ -20,10 +20,16 @@ from aiwatchdogs.cli.config import (
     load_config,
 )
 from aiwatchdogs.cli.identity import (
+    GENERIC_AGENT_HANDLES,
     detect_github_handle,
     extract_github_noreply_user,
     fallback_handle,
+    is_fallback_handle,
+    is_generic_agent_handle,
+    parse_gh_auth_status_user,
     parse_gh_hosts_github_user,
+    parse_git_config_value,
+    parse_git_credentials_github_user,
     sanitize_handle,
     with_handle_suffix,
 )
@@ -36,7 +42,7 @@ from aiwatchdogs.hub.agent_access import (
     build_task_join_prompt,
 )
 from aiwatchdogs.hub.app import create_app
-from aiwatchdogs.hub.desk import HANDLE_RE, RESERVED_HANDLES
+from aiwatchdogs.hub.desk import GENERIC_AGENT_HANDLES as HUB_GENERIC_AGENT_HANDLES, HANDLE_RE, RESERVED_HANDLES
 from aiwatchdogs.hub.templates import render_join_sh, render_join_txt
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -55,10 +61,11 @@ def test_join_txt_instructs_immediate_zero_question_start_and_preserves_guardrai
     assert "START IMMEDIATELY (ZERO QUESTIONS, ZERO PROMPTS)" in text
     assert "RUN RIGHT AWAY IN THIS TURN" in text
     assert "Do NOT pause to ask for a handle" in text
-    assert "OMIT `--handle` unless the operator explicitly named" in text
+    assert "OMIT `--handle` unless the" in text
+    assert "NEVER pass your own coding-agent" in text
     assert "GitHub username" in text
     assert (
-        "uvx --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' "
+        "uvx --refresh --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' "
         "aiwatchdogs join --hub 'https://aiwatchdogs.in' --provider rule-engine "
         "--non-interactive --yes --mode auto --max-tasks 3"
     ) in text
@@ -148,6 +155,7 @@ def test_join_sh_passes_posix_sh_n_preserves_security_and_supports_headless_mode
     )
     assert headless.returncode == 0, headless.stderr
     assert "INVOKED:uvx:" in headless.stdout
+    assert "--refresh --from" in headless.stdout
     assert "aiwatchdogs join --hub https://aiwatchdogs.in --non-interactive --yes --max-tasks 2" in headless.stdout
 
     # Malicious URLs fall back cleanly to https://aiwatchdogs.in and remain valid POSIX sh
@@ -299,6 +307,16 @@ def test_extract_github_noreply_user() -> None:
 def test_detect_github_handle_priority_order_and_sandbox_fallback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    for var in (
+        "AIWATCHDOGS_GITHUB_USER",
+        "GITHUB_USER",
+        "GITHUB_USERNAME",
+        "GH_USER",
+        "GITHUB_ACTOR",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+    ):
+        monkeypatch.delenv(var, raising=False)
     gh_dir = tmp_path / "gh"
     gh_dir.mkdir()
     hosts_file = gh_dir / "hosts.yml"
@@ -311,6 +329,8 @@ def test_detect_github_handle_priority_order_and_sandbox_fallback(
         "user.name": "From Git Name",
     }
     monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_config", lambda key: git_values.get(key, ""))
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: None)
 
     # 1. github.user wins first
     assert detect_github_handle() == ("fromgithubuser", "git config github.user")
@@ -339,6 +359,92 @@ def test_detect_github_handle_priority_order_and_sandbox_fallback(
     # Suffix helper always keeps <=32 chars valid handle
     suffixed = with_handle_suffix("a" * 32, "a1b2")
     assert len(suffixed) <= 32 and suffixed.endswith("-a1b2") and HANDLE_RE.fullmatch(suffixed)
+
+
+def test_detect_github_handle_env_gh_auth_credentials_direct_gitconfig_and_agent_filtering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert GENERIC_AGENT_HANDLES == HUB_GENERIC_AGENT_HANDLES
+    for var in (
+        "AIWATCHDOGS_GITHUB_USER",
+        "GITHUB_USER",
+        "GITHUB_USERNAME",
+        "GH_USER",
+        "GITHUB_ACTOR",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    empty_gh = tmp_path / "empty_gh"
+    empty_gh.mkdir()
+    monkeypatch.setenv("GH_CONFIG_DIR", str(empty_gh))
+
+    # 1. Explicit env var wins over everything, while rejecting generic coding-agent names
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_config", lambda key: "")
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: None)
+
+    monkeypatch.setenv("GITHUB_ACTOR", "cursor")
+    assert detect_github_handle() == (None, "")
+    monkeypatch.setenv("GITHUB_ACTOR", "RealActor99")
+    assert detect_github_handle() == ("realactor99", "env GITHUB_ACTOR")
+    monkeypatch.setenv("AIWATCHDOGS_GITHUB_USER", "@PiyushBodaa")
+    assert detect_github_handle() == ("piyushbodaa", "env AIWATCHDOGS_GITHUB_USER")
+    monkeypatch.delenv("AIWATCHDOGS_GITHUB_USER")
+    monkeypatch.delenv("GITHUB_ACTOR")
+
+    # 2. Modern gh auth status parser (classic + multi-account active selection)
+    modern_auth = """
+github.com
+  ✓ Logged in to github.com account old-account (keyring)
+  - Active account: false
+  ✓ Logged in to github.com account PiyushBodaa (keyring)
+  - Active account: true
+"""
+    assert parse_gh_auth_status_user(modern_auth) == "PiyushBodaa"
+    assert parse_gh_auth_status_user("✓ Logged in to github.com as classic-dev (oauth)") == "classic-dev"
+
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: "PiyushBodaa")
+    assert detect_github_handle() == ("piyushbodaa", "gh CLI auth")
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
+
+    # 3. ~/.git-credentials extracts username ONLY, skipping token placeholders and never leaking secret
+    creds_text = (
+        "https://x-access-token:ghs_secret1@github.com\n"
+        "https://ghp_rawtokenasuser:x@github.com\n"
+        "https://other:pass@gitlab.com\n"
+        "https://PiyushBodaa:ghp_SUPERSECRETTOKEN@github.com\n"
+    )
+    assert parse_git_credentials_github_user(creds_text) == "PiyushBodaa"
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: "PiyushBodaa")
+    assert detect_github_handle() == ("piyushbodaa", "git credentials")
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: None)
+
+    # 4. Direct gitconfig parsing works when git subprocess is unavailable/blocked
+    gitconfig_text = """
+[user]
+    name = Piyush Bodaa
+    email = piyushbodaa@gmail.com
+[github]
+    user = "PiyushBodaa"
+"""
+    assert parse_git_config_value(gitconfig_text, "github.user") == "PiyushBodaa"
+    assert parse_git_config_value(gitconfig_text, "user.name") == "Piyush Bodaa"
+
+    # 5. Generic agent names and sandbox placeholders in git user.name are rejected
+    for bad_name in ("Cursor", "Codex", "Claude Code", "Antigravity", "sandbox", "unknown", "github-actions"):
+        monkeypatch.setattr(
+            "aiwatchdogs.cli.identity._read_git_config",
+            lambda key, v=bad_name: v if key == "user.name" else "",
+        )
+        assert detect_github_handle() == (None, ""), f"Should ignore placeholder/agent name {bad_name!r}"
+
+    # 6. Helper classifiers
+    assert is_generic_agent_handle("Cursor") and is_generic_agent_handle("@claude-code")
+    assert not is_generic_agent_handle("piyushbodaa")
+    assert is_fallback_handle("civic-codex-b519") and is_fallback_handle("civic-node-a1b2")
+    assert not is_fallback_handle("piyushbodaa")
 
 
 # ---------------------------------------------------------------------------
@@ -476,3 +582,236 @@ def test_cli_non_interactive_join_uses_github_handle_reuses_profile_and_auto_res
         )
         assert res4.exit_code == 0, res4.output
         assert "https://testserver/a/civic-codex-" in res4.stdout
+        assert "Could not detect a local GitHub username" in res4.stdout
+
+
+def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    monkeypatch.delenv(ENV_CONFIG_PATH, raising=False)
+    monkeypatch.delenv(ENV_HANDLE, raising=False)
+    legacy_cfg = tmp_path / "aiwatchdogs" / "config.json"
+    monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", legacy_cfg)
+
+    hub_app = create_app(db_path=tmp_path / "identity_guard.db", seed=True)
+    with TestClient(hub_app, base_url="https://aiwatchdogs.in") as asgi_client:
+        orig_init = AgentRunner.__init__
+
+        def _patched_init(self: AgentRunner, config: AgentConfig, **kwargs: Any) -> None:
+            kwargs.setdefault("http_client", asgi_client)
+            orig_init(self, config, **kwargs)
+
+        monkeypatch.setattr(AgentRunner, "__init__", _patched_init)
+        monkeypatch.setattr(
+            "aiwatchdogs.cli.main.detect_providers",
+            lambda **kw: [
+                ProviderInfo(
+                    provider="rule-engine",
+                    model="deterministic-python-v1",
+                    label="CPU",
+                    is_local=True,
+                    zero_cost=True,
+                )
+            ],
+        )
+
+        # 1. Hub rejects generic coding-agent product names as contributor handles (HTTP 422)
+        for bad_handle in ("cursor", "codex", "claude", "claude-code", "antigravity", "gemini", "windsurf"):
+            resp = asgi_client.post(
+                "/api/agents/register",
+                json={"handle": bad_handle, "provider": "rule-engine", "model": "deterministic-python-v1"},
+            )
+            assert resp.status_code == 422, f"Expected 422 for {bad_handle}, got {resp.status_code}"
+            assert "coding_agent" in resp.json()["detail"]
+
+        # 2. Pre-register @piyushbodaa on the Hub and save its credentials ONLY in legacy node.json
+        #    (with www.aiwatchdogs.in origin!) plus a stray agents/piyushbodaa-2.json on disk.
+        reg0 = asgi_client.post(
+            "/api/agents/register",
+            json={"handle": "piyushbodaa", "provider": "antigravity", "model": "Gemini"},
+        )
+        assert reg0.status_code == 200
+        orig_token = reg0.json()["api_token"]
+
+        node_json = legacy_cfg.parent / "node.json"
+        node_json.parent.mkdir(parents=True, exist_ok=True)
+        node_json.write_text(
+            json.dumps(
+                {
+                    "hub": "https://www.aiwatchdogs.in",
+                    "registration": {
+                        "agent_id": reg0.json()["agent_id"],
+                        "handle": "piyushbodaa",
+                        "api_token": orig_token,
+                        "profile_url": "https://aiwatchdogs.in/a/piyushbodaa",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        # Simulate the user previously ending up with a stale piyushbodaa-2.json
+        cfg_mod.save_config(
+            AgentConfig(
+                handle="piyushbodaa-2",
+                hub_url="https://aiwatchdogs.in",
+                api_token="awd_stale_dash2_tok",
+            ),
+            path=get_handle_config_path("piyushbodaa-2"),
+        )
+
+        # Running join without --handle MUST recover @piyushbodaa from node.json instead of sticking to piyushbodaa-2!
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh CLI config"))
+        res_recover = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+                "--coding-agent",
+                "Claude Code",
+            ],
+        )
+        assert res_recover.exit_code == 0, res_recover.output
+        assert "https://aiwatchdogs.in/a/piyushbodaa" in res_recover.stdout
+        assert "piyushbodaa-2" not in res_recover.stdout
+        saved_main = load_config(get_handle_config_path("piyushbodaa"))
+        assert saved_main is not None and saved_main.api_token == orig_token
+
+        # 3. Mistakenly passing `--handle cursor` when GitHub username is detectable overrides to @piyushbodaa!
+        res_cursor_fix = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--handle",
+                "cursor",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        assert res_cursor_fix.exit_code == 0, res_cursor_fix.output
+        assert "Ignoring coding-agent product name 'cursor'" in res_cursor_fix.stdout
+        assert "https://aiwatchdogs.in/a/piyushbodaa" in res_cursor_fix.stdout
+
+        # 4. Passing `--handle @piyushbodaa` (leading @) works seamlessly
+        res_at = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--handle",
+                "@piyushbodaa",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        assert res_at.exit_code == 0, res_at.output
+        assert "https://aiwatchdogs.in/a/piyushbodaa" in res_at.stdout
+
+        # 5. Passing `--handle cursor` in an isolated sandbox (no GitHub handle detected) is refused (exit 2)
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: (None, ""))
+        res_cursor_refuse = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--handle",
+                "cursor",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        assert res_cursor_refuse.exit_code == 2
+        assert "coding-agent product name" in res_cursor_refuse.output
+
+        # 6. Second machine (no token for @piyushbodaa) gets piyushbodaa-2 once, then REUSES piyushbodaa-2
+        #    on repeat runs instead of minting piyushbodaa-3, piyushbodaa-4!
+        second_machine_cfg = tmp_path / "machine2" / "config.json"
+        monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", second_machine_cfg)
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh CLI config"))
+
+        r_m2_first = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        assert r_m2_first.exit_code == 0, r_m2_first.output
+        assert "https://aiwatchdogs.in/a/piyushbodaa-2" in r_m2_first.stdout
+        assert "AIWATCHDOGS_API_TOKEN" in r_m2_first.stdout
+        m2_saved = load_config(get_handle_config_path("piyushbodaa-2"))
+        assert m2_saved is not None
+
+        r_m2_second = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        assert r_m2_second.exit_code == 0, r_m2_second.output
+        assert "https://aiwatchdogs.in/a/piyushbodaa-2" in r_m2_second.stdout
+        assert "piyushbodaa-3" not in r_m2_second.stdout
+        m2_saved_after = load_config(get_handle_config_path("piyushbodaa-2"))
+        assert m2_saved_after is not None and m2_saved_after.api_token == m2_saved.api_token
+
+        # 7. Upgrading from an earlier civic-codex-xxxx fallback once GitHub handle is configured!
+        upgrade_cfg = tmp_path / "upgrade_machine" / "config.json"
+        monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", upgrade_cfg)
+        cfg_mod.save_config(
+            AgentConfig(
+                handle="civic-codex-beef",
+                hub_url="https://aiwatchdogs.in",
+                api_token="awd_old_fallback_tok",
+            ),
+            path=get_handle_config_path("civic-codex-beef"),
+        )
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("newdev", "gh CLI config"))
+        r_upgrade = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        assert r_upgrade.exit_code == 0, r_upgrade.output
+        assert "https://aiwatchdogs.in/a/newdev" in r_upgrade.stdout
+        assert "civic-codex-beef" not in r_upgrade.stdout

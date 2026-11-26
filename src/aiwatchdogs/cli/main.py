@@ -25,6 +25,7 @@ from aiwatchdogs.cli.config import (
     AgentConfig,
     AmbiguousConfigError,
     explicit_config_path,
+    find_saved_config_for_prefix,
     get_config_path,
     get_spend_ledger_path,
     load_config,
@@ -38,6 +39,8 @@ from aiwatchdogs.cli.config import (
 from aiwatchdogs.cli.identity import (
     detect_github_handle,
     fallback_handle,
+    is_fallback_handle,
+    is_generic_agent_handle,
     with_handle_suffix,
 )
 from aiwatchdogs.cli.providers import (
@@ -377,14 +380,23 @@ def _register_with_collision_fallback(
     hub_clean: str,
     allow_auto_suffix: bool,
 ) -> tuple[dict[str, Any], Path]:
-    """Register with the Hub, automatically retrying with a short suffix on HTTP 409 when auto-picked."""
+    """Register with the Hub, reusing saved suffixed creds or retrying with a short suffix on HTTP 409."""
     base_handle = cfg.handle
     suffix_candidates = ["2", "3", secrets.token_hex(2), secrets.token_hex(2), secrets.token_hex(2)]
     attempt = 0
+    tried_saved_prefix = False
     while True:
         try:
             reg = runner.register(save=True)
             saved_path = Path(runner.config_path) if runner.config_path is not None else _resolve_config_path(cfg.handle)
+            if cfg.handle != base_handle:
+                console.print(
+                    f"[yellow]Note:[/yellow] Registered as [bold]@{_safe_rich(cfg.handle)}[/bold] because "
+                    f"[bold]@{_safe_rich(base_handle)}[/bold] is already registered on this Hub without a local token here. "
+                    f"To credit future runs directly to @{_safe_rich(base_handle)}, copy "
+                    f"~/.config/aiwatchdogs/agents/{_safe_rich(base_handle)}.json from your original machine "
+                    "or export AIWATCHDOGS_API_TOKEN."
+                )
             return reg, saved_path
         except httpx.HTTPStatusError as exc:
             if (
@@ -394,12 +406,21 @@ def _register_with_collision_fallback(
             ):
                 raise
             prev_handle = cfg.handle
-            candidate = with_handle_suffix(base_handle, suffix_candidates[attempt])
-            attempt += 1
-            if candidate == prev_handle:
-                continue
-            cand_existing, _ = _safe_load_existing_config(candidate)
-            cand_token = resolve_reusable_token(cand_existing, hub_url=hub_clean, handle=candidate)
+            candidate: str | None = None
+            cand_token = ""
+            if not tried_saved_prefix and explicit_config_path() is None:
+                tried_saved_prefix = True
+                saved_pref = find_saved_config_for_prefix(base_handle, hub_url=hub_clean)
+                if saved_pref is not None and saved_pref.handle and saved_pref.handle != prev_handle:
+                    candidate = saved_pref.handle.strip().lstrip("@").lower()
+                    cand_token = resolve_reusable_token(saved_pref, hub_url=hub_clean, handle=candidate)
+            if not candidate:
+                candidate = with_handle_suffix(base_handle, suffix_candidates[attempt])
+                attempt += 1
+                if candidate == prev_handle:
+                    continue
+                cand_existing, _ = _safe_load_existing_config(candidate)
+                cand_token = resolve_reusable_token(cand_existing, hub_url=hub_clean, handle=candidate)
             cfg.handle = candidate
             cfg.api_token = cand_token
             if explicit_config_path() is None:
@@ -496,23 +517,54 @@ def join(
 
     _render_consent_notice(hub_clean)
 
-    explicit_handle = (handle or "").strip().lower() or None
+    explicit_handle = (handle or "").strip().lstrip("@").lower() or None
     handle_was_explicit = explicit_handle is not None
+    inferred_coding_agent = ""
     effective_coding_agent = normalize_coding_agent(coding_agent) or detect_coding_agent()
+
+    if explicit_handle is not None and is_generic_agent_handle(explicit_handle):
+        detected_gh, gh_source = detect_github_handle()
+        if detected_gh:
+            inferred_coding_agent = normalize_coding_agent(explicit_handle)
+            if not effective_coding_agent and inferred_coding_agent:
+                effective_coding_agent = inferred_coding_agent
+            console.print(
+                f"[yellow]Ignoring coding-agent product name '{_safe_rich(explicit_handle)}' as --handle; "
+                f"using your GitHub username '{_safe_rich(detected_gh)}' ({_safe_rich(gh_source)}) instead.[/yellow]"
+            )
+            explicit_handle = None
+            handle_was_explicit = False
+        else:
+            err_console.print(
+                f"[red]Refusing coding-agent product name '{_safe_rich(explicit_handle)}' as --handle.[/red]\n"
+                "Pass the human operator's GitHub username via --handle <github-username> "
+                "(or omit --handle to auto-detect it), and put the tool name in --coding-agent."
+            )
+            raise typer.Exit(code=2)
 
     existing: AgentConfig | None = None
     had_existing_file = False
     handle_source = ""
+    suggested_handle = ""
 
     if explicit_handle is not None:
         existing, had_existing_file = _safe_load_existing_config(explicit_handle)
         suggested_handle = explicit_handle
         handle_source = "explicit --handle"
     else:
-        # 1. Reuse a single existing saved local profile for THIS hub when it has a valid token.
+        # 1. If the operator pinned AIWATCHDOGS_CONFIG_PATH and it holds a valid token for this hub, reuse it.
         saved_candidate: AgentConfig | None = None
         if explicit_config_path() is not None:
             saved_candidate, had_existing_file = _safe_load_existing_config(None)
+            if (
+                saved_candidate is not None
+                and saved_candidate.handle
+                and not is_generic_agent_handle(saved_candidate.handle)
+                and resolve_reusable_token(saved_candidate, hub_url=hub_clean, handle=saved_candidate.handle)
+            ):
+                existing = saved_candidate
+                suggested_handle = saved_candidate.handle.strip().lstrip("@").lower()
+                handle_source = "saved local profile"
         else:
             try:
                 _only_path = get_config_path()
@@ -521,26 +573,55 @@ def join(
             except ValueError:
                 saved_candidate = None
 
-        if (
-            saved_candidate is not None
-            and saved_candidate.handle
-            and resolve_reusable_token(saved_candidate, hub_url=hub_clean, handle=saved_candidate.handle)
-        ):
-            existing = saved_candidate
-            suggested_handle = saved_candidate.handle.strip().lower()
-            handle_source = "saved local profile"
-        else:
-            # 2. Local zero-prompt GitHub username detection (git/gh config; never repo remotes).
+        if not handle_source:
+            # 2. Local GitHub username detection FIRST so users never stay stuck on a fallback/suffixed
+            #    handle when their real GitHub username (and any saved token in agents/, config.json,
+            #    or legacy node.json) is available on this machine.
             detected_gh, gh_source = detect_github_handle()
             if detected_gh:
-                suggested_handle = detected_gh
-                handle_source = gh_source
+                gh_existing: AgentConfig | None = None
+                gh_had_file = False
                 if explicit_config_path() is None:
-                    existing, had_existing_file = _safe_load_existing_config(detected_gh)
-                elif saved_candidate is not None and saved_candidate.handle.strip().lower() == detected_gh:
+                    gh_existing, gh_had_file = _safe_load_existing_config(detected_gh)
+                elif saved_candidate is not None and saved_candidate.handle.strip().lstrip("@").lower() == detected_gh:
+                    gh_existing = saved_candidate
+                    gh_had_file = had_existing_file
+
+                saved_norm = saved_candidate.handle.strip().lstrip("@").lower() if saved_candidate and saved_candidate.handle else ""
+                if gh_existing is not None and resolve_reusable_token(
+                    gh_existing, hub_url=hub_clean, handle=detected_gh
+                ):
+                    existing = gh_existing
+                    had_existing_file = gh_had_file
+                    suggested_handle = detected_gh
+                    handle_source = f"{gh_source} (saved credentials)"
+                elif (
+                    saved_candidate is not None
+                    and saved_norm
+                    and not is_fallback_handle(saved_norm)
+                    and not is_generic_agent_handle(saved_norm)
+                    and not saved_norm.startswith(f"{detected_gh}-")
+                    and resolve_reusable_token(saved_candidate, hub_url=hub_clean, handle=saved_norm)
+                ):
                     existing = saved_candidate
+                    suggested_handle = saved_norm
+                    handle_source = "saved local profile"
+                else:
+                    existing = gh_existing
+                    had_existing_file = gh_had_file
+                    suggested_handle = detected_gh
+                    handle_source = gh_source
+            elif (
+                saved_candidate is not None
+                and saved_candidate.handle
+                and not is_generic_agent_handle(saved_candidate.handle)
+                and resolve_reusable_token(saved_candidate, hub_url=hub_clean, handle=saved_candidate.handle)
+            ):
+                existing = saved_candidate
+                suggested_handle = saved_candidate.handle.strip().lstrip("@").lower()
+                handle_source = "saved local profile"
             else:
-                # 3. Clean sandbox fallback (e.g. Codex/cloud container with no local git/gh config).
+                # 3. Clean sandbox fallback (e.g. cloud container with no local git/gh config).
                 suggested_handle = fallback_handle(effective_coding_agent)
                 handle_source = "auto-generated fallback"
 
@@ -633,7 +714,7 @@ def join(
         selected_prov = selected_prov.model_copy(update={"model": model})
 
     # Each handle has its own credential file, so joining never overwrites another agent's token.
-    chosen_handle = chosen_handle.strip().lower()
+    chosen_handle = chosen_handle.strip().lstrip("@").lower()
     existing, had_existing_file = _safe_load_existing_config(chosen_handle)
 
     # Reuse stored token ONLY when both normalized hub origin AND handle match!
@@ -641,7 +722,19 @@ def join(
 
     if handle_source:
         console.print(f"[dim]Public handle:[/dim] [bold]{_safe_rich(chosen_handle)}[/bold] [dim]({_safe_rich(handle_source)})[/dim]")
+        if handle_source == "auto-generated fallback":
+            console.print(
+                "[yellow]Note:[/yellow] Could not detect a local GitHub username in this environment. "
+                "To get credited under your real GitHub username, pass [bold]--handle <your-github-username>[/bold] "
+                "(or configure [bold]gh auth login[/bold] / [bold]git config --global github.user <username>[/bold])."
+            )
 
+    resolved_coding_agent = (
+        normalize_coding_agent(coding_agent)
+        or inferred_coding_agent
+        or detect_coding_agent()
+        or normalize_coding_agent(getattr(existing, "coding_agent", "") if existing else "")
+    )
     cfg = AgentConfig(
         handle=chosen_handle,
         hub_url=hub_clean,
@@ -653,7 +746,7 @@ def join(
         max_usd=max(0.0, chosen_max_usd),
         daily_max_usd=max(0.0, chosen_daily_max_usd) if chosen_daily_max_usd is not None else None,
         allow_paid_provider=chosen_allow_paid,
-        coding_agent=normalize_coding_agent(coding_agent) or normalize_coding_agent(getattr(existing, "coding_agent", "") if existing else "") or detect_coding_agent(),
+        coding_agent=resolved_coding_agent,
         coding_agent_model=normalize_coding_agent_model(coding_agent_model) or (normalize_coding_agent_model(getattr(existing, "coding_agent_model", "")) if existing else ""),
     )
 
@@ -795,8 +888,9 @@ def run(
     ),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
-    cfg_path = _resolve_config_path(handle)
-    saved, had_existing_file = _safe_load_existing_config(handle)
+    clean_handle = (handle or "").strip().lstrip("@").lower() or None
+    cfg_path = _resolve_config_path(clean_handle)
+    saved, had_existing_file = _safe_load_existing_config(clean_handle)
     identity_changed = False
 
     if saved is None:
@@ -807,8 +901,13 @@ def run(
             probe_local=False,
             allow_paid_provider=eff_allow_paid,
         )
+        run_coding_agent = normalize_coding_agent(coding_agent) or detect_coding_agent()
+        resolved_handle = clean_handle
+        if not resolved_handle:
+            detected_gh, _ = detect_github_handle()
+            resolved_handle = detected_gh or fallback_handle(run_coding_agent)
         cfg = AgentConfig(
-            handle=(handle or _default_handle()).strip().lower(),
+            handle=resolved_handle,
             hub_url=(hub or DEFAULT_HUB_URL).rstrip("/"),
             api_token="",
             provider=resolved_prov.provider,
@@ -822,7 +921,7 @@ def run(
         cfg_path = _resolve_config_path(cfg.handle)
     else:
         cfg = saved.model_copy()
-        target_handle = (handle or cfg.handle).strip().lower()
+        target_handle = (clean_handle or cfg.handle).strip().lstrip("@").lower()
         target_hub = (hub or cfg.hub_url).rstrip("/")
         if (
             target_handle != cfg.handle.strip().lower()
