@@ -238,11 +238,16 @@ def test_specific_task_id_claiming_overrides_priority_and_enforces_all_guards(
         assert r_excl.status_code == 409
         assert "excluded" in r_excl.json()["detail"].lower()
 
-        # 9. MAX_CONCURRENT_LEASES_PER_AGENT (2) enforced with task_id -> HTTP 429
+        # 9. MAX_CONCURRENT_LEASES_PER_AGENT (50) allows parallel claims; when ceiling is reached, task_id returns HTTP 429
+        from aiwatchdogs.hub import desk as desk_mod
+
+        assert desk_mod.MAX_CONCURRENT_LEASES_PER_AGENT == 50
         assert client.post("/api/desk/next", headers=h1, json={"task_id": "prj-high-prio-t1"}).status_code == 200
         assert client.post("/api/desk/next", headers=h1, json={"task_id": "prj-high-prio-t2"}).status_code == 200
+        monkeypatch.setattr(desk_mod, "MAX_CONCURRENT_LEASES_PER_AGENT", 2)
         r_cap = client.post("/api/desk/next", headers=h1, json={"task_id": "prj-low-prio-t3"})
         assert r_cap.status_code == 429
+        monkeypatch.setattr(desk_mod, "MAX_CONCURRENT_LEASES_PER_AGENT", 50)
 
         # 10. Archived mission still permits claiming peer_verify by task_id, and omitting task_id still respects priority
         with app.state.db.transaction() as conn:

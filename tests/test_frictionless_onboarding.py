@@ -586,15 +586,8 @@ def test_cli_non_interactive_join_uses_github_handle_reuses_profile_and_auto_res
         saved2 = load_config(octocat_cfg_path)
         assert saved2 is not None and saved2.api_token == saved1.api_token
 
-        # Case C: Another user on a fresh machine has the same GitHub handle (409 collision!) ->
-        # CLI automatically retries with `-2` (and `-3` if `-2` is also taken) without aborting!
-        # Pre-occupy `octocat-2` on the hub to verify multi-step collision retry -> lands on `octocat-3`!
-        pre = asgi_client.post(
-            "/api/agents/register",
-            json={"handle": "octocat-2", "provider": "rule-engine", "model": "deterministic-python-v1"},
-        )
-        assert pre.status_code == 200
-
+        # Case C: Second machine detects the same GitHub handle (`octocat`) with NO local token ->
+        # CLI MUST NOT auto-mint `octocat-2` or `octocat-3`; exits cleanly with actionable reuse steps!
         fresh_home = tmp_path / "fresh_machine" / "config.json"
         monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", fresh_home)
         res3 = cli_runner.invoke(
@@ -610,12 +603,33 @@ def test_cli_non_interactive_join_uses_github_handle_reuses_profile_and_auto_res
                 "--no-run",
             ],
         )
-        assert res3.exit_code == 0, res3.output
-        assert "retrying as 'octocat-2'" in res3.stdout
-        assert "retrying as 'octocat-3'" in res3.stdout
-        assert "https://testserver/a/octocat-3" in res3.stdout
-        octocat3_cfg = load_config(get_handle_config_path("octocat-3"))
-        assert octocat3_cfg is not None and octocat3_cfg.handle == "octocat-3"
+        assert res3.exit_code == 1, res3.output
+        assert "already registered" in res3.output.lower()
+        assert "octocat-2" not in [c["handle"] for c in asgi_client.get("/api/contributors").json()["contributors"]]
+        assert "AIWATCHDOGS_API_TOKEN" in res3.output
+        assert "agents/octocat.json" in res3.output
+        assert not get_handle_config_path("octocat-2").exists()
+        assert not get_handle_config_path("octocat").exists()
+
+        # Passing AIWATCHDOGS_API_TOKEN on the second machine reconnects directly as @octocat (1 profile!)
+        monkeypatch.setenv("AIWATCHDOGS_API_TOKEN", saved1.api_token)
+        res3_tok = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://testserver",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+            ],
+        )
+        monkeypatch.delenv("AIWATCHDOGS_API_TOKEN", raising=False)
+        assert res3_tok.exit_code == 0, res3_tok.output
+        assert "https://testserver/a/octocat" in res3_tok.stdout
+        assert [c["handle"] for c in asgi_client.get("/api/contributors").json()["contributors"]] == ["octocat"]
 
         # Case D: Clean cloud sandbox with no git/gh config -> auto-generates civic-codex-<4hex> & succeeds!
         sandbox_home = tmp_path / "sandbox" / "config.json"
@@ -801,8 +815,8 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
         assert res_cursor_refuse.exit_code == 2
         assert "coding-agent product name" in res_cursor_refuse.output
 
-        # 6. Second machine (no token for @piyushbodaa) gets piyushbodaa-2 once, then REUSES piyushbodaa-2
-        #    on repeat runs instead of minting piyushbodaa-3, piyushbodaa-4!
+        # 6. Second machine (no token for @piyushbodaa) NEVER auto-mints piyushbodaa-2!
+        #    Exits cleanly with actionable instructions to copy agents/piyushbodaa.json or set AIWATCHDOGS_API_TOKEN.
         second_machine_cfg = tmp_path / "machine2" / "config.json"
         monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", second_machine_cfg)
         monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh auth status"))
@@ -820,12 +834,15 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
                 "--no-run",
             ],
         )
-        assert r_m2_first.exit_code == 0, r_m2_first.output
-        assert "https://aiwatchdogs.in/a/piyushbodaa-2" in r_m2_first.stdout
-        assert "AIWATCHDOGS_API_TOKEN" in r_m2_first.stdout
-        m2_saved = load_config(get_handle_config_path("piyushbodaa-2"))
-        assert m2_saved is not None
+        assert r_m2_first.exit_code == 1, r_m2_first.output
+        assert "one github username = one public profile" in r_m2_first.output.lower()
+        assert "AIWATCHDOGS_API_TOKEN" in r_m2_first.output
+        assert "agents/piyushbodaa.json" in r_m2_first.output
+        assert not get_handle_config_path("piyushbodaa-2").exists()
+        assert [c["handle"] for c in asgi_client.get("/api/contributors").json()["contributors"]] == ["piyushbodaa"]
 
+        # With AIWATCHDOGS_API_TOKEN provided, the second machine joins cleanly AS @piyushbodaa!
+        monkeypatch.setenv("AIWATCHDOGS_API_TOKEN", orig_token)
         r_m2_second = cli_runner.invoke(
             cli_app,
             [
@@ -839,11 +856,13 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
                 "--no-run",
             ],
         )
+        monkeypatch.delenv("AIWATCHDOGS_API_TOKEN", raising=False)
         assert r_m2_second.exit_code == 0, r_m2_second.output
-        assert "https://aiwatchdogs.in/a/piyushbodaa-2" in r_m2_second.stdout
-        assert "piyushbodaa-3" not in r_m2_second.stdout
-        m2_saved_after = load_config(get_handle_config_path("piyushbodaa-2"))
-        assert m2_saved_after is not None and m2_saved_after.api_token == m2_saved.api_token
+        assert "https://aiwatchdogs.in/a/piyushbodaa" in r_m2_second.stdout
+        assert "piyushbodaa-2" not in r_m2_second.stdout
+        m2_saved_after = load_config(get_handle_config_path("piyushbodaa"))
+        assert m2_saved_after is not None and m2_saved_after.api_token == orig_token
+        assert [c["handle"] for c in asgi_client.get("/api/contributors").json()["contributors"]] == ["piyushbodaa"]
 
         # 7. Upgrading from an earlier civic-codex-xxxx fallback once GitHub handle is configured!
         upgrade_cfg = tmp_path / "upgrade_machine" / "config.json"

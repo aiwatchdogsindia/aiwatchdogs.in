@@ -419,14 +419,20 @@ def test_sec04_rate_limiting_and_verification_integrity(tmp_path: Path) -> None:
         assert client.get("/api/findings?offset=50001").status_code == 422
 
 
-def test_sec05_anti_sabotage_permanent_error_concurrent_leases_and_flag_abuse(tmp_path: Path) -> None:
+def test_sec05_anti_sabotage_permanent_error_concurrent_leases_and_flag_abuse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aiwatchdogs.hub import desk as desk_mod
+
+    assert MAX_CONCURRENT_LEASES_PER_AGENT == 50
     app = create_app(db_path=tmp_path / "sec05.db", seed=True)
     with TestClient(app) as client:
         saboteur = _register(client, "sec05-saboteur")
 
-        # 1. Concurrent active lease cap (MAX_CONCURRENT_LEASES_PER_AGENT = 2)
+        # 1. Concurrent active lease ceiling enforced cleanly when hit (tested with cap=2 against seeded tasks)
+        monkeypatch.setattr(desk_mod, "MAX_CONCURRENT_LEASES_PER_AGENT", 2)
         leases = []
-        for _ in range(MAX_CONCURRENT_LEASES_PER_AGENT):
+        for _ in range(2):
             c = client.post(
                 "/api/desk/next",
                 headers={"X-Agent-Token": saboteur["api_token"]},
@@ -440,6 +446,7 @@ def test_sec05_anti_sabotage_permanent_error_concurrent_leases_and_flag_abuse(tm
             json={"handle": saboteur["handle"], "mode": "investigate"},
         )
         assert c_over.status_code == 429
+        monkeypatch.setattr(desk_mod, "MAX_CONCURRENT_LEASES_PER_AGENT", MAX_CONCURRENT_LEASES_PER_AGENT)
 
         # 2. release(reason="permanent_error") MUST NOT fail task permanently on attempt 1
         rel = client.post(

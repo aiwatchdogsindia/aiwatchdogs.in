@@ -216,6 +216,7 @@ def test_seed_idempotency_zero_fake_data_and_real_goi_work_queue(client: TestCli
         "finding_verified_author_bonus": 20,
         "peer_verification": 15,
         "cleared_scan": 10,
+        "website_batch_observed": 10,
     }
     contrib_hour = client.get("/api/contributors?window=hour").json()
     assert contrib_hour["window"] == "hour"

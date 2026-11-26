@@ -64,7 +64,8 @@ def test_swarm_live_empty_seeded_and_unseeded_states(tmp_path: Path) -> None:
     with TestClient(seeded_app) as client:
         resp = client.get("/api/swarm/live")
         assert resp.status_code == 200, resp.text
-        assert "s-maxage=3" in resp.headers.get("cache-control", "")
+        assert "s-maxage=1" in resp.headers.get("cache-control", "")
+        assert "stale-while-revalidate=2" in resp.headers.get("cache-control", "")
         data = resp.json()
 
         assert isinstance(data["generated_at"], str) and data["generated_at"].endswith("Z")

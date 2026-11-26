@@ -143,6 +143,16 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         assert len(dashboard["tasks"]) == 1000
         assert sum(task["status"] == "completed" for task in dashboard["tasks"]) == 1
 
+        # W1 website observation batch awards merit points on both all-time and hourly leaderboards
+        contribs_all = client.get("/api/contributors?window=all").json()
+        assert contribs_all["score_weights"]["website_batch_observed"] == 10
+        w1_all = next(c for c in contribs_all["contributors"] if c["handle"] == "website-volunteer")
+        assert w1_all["score"] == 10
+        assert w1_all["tasks_completed"] == 1
+        contribs_hour = client.get("/api/contributors?window=hour").json()
+        w1_hour = next(c for c in contribs_hour["contributors"] if c["handle"] == "website-volunteer")
+        assert w1_hour["score"] == 10
+
 
 @pytest.mark.parametrize("fault", [
     "future", "stale", "personal_path", "encoded_private_path", "arbitrary_contact_gap",

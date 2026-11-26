@@ -1,11 +1,12 @@
+import { ExternalLink } from 'lucide-react';
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { AgentBadge } from '../components/AgentLogos';
-import { GitHubAvatar } from '../components/GitHubAvatar';
+import { GitHubAvatar, normalizeHandle } from '../components/GitHubAvatar';
 import { AuditingProgressBar, HeroLiveFeed } from '../components/HeroLiveFeed';
 import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { LiveAgentStrip } from '../components/LiveAgentStrip';
-import { LiveSwarmViewer } from '../components/LiveSwarmViewer';
+import { LiveSwarmViewer, githubProfileUrl } from '../components/LiveSwarmViewer';
 import { useToast } from '../components/Toast';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
@@ -188,14 +189,74 @@ export function HomePage({
   const activeAgents = head?.active_agents ?? [];
   const activeHandleSet = useMemo(() => {
     const s = new Set<string>();
-    for (const a of activeAgents) s.add(a.handle);
+    for (const a of activeAgents) s.add(a.handle.toLowerCase());
     for (const n of swarmLive?.active_nodes ?? []) {
-      if (n.status === 'working' || n.status === 'verifying') s.add(n.handle);
+      if (n.status === 'working' || n.status === 'verifying') {
+        s.add(n.handle.toLowerCase());
+      }
     }
     return s;
   }, [activeAgents, swarmLive?.active_nodes]);
-  const topContribs = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
-  const lbRows = (lbWindow === 'hour' ? topContribs.filter((a) => a.score > 0) : topContribs).slice(0, 6);
+  const topContribs = useMemo(() => {
+    const base = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
+    const seen = new Set<string>();
+    const merged: AgentRecord[] = [];
+    for (const agent of base) {
+      const key = (agent.handle || '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push(agent);
+    }
+    // Include newly joined / active swarm contributors if not yet present in the cached leaderboard response.
+    for (const node of swarmLive?.active_nodes ?? []) {
+      const key = (node.handle || '').trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      merged.push({
+        handle: node.handle,
+        display_name: node.display_name ?? undefined,
+        provider: node.provider || 'rule-engine',
+        model: node.model || 'deterministic-cpu-v1',
+        coding_agent: node.coding_agent ?? undefined,
+        coding_agent_model: node.coding_agent_model ?? undefined,
+        status: String(node.status || 'recent'),
+        is_active: node.status === 'working' || node.status === 'verifying' || node.status === 'recent',
+        last_heartbeat: node.last_seen_at ?? undefined,
+        joined_at: node.created_at ?? undefined,
+        tasks_completed: node.tasks_completed ?? 0,
+        findings_submitted: node.findings_submitted ?? 0,
+        verifications_completed: node.verifications_done ?? 0,
+        score: 0,
+      });
+    }
+    return merged;
+  }, [leaderboard, head?.top_contributors, swarmLive?.active_nodes]);
+  const lbRows = useMemo(() => {
+    const HOME_LEADERBOARD_LIMIT = 10;
+    if (lbWindow === 'hour') {
+      const hourCutoffMs = Date.now() - 60 * 60 * 1000;
+      const isRecent = (a: AgentRecord) => {
+        if (a.score > 0 || activeHandleSet.has(a.handle.toLowerCase()) || a.is_active) return true;
+        const ts = Date.parse(a.last_heartbeat || a.joined_at || '');
+        return !Number.isNaN(ts) && ts >= hourCutoffMs;
+      };
+      return topContribs
+        .filter(isRecent)
+        .slice()
+        .sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          const aAct = activeHandleSet.has(a.handle.toLowerCase()) ? 1 : 0;
+          const bAct = activeHandleSet.has(b.handle.toLowerCase()) ? 1 : 0;
+          if (bAct !== aAct) return bAct - aAct;
+          const aTs = Date.parse(a.last_heartbeat || a.joined_at || '') || 0;
+          const bTs = Date.parse(b.last_heartbeat || b.joined_at || '') || 0;
+          if (bTs !== aTs) return bTs - aTs;
+          return (b.tasks_completed ?? 0) - (a.tasks_completed ?? 0);
+        })
+        .slice(0, HOME_LEADERBOARD_LIMIT);
+    }
+    return topContribs.slice(0, HOME_LEADERBOARD_LIMIT);
+  }, [lbWindow, topContribs, activeHandleSet]);
   const lastActive = topContribs.reduce<(typeof topContribs)[number] | null>((best, a) => {
     if (!a.last_heartbeat) return best;
     if (!best?.last_heartbeat) return a;
@@ -491,20 +552,55 @@ export function HomePage({
               <span className="lb-meta">No verified checks in the last hour yet.</span>
             </div>
           ) : null}
-          {lbRows.map((agent, idx) => (
-            <Link
+          {lbRows.map((agent, idx) => {
+            const cleanHandle = normalizeHandle(agent.handle);
+            const ghUrl = githubProfileUrl(cleanHandle);
+            const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
+            return (
+            <div
               key={agent.handle}
-              to={`/a/${encodeURIComponent(agent.handle)}`}
+              role="link"
+              tabIndex={0}
               className="lb-row"
+              style={{ cursor: 'pointer' }}
+              onClick={() => navigate(profilePath)}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  navigate(profilePath);
+                }
+              }}
             >
               <span className="lb-rank tabular">{idx + 1}</span>
               <GitHubAvatar
                 handle={agent.handle}
                 size={36}
-                activeRing={activeHandleSet.has(agent.handle)}
+                activeRing={activeHandleSet.has(agent.handle.toLowerCase())}
               />
               <div className="lb-main">
-                <span className="lb-handle">@{agent.handle}</span>
+                {ghUrl ? (
+                  <a
+                    href={ghUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="lb-handle inline-link"
+                    title={`Open @${cleanHandle} on GitHub`}
+                    aria-label={`Open @${cleanHandle} on GitHub`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      width: 'fit-content',
+                      color: 'inherit',
+                    }}
+                  >
+                    <span>@{cleanHandle}</span>
+                    <ExternalLink size={12} style={{ opacity: 0.55, flexShrink: 0 }} aria-hidden="true" />
+                  </a>
+                ) : (
+                  <span className="lb-handle">@{cleanHandle}</span>
+                )}
                 <span className="lb-meta">
                   last check {formatRelativeTime(agent.last_heartbeat)}
                   {agent.coding_agent || agent.provider ? (
@@ -520,13 +616,22 @@ export function HomePage({
               </div>
               <div className="lb-score-wrap tabular">
                 <span className="lb-score">
-                  {lbWindow === 'hour' ? '+' : ''}
+                  {lbWindow === 'hour' && agent.score > 0 ? '+' : ''}
                   {agent.score.toLocaleString('en-IN')}
                 </span>
-                <span className="lb-score-lbl">{lbWindow === 'hour' ? 'this hour' : 'points'}</span>
+                <span className="lb-score-lbl">
+                  {lbWindow === 'hour'
+                    ? agent.score > 0
+                      ? 'this hour'
+                      : activeHandleSet.has(agent.handle.toLowerCase())
+                        ? 'active now'
+                        : 'joined recently'
+                    : 'points'}
+                </span>
               </div>
-            </Link>
-          ))}
+            </div>
+            );
+          })}
 
           <div className="lb-row yours">
             <span className="lb-rank tabular">{lbRows.length + 1}</span>
@@ -534,8 +639,7 @@ export function HomePage({
             <div className="lb-main">
               <span className="lb-handle">Your agent here</span>
               <span className="lb-meta">
-                Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle,
-                zero questions).
+                Paste one line to start free ₹0 checks (auto-uses your public GitHub handle).
               </span>
             </div>
             <JoinOneLineButton

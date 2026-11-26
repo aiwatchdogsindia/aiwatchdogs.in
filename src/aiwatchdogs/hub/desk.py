@@ -100,7 +100,7 @@ GENERIC_AGENT_HANDLES: frozenset[str] = frozenset(
 )
 LEASE_MINUTES = 45
 MAX_LEASE_TOTAL_MINUTES = 180
-MAX_CONCURRENT_LEASES_PER_AGENT = 2
+MAX_CONCURRENT_LEASES_PER_AGENT = 50
 MAX_ADJUDICATION_ROUNDS = 3
 MAX_WHISPERS_PER_LEASE = 25
 LIVE_AGENT_WINDOW_SECONDS = 900
@@ -274,6 +274,7 @@ SCORE_WEIGHTS: dict[str, int] = {
     "finding_verified_author_bonus": 20,
     "peer_verification": 15,
     "cleared_scan": 10,
+    "website_batch_observed": 10,
 }
 
 QUARANTINE_NOTICE = (
@@ -1134,8 +1135,9 @@ class DeskService:
                     should_prune = True
 
         exceeded = False
+        ordered_checks = sorted(checks, key=lambda item: item[0])
         with self.db.transaction() as conn:
-            for raw_key, limit in checks:
+            for raw_key, limit in ordered_checks:
                 key = raw_key[:160]
                 conn.execute(
                     """
@@ -1247,10 +1249,16 @@ class DeskService:
             (se_id, agent_id, agent_handle, event_type, points, ref_id, now),
         )
         if cur.rowcount == 1:
-            conn.execute(
-                "UPDATE agents SET compute_score = compute_score + ? WHERE handle = ?",
-                (points, agent_handle),
-            )
+            if agent_id:
+                conn.execute(
+                    "UPDATE agents SET compute_score = compute_score + ? WHERE id = ?",
+                    (points, agent_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE agents SET compute_score = compute_score + ? WHERE handle = ?",
+                    (points, agent_handle),
+                )
             return points
         return 0
 
@@ -1398,6 +1406,40 @@ class DeskService:
         if cnt is not None:
             conn.execute("UPDATE missions SET total_tasks = ? WHERE id = ?", (int(cnt["c"]), mission_id))
 
+    def _clear_agent_current_task_nonblocking(self, conn: Any, agent_id: str, task_id: str) -> None:
+        """Clear denormalized ``agents.current_task_id`` without risking a Postgres AB-BA lock wait."""
+        if self.db.is_postgres:
+            conn.execute(
+                """
+                UPDATE agents
+                SET current_task_id = NULL
+                WHERE id IN (
+                    SELECT id FROM agents
+                    WHERE id = ? AND current_task_id = ?
+                    FOR NO KEY UPDATE SKIP LOCKED
+                )
+                """,
+                (agent_id, task_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE agents SET current_task_id = NULL WHERE id = ? AND current_task_id = ?",
+                (agent_id, task_id),
+            )
+
+    def _lock_agents_ordered(self, conn: Any, agent_ids: list[str | None]) -> None:
+        """Acquire Postgres ``FOR NO KEY UPDATE`` row locks on ``agents`` in deterministic ascending ID order.
+
+        Every Desk write transaction (`claim_next_task`, `heartbeat`, `release_task`, `submit_task`)
+        locks its target ``agents`` row(s) FIRST in ascending ID order BEFORE touching ``tasks``,
+        ``findings``, or ``missions``, eliminating AB-BA deadlocks across concurrent workers.
+        """
+        if not self.db.is_postgres:
+            return
+        ordered = sorted({str(aid).strip() for aid in agent_ids if aid and str(aid).strip()})
+        for aid in ordered:
+            conn.execute("SELECT id FROM agents WHERE id = ? FOR NO KEY UPDATE", (aid,))
+
     def _reclaim_expired_leases(self, conn: Any) -> int:
         now = utc_now_iso()
         lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
@@ -1412,10 +1454,7 @@ class DeskService:
         for row in expired:
             if self._is_orphaned_w1_task(row):
                 if row["claimed_by_agent_id"]:
-                    conn.execute(
-                        "UPDATE agents SET current_task_id = NULL WHERE id = ? AND current_task_id = ?",
-                        (row["claimed_by_agent_id"], row["id"]),
-                    )
+                    self._clear_agent_current_task_nonblocking(conn, str(row["claimed_by_agent_id"]), str(row["id"]))
                 self._retire_orphaned_task(conn, str(row["id"]), str(row["mission_id"]), now)
                 continue
             next_retry = int(_row_get(row, "retry_count", 0) or 0) + 1
@@ -1438,10 +1477,7 @@ class DeskService:
                 (next_status, next_retry, avail_at, now, row["id"]),
             )
             if row["claimed_by_agent_id"]:
-                conn.execute(
-                    "UPDATE agents SET current_task_id = NULL WHERE id = ? AND current_task_id = ?",
-                    (row["claimed_by_agent_id"], row["id"]),
-                )
+                self._clear_agent_current_task_nonblocking(conn, str(row["claimed_by_agent_id"]), str(row["id"]))
         self._requeue_parked_tasks(conn, now, is_postgres=self.db.is_postgres)
         return len(expired)
 
@@ -1873,7 +1909,14 @@ class DeskService:
                 )
                 for r in all_agents
             ]
-            serialized_agents.sort(key=lambda a: (a["compute_score"], a["tasks_completed"]), reverse=True)
+            serialized_agents.sort(
+                key=lambda a: (
+                    a["compute_score"],
+                    a["tasks_completed"],
+                    str(a.get("last_heartbeat") or a.get("joined_at") or ""),
+                ),
+                reverse=True,
+            )
             active_agents = [a for a in serialized_agents if a["is_active"]]
 
             just_joined_rows = conn.execute(
@@ -4911,7 +4954,14 @@ class DeskService:
                     )
                 )
 
-        contributors.sort(key=lambda c: (c["window_score"], c["tasks_completed"]), reverse=True)
+        contributors.sort(
+            key=lambda c: (
+                c["window_score"],
+                c["tasks_completed"],
+                str(c.get("last_heartbeat") or c.get("joined_at") or ""),
+            ),
+            reverse=True,
+        )
         return {
             "window": window_norm,
             "contributors": contributors,
@@ -5411,7 +5461,11 @@ class DeskService:
 
             raise HTTPException(
                 status_code=409,
-                detail=f"Handle '{raw_handle}' is already registered; pass X-Agent-Token to reconnect or pick a different handle.",
+                detail=(
+                    f"Handle '{raw_handle}' is already registered; pass X-Agent-Token "
+                    f"(from ~/.config/aiwatchdogs/agents/{raw_handle}.json) to reconnect as @{raw_handle} "
+                    "(one GitHub username = one profile)."
+                ),
             )
 
         with self.db.transaction() as conn:
@@ -5548,9 +5602,9 @@ class DeskService:
             agent_handle = str(agent["handle"])
             eff_mode = (mode or agent["mode"] or "auto").strip().lower()
 
-            # Serialize concurrent claim attempts by the same agent on Postgres (prevents double peer_verify claims)
-            if self.db.is_postgres:
-                conn.execute("SELECT id FROM agents WHERE id = ? FOR UPDATE", (agent["id"],))
+            # Serialize concurrent claim attempts by the same agent on Postgres using the canonical
+            # lock order (`agents` sorted by ID -> `tasks` -> `findings` -> `missions`).
+            self._lock_agents_ordered(conn, [str(agent["id"])])
 
             self._reclaim_expired_leases(conn)
             now = utc_now_iso()
@@ -5976,9 +6030,31 @@ class DeskService:
         now: str,
         allow_settled_idempotency_key: str | None = None,
     ) -> tuple[Any, Any, dict[str, Any] | None]:
-        """Enforce authenticated contributor + active unexpired lease ownership atomically."""
+        """Enforce authenticated contributor + active unexpired lease ownership atomically.
+
+        On Postgres, acquires `FOR NO KEY UPDATE` on all `agents` rows this transaction may update
+        (caller + target finding author for peer verification) in ascending ID order BEFORE locking
+        the `tasks` row (`FOR UPDATE`). This matches `claim_next_task`'s canonical lock order
+        (`agents` -> `tasks` -> `findings` -> `missions`) and eliminates AB-BA deadlocks.
+        """
         authed = self._authenticate_agent(conn, token, required=True)
         assert authed is not None
+
+        if self.db.is_postgres:
+            agent_ids_to_lock: list[str | None] = [str(authed["id"])]
+            peek = conn.execute(
+                "SELECT target_finding_id FROM tasks WHERE lease_id = ?",
+                (lease_id,),
+            ).fetchone()
+            target_fid = str(peek["target_finding_id"] or "").strip() if peek is not None else ""
+            if target_fid:
+                author_row = conn.execute(
+                    "SELECT submitted_by_agent_id FROM findings WHERE id = ?",
+                    (target_fid,),
+                ).fetchone()
+                if author_row is not None and author_row["submitted_by_agent_id"]:
+                    agent_ids_to_lock.append(str(author_row["submitted_by_agent_id"]))
+            self._lock_agents_ordered(conn, agent_ids_to_lock)
 
         lock_clause = " FOR UPDATE" if self.db.is_postgres else ""
         task = conn.execute(
@@ -6279,6 +6355,14 @@ class DeskService:
                     "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
                     "last_heartbeat_at = ? WHERE id = ?", (now, agent["id"]),
                 )
+                self._record_score_event(
+                    conn,
+                    agent_id=str(agent["id"]),
+                    agent_handle=str(agent["handle"]),
+                    event_type="website_batch_observed",
+                    ref_id=str(task["id"]),
+                    now=now,
+                )
                 w1_msg = whisper_text or f"Observed {len(rows)} .gov.in public sites ({task['title'][:90]})."
                 w1_whisper = self._insert_whisper(
                     conn,
@@ -6345,12 +6429,27 @@ class DeskService:
 
             # Peer checks repeat the original check on the same dataset, so they carry its estimate.
             if task["estimated_tokens"] is not None and task["dataset_key"]:
-                conn.execute(
-                    "UPDATE tasks SET estimated_tokens = ?, estimate_basis = ? "
-                    "WHERE mission_id = ? AND dataset_key = ? AND task_type = 'peer_verify' "
-                    "AND estimated_tokens IS NULL",
-                    (task["estimated_tokens"], PEER_ESTIMATE_BASIS, task["mission_id"], task["dataset_key"]),
-                )
+                if self.db.is_postgres:
+                    conn.execute(
+                        """
+                        UPDATE tasks
+                        SET estimated_tokens = ?, estimate_basis = ?
+                        WHERE id IN (
+                            SELECT id FROM tasks
+                            WHERE mission_id = ? AND dataset_key = ?
+                              AND task_type = 'peer_verify' AND estimated_tokens IS NULL
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        """,
+                        (task["estimated_tokens"], PEER_ESTIMATE_BASIS, task["mission_id"], task["dataset_key"]),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE tasks SET estimated_tokens = ?, estimate_basis = ? "
+                        "WHERE mission_id = ? AND dataset_key = ? AND task_type = 'peer_verify' "
+                        "AND estimated_tokens IS NULL",
+                        (task["estimated_tokens"], PEER_ESTIMATE_BASIS, task["mission_id"], task["dataset_key"]),
+                    )
 
             raw_usage = payload.get("usage")
             if isinstance(raw_usage, dict):
@@ -7777,23 +7876,40 @@ class DeskService:
         def _settle_open_peer_checks() -> None:
             conn.execute(
                 """
-                UPDATE agents
-                SET current_task_id = NULL
-                WHERE current_task_id IN (
-                    SELECT id FROM tasks
-                    WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status = 'claimed'
-                )
-                """,
-                (finding_id,),
-            )
-            conn.execute(
-                """
                 UPDATE tasks
                 SET status = 'settled', updated_at = ?, completed_at = ?
                 WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status IN ('queued', 'claimed')
                 """,
                 (now, now, finding_id),
             )
+            if self.db.is_postgres:
+                conn.execute(
+                    """
+                    UPDATE agents
+                    SET current_task_id = NULL
+                    WHERE id IN (
+                        SELECT a.id FROM agents a
+                        WHERE a.current_task_id IN (
+                            SELECT id FROM tasks
+                            WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status = 'settled'
+                        )
+                        FOR NO KEY UPDATE SKIP LOCKED
+                    )
+                    """,
+                    (finding_id,),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE agents
+                    SET current_task_id = NULL
+                    WHERE current_task_id IN (
+                        SELECT id FROM tasks
+                        WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status = 'settled'
+                    )
+                    """,
+                    (finding_id,),
+                )
 
         if has_pii_or_legal_flag:
             _settle_open_peer_checks()
@@ -7856,10 +7972,16 @@ class DeskService:
                 "UPDATE missions SET verified_findings_count = verified_findings_count + 1 WHERE id = ?",
                 (finding_row["mission_id"],),
             )
-            conn.execute(
-                "UPDATE agents SET findings_verified = findings_verified + 1 WHERE handle = ?",
-                (finding_row["submitted_by"],),
-            )
+            if finding_row["submitted_by_agent_id"]:
+                conn.execute(
+                    "UPDATE agents SET findings_verified = findings_verified + 1 WHERE id = ?",
+                    (finding_row["submitted_by_agent_id"],),
+                )
+            else:
+                conn.execute(
+                    "UPDATE agents SET findings_verified = findings_verified + 1 WHERE handle = ?",
+                    (finding_row["submitted_by"],),
+                )
             self._record_score_event(
                 conn,
                 agent_id=finding_row["submitted_by_agent_id"],
