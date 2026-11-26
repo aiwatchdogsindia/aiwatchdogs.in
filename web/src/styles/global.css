@@ -473,19 +473,21 @@ code.font-mono {
 }
 
 /* =========================================================================
-   2. JUST-IN BAR (Full-Bleed Tiranga TV News Ticker Strip Under Header)
-   Saffron stripe on top, white field with pinned live badge + scrolling
-   broadcast chyron marquee, green stripe below.
+   2. JUST-IN BAR (Full-Bleed End-to-End Tiranga TV News Ticker Strip)
+   Saffron stripe on top, white field with continuous edge-to-edge broadcast
+   chyron marquee (inline live kicker per item), green stripe below.
    ========================================================================= */
 .just-in {
   margin: 0;
   width: 100%;
-  max-width: 100%;
+  max-width: none;
   background: var(--flag-white);
   color: var(--ink);
   border-top: 3px solid var(--flag-saffron);
   border-bottom: 3px solid var(--flag-green);
   padding: 0;
+  padding-left: 0;
+  padding-right: 0;
   height: 44px;
   min-height: 44px;
   display: flex;
@@ -498,24 +500,19 @@ code.font-mono {
   line-height: 20px;
 }
 
-.just-in-badge {
-  position: relative;
-  z-index: 2;
-  flex: 0 0 auto;
+.just-in-kicker {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 16px 0 max(20px, var(--gutter));
-  background: var(--flag-white);
-  border-right: 1px solid var(--rule-strong);
+  gap: 7px;
   color: var(--flag-green-deep);
   white-space: nowrap;
+  flex-shrink: 0;
   user-select: none;
 }
 
-.just-in--review .just-in-badge,
-.just-in--latest .just-in-badge,
-.just-in--queue .just-in-badge {
+.just-in--review .just-in-kicker,
+.just-in--latest .just-in-kicker,
+.just-in--queue .just-in-kicker {
   color: var(--in-work-ink);
 }
 
@@ -556,7 +553,7 @@ code.font-mono {
   }
 }
 
-.just-in-badge-label {
+.just-in-kicker-label {
   font-family: var(--font-serif);
   font-size: 11px;
   font-weight: 500;
@@ -567,7 +564,8 @@ code.font-mono {
 
 .just-in-viewport {
   position: relative;
-  flex: 1 1 0;
+  flex: 1 1 100%;
+  width: 100%;
   min-width: 0;
   height: 100%;
   overflow: hidden;
@@ -576,15 +574,15 @@ code.font-mono {
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0,
-    #000 24px,
-    #000 calc(100% - 36px),
+    #000 18px,
+    #000 calc(100% - 18px),
     transparent 100%
   );
   mask-image: linear-gradient(
     to right,
     transparent 0,
-    #000 24px,
-    #000 calc(100% - 36px),
+    #000 18px,
+    #000 calc(100% - 18px),
     transparent 100%
   );
 }
@@ -627,7 +625,7 @@ code.font-mono {
   flex-wrap: nowrap;
   flex-shrink: 0;
   height: 100%;
-  padding-left: 18px;
+  padding-left: 20px;
 }
 
 .just-in-item {
@@ -733,7 +731,7 @@ code.font-mono {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin: 0 0 0 18px;
+  margin: 0 0 0 20px;
   font-size: 8px;
   line-height: 1;
   color: var(--flag-saffron);
@@ -5688,16 +5686,17 @@ code.font-mono {
     border-bottom-width: 2px;
     height: 44px;
     min-height: 44px;
+    padding-left: 0;
+    padding-right: 0;
     font-size: 13.5px;
     line-height: 18px;
   }
 
-  .just-in-badge {
+  .just-in-kicker {
     gap: 6px;
-    padding: 0 12px 0 max(14px, var(--safe-left));
   }
 
-  .just-in-badge-label {
+  .just-in-kicker-label {
     font-size: 10.5px;
     letter-spacing: 0.1em;
   }
@@ -5706,15 +5705,15 @@ code.font-mono {
     -webkit-mask-image: linear-gradient(
       to right,
       transparent 0,
-      #000 14px,
-      #000 calc(100% - 22px),
+      #000 12px,
+      #000 calc(100% - 12px),
       transparent 100%
     );
     mask-image: linear-gradient(
       to right,
       transparent 0,
-      #000 14px,
-      #000 calc(100% - 22px),
+      #000 12px,
+      #000 calc(100% - 12px),
       transparent 100%
     );
   }
@@ -6736,9 +6735,8 @@ code.font-mono {
 }
 
 @media (max-width: 560px) {
-  .just-in-badge {
+  .just-in-kicker {
     gap: 5px;
-    padding: 0 10px 0 max(10px, var(--safe-left));
   }
 
   .just-in-dot {
@@ -6746,9 +6744,9 @@ code.font-mono {
     height: 6px;
   }
 
-  .just-in-badge-label {
-    font-size: 9.5px;
-    letter-spacing: 0.07em;
+  .just-in-kicker-label {
+    font-size: 10px;
+    letter-spacing: 0.08em;
   }
 
   .just-in-viewport {
@@ -6756,14 +6754,14 @@ code.font-mono {
       to right,
       transparent 0,
       #000 10px,
-      #000 calc(100% - 16px),
+      #000 calc(100% - 10px),
       transparent 100%
     );
     mask-image: linear-gradient(
       to right,
       transparent 0,
       #000 10px,
-      #000 calc(100% - 16px),
+      #000 calc(100% - 10px),
       transparent 100%
     );
   }

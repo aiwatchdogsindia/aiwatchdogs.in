@@ -21,10 +21,11 @@ interface TickerEntry {
 
 const MAX_TICKER_ITEMS = 12;
 const MIN_ENTRIES_PER_GROUP = 4;
-const MAX_REPEATS_PER_GROUP = 12;
+const MAX_REPEATS_PER_GROUP = 24;
+const MIN_GROUP_WIDTH_PX = 2560;
 const TARGET_SPEED_PX_PER_SEC = 60;
 const MIN_DURATION_SEC = 18;
-const MAX_DURATION_SEC = 280;
+const MAX_DURATION_SEC = 360;
 
 function isVerifiedFinding(f: FindingItem): boolean {
   return (f.status === 'verified' || f.status === 'rti_filed') && !f.quarantined;
@@ -43,7 +44,7 @@ function findingToEntry(f: FindingItem): TickerEntry {
 }
 
 function estimateDurationSec(entries: TickerEntry[], repeatCount: number): number {
-  const perCopyChars = entries.reduce((sum, e) => sum + e.title.length + 34, 0);
+  const perCopyChars = entries.reduce((sum, e) => sum + e.title.length + 48, 0);
   const approxPx = perCopyChars * repeatCount * 7.2;
   const raw = approxPx / TARGET_SPEED_PX_PER_SEC;
   return Math.max(MIN_DURATION_SEC, Math.min(MAX_DURATION_SEC, Math.round(raw * 10) / 10));
@@ -133,8 +134,6 @@ export function JustInBar({
 
   const baseCount = entries.length > 0 ? entries.length : 1;
   const minRepeats = Math.max(1, Math.ceil(MIN_ENTRIES_PER_GROUP / baseCount));
-  const [extraRepeats, setExtraRepeats] = useState(0);
-  const repeatCount = Math.min(MAX_REPEATS_PER_GROUP, minRepeats + extraRepeats);
 
   const signature = useMemo(
     () =>
@@ -144,10 +143,12 @@ export function JustInBar({
     [entries, mode, queuedTasks, missionsCount],
   );
 
-  // Reset extra repeats when content changes
-  useEffect(() => {
-    setExtraRepeats(0);
-  }, [signature]);
+  const [repeatState, setRepeatState] = useState<{ signature: string; extra: number }>({
+    signature: '',
+    extra: 0,
+  });
+  const extraRepeats = repeatState.signature === signature ? repeatState.extra : 0;
+  const repeatCount = Math.min(MAX_REPEATS_PER_GROUP, minRepeats + extraRepeats);
 
   const [durationSec, setDurationSec] = useState<number>(() =>
     entries.length > 0 ? estimateDurationSec(entries, minRepeats) : 28,
@@ -167,7 +168,7 @@ export function JustInBar({
   }, [leadId]);
 
   // Measure one group's rendered width to keep a steady ~60px/s broadcast pace
-  // and ensure one group always spans beyond the viewport width (zero blank gap).
+  // and ensure one group always spans beyond max(viewportWidth, 2560px) (zero blank gap).
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
     const group = primaryGroupRef.current;
@@ -178,13 +179,14 @@ export function JustInBar({
       const groupWidth = group.scrollWidth;
       if (groupWidth <= 0) return;
 
-      if (vpWidth > 0 && groupWidth < vpWidth + 96 && repeatCount < MAX_REPEATS_PER_GROUP) {
+      const targetWidth = Math.max(vpWidth, MIN_GROUP_WIDTH_PX) + 160;
+      if (groupWidth < targetWidth && repeatCount < MAX_REPEATS_PER_GROUP) {
         const needed = Math.min(
           MAX_REPEATS_PER_GROUP,
-          Math.ceil(((vpWidth + 160) / groupWidth) * repeatCount),
+          Math.ceil((targetWidth / groupWidth) * repeatCount),
         );
         if (needed > repeatCount) {
-          setExtraRepeats(needed - minRepeats);
+          setRepeatState({ signature, extra: needed - minRepeats });
           return;
         }
       }
@@ -209,7 +211,7 @@ export function JustInBar({
     return null;
   }
 
-  const badgeLabel =
+  const kickerLabel =
     mode === 'verified'
       ? 'JUST VERIFIED'
       : mode === 'review'
@@ -231,6 +233,13 @@ export function JustInBar({
     '--ticker-duration': `${durationSec}s`,
   } as CSSProperties;
 
+  const renderInlineKicker = () => (
+    <span className="just-in-kicker">
+      <span className="just-in-dot" aria-hidden="true" />
+      <span className="just-in-kicker-label">{kickerLabel}</span>
+    </span>
+  );
+
   const renderGroupContent = (isClone: boolean) => {
     if (mode === 'queue') {
       const queueHeadline = `${queuedTasks} official dataset${queuedTasks === 1 ? '' : 's'} queued across ${missionsCount} ${missionsCount === 1 ? 'project' : 'projects'}`;
@@ -250,6 +259,7 @@ export function JustInBar({
                 tabIndex={hideFromAt ? -1 : 0}
                 onClick={onOpenJoin}
               >
+                {renderInlineKicker()}
                 <span className="just-in-title">{queueHeadline}</span>
                 <span className="just-in-meta">2-of-2 quorum active</span>
                 <span className="just-in-cta">
@@ -258,6 +268,7 @@ export function JustInBar({
               </button>
             ) : (
               <span className="just-in-item just-in-item--static">
+                {renderInlineKicker()}
                 <span className="just-in-title">{queueHeadline}</span>
                 <span className="just-in-meta">2-of-2 quorum active</span>
               </span>
@@ -285,7 +296,7 @@ export function JustInBar({
             tabIndex={hideFromAt ? -1 : 0}
             onClick={() => onSelectFinding(entry.id)}
           >
-            <span className="just-in-title">{entry.title}</span>
+            {renderInlineKicker()}
             {entry.monetary_exposure_inr_cr > 0 && (
               <span className="just-in-amount tabular">
                 {formatInrCr(entry.monetary_exposure_inr_cr)}
@@ -294,6 +305,7 @@ export function JustInBar({
             {entry.verified_at && (
               <span className="just-in-meta">{formatRelativeTime(entry.verified_at)}</span>
             )}
+            <span className="just-in-title">{entry.title}</span>
             <span className="just-in-cta">
               Inspect dossier <span aria-hidden="true">→</span>
             </span>
@@ -312,11 +324,6 @@ export function JustInBar({
       role="region"
       aria-label={regionLabel}
     >
-      <div className="just-in-badge">
-        <span className="just-in-dot" aria-hidden="true" />
-        <span className="just-in-badge-label">{badgeLabel}</span>
-      </div>
-
       <div className="just-in-viewport" ref={viewportRef}>
         <div className="just-in-track" style={trackStyle}>
           <div className="just-in-group" ref={primaryGroupRef}>
