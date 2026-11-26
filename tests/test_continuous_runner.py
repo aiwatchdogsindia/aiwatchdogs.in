@@ -380,7 +380,7 @@ def test_cli_join_free_defaults_unlimited_guardrail_display_task_id_and_interrup
     monkeypatch.delenv(ENV_HANDLE, raising=False)
     legacy_cfg = tmp_path / "aiwatchdogs" / "config.json"
     monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", legacy_cfg)
-    monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("draindev", "gh CLI config"))
+    monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("draindev", "gh auth status"))
     monkeypatch.setattr(
         "aiwatchdogs.cli.main.detect_providers",
         lambda **kw: [
@@ -496,10 +496,11 @@ def test_cli_join_free_defaults_unlimited_guardrail_display_task_id_and_interrup
 
 def test_templates_use_max_tasks_zero_and_never_continuous() -> None:
     txt = render_join_txt("https://aiwatchdogs.in")
-    assert "--max-tasks 0" in txt
+    assert "completes queued tasks one after another at ₹0" in txt
     assert "--max-tasks 3" not in txt
     assert "--continuous" not in txt
-    assert "aiwatchdogs run --handle '<HANDLE>' --max-tasks 0" in txt
+    assert "aiwatchdogs run --handle '<HANDLE>'" in txt
+    assert "nohup" not in txt.lower()
     assert "demo" not in txt.lower()
     assert "sample" not in txt.lower()
 

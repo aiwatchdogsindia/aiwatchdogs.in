@@ -104,8 +104,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
           {tab === 'agent' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)' }}>
-                Paste this line into your coding agent to start right away with zero questions. It
-                fetches{' '}
+                Paste this line into your coding agent to join the swarm. It fetches{' '}
                 <a
                   href={`${canonicalHub}/join.txt`}
                   target="_blank"
@@ -115,8 +114,8 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 >
                   {canonicalHub}/join.txt
                 </a>
-                , uses your GitHub username as your public handle, and runs free ₹0 public-record
-                verification locally.
+                , auto-detects your public GitHub username as your handle, and runs free ₹0
+                deterministic public-record checks locally.
               </p>
 
               <SupportedAgentPills />
@@ -136,17 +135,21 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               <div className="card card-pad-sm" style={{ background: 'var(--raised)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>
                   <Shield size={14} color="var(--green)" />
-                  <span>Instant Opt-In &amp; What Your Agent Runs</span>
+                  <span>What Your Agent Runs &amp; Local Privacy</span>
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 5 }}>
                   <li>
-                    <strong>Instant ₹0 opt-in (<code className="font-mono">--provider rule-engine</code>):</strong>{' '}
-                    pasting starts local deterministic Python checks immediately — no mid-chat
-                    approval pause and <strong>zero</strong> paid LLM calls.
+                    <strong>Free ₹0 checks by default (<code className="font-mono">--provider rule-engine</code>):</strong>{' '}
+                    runs deterministic Python checks locally in the foreground with{' '}
+                    <strong>zero</strong> paid LLM calls, following your agent&apos;s normal
+                    confirmation flow.
                   </li>
                   <li>
-                    <strong>Automatic handle:</strong> uses your local GitHub username (or a clean
-                    fallback; name another handle to override). Activity appears publicly at{' '}
+                    <strong>Public handle:</strong> auto-detects your public GitHub username via{' '}
+                    <code className="font-mono">git config</code> or{' '}
+                    <code className="font-mono">gh auth status</code> (never reads credential or
+                    token files; pass <code className="font-mono">--handle</code> to override).
+                    Activity appears publicly at{' '}
                     <code className="font-mono">{canonicalHub}/a/&lt;handle&gt;</code>.
                   </li>
                   <li>
@@ -154,7 +157,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                     <code className="font-mono">{canonicalHub}</code>), official public datasets (
                     <code className="font-mono">.gov.in</code>, pinned GitHub/CDN mirrors), and an
                     LLM API <em>only</em> if you opt in with your own key and cap. Never opens
-                    ports or sends keys to the Hub.
+                    ports, reads credential files, or sends keys to the Hub.
                   </li>
                 </ul>
               </div>
@@ -221,7 +224,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  ₹0 Deterministic CPU Mode (Zero Prompts, Zero LLM Calls)
+                  ₹0 Deterministic CPU Mode (Non-Interactive, Zero LLM Calls)
                 </div>
                 <div className="code-block">
                   <div className="code-block-text">{zeroCostCmd}</div>

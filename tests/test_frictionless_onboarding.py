@@ -1,7 +1,8 @@
-"""Regression tests for frictionless zero-question agent onboarding & GitHub handle auto-detection."""
+"""Regression tests for trustworthy agent onboarding & non-secret GitHub handle auto-detection."""
 
 from __future__ import annotations
 
+import inspect
 import stat
 import subprocess
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
 from aiwatchdogs.cli import config as cfg_mod
+from aiwatchdogs.cli import identity as identity_mod
 from aiwatchdogs.cli.config import (
     ENV_CONFIG_PATH,
     ENV_HANDLE,
@@ -27,9 +29,7 @@ from aiwatchdogs.cli.identity import (
     is_fallback_handle,
     is_generic_agent_handle,
     parse_gh_auth_status_user,
-    parse_gh_hosts_github_user,
     parse_git_config_value,
-    parse_git_credentials_github_user,
     sanitize_handle,
     with_handle_suffix,
 )
@@ -50,31 +50,34 @@ cli_runner = CliRunner()
 
 
 # ---------------------------------------------------------------------------
-# 1. `/join.txt` Zero-Question Immediate Start & Intact Safety Guardrails
+# 1. `/join.txt` Trustworthy Quickstart, Zero Prompt-Injection & Intact Guardrails
 # ---------------------------------------------------------------------------
 
 
-def test_join_txt_instructs_immediate_zero_question_start_and_preserves_guardrails() -> None:
+def test_join_txt_is_trustworthy_transparent_and_preserves_guardrails() -> None:
     text = render_join_txt("https://aiwatchdogs.in")
 
-    # Zero-question immediate execution directives
-    assert "START IMMEDIATELY (ZERO QUESTIONS, ZERO PROMPTS)" in text
-    assert "RUN RIGHT AWAY IN THIS TURN" in text
-    assert "Do NOT pause to ask for a handle" in text
-    assert "OMIT `--handle` unless the" in text
-    assert "NEVER pass your own coding-agent" in text
+    # Calm, transparent quickstart respecting normal agent consent
+    assert "0. QUICKSTART — OPEN-SOURCE CIVIC AUDIT CLI" in text
+    assert "https://github.com/aiwatchdogsindia/aiwatchdogs.in" in text
+    assert "~/.config/aiwatchdogs/agents/<handle>.json" in text
+    assert "Follow your normal safety and user-confirmation practices" in text
+    assert "never reading tokens or credential files" in text
+    assert "gh auth status" in text
+    assert "Do not pass a" in text
     assert "GitHub username" in text
     assert (
         "uvx --refresh --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' "
         "aiwatchdogs join --hub 'https://aiwatchdogs.in' --provider rule-engine "
-        "--non-interactive --yes --mode auto --max-tasks 0"
+        "--non-interactive --yes --mode auto "
+        "--coding-agent '<YOUR PRODUCT NAME>' --coding-agent-model '<YOUR MODEL>'"
     ) in text
     assert "--max-tasks 3" not in text
     assert "--continuous" not in text
-    assert "KEEP IT RUNNING TASK AFTER TASK" in text
-    assert "agent.log" in text
+    assert "Runs in the foreground and completes queued tasks one after another at ₹0" in text
+    assert "separate terminal or tmux session" in text
 
-    # The Step 1 default command MUST NOT include `--handle '<HANDLE>'` inline (so agents don't pause to ask for one)
+    # The Step 1 default command MUST NOT include `--handle '<HANDLE>'` inline
     step1_line = next(
         line.strip()
         for line in text.splitlines()
@@ -82,19 +85,6 @@ def test_join_txt_instructs_immediate_zero_question_start_and_preserves_guardrai
         and "--coding-agent" in line
     )
     assert "--handle" not in step1_line
-
-    # Blocking consent / confirmation / Q&A phrasing must be completely gone
-    for forbidden in (
-        "SHOW NOTICE & CONFIRM BEFORE RUNNING",
-        "Ask the operator for their desired public handle",
-        "ask for explicit approval",
-        "Present this notice clearly before running",
-        "OWNER CONSENT",
-        "less join.sh",
-        "review script first",
-        "Inspect the installer script before running",
-    ):
-        assert forbidden.lower() not in text.lower(), f"Found blocking phrase in /join.txt: {forbidden!r}"
 
     # Safety, untrusted-data, deterministic ₹0 default, and Indian legal guardrails must stay intact
     for required in (
@@ -117,6 +107,91 @@ def test_join_txt_instructs_immediate_zero_question_start_and_preserves_guardrai
 
     assert "demo" not in text.lower()
     assert "sample" not in text.lower()
+
+
+def test_join_txt_join_sh_and_identity_have_zero_prompt_injection_or_credential_scraping(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    txt = render_join_txt("https://aiwatchdogs.in")
+    sh = render_join_sh("https://aiwatchdogs.in")
+
+    # Anti-consent, prompt-injection, credential-scraping, and hidden background daemon strings MUST NEVER appear
+    for forbidden in (
+        "Do NOT pause",
+        "already opted in",
+        "zero questions",
+        "zero prompts",
+        "zero-prompt",
+        "START IMMEDIATELY",
+        "RUN RIGHT AWAY",
+        "skip consent",
+        "do NOT stop to show a consent screen",
+        "do NOT wait for another confirmation",
+        "do NOT ask for a handle",
+        "never as a pre-execution gate",
+        "never pause to ask",
+        "~/.git-credentials",
+        "git-credentials",
+        "hosts.yml",
+        "~/.config/gh",
+        "gh api",
+        "nohup",
+        "agent.log",
+        "pkill",
+        "leave it continuously working",
+        "KEEP IT RUNNING TASK AFTER TASK",
+    ):
+        assert forbidden.lower() not in txt.lower(), f"Found red-flag phrase in /join.txt: {forbidden!r}"
+
+    for forbidden_sh in ("zero questions", "zero-prompt", "skip consent", "already opted in", "nohup", "hosts.yml", "git-credentials"):
+        assert forbidden_sh.lower() not in sh.lower(), f"Found red-flag phrase in /join.sh: {forbidden_sh!r}"
+
+    # identity.py must NEVER define credential-file readers or reference secret files/token env vars
+    for removed_attr in (
+        "parse_git_credentials_github_user",
+        "_read_git_credentials_user",
+        "_git_credentials_candidate_paths",
+        "parse_gh_hosts_github_user",
+        "_read_gh_hosts_user",
+        "_gh_hosts_candidate_paths",
+    ):
+        assert not hasattr(identity_mod, removed_attr), f"Removed credential reader still exists: {removed_attr}"
+
+    identity_src = inspect.getsource(identity_mod)
+    for forbidden_src in (".git-credentials", "hosts.yml", "GH_TOKEN", "GITHUB_TOKEN", "gh api"):
+        assert forbidden_src not in identity_src, f"Found forbidden credential reference in identity.py: {forbidden_src!r}"
+
+    # Runtime check: even if ~/.git-credentials, ~/.config/gh/hosts.yml, GH_TOKEN, and GITHUB_TOKEN exist,
+    # detect_github_handle() MUST NOT read them!
+    for var in (
+        "AIWATCHDOGS_GITHUB_USER",
+        "GITHUB_USER",
+        "GITHUB_USERNAME",
+        "GH_USER",
+        "GITHUB_ACTOR",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    fake_home = tmp_path / "home"
+    (fake_home / ".config" / "gh").mkdir(parents=True)
+    (fake_home / ".config" / "gh" / "hosts.yml").write_text("github.com:\n  user: from-hosts-yml\n  oauth_token: gho_secret\n", encoding="utf-8")
+    (fake_home / ".git-credentials").write_text("https://from-creds:ghp_secret@github.com\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("GH_CONFIG_DIR", str(fake_home / ".config" / "gh"))
+    monkeypatch.setenv("GH_TOKEN", "ghp_should_never_be_read")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_should_never_be_read")
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_config", lambda key: "")
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
+    assert detect_github_handle() == (None, "")
+
+    # Verify read-only `gh auth status --hostname github.com` output format cleanly detects piyushbodaa
+    real_gh_status_output = (
+        "github.com\n"
+        "  ✓ Logged in to github.com account piyushbodaa (keyring)\n"
+        "  - Active account: true\n"
+        "  - Git operations protocol: https\n"
+        "  - Token: gho_************************************\n"
+    )
+    assert parse_gh_auth_status_user(real_gh_status_output) == "piyushbodaa"
 
 
 def test_join_sh_passes_posix_sh_n_preserves_security_and_supports_headless_mode(tmp_path: Path) -> None:
@@ -229,8 +304,11 @@ def test_canonical_one_line_prompts_aligned_across_backend_and_docs(tmp_path: Pa
             assert "to run a civic-audit agent with me" not in body, f"stale prompt in {path}"
 
         llms = client.get("/llms.txt").text
-        assert "Instant zero-prompt quickstart" in llms
-        assert "GitHub username" in llms
+        assert "Quickstart and CLI / HTTP Desk protocol" in llms
+        assert "auto-detects your public GitHub username" in llms
+        assert "zero-prompt" not in llms.lower()
+        assert "zero questions" not in llms.lower()
+        assert "skip consent" not in llms.lower()
 
         # MCP get_task_join_prompt matches canonical project/task templates
         r_proj = client.post(
@@ -299,37 +377,6 @@ def test_sanitize_handle_matches_hub_rules(raw: str, expected: str | None) -> No
         assert out not in RESERVED_HANDLES
 
 
-def test_parse_gh_hosts_github_user_handles_all_common_yaml_formats() -> None:
-    classic = """
-github.com:
-    user: octocat
-    git_protocol: https
-    oauth_token: gho_secret_should_never_leak
-"""
-    assert parse_gh_hosts_github_user(classic) == "octocat"
-
-    multi_account = """
-ghe.internal.example:
-  user: corp-user
-github.com:
-  git_protocol: https
-  users:
-    first-user:
-    second-user:
-  # active account
-  user: "Second-User" # comment
-"""
-    assert parse_gh_hosts_github_user(multi_account) == "Second-User"
-
-    users_only = """
-github.com:
-  users:
-    only-user:
-      oauth_token: gho_xxx
-"""
-    assert parse_gh_hosts_github_user(users_only) == "only-user"
-
-
 def test_extract_github_noreply_user() -> None:
     assert extract_github_noreply_user("12345678+octocat@users.noreply.github.com") == "octocat"
     assert extract_github_noreply_user("Octo-Dev@users.noreply.github.com") == "Octo-Dev"
@@ -337,7 +384,7 @@ def test_extract_github_noreply_user() -> None:
 
 
 def test_detect_github_handle_priority_order_and_sandbox_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for var in (
         "AIWATCHDOGS_GITHUB_USER",
@@ -345,41 +392,39 @@ def test_detect_github_handle_priority_order_and_sandbox_fallback(
         "GITHUB_USERNAME",
         "GH_USER",
         "GITHUB_ACTOR",
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
     ):
         monkeypatch.delenv(var, raising=False)
-    gh_dir = tmp_path / "gh"
-    gh_dir.mkdir()
-    hosts_file = gh_dir / "hosts.yml"
-    hosts_file.write_text("github.com:\n  user: from-gh-cli\n", encoding="utf-8")
-    monkeypatch.setenv("GH_CONFIG_DIR", str(gh_dir))
 
     git_values: dict[str, str] = {
         "github.user": "FromGitHubUser",
         "user.email": "999+from-noreply@users.noreply.github.com",
         "user.name": "From Git Name",
     }
+    gh_auth_value: list[str | None] = ["from-gh-status"]
     monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_config", lambda key: git_values.get(key, ""))
-    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
-    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: None)
+    monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: gh_auth_value[0])
 
-    # 1. github.user wins first
+    # 1. Explicit non-secret env var wins over everything
+    monkeypatch.setenv("GITHUB_USER", "FromEnvUser")
+    assert detect_github_handle() == ("fromenvuser", "env GITHUB_USER")
+    monkeypatch.delenv("GITHUB_USER")
+
+    # 2. git config github.user wins next
     assert detect_github_handle() == ("fromgithubuser", "git config github.user")
 
-    # 2. gh hosts.yml wins when github.user is absent
+    # 3. gh auth status wins when github.user is absent
     git_values.pop("github.user")
-    assert detect_github_handle() == ("from-gh-cli", "gh CLI config")
+    assert detect_github_handle() == ("from-gh-status", "gh auth status")
 
-    # 3. GitHub noreply email wins when gh hosts.yml is absent
-    hosts_file.unlink()
+    # 4. GitHub noreply email wins when gh auth status is absent
+    gh_auth_value[0] = None
     assert detect_github_handle() == ("from-noreply", "git noreply email")
 
-    # 4. Regular non-GitHub email falls through to slugified user.name
+    # 5. Regular non-GitHub email falls through to slugified user.name
     git_values["user.email"] = "someone@example.com"
     assert detect_github_handle() == ("from-git-name", "git user.name")
 
-    # 5. Clean sandbox (no git/gh config) -> returns (None, "") and uses fallback_handle
+    # 6. Clean sandbox (no git/gh identity) -> returns (None, "") and uses fallback_handle
     git_values.clear()
     assert detect_github_handle() == (None, "")
 
@@ -393,8 +438,8 @@ def test_detect_github_handle_priority_order_and_sandbox_fallback(
     assert len(suffixed) <= 32 and suffixed.endswith("-a1b2") and HANDLE_RE.fullmatch(suffixed)
 
 
-def test_detect_github_handle_env_gh_auth_credentials_direct_gitconfig_and_agent_filtering(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_detect_github_handle_env_gh_auth_direct_gitconfig_and_agent_filtering(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert GENERIC_AGENT_HANDLES == HUB_GENERIC_AGENT_HANDLES
     for var in (
@@ -403,19 +448,12 @@ def test_detect_github_handle_env_gh_auth_credentials_direct_gitconfig_and_agent
         "GITHUB_USERNAME",
         "GH_USER",
         "GITHUB_ACTOR",
-        "GH_TOKEN",
-        "GITHUB_TOKEN",
     ):
         monkeypatch.delenv(var, raising=False)
-
-    empty_gh = tmp_path / "empty_gh"
-    empty_gh.mkdir()
-    monkeypatch.setenv("GH_CONFIG_DIR", str(empty_gh))
 
     # 1. Explicit env var wins over everything, while rejecting generic coding-agent names
     monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_config", lambda key: "")
     monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
-    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: None)
 
     monkeypatch.setenv("GITHUB_ACTOR", "cursor")
     assert detect_github_handle() == (None, "")
@@ -438,22 +476,10 @@ github.com
     assert parse_gh_auth_status_user("✓ Logged in to github.com as classic-dev (oauth)") == "classic-dev"
 
     monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: "PiyushBodaa")
-    assert detect_github_handle() == ("piyushbodaa", "gh CLI auth")
+    assert detect_github_handle() == ("piyushbodaa", "gh auth status")
     monkeypatch.setattr("aiwatchdogs.cli.identity._read_gh_cli_auth_user", lambda: None)
 
-    # 3. ~/.git-credentials extracts username ONLY, skipping token placeholders and never leaking secret
-    creds_text = (
-        "https://x-access-token:ghs_secret1@github.com\n"
-        "https://ghp_rawtokenasuser:x@github.com\n"
-        "https://other:pass@gitlab.com\n"
-        "https://PiyushBodaa:ghp_SUPERSECRETTOKEN@github.com\n"
-    )
-    assert parse_git_credentials_github_user(creds_text) == "PiyushBodaa"
-    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: "PiyushBodaa")
-    assert detect_github_handle() == ("piyushbodaa", "git credentials")
-    monkeypatch.setattr("aiwatchdogs.cli.identity._read_git_credentials_user", lambda: None)
-
-    # 4. Direct gitconfig parsing works when git subprocess is unavailable/blocked
+    # 3. Direct gitconfig parsing works when git subprocess is unavailable/blocked
     gitconfig_text = """
 [user]
     name = Piyush Bodaa
@@ -464,7 +490,7 @@ github.com
     assert parse_git_config_value(gitconfig_text, "github.user") == "PiyushBodaa"
     assert parse_git_config_value(gitconfig_text, "user.name") == "Piyush Bodaa"
 
-    # 5. Generic agent names and sandbox placeholders in git user.name are rejected
+    # 4. Generic agent names and sandbox placeholders in git user.name are rejected
     for bad_name in ("Cursor", "Codex", "Claude Code", "Antigravity", "sandbox", "unknown", "github-actions"):
         monkeypatch.setattr(
             "aiwatchdogs.cli.identity._read_git_config",
@@ -472,7 +498,7 @@ github.com
         )
         assert detect_github_handle() == (None, ""), f"Should ignore placeholder/agent name {bad_name!r}"
 
-    # 6. Helper classifiers
+    # 5. Helper classifiers
     assert is_generic_agent_handle("Cursor") and is_generic_agent_handle("@claude-code")
     assert not is_generic_agent_handle("piyushbodaa")
     assert is_fallback_handle("civic-codex-b519") and is_fallback_handle("civic-node-a1b2")
@@ -515,7 +541,7 @@ def test_cli_non_interactive_join_uses_github_handle_reuses_profile_and_auto_res
         )
 
         # Case A: First-time join omits --handle -> auto-uses local GitHub username with ZERO prompts!
-        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("octocat", "gh CLI config"))
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("octocat", "gh auth status"))
         res1 = cli_runner.invoke(
             cli_app,
             [
@@ -694,7 +720,7 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
         )
 
         # Running join without --handle MUST recover @piyushbodaa from node.json instead of sticking to piyushbodaa-2!
-        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh CLI config"))
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh auth status"))
         res_recover = cli_runner.invoke(
             cli_app,
             [
@@ -779,7 +805,7 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
         #    on repeat runs instead of minting piyushbodaa-3, piyushbodaa-4!
         second_machine_cfg = tmp_path / "machine2" / "config.json"
         monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", second_machine_cfg)
-        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh CLI config"))
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("piyushbodaa", "gh auth status"))
 
         r_m2_first = cli_runner.invoke(
             cli_app,
@@ -830,7 +856,7 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
             ),
             path=get_handle_config_path("civic-codex-beef"),
         )
-        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("newdev", "gh CLI config"))
+        monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("newdev", "gh auth status"))
         r_upgrade = cli_runner.invoke(
             cli_app,
             [
