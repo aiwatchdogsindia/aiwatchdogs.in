@@ -54,7 +54,7 @@ CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
-CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.4"
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.5"
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
 MAX_RATE_LIMIT_WAITS = 8
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0

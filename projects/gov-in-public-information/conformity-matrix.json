@@ -128,10 +128,10 @@
     "gigw_checkpoints": 88,
     "rti_checkpoints": 42,
     "statutory_other_checkpoints": 29,
-    "automated_http_html": 57,
-    "agent_inspection": 87,
+    "automated_http_html": 48,
+    "agent_inspection": 96,
     "internal_governance": 15,
-    "w1_automated_checks_count": 42
+    "w1_automated_checks_count": 46
   },
   "sections": [
     {
@@ -161,9 +161,9 @@
         "data_table_headers",
         "gov_domain_canonical",
         "social_media_links",
-        "terms_copyright_link",
+        "html_lang_attr",
         "search_or_sitemap",
-        "html_lang_attr"
+        "terms_copyright_link"
       ]
     },
     {
@@ -195,14 +195,14 @@
       "agent_count": 42,
       "internal_count": 0,
       "w1_check_keys": [
-        "page_title_meta",
         "img_alt_text",
         "semantic_landmarks",
         "skip_to_main",
         "search_or_sitemap",
         "html_lang_attr",
         "form_input_labels",
-        "unique_dom_ids"
+        "unique_dom_ids",
+        "page_title_meta"
       ]
     },
     {
@@ -215,12 +215,12 @@
       "agent_count": 0,
       "internal_count": 2,
       "w1_check_keys": [
-        "website_policies_link",
-        "privacy_policy_link",
         "https_valid_tls",
         "hsts_header",
         "security_headers",
-        "server_banner_obscured"
+        "server_banner_obscured",
+        "privacy_policy_link",
+        "website_policies_link"
       ]
     },
     {
@@ -229,20 +229,14 @@
       "short_name": "RTI Act 2005",
       "framework": "RTI Act 2005",
       "total_checkpoints": 34,
-      "automated_count": 9,
-      "agent_count": 21,
+      "automated_count": 3,
+      "agent_count": 27,
       "internal_count": 4,
       "w1_check_keys": [
-        "contact_link",
-        "about_link",
-        "updated_date",
-        "help_link",
-        "feedback_link",
-        "bilingual_unicode",
         "rti_link",
         "pio_faa_disclosure",
-        "citizen_charter_link",
-        "acts_tenders_link"
+        "acts_tenders_link",
+        "bilingual_unicode"
       ]
     },
     {
@@ -251,13 +245,12 @@
       "short_name": "DoPT Suo Motu",
       "framework": "RTI Act 2005",
       "total_checkpoints": 8,
-      "automated_count": 3,
-      "agent_count": 5,
+      "automated_count": 1,
+      "agent_count": 7,
       "internal_count": 0,
       "w1_check_keys": [
-        "updated_date",
         "rti_link",
-        "acts_tenders_link"
+        "updated_date"
       ]
     },
     {
@@ -266,27 +259,23 @@
       "short_name": "Rights & Governance",
       "framework": "GoI Statutory & Policy",
       "total_checkpoints": 14,
-      "automated_count": 7,
-      "agent_count": 5,
+      "automated_count": 6,
+      "agent_count": 6,
       "internal_count": 2,
       "w1_check_keys": [
-        "contact_link",
-        "emblem_or_logo",
-        "download_metadata",
-        "page_title_meta",
-        "data_table_headers",
-        "wim_disclosure",
-        "bilingual_unicode",
-        "img_alt_text",
-        "semantic_landmarks",
-        "skip_to_main",
-        "html_lang_attr",
-        "form_input_labels",
-        "unique_dom_ids",
         "citizen_charter_link",
         "grievance_link",
-        "acts_tenders_link",
-        "accessibility_link"
+        "accessibility_link",
+        "hindi_english_bilingual",
+        "html_lang_attr",
+        "page_title_meta",
+        "skip_to_main",
+        "img_alt_text",
+        "form_input_labels",
+        "semantic_landmarks",
+        "unique_dom_ids",
+        "data_table_headers",
+        "wim_disclosure"
       ]
     },
     {
@@ -299,20 +288,17 @@
       "agent_count": 2,
       "internal_count": 4,
       "w1_check_keys": [
-        "email",
-        "ownership_statement",
-        "download_metadata",
-        "responsive_viewport",
-        "gov_domain_canonical",
-        "website_policies_link",
-        "privacy_policy_link",
+        "gov_email_domain",
+        "stqc_cqw_badge",
+        "no_legacy_plugins",
+        "open_data_link",
         "https_valid_tls",
+        "gov_domain_canonical",
         "hsts_header",
         "security_headers",
         "server_banner_obscured",
-        "grievance_link",
-        "acts_tenders_link",
-        "gov_email_domain"
+        "privacy_policy_link",
+        "download_metadata"
       ]
     }
   ],
@@ -322,13 +308,9 @@
       "label": "Contact link",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
         "GIGW-Q-10",
-        "GIGW-Q-18",
-        "RTI-4-1-b-ix",
-        "RTI-4-1-b-xv",
-        "DARPG-PGO-01"
+        "GIGW-Q-18"
       ],
       "description": "Homepage navigation link to Contact Us, Who's Who, or Directory (multilingual)."
     },
@@ -337,10 +319,8 @@
       "label": "Email indicator",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
-        "GIGW-Q-10",
-        "MEITY-EMAIL-01"
+        "GIGW-Q-10"
       ],
       "description": "Published email indicator on homepage or linked contact page (presence only, zero PII retained)."
     },
@@ -349,7 +329,6 @@
       "label": "Postal address",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
         "GIGW-Q-10"
       ],
@@ -360,7 +339,6 @@
       "label": "Telephone indicator",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
         "GIGW-Q-10"
       ],
@@ -371,11 +349,9 @@
       "label": "About Us link",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
         "GIGW-Q-09",
-        "GIGW-Q-18",
-        "RTI-4-1-b-i"
+        "GIGW-Q-18"
       ],
       "description": "Homepage navigation link to About Us / organisation overview (multilingual)."
     },
@@ -384,10 +360,8 @@
       "label": "Last updated date",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
         "GIGW-Q-05",
-        "RTI-4-1-b-annual",
         "DOPT-SM-01"
       ],
       "description": "Homepage displays a Last Updated / Last Reviewed date indicator (multilingual)."
@@ -397,10 +371,8 @@
       "label": "Help link",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": true,
       "checkpoint_ids": [
-        "GIGW-Q-14",
-        "RTI-4-1-b-xv"
+        "GIGW-Q-14"
       ],
       "description": "Homepage link to a Help section (multilingual)."
     },
@@ -409,11 +381,9 @@
       "label": "Govt emblem / logo",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-01",
-        "GIGW-Q-18",
-        "EMBLEM-2005-motto"
+        "GIGW-Q-18"
       ],
       "description": "Homepage displays State Emblem of India or official government logo markup (alt/src/title/aria-label)."
     },
@@ -422,11 +392,9 @@
       "label": "Ownership attribution",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-02",
-        "GIGW-Q-18",
-        "STQC-CQW-01"
+        "GIGW-Q-18"
       ],
       "description": "Header/footer ownership text identifying the responsible government body or NIC hosting attribution."
     },
@@ -435,24 +403,20 @@
       "label": "Download size/format",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-06",
-        "RPWD-15-1-c-ii",
         "OPENSTD-02"
       ],
-      "description": "Downloadable document links (.pdf/.doc/.xls/.zip) on homepage disclose format/size metadata (unassessable if no download links on homepage)."
+      "description": "Downloadable document links (.pdf/.doc/.xls/.zip) on homepage disclose format/size metadata."
     },
     {
       "key": "feedback_link",
       "label": "Feedback link / form",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-11",
-        "GIGW-Q-18",
-        "RTI-4-1-b-vii"
+        "GIGW-Q-18"
       ],
       "description": "Homepage links to a Feedback page or embeds a feedback form indicator (read-only, never submitted)."
     },
@@ -461,7 +425,6 @@
       "label": "National Portal link",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-12",
         "GIGW-Q-18"
@@ -473,10 +436,8 @@
       "label": "Responsive CSS / viewport",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "GIGW-Q-15",
-        "OPENSTD-01"
+        "GIGW-Q-15"
       ],
       "description": "Homepage declares <meta name='viewport'> and loads CSS stylesheets."
     },
@@ -485,7 +446,6 @@
       "label": "Title & page metadata",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-17",
         "GIGW-A-28",
@@ -498,19 +458,17 @@
       "label": "Data table markup",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-19",
         "RPWD-15-1-c-iii"
       ],
-      "description": "HTML tables on sampled pages use semantic <th>/<thead>/<caption>/scope markup (unassessable if no tables present)."
+      "description": "HTML tables on sampled pages use semantic <th>/<thead>/<caption>/scope markup."
     },
     {
       "key": "gov_domain_canonical",
       "label": "Official .gov.in/.nic.in host",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-21",
         "MEITY-DOMAIN-01"
@@ -522,7 +480,6 @@
       "label": "Social media links",
       "section": "quality",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-24"
       ],
@@ -533,23 +490,20 @@
       "label": "Web Information Manager",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-L-01",
         "DARPG-WIM-01"
       ],
-      "description": "Public mention/disclosure of Web Information Manager (WIM) on homepage or linked contact/policies page."
+      "description": "Public mention/disclosure of Web Information Manager (WIM) on homepage or linked contact/RTI page."
     },
     {
       "key": "website_policies_link",
       "label": "Website policies link",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-L-03",
-        "GIGW-S-03",
-        "DPDP-PRIVACY-01"
+        "GIGW-S-03"
       ],
       "description": "Homepage links to Website Policies (Copyright, Hyperlinking, Privacy, CAP/CRP/CMAP, Terms & Conditions)."
     },
@@ -558,13 +512,10 @@
       "label": "Privacy policy",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-L-03",
         "GIGW-S-03",
-        "DPDP-PRIVACY-01",
-        "DPDP-NOTICE-02",
-        "DPDP-GRIEVANCE-03"
+        "DPDP-PRIVACY-01"
       ],
       "description": "Published Privacy Policy link or section on homepage / Website Policies page."
     },
@@ -573,7 +524,6 @@
       "label": "Terms & copyright policy",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-18",
         "GIGW-L-03"
@@ -585,57 +535,48 @@
       "label": "External link indication",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-L-04"
       ],
-      "description": "Hyperlinking policy or external-link indicator (target='_blank' / external warning) on non-government links (unassessable if none present)."
+      "description": "Hyperlinking policy or external-link indicator (target='_blank' / external warning) on non-government links."
     },
     {
       "key": "no_under_construction",
       "label": "No under-construction stubs",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-L-08"
       ],
-      "description": "Sampled pages and homepage links are free from 'under construction' / 'coming soon' placeholder text."
+      "description": "Sampled pages are free from 'under construction' / 'coming soon' placeholder text."
     },
     {
       "key": "bilingual_unicode",
       "label": "Bilingual & Unicode",
       "section": "lifecycle",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-L-10",
-        "RTI-4-4",
-        "RTI-26-2-3",
-        "OLA-3-3-web",
-        "OLA-3-3-docs",
-        "OLA-11-manuals"
+        "RTI-4-4"
       ],
-      "description": "UTF-8/Unicode encoding declared and prominent Hindi/regional language switcher present."
+      "description": "UTF-8/Unicode encoding declared and Hindi/regional language switcher or bilingual text present."
     },
     {
       "key": "img_alt_text",
       "label": "Image alt attributes (1.1.1)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-A-01",
         "RPWD-15-1-c-iii"
       ],
-      "description": "All <img> elements on homepage carry an alt attribute (unassessable if no <img> tags)."
+      "description": "All <img> elements on homepage carry an alt attribute."
     },
     {
       "key": "semantic_landmarks",
       "label": "Semantic landmarks (1.3.1)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-A-07",
         "RPWD-15-1-c-iii"
@@ -647,10 +588,8 @@
       "label": "Skip to main content (2.4.1)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-A-27",
-        "RPWD-15-1-c-i",
         "RPWD-15-1-c-iii"
       ],
       "description": "Homepage provides a 'Skip to main content' bypass link targeting a valid fragment ID."
@@ -660,7 +599,6 @@
       "label": "Search / Sitemap (2.4.5)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-18",
         "GIGW-A-31"
@@ -672,7 +610,6 @@
       "label": "HTML lang attribute (3.1.1)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-Q-17",
         "GIGW-A-38",
@@ -685,19 +622,17 @@
       "label": "Form input labels (3.3.2)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-A-45",
         "RPWD-15-1-c-iii"
       ],
-      "description": "Visible form inputs have programmatic <label>/aria-label/title attributes (unassessable if no form inputs)."
+      "description": "Visible form inputs have programmatic <label>/aria-label/title attributes."
     },
     {
       "key": "unique_dom_ids",
       "label": "Unique DOM IDs (4.1.1)",
       "section": "accessibility",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
         "GIGW-A-48",
         "RPWD-15-1-c-iii"
@@ -709,9 +644,7 @@
       "label": "Valid HTTPS / TLS",
       "section": "security",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "GIGW-S-02",
         "MEITY-DOMAIN-01"
       ],
       "description": "Site serves valid verified HTTPS/TLS on its assigned .gov.in hostname (passive TLS verification)."
@@ -721,9 +654,7 @@
       "label": "HSTS header",
       "section": "security",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "GIGW-S-02",
         "CERTIN-SEC-01"
       ],
       "description": "HTTPS response sends Strict-Transport-Security (HSTS) header (GIGW 5.3.2)."
@@ -733,10 +664,7 @@
       "label": "HTTP security headers",
       "section": "security",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "GIGW-S-01",
-        "GIGW-S-02",
         "CERTIN-SEC-01"
       ],
       "description": "Response sends X-Content-Type-Options: nosniff and clickjacking protection (X-Frame-Options or CSP frame-ancestors)."
@@ -746,52 +674,19 @@
       "label": "Server version obscured",
       "section": "security",
       "framework": "GIGW 3.0",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "GIGW-S-01",
-        "GIGW-S-02",
         "CERTIN-SEC-02"
       ],
-      "description": "Server / X-Powered-By HTTP headers do not disclose exact server/runtime version numbers (GIGW 5.3.1 & 5.3.2)."
+      "description": "Server / X-Powered-By HTTP headers do not disclose exact server/runtime version numbers."
     },
     {
       "key": "rti_link",
       "label": "RTI / Proactive disclosure link",
       "section": "rti_act",
       "framework": "RTI Act 2005",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "RTI-4-1-b-i",
-        "RTI-4-1-b-ii",
-        "RTI-4-1-b-iii",
-        "RTI-4-1-b-iv",
-        "RTI-4-1-b-v",
-        "RTI-4-1-b-vi",
-        "RTI-4-1-b-vii",
-        "RTI-4-1-b-viii",
-        "RTI-4-1-b-ix",
-        "RTI-4-1-b-x",
-        "RTI-4-1-b-xi",
-        "RTI-4-1-b-xii",
-        "RTI-4-1-b-xiii",
-        "RTI-4-1-b-xiv",
-        "RTI-4-1-b-xv",
-        "RTI-4-1-b-xvi",
-        "RTI-4-1-b-xvii",
-        "RTI-4-1-b-annual",
         "RTI-4-2",
-        "RTI-4-3",
-        "RTI-6-1",
-        "RTI-7-5",
-        "RTI-25-2-3",
-        "RTI-26-2-3",
-        "DOPT-SM-01",
-        "DOPT-SM-02",
-        "DOPT-SM-04",
-        "DOPT-SM-05",
-        "DOPT-SM-06",
-        "DOPT-SM-07",
-        "DOPT-SM-08"
+        "DOPT-SM-01"
       ],
       "description": "Dedicated RTI / Right to Information / Suo Motu Disclosure link on homepage or navigation."
     },
@@ -800,23 +695,17 @@
       "label": "CPIO / SPIO / FAA disclosure",
       "section": "rti_act",
       "framework": "RTI Act 2005",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "RTI-4-1-b-xvi",
-        "RTI-5-1",
-        "RTI-5-2",
-        "RTI-19-1"
+        "RTI-4-1-b-xvi"
       ],
-      "description": "Public Information Officer (CPIO/SPIO/CAPIO) or First Appellate Authority designation indicator on landing, contact, or RTI page (zero PII stored)."
+      "description": "Public Information Officer (CPIO/SPIO/CAPIO) or First Appellate Authority designation indicator (zero PII stored)."
     },
     {
       "key": "citizen_charter_link",
       "label": "Citizen's Charter link",
       "section": "statutory_rights_governance",
       "framework": "GoI Statutory & Policy",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "RTI-4-1-b-iv",
         "DARPG-CC-01"
       ],
       "description": "Published Citizen's Charter / Client's Charter / Sevottam navigation link."
@@ -826,11 +715,8 @@
       "label": "Public Grievance / CPGRAMS link",
       "section": "statutory_rights_governance",
       "framework": "GoI Statutory & Policy",
-      "existing_w1": false,
       "checkpoint_ids": [
-        "DARPG-CPGRAMS-01",
-        "DARPG-PGO-01",
-        "DPDP-GRIEVANCE-03"
+        "DARPG-CPGRAMS-01"
       ],
       "description": "Public Grievance Redressal / CPGRAMS (pgportal.gov.in) / PGO navigation link."
     },
@@ -839,18 +725,7 @@
       "label": "Acts, Rules, Tenders & Schemes",
       "section": "rti_act",
       "framework": "RTI Act 2005",
-      "existing_w1": false,
-      "checkpoint_ids": [
-        "RTI-4-1-b-v",
-        "RTI-4-1-b-xi",
-        "RTI-4-1-b-xii",
-        "RTI-4-1-c",
-        "RTI-8-1-i-proviso",
-        "DOPT-SM-03",
-        "DOPT-SM-08",
-        "OLA-11-manuals",
-        "NDSAP-01"
-      ],
+      "checkpoint_ids": [],
       "description": "Public governance disclosure links: Acts/Rules/Manuals, Tenders/Procurement, Budget/Annual Reports, Schemes, or Open Data."
     },
     {
@@ -858,7 +733,6 @@
       "label": "Official @gov.in / @nic.in email",
       "section": "statutory_security_data",
       "framework": "GoI Statutory & Policy",
-      "existing_w1": false,
       "checkpoint_ids": [
         "MEITY-EMAIL-01"
       ],
@@ -869,11 +743,50 @@
       "label": "Accessibility / Screen Reader link",
       "section": "statutory_rights_governance",
       "framework": "GoI Statutory & Policy",
-      "existing_w1": false,
       "checkpoint_ids": [
         "RPWD-15-1-c-i"
       ],
       "description": "Screen Reader Access or Accessibility Statement link per RPwD Rule 15(1)(c)(i) and GIGW."
+    },
+    {
+      "key": "hindi_english_bilingual",
+      "label": "Hindi & English bilingual (OLA)",
+      "section": "statutory_rights_governance",
+      "framework": "GoI Statutory & Policy",
+      "checkpoint_ids": [
+        "OLA-3-3-web"
+      ],
+      "description": "UTF-8 homepage provides both English and Hindi (Devanagari script or explicit Hindi switcher) for Official Languages Act Sec 3(3) checks."
+    },
+    {
+      "key": "stqc_cqw_badge",
+      "label": "STQC CQW / GIGW badge",
+      "section": "statutory_security_data",
+      "framework": "GoI Statutory & Policy",
+      "checkpoint_ids": [
+        "STQC-CQW-01"
+      ],
+      "description": "Explicit STQC Certified Quality Website (CQW) or GIGW conformity certification badge/statement on homepage."
+    },
+    {
+      "key": "no_legacy_plugins",
+      "label": "No Flash / Silverlight / ActiveX",
+      "section": "statutory_security_data",
+      "framework": "GoI Statutory & Policy",
+      "checkpoint_ids": [
+        "OPENSTD-01"
+      ],
+      "description": "Homepage markup is free of deprecated proprietary browser plugins (<applet>, Flash .swf, Silverlight, ActiveX clsid)."
+    },
+    {
+      "key": "open_data_link",
+      "label": "Open Data / machine-readable link",
+      "section": "statutory_security_data",
+      "framework": "GoI Statutory & Policy",
+      "checkpoint_ids": [
+        "NDSAP-01"
+      ],
+      "description": "Homepage links to data.gov.in, an Open Data / Datasets section, or machine-readable .csv/.json/.xml/.ods datasets (NDSAP)."
     }
   ],
   "risk_catalog": {
@@ -2250,7 +2163,7 @@
       ],
       "source_url": "https://guidelines.india.gov.in/guidelines/#lifecycleGuidelines",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
+      "automation_coverage": "none",
       "w1_check_keys": [],
       "public_disclosure_indicator": "All primary homepage navigation and footer links resolve cleanly with HTTP 200.",
       "caveats": "Full site-wide link crawling across 12,537 domains would violate polite crawling bounds; W1 checks only bounded primary pages.",
@@ -3977,11 +3890,8 @@
       ],
       "source_url": "https://guidelines.india.gov.in/guidelines/#cybersecurityGuidelines",
       "verification_mode": "internal_governance",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "security_headers",
-        "server_banner_obscured"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Obscured Server/X-Powered-By version headers, defense-in-depth HTTP security headers, and optional public STQC/CQW badge.",
       "caveats": "Absence of a public badge does NOT prove lack of a Safe-to-Host certificate; internal code/DB security audits can only be verified via official STQC/CERT-In records. Never probe or actively scan government servers.",
       "agent_inspection_guidance": "Check if the portal publicly discloses a STQC Certified Quality Website (CQW) / CERT-In Safe-to-Host badge or security audit date (optional public indicator); actual certificate validity, OWASP ASVS code review, DB encryption, and annual re-audit records are strictly internal.",
@@ -4025,13 +3935,8 @@
       ],
       "source_url": "https://guidelines.india.gov.in/guidelines/#cybersecurityGuidelines",
       "verification_mode": "internal_governance",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "https_valid_tls",
-        "hsts_header",
-        "security_headers",
-        "server_banner_obscured"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Valid HTTPS/TLS certificate, HSTS header, and obscured server version banner.",
       "caveats": "Passive HTTPS/HSTS observation covers only the public transport layer of GIGW 5.3.2; hosting infrastructure CIA controls require backend HSP/STQC verification. Zero active port scanning or vulnerability probing is permitted.",
       "agent_inspection_guidance": "Review observed passive TLS/HTTPS and HSTS results; data-centre India residency, DC/DR seismic separation, WAF deployment, 180-day CERT-In log retention, container hardening, and OS patching are internal hosting controls.",
@@ -4140,11 +4045,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "about_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Link to About Us / Organisation Chart / RTI Section 4(1)(b) Manual 1 on homepage or RTI page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "About/RTI page clearly states the authority's institutional identity, organisational structure/divisions, and core functions & duties. Partial/stale: Only a one-sentence tagline or empty/under-construction heading is present without concrete functions or structure.",
@@ -4177,10 +4079,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(ii) / Manual-2 heading or table on RTI proactive disclosure page or work-allocation PDF.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Published role-wise or division-wise description of administrative/financial/statutory powers and duties of officers and employees. Partial/stale: Only lists senior-most head's role or references 'as per Allocation of Business Rules' without detailing officer duties.",
@@ -4212,10 +4112,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(iii) / Manual-3 block or channel-of-submission matrix on RTI page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Explicitly documents how proposals/applications move through levels of scrutiny, supervision, and final approval. Partial/stale: Only states 'as per Manual of Office Procedure' without specifying internal channels of submission.",
@@ -4247,11 +4145,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "citizen_charter_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Link to Citizen's Charter or Section 4(1)(b)(iv) / Manual-4 table specifying timelines/service standards.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Concrete norms, processing timelines, or service-delivery benchmarks published on RTI page or linked Citizen's Charter. Partial/stale: Only states 'as per government rules' or publishes a charter older than several years with no timelines.",
@@ -4282,12 +4177,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link",
-        "rti_link"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Navigation link matching Acts/Rules/Regulations/Manuals/Circulars/Notifications/Guidelines on homepage or RTI section.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Dedicated Acts/Rules/Manuals/Circulars/Notifications section observed with accessible documents or listings. Partial/stale: Lists titles of rules/manuals without downloadable texts, or links are broken/outdated.",
@@ -4319,10 +4211,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(vi) / Manual-6 table listing document categories and custodian divisions.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Explicit inventory/statement classifying document categories held by the authority and their custodians/access mode. Partial/stale: Only lists 1-2 generic items (e.g., 'Files and registers') without concrete categories.",
@@ -4354,11 +4244,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "feedback_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(vii) disclosure block or Public Consultation / Draft Policies section.",
       "caveats": "Authorities without formal public policy-formulation roles may legitimately state 'Not applicable' or describe general feedback channels. Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Explicitly describes public consultation/representation arrangements (or clearly states N/A with rationale for non-policy units). Partial/stale: Mentions consultation in heading only or displays expired draft calls from many years ago with no framework.",
@@ -4390,10 +4277,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(viii) / Manual-8 table listing advisory/governing committees plus public-access status of meetings & minutes.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Lists constituted boards/councils/committees AND explicitly states whether meetings are open to the public and whether minutes are accessible. Partial/stale: Lists committees or governing board composition but omits openness of meetings and accessibility of minutes.",
@@ -4424,12 +4309,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "contact_link",
-        "rti_link"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Link matching Who's Who / Officer Directory / Telephone Directory / Staff Directory on homepage, Contact page, or RTI page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Accessible Who's Who or Directory of Officers and Employees page/document listing official designations. Partial/stale: Lists only top 1-2 political/administrative heads or clearly outdated incumbents without broader officer directory.",
@@ -4461,10 +4343,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(x) / Manual-10 table or PDF listing monthly remuneration / pay levels and compensation rules.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Published remuneration table (designation/post-wise pay levels or monthly remuneration) and reference to pay/compensation regulations. Partial/stale: Only cites 'as per Pay Commission rules' without post-wise pay matrix/remuneration table, or uses pre-7th CPC obsolete scales.",
@@ -4496,11 +4376,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Link to Budget / Demand for Grants / Expenditure / Outcome Budget / Annual Report or RTI Manual-11.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Authority-specific budget allocations, proposed plan/scheme outlays, and actual expenditure/disbursement reports for recent fiscal year(s). Partial/stale: Shows only high-level allocation without disbursement/actual expenditure, or latest published budget is >2 financial years old.",
@@ -4532,11 +4409,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(xii) / Manual-12 disclosure or Schemes/Subsidies/DBT dashboard link.",
       "caveats": "Regulatory/administrative authorities that operate no subsidy schemes satisfy this clause by explicitly stating 'Not Applicable / Nil'. Note RTI Sec 8(1)(j) as amended by DPDP Act 2023 w.e.f. 13-11-2025 limits personal data publication. Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Publishes subsidy execution guidelines, allocated amounts, and beneficiary reporting/dashboard (or explicitly states Nil/N/A where no subsidy exists). Partial/stale: Describes scheme eligibility qualitatively but omits budget allocations or disbursement/beneficiary summaries.",
@@ -4568,10 +4442,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(xiii) / Manual-13 statement or public register of licences/permits/concessions.",
       "caveats": "Authorities that do not grant concessions/permits/licences satisfy this clause by stating 'Not Applicable / Nil'. Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Publishes public register/list of institutional recipients of concessions/permits/authorisations, or explicitly states Nil/N/A. Partial/stale: Describes how to apply for a permit but publishes no register or historical list of granted permits/concessions.",
@@ -4603,10 +4475,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(xiv) / Manual-14 inventory listing digitised datasets, web portals, and electronic publications.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Itemised inventory of databases, reports, manuals, and portals available in electronic form with access pointers. Partial/stale: Generic one-liner stating 'Most information is on the website' without listing electronic holdings.",
@@ -4638,12 +4508,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "help_link",
-        "contact_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(xv) / Manual-15 block detailing facilitation counter, office timings, library/reading room status, and web access.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Specifies citizen access mechanisms (website, facilitation counter/reception, office timings, inspection procedure, and library/reading room status). Partial/stale: Mentions only the website URL without office timings, facilitation counter, or physical inspection details.",
@@ -4677,8 +4543,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "pio_faa_disclosure",
-        "rti_link"
+        "pio_faa_disclosure"
       ],
       "public_disclosure_indicator": "Explicit CPIO / SPIO / Public Information Officer designation text or dedicated PIO directory link on homepage, Contact page, or RTI page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
@@ -4711,10 +4576,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Section 4(1)(b)(xvii) / Manual-17 heading linking annual reports, FAQs, parliamentary Q&A, or DoPT prescribed items.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Addresses item (xvii) with prescribed/additional transparency disclosures (e.g., annual report, FAQs, RTI statistics, audit reports). Partial/stale: Heading present with blank cell or 'To be updated' placeholder.",
@@ -4746,11 +4609,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "updated_date",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Last Updated / Reviewed date on the RTI proactive disclosure page itself (distinct from homepage footer auto-timestamp) and fiscal year currency inside tables.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "RTI Section 4(1)(b) disclosures show clear revision/data currency within the last 12–18 months (current or preceding fiscal year). Partial/stale: RTI manual exists but dates/budgets/officer lists are visibly >2 years stale (e.g., last revised 2018-2022).",
@@ -4782,10 +4642,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Presence of Policy Documents / Notifications / Press Releases / Public Notices section with explanatory background notes.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Publishes policy papers, notifications, background notes, or explanatory announcements for major public-facing decisions. Partial/stale: Publishes terse order numbers without explanatory background facts or stops updating policy notices.",
@@ -4886,10 +4744,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "RTI page loads publicly over HTTPS without login wall, uses structured headings/tables or readable links, and avoids dead links.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "RTI disclosures are reachable without login, clearly structured by Section 4(1)(b) items, and readable without broken links. Partial/stale: RTI page exists but key documents return 404/broken links, require login, or are unindexed bulk image scans.",
@@ -4955,11 +4811,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "pio_faa_disclosure"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Visible CPIO / SPIO / PIO listing on RTI or Contact page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "CPIO/SPIO designations for administrative units/divisions are published clearly on the website. Partial/stale: Only one generic Nodal CPIO listed for a large multi-unit ministry without unit-wise CPIOs, or entries are outdated.",
@@ -4990,11 +4844,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "pio_faa_disclosure"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Visible CAPIO / SAPIO / APIO / Assistant Public Information Officer mention or table on RTI page.",
       "caveats": "Applies specifically to authorities having sub-divisional/sub-district or field-level units; single-headquarters bodies with no field offices may legitimately have no CAPIO/SAPIO. Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "CAPIO/SAPIO designations published (or authority explicitly clarifies single-unit structure with direct CPIO/SPIO). Partial/stale: Mentions CAPIO heading without listing regional/sub-divisional officers where authority has wide field presence.",
@@ -5025,11 +4877,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Outbound link to rtionline.gov.in or state RTI online portal (e.g., rtionline.<state>.gov.in), or published RTI application filing instructions.",
       "caveats": "Central authorities route via https://rtionline.gov.in; State authorities MUST route to their respective State RTI portal or SPIO postal channel (NEVER rtionline.gov.in, which returns state requests without refund). Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Website links to the jurisdiction-appropriate online RTI portal and/or clearly explains how to submit an RTI request electronically or in writing. Partial/stale: Links to wrong jurisdiction portal (e.g., State authority linking to central rtionline.gov.in) or broken portal URL.",
@@ -5094,10 +4944,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Fee schedule and BPL exemption notice on the authority's RTI page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "RTI page states applicable application/reproduction fee, payment modes, and explicitly mentions BPL fee exemption. Partial/stale: Mentions Rs. 10 application fee but omits BPL exemption or copying cost schedule.",
@@ -5129,10 +4977,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Cabinet Decisions / Monthly Summary for Cabinet archive on Cabinet Secretariat or Ministry websites.",
       "caveats": "Second Proviso excludes matters falling under other Section 8(1) exemptions. Applies ONLY to Cabinet Secretariat, Chief Minister/Council of Ministers secretariats, and Union/State Ministries — NOT applicable to subordinate offices, courts, or autonomous institutes.",
       "agent_inspection_guidance": "Cabinet Secretariat / Ministry / State GAD publishes completed Cabinet decisions and non-exempt summaries/reasons. Partial/stale: Publishes brief press headlines without decision summaries or archive is >1 year stale.",
@@ -5163,11 +5009,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "pio_faa_disclosure"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Explicit 'First Appellate Authority' / 'Appellate Authority' listing alongside CPIO/SPIO on RTI or Contact page.",
       "caveats": "Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "First Appellate Authority designation (senior in rank to CPIO/SPIO) and official contact channel published on RTI/Contact page. Partial/stale: Mentions appeal right in abstract without identifying who the First Appellate Authority is.",
@@ -5199,10 +5043,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Quarterly/Annual RTI Returns table or Annual Report chapter reporting RTI receipts/disposals/rejections.",
       "caveats": "Statutory submission is made to CIC/SIC (which tables the consolidated report in Parliament/Legislature under Sec 25(4)); online publication of quarterly/annual RTI returns on the authority's own website is reinforced by DoPT OM 1/6/2011-IR. Does not apply to intelligence and security organisations specified in the Second Schedule (Section 24(1)) or State-notified intelligence/security organisations (Section 24(4)), except for specific statutory provisos. Single-purpose web apps/subdomains may satisfy web discoverability by linking prominently to their parent public authority's Section 4 disclosure portal.",
       "agent_inspection_guidance": "Published annual/quarterly RTI disposal statistics (requests received, disposed, rejected, appeals) on RTI page or in Annual Report. Partial/stale: Only old RTI statistics (>2 years old) or aggregate counts without rejection/appeal breakdown.",
@@ -5267,11 +5109,8 @@
       "risks_addressed": [],
       "source_url": "https://rti.gov.in/Writereaddata/RTI%20Act,%202005%20(Amended)-English%20Version.PDF",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link",
-        "bilingual_unicode"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Official-language RTI Citizen Guide PDF/webpage on Union or State nodal RTI portals.",
       "caveats": "Applies specifically to Central/State Appropriate Government nodal RTI portals (e.g., rti.gov.in, dopt.gov.in, and State Government RTI / Information Commission / General Administration portals) — NOT every subordinate domain.",
       "agent_inspection_guidance": "Nodal Appropriate Government portal publishes an official-language Citizen RTI Guide covering clauses (a)-(i) of Section 26(3). Partial/stale: Guide exists only in English (omitting official language) or is severely outdated (pre-2012 rules / dead addresses).",
@@ -5338,11 +5177,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://cic.gov.in/",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Link or PDF mentioning 'Transparency Audit' / 'Third-Party Audit' of Section 4 disclosures on the RTI page.",
       "caveats": "Mandatory for Central Government Ministries, Departments, and Central Public Authorities overseen by CIC; optional/state-policy-dependent for State Government portals. Subject to RTI Section 24 exemptions.",
       "agent_inspection_guidance": "Recent (last 1–2 years) Third-Party RTI Transparency Audit report hosted publicly on the authority's RTI section. Partial/stale: Only self-appraisal report published without independent third-party audit, or audit report is >2 years stale.",
@@ -5374,11 +5211,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://dopt.gov.in/",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Visible Tenders / Procurement navigation link on homepage or RTI section.",
       "caveats": "Many authorities publish tenders via CPPP (eprocure.gov.in), GeM (gem.gov.in), or State e-procurement portals; linking to those portals from a Tenders nav item satisfies discoverability.",
       "agent_inspection_guidance": "Dedicated Tenders/Procurement page or link to official e-Procurement/CPPP/GeM tender listings with active/awarded records. Partial/stale: Tenders section exists but only displays notices from >2 years ago or omits contract award disclosures.",
@@ -5410,10 +5245,8 @@
       "risks_addressed": [],
       "source_url": "https://dopt.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Foreign/Domestic Tours link or table inside RTI Proactive Disclosure section.",
       "caveats": "Applies primarily to Central Ministries/Departments/Public Authorities; non-applicable or Nil for small offices with no foreign/official tours.",
       "agent_inspection_guidance": "Published statement/table of foreign & domestic tours with dates, destinations, and expenditure (or explicit Nil report). Partial/stale: Lists tours without expenditure figures or latest tour statement is >2 years old.",
@@ -5445,10 +5278,8 @@
       "risks_addressed": [],
       "source_url": "https://dopt.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "PPP Projects / Concession Agreements entry in RTI proactive disclosure section.",
       "caveats": "Applies only where the public authority executes PPP projects; explicit 'Nil / Not Applicable' satisfies the item.",
       "agent_inspection_guidance": "Lists active PPP projects, partner entities, outlays, and concession summaries — or explicitly states 'Nil / No PPP projects'. Partial/stale: Mentions PPP projects qualitatively without financial outlay or concession summaries.",
@@ -5480,10 +5311,8 @@
       "risks_addressed": [],
       "source_url": "https://dopt.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Transfer Policy / Transfer Orders link inside RTI or Administration/Circulars section.",
       "caveats": "Single-location autonomous bodies or cadreless units without transferable posts may legitimately note 'Not Applicable'.",
       "agent_inspection_guidance": "Published employee transfer policy and periodic transfer orders (or explicit 'N/A — single-station office' statement). Partial/stale: Transfer policy published without recent orders or policy is visibly superseded.",
@@ -5515,10 +5344,8 @@
       "risks_addressed": [],
       "source_url": "https://dopt.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Links for RTI Replies / RTI Applications & Appeals Disposal / RTI FAQs under RTI section.",
       "caveats": "Personal information of RTI applicants MUST be excluded (RTI Sec 8(1)(j) as amended by DPDP Act 2023 w.e.f. 13-11-2025). If a portal leaks applicant PII (mobile/email/address), our auditor MUST NOT copy it.",
       "agent_inspection_guidance": "Publishes PII-redacted RTI requests/appeals and replies (or substantive RTI FAQs) updated periodically. Partial/stale: Only general website FAQs exist, or RTI replies archive stopped >2 years ago.",
@@ -5550,11 +5377,8 @@
       "risks_addressed": [],
       "source_url": "https://dopt.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "acts_tenders_link",
-        "rti_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "CAG/PAC Audit Paras / ATN or Discretionary Grants disclosure link under RTI or Reports section.",
       "caveats": "CAG/PAC paras are disclosed only after being tabled in Parliament/State Legislature (respecting Section 8(1)(c) parliamentary privilege).",
       "agent_inspection_guidance": "Publishes tabled CAG/PAC audit summaries/ATNs and discretionary/non-discretionary grants (or explicit Nil statement). Partial/stale: Mentions audit paras or grants in heading only with broken links or >3-year-old records.",
@@ -5588,8 +5412,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "accessibility_link",
-        "skip_to_main"
+        "accessibility_link"
       ],
       "public_disclosure_indicator": "Visible link to Screen Reader Access / Accessibility Statement and/or Skip to Main Content anchor.",
       "caveats": "Binding statutory standard across all Government establishments (Central, State, UT, and Local) under RPwD Act Sec 40 & 46.",
@@ -5622,10 +5445,8 @@
       "risks_addressed": [],
       "source_url": "https://depwd.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "download_metadata"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Detection of .pdf/.epub links on landing/RTI pages surfaces candidate public documents for bounded OCR/text-layer sampling by the agent.",
       "caveats": "Checking whether linked PDFs have a real text/OCR layer vs image-only scans requires downloading sampled PDFs (bounded) or agent inspection — do NOT assume from `.pdf` extension alone!",
       "agent_inspection_guidance": "Sampled public PDFs contain selectable/searchable text (OCR or digitally generated) or ePUB/HTML equivalents are provided. Partial/stale: Mix of digitally generated PDFs and unscanned image-only circulars/orders.",
@@ -5767,7 +5588,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "bilingual_unicode"
+        "hindi_english_bilingual"
       ],
       "public_disclosure_indicator": "Visible Hindi toggle/link ('हिन्दी' / 'हिंदी' / '/hi/') OR Devanagari Hindi content present alongside English on Central `.gov.in` portals.",
       "caveats": "CRITICAL JURISDICTION GUARD: The Official Languages Act, 1963 applies to the UNION (Central Government ministries, departments, attached offices, and Union PSUs). State/UT portals (e.g., *.tn.gov.in, *.kerala.gov.in, *.karnataka.gov.in, *.wb.gov.in, *.maharashtra.gov.in) are governed by their respective State Official Languages Acts — NEVER flag a non-Hindi State portal for lacking Hindi!",
@@ -5801,10 +5622,8 @@
       "risks_addressed": [],
       "source_url": "https://rajbhasha.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "bilingual_unicode"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Parallel Hindi & English document links or diglot PDFs in Notifications/Orders/Reports/Tenders sections.",
       "caveats": "Applies strictly to Central Government ministries, departments, offices, and Union corporations/PSUs — NOT State Government portals.",
       "agent_inspection_guidance": "Sampled Central Government notifications, reports, press releases, and tenders are available in both Hindi and English (or diglot PDFs). Partial/stale: Website chrome is bilingual, but linked notifications/tenders/reports are uploaded in English only.",
@@ -5836,11 +5655,8 @@
       "risks_addressed": [],
       "source_url": "https://rajbhasha.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "bilingual_unicode",
-        "acts_tenders_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Bilingual/diglot manuals and downloadable forms in Forms/Manuals section of Central portals.",
       "caveats": "Applies to Central Government offices (subject to Central Government exemption proviso under Rule 11(3)). Not applicable to State Government portals.",
       "agent_inspection_guidance": "Procedural manuals and citizen forms on Central Government portal are provided in Hindi and English (diglot or parallel versions). Partial/stale: Some major forms are bilingual while procedural manuals are English-only.",
@@ -5872,10 +5688,8 @@
       "risks_addressed": [],
       "source_url": "https://www.mha.gov.in/",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "emblem_or_logo"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "<img> tags in <header> whose src/alt/title references 'emblem', 'ashoka', 'satyamev', or 'lion' (surfaces emblem image URL for visual/agent verification of the Devanagari motto).",
       "caveats": "Applies ONLY when the website displays the State Emblem of India (State governments using a distinct State seal or autonomous/PSU bodies not authorised to display the State Emblem under Rules 2007 Schedule I/II are NOT required to display it — and indeed Rule 10 restricts unauthorised use!). Visual verification of whether the Devanagari motto appears inside the logo image requires agent/vision inspection.",
       "agent_inspection_guidance": "Displayed State Emblem of India clearly includes the Devanagari motto 'सत्यमेव जयते' below the abacus (or portal lawfully uses an institutional/state seal instead). Partial/stale: Emblem is rendered at tiny/blurry resolution where the motto is illegible or distorted.",
@@ -5978,8 +5792,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "gov_email_domain",
-        "email"
+        "gov_email_domain"
       ],
       "public_disclosure_indicator": "Emit TWO strictly boolean/categorical indicators: `official_gov_email_domain` (observed/not_observed) and `commercial_webmail_indicator` (observed/not_observed), supporting both `@` and `[at]/[dot]` obfuscation.",
       "caveats": "Supports NIC standard obfuscation (`[at]` / `[dot]` / `(at)` / `(dot)`). Autonomous academic/research institutions on `.gov.in` may lawfully use institutional `.ac.in`/`.edu.in`/`.res.in` mail domains; flag ONLY commercial consumer webmail domains (`gmail.com`, `yahoo.com`, `yahoo.co.in`, `rediffmail.com`, `hotmail.com`, `outlook.com`, `live.com`) as a neutral observation indicator.",
@@ -6152,7 +5965,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "ownership_statement"
+        "stqc_cqw_badge"
       ],
       "public_disclosure_indicator": "Footer image alt/src/link referencing `stqc.gov.in`, `CQW`, `Certified Quality Website`, or `STQC` certificate.",
       "caveats": "STQC CQW certification is a formal third-party conformity mark; absence of a footer badge is a neutral observation (certification may be in progress or portal may be a small subdomain).",
@@ -6254,12 +6067,9 @@
       "wcag_level": null,
       "risks_addressed": [],
       "source_url": "https://www.darpg.gov.in/",
-      "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "grievance_link",
-        "contact_link"
-      ],
+      "verification_mode": "agent_inspection",
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Visible mention of Public Grievance Officer / Grievance Redressal Officer / Nodal Officer for Public Grievances on Grievance or Contact page.",
       "caveats": "Record ONLY boolean presence of PGO designation — never copy personal phone/email values.",
       "agent_inspection_guidance": "Public Grievance Officer / Nodal Grievance Officer designation and official contact channel observed. Partial/stale: Mentions grievance officer role generically without official office contact channel.",
@@ -6328,8 +6138,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "privacy_policy_link",
-        "website_policies_link"
+        "privacy_policy_link"
       ],
       "public_disclosure_indicator": "Visible footer/nav link matching 'Privacy Policy' / 'Website Policies' / 'गोपनीयता नीति' on landing page.",
       "caveats": "LEGAL TIMELINE NOTE: Under Gazette Notifications G.S.R. 843(E) & G.S.R. 846(E) dated 13 November 2025, the DPDP Board and RTI Sec 8(1)(j) amendment took effect on 13.11.2025, Consent Managers on 13.11.2026, and substantive Data Fiduciary obligations (Sections 5–17 & Rules 3–16) reach full enforcement on 13 May 2027. Meanwhile GIGW Website Policies already require a Privacy Policy link on all `.gov.in` sites. Frame DPDP readiness neutrally.",
@@ -6362,10 +6171,8 @@
       "risks_addressed": [],
       "source_url": "https://www.meity.gov.in/data-governance/digital-personal-data-protection-act-2023",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "privacy_policy_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Presence of citizen <form> inputs (excluding simple search bars) alongside Privacy Policy / data-collection notice text.",
       "caveats": "CRITICAL LEGAL NUANCES: (1) Applies ONLY to portals with citizen personal-data forms; static read-only sites are not_applicable. (2) State & its instrumentalities may process data without fresh consent under Section 7(b)-(d) for subsidies/benefits/services/certificates/statutory duties, and notified security agencies are exempt under Section 17(2)(a). (3) Full statutory enforcement of Section 5 / Rule 3 begins 13 May 2027 — frame observations as transparency / DPDP-readiness indicators, NEVER as legal violations.",
       "agent_inspection_guidance": "Privacy policy / form notice clearly itemises data fields collected, purpose, retention/sharing practices, and citizen redressal pathway. Partial/stale: Generic GIGW boilerplate privacy policy exists ('we do not capture personal info unless you provide it') without itemising actual form data purposes.",
@@ -6397,11 +6204,8 @@
       "risks_addressed": [],
       "source_url": "https://www.meity.gov.in/data-governance/digital-personal-data-protection-act-2023",
       "verification_mode": "agent_inspection",
-      "automation_coverage": "partial_public_indicator",
-      "w1_check_keys": [
-        "privacy_policy_link",
-        "grievance_link"
-      ],
+      "automation_coverage": "none",
+      "w1_check_keys": [],
       "public_disclosure_indicator": "Presence of Grievance Officer / DPO / Web Information Manager contact channel inside Privacy Policy page.",
       "caveats": "DPO appointment is statutorily mandatory only for notified Significant Data Fiduciaries (Sec 10); other Data Fiduciaries must publish a contact person/grievance mechanism (Sec 8(9)-(10), enforceable 13.05.2027).",
       "agent_inspection_guidance": "Privacy Policy or Grievance page specifies a designated Grievance Officer / DPO / official contact channel for data-protection queries. Partial/stale: Privacy Policy exists but provides no grievance contact or points only to a generic 'Contact Us' without redressal process.",
@@ -6466,9 +6270,9 @@
       "risks_addressed": [],
       "source_url": "https://egovstandards.gov.in/",
       "verification_mode": "automated_http_html",
-      "automation_coverage": "partial_public_indicator",
+      "automation_coverage": "full",
       "w1_check_keys": [
-        "responsive_viewport"
+        "no_legacy_plugins"
       ],
       "public_disclosure_indicator": "Absence of `<applet>`, `<embed>`/`<object>` with `application/x-shockwave-flash`, `.swf`, `application/x-silverlight`, `application/x-java-applet`, or ActiveX `classid='clsid:...'` on sampled HTML.",
       "caveats": "Passive HTML tag/attribute inspection cleanly identifies legacy Flash/Silverlight/ActiveX/Applet embeds.",
@@ -6538,7 +6342,7 @@
       "verification_mode": "automated_http_html",
       "automation_coverage": "partial_public_indicator",
       "w1_check_keys": [
-        "acts_tenders_link"
+        "open_data_link"
       ],
       "public_disclosure_indicator": "Outbound link to `data.gov.in` / `apisetu.gov.in` OR Open Data / Datasets section OR direct `.csv`/`.json`/`.xml`/`.ods` public data links.",
       "caveats": "Applies meaningfully to ministries, statistical/scheme agencies, and data-holding public bodies; informational microsites without statistical datasets may legitimately have no open data exports.",

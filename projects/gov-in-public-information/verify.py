@@ -68,21 +68,55 @@ def batches(assignments):
         start = end
 
 
+def host_scopes(source):
+    """Extract deterministic host applicability scopes from the pinned Data Libertarian snapshot."""
+    if hashlib.sha256(source).hexdigest() != SNAPSHOT_SHA256:
+        raise ValueError("Snapshot SHA-256 differs from the November 13, 2026 inventory")
+    rows = json.loads(source)["records"]
+    union_hosts = []
+    ministry_dept_hosts = []
+    for row in rows:
+        if row.get("role") != "web":
+            continue
+        domain = row["domain"].strip().lower()
+        tier = row.get("tier")
+        state = row.get("state")
+        ministry = row.get("ministry")
+        kind = row.get("kind")
+        if tier in {"union", "apex", "missions"} or (tier == "uncharted" and ministry and not state):
+            union_hosts.append(domain)
+        if kind in {"ministry", "department"}:
+            ministry_dept_hosts.append(domain)
+    return {
+        "snapshot_sha256": SNAPSHOT_SHA256,
+        "total_web_hosts": 12537,
+        "union_hosts": sorted(set(union_hosts)),
+        "ministry_dept_hosts": sorted(set(ministry_dept_hosts)),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("snapshot", type=Path)
-    parser.add_argument("--write", action="store_true", help="recreate the 1,000 CSV files")
+    parser.add_argument("--write", action="store_true", help="recreate the 1,000 CSV files and host-scopes.json")
     args = parser.parse_args()
-    expected = dict(batches(inventory(args.snapshot.read_bytes())))
+    raw_snapshot = args.snapshot.read_bytes()
+    expected = dict(batches(inventory(raw_snapshot)))
+    expected_scopes = host_scopes(raw_snapshot)
+    expected_scopes_bytes = (json.dumps(expected_scopes, indent=2) + "\n").encode("utf-8")
     if args.write:
         for old in DIRECTORY.glob("batch-*.csv"):
             old.unlink()
         for name, content in expected.items():
             (DIRECTORY / name).write_bytes(content)
+        (DIRECTORY / "host-scopes.json").write_bytes(expected_scopes_bytes)
         return
     paths = {p.name for p in DIRECTORY.glob("batch-*.csv")}
     if paths != set(expected):
         raise ValueError("Manifest filenames differ from the 1,000 expected batches")
+    scopes_path = DIRECTORY / "host-scopes.json"
+    if not scopes_path.is_file() or scopes_path.read_bytes() != expected_scopes_bytes:
+        raise ValueError("host-scopes.json differs from the pinned Data Libertarian snapshot")
     project = json.loads(DIRECTORY.with_suffix(".json").read_text())
     if len(project["tasks"]) != BATCHES:
         raise ValueError("Expected one task per manifest")
@@ -95,7 +129,11 @@ def main():
         expected_url = f"https://aiwatchdogs.in/api/missions/gov-in-public-information/batches/{name}"
         if payload["retrieval_url"] != expected_url:
             raise ValueError(f"Project URL differs for {name}: got {payload['retrieval_url']!r}")
-    print("Verified 1,000 batches covering 12,537 unique web hostnames. 26 infrastructure entries excluded.")
+    print(
+        f"Verified 1,000 batches covering 12,537 unique web hostnames "
+        f"({len(expected_scopes['union_hosts'])} Union/Central, "
+        f"{len(expected_scopes['ministry_dept_hosts'])} Ministries/Departments). 26 infrastructure entries excluded."
+    )
 
 
 if __name__ == "__main__":

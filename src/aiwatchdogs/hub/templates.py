@@ -67,7 +67,7 @@ def render_join_txt(base_url: str) -> str:
 The police finance project audits Union, State and Union Territory forces using
 official budget documents. The government website project audits 12,537 .gov.in
 sites across 1,000 batches against a 159-checkpoint GIGW 3.0, RTI Act 2005 and
-GoI statutory conformity matrix (42 automated W1 checks + qualitative review).
+GoI statutory conformity matrix (46 automated W1 checks + qualitative review).
 Progress and the full task list: {hub}/projects
 
 YOUR ROLE IS ASSIGNED BY THE HUB, one task at a time. You do not choose it:
@@ -131,7 +131,7 @@ Follow these steps cleanly and transparently with the operator:
 
 Use the official CLI. For P1 police budget checks it downloads the official file,
 verifies its SHA-256 and runs the same check that peer verifiers will reproduce.
-For W1 it verifies the assigned batch manifest (12–13 hosts), then observes 42
+For W1 it verifies the assigned batch manifest (12–13 hosts), then observes 46
 GIGW 3.0, RTI Act 2005 and GoI statutory public indicators across each site's
 landing page and up to two linked public pages (Contact/Directory and RTI).
 Each W1 observation records when the pages were checked without storing personal

@@ -1,8 +1,9 @@
 """Canonical Indian government website conformity matrix (GIGW 3.0 + RTI Act 2005 + GoI statutory norms).
 
 Provides pure-Python W1 check metadata (usable inside the contributor CLI wheel without requiring
-the repository's ``projects/`` directory) and a cached read-only loader for the complete 159-item
-``projects/gov-in-public-information/conformity-matrix.json`` asset used by the hub API.
+the repository's ``projects/`` directory) and cached read-only loaders for the complete 159-item
+``projects/gov-in-public-information/conformity-matrix.json`` and deterministic host-scope assets
+used by the hub API.
 """
 
 from __future__ import annotations
@@ -26,8 +27,8 @@ LEGACY_CHECKS: tuple[str, ...] = (
     "help_link",
 )
 
-# Unified 42 deterministic, read-only, privacy-safe W1 automated checks:
-# 7 original + 28 GIGW 3.0 Annexure II/Ch. 5 + 7 RTI Act 2005 / GoI statutory checks.
+# Unified 46 deterministic, read-only, privacy-safe W1 automated checks:
+# 7 original + 28 GIGW 3.0 Annexure II/Ch. 5 + 11 RTI Act 2005 / GoI statutory checks.
 W1_CHECK_SPECS: tuple[tuple[str, str, str, str, str], ...] = (
     # --- 7 preserved legacy checks ---
     ("contact_link", "Contact link", "quality", "GIGW 3.0", "Homepage navigation link to Contact Us, Who's Who, or Directory (multilingual)."),
@@ -37,7 +38,7 @@ W1_CHECK_SPECS: tuple[tuple[str, str, str, str, str], ...] = (
     ("about_link", "About Us link", "quality", "GIGW 3.0", "Homepage navigation link to About Us / organisation overview (multilingual)."),
     ("updated_date", "Last updated date", "quality", "GIGW 3.0", "Homepage displays a Last Updated / Last Reviewed date indicator (multilingual)."),
     ("help_link", "Help link", "quality", "GIGW 3.0", "Homepage link to a Help section (multilingual)."),
-    # --- 28 new GIGW 3.0 automated checks ---
+    # --- 28 GIGW 3.0 automated checks ---
     ("emblem_or_logo", "Govt emblem / logo", "quality", "GIGW 3.0", "Homepage displays State Emblem of India or official government logo markup (alt/src/title/aria-label)."),
     ("ownership_statement", "Ownership attribution", "quality", "GIGW 3.0", "Header/footer ownership text identifying the responsible government body or NIC hosting attribution."),
     ("download_metadata", "Download size/format", "quality", "GIGW 3.0", "Downloadable document links (.pdf/.doc/.xls/.zip) on homepage disclose format/size metadata."),
@@ -66,7 +67,7 @@ W1_CHECK_SPECS: tuple[tuple[str, str, str, str, str], ...] = (
     ("hsts_header", "HSTS header", "security", "GIGW 3.0", "HTTPS response sends Strict-Transport-Security (HSTS) header (GIGW 5.3.2)."),
     ("security_headers", "HTTP security headers", "security", "GIGW 3.0", "Response sends X-Content-Type-Options: nosniff and clickjacking protection (X-Frame-Options or CSP frame-ancestors)."),
     ("server_banner_obscured", "Server version obscured", "security", "GIGW 3.0", "Server / X-Powered-By HTTP headers do not disclose exact server/runtime version numbers."),
-    # --- 7 new RTI Act 2005 & GoI statutory/policy checks ---
+    # --- 11 RTI Act 2005 & GoI statutory/policy checks ---
     ("rti_link", "RTI / Proactive disclosure link", "rti_act", "RTI Act 2005", "Dedicated RTI / Right to Information / Suo Motu Disclosure link on homepage or navigation."),
     ("pio_faa_disclosure", "CPIO / SPIO / FAA disclosure", "rti_act", "RTI Act 2005", "Public Information Officer (CPIO/SPIO/CAPIO) or First Appellate Authority designation indicator (zero PII stored)."),
     ("citizen_charter_link", "Citizen's Charter link", "statutory_rights_governance", "GoI Statutory & Policy", "Published Citizen's Charter / Client's Charter / Sevottam navigation link."),
@@ -74,6 +75,10 @@ W1_CHECK_SPECS: tuple[tuple[str, str, str, str, str], ...] = (
     ("acts_tenders_link", "Acts, Rules, Tenders & Schemes", "rti_act", "RTI Act 2005", "Public governance disclosure links: Acts/Rules/Manuals, Tenders/Procurement, Budget/Annual Reports, Schemes, or Open Data."),
     ("gov_email_domain", "Official @gov.in / @nic.in email", "statutory_security_data", "GoI Statutory & Policy", "Observed public email uses official @gov.in / @nic.in government domain rather than commercial webmail (domain class only, zero email strings stored)."),
     ("accessibility_link", "Accessibility / Screen Reader link", "statutory_rights_governance", "GoI Statutory & Policy", "Screen Reader Access or Accessibility Statement link per RPwD Rule 15(1)(c)(i) and GIGW."),
+    ("hindi_english_bilingual", "Hindi & English bilingual (OLA)", "statutory_rights_governance", "GoI Statutory & Policy", "UTF-8 homepage provides both English and Hindi (Devanagari script or explicit Hindi switcher) for Official Languages Act Sec 3(3) checks."),
+    ("stqc_cqw_badge", "STQC CQW / GIGW badge", "statutory_security_data", "GoI Statutory & Policy", "Explicit STQC Certified Quality Website (CQW) or GIGW conformity certification badge/statement on homepage."),
+    ("no_legacy_plugins", "No Flash / Silverlight / ActiveX", "statutory_security_data", "GoI Statutory & Policy", "Homepage markup is free of deprecated proprietary browser plugins (<applet>, Flash .swf, Silverlight, ActiveX clsid)."),
+    ("open_data_link", "Open Data / machine-readable link", "statutory_security_data", "GoI Statutory & Policy", "Homepage links to data.gov.in, an Open Data / Datasets section, or machine-readable .csv/.json/.xml/.ods datasets (NDSAP)."),
 )
 
 W1_CHECKS: tuple[str, ...] = tuple(spec[0] for spec in W1_CHECK_SPECS)
@@ -141,27 +146,66 @@ def is_rti_sec24_exempt(domain: str) -> bool:
     return any(host == base or host.endswith("." + base) for base in RTI_SEC24_EXEMPT_BASE_DOMAINS)
 
 
-def _matrix_json_candidates() -> list[Path]:
+def _gov_project_asset_candidates(filename: str) -> list[Path]:
     from aiwatchdogs.projects import default_projects_dir
 
-    candidates = [
-        default_projects_dir() / "gov-in-public-information" / "conformity-matrix.json",
-        Path(__file__).resolve().parents[3] / "projects" / "gov-in-public-information" / "conformity-matrix.json",
+    return [
+        default_projects_dir() / "gov-in-public-information" / filename,
+        Path(__file__).resolve().parents[3] / "projects" / "gov-in-public-information" / filename,
     ]
-    return candidates
 
 
-@lru_cache(maxsize=2)
-def _load_matrix_from_path(path_str: str) -> dict[str, Any]:
+@lru_cache(maxsize=4)
+def _load_json_from_path(path_str: str) -> dict[str, Any]:
     return json.loads(Path(path_str).read_text(encoding="utf-8"))
 
 
 def load_conformity_matrix() -> dict[str, Any]:
     """Load the static read-only 159-checkpoint conformity matrix JSON."""
-    for candidate in _matrix_json_candidates():
+    for candidate in _gov_project_asset_candidates("conformity-matrix.json"):
         if candidate.is_file():
-            return _load_matrix_from_path(str(candidate.resolve()))
+            return _load_json_from_path(str(candidate.resolve()))
     raise FileNotFoundError("Could not locate projects/gov-in-public-information/conformity-matrix.json")
+
+
+@lru_cache(maxsize=4)
+def _load_host_scopes_from_path(path_str: str) -> dict[str, frozenset[str]]:
+    raw = json.loads(Path(path_str).read_text(encoding="utf-8"))
+    return {
+        "union_hosts": frozenset(str(d).strip().lower() for d in raw.get("union_hosts") or ()),
+        "ministry_dept_hosts": frozenset(str(d).strip().lower() for d in raw.get("ministry_dept_hosts") or ()),
+    }
+
+
+def load_host_scopes() -> dict[str, frozenset[str]]:
+    """Load deterministic Data Libertarian host-applicability sets (Union/Central, Ministries/Depts)."""
+    for candidate in _gov_project_asset_candidates("host-scopes.json"):
+        if candidate.is_file():
+            return _load_host_scopes_from_path(str(candidate.resolve()))
+    return {"union_hosts": frozenset(), "ministry_dept_hosts": frozenset()}
+
+
+def host_matches_applicability(
+    domain: str,
+    applicability: str | None,
+    *,
+    host_scopes: dict[str, frozenset[str]] | None = None,
+) -> bool:
+    """Return True iff *domain* falls within the statutory/policy scope named by *applicability*."""
+    scope = (applicability or "all_gov_in_websites").strip().lower()
+    host = domain.strip().lower().removeprefix("www.")
+    if not host:
+        return False
+    if scope == "all_gov_in_websites":
+        return True
+    if scope == "all_public_authorities_non_exempt":
+        return not is_rti_sec24_exempt(host)
+    scopes = host_scopes if host_scopes is not None else load_host_scopes()
+    if scope == "central_govt_and_union_bodies":
+        return host in scopes.get("union_hosts", frozenset())
+    if scope == "ministries_and_departments":
+        return host in scopes.get("ministry_dept_hosts", frozenset())
+    return False
 
 
 def build_website_audit_visual_payload(
@@ -172,13 +216,23 @@ def build_website_audit_visual_payload(
     hosts_unassessable: int,
     cp_counts: dict[str, dict[str, int]],
     reasons: dict[str, int],
+    host_observations: list[dict[str, Any]] | None = None,
+    host_scopes: dict[str, frozenset[str]] | None = None,
 ) -> dict[str, Any]:
-    """Assemble the complete ``visual_summary.website_audit`` payload for ``gov-in-public-information``."""
+    """Assemble the complete ``visual_summary.website_audit`` payload for ``gov-in-public-information``.
+
+    Per-checkpoint ``observed_pct`` values are computed strictly for ``automated_http_html``
+    checkpoints with directly mapped ``w1_check_keys``, filtered per host against each
+    checkpoint's ``applicability`` scope. ``agent_inspection`` and ``internal_governance``
+    checkpoints always report ``observed_pct = None`` (pending qualitative/internal review).
+    """
     matrix_doc = load_conformity_matrix()
     w1_meta_by_key = {item["key"]: item for item in matrix_doc.get("w1_checks") or []}
+    scopes = host_scopes if host_scopes is not None else load_host_scopes()
 
     checkpoints_out: list[dict[str, Any]] = []
-    observed_pct_by_key: dict[str, float | None] = {}
+    global_observed_pct_by_key: dict[str, float | None] = {}
+    global_assessed_by_key: dict[str, int] = {}
 
     for key, label, section, framework, description in W1_CHECK_SPECS:
         c = cp_counts.get(key) or {"observed": 0, "not_observed": 0, "unassessable": 0, "not_applicable": 0}
@@ -192,9 +246,11 @@ def build_website_audit_visual_payload(
         unass_pct = round((unass / denom) * 100.0, 2) if denom > 0 else 0.0
         na_pct = round((na / denom) * 100.0, 2) if denom > 0 else 0.0
 
-        # Track applicable-evaluated rate for rollups when at least one host was assessed on this check.
-        applicable_denom = obs + not_obs + unass
-        observed_pct_by_key[key] = round((obs / applicable_denom) * 100.0, 2) if applicable_denom > 0 else None
+        # Track assessed rate (observed / (observed + not_observed)), keeping inaccessible/unassessable
+        # and not_applicable hosts separate from conformity gaps.
+        assessed_denom = obs + not_obs
+        global_assessed_by_key[key] = assessed_denom
+        global_observed_pct_by_key[key] = round((obs / assessed_denom) * 100.0, 2) if assessed_denom > 0 else None
 
         meta = w1_meta_by_key.get(key) or {}
         checkpoints_out.append(
@@ -216,31 +272,65 @@ def build_website_audit_visual_payload(
             }
         )
 
-    sections_out: list[dict[str, Any]] = []
-    for sec in matrix_doc.get("sections") or []:
-        sec_keys = list(sec.get("w1_check_keys") or [])
-        key_pcts = [observed_pct_by_key[k] for k in sec_keys if observed_pct_by_key.get(k) is not None]
-        avg_pct = round(sum(key_pcts) / len(key_pcts), 2) if key_pcts else None
-        sections_out.append(
-            {
-                "id": sec["id"],
-                "name": sec["name"],
-                "short_name": sec["short_name"],
-                "framework": sec["framework"],
-                "total_checkpoints": int(sec["total_checkpoints"]),
-                "automated_count": int(sec["automated_count"]),
-                "agent_count": int(sec["agent_count"]),
-                "internal_count": int(sec["internal_count"]),
-                "w1_check_keys": sec_keys,
-                "avg_observed_pct": avg_pct,
-            }
-        )
+    # Pre-bucket per-host observations by applicability scope so matrix rollup stays O(hosts + checkpoints).
+    scoped_stats_cache: dict[str, tuple[dict[str, int], dict[str, float | None]]] = {}
+
+    def _scoped_stats(scope_name: str) -> tuple[dict[str, int], dict[str, float | None]]:
+        if scope_name in scoped_stats_cache:
+            return scoped_stats_cache[scope_name]
+        if host_observations is None:
+            # Backward-compatible fallback when a caller supplies only global cp_counts:
+            # only unrestricted all_.gov.in checkpoints may reuse global counts.
+            if scope_name == "all_gov_in_websites":
+                res = (dict(global_assessed_by_key), dict(global_observed_pct_by_key))
+            else:
+                res = ({}, {})
+            scoped_stats_cache[scope_name] = res
+            return res
+
+        counts_by_key: dict[str, list[int]] = {k: [0, 0] for k in W1_CHECKS}  # [observed, observed + not_observed]
+        for obs in host_observations:
+            dom = str(obs.get("domain") or "").strip().lower()
+            if not host_matches_applicability(dom, scope_name, host_scopes=scopes):
+                continue
+            checks = obs.get("checks")
+            if not isinstance(checks, dict):
+                continue
+            for k in W1_CHECKS:
+                val = str(checks.get(k) or "").strip().lower()
+                if val == "observed":
+                    counts_by_key[k][0] += 1
+                    counts_by_key[k][1] += 1
+                elif val == "not_observed":
+                    counts_by_key[k][1] += 1
+
+        denoms: dict[str, int] = {k: pair[1] for k, pair in counts_by_key.items()}
+        pcts: dict[str, float | None] = {
+            k: (round((pair[0] / pair[1]) * 100.0, 2) if pair[1] > 0 else None)
+            for k, pair in counts_by_key.items()
+        }
+        res = (denoms, pcts)
+        scoped_stats_cache[scope_name] = res
+        return res
 
     compact_matrix: list[dict[str, Any]] = []
+    section_cp_pcts: dict[str, list[float]] = {}
+
     for cp in matrix_doc.get("checkpoints") or []:
+        mode = str(cp.get("verification_mode") or "")
         w1_keys = list(cp.get("w1_check_keys") or [])
-        linked_pcts = [observed_pct_by_key[k] for k in w1_keys if observed_pct_by_key.get(k) is not None]
-        cp_obs_pct = round(sum(linked_pcts) / len(linked_pcts), 2) if linked_pcts else None
+        applicability = str(cp.get("applicability") or "all_gov_in_websites")
+        cp_obs_pct: float | None = None
+        applicable_hosts_assessed = 0
+
+        if mode == "automated_http_html" and w1_keys:
+            scoped_denoms, scoped_pcts = _scoped_stats(applicability)
+            applicable_hosts_assessed = max((scoped_denoms.get(k, 0) for k in w1_keys), default=0)
+            linked_pcts = [scoped_pcts[k] for k in w1_keys if scoped_pcts.get(k) is not None]
+            if linked_pcts:
+                cp_obs_pct = round(sum(linked_pcts) / len(linked_pcts), 2)
+                section_cp_pcts.setdefault(str(cp["section_id"]), []).append(cp_obs_pct)
+
         compact_matrix.append(
             {
                 "id": cp["id"],
@@ -257,12 +347,35 @@ def build_website_audit_visual_payload(
                 "wcag_level": cp.get("wcag_level"),
                 "risks_addressed": list(cp.get("risks_addressed") or []),
                 "source_url": cp["source_url"],
-                "verification_mode": cp["verification_mode"],
+                "verification_mode": mode,
                 "automation_coverage": cp["automation_coverage"],
+                "applicability": applicability,
+                "applicable_hosts_assessed": applicable_hosts_assessed,
                 "w1_check_keys": w1_keys,
                 "public_disclosure_indicator": cp.get("public_disclosure_indicator") or "",
                 "caveats": cp.get("caveats") or "",
                 "observed_pct": cp_obs_pct,
+            }
+        )
+
+    sections_out: list[dict[str, Any]] = []
+    for sec in matrix_doc.get("sections") or []:
+        sec_id = str(sec["id"])
+        sec_keys = list(sec.get("w1_check_keys") or [])
+        cp_rates = section_cp_pcts.get(sec_id) or []
+        avg_pct = round(sum(cp_rates) / len(cp_rates), 2) if cp_rates else None
+        sections_out.append(
+            {
+                "id": sec_id,
+                "name": sec["name"],
+                "short_name": sec["short_name"],
+                "framework": sec["framework"],
+                "total_checkpoints": int(sec["total_checkpoints"]),
+                "automated_count": int(sec["automated_count"]),
+                "agent_count": int(sec["agent_count"]),
+                "internal_count": int(sec["internal_count"]),
+                "w1_check_keys": sec_keys,
+                "avg_observed_pct": avg_pct,
             }
         )
 

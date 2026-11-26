@@ -50,7 +50,7 @@ def test_evidence_retains_presence_without_contact_values(monkeypatch):
     )
     result = audit.observe_site({"domain": HOST})
     assert list(seen) == [HOME + "robots.txt", HOME, HOME + "contact/"]
-    assert len(result["checks"]) == 42
+    assert len(result["checks"]) == 46
     assert all(result["checks"][k] == "observed" for k in audit.LEGACY_CHECKS)
     assert result["checks"]["gov_email_domain"] == "observed"
     assert result["pages"] == [HOME, HOME + "contact/"]
@@ -323,6 +323,7 @@ FULL_COMPLIANT_HOME = """<!doctype html>
     <a href="/sitemap">Sitemap</a>
     <a href="https://pgportal.gov.in/" target="_blank" rel="noopener">CPGRAMS Public Grievances</a>
     <a href="https://www.india.gov.in/" target="_blank" rel="noopener">National Portal of India</a>
+    <a href="https://data.gov.in/" target="_blank" rel="noopener">Open Data</a>
     <a href="https://x.com/govindia" target="_blank" rel="noopener">Official X</a>
   </nav>
   <main id="main-content">
@@ -333,6 +334,7 @@ FULL_COMPLIANT_HOME = """<!doctype html>
   </main>
   <footer>
     <p>Content owned by Ministry of Education, Government of India. Last updated on 26 November 2026.</p>
+    <img src="/stqc-cqw.png" alt="STQC Certified Quality Website (CQW) GIGW Compliant">
     <a href="/website-policies">Website Policies</a>
     <a href="/privacy-policy">Privacy Policy</a>
     <a href="/terms-and-conditions">Terms and Conditions</a>
@@ -347,7 +349,7 @@ FULL_COMPLIANT_RTI = """
 """
 
 
-def test_full_42_checks_compliant_site_and_three_page_crawl(monkeypatch):
+def test_full_46_checks_compliant_site_and_three_page_crawl(monkeypatch):
     seen = serve(
         monkeypatch,
         {
@@ -361,9 +363,9 @@ def test_full_42_checks_compliant_site_and_three_page_crawl(monkeypatch):
     assert seen == [HOME + "robots.txt", HOME, HOME + "contact-us", HOME + "rti"]
     assert result["outcome"] == "observed" and result["reason"] is None
     assert result["pages"] == [HOME, HOME + "contact-us", HOME + "rti"]
-    assert len(result["checks"]) == 42
+    assert len(result["checks"]) == 46
     not_obs = {k: v for k, v in result["checks"].items() if v != "observed"}
-    assert not_obs == {}, f"Expected all 42 checks observed, got {not_obs}"
+    assert not_obs == {}, f"Expected all 46 checks observed, got {not_obs}"
     dumped = json.dumps(result)
     assert "office[at]" not in dumped and "12345678" not in dumped and "NIC-Web" not in dumped
 
@@ -429,3 +431,93 @@ def test_rti_sec24_exempt_agency_and_blocked_rti_subpage(monkeypatch):
     assert blocked_rti["reason"] == "rti_unavailable"
     assert blocked_rti["checks"]["rti_link"] == "observed"
     assert blocked_rti["checks"]["pio_faa_disclosure"] == "unassessable"
+
+
+def test_direct_checks_do_not_conflate_footer_viewport_tenders_or_non_hindi_scripts(monkeypatch):
+    """P1 regressions: STQC badge != ownership footer; legacy plugins != viewport;
+    Open Data != tenders; Hindi-English OLA != non-Hindi Indic scripts."""
+    tamil_legacy_html = """<!doctype html>
+    <html lang="en-IN">
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="stylesheet" href="/app.css">
+      <title>State Transport Department Portal</title>
+    </head>
+    <body>
+      <main>
+        <p>Official portal of Tamil Nadu Transport Department. தமிழ் version available.</p>
+        <a href="/ta/">தமிழ்</a>
+        <a href="/tenders">Tenders</a>
+        <embed src="/banner.swf" type="application/x-shockwave-flash" width="300" height="100">
+      </main>
+      <footer>Content owned by Government of Tamil Nadu, hosted by NIC.</footer>
+    </body></html>"""
+    serve(monkeypatch, {HOME + "robots.txt": (404, {}, ""), HOME: (200, HTML, tamil_legacy_html)})
+    res = audit.observe_site({"domain": HOST})
+    c = res["checks"]
+    assert c["ownership_statement"] == "observed"
+    assert c["stqc_cqw_badge"] == "not_observed"
+    assert c["responsive_viewport"] == "observed"
+    assert c["no_legacy_plugins"] == "not_observed"
+    assert c["acts_tenders_link"] == "observed"
+    assert c["open_data_link"] == "not_observed"
+    assert c["bilingual_unicode"] == "observed"
+    assert c["hindi_english_bilingual"] == "not_observed"
+
+    # Verify STQC/CQW certification variants and API Setu Open Data link match cleanly
+    for badge_phrase in ("STQC Certified", "STQC certification valid", "CQW Certificate", "CQW certified"):
+        page_html = f"<main>Official department public portal with services. {badge_phrase}.</main><a href='https://apisetu.gov.in/'>API Setu</a>"
+        serve(monkeypatch, {HOME + "robots.txt": (404, {}, ""), HOME: (200, HTML, page_html)})
+        r_badge = audit.observe_site({"domain": HOST})
+        assert r_badge["checks"]["stqc_cqw_badge"] == "observed", badge_phrase
+        assert r_badge["checks"]["open_data_link"] == "observed"
+
+
+def test_slow_rti_subpage_timeout_emits_valid_rti_unavailable_without_contact_link(monkeypatch):
+    """P1 regression: a timeout fetching /rti on a homepage without a contact link MUST emit
+    reason='rti_unavailable' with pio_faa_disclosure='unassessable' and pass server validation."""
+    import asyncio
+    from aiwatchdogs.hub.website_reports import _validate_evidence
+
+    monkeypatch.setattr(audit, "SITE_TIMEOUT_SECONDS", 0.25)
+
+    async def slow_page(reader, url):
+        if url.endswith("/rti"):
+            await asyncio.sleep(1.0)
+        return url, audit.Page(
+            "<main>Official department public portal with citizen services and records.</main>"
+            "<a href='/rti'>Right to Information</a>"
+        )
+
+    monkeypatch.setattr(audit.Reader, "page", slow_page)
+    res = audit.observe_site({"domain": HOST})
+    assert res["outcome"] == "observed"
+    assert res["reason"] == "rti_unavailable"
+    assert res["pages"] == [HOME]
+    assert res["checks"]["contact_link"] == "not_observed"
+    assert res["checks"]["rti_link"] == "observed"
+    assert res["checks"]["pio_faa_disclosure"] == "unassessable"
+    # Server batch validator MUST accept this observation cleanly (zero 422 rejection)
+    _validate_evidence(res, HOST)
+
+    # Also verify when BOTH /contact (fast) and /rti (times out) exist on homepage
+    async def fast_contact_slow_rti(reader, url):
+        if url.endswith("/rti"):
+            await asyncio.sleep(1.0)
+        if url.endswith("/contact"):
+            return url, audit.Page(CONTACT_HTML)
+        return url, audit.Page(
+            "<main>Official department public portal with citizen services and records.</main>"
+            "<a href='/contact'>Contact Us</a><a href='/rti'>Right to Information</a>"
+        )
+
+    monkeypatch.setattr(audit.Reader, "page", fast_contact_slow_rti)
+    res2 = audit.observe_site({"domain": HOST})
+    assert res2["outcome"] == "observed"
+    assert res2["reason"] == "rti_unavailable"
+    assert res2["pages"] == [HOME, HOME + "contact"]
+    assert res2["checks"]["email"] == "observed"
+    assert res2["checks"]["gov_email_domain"] == "observed"
+    assert res2["checks"]["pio_faa_disclosure"] == "unassessable"
+    _validate_evidence(res2, HOST)

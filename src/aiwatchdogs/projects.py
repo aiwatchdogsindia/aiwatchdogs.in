@@ -634,8 +634,12 @@ def project_task_id(task_id: str) -> str:
     return f"prj-{task_id}"
 
 
+SYNC_LOGIC_VERSION = 2
+
+
 def _fingerprint(files: list[ProjectFile]) -> int:
     digest = hashlib.sha256()
+    digest.update(f"sync-v{SYNC_LOGIC_VERSION}:".encode())
     for pf in files:
         digest.update(pf.path.name.encode())
         digest.update(json.dumps(pf.data, sort_keys=True).encode())
@@ -845,32 +849,64 @@ def sync_projects(
                 )
             if getattr(db, "is_postgres", False):
                 conn.execute("SELECT id FROM missions WHERE id = ? FOR UPDATE", (mid,))
-            # Retire obsolete unstarted primary tasks removed or superseded in the project file,
-            # while strictly preserving any claimed/completed tasks and peer_verify history.
+            # Retire all superseded non-completed primary tasks (including active claimed/parked leases
+            # whose underlying manifests were removed/replaced), while strictly preserving completed
+            # work, peer_verify history, and any task referenced by findings.
             current_task_ids = [project_task_id(t["id"]) for t in tasks]
             if current_task_ids:
-                existing_queued = conn.execute(
-                    "SELECT id FROM tasks WHERE mission_id = ? AND status = 'queued' "
-                    "AND task_type != 'peer_verify' AND claimed_by_agent_id IS NULL AND completed_at IS NULL",
+                existing_unfinished = conn.execute(
+                    "SELECT id FROM tasks WHERE mission_id = ? AND status != 'completed' "
+                    "AND status != 'retired' AND completed_at IS NULL AND task_type != 'peer_verify'",
                     (mid,),
                 ).fetchall()
                 keep_ids = set(current_task_ids)
-                obsolete_ids = [str(r["id"]) for r in existing_queued if str(r["id"]) not in keep_ids]
+                obsolete_ids = [str(r["id"]) for r in existing_unfinished if str(r["id"]) not in keep_ids]
                 for idx in range(0, len(obsolete_ids), 200):
                     chunk = obsolete_ids[idx : idx + 200]
                     ph = ",".join("?" for _ in chunk)
+                    # Unblock any volunteer agent currently holding a superseded lease.
                     conn.execute(
-                        f"DELETE FROM tasks WHERE mission_id = ? AND status = 'queued' "
-                        f"AND task_type != 'peer_verify' AND claimed_by_agent_id IS NULL AND completed_at IS NULL "
-                        f"AND id IN ({ph})",
-                        (mid, *chunk),
+                        f"UPDATE agents SET current_task_id = NULL WHERE current_task_id IN ({ph})",
+                        tuple(chunk),
                     )
+                    # Preserve tasks referenced by findings as 'retired' so FK constraints never fail
+                    # and expired/released leases can never return to the live queue.
+                    referenced = {
+                        str(r["task_id"])
+                        for r in conn.execute(
+                            f"SELECT DISTINCT task_id FROM findings WHERE task_id IN ({ph})",
+                            tuple(chunk),
+                        ).fetchall()
+                        if r["task_id"] is not None
+                    }
+                    retire_only = [tid for tid in chunk if tid in referenced]
+                    deletable = [tid for tid in chunk if tid not in referenced]
+                    if retire_only:
+                        rph = ",".join("?" for _ in retire_only)
+                        conn.execute(
+                            f"UPDATE tasks SET status = 'retired', claimed_by_agent_id = NULL, "
+                            f"claimed_by_handle = NULL, lease_id = NULL, lease_started_at = NULL, "
+                            f"lease_expires_at = NULL, available_at = NULL, updated_at = ? "
+                            f"WHERE mission_id = ? AND status != 'completed' AND completed_at IS NULL "
+                            f"AND task_type != 'peer_verify' AND id IN ({rph})",
+                            (now, mid, *retire_only),
+                        )
+                    if deletable:
+                        dph = ",".join("?" for _ in deletable)
+                        conn.execute(
+                            f"DELETE FROM tasks WHERE mission_id = ? AND status != 'completed' "
+                            f"AND completed_at IS NULL AND task_type != 'peer_verify' "
+                            f"AND id IN ({dph})",
+                            (mid, *deletable),
+                        )
             cnt = conn.execute(
-                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify'",
+                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+                "AND task_type != 'peer_verify' AND status != 'retired'",
                 (mid,),
             ).fetchone()
             done_cnt = conn.execute(
-                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status = 'completed'",
+                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+                "AND task_type != 'peer_verify' AND status = 'completed'",
                 (mid,),
             ).fetchone()
             conn.execute(

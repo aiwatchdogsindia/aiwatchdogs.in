@@ -23,8 +23,10 @@ from aiwatchdogs.engines.gigw_matrix import (
     is_rti_sec24_exempt,
 )
 
-# Canonical 42 W1 automated checks (7 original keys first, then 28 GIGW 3.0 + 7 RTI/statutory).
+# Canonical 46 W1 automated checks (7 original keys first, then 28 GIGW 3.0 + 11 RTI/statutory).
 CHECKS = W1_CHECKS
+SITE_TIMEOUT_SECONDS = 15.0
+SUBPAGE_BUDGET_SECONDS = 7.0
 AGENT = "AIWatchdogs"
 USER_AGENT = "AIWatchdogs/1.0 (aiwatchdogs.in; public website content review)"
 DNS_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="gov-page-dns")
@@ -171,6 +173,30 @@ LANGUAGE_SWITCH = re.compile(
     re.I,
 )
 INDIC_SCRIPT_RE = re.compile(r"[\u0900-\u0D7F]")
+DEVANAGARI_SCRIPT_RE = re.compile(r"[\u0900-\u097F]")
+ENGLISH_TEXT_RE = re.compile(r"[A-Za-z]{3,}")
+HINDI_SWITCH_LABEL_RE = re.compile(r"\bhindi\b|हिन्दी|हिंदी|राजभाषा\s*हिन्दी", re.I)
+HINDI_SWITCH_HREF_RE = re.compile(r"(?:^|/)(?:hi|hindi)(?:/|[.?#]|\Z)|[?&]lang=hi\b", re.I)
+ENGLISH_SWITCH_LABEL_RE = re.compile(r"\benglish\b|अंग्रेजी|अंग्रेज़ी", re.I)
+STQC_CQW_RE = re.compile(
+    r"\bstqc\b.{0,80}\b(?:certif[a-z]*|cqw|quality|gigw|compliant|badge)\b"
+    r"|\b(?:certif[a-z]*|cqw|quality|gigw)\b.{0,80}\bstqc\b"
+    r"|certified\s+quality\s+website"
+    r"|\bcqw\s+(?:certif[a-z]*|badge|compliant|logo)\b"
+    r"|stqc\.gov\.in"
+    r"|gigw\s+(?:certified|compliant|conformity\s+certificate)",
+    re.I,
+)
+OPEN_DATA_LINK_RE = re.compile(
+    r"(?:^|\.)(?:data|apisetu)\.gov\.in\b|\bopen\s+(?:government\s+)?data\b|\bopen[-_]?data\b|\bdatasets?\b|ओपन\s+डेटा",
+    re.I,
+)
+OPEN_DATA_EXT_RE = re.compile(r"\.(?:csv|json|xml|ods)(?:[?#]|\Z)", re.I)
+LEGACY_PLUGIN_MIME_RE = re.compile(
+    r"application/(?:x-shockwave-flash|x-silverlight(?:-\d+)?|x-java-applet|x-oleobject|futuresplash)",
+    re.I,
+)
+LEGACY_PLUGIN_EXT_RE = re.compile(r"\.(?:swf|xap|class|jar|cab)(?:[?#]|\Z)", re.I)
 BCP47_RE = re.compile(r"^[a-z]{2,3}(?:-[a-z0-9]{2,8})*\Z", re.I | re.ASCII)
 GENERIC_TITLES = frozenset({"home", "homepage", "index", "untitled", "document", "welcome", "default", "page"})
 SERVER_VERSION_LEAK = re.compile(
@@ -260,6 +286,8 @@ class Page(HTMLParser):
         self.has_stylesheet: bool = False
         self.has_meta_desc_or_keywords: bool = False
         self.has_emblem_or_logo_img: bool = False
+        self.has_stqc_cqw_markup: bool = False
+        self.has_legacy_plugin: bool = False
         self.img_count: int = 0
         self.imgs_with_alt: int = 0
         self.has_landmark: bool = False
@@ -389,6 +417,28 @@ class Page(HTMLParser):
                 }
             )
 
+        # Deprecated/proprietary browser plugins (OPENSTD-01: Flash, Silverlight, ActiveX, Java Applets)
+        if not self._hidden and tag in {"applet", "object", "embed", "param"}:
+            if tag == "applet":
+                self.has_legacy_plugin = True
+            elif tag in {"object", "embed"}:
+                ptype = attributes.get("type", "").strip()
+                classid = attributes.get("classid", "").strip().lower()
+                src_or_data = " ".join(
+                    (attributes.get("src", ""), attributes.get("data", ""), attributes.get("codebase", ""))
+                )
+                if (
+                    LEGACY_PLUGIN_MIME_RE.search(ptype)
+                    or classid.startswith("clsid:")
+                    or LEGACY_PLUGIN_EXT_RE.search(src_or_data)
+                ):
+                    self.has_legacy_plugin = True
+            elif tag == "param":
+                pname = attributes.get("name", "").strip().lower()
+                pval = attributes.get("value", "").strip()
+                if pname in {"movie", "src", "source"} and LEGACY_PLUGIN_EXT_RE.search(pval):
+                    self.has_legacy_plugin = True
+
         # Images & emblem/logo markup
         if tag == "img":
             self.img_count += 1
@@ -406,6 +456,8 @@ class Page(HTMLParser):
             )
             if EMBLEM_OR_LOGO.search(img_blob):
                 self.has_emblem_or_logo_img = True
+            if STQC_CQW_RE.search(img_blob):
+                self.has_stqc_cqw_markup = True
             if self._href:
                 self._label.append(attributes.get("alt") or "")
         elif tag == "svg":
@@ -414,6 +466,8 @@ class Page(HTMLParser):
             )
             if EMBLEM_OR_LOGO.search(svg_blob):
                 self.has_emblem_or_logo_img = True
+            if STQC_CQW_RE.search(svg_blob):
+                self.has_stqc_cqw_markup = True
 
         # Tables
         if tag == "table":
@@ -606,6 +660,52 @@ class Page(HTMLParser):
                 return True
         return False
 
+    def has_hindi_english_bilingual(self, content_type: str) -> bool:
+        """Return True iff the UTF-8 page exposes BOTH English and Hindi (Devanagari / Hindi switch).
+
+        Unlike ``has_bilingual_unicode``, non-Hindi regional scripts (Tamil, Telugu, Bengali, etc.)
+        do not satisfy the Union Official Languages Act Section 3(3) Hindi-and-English check.
+        """
+        utf8 = self.has_utf8_meta or ("utf-8" in content_type.lower())
+        if not utf8:
+            return False
+        lang_lower = self.html_lang.lower()
+        has_english = (
+            lang_lower.startswith("en")
+            or bool(ENGLISH_TEXT_RE.search(self.body))
+            or any(ENGLISH_SWITCH_LABEL_RE.search(label) for _, label in self.links)
+        )
+        has_hindi = (
+            lang_lower.startswith("hi")
+            or bool(DEVANAGARI_SCRIPT_RE.search(self.body))
+            or any(
+                HINDI_SWITCH_LABEL_RE.search(label) or HINDI_SWITCH_HREF_RE.search(href)
+                for href, label in self.links
+            )
+        )
+        return has_english and has_hindi
+
+    def has_stqc_cqw_badge(self) -> bool:
+        """Return True iff homepage explicitly discloses STQC CQW / GIGW conformity certification."""
+        if self.has_stqc_cqw_markup or STQC_CQW_RE.search(self.body):
+            return True
+        return any(STQC_CQW_RE.search(f"{href} {label}") for href, label in self.links)
+
+    def has_open_data_link(self) -> bool:
+        """Return True iff homepage links to data.gov.in, an Open Data section, or machine-readable datasets."""
+        if next(self.matching_links(OPEN_DATA_LINK_RE), None):
+            return True
+        for href, _ in self.links:
+            try:
+                parts = urlsplit(href)
+            except ValueError:
+                continue
+            if parts.scheme not in {"", "http", "https"}:
+                continue
+            if OPEN_DATA_EXT_RE.search(parts.path):
+                return True
+        return False
+
 
 def _header_security_checks(headers: dict[str, str], home_url: str) -> dict[str, str]:
     h = {str(k).lower(): str(v) for k, v in headers.items()}
@@ -728,11 +828,13 @@ class Reader:
         raise Unavailable("fetch_failed")
 
 
-async def _observe(result: dict, start_url: str) -> None:
+async def _observe(result: dict, start_url: str, *, timeout_seconds: float = SITE_TIMEOUT_SECONDS) -> None:
     domain = result["domain"]
     rti_exempt = is_rti_sec24_exempt(domain)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + max(0.2, float(timeout_seconds))
     reader = Reader(domain)
-    home_url, home = await reader.page(start_url)
+    home_url, home = await asyncio.wait_for(reader.page(start_url), timeout=max(0.1, deadline - loop.time()))
     home_headers = reader.page_headers.get(home_url, {})
 
     contact_found, contact_url = home.contact_link(home_url, domain)
@@ -811,7 +913,7 @@ async def _observe(result: dict, start_url: str) -> None:
             "form_input_labels": home.form_labels_state(),
             "unique_dom_ids": "not_observed" if home.duplicate_ids else "observed",
             **sec_checks,
-            # 7 RTI Act 2005 & GoI statutory checks
+            # 11 RTI Act 2005 & GoI statutory checks
             "rti_link": "observed" if rti_found else ("not_applicable" if rti_exempt else "not_observed"),
             "pio_faa_disclosure": "observed" if home_pio_faa else ("not_applicable" if rti_exempt else "not_observed"),
             "citizen_charter_link": "observed" if home_charter else "not_observed",
@@ -821,6 +923,12 @@ async def _observe(result: dict, start_url: str) -> None:
                 "observed" if home_gov_email else ("not_observed" if home_any_email else "not_applicable")
             ),
             "accessibility_link": "observed" if next(home.matching_links(ACCESSIBILITY), None) else "not_observed",
+            "hindi_english_bilingual": (
+                "observed" if home.has_hindi_english_bilingual(home_headers.get("content-type", "")) else "not_observed"
+            ),
+            "stqc_cqw_badge": "observed" if home.has_stqc_cqw_badge() else "not_observed",
+            "no_legacy_plugins": "not_observed" if home.has_legacy_plugin else "observed",
+            "open_data_link": "observed" if home.has_open_data_link() else "not_observed",
         }
     )
 
@@ -859,38 +967,73 @@ async def _observe(result: dict, start_url: str) -> None:
             checks["acts_tenders_link"] = "observed"
         if UNDER_CONSTRUCTION.search(sub.body):
             checks["no_under_construction"] = "not_observed"
+        if sub.has_legacy_plugin:
+            checks["no_legacy_plugins"] = "not_observed"
+        if sub.has_open_data_link():
+            checks["open_data_link"] = "observed"
         table_count += sub.table_count
         table_semantic = table_semantic or sub.has_semantic_table_markup
         if table_count > 0:
             checks["data_table_headers"] = "observed" if table_semantic else "not_observed"
 
-    # Page 2: optional linked Contact / Directory page
+    # Page 2: optional linked Contact / Directory page (bounded by remaining site deadline)
+    needs_rti_fetch = bool(rti_found and rti_url is not None and rti_url not in {home_url, contact_url})
     if contact_found:
         if contact_url is None:
             contact_failed = True
         elif contact_url != home_url:
-            try:
-                resolved_contact, contact_page = await reader.page(contact_url)
-                ev_url = public_evidence_url(resolved_contact, domain)
-                if ev_url not in result["pages"]:
-                    result["pages"].append(ev_url)
-                _merge_subpage(contact_page)
-            except (Unavailable, ValueError, OSError, httpx.HTTPError, LookupError, AssertionError):
+            rem = deadline - loop.time()
+            # Reserve a fair slice for Page 3 (RTI) if both subpages are scheduled.
+            contact_budget = min(rem, SUBPAGE_BUDGET_SECONDS) if needs_rti_fetch else rem
+            if contact_budget <= 0.05:
                 contact_failed = True
+            else:
+                try:
+                    resolved_contact, contact_page = await asyncio.wait_for(
+                        reader.page(contact_url), timeout=contact_budget
+                    )
+                    ev_url = public_evidence_url(resolved_contact, domain)
+                    if ev_url not in result["pages"]:
+                        result["pages"].append(ev_url)
+                    _merge_subpage(contact_page)
+                except (
+                    Unavailable,
+                    ValueError,
+                    OSError,
+                    TimeoutError,
+                    asyncio.TimeoutError,
+                    httpx.HTTPError,
+                    LookupError,
+                    AssertionError,
+                ):
+                    contact_failed = True
 
     # Page 3: optional linked RTI / Proactive Disclosure page (if distinct from home & contact)
     if rti_found:
         if rti_url is None:
             rti_failed = True
         elif rti_url not in {home_url, contact_url}:
-            try:
-                resolved_rti, rti_page = await reader.page(rti_url)
-                ev_url = public_evidence_url(resolved_rti, domain)
-                if ev_url not in result["pages"]:
-                    result["pages"].append(ev_url)
-                _merge_subpage(rti_page)
-            except (Unavailable, ValueError, OSError, httpx.HTTPError, LookupError, AssertionError):
+            rem = deadline - loop.time()
+            if rem <= 0.05:
                 rti_failed = True
+            else:
+                try:
+                    resolved_rti, rti_page = await asyncio.wait_for(reader.page(rti_url), timeout=rem)
+                    ev_url = public_evidence_url(resolved_rti, domain)
+                    if ev_url not in result["pages"]:
+                        result["pages"].append(ev_url)
+                    _merge_subpage(rti_page)
+                except (
+                    Unavailable,
+                    ValueError,
+                    OSError,
+                    TimeoutError,
+                    asyncio.TimeoutError,
+                    httpx.HTTPError,
+                    LookupError,
+                    AssertionError,
+                ):
+                    rti_failed = True
 
     # Reconcile contact & RTI check states honestly when a linked subpage was unavailable.
     if gov_email:
@@ -936,10 +1079,21 @@ def observe_site(record: dict) -> dict:
         if not isinstance(assigned_url, str) or not assigned_url.startswith("https://"):
             raise Unavailable("unsupported_page")
         start_url = _page_url(base, assigned_url, domain)
-        asyncio.run(asyncio.wait_for(_observe(result, start_url), timeout=15))
-    except (Unavailable, ValueError, OSError, httpx.HTTPError, LookupError, AssertionError) as exc:
+        # Inner deadline inside _observe() handles subpage timeouts with full state reconciliation;
+        # outer wait_for acts only as a hard safety ceiling.
+        asyncio.run(
+            asyncio.wait_for(
+                _observe(result, start_url, timeout_seconds=SITE_TIMEOUT_SECONDS),
+                timeout=SITE_TIMEOUT_SECONDS + 2.0,
+            )
+        )
+    except (Unavailable, ValueError, OSError, TimeoutError, asyncio.TimeoutError, httpx.HTTPError, LookupError, AssertionError) as exc:
+        # Never emit a half-reconciled observed row (e.g. contact_unavailable without a contact link).
         if result["outcome"] == "observed":
-            result["reason"] = result["reason"] or "contact_unavailable"
+            result["outcome"] = "unassessable"
+            result["pages"] = []
+            result["checks"] = dict.fromkeys(CHECKS, "unassessable")
+            result["reason"] = "fetch_failed"
         elif isinstance(exc, Unavailable):
             result["reason"] = str(exc)
         else:

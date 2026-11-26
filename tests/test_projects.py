@@ -381,12 +381,40 @@ def test_repository_police_project_uses_p1_on_official_documents() -> None:
 
 
 def test_hex_digests_are_not_mistaken_for_phone_numbers() -> None:
+    from aiwatchdogs.core.safety import verhoeff_generate_check_digit
+
     digest = "22db9256b950b843a3ee77627bf9b43fdc5e89390e565d441059f09055412504"
     aadhaar_run_digest = "016a42d6d0a1c8a52425df43e0061866ab0d890755632223a16cc09799e375bb"
     assert scrub_pii(digest) == (digest, [])
     assert scrub_pii(aadhaar_run_digest) == (aadhaar_run_digest, [])
     assert scrub_pii("Call 09876543210 now")[1] == ["phone"]
     assert scrub_pii("+91 98765 43210")[1] == ["phone"]
+
+    # P1 Security regression: checksum-valid Aadhaar numbers glued directly to English/Hindi labels
+    # or underscores MUST be redacted, while whole cryptographic hex digests stay intact.
+    valid_aadhaar = "23456789012" + verhoeff_generate_check_digit("23456789012")
+    for sample in (
+        f"Aadhaar{valid_aadhaar}",
+        f"aadhaar_{valid_aadhaar}",
+        f"UID{valid_aadhaar}",
+        f"आधार{valid_aadhaar}",
+        f"आधार_{valid_aadhaar}",
+        f"{valid_aadhaar}_verified",
+        f"{valid_aadhaar}आधार",
+        f"cafe{valid_aadhaar}",
+    ):
+        redacted, cats = scrub_pii(sample)
+        assert valid_aadhaar not in redacted, f"Aadhaar escaped redaction in {sample!r}: {redacted!r}"
+        assert "[REDACTED_AADHAAR]" in redacted
+        assert "aadhaar" in cats
+
+    # Whole 64-char SHA-256 and 32-char MD5 hex digests containing that exact 12-digit run stay intact
+    sha256_with_aadhaar = f"a1b2c3d4e5f6{valid_aadhaar}{'deadbeef' * 5}"
+    assert len(sha256_with_aadhaar) == 64
+    assert scrub_pii(sha256_with_aadhaar) == (sha256_with_aadhaar, [])
+    md5_with_aadhaar = f"deadbeef{valid_aadhaar}cafe1234abcd"
+    assert len(md5_with_aadhaar) == 32
+    assert scrub_pii(md5_with_aadhaar) == (md5_with_aadhaar, [])
 
 
 @pytest.mark.production_missions
@@ -433,6 +461,129 @@ def test_sync_projects_retires_obsolete_queued_tasks_while_preserving_completed(
         assert "prj-test-city-budget-old-2" not in task_ids  # obsolete queued retired
         assert {"prj-test-city-budget-new-1", "prj-test-city-budget-new-2", "prj-test-city-budget-new-3"} <= task_ids
         assert detail["total_tasks"] == 4
+
+
+@pytest.mark.production_missions
+def test_sync_projects_retires_superseded_claimed_leases_and_orphaned_w1_manifests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P1 regression: claimed legacy 3-digit batch leases must be safely retired on upgrade,
+    unblocking the volunteer agent and never returning broken manifests to the queue."""
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    base_task = _project()["tasks"][0]
+    v1 = _project(
+        tasks=[
+            {**base_task, "id": "test-city-budget-old-claimed", "dataset_key": "old-claimed"},
+            {**base_task, "id": "test-city-budget-old-parked", "dataset_key": "old-parked"},
+            {**base_task, "id": "test-city-budget-old-done", "dataset_key": "old-done"},
+        ]
+    )
+    (pdir / "test-city-budget.json").write_text(json.dumps(v1), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+    db_path = tmp_path / "retire_claimed.db"
+
+    with TestClient(create_app(db_path=db_path, seed=True)) as client1:
+        reg = client1.post(
+            "/api/agents/register",
+            json={"handle": "legacy-volunteer", "provider": "rule-engine", "model": "deterministic-cpu-v1", "mode": "auto"},
+        ).json()
+        claim = client1.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": reg["api_token"]},
+            json={"task_id": "prj-test-city-budget-old-claimed"},
+        )
+        assert claim.status_code == 200, claim.text
+        old_lease_id = claim.json()["lease_id"]
+        with client1.app.state.db.transaction() as conn:
+            conn.execute(
+                "UPDATE tasks SET status = 'needs_adjudication' WHERE id = 'prj-test-city-budget-old-parked'"
+            )
+            conn.execute(
+                "UPDATE tasks SET status = 'completed', completed_at = '2026-11-26T00:00:00Z' "
+                "WHERE id = 'prj-test-city-budget-old-done'"
+            )
+
+    # Upgrade to v2 with new task IDs: claimed & parked legacy tasks must be retired cleanly!
+    v2 = _project(
+        title="Upgraded v2 project",
+        tasks=[
+            {**base_task, "id": "test-city-budget-new-0001", "dataset_key": "new-0001"},
+            {**base_task, "id": "test-city-budget-new-0002", "dataset_key": "new-0002"},
+        ],
+    )
+    (pdir / "test-city-budget.json").write_text(json.dumps(v2), encoding="utf-8")
+
+    with TestClient(create_app(db_path=db_path, seed=True)) as client2:
+        detail = client2.get("/api/missions/test-city-budget").json()
+        task_ids = {t["id"] for t in detail["tasks"]}
+        assert "prj-test-city-budget-old-claimed" not in task_ids
+        assert "prj-test-city-budget-old-parked" not in task_ids
+        assert "prj-test-city-budget-old-done" in task_ids
+        assert {"prj-test-city-budget-new-0001", "prj-test-city-budget-new-0002"} <= task_ids
+        assert detail["total_tasks"] == 3
+
+        # Submitting against the superseded lease returns clean 404/409/410 (never HTTP 503!)
+        old_sub = client2.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": reg["api_token"]},
+            json={"lease_id": old_lease_id, "outcome": "cleared"},
+        )
+        assert old_sub.status_code in (404, 409, 410), old_sub.text
+
+        # Volunteer agent's current_task_id was cleared and can immediately claim a fresh v2 task
+        new_claim = client2.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": reg["api_token"]},
+            json={"preferred_mission": "test-city-budget"},
+        )
+        assert new_claim.status_code == 200, new_claim.text
+        assert new_claim.json()["task"]["id"] in {"prj-test-city-budget-new-0001", "prj-test-city-budget-new-0002"}
+
+        # Belt-and-suspenders: if an orphaned W1 task referencing a deleted 3-digit batch CSV ever
+        # expires or is released, _reclaim_expired_leases retires it instead of re-queueing it.
+        with client2.app.state.db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type, title, instructions,
+                    payload_json, status, claimed_by_agent_id, lease_id, lease_started_at,
+                    lease_expires_at, created_at, updated_at
+                ) VALUES (
+                    'prj-orphan-w1-001', 'project-test-city-budget', 'test-city-budget', 'W1', 'anomaly_scan',
+                    'Orphan legacy batch', 'Legacy batch',
+                    '{"retrieval_url":"https://aiwatchdogs.in/api/missions/gov-in-public-information/batches/batch-001.csv"}',
+                    'claimed', ?, 'lease-orphan-1', '2020-01-01T00:00:00Z', '2020-01-01T00:10:00Z',
+                    '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z'
+                )
+                """,
+                (reg["agent_id"],),
+            )
+            client2.app.state.desk._reclaim_expired_leases(conn)
+            orphan = conn.execute("SELECT id FROM tasks WHERE id = 'prj-orphan-w1-001'").fetchone()
+            assert orphan is None
+
+        # Retired finding-referenced tasks must NOT leak into mission rungs or token estimates!
+        before_detail = client2.get("/api/missions/test-city-budget").json()
+        before_tokens = before_detail["token_summary"]["estimated_tokens"]
+        with client2.app.state.db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type, title, instructions,
+                    payload_json, status, estimated_tokens, created_at, updated_at
+                ) VALUES (
+                    'prj-retired-ref-task', 'project-test-city-budget', 'test-city-budget', 'M1', 'anomaly_scan',
+                    'Retired historical task', 'Retired', '{}', 'retired', 999999,
+                    '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'
+                )
+                """
+            )
+        after_detail = client2.get("/api/missions/test-city-budget").json()
+        assert after_detail["token_summary"]["estimated_tokens"] == before_tokens
+        assert all(r["id"] != "prj-retired-ref-task" for r in after_detail["rungs"])
+        assert all(t["id"] != "prj-retired-ref-task" for t in after_detail["tasks"])
 
 
 @pytest.mark.production_missions
