@@ -587,6 +587,71 @@ def test_sync_projects_retires_superseded_claimed_leases_and_orphaned_w1_manifes
 
 
 @pytest.mark.production_missions
+def test_sync_projects_handles_postgres_advisory_lock_contention_without_crashing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Production regression: concurrent serverless cold starts must wait via pg_try_advisory_xact_lock
+    and serve existing live projects cleanly instead of crashing with LockNotAvailable -> 503."""
+    from contextlib import contextmanager
+    from typing import Any
+    from aiwatchdogs.hub.database import Database
+    from aiwatchdogs.projects import sync_projects
+
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    proj = _project()
+    (pdir / "test-city-budget.json").write_text(json.dumps(proj), encoding="utf-8")
+    db = Database(db_path=tmp_path / "lock_contention.db")
+    # Initial sync succeeds and populates active community mission
+    r0 = sync_projects(db, pdir)
+    assert r0["changed"] is True
+
+    # Modify project file so fingerprint changes, then simulate another Postgres container holding the lock
+    proj["title"] = "Updated city police budget audit"
+    (pdir / "test-city-budget.json").write_text(json.dumps(proj), encoding="utf-8")
+
+    class _ContendedPgDb:
+        is_postgres = True
+
+        def __init__(self, inner: Database, *, release_after_polls: int | None) -> None:
+            self._inner = inner
+            self._polls = 0
+            self._release_after = release_after_polls
+
+        @contextmanager
+        def read(self):
+            with self._inner.read() as conn:
+                yield conn
+
+        @contextmanager
+        def transaction(self, **_kwargs: Any):
+            class _LockOnlyConn:
+                def __init__(self, acquired: bool) -> None:
+                    self._acquired = acquired
+
+                def execute(self, sql: str, params: Any = None) -> Any:
+                    assert "pg_try_advisory_xact_lock" in sql
+                    return type("_Cur", (), {"fetchone": lambda _self: {"acquired": self._acquired}})()
+
+            self._polls += 1
+            if self._release_after is not None and self._polls >= self._release_after:
+                # Simulate peer finishing sync before our next read check
+                sync_projects(self._inner, pdir)
+            yield _LockOnlyConn(acquired=False)
+
+    # Case 1: Lock stays held past timeout while active missions already exist -> graceful non-crashing skip
+    res_warn = sync_projects(_ContendedPgDb(db, release_after_polls=None), pdir, lock_wait_seconds=0.05)
+    assert res_warn["changed"] is False
+    assert "actively syncing" in res_warn.get("warning", "")
+
+    # Case 2: Peer finishes syncing on 2nd poll -> exits immediately without warning
+    res_peer_done = sync_projects(_ContendedPgDb(db, release_after_polls=2), pdir, lock_wait_seconds=2.0)
+    assert res_peer_done["changed"] is False
+    assert "warning" not in res_peer_done
+    db.close()
+
+
+@pytest.mark.production_missions
 def test_peer_verify_tasks_carry_the_server_side_engine_context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verifiers must re-run P1 with the project's page/line specs, or reproduction yields 0 leads."""
     import sqlite3

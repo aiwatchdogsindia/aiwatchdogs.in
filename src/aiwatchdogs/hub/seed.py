@@ -1138,7 +1138,7 @@ def seed_database(db: Database, repo_root: Path | None = None) -> bool:
 
     now_iso = _utc_now_iso()
 
-    with db.transaction() as conn:
+    with db.transaction(statement_timeout_ms=30_000, lock_timeout_ms=15_000) as conn:
         if db.is_postgres:
             conn.execute(f"SELECT pg_advisory_xact_lock({PG_SEED_ADVISORY_LOCK_KEY})")
 

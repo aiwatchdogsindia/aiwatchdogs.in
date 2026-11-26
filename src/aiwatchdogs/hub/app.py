@@ -7,10 +7,15 @@ import math
 import mimetypes
 import os
 import re
+import threading
+import time
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlsplit
+
+import anyio
 
 mimetypes.add_type("font/woff2", ".woff2")
 
@@ -472,8 +477,93 @@ def _build_cors_origins() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def create_degraded_app(*, reason: str) -> FastAPI:
-    """Create a fail-closed ASGI app used when production durable storage is unconfigured."""
+class _SelfHealingHubMiddleware:
+    """ASGI middleware that allows a transiently degraded container to recover automatically.
+
+    When cold-start database initialization fails due to a transient error (e.g., Neon wakeup or
+    concurrent startup lock contention), ``api/index.py`` binds the returned degraded FastAPI
+    instance once at module import time. This middleware retries initialization at most once per
+    cooldown window and transparently delegates all subsequent requests to the healthy app once
+    recovery succeeds — preventing permanent 503 zombie serverless instances.
+    """
+
+    def __init__(
+        self,
+        app: Any,
+        *,
+        retry_factory: Callable[[], FastAPI],
+        retry_cooldown_s: float = 3.0,
+    ) -> None:
+        self.app = app
+        self._retry_factory = retry_factory
+        self._cooldown_s = max(0.0, float(retry_cooldown_s))
+        self._recovered_app: FastAPI | None = None
+        self._next_retry_at: float = time.monotonic() + self._cooldown_s
+        self._retry_lock = threading.Lock()
+        self._retrying = False
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") == "lifespan":
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                recovered = self._recovered_app
+                if recovered is not None:
+                    db = getattr(getattr(recovered, "state", None), "db", None)
+                    if db is not None:
+                        try:
+                            db.close()
+                        except Exception:
+                            pass
+            return
+
+        recovered = self._recovered_app
+        if recovered is not None:
+            await recovered(scope, receive, send)
+            return
+
+        if scope.get("type") == "http":
+            should_retry = False
+            with self._retry_lock:
+                if self._recovered_app is None and not self._retrying and time.monotonic() >= self._next_retry_at:
+                    self._retrying = True
+                    should_retry = True
+            if should_retry:
+                candidate: FastAPI | None = None
+                try:
+                    candidate = await anyio.to_thread.run_sync(self._retry_factory)
+                except Exception as exc:
+                    with self._retry_lock:
+                        self._next_retry_at = time.monotonic() + self._cooldown_s
+                    logger.warning(
+                        "Degraded Hub recovery attempt failed (retrying in %.1fs): %s",
+                        self._cooldown_s,
+                        redact_database_url(str(exc)),
+                    )
+                else:
+                    with self._retry_lock:
+                        self._recovered_app = candidate
+                    logger.info("Coordinator Hub self-healed from degraded startup state.")
+                finally:
+                    with self._retry_lock:
+                        self._retrying = False
+                if candidate is not None:
+                    await candidate(scope, receive, send)
+                    return
+            if self._recovered_app is not None:
+                await self._recovered_app(scope, receive, send)
+                return
+
+        await self.app(scope, receive, send)
+
+
+def create_degraded_app(
+    *,
+    reason: str,
+    retry_factory: Callable[[], FastAPI] | None = None,
+    retry_cooldown_s: float = 3.0,
+) -> FastAPI:
+    """Create a fail-closed ASGI app used when production durable storage is unavailable."""
     logger.error("Starting degraded Hub app: %s", redact_database_url(reason))
     degraded = FastAPI(
         title="AI Watchdogs · India Coordinator Hub (Degraded)",
@@ -483,6 +573,12 @@ def create_degraded_app(*, reason: str) -> FastAPI:
         openapi_url=None,
     )
     degraded.add_middleware(SecurityHeadersMiddleware)
+    if retry_factory is not None:
+        degraded.add_middleware(
+            _SelfHealingHubMiddleware,
+            retry_factory=retry_factory,
+            retry_cooldown_s=retry_cooldown_s,
+        )
 
     @degraded.get("/health")
     def degraded_health() -> JSONResponse:
@@ -524,8 +620,15 @@ def create_app(
         read_only=read_only,
     )
     if seed and not read_only:
-        seed_database(db)
-        sync_projects(db)
+        try:
+            seed_database(db)
+            sync_projects(db)
+        except Exception:
+            try:
+                db.close()
+            except Exception:
+                pass
+            raise
     broker = SSEBroker(db=db)
     desk = DeskService(db=db, broker=broker)
     # Renamed projects keep answering at their earlier slug (page, API and feed links).
@@ -1276,6 +1379,15 @@ def create_app(
 
 
 _DEFAULT_APP: FastAPI | None = None
+_DEFAULT_APP_LOCK = threading.Lock()
+
+
+def _init_default_app() -> FastAPI:
+    global _DEFAULT_APP
+    with _DEFAULT_APP_LOCK:
+        if _DEFAULT_APP is None:
+            _DEFAULT_APP = create_app()
+        return _DEFAULT_APP
 
 
 def get_default_app() -> FastAPI:
@@ -1283,20 +1395,24 @@ def get_default_app() -> FastAPI:
 
     Fails closed with a degraded 503 ASGI app when running in production
     (``VERCEL=1`` or ``AIWATCHDOGS_REQUIRE_POSTGRES=1``) without ``DATABASE_URL``
-    or ``POSTGRES_URL`` configured, or if database startup fails.
+    or ``POSTGRES_URL`` configured, or if database startup fails (with bounded
+    self-healing retries for transient startup failures).
     """
     if is_postgres_required() and resolve_database_url() is None:
         return create_degraded_app(
             reason="Durable PostgreSQL storage is required in production (DATABASE_URL or POSTGRES_URL not configured)."
         )
-    global _DEFAULT_APP
-    if _DEFAULT_APP is None:
-        try:
-            _DEFAULT_APP = create_app()
-        except Exception as exc:
-            logger.exception("Failed to initialize Coordinator Hub app: %s", redact_database_url(str(exc)))
-            return create_degraded_app(reason="Coordinator Hub database initialization failed.")
-    return _DEFAULT_APP
+    if _DEFAULT_APP is not None:
+        return _DEFAULT_APP
+    try:
+        return _init_default_app()
+    except Exception as exc:
+        logger.exception("Failed to initialize Coordinator Hub app: %s", redact_database_url(str(exc)))
+        return create_degraded_app(
+            reason="Coordinator Hub database initialization failed.",
+            retry_factory=_init_default_app,
+            retry_cooldown_s=3.0,
+        )
 
 
 def __getattr__(name: str) -> Any:

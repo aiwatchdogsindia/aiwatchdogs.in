@@ -2119,6 +2119,38 @@ def test_vercel_fail_closed_503_and_unhealthy_db_503(
     finally:
         app.state.db.close()
 
+    # 4. Self-healing degraded app recovers automatically after a transient startup failure
+    from aiwatchdogs.hub.app import create_degraded_app
+
+    attempts = {"count": 0}
+
+    def _flaky_factory() -> Any:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("transient lock timeout")
+        return create_app(db_path=tmp_path / "self_heal.db", seed=False)
+
+    healing_app = create_degraded_app(
+        reason="Transient cold-start DB error",
+        retry_factory=_flaky_factory,
+        retry_cooldown_s=0.0,
+    )
+    with TestClient(healing_app) as heal_client:
+        # First retry attempt still fails -> HTTP 503 degraded with security headers
+        r1 = heal_client.get("/health")
+        assert r1.status_code == 503
+        assert r1.json()["status"] == "degraded"
+        assert r1.headers.get("x-content-type-options") == "nosniff"
+        # Second attempt succeeds -> immediately returns HTTP 200 healthy!
+        r2 = heal_client.get("/health")
+        assert r2.status_code == 200
+        assert r2.json()["status"] == "ok"
+        assert r2.json()["db_ok"] is True
+        # Subsequent requests stay pinned to the recovered app (no re-init)
+        r3 = heal_client.get("/health")
+        assert r3.status_code == 200
+        assert attempts["count"] == 2
+
 
 def test_lease_auth_server_authoritative_binding_idempotency_and_backoff_adjudication(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
