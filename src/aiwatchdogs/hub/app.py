@@ -88,7 +88,8 @@ SECURITY_CSP = (
     "default-src 'self'; "
     "script-src 'self' https://www.googletagmanager.com; "
     "style-src 'self' 'unsafe-inline'; "
-    "img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com; "
+    "img-src 'self' data: https://www.google-analytics.com https://www.googletagmanager.com "
+    "https://github.com https://avatars.githubusercontent.com; "
     "font-src 'self'; "
     "connect-src 'self' https://www.google-analytics.com https://*.google-analytics.com "
     "https://*.analytics.google.com https://www.googletagmanager.com; "
@@ -818,6 +819,7 @@ def create_app(
     # ------------------------------------------------------------------
 
     _PUBLIC_READ_CACHE = "public, max-age=0, s-maxage=5, stale-while-revalidate=15"
+    _LIVE_SWARM_CACHE = "public, max-age=0, s-maxage=3, stale-while-revalidate=10"
 
     @application.get("/api/head")
     def api_head(response: Response) -> dict[str, Any]:
@@ -1000,6 +1002,11 @@ def create_app(
     def api_live(response: Response) -> dict[str, Any]:
         response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.get_live()
+
+    @application.get("/api/swarm/live")
+    def api_swarm_live(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _LIVE_SWARM_CACHE
+        return desk.get_swarm_live()
 
     @application.get("/api/contributors")
     def api_contributors(
