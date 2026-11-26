@@ -1338,12 +1338,14 @@ def _run_interactive_audit(
             channel = draft.get("filing_channel") or draft.get("rti_portal_url") or "Verify jurisdiction RTI channel"
             jur_level = draft.get("jurisdiction_level") or ""
             fee_info = draft.get("fee_rules") or draft.get("fee_note") or ""
+            # Built outside the f-string: a backslash inside an f-string expression needs Python 3.12+.
+            fee_line = f"[bold]Fee Rules:[/bold] {_safe_rich(fee_info)}\n" if fee_info else ""
             rti_body = (
                 f"[bold]Public Authority:[/bold] {_safe_rich(draft.get('public_authority'))}"
                 f"{f' ({_safe_rich(jur_level)})' if jur_level else ''}\n"
                 f"[bold]CPIO/SPIO:[/bold] {_safe_rich(draft.get('cpio_designation'))}  ·  "
                 f"[bold]Channel / Portal:[/bold] {_safe_rich(channel)}\n"
-                f"{f'[bold]Fee Rules:[/bold] {_safe_rich(fee_info)}\n' if fee_info else ''}"
+                f"{fee_line}"
                 f"[bold]Sections:[/bold] {_safe_rich(', '.join(draft.get('statutory_sections') or []))}  ·  "
                 f"[bold]Word Count:[/bold] {_safe_rich(draft.get('word_count'))} / 500\n"
                 f"[bold]Subject:[/bold] {_safe_rich(draft.get('subject'))}\n\n"
