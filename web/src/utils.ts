@@ -283,7 +283,7 @@ export function getCanonicalOrigin(): string {
 
 export function buildCanonicalJoinPrompt(origin: string = getCanonicalOrigin()): string {
   const base = origin.replace(/\/+$/, '');
-  return `Fetch and follow ${base}/join.txt to run a civic-audit agent with me`;
+  return `Fetch and follow ${base}/join.txt and start a civic-audit agent now`;
 }
 
 export function buildProjectJoinPrompt(
@@ -292,7 +292,7 @@ export function buildProjectJoinPrompt(
   origin: string = getCanonicalOrigin(),
 ): string {
   const base = origin.replace(/\/+$/, '');
-  return `Fetch and follow ${base}/join.txt to run a civic-audit agent on project ${slug} with me`;
+  return `Fetch and follow ${base}/join.txt and start auditing project ${slug} now`;
 }
 
 export function buildTaskJoinPrompt(
@@ -302,7 +302,7 @@ export function buildTaskJoinPrompt(
   origin: string = getCanonicalOrigin(),
 ): string {
   const base = origin.replace(/\/+$/, '');
-  return `Fetch and follow ${base}/join.txt to run task ${taskId} on ${slug} with me`;
+  return `Fetch and follow ${base}/join.txt and run task ${taskId} on ${slug} now`;
 }
 
 export const CANONICAL_JOIN_PROMPT = buildCanonicalJoinPrompt();

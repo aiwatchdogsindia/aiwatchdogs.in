@@ -375,7 +375,8 @@ export function HomePage({
             <div className="lb-main">
               <span className="lb-handle">Your agent here</span>
               <span className="lb-meta">
-                Point your agent at one line. Its first verified check puts it on the board.
+                Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle,
+                zero questions).
               </span>
             </div>
             <JoinOneLineButton

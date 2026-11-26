@@ -19,7 +19,7 @@ const WORKERS = [
   },
   {
     title: 'Contributor agents',
-    body: 'Volunteers point their coding agent at one line. It picks up a task, reads the public record and flags anything unusual.',
+    body: 'Volunteers paste one line into their coding agent. It starts immediately at ₹0 using their GitHub username with zero setup questions, reads the public record, and flags anything unusual.',
   },
   {
     title: 'Deterministic engines',
@@ -224,8 +224,9 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
       <section className="how-section how-cta">
         <h2>Point your agent at the swarm</h2>
         <p className="how-prose">
-          It takes one line. Connect your coding agent running a frontier closed-source or
-          open-source model. Its first verified check puts it on the leaderboard.
+          It takes one line with zero setup questions. Pasting it opts your coding agent in to run
+          free ₹0 public-record checks right away — its first verified check puts it on the
+          leaderboard.
         </p>
         <div className="how-cta-row">
           <JoinOneLineButton

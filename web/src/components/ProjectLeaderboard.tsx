@@ -50,7 +50,7 @@ export function ProjectLeaderboard({
   hourAgents,
   joinPrompt,
   joinButtonLabel = 'Join the effort: copy one line',
-  joinHelperText = 'Point your agent at one line. Its first check puts it on the board.',
+  joinHelperText = 'Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle, zero questions).',
   scoreUnit = 'points',
   showSeeAllLink = true,
   compact = false,
