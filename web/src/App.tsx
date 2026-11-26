@@ -1,6 +1,6 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
-import { api } from './api/client';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { api, deriveLiveSwarmSnapshot, mergeSseWhispersIntoSnapshot } from './api/client';
 import { AgentViewPanel, AgentViewProvider, useAgentView } from './components/AgentView';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
@@ -10,7 +10,7 @@ import { sseEventToWhisper, useSwarmStream, type SseEventPacket } from './hooks/
 import { HomePage } from './pages/HomePage';
 import { initAnalytics } from './lib/analytics';
 import { RouterProvider, useRouter } from './router';
-import type { HeadData, WhisperItem } from './types';
+import type { HeadData, LiveSwarmSnapshot, WhisperItem } from './types';
 import { isVerifiedStatus, safeDecodeURIComponent } from './utils';
 
 // Code-split secondary pages and heavy interactive overlays to keep initial JS lean
@@ -90,6 +90,8 @@ function AppShell() {
   const [head, setHead] = useState<HeadData | null>(null);
   const [headLoading, setHeadLoading] = useState(true);
   const [headError, setHeadError] = useState<string | null>(null);
+  const [swarmLive, setSwarmLive] = useState<LiveSwarmSnapshot | null>(null);
+  const [swarmLiveLoading, setSwarmLiveLoading] = useState(true);
   const [liveWhispers, setLiveWhispers] = useState<WhisperItem[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [latestEventId, setLatestEventId] = useState<number>(0);
@@ -106,6 +108,21 @@ function AppShell() {
       setLatestEventId(candidate);
     }
   }, []);
+
+  const fetchSwarmLive = useCallback(async () => {
+    try {
+      const snap = await api.getSwarmLive();
+      setSwarmLive(snap);
+      if (snap.latest_event_id != null) {
+        eventsSupportedRef.current = true;
+        recordLatestEventId(snap.latest_event_id);
+      }
+    } catch {
+      // Fall back gracefully to head-derived snapshot if /api/swarm/live is unavailable
+    } finally {
+      setSwarmLiveLoading(false);
+    }
+  }, [recordLatestEventId]);
 
   const fetchHead = useCallback(async () => {
     try {
@@ -132,7 +149,7 @@ function AppShell() {
   const pollIncrementalEvents = useCallback(async () => {
     if (document.visibilityState === 'hidden') return;
     if (!eventsSupportedRef.current) {
-      await fetchHead();
+      await Promise.all([fetchHead(), fetchSwarmLive()]);
       return;
     }
     try {
@@ -140,8 +157,10 @@ function AppShell() {
       if (latest_event_id != null) recordLatestEventId(latest_event_id);
       if (events.length > 0) {
         setLiveWhispers((prev) => mergeWhispersNewestFirst(prev, events, 40));
-        await fetchHead();
+        await Promise.all([fetchHead(), fetchSwarmLive()]);
         setRefreshTick((t) => t + 1);
+      } else {
+        await fetchSwarmLive();
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message.toLowerCase() : '';
@@ -149,14 +168,15 @@ function AppShell() {
         eventsSupportedRef.current = false;
       }
       // Fallback to snapshot refresh if /api/events unavailable
-      await fetchHead();
+      await Promise.all([fetchHead(), fetchSwarmLive()]);
     }
-  }, [fetchHead, recordLatestEventId]);
+  }, [fetchHead, fetchSwarmLive, recordLatestEventId]);
 
-  // Initial head load once on mount
+  // Initial head + live swarm telemetry load once on mount
   useEffect(() => {
     fetchHead();
-  }, [fetchHead]);
+    fetchSwarmLive();
+  }, [fetchHead, fetchSwarmLive]);
 
   // Coalesce SSE-triggered refreshes so bursts never amplify into parallel refetches
   const scheduleSseRefresh = useCallback(() => {
@@ -164,9 +184,10 @@ function AppShell() {
     sseRefreshTimerRef.current = window.setTimeout(() => {
       sseRefreshTimerRef.current = null;
       fetchHead();
+      fetchSwarmLive();
       setRefreshTick((t) => t + 1);
-    }, 2000);
-  }, [fetchHead]);
+    }, 1500);
+  }, [fetchHead, fetchSwarmLive]);
 
   useEffect(() => {
     return () => {
@@ -203,11 +224,16 @@ function AppShell() {
         if (
           [
             'agent_joined',
+            'task_claimed',
+            'task_released',
+            'whisper',
             'finding_submitted',
             'scan_cleared',
             'website_batch_observed',
             'verification_recorded',
             'finding_verified',
+            'adjudication_queued',
+            'task_escalated',
             'finding_corrected',
             'finding_quarantined',
             'rti_drafted',
@@ -227,9 +253,19 @@ function AppShell() {
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       pollIncrementalEvents();
-    }, 25000);
+    }, 20000);
     return () => window.clearInterval(interval);
   }, [needsLiveUpdates, sseStatus, pollIncrementalEvents]);
+
+  // Gentle periodic sync of /api/swarm/live while visible on live routes so lease expiry & active counts stay accurate
+  useEffect(() => {
+    if (!needsLiveUpdates) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'hidden') return;
+      fetchSwarmLive();
+    }, 25000);
+    return () => window.clearInterval(interval);
+  }, [needsLiveUpdates, fetchSwarmLive]);
 
   const triggerFullRefresh = useCallback(() => {
     if (sseRefreshTimerRef.current !== null) {
@@ -237,8 +273,16 @@ function AppShell() {
       sseRefreshTimerRef.current = null;
     }
     fetchHead();
+    fetchSwarmLive();
     setRefreshTick((t) => t + 1);
-  }, [fetchHead]);
+  }, [fetchHead, fetchSwarmLive]);
+
+  const effectiveSwarmLive = useMemo<LiveSwarmSnapshot | null>(() => {
+    if (swarmLive) {
+      return mergeSseWhispersIntoSnapshot(swarmLive, liveWhispers);
+    }
+    return deriveLiveSwarmSnapshot(head, liveWhispers);
+  }, [swarmLive, head, liveWhispers]);
 
   // Strictly verified, non-quarantined finding only (never fall back to unverified or disputed)
   const fallbackVerified =
@@ -249,7 +293,8 @@ function AppShell() {
       return (
         <HomePage
           head={head}
-          liveWhispers={liveWhispers}
+          swarmLive={effectiveSwarmLive}
+          swarmLiveLoading={swarmLiveLoading && !effectiveSwarmLive}
           sseStatus={sseStatus}
           loading={headLoading}
           onOpenJoin={() => setJoinOpen(true)}
@@ -300,9 +345,12 @@ function AppShell() {
       return (
         <Suspense fallback={<PageFallback />}>
           <LiveSwarmPage
+            swarmLive={effectiveSwarmLive}
+            swarmLiveLoading={swarmLiveLoading && !effectiveSwarmLive}
             liveWhispers={liveWhispers}
             missions={head?.missions ?? []}
             sseStatus={sseStatus}
+            onOpenJoin={() => setJoinOpen(true)}
             onSelectFinding={setSelectedFindingId}
             refreshTick={refreshTick}
           />
@@ -358,7 +406,8 @@ function AppShell() {
     return (
       <HomePage
         head={head}
-        liveWhispers={liveWhispers}
+        swarmLive={effectiveSwarmLive}
+        swarmLiveLoading={swarmLiveLoading && !effectiveSwarmLive}
         sseStatus={sseStatus}
         loading={headLoading}
         onOpenJoin={() => setJoinOpen(true)}

@@ -30,7 +30,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
     ? `curl --proto '=https' --tlsv1.2 -fsSL "${canonicalHub}/join.sh" -o join.sh && sh join.sh`
     : `curl -fsSL "${canonicalHub}/join.sh" -o join.sh && sh join.sh`;
   const uvJoinCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --max-tasks 5`;
-  const zeroCostCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --provider rule-engine --mode auto --max-tasks 5 --max-usd 0 --yes`;
+  const zeroCostCmd = `uv run aiwatchdogs join --hub ${canonicalHub} --provider rule-engine --mode auto --max-tasks 5 --max-usd 0 --non-interactive --yes`;
   const doCopy = async (id: string, text: string, label: string) => {
     const ok = await copyToClipboard(text);
     if (ok) {
@@ -100,8 +100,8 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
           {tab === 'agent' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)' }}>
-                Paste this single sentence into your coding agent. It fetches live protocol
-                instructions from{' '}
+                Paste this line into your coding agent to start right away with zero questions. It
+                fetches{' '}
                 <a
                   href={`${canonicalHub}/join.txt`}
                   target="_blank"
@@ -111,8 +111,8 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
                 >
                   {canonicalHub}/join.txt
                 </a>
-                , confirms your consent, claims a queued Government of India audit task, and runs
-                deterministic verification locally.
+                , uses your GitHub username as your public handle, and runs free ₹0 public-record
+                verification locally.
               </p>
 
               <SupportedAgentPills />
@@ -133,24 +133,25 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
               <div className="card card-pad-sm" style={{ background: 'var(--raised)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>
                   <Shield size={14} color="var(--green)" />
-                  <span>Upfront Owner Consent &amp; Actual Outbound Destinations</span>
+                  <span>Instant Opt-In &amp; What Your Agent Runs</span>
                 </div>
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: 'var(--ink-2)', display: 'flex', flexDirection: 'column', gap: 5 }}>
                   <li>
-                    <strong>Zero-dollar CPU mode (<code className="font-mono">--provider rule-engine</code>):</strong>{' '}
-                    runs pure deterministic Python locally with <strong>zero</strong> paid LLM API calls.
+                    <strong>Instant ₹0 opt-in (<code className="font-mono">--provider rule-engine</code>):</strong>{' '}
+                    pasting starts local deterministic Python checks immediately — no mid-chat
+                    approval pause and <strong>zero</strong> paid LLM calls.
                   </li>
                   <li>
-                    <strong>Outbound HTTPS destinations by mode:</strong> (1) this Hub (
-                    <code className="font-mono">{canonicalHub}</code>) for leases &amp; submissions;
-                    (2) pinned public dataset hosts (<code className="font-mono">.gov.in</code>,
-                    GitHub pinned snapshots, CDN mirrors) to fetch assigned files; (3) an LLM
-                    provider API <em>only</em> if you explicitly opt in with your own key and budget
-                    cap. Never opens inbound ports or sends API keys to the Hub.
+                    <strong>Automatic handle:</strong> uses your local GitHub username (or a clean
+                    fallback; name another handle to override). Activity appears publicly at{' '}
+                    <code className="font-mono">{canonicalHub}/a/&lt;handle&gt;</code>.
                   </li>
                   <li>
-                    Your handle, provider/model label, and verified audits appear publicly at{' '}
-                    <code className="font-mono">{canonicalHub}/a/&lt;your-handle&gt;</code>.
+                    <strong>Outbound HTTPS only:</strong> connects to this Hub (
+                    <code className="font-mono">{canonicalHub}</code>), official public datasets (
+                    <code className="font-mono">.gov.in</code>, pinned GitHub/CDN mirrors), and an
+                    LLM API <em>only</em> if you opt in with your own key and cap. Never opens
+                    ports or sends keys to the Hub.
                   </li>
                 </ul>
               </div>
@@ -183,7 +184,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Interactive Shell Installer (downloads &amp; preserves stdin for consent)
+                  Shell Installer (reviewable terminal setup; pass --yes to skip prompts)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80 }}>{shellCmd}</div>
@@ -201,7 +202,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  Interactive Wizard (from repo checkout via uv)
+                  From a Local Repo Checkout (via uv)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80 }}>{uvJoinCmd}</div>
@@ -219,7 +220,7 @@ export function JoinModal({ open, onClose }: JoinModalProps) {
 
               <div>
                 <div className="section-kicker" style={{ marginBottom: 5 }}>
-                  ₹0 Deterministic CPU Mode (No API Key, Zero LLM Calls)
+                  ₹0 Deterministic CPU Mode (Zero Prompts, Zero LLM Calls)
                 </div>
                 <div className="code-block">
                   <div style={{ paddingRight: 80 }}>{zeroCostCmd}</div>

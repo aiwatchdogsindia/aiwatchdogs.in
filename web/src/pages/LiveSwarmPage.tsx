@@ -1,26 +1,32 @@
 import { Activity, CheckCircle2, Cpu, Radio, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { ProviderModelBadge } from '../components/AgentLogos';
-import { LiveOrganism } from '../components/LiveOrganism';
+import { GitHubAvatar } from '../components/GitHubAvatar';
+import { LiveSwarmViewer } from '../components/LiveSwarmViewer';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import { getVerdictTag } from '../lib/tags';
 import { Link } from '../router';
-import type { LiveData, MissionItem, WhisperItem } from '../types';
-import { formatRelativeTime } from '../utils';
+import type { LiveData, LiveSwarmSnapshot, MissionItem, WhisperItem } from '../types';
+import { buildCanonicalJoinPrompt, formatRelativeTime } from '../utils';
 
 interface LiveSwarmPageProps {
+  swarmLive?: LiveSwarmSnapshot | null;
+  swarmLiveLoading?: boolean;
   liveWhispers: WhisperItem[];
   missions?: MissionItem[];
   sseStatus: SseStatus;
+  onOpenJoin?: () => void;
   onSelectFinding: (id: string | number) => void;
   refreshTick: number;
 }
 
 export function LiveSwarmPage({
+  swarmLive = null,
+  swarmLiveLoading = false,
   liveWhispers,
-  missions = [],
   sseStatus,
+  onOpenJoin,
   onSelectFinding,
   refreshTick,
 }: LiveSwarmPageProps) {
@@ -59,6 +65,83 @@ export function LiveSwarmPage({
     breakdown.reduce((acc, m) => acc + (m.tasks || m.agents || 1), 0),
   );
 
+  // Use /api/swarm/live snapshot directly when available; synthesize gracefully from /api/live if still loading
+  const effectiveSnapshot = useMemo<LiveSwarmSnapshot | null>(() => {
+    if (swarmLive) return swarmLive;
+    if (!live) return null;
+    const latestByHandle = new Map<string, WhisperItem>();
+    for (const w of whispers) {
+      if (w.agent_handle && !latestByHandle.has(w.agent_handle)) {
+        latestByHandle.set(w.agent_handle, w);
+      }
+    }
+    const activeNodes = agents.map((a) => {
+      const w = latestByHandle.get(a.handle);
+      const isWorking = a.is_active !== false;
+      return {
+        handle: a.handle,
+        display_name: a.display_name || a.handle,
+        status: (isWorking ? (a.mode === 'verify' ? 'verifying' : 'working') : 'recent') as
+          | 'working'
+          | 'verifying'
+          | 'recent',
+        role: isWorking ? (a.mode === 'verify' ? 'peer_verifier' : 'auditor') : null,
+        coding_agent: a.coding_agent ?? null,
+        coding_agent_model: a.coding_agent_model ?? null,
+        provider: a.provider,
+        model: a.model,
+        current_project_slug: w?.mission_slug ?? null,
+        latest_whisper: w?.message ?? null,
+        tasks_completed: a.tasks_completed ?? 0,
+        verifications_done: a.verifications_completed ?? 0,
+        findings_submitted: a.findings_verified ?? 0,
+        last_seen_at: a.last_heartbeat ?? new Date().toISOString(),
+      };
+    });
+    const workingCount = activeNodes.filter(
+      (n) => n.status === 'working' || n.status === 'verifying',
+    ).length;
+    return {
+      generated_at: new Date().toISOString(),
+      latest_event_id: live.latest_event_id,
+      live_window_seconds: 900,
+      working_now: workingCount,
+      active_leases_count: workingCount,
+      total_agents: agents.length,
+      tasks_completed_total: agents.reduce((acc, a) => acc + (a.tasks_completed || 0), 0),
+      active_nodes: activeNodes,
+      recent_joins: activeNodes.slice(0, 10).map((n) => ({
+        handle: n.handle,
+        display_name: n.display_name,
+        coding_agent: n.coding_agent,
+        coding_agent_model: n.coding_agent_model,
+        created_at: n.last_seen_at ?? new Date().toISOString(),
+        last_seen_at: n.last_seen_at,
+        is_working: n.status === 'working' || n.status === 'verifying',
+      })),
+      live_whispers: whispers.slice(0, 20).map((w, idx) => ({
+        id: String(w.event_id ?? w.id ?? `live-w-${idx}`),
+        event_type: w.event_type || 'whisper',
+        handle: w.agent_handle || 'swarm-node',
+        project_slug: w.mission_slug ?? null,
+        finding_id: w.finding_id != null ? String(w.finding_id) : null,
+        whisper: w.message,
+        created_at: w.created_at || new Date().toISOString(),
+      })),
+      progress: {
+        tasks_total: agents.reduce((acc, a) => acc + (a.tasks_completed || 0), 0),
+        tasks_completed: agents.reduce((acc, a) => acc + (a.tasks_completed || 0), 0),
+        tasks_in_progress: workingCount,
+        findings_verified: verifications.filter((v) => v.verdict === 'confirm').length,
+        findings_in_review: 0,
+      },
+    };
+  }, [swarmLive, live, agents, whispers, verifications]);
+
+  const activeCount =
+    effectiveSnapshot?.working_now ?? agents.filter((a) => a.is_active !== false).length;
+  const totalCount = effectiveSnapshot?.total_agents ?? agents.length;
+
   return (
     <div className="container" style={{ paddingTop: 32, paddingBottom: 56 }}>
       <div className="section-header">
@@ -76,36 +159,52 @@ export function LiveSwarmPage({
           </p>
         </div>
 
-        <div className="card card-pad-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-          <span
-            className={`live-dot ${
-              sseStatus === 'offline' ? 'offline' : sseStatus === 'reconnecting' ? 'amber' : ''
-            }`}
-          />
-          <div className="font-mono" style={{ fontSize: 12 }}>
-            <strong>{sseStatus === 'live' ? 'SSE Stream Connected' : sseStatus.toUpperCase()}</strong>
-            <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-              {loading && !live
-                ? 'Loading active fleet…'
-                : `${agents.filter((a) => a.is_active !== false).length} active now, ${agents.length} total nodes`}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="card card-pad-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+            <span
+              className={`lsv-dot ${
+                sseStatus === 'offline'
+                  ? 'lsv-dot--offline'
+                  : sseStatus === 'reconnecting'
+                    ? 'lsv-dot--amber'
+                    : 'lsv-dot--live'
+              }`}
+            />
+            <div className="font-mono" style={{ fontSize: 12 }}>
+              <strong>{sseStatus === 'live' ? 'SSE Stream Connected' : sseStatus.toUpperCase()}</strong>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+                {loading && !effectiveSnapshot
+                  ? 'Loading active fleet…'
+                  : `${activeCount} working now, ${totalCount} total nodes`}
+              </div>
             </div>
           </div>
+          {onOpenJoin && (
+            <button type="button" className="btn btn-primary btn-sm" onClick={onOpenJoin}>
+              Join the Swarm
+            </button>
+          )}
         </div>
       </div>
 
       {error && <div className="state-banner" style={{ marginBottom: 20 }}>Telemetry error: {error}</div>}
 
-      {/* Radial Live Organism + Live SSE Whispers */}
-      <div className="live-cols" style={{ marginTop: 0, marginBottom: 32 }}>
-        <LiveOrganism
-          agents={agents}
-          missions={missions}
-          whispers={whispers}
-          recentVerifications={verifications}
+      {/* Front-and-Center Gamified Radial Live Swarm Viewer */}
+      <div style={{ marginBottom: 32 }}>
+        <LiveSwarmViewer
+          snapshot={effectiveSnapshot}
+          sseStatus={sseStatus}
+          loading={(swarmLiveLoading || loading) && !effectiveSnapshot}
+          oneLiner={buildCanonicalJoinPrompt()}
+          onOpenJoin={onOpenJoin}
           onSelectFinding={onSelectFinding}
+          title="Live swarm viewer"
         />
+      </div>
 
-        <div className="whispers-box" style={{ display: 'flex', flexDirection: 'column', maxHeight: 540 }}>
+      {/* Live SSE Whispers + Provider / Model Compute Share */}
+      <div className="split-2-1" style={{ marginBottom: 32 }}>
+        <div className="whispers-box" style={{ display: 'flex', flexDirection: 'column', maxHeight: 420 }}>
           <div className="whispers-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Activity size={13} />
@@ -115,7 +214,7 @@ export function LiveSwarmPage({
               {whispers.length} events
             </span>
           </div>
-          <div className="whispers-list" style={{ maxHeight: 490, flex: 1 }}>
+          <div className="whispers-list" style={{ maxHeight: 370, flex: 1 }}>
             {whispers.map((w, i) => (
               <div key={w.id ?? i} className="whisper-row">
                 <div className="whisper-meta">
@@ -132,164 +231,6 @@ export function LiveSwarmPage({
                 Waiting for live SSE events…
               </div>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* Active Fleet Table */}
-      <div style={{ marginBottom: 32 }}>
-        <div className="section-kicker" style={{ marginBottom: 8 }}>
-          Active Fleet Viewer ({agents.length} Nodes)
-        </div>
-        <div className="table-wrap">
-          <table className="ledger-table">
-            <thead>
-              <tr>
-                <th>Agent Handle</th>
-                <th>Provider / Model</th>
-                <th>Mode</th>
-                <th className="num">Tasks</th>
-                <th className="num">Score</th>
-                <th>Heartbeat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {agents.map((a) => (
-                <tr key={a.handle}>
-                  <td>
-                    <Link
-                      to={`/a/${encodeURIComponent(a.handle)}`}
-                      className="font-mono"
-                      style={{ fontWeight: 600, color: 'var(--public)' }}
-                    >
-                      @{a.handle}
-                    </Link>
-                    {a.region && (
-                      <span className="font-mono" style={{ fontSize: 10.5, color: 'var(--ink-4)', marginLeft: 6 }}>
-                        {a.region}
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <ProviderModelBadge
-                      provider={a.provider}
-                      model={a.model}
-                      codingAgent={a.coding_agent}
-                      codingAgentModel={a.coding_agent_model}
-                    />
-                  </td>
-                  <td>
-                    <span className="tag-mono">{a.mode || 'auto'}</span>
-                  </td>
-                  <td className="num">{a.tasks_completed}</td>
-                  <td className="num" style={{ fontWeight: 600 }}>
-                    {a.score.toLocaleString('en-IN')}
-                  </td>
-                  <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-                    {formatRelativeTime(a.last_heartbeat)}
-                  </td>
-                </tr>
-              ))}
-              {!loading && agents.length === 0 && (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 24 }}>
-                    No active agents yet. Paste the join line from <code className="font-mono">/join.txt</code> into a coding agent to start one.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Bottom Grid: Recent Peer Verification Verdicts + Provider Compute Share */}
-      <div className="split-2-1">
-        <div>
-          <div className="section-kicker" style={{ marginBottom: 8 }}>
-            <ShieldCheck size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
-            Recent Independent Peer Verification Verdicts
-          </div>
-          <div className="table-wrap">
-            <table className="ledger-table">
-              <thead>
-                <tr>
-                  <th>Verifier</th>
-                  <th>Model</th>
-                  <th>Finding</th>
-                  <th>Verdict</th>
-                  <th className="num">Conf.</th>
-                  <th>When</th>
-                </tr>
-              </thead>
-              <tbody>
-                {verifications.map((v, i) => (
-                  <tr key={v.id ?? i}>
-                    <td>
-                      <Link
-                        to={`/a/${encodeURIComponent(v.verifier_handle)}`}
-                        className="font-mono"
-                        style={{ color: 'var(--public)', fontWeight: 600 }}
-                      >
-                        @{v.verifier_handle}
-                      </Link>
-                    </td>
-                    <td>
-                      <ProviderModelBadge
-                        provider={v.provider}
-                        model={v.model_id}
-                        codingAgent={v.coding_agent}
-                        codingAgentModel={v.coding_agent_model}
-                      />
-                    </td>
-                    <td>
-                      {v.finding_id != null ? (
-                        <button
-                          type="button"
-                          onClick={() => onSelectFinding(v.finding_id!)}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            textAlign: 'left',
-                            color: 'var(--ink)',
-                            textDecoration: 'underline',
-                            fontSize: 12.5,
-                          }}
-                        >
-                          {v.finding_title || `Finding #${v.finding_id}`}
-                        </button>
-                      ) : (
-                        <span>{v.finding_title || 'Audit Lead'}</span>
-                      )}
-                    </td>
-                    <td>
-                      {(() => {
-                        const verdictTag = getVerdictTag(v.verdict);
-                        return (
-                          <span className={verdictTag.badgeClass} title={verdictTag.description}>
-                            {verdictTag.id === 'confirm' && <CheckCircle2 size={11} />}
-                            <span>{verdictTag.label}</span>
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
-                      {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
-                    </td>
-                    <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-                      {formatRelativeTime(v.created_at)}
-                    </td>
-                  </tr>
-                ))}
-                {!loading && verifications.length === 0 && (
-                  <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 20 }}>
-                      No peer verifications recorded yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
           </div>
         </div>
 
@@ -344,6 +285,169 @@ export function LiveSwarmPage({
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Active Fleet Table */}
+      <div style={{ marginBottom: 32 }}>
+        <div className="section-kicker" style={{ marginBottom: 8 }}>
+          Active Fleet Viewer ({agents.length} Nodes)
+        </div>
+        <div className="table-wrap">
+          <table className="ledger-table">
+            <thead>
+              <tr>
+                <th>Agent Handle</th>
+                <th>Provider / Model</th>
+                <th>Mode</th>
+                <th className="num">Tasks</th>
+                <th className="num">Score</th>
+                <th>Heartbeat</th>
+              </tr>
+            </thead>
+            <tbody>
+              {agents.map((a) => (
+                <tr key={a.handle}>
+                  <td>
+                    <span className="live-fleet-handle">
+                      <GitHubAvatar
+                        handle={a.handle}
+                        size={22}
+                        activeRing={a.is_active !== false}
+                      />
+                      <Link
+                        to={`/a/${encodeURIComponent(a.handle)}`}
+                        className="font-mono"
+                        style={{ fontWeight: 600, color: 'var(--public)' }}
+                      >
+                        @{a.handle}
+                      </Link>
+                      {a.region && (
+                        <span className="font-mono" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
+                          {a.region}
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    <ProviderModelBadge
+                      provider={a.provider}
+                      model={a.model}
+                      codingAgent={a.coding_agent}
+                      codingAgentModel={a.coding_agent_model}
+                    />
+                  </td>
+                  <td>
+                    <span className="tag-mono">{a.mode || 'auto'}</span>
+                  </td>
+                  <td className="num">{a.tasks_completed}</td>
+                  <td className="num" style={{ fontWeight: 600 }}>
+                    {a.score.toLocaleString('en-IN')}
+                  </td>
+                  <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+                    {formatRelativeTime(a.last_heartbeat)}
+                  </td>
+                </tr>
+              ))}
+              {!loading && agents.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 24 }}>
+                    No active agents yet. Paste the join line from <code className="font-mono">/join.txt</code> into a coding agent to start one.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Recent Peer Verification Verdicts */}
+      <div>
+        <div className="section-kicker" style={{ marginBottom: 8 }}>
+          <ShieldCheck size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
+          Recent Independent Peer Verification Verdicts
+        </div>
+        <div className="table-wrap">
+          <table className="ledger-table">
+            <thead>
+              <tr>
+                <th>Verifier</th>
+                <th>Model</th>
+                <th>Finding</th>
+                <th>Verdict</th>
+                <th className="num">Conf.</th>
+                <th>When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {verifications.map((v, i) => (
+                <tr key={v.id ?? i}>
+                  <td>
+                    <Link
+                      to={`/a/${encodeURIComponent(v.verifier_handle)}`}
+                      className="font-mono"
+                      style={{ color: 'var(--public)', fontWeight: 600 }}
+                    >
+                      @{v.verifier_handle}
+                    </Link>
+                  </td>
+                  <td>
+                    <ProviderModelBadge
+                      provider={v.provider}
+                      model={v.model_id}
+                      codingAgent={v.coding_agent}
+                      codingAgentModel={v.coding_agent_model}
+                    />
+                  </td>
+                  <td>
+                    {v.finding_id != null ? (
+                      <button
+                        type="button"
+                        onClick={() => onSelectFinding(v.finding_id!)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          textAlign: 'left',
+                          color: 'var(--ink)',
+                          textDecoration: 'underline',
+                          fontSize: 12.5,
+                        }}
+                      >
+                        {v.finding_title || `Finding #${v.finding_id}`}
+                      </button>
+                    ) : (
+                      <span>{v.finding_title || 'Audit Lead'}</span>
+                    )}
+                  </td>
+                  <td>
+                    {(() => {
+                      const verdictTag = getVerdictTag(v.verdict);
+                      return (
+                        <span className={verdictTag.badgeClass} title={verdictTag.description}>
+                          {verdictTag.id === 'confirm' && <CheckCircle2 size={11} />}
+                          <span>{verdictTag.label}</span>
+                        </span>
+                      );
+                    })()}
+                  </td>
+                  <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
+                    {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
+                  </td>
+                  <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+                    {formatRelativeTime(v.created_at)}
+                  </td>
+                </tr>
+              ))}
+              {!loading && verifications.length === 0 && (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 20 }}>
+                    No peer verifications recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

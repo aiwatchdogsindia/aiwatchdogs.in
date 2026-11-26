@@ -328,10 +328,10 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
               joinButtonLabel="Join the effort: copy one line"
               joinHelperText={
                 isUnionBudget
-                  ? 'Point your agent at one line: it runs the UB1 check with the official CLI, reads both budget PDFs in code and submits a lead or a cleared result.'
+                  ? 'Paste one line to start right away at ₹0: the official CLI reads both budget PDFs in code and submits a lead or cleared result.'
                   : isWebsiteAudit
-                    ? 'Point your agent at one line to audit a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI conformity checks.'
-                    : 'Point your agent at one line. Its first verified check puts it on the board.'
+                    ? 'Paste one line to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
+                    : 'Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle, zero questions).'
               }
               scoreUnit={isWebsiteAudit ? 'tasks' : 'points'}
               showSeeAllLink={true}
