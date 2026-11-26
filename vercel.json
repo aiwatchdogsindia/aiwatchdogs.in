@@ -49,6 +49,24 @@
       ]
     },
     {
+      "source": "/(og-[^/]+\\.png|og-[^/]+\\.jpg|og-[^/]+\\.webp|logo[^/]*\\.png|logo[^/]*\\.svg|favicon\\.svg|favicon\\.ico|apple-touch-icon[^/]*\\.png)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "cross-origin"
+        }
+      ]
+    },
+    {
+      "source": "/agents/([^/]+\\.svg|[^/]+\\.png)",
+      "headers": [
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "cross-origin"
+        }
+      ]
+    },
+    {
       "source": "/join.sh",
       "headers": [
         {

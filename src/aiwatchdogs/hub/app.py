@@ -110,6 +110,9 @@ _OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,
 MIN_OFFICIAL_CLI_VERSION = (0, 6)
 _WEBSITE_BATCH_FILENAME_RE = re.compile(r"^batch-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|1000)\.csv\Z")
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
+_PUBLIC_CROSS_ORIGIN_ASSET_RE = re.compile(
+    r"^/(?:og-[^/]+\.(?:png|jpg|jpeg|webp)|logo[^/]*\.(?:png|svg)|favicon\.(?:svg|ico)|apple-touch-icon[^/]*\.png|agents/[^/]+\.(?:svg|png))\Z"
+)
 
 # ---------------------------------------------------------------------------
 # Pure ASGI Security & Body-Size Middlewares (SSE-safe, zero response buffering)
@@ -219,8 +222,15 @@ class SecurityHeadersMiddleware:
             or bool(os.environ.get("VERCEL"))
         )
 
+        req_path = str(scope.get("path") or "")
+        is_head = str(scope.get("method") or "").upper() == "HEAD"
+        corp_value = b"cross-origin" if _PUBLIC_CROSS_ORIGIN_ASSET_RE.fullmatch(req_path) else b"same-origin"
+        head_body_sent = False
+
         async def _send_with_headers(message: dict[str, Any]) -> None:
-            if message.get("type") == "http.response.start":
+            nonlocal head_body_sent
+            msg_type = message.get("type")
+            if msg_type == "http.response.start":
                 headers = list(message.get("headers") or ())
                 existing = {k.lower() for k, _ in headers}
 
@@ -235,13 +245,22 @@ class SecurityHeadersMiddleware:
                 _add(b"referrer-policy", b"strict-origin-when-cross-origin")
                 _add(b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(), usb=()")
                 _add(b"cross-origin-opener-policy", b"same-origin")
-                _add(b"cross-origin-resource-policy", b"same-origin")
-                if str(scope.get("path") or "").startswith("/api/"):
+                _add(b"cross-origin-resource-policy", corp_value)
+                if req_path.startswith("/api/"):
                     _add(b"link", build_link_header(None).encode("ascii"))
                 if is_https:
                     _add(b"strict-transport-security", b"max-age=63072000; includeSubDomains; preload")
 
                 message = {**message, "headers": headers}
+                await send(message)
+                return
+
+            if is_head and msg_type == "http.response.body":
+                if not head_body_sent:
+                    head_body_sent = True
+                    await send({"type": "http.response.body", "body": b"", "more_body": False})
+                return
+
             await send(message)
 
         await self.app(scope, receive, _send_with_headers)
@@ -595,6 +614,7 @@ def create_degraded_app(
         )
 
     @degraded.get("/health")
+    @degraded.head("/health", include_in_schema=False)
     def degraded_health() -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -710,7 +730,7 @@ def create_app(
         allow_origins=_build_cors_origins(),
         allow_origin_regex=r"^https://aiwatchdogs(?:-[a-z0-9-]+)?\.vercel\.app$",
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "HEAD", "POST", "OPTIONS"],
         allow_headers=[
             "Content-Type",
             "Accept",
@@ -729,6 +749,7 @@ def create_app(
     # ------------------------------------------------------------------
 
     @application.get("/health", response_model=None)
+    @application.head("/health", response_model=None, include_in_schema=False)
     def health() -> JSONResponse | dict[str, Any]:
         db_ok = db.health_check()
         if _is_production_env():
@@ -761,12 +782,14 @@ def create_app(
         )
 
     @application.get("/feed.atom")
+    @application.head("/feed.atom", include_in_schema=False)
     def feed_atom(request: Request) -> Response:
         with db.read() as conn:
             entries = feed_entries(conn)
         return _atom(request, "/feed.atom", "AI Watchdogs India: every change of state", "/", entries)
 
     @application.get("/graveyard.atom")
+    @application.head("/graveyard.atom", include_in_schema=False)
     def graveyard_atom(request: Request) -> Response:
         with db.read() as conn:
             entries = graveyard_feed_entries(conn)
@@ -779,6 +802,7 @@ def create_app(
         )
 
     @application.get("/feeds/{slug}.atom")
+    @application.head("/feeds/{slug}.atom", include_in_schema=False)
     def project_feed_atom(slug: str, request: Request) -> Response:
         slug = desk.resolve_slug(slug)
         with db.read() as conn:
@@ -797,6 +821,7 @@ def create_app(
         )
 
     @application.get("/join.txt", response_class=PlainTextResponse)
+    @application.head("/join.txt", response_class=PlainTextResponse, include_in_schema=False)
     def join_txt(request: Request) -> PlainTextResponse:
         content = render_join_txt(_public_base_url(request))
         return PlainTextResponse(
@@ -806,6 +831,7 @@ def create_app(
         )
 
     @application.get("/join.sh")
+    @application.head("/join.sh", include_in_schema=False)
     def join_sh(request: Request) -> Response:
         content = render_join_sh(_public_base_url(request))
         return Response(
@@ -1257,6 +1283,7 @@ def create_app(
     # ------------------------------------------------------------------
 
     @application.get("/llms.txt", response_class=PlainTextResponse)
+    @application.head("/llms.txt", response_class=PlainTextResponse, include_in_schema=False)
     def llms_txt(request: Request) -> PlainTextResponse:
         content = render_llms_txt(desk, _public_base_url(request))
         return PlainTextResponse(
@@ -1270,6 +1297,7 @@ def create_app(
         )
 
     @application.get("/llms-full.txt", response_class=PlainTextResponse)
+    @application.head("/llms-full.txt", response_class=PlainTextResponse, include_in_schema=False)
     def llms_full_txt(request: Request) -> PlainTextResponse:
         content = render_llms_full_txt(desk, _public_base_url(request))
         return PlainTextResponse(
@@ -1283,6 +1311,7 @@ def create_app(
         )
 
     @application.get("/robots.txt", response_class=PlainTextResponse)
+    @application.head("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
     def robots_txt(request: Request) -> PlainTextResponse:
         return PlainTextResponse(
             content=render_robots_txt(_public_base_url(request)),
@@ -1291,6 +1320,7 @@ def create_app(
         )
 
     @application.get("/sitemap.xml")
+    @application.head("/sitemap.xml", include_in_schema=False)
     def sitemap_xml(request: Request) -> Response:
         return Response(
             content=render_sitemap_xml(desk, _public_base_url(request)),
@@ -1299,6 +1329,7 @@ def create_app(
         )
 
     @application.get("/.well-known/api-catalog")
+    @application.head("/.well-known/api-catalog", include_in_schema=False)
     def well_known_api_catalog(request: Request) -> Response:
         import json as _json
 
@@ -1313,7 +1344,9 @@ def create_app(
         )
 
     @application.get("/.well-known/mcp.json")
+    @application.head("/.well-known/mcp.json", include_in_schema=False)
     @application.get("/.well-known/mcp/server-card.json")
+    @application.head("/.well-known/mcp/server-card.json", include_in_schema=False)
     def well_known_mcp(request: Request) -> JSONResponse:
         return JSONResponse(
             content=render_mcp_discovery(_public_base_url(request)),
@@ -1324,6 +1357,7 @@ def create_app(
         )
 
     @application.get("/mcp", response_model=None)
+    @application.head("/mcp", response_model=None, include_in_schema=False)
     def mcp_get(request: Request) -> Response:
         base_url = _public_base_url(request)
         if prefers_markdown(request.headers.get("accept")):
@@ -1349,16 +1383,21 @@ def create_app(
 
     # Explicit .md routes for every site page
     @application.get("/index.md")
+    @application.head("/index.md", include_in_schema=False)
     def md_index(request: Request) -> Response:
         return markdown_response(render_index_md(desk, _public_base_url(request)), md_path="/index.md")
 
     @application.get("/projects.md")
+    @application.head("/projects.md", include_in_schema=False)
     @application.get("/missions.md")
+    @application.head("/missions.md", include_in_schema=False)
     def md_projects(request: Request) -> Response:
         return markdown_response(render_projects_md(desk, _public_base_url(request)), md_path="/projects.md")
 
     @application.get("/projects/{slug}.md")
+    @application.head("/projects/{slug}.md", include_in_schema=False)
     @application.get("/missions/{slug}.md")
+    @application.head("/missions/{slug}.md", include_in_schema=False)
     def md_project_detail(slug: str, request: Request) -> Response:
         resolved = desk.resolve_slug(slug)
         return markdown_response(
@@ -1367,10 +1406,12 @@ def create_app(
         )
 
     @application.get("/findings.md")
+    @application.head("/findings.md", include_in_schema=False)
     def md_findings(request: Request) -> Response:
         return markdown_response(render_findings_md(desk, _public_base_url(request)), md_path="/findings.md")
 
     @application.get("/findings/{finding_id}.md")
+    @application.head("/findings/{finding_id}.md", include_in_schema=False)
     def md_finding_detail(finding_id: str, request: Request) -> Response:
         return markdown_response(
             render_finding_detail_md(desk, _public_base_url(request), finding_id),
@@ -1378,15 +1419,19 @@ def create_app(
         )
 
     @application.get("/live.md")
+    @application.head("/live.md", include_in_schema=False)
     def md_live(request: Request) -> Response:
         return markdown_response(render_live_md(desk, _public_base_url(request)), md_path="/live.md")
 
     @application.get("/leaderboard.md")
+    @application.head("/leaderboard.md", include_in_schema=False)
     @application.get("/contributors.md")
+    @application.head("/contributors.md", include_in_schema=False)
     def md_leaderboard(request: Request) -> Response:
         return markdown_response(render_leaderboard_md(desk, _public_base_url(request)), md_path="/leaderboard.md")
 
     @application.get("/a/{handle}.md")
+    @application.head("/a/{handle}.md", include_in_schema=False)
     def md_contributor(handle: str, request: Request) -> Response:
         return markdown_response(
             render_contributor_md(desk, _public_base_url(request), handle),
@@ -1394,23 +1439,29 @@ def create_app(
         )
 
     @application.get("/how-it-works.md")
+    @application.head("/how-it-works.md", include_in_schema=False)
     def md_how_it_works(request: Request) -> Response:
         return markdown_response(render_how_it_works_md(desk, _public_base_url(request)), md_path="/how-it-works.md")
 
     @application.get("/brief.md")
+    @application.head("/brief.md", include_in_schema=False)
     def md_brief(request: Request) -> Response:
         return markdown_response(render_brief_md(_public_base_url(request)), md_path="/brief.md")
 
     @application.get("/changelog.md")
+    @application.head("/changelog.md", include_in_schema=False)
     def md_changelog(request: Request) -> Response:
         return markdown_response(render_changelog_md(_public_base_url(request)), md_path="/changelog.md")
 
     @application.get("/graveyard.md")
+    @application.head("/graveyard.md", include_in_schema=False)
     def md_graveyard(request: Request) -> Response:
         return markdown_response(render_graveyard_md(desk, _public_base_url(request)), md_path="/graveyard.md")
 
     @application.get("/back.md")
+    @application.head("/back.md", include_in_schema=False)
     @application.get("/sponsors.md")
+    @application.head("/sponsors.md", include_in_schema=False)
     def md_back(request: Request) -> Response:
         return markdown_response(render_back_md(desk, _public_base_url(request)), md_path="/back.md")
 
@@ -1424,7 +1475,7 @@ def create_app(
             return Path(configured)
         return _resolve_web_dist(None)
 
-    @application.get("/assets/{file_path:path}", include_in_schema=False)
+    @application.api_route("/assets/{file_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def serve_assets(file_path: str) -> Response:
         assets_root = (_current_dist() / "assets").resolve()
         candidate = (assets_root / file_path).resolve()
@@ -1432,7 +1483,7 @@ def create_app(
             return FileResponse(candidate)
         return JSONResponse(status_code=404, content={"detail": "Asset not found"})
 
-    @application.get("/{full_path:path}", include_in_schema=False)
+    @application.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
     def spa_fallback(full_path: str, request: Request) -> Response:
         norm_path = full_path.strip("/")
         if norm_path.startswith("api/") or norm_path == "api":
