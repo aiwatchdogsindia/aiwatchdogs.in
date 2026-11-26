@@ -293,8 +293,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
             </div>
             <h2
               id="finding-drawer-title"
-              className="font-serif"
-              style={{ margin: 0, fontSize: 23, lineHeight: 1.24, fontWeight: 400 }}
+              className="font-serif drawer-title"
             >
               {loading ? 'Loading evidence dossier…' : finding?.title || 'Finding Dossier'}
             </h2>
@@ -302,7 +301,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost btn-sm overlay-close-btn"
             onClick={onClose}
             aria-label="Close dossier"
           >
@@ -418,7 +417,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                 <>
                   {/* Key Metadata Strip */}
                   <div className="card card-pad-sm">
-                    <div className="grid-4" style={{ gap: 12 }}>
+                    <div className="grid-4 drawer-meta-grid" style={{ gap: 12 }}>
                       <div>
                         <div className="kicker" style={{ fontSize: 10.5 }}>Public Entity</div>
                         <div style={{ fontSize: 14, marginTop: 3 }}>{finding.entity_name}</div>
@@ -512,7 +511,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           </span>
                         )}
                       </div>
-                      <div className="table-wrap">
+                      <div className="table-wrap drawer-metrics-table">
                         <table className="ledger-table">
                           <thead>
                             <tr>
@@ -979,11 +978,10 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       </div>
                     )}
 
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    <div className="drawer-rti-form">
                       <input
                         type="text"
-                        className="input-field"
-                        style={{ flex: 1, minWidth: 220 }}
+                        className="input-field drawer-rti-input"
                         value={rtiAuthority}
                         onChange={(e) => setRtiAuthority(e.target.value)}
                         placeholder="Target Public Authority / Ministry (optional personal override)"
@@ -992,7 +990,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       />
                       <button
                         type="button"
-                        className="btn btn-rti"
+                        className="btn btn-rti drawer-rti-submit"
                         onClick={handleGenerateRti}
                         disabled={rtiLoading}
                       >

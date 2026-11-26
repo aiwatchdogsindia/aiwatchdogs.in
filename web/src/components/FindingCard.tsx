@@ -101,13 +101,14 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           lineHeight: 1.28,
           fontStyle: unverified ? 'italic' : 'normal',
           color: unverified ? 'var(--ink-2)' : 'var(--ink)',
+          overflowWrap: 'break-word',
         }}
       >
         {finding.title}
       </h3>
 
       {!compact && (
-        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+        <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.55, overflowWrap: 'break-word' }}>
           {isQuarantined
             ? finding.quarantine_reason ||
               'This record is quarantined pending privacy or legal compliance review. Raw metrics and excerpts are withheld.'

@@ -120,9 +120,25 @@
    Safety gates.
    ------------------------------------------------------------------------- */
 .how {
-  max-width: 980px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(980px + 2 * var(--gutter));
   padding: 64px var(--gutter) 84px;
   gap: 72px;
+}
+
+.how-section,
+.changelog-list,
+.changelog-entry {
+  min-width: 0;
+}
+
+.text-list li,
+.changelog-entry,
+.changelog-items,
+.how code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .how-intro p,
@@ -334,11 +350,32 @@
 
 @media (max-width: 760px) {
   .how {
-    padding-block: 40px 56px;
-    gap: 52px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 32px max(var(--gutter), var(--safe-right)) 48px max(var(--gutter), var(--safe-left));
+    gap: 40px;
+  }
+  .how-intro h1 {
+    font-size: clamp(28px, 8vw, 38px);
+    padding-bottom: 14px;
+  }
+  .how-intro p,
+  .how-intro p.brief-lead {
+    font-size: 16.5px;
+    overflow-wrap: break-word;
+  }
+  .how-section h2 {
+    margin: 0 0 18px;
+    font-size: clamp(23px, 6.4vw, 28px);
+  }
+  .how-prose,
+  .how-section > p,
+  .text-list {
+    font-size: 15.5px;
+    overflow-wrap: break-word;
   }
   .how-swarm-tiers {
-    gap: 30px;
+    gap: 28px;
   }
   .how-swarm .how-cards.three,
   .how-swarm .how-cards.two,
@@ -347,12 +384,31 @@
     gap: 16px;
   }
   .how-swarm .how-card {
-    padding: 18px 18px 20px;
+    padding: 16px 16px 18px;
   }
   .how-section > p.how-rule,
   .how-swarm-note {
-    margin-top: 24px;
-    padding: 15px 16px;
+    margin-top: 20px;
+    padding: 14px 15px;
+  }
+  .how-sources summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .how-cta {
+    padding: 20px 16px;
+  }
+  .how-cta-row {
+    gap: 10px 14px;
+  }
+  .how-cta-row .btn,
+  .how-cta-row .join-cta {
+    min-height: 44px;
+  }
+  .findings-tag-key {
+    gap: 6px 8px;
+    padding: 12px 14px;
   }
 }
 
@@ -360,6 +416,18 @@
   .how-guide .how-legend-row {
     grid-template-columns: 1fr;
     gap: 6px;
+  }
+  .how-cta-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .how-cta-row .btn,
+  .how-cta-row .join-cta {
+    width: 100%;
+    justify-content: center;
+  }
+  .how-cta-row .join-cta {
+    justify-content: space-between;
   }
 }
 
@@ -717,7 +785,19 @@
 
 @media (max-width: 760px) {
   .brief-page {
-    gap: 48px;
+    gap: 40px;
+  }
+  .brief-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 16px;
+    margin-top: 22px;
+    padding-top: 18px;
+  }
+  .brief-fact dt {
+    font-size: 19px;
+  }
+  .brief-fact dd {
+    font-size: 13px;
   }
   .brief-steps,
   .brief-explore,
@@ -725,21 +805,39 @@
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  .brief-step {
-    padding: 18px 18px 20px;
+  .brief-step,
+  .brief-project-card,
+  .brief-explore-card {
+    padding: 16px;
   }
   .brief-agent-callout {
-    padding: 18px;
+    padding: 16px;
+    gap: 16px;
+  }
+  .brief-agent-copy {
+    flex: 1 1 100%;
+    overflow-wrap: break-word;
   }
   .brief-agent-actions {
-    align-items: flex-start;
+    width: 100%;
+    align-items: stretch;
   }
-}
-
-@media (max-width: 480px) {
-  .brief-facts {
-    grid-template-columns: 1fr;
-    gap: 14px;
+  .brief-agent-actions .btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .brief-agent-links {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .changelog-entry-title,
+  .changelog-items {
+    overflow-wrap: break-word;
+  }
+  .changelog-pr-badge {
+    padding: 4px 10px;
+    min-height: 30px;
   }
 }
 

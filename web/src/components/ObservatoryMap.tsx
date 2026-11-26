@@ -336,17 +336,26 @@ export function ObservatoryMap({
     }
   }, [refreshTick, world.worldNodes]);
 
-  // Helper: fit entire world smoothly
+  // Helper: fit entire world smoothly (adapting to mobile portrait viewports without clipping outer clusters)
   const fitAll = useCallback(
     (instant = false) => {
       const el = wrapRef.current;
       const w = el ? el.clientWidth : 1200;
       const h = el ? el.clientHeight : 700;
-      const bw = world.bounds.maxX - world.bounds.minX;
-      const bh = world.bounds.maxY - world.bounds.minY;
-      const z = Math.max(0.52, Math.min(1.15, Math.min((w * 0.88) / bw, (h * 0.72) / bh)));
+      const isNarrow = w < 760;
+      // Add label margin around outer clusters so titles like "P1, POLICE FINANCES" never clip
+      const labelPadX = isNarrow ? 110 : 40;
+      const labelPadY = isNarrow ? 70 : 30;
+      const bw = world.bounds.maxX - world.bounds.minX + labelPadX * 2;
+      const bh = world.bounds.maxY - world.bounds.minY + labelPadY * 2;
+      const availW = isNarrow ? Math.max(240, w - 24) : w * 0.88;
+      const availH = isNarrow ? Math.max(200, h - 250) : h * 0.72;
+      const minZoom = isNarrow ? 0.2 : 0.52;
+      const z = Math.max(minZoom, Math.min(1.15, Math.min(availW / bw, availH / bh)));
       const cx = (world.bounds.minX + world.bounds.maxX) / 2;
-      const cy = (world.bounds.minY + world.bounds.maxY) / 2 - 14;
+      // On mobile the header+search occupy top ~190px and legend occupies bottom ~60px, so shift graph down into the open middle band
+      const mobileShiftPx = isNarrow ? 54 : 0;
+      const cy = (world.bounds.minY + world.bounds.maxY) / 2 - (isNarrow ? mobileShiftPx / z : 14);
       camRef.current.targetX = cx;
       camRef.current.targetY = cy;
       camRef.current.targetZoom = z;
@@ -356,17 +365,31 @@ export function ObservatoryMap({
         camRef.current.zoom = z;
       }
       setActiveClusterKey(null);
+      requestDrawRef.current();
     },
     [world.bounds],
   );
 
-  // Initial fit on mount / graph change
+  // Initial fit on mount / graph change + refit when container resizes across viewport widths
   useEffect(() => {
     fitAll(true);
+    const el = wrapRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let lastW = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      const nextW = el.clientWidth;
+      if (nextW > 0 && Math.abs(nextW - lastW) > 24) {
+        lastW = nextW;
+        fitAll(true);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [fitAll]);
 
   const flyTo = useCallback((wx: number, wy: number, zoom: number) => {
-    const clampedZoom = Math.max(0.45, Math.min(3.2, zoom));
+    const isNarrow = (wrapRef.current?.clientWidth ?? 1200) < 760;
+    const clampedZoom = Math.max(isNarrow ? 0.2 : 0.45, Math.min(3.2, zoom));
     camRef.current.targetX = wx;
     camRef.current.targetY = wy;
     camRef.current.targetZoom = clampedZoom;
@@ -553,21 +576,29 @@ export function ObservatoryMap({
         ctx.stroke();
         ctx.restore();
 
-        // Cluster label below cloud
+        // Cluster label below cloud (screen-legible sizing on zoomed-out mobile viewports)
         ctx.save();
-        ctx.font = `400 ${Math.max(10, 11.5 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(27, 26, 23, 0.86)';
+        const isNarrowCanvas = w < 760;
+        const titleWorldPx = isNarrowCanvas
+          ? Math.max(10.5 / cam.zoom, 11.5 / Math.sqrt(cam.zoom))
+          : Math.max(10, 11.5 / Math.sqrt(cam.zoom));
+        const subWorldPx = isNarrowCanvas
+          ? Math.max(9.5 / cam.zoom, 11 / Math.sqrt(cam.zoom))
+          : Math.max(9.5, 11 / Math.sqrt(cam.zoom));
+        const maxLabelChars = isNarrowCanvas ? 18 : 26;
+        ctx.font = `400 ${titleWorldPx}px "Geist Serif", Georgia, serif`;
+        ctx.fillStyle = 'rgba(27, 26, 23, 0.88)';
         ctx.textAlign = 'center';
-        const shortLabel = `${cl.shortCode}, ${cl.label.length > 26 ? `${cl.label.slice(0, 25)}…` : cl.label}`.toUpperCase();
-        ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + 16 / Math.sqrt(cam.zoom));
+        const shortLabel = `${cl.shortCode}, ${cl.label.length > maxLabelChars ? `${cl.label.slice(0, maxLabelChars - 1)}…` : cl.label}`.toUpperCase();
+        ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + (isNarrowCanvas ? 14 / cam.zoom : 16 / Math.sqrt(cam.zoom)));
 
-        ctx.font = `400 ${Math.max(9.5, 11 / Math.sqrt(cam.zoom))}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(27, 26, 23, 0.62)';
+        ctx.font = `400 ${subWorldPx}px "Geist Serif", Georgia, serif`;
+        ctx.fillStyle = 'rgba(27, 26, 23, 0.68)';
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
             ? `${cl.verifiedCount} verified, ${cl.reviewCount} in review`
             : `${cl.sourceCount > 0 ? `${cl.sourceCount} official source${cl.sourceCount === 1 ? '' : 's'}` : `${cl.totalCount} mapped`}, ready to audit`;
-        ctx.fillText(clSub, cl.cx, cl.cy + cl.radius + 30 / Math.sqrt(cam.zoom));
+        ctx.fillText(clSub, cl.cx, cl.cy + cl.radius + (isNarrowCanvas ? 27 / cam.zoom : 30 / Math.sqrt(cam.zoom)));
         ctx.restore();
       }
 
@@ -1056,7 +1087,7 @@ export function ObservatoryMap({
       <div className="map-head">
         <div className="map-head-inner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src="/logo-dark.svg" alt="" width={64} height={64} />
+            <img src="/logo-dark.svg" alt="" className="map-head-logo" width={64} height={64} />
             <span className="kicker" style={{ color: 'var(--obs-mist)' }}>
               Observatory map
             </span>
@@ -1286,9 +1317,12 @@ export function ObservatoryMap({
         <div
           className="map-card"
           style={{
-            left: Math.min(
-              (wrapRef.current?.clientWidth ?? 1200) - 290,
-              Math.max(16, hoveredNode.sx + 16),
+            left: Math.max(
+              12,
+              Math.min(
+                (wrapRef.current?.clientWidth ?? 1200) - 282,
+                Math.max(12, hoveredNode.sx + 16),
+              ),
             ),
             top: Math.max(16, hoveredNode.sy - 28),
           }}
@@ -1339,7 +1373,7 @@ export function ObservatoryMap({
                 <span className="tag-provider">Community Node</span>
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div className="map-sheet-actions">
               <button
                 type="button"
                 className="btn btn-ghost btn-xs"
@@ -1578,7 +1612,8 @@ export function ObservatoryMap({
         <button
           type="button"
           onClick={() => {
-            camRef.current.targetZoom = Math.max(0.45, camRef.current.targetZoom / 1.28);
+            const isNarrow = (wrapRef.current?.clientWidth ?? 1200) < 760;
+            camRef.current.targetZoom = Math.max(isNarrow ? 0.2 : 0.45, camRef.current.targetZoom / 1.28);
             requestDrawRef.current();
           }}
           aria-label="Zoom out"

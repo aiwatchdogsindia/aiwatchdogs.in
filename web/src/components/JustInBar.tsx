@@ -63,17 +63,21 @@ export function JustInBar({
         role="region"
         aria-label="Open audit queue"
       >
-        <span className="just-in-kicker">
-          <span className="live-dot sm" aria-hidden="true" />
-          <span>OPEN AUDIT QUEUE</span>
-        </span>
+        <div className="just-in-content">
+          <div className="just-in-top">
+            <span className="just-in-kicker">
+              <span className="live-dot sm" aria-hidden="true" />
+              <span>OPEN AUDIT QUEUE</span>
+            </span>
 
-        <span className="just-in-title">
-          {queuedTasks} official dataset{queuedTasks === 1 ? '' : 's'} queued across {missionsCount}{' '}
-          {missionsCount === 1 ? 'project' : 'projects'}
-        </span>
+            <span className="just-in-meta">2-of-2 quorum active</span>
+          </div>
 
-        <span className="just-in-meta">2-of-2 quorum active</span>
+          <span className="just-in-title">
+            {queuedTasks} official dataset{queuedTasks === 1 ? '' : 's'} queued across {missionsCount}{' '}
+            {missionsCount === 1 ? 'project' : 'projects'}
+          </span>
+        </div>
 
         {onOpenJoin && (
           <button type="button" className="just-in-cta" onClick={onOpenJoin}>
@@ -96,22 +100,26 @@ export function JustInBar({
       role="region"
       aria-label="Latest public audit record"
     >
-      <span className="just-in-kicker">
-        <span className="live-dot sm" aria-hidden="true" />
-        <span>{kickerLabel}</span>
-      </span>
+      <div className="just-in-content">
+        <div className="just-in-top">
+          <span className="just-in-kicker">
+            <span className="live-dot sm" aria-hidden="true" />
+            <span>{kickerLabel}</span>
+          </span>
 
-      <span className="just-in-title">{item.title}</span>
+          {item.monetary_exposure_inr_cr > 0 && (
+            <span className="just-in-meta tabular">
+              {formatInrCr(item.monetary_exposure_inr_cr)}
+            </span>
+          )}
 
-      {item.monetary_exposure_inr_cr > 0 && (
-        <span className="just-in-meta tabular">
-          {formatInrCr(item.monetary_exposure_inr_cr)}
-        </span>
-      )}
+          {item.verified_at && (
+            <span className="just-in-meta">{formatRelativeTime(item.verified_at)}</span>
+          )}
+        </div>
 
-      {item.verified_at && (
-        <span className="just-in-meta">{formatRelativeTime(item.verified_at)}</span>
-      )}
+        <span className="just-in-title">{item.title}</span>
+      </div>
 
       <button
         type="button"

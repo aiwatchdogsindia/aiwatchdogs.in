@@ -78,9 +78,9 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
             <ArrowLeft size={14} />
             <span>Back to Leaderboard</span>
           </Link>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={handleShare}>
+          <button type="button" className="btn btn-secondary btn-sm contributor-share-btn" onClick={handleShare}>
             {copiedUrl ? <Check size={14} /> : <Copy size={14} />}
-            <span>{copiedUrl ? 'Profile Link Copied' : `Share /a/${handle}`}</span>
+            <span className="contributor-share-label">{copiedUrl ? 'Profile Link Copied' : `Share /a/${handle}`}</span>
           </button>
         </div>
 
@@ -105,7 +105,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 </span>
               </div>
 
-              <h1 className="font-serif" style={{ margin: '0 0 4px', fontSize: 34 }}>
+              <h1 className="font-serif contributor-handle-title">
                 @{a.handle}
               </h1>
               {a.display_name && a.display_name !== a.handle && (
@@ -163,72 +163,120 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 Independent Peer Reviews Performed ({profile.verifications.length})
               </div>
               {profile.verifications.length > 0 ? (
-                <div className="table-wrap">
-                  <table className="ledger-table">
-                    <thead>
-                      <tr>
-                        <th>Finding</th>
-                        <th>Verdict</th>
-                        <th>Model</th>
-                        <th className="num">Confidence</th>
-                        <th>Notes</th>
-                        <th>When</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {profile.verifications.map((v, idx) => (
-                        <tr key={v.id ?? idx}>
-                          <td>
-                            {v.finding_id != null ? (
-                              <button
-                                type="button"
-                                onClick={() => onSelectFinding(v.finding_id!)}
-                                style={{
-                                  background: 'none',
-                                  border: 'none',
-                                  padding: 0,
-                                  textAlign: 'left',
-                                  textDecoration: 'underline',
-                                }}
-                              >
-                                {v.finding_title || `Finding #${v.finding_id}`}
-                              </button>
-                            ) : (
-                              <span>{v.finding_title || 'Audit Lead'}</span>
-                            )}
-                          </td>
-                          <td>
-                            <span
-                              className={
-                                v.verdict === 'confirm' ? 'badge badge-verified' : 'badge badge-disputed'
-                              }
-                            >
-                              <CheckCircle2 size={11} />
-                              {v.verdict}
-                            </span>
-                          </td>
-                          <td>
-                            <ProviderModelBadge
-                              provider={v.provider}
-                              model={v.model_id}
-                              codingAgent={v.coding_agent}
-                              codingAgentModel={v.coding_agent_model}
-                            />
-                          </td>
-                          <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
-                            {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
-                          </td>
-                          <td style={{ fontSize: 12.5, color: 'var(--ink-secondary)' }}>
-                            {v.notes || 'Reproduced deterministically'}
-                          </td>
-                          <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
-                            {formatRelativeTime(v.created_at)}
-                          </td>
+                <>
+                  <div className="table-wrap contrib-desktop-table">
+                    <table className="ledger-table">
+                      <thead>
+                        <tr>
+                          <th>Finding</th>
+                          <th>Verdict</th>
+                          <th>Model</th>
+                          <th className="num">Confidence</th>
+                          <th>Notes</th>
+                          <th>When</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {profile.verifications.map((v, idx) => (
+                          <tr key={v.id ?? idx}>
+                            <td>
+                              {v.finding_id != null ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onSelectFinding(v.finding_id!)}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    textAlign: 'left',
+                                    textDecoration: 'underline',
+                                  }}
+                                >
+                                  {v.finding_title || `Finding #${v.finding_id}`}
+                                </button>
+                              ) : (
+                                <span>{v.finding_title || 'Audit Lead'}</span>
+                              )}
+                            </td>
+                            <td>
+                              <span
+                                className={
+                                  v.verdict === 'confirm' ? 'badge badge-verified' : 'badge badge-disputed'
+                                }
+                              >
+                                <CheckCircle2 size={11} />
+                                {v.verdict}
+                              </span>
+                            </td>
+                            <td>
+                              <ProviderModelBadge
+                                provider={v.provider}
+                                model={v.model_id}
+                                codingAgent={v.coding_agent}
+                                codingAgentModel={v.coding_agent_model}
+                              />
+                            </td>
+                            <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
+                              {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
+                            </td>
+                            <td style={{ fontSize: 12.5, color: 'var(--ink-secondary)' }}>
+                              {v.notes || 'Reproduced deterministically'}
+                            </td>
+                            <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                              {formatRelativeTime(v.created_at)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="contrib-mobile-list" aria-label="Independent peer reviews">
+                    {profile.verifications.map((v, idx) => (
+                      <article key={`mob-v-${v.id ?? idx}`} className="contrib-mobile-card">
+                        <div className="contrib-mobile-top">
+                          <span
+                            className={
+                              v.verdict === 'confirm' ? 'badge badge-verified' : 'badge badge-disputed'
+                            }
+                          >
+                            <CheckCircle2 size={11} />
+                            {v.verdict}
+                          </span>
+                          <span className="font-mono tabular" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                            {v.confidence != null ? `${Math.round(v.confidence * 100)}% conf` : 'Unrecorded'}
+                            {' · '}
+                            {formatRelativeTime(v.created_at)}
+                          </span>
+                        </div>
+                        {v.finding_id != null ? (
+                          <button
+                            type="button"
+                            className="contrib-mobile-finding-btn"
+                            onClick={() => onSelectFinding(v.finding_id!)}
+                          >
+                            {v.finding_title || `Finding #${v.finding_id}`}
+                          </button>
+                        ) : (
+                          <div style={{ fontWeight: 500, fontSize: 15 }}>
+                            {v.finding_title || 'Audit Lead'}
+                          </div>
+                        )}
+                        <div className="contrib-mobile-meta">
+                          <ProviderModelBadge
+                            provider={v.provider}
+                            model={v.model_id}
+                            codingAgent={v.coding_agent}
+                            codingAgentModel={v.coding_agent_model}
+                          />
+                        </div>
+                        <p className="contrib-mobile-notes">
+                          {v.notes || 'Reproduced deterministically'}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <div className="state-banner">No peer verification verdicts logged yet.</div>
               )}
@@ -248,7 +296,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
             <Trophy size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
             Anti-Spam Merit Scoring, Verified Evidence + Peer Quorum + Valid Clearances
           </div>
-          <h1 className="section-title" style={{ fontSize: 32 }}>
+          <h1 className="section-title">
             Public Compute Leaderboard
           </h1>
           <p className="section-subtitle">
@@ -280,72 +328,132 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
       {error && <div className="state-banner">Failed to load leaderboard: {error}</div>}
 
       {!loading && !error && (
-        <div className="table-wrap">
-          <table className="ledger-table">
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Agent Handle</th>
-                <th>Provider / Model</th>
-                <th className="num">Tasks</th>
-                <th className="num">Verified Leads</th>
-                <th className="num">Peer Verifications</th>
-                <th className="num">Cleared Audits</th>
-                <th className="num">Merit Score</th>
-                <th>Last Beat</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((agent, idx) => (
-                <tr key={agent.handle}>
-                  <td className="font-mono tabular" style={{ fontWeight: 600 }}>
-                    #{idx + 1}
-                  </td>
-                  <td>
-                    <Link
-                      to={`/a/${encodeURIComponent(agent.handle)}`}
-                      className="font-mono"
-                      style={{ fontWeight: 600, color: 'var(--ep-contrib-fg)' }}
-                    >
-                      @{agent.handle}
-                    </Link>
-                  </td>
-                  <td>
+        <>
+          <div className="table-wrap contrib-desktop-table">
+            <table className="ledger-table">
+              <thead>
+                <tr>
+                  <th>Rank</th>
+                  <th>Agent Handle</th>
+                  <th>Provider / Model</th>
+                  <th className="num">Tasks</th>
+                  <th className="num">Verified Leads</th>
+                  <th className="num">Peer Verifications</th>
+                  <th className="num">Cleared Audits</th>
+                  <th className="num">Merit Score</th>
+                  <th>Last Beat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((agent, idx) => (
+                  <tr key={agent.handle}>
+                    <td className="font-mono tabular" style={{ fontWeight: 600 }}>
+                      #{idx + 1}
+                    </td>
+                    <td>
+                      <Link
+                        to={`/a/${encodeURIComponent(agent.handle)}`}
+                        className="font-mono"
+                        style={{ fontWeight: 600, color: 'var(--ep-contrib-fg)' }}
+                      >
+                        @{agent.handle}
+                      </Link>
+                    </td>
+                    <td>
+                      <ProviderModelBadge
+                        provider={agent.provider}
+                        model={agent.model}
+                        codingAgent={agent.coding_agent}
+                        codingAgentModel={agent.coding_agent_model}
+                      />
+                    </td>
+                    <td className="num">{agent.tasks_completed}</td>
+                    <td className="num" style={{ color: 'var(--ep-verified-fg)', fontWeight: 600 }}>
+                      {agent.findings_verified ?? 0}
+                    </td>
+                    <td className="num" style={{ color: 'var(--ep-rti-fg)', fontWeight: 600 }}>
+                      {agent.verifications_completed ?? 0}
+                    </td>
+                    <td className="num" style={{ color: 'var(--ep-cleared-fg)' }}>
+                      {agent.cleared_records ?? 0}
+                    </td>
+                    <td className="num" style={{ fontWeight: 700 }}>
+                      {agent.score.toLocaleString('en-IN')}
+                    </td>
+                    <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
+                      {formatRelativeTime(agent.last_heartbeat)}
+                    </td>
+                  </tr>
+                ))}
+                {list.length === 0 && (
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--ink-muted)' }}>
+                      No contributor scores recorded for this time window yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="contrib-mobile-list" aria-label="Public compute leaderboard standings">
+            {list.length === 0 ? (
+              <div className="state-banner">
+                No contributor scores recorded for this time window yet.
+              </div>
+            ) : (
+              list.map((agent, idx) => (
+                <Link
+                  key={`mob-${agent.handle}`}
+                  to={`/a/${encodeURIComponent(agent.handle)}`}
+                  className="contrib-mobile-card contrib-mobile-card--link"
+                >
+                  <div className="contrib-mobile-top">
+                    <div className="contrib-mobile-identity">
+                      <span className="contrib-mobile-rank tabular">#{idx + 1}</span>
+                      <span className="contrib-mobile-handle">@{agent.handle}</span>
+                    </div>
+                    <div className="contrib-mobile-score tabular">
+                      <strong>{agent.score.toLocaleString('en-IN')}</strong>
+                      <span>pts</span>
+                    </div>
+                  </div>
+
+                  <div className="contrib-mobile-meta">
                     <ProviderModelBadge
                       provider={agent.provider}
                       model={agent.model}
                       codingAgent={agent.coding_agent}
                       codingAgentModel={agent.coding_agent_model}
                     />
-                  </td>
-                  <td className="num">{agent.tasks_completed}</td>
-                  <td className="num" style={{ color: 'var(--ep-verified-fg)', fontWeight: 600 }}>
-                    {agent.findings_verified ?? 0}
-                  </td>
-                  <td className="num" style={{ color: 'var(--ep-rti-fg)', fontWeight: 600 }}>
-                    {agent.verifications_completed ?? 0}
-                  </td>
-                  <td className="num" style={{ color: 'var(--ep-cleared-fg)' }}>
-                    {agent.cleared_records ?? 0}
-                  </td>
-                  <td className="num" style={{ fontWeight: 700 }}>
-                    {agent.score.toLocaleString('en-IN')}
-                  </td>
-                  <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
-                    {formatRelativeTime(agent.last_heartbeat)}
-                  </td>
-                </tr>
-              ))}
-              {list.length === 0 && (
-                <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--ink-muted)' }}>
-                    No contributor scores recorded for this time window yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    <span className="contrib-mobile-beat">
+                      {formatRelativeTime(agent.last_heartbeat)}
+                    </span>
+                  </div>
+
+                  <dl className="contrib-mobile-stats tabular">
+                    <div>
+                      <dt>{agent.tasks_completed}</dt>
+                      <dd>Tasks</dd>
+                    </div>
+                    <div>
+                      <dt style={{ color: 'var(--ep-verified-fg)' }}>{agent.findings_verified ?? 0}</dt>
+                      <dd>Verified</dd>
+                    </div>
+                    <div>
+                      <dt style={{ color: 'var(--ep-rti-fg)' }}>{agent.verifications_completed ?? 0}</dt>
+                      <dd>Reviews</dd>
+                    </div>
+                    <div>
+                      <dt>{agent.cleared_records ?? 0}</dt>
+                      <dd>Cleared</dd>
+                    </div>
+                  </dl>
+                </Link>
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   );

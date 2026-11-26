@@ -422,7 +422,7 @@ function AppShell() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div className="app-shell">
       <Header onOpenJoin={() => setJoinOpen(true)} />
 
       <JustInBar
@@ -436,17 +436,9 @@ function AppShell() {
 
       {headError && (
         <div className="offline-banner" role="alert">
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-              <WifiOff size={14} />
+          <div className="offline-banner-row">
+            <span className="offline-banner-msg">
+              <WifiOff size={14} style={{ flexShrink: 0 }} />
               {import.meta.env.DEV ? (
                 <span>
                   Unable to reach Coordinator Hub API ({headError}). Ensure{' '}
@@ -467,7 +459,7 @@ function AppShell() {
         </div>
       )}
 
-      <main style={{ flex: 1 }}>
+      <main className="app-main">
         {renderPage()}
       </main>
 

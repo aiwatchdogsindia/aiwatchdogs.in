@@ -99,7 +99,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       <div className="section-header">
         <div>
           <div className="section-kicker">Public Evidence Wall, Deterministic &amp; Neutral</div>
-          <h1 className="section-title" style={{ fontSize: 32 }}>
+          <h1 className="section-title">
             Findings &amp; Evidence Ledger
           </h1>
           <p className="section-subtitle">
@@ -125,7 +125,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
       {/* Filter Bar */}
       <div className="filter-bar">
-        <div style={{ position: 'relative', flex: 1, minWidth: 220 }}>
+        <div className="filter-search-wrap">
           <Search
             size={14}
             aria-hidden="true"

@@ -885,15 +885,8 @@ export function HomePage({
               {frontierFinding && (
                 <button
                   type="button"
+                  className="return-card-action"
                   onClick={() => onSelectFinding(frontierFinding.id)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    padding: 0,
-                    color: 'var(--accent)',
-                    textDecoration: 'underline',
-                    fontSize: 12,
-                  }}
                 >
                   Open dossier
                 </button>
@@ -916,8 +909,7 @@ export function HomePage({
                 <button
                   type="button"
                   onClick={() => onSelectFinding(clearedFinding.id)}
-                  className="inline-link"
-                  style={{ background: 'none', border: 'none', padding: 0, fontSize: 12 }}
+                  className="inline-link return-card-action"
                 >
                   Inspect clearance
                 </button>
