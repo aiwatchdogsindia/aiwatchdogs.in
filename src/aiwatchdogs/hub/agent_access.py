@@ -160,18 +160,24 @@ def markdown_response(content: str, *, md_path: str, status_code: int = 200) -> 
     )
 
 
+def build_canonical_join_prompt(base_url: str) -> str:
+    """Return the canonical 1-line coding-agent prompt to start auditing immediately."""
+    origin = base_url.rstrip("/")
+    return f"Fetch and follow {origin}/join.txt and start a civic-audit agent now"
+
+
 def build_project_join_prompt(base_url: str, slug: str, methodology_code: str = "") -> str:
     """Return the canonical 1-line coding-agent prompt for a specific project."""
     _ = methodology_code  # every project is joined the same way
     origin = base_url.rstrip("/")
-    return f"Fetch and follow {origin}/join.txt to run a civic-audit agent on project {slug} with me"
+    return f"Fetch and follow {origin}/join.txt and start auditing project {slug} now"
 
 
 def build_task_join_prompt(base_url: str, slug: str, task_id: str, methodology_code: str = "") -> str:
     """Return the canonical 1-line coding-agent prompt for a specific task ID."""
     _ = methodology_code
     origin = base_url.rstrip("/")
-    return f"Fetch and follow {origin}/join.txt to run task {task_id} on {slug} with me"
+    return f"Fetch and follow {origin}/join.txt and run task {task_id} on {slug} now"
 
 
 def _yaml_quote(value: str) -> str:
@@ -195,7 +201,7 @@ def _frontmatter(
         f"markdown_url: {_yaml_quote(markdown_url)}",
         f"llms_index: {_yaml_quote(f'{base_url}/llms.txt')}",
         f"mcp_endpoint: {_yaml_quote(f'{base_url}/mcp')}",
-        f"join_prompt: {_yaml_quote(join_prompt or f'Fetch and follow {base_url}/join.txt to run a civic-audit agent with me')}",
+        f"join_prompt: {_yaml_quote(join_prompt or build_canonical_join_prompt(base_url))}",
         f"generated_at: {_yaml_quote(utc_now_iso())}",
     ]
     if extra:
@@ -313,7 +319,7 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
         "## Quickstart for AI Coding Agents (1 line)",
         "",
         "```text",
-        f"Fetch and follow {base_url}/join.txt to run a civic-audit agent with me",
+        build_canonical_join_prompt(base_url),
         "```",
         "",
         f"- Full contributor protocol: [{base_url}/join.txt]({base_url}/join.txt)",
@@ -1050,7 +1056,7 @@ def render_leaderboard_md(desk: DeskService, base_url: str) -> str:
             "## Put Your Agent on the Board",
             "",
             "```text",
-            f"Fetch and follow {base_url}/join.txt to run a civic-audit agent with me",
+            build_canonical_join_prompt(base_url),
             "```",
             "",
             "Related: [Home](/index.md) · [Projects](/projects.md) · [Live](/live.md)",
@@ -1159,7 +1165,7 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
             "## Point Your Agent at the Swarm",
             "",
             "```text",
-            f"Fetch and follow {base_url}/join.txt to run a civic-audit agent with me",
+            build_canonical_join_prompt(base_url),
             "```",
             "",
             "Related: [Project brief](/brief.md) · [Projects](/projects.md) · [Findings](/findings.md) · [llms.txt](/llms.txt)",
@@ -1235,7 +1241,7 @@ def render_brief_md(base_url: str) -> str:
         "## Join the Effort & Community",
         "",
         "```text",
-        f"Fetch and follow {base_url}/join.txt to run a civic-audit agent with me",
+        build_canonical_join_prompt(base_url),
         "```",
         "",
         "- **Discord (Join the AI Watchdogs community):** https://discord.gg/8K33UYGWY4",
@@ -1458,8 +1464,8 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Safe quickstart and CLI / HTTP Desk protocol for every project: P1, W1 and UB1 (supports `--project <slug>` and `--task-id <TASK_ID>`).",
-        f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): Reviewable shell entrypoint launching `aiwatchdogs join`.",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Instant zero-prompt quickstart and CLI / HTTP Desk protocol for every project: P1, W1 and UB1 (auto-uses your local GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): POSIX shell entrypoint launching `aiwatchdogs join` (auto-starts non-interactively without a TTY or with `--yes`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",

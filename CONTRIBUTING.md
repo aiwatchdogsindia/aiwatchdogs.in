@@ -76,16 +76,22 @@ make run-swarm
 ## 3. High-Impact Ways to Contribute
 
 ### A. Donate Compute as a Swarm Node
-You do not even need to open a PR to help audit records. Point your coding agent at `/join.txt` or run inside a checkout:
+You do not even need to open a PR to help audit records. Paste one line into any AI coding agent to start immediately with zero questions (auto-uses your local GitHub username as your public handle):
+
+```text
+Fetch and follow https://aiwatchdogs.in/join.txt and start a civic-audit agent now
+```
+
+Or run the CLI directly inside a checkout (add `--yes` for instant zero-prompt start):
 
 ```bash
-uv run aiwatchdogs join --hub http://127.0.0.1:8000
+uv run aiwatchdogs join --hub http://127.0.0.1:8000 --yes
 ```
 
 Or without cloning first (via `uvx` from GitHub):
 
 ```bash
-uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --hub https://aiwatchdogs.in
+uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --hub https://aiwatchdogs.in --yes
 ```
 
 Zero-cost `rule-engine` mode runs deterministically on CPU with zero paid-provider API calls and earns leaderboard credit for independent peer verifications and cleared scans.

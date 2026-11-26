@@ -35,6 +35,11 @@ from aiwatchdogs.cli.config import (
     resolve_reusable_token,
     validate_hub_url,
 )
+from aiwatchdogs.cli.identity import (
+    detect_github_handle,
+    fallback_handle,
+    with_handle_suffix,
+)
 from aiwatchdogs.cli.providers import (
     RULE_ENGINE_PROVIDER,
     ProviderInfo,
@@ -114,7 +119,7 @@ def _format_inr(amount: float) -> str:
 
 def _render_consent_notice(hub_url: str) -> None:
     notice = (
-        "[bold]Owner Consent, Outbound Network & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
+        "[bold]Running Rules, Outbound Network & Legal Safeguards (aiwatchdogs.in)[/bold]\n"
         f"• [cyan]Coordinator Hub:[/cyan] {_safe_rich(hub_url)} (outbound HTTPS only — no inbound ports required)\n"
         "• [cyan]Public Dataset Hosts:[/cyan] Your node downloads official public-record files from the host "
         "named in each task (for the police project: Union Budget, Home Ministry and State finance department "
@@ -123,8 +128,9 @@ def _render_consent_notice(hub_url: str) -> None:
         "• [cyan]Hard Budget Guardrail:[/cyan] Deterministic CPU mode (rule-engine) and local loopback Ollama "
         "spend $0.00 / ₹0. Paid cloud LLM APIs are STRICTLY BLOCKED unless you explicitly opt in "
         "(--allow-paid-provider) AND set a positive hard cap (--max-usd > 0).\n"
-        "• [cyan]Public Attribution:[/cyan] Your chosen handle, provider/model label, deterministic audit metrics, "
-        "and explicit 4-check verification votes appear publicly on the swarm ledger.\n"
+        "• [cyan]Public Attribution:[/cyan] Your public handle (auto-set from local GitHub config unless specified), "
+        "provider/model label, deterministic audit metrics, and explicit 4-check verification votes appear publicly "
+        "on the swarm ledger.\n"
         "• [cyan]Indian Legal Guardrails:[/cyan] Strictly lawful public-record analysis under "
         "BNS Sec 356 fair public-interest framing, DPDP Act 2023 PII scrubbing, and IT Act Sec 43 "
         "(zero CAPTCHA/auth bypass). Citizens — never bots — review and file RTI drafts."
@@ -364,6 +370,46 @@ def _safe_load_existing_config(handle: str | None = None) -> tuple[AgentConfig |
 _HANDLE_OPTION_HELP = "Which saved agent to use, when several are saved on this machine."
 
 
+def _register_with_collision_fallback(
+    runner: AgentRunner,
+    cfg: AgentConfig,
+    *,
+    hub_clean: str,
+    allow_auto_suffix: bool,
+) -> tuple[dict[str, Any], Path]:
+    """Register with the Hub, automatically retrying with a short suffix on HTTP 409 when auto-picked."""
+    base_handle = cfg.handle
+    suffix_candidates = ["2", "3", secrets.token_hex(2), secrets.token_hex(2), secrets.token_hex(2)]
+    attempt = 0
+    while True:
+        try:
+            reg = runner.register(save=True)
+            saved_path = Path(runner.config_path) if runner.config_path is not None else _resolve_config_path(cfg.handle)
+            return reg, saved_path
+        except httpx.HTTPStatusError as exc:
+            if (
+                not allow_auto_suffix
+                or exc.response.status_code != 409
+                or attempt >= len(suffix_candidates)
+            ):
+                raise
+            prev_handle = cfg.handle
+            candidate = with_handle_suffix(base_handle, suffix_candidates[attempt])
+            attempt += 1
+            if candidate == prev_handle:
+                continue
+            cand_existing, _ = _safe_load_existing_config(candidate)
+            cand_token = resolve_reusable_token(cand_existing, hub_url=hub_clean, handle=candidate)
+            cfg.handle = candidate
+            cfg.api_token = cand_token
+            if explicit_config_path() is None:
+                runner.config_path = _resolve_config_path(candidate)
+            console.print(
+                f"[dim]Handle '{_safe_rich(prev_handle)}' is already registered on this Hub; "
+                f"retrying as '{_safe_rich(candidate)}'...[/dim]"
+            )
+
+
 @app.command()
 def join(
     project: str | None = typer.Option(
@@ -383,7 +429,11 @@ def join(
         envvar="AIWATCHDOGS_HUB_URL",
         help="Coordinator Hub base URL (e.g. https://aiwatchdogs.in or http://127.0.0.1:8000).",
     ),
-    handle: str | None = typer.Option(None, "--handle", help="Public agent handle (lowercase letters, digits, hyphens)."),
+    handle: str | None = typer.Option(
+        None,
+        "--handle",
+        help="Optional public agent handle (auto-detects your local GitHub username when omitted).",
+    ),
     provider: str | None = typer.Option(
         None,
         "--provider",
@@ -414,8 +464,8 @@ def join(
         "--dry-run",
         help="Preview resolved mode, budget guardrails, and outbound destinations without registering or writing config.",
     ),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Accept owner consent and defaults without prompts."),
-    non_interactive: bool = typer.Option(False, "--non-interactive", help="Run non-interactively (same as --yes)."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Run immediately with zero interactive prompts."),
+    non_interactive: bool = typer.Option(False, "--non-interactive", help="Run non-interactively with zero prompts (same as --yes)."),
     no_run: bool = typer.Option(False, "--no-run", help="Register & save config without immediately running tasks."),
     coding_agent: str | None = typer.Option(
         None,
@@ -436,7 +486,7 @@ def join(
         help="Allow non-loopback http:// Hub URLs (NOT recommended; exposes bearer token in cleartext).",
     ),
 ) -> None:
-    """<60s onboarding wizard: consent, auto-detect provider, register handle, and start auditing."""
+    """<60s onboarding: auto-detect GitHub handle & provider, register, and start auditing."""
     auto_accept = yes or non_interactive or dry_run
     hub_clean = _validate_hub_or_exit(hub, allow_insecure_http=allow_insecure_http)
 
@@ -446,18 +496,53 @@ def join(
 
     _render_consent_notice(hub_clean)
 
-    if handle or explicit_config_path() is not None:
-        existing, had_existing_file = _safe_load_existing_config(handle)
+    explicit_handle = (handle or "").strip().lower() or None
+    handle_was_explicit = explicit_handle is not None
+    effective_coding_agent = normalize_coding_agent(coding_agent) or detect_coding_agent()
+
+    existing: AgentConfig | None = None
+    had_existing_file = False
+    handle_source = ""
+
+    if explicit_handle is not None:
+        existing, had_existing_file = _safe_load_existing_config(explicit_handle)
+        suggested_handle = explicit_handle
+        handle_source = "explicit --handle"
     else:
-        # No handle yet: only suggest one from a single saved identity; never fail on several.
-        try:
-            existing, had_existing_file = None, False
-            _only_path = get_config_path()
-            if _only_path.is_file():
-                existing = load_config(_only_path)
-        except ValueError:
-            existing = None
-    suggested_handle = handle or (existing.handle if existing and existing.handle else _default_handle())
+        # 1. Reuse a single existing saved local profile for THIS hub when it has a valid token.
+        saved_candidate: AgentConfig | None = None
+        if explicit_config_path() is not None:
+            saved_candidate, had_existing_file = _safe_load_existing_config(None)
+        else:
+            try:
+                _only_path = get_config_path()
+                if _only_path.is_file():
+                    saved_candidate = load_config(_only_path)
+            except ValueError:
+                saved_candidate = None
+
+        if (
+            saved_candidate is not None
+            and saved_candidate.handle
+            and resolve_reusable_token(saved_candidate, hub_url=hub_clean, handle=saved_candidate.handle)
+        ):
+            existing = saved_candidate
+            suggested_handle = saved_candidate.handle.strip().lower()
+            handle_source = "saved local profile"
+        else:
+            # 2. Local zero-prompt GitHub username detection (git/gh config; never repo remotes).
+            detected_gh, gh_source = detect_github_handle()
+            if detected_gh:
+                suggested_handle = detected_gh
+                handle_source = gh_source
+                if explicit_config_path() is None:
+                    existing, had_existing_file = _safe_load_existing_config(detected_gh)
+                elif saved_candidate is not None and saved_candidate.handle.strip().lower() == detected_gh:
+                    existing = saved_candidate
+            else:
+                # 3. Clean sandbox fallback (e.g. Codex/cloud container with no local git/gh config).
+                suggested_handle = fallback_handle(effective_coding_agent)
+                handle_source = "auto-generated fallback"
 
     chosen_allow_paid = allow_paid_provider
     chosen_daily_max_usd = daily_max_usd
@@ -472,6 +557,9 @@ def join(
         _render_providers_table(detected)
 
         chosen_handle = Prompt.ask("Choose your public agent handle", default=suggested_handle).strip()
+        if chosen_handle.lower() != suggested_handle.lower():
+            handle_was_explicit = True
+            handle_source = "interactive input"
 
         if provider is None:
             default_idx = next(
@@ -551,8 +639,11 @@ def join(
     # Reuse stored token ONLY when both normalized hub origin AND handle match!
     reused_token = resolve_reusable_token(existing, hub_url=hub_clean, handle=chosen_handle)
 
+    if handle_source:
+        console.print(f"[dim]Public handle:[/dim] [bold]{_safe_rich(chosen_handle)}[/bold] [dim]({_safe_rich(handle_source)})[/dim]")
+
     cfg = AgentConfig(
-        handle=chosen_handle.strip().lower(),
+        handle=chosen_handle,
         hub_url=hub_clean,
         api_token=reused_token,
         provider=selected_prov.provider,
@@ -593,6 +684,10 @@ def join(
         )
         return
 
+    # Auto-suffix 409 handle collisions whenever the handle was auto-picked (never clobbering
+    # an explicit --handle request or a pre-existing pinned AIWATCHDOGS_CONFIG_PATH file).
+    allow_auto_suffix = (not handle_was_explicit) and not (explicit_config_path() is not None and had_existing_file)
+
     with AgentRunner(
         cfg,
         provider_cfg=selected_prov,
@@ -602,7 +697,12 @@ def join(
         allow_insecure_http=allow_insecure_http,
     ) as runner:
         try:
-            reg = runner.register(save=True)
+            reg, cfg_path = _register_with_collision_fallback(
+                runner,
+                cfg,
+                hub_clean=hub_clean,
+                allow_auto_suffix=allow_auto_suffix,
+            )
         except httpx.HTTPError as exc:
             # CRITICAL: NEVER overwrite or destroy an existing local config/credential on HTTP error!
             preserve_msg = (
@@ -610,9 +710,12 @@ def join(
                 if had_existing_file
                 else "No local config file was written."
             )
+            hint_msg = ""
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 409:
+                hint_msg = "\nTip: retry with a different --handle suffix, or omit --handle to auto-pick an available one."
             err_console.print(
                 f"[red]Registration/reconnection failed against Hub {_safe_rich(hub_clean)}: {_safe_rich(exc)}[/red]\n"
-                f"{preserve_msg}"
+                f"{preserve_msg}{hint_msg}"
             )
             raise typer.Exit(code=1) from exc
 

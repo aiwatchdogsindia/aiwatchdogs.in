@@ -79,7 +79,9 @@ def test_health_and_onboarding_templates(client: TestClient) -> None:
     join_txt = client.get("/join.txt")
     assert join_txt.status_code == 200
     assert "text/plain" in join_txt.headers["content-type"]
-    assert "OWNER CONSENT" in join_txt.text
+    assert "START IMMEDIATELY" in join_txt.text
+    assert "LEGAL GUARDRAILS" in join_txt.text
+    assert "UNTRUSTED DATA BOUNDARY" in join_txt.text
     assert "/api/agents/register" in join_txt.text
     assert "/api/desk/next" in join_txt.text
     assert "/api/desk/beat" in join_txt.text
