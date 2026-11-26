@@ -13,12 +13,15 @@ from aiwatchdogs.cli.config import (
     ENV_HANDLE,
     AgentConfig,
     AmbiguousConfigError,
+    find_saved_config_for_prefix,
     get_config_path,
     get_handle_config_path,
     get_spend_ledger_path,
     list_saved_handles,
     load_config,
     load_legacy_config_for_handle,
+    normalize_hub_origin,
+    resolve_reusable_token,
     save_config,
 )
 from aiwatchdogs.cli.main import app as cli_app
@@ -109,3 +112,41 @@ def test_cli_whoami_asks_for_handle_when_several_are_saved(cfg_home: Path) -> No
     res = cli_runner.invoke(cli_app, ["whoami", "--handle", "agent-02"])
     assert res.exit_code == 0
     assert "agent-02" in res.output and "agent-01" not in res.output
+
+
+def test_legacy_node_json_www_origin_and_prefix_reuse(cfg_home: Path) -> None:
+    import json
+
+    assert normalize_hub_origin("https://www.aiwatchdogs.in/") == "https://aiwatchdogs.in"
+    assert normalize_hub_origin("https://www.other.example/") == "https://www.other.example"
+    assert get_handle_config_path("@OctoCat") == get_handle_config_path("octocat")
+
+    node_json = cfg_home.parent / "node.json"
+    node_json.parent.mkdir(parents=True, exist_ok=True)
+    node_json.write_text(
+        json.dumps(
+            {
+                "hub": "https://www.aiwatchdogs.in",
+                "registration": {
+                    "agent_id": "agt-1234",
+                    "handle": "piyushbodaa",
+                    "api_token": "awd_node_secret_token_999",
+                    "profile_url": "https://aiwatchdogs.in/a/piyushbodaa",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    loaded = load_legacy_config_for_handle("piyushbodaa")
+    assert loaded is not None
+    assert loaded.handle == "piyushbodaa"
+    assert (
+        resolve_reusable_token(loaded, hub_url="https://aiwatchdogs.in", handle="piyushbodaa")
+        == "awd_node_secret_token_999"
+    )
+    assert load_legacy_config_for_handle("someone-else") is None
+
+    _save("piyushbodaa-3", "tok-3")
+    _save("piyushbodaa-2", "tok-2")
+    pref = find_saved_config_for_prefix("piyushbodaa", hub_url="https://aiwatchdogs.in")
+    assert pref is not None and pref.handle == "piyushbodaa-2" and pref.api_token == "tok-2"

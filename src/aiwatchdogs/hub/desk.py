@@ -68,6 +68,36 @@ RESERVED_HANDLES: frozenset[str] = frozenset(
         "api",
     }
 )
+# Coding-agent / AI product names belong in `coding_agent`, never as a volunteer contributor's handle.
+GENERIC_AGENT_HANDLES: frozenset[str] = frozenset(
+    {
+        "cursor",
+        "codex",
+        "claude",
+        "claude-code",
+        "claudecode",
+        "antigravity",
+        "agy",
+        "gemini",
+        "gemini-cli",
+        "copilot",
+        "github-copilot",
+        "windsurf",
+        "opencode",
+        "cline",
+        "roo-code",
+        "hermes",
+        "hermes-agent",
+        "chatgpt",
+        "openai",
+        "anthropic",
+        "aider",
+        "devin",
+        "kiro",
+        "amp",
+        "grok",
+    }
+)
 LEASE_MINUTES = 45
 MAX_LEASE_TOTAL_MINUTES = 180
 MAX_CONCURRENT_LEASES_PER_AGENT = 2
@@ -5225,6 +5255,15 @@ class DeskService:
             raise HTTPException(
                 status_code=422,
                 detail=f"Handle '{raw_handle}' is reserved and cannot be registered.",
+            )
+        if raw_handle in GENERIC_AGENT_HANDLES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Handle '{raw_handle}' is an AI coding-agent product name, not a contributor username. "
+                    "Use the operator's GitHub username as 'handle' (or omit --handle in the CLI to auto-detect it) "
+                    "and put the tool name in 'coding_agent'."
+                ),
             )
         display_name, _ = scrub_pii(str(payload.get("display_name") or raw_handle).strip()[:120])
         provider, _ = scrub_pii(str(payload.get("provider") or "rule-engine").strip().lower()[:64])

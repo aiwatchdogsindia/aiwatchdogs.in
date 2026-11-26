@@ -30,10 +30,12 @@ logger = logging.getLogger("aiwatchdogs.cli.config")
 
 DEFAULT_HUB_URL = "https://aiwatchdogs.in"
 DEFAULT_CONFIG_PATH = Path.home() / ".config" / "aiwatchdogs" / "config.json"
+_INITIAL_DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_PATH
 ENV_CONFIG_PATH = "AIWATCHDOGS_CONFIG_PATH"
 ENV_API_TOKEN = "AIWATCHDOGS_API_TOKEN"
 ENV_HANDLE = "AIWATCHDOGS_HANDLE"
 AGENTS_DIRNAME = "agents"
+LEGACY_NODE_FILENAME = "node.json"
 _HANDLE_FILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 DEFAULT_SPEND_LEDGER_FILENAME = "spend_ledger.json"
 
@@ -49,6 +51,8 @@ def normalize_hub_origin(url: str) -> str:
     parsed = urlsplit(candidate)
     scheme = (parsed.scheme or "https").lower()
     hostname = (parsed.hostname or "").lower()
+    if hostname == "www.aiwatchdogs.in":
+        hostname = "aiwatchdogs.in"
     if not hostname:
         return raw.rstrip("/").lower()
     try:
@@ -179,7 +183,7 @@ class AmbiguousConfigError(ValueError):
 
 
 def _clean_handle(handle: str | None) -> str:
-    return str(handle or "").strip().lower()
+    return str(handle or "").strip().lstrip("@").lower()
 
 
 def get_agents_dir() -> Path:
@@ -254,15 +258,117 @@ def get_config_path(override: str | Path | None = None, *, handle: str | None = 
     raise AmbiguousConfigError(identities)
 
 
-def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
-    """Return the legacy ``config.json`` only when it belongs to ``handle`` (for token reuse)."""
-    cleaned = _clean_handle(handle)
-    if not cleaned or _peek_handle(DEFAULT_CONFIG_PATH) != cleaned:
-        return None
+def _load_legacy_node_config(path: Path) -> AgentConfig | None:
+    """Read a legacy ``node.json`` saved by Option B / manual registration without mutating it."""
     try:
-        return load_config(DEFAULT_CONFIG_PATH)
-    except ValueError:
+        if path.is_symlink() or not path.is_file():
+            return None
+        st = path.lstat()
+        if stat.S_ISLNK(st.st_mode):
+            return None
+        if (stat.S_IMODE(st.st_mode) & 0o077) != 0:
+            try:
+                os.chmod(path, 0o600)
+            except OSError:
+                pass
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
         return None
+    if not isinstance(data, dict):
+        return None
+
+    reg = data.get("registration") if isinstance(data.get("registration"), dict) else data
+    handle = _clean_handle(reg.get("handle") or data.get("handle"))
+    api_token = str(reg.get("api_token") or data.get("api_token") or "").strip()
+    hub_url = str(data.get("hub_url") or data.get("hub") or reg.get("hub_url") or reg.get("hub") or "").strip()
+    if not hub_url:
+        profile_url = str(reg.get("profile_url") or "").strip()
+        if profile_url.startswith(("http://", "https://")):
+            parsed = urlsplit(profile_url)
+            if parsed.scheme and parsed.netloc:
+                hub_url = f"{parsed.scheme}://{parsed.netloc}"
+    if not handle or not api_token:
+        return None
+    return AgentConfig(
+        handle=handle,
+        hub_url=hub_url or DEFAULT_HUB_URL,
+        api_token=api_token,
+    )
+
+
+def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
+    """Return a legacy saved config (``config.json``, ``node.json``, or XDG fallback) matching ``handle``."""
+    cleaned = _clean_handle(handle)
+    if not cleaned:
+        return None
+
+    if _peek_handle(DEFAULT_CONFIG_PATH) == cleaned:
+        try:
+            return load_config(DEFAULT_CONFIG_PATH)
+        except ValueError:
+            pass
+
+    node_cfg = _load_legacy_node_config(DEFAULT_CONFIG_PATH.parent / LEGACY_NODE_FILENAME)
+    if node_cfg is not None and _clean_handle(node_cfg.handle) == cleaned:
+        return node_cfg
+
+    # If DEFAULT_CONFIG_PATH was not overridden by tests, also check custom XDG_CONFIG_HOME.
+    if DEFAULT_CONFIG_PATH == _INITIAL_DEFAULT_CONFIG_PATH:
+        xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        if xdg:
+            xdg_dir = Path(xdg).expanduser() / "aiwatchdogs"
+            if xdg_dir != DEFAULT_CONFIG_PATH.parent:
+                if _HANDLE_FILE_RE.fullmatch(cleaned):
+                    xdg_agent = xdg_dir / AGENTS_DIRNAME / f"{cleaned}.json"
+                    try:
+                        loaded = load_config(xdg_agent)
+                        if loaded is not None and _clean_handle(loaded.handle) == cleaned:
+                            return loaded
+                    except ValueError:
+                        pass
+                xdg_legacy = xdg_dir / "config.json"
+                if _peek_handle(xdg_legacy) == cleaned:
+                    try:
+                        return load_config(xdg_legacy)
+                    except ValueError:
+                        pass
+                xdg_node = _load_legacy_node_config(xdg_dir / LEGACY_NODE_FILENAME)
+                if xdg_node is not None and _clean_handle(xdg_node.handle) == cleaned:
+                    return xdg_node
+
+    return None
+
+
+def find_saved_config_for_prefix(base_handle: str, *, hub_url: str) -> AgentConfig | None:
+    """Find an already-saved ``<base_handle>-<suffix>`` credential for ``hub_url`` to avoid handle churn."""
+    cleaned = _clean_handle(base_handle)
+    if not cleaned:
+        return None
+    prefix = f"{cleaned}-"
+    matches: list[tuple[int, int, str, AgentConfig]] = []
+    for saved_handle in list_saved_handles():
+        if not saved_handle.startswith(prefix):
+            continue
+        suffix = saved_handle[len(prefix) :]
+        if not suffix:
+            continue
+        try:
+            cfg = load_config(get_handle_config_path(saved_handle))
+        except ValueError:
+            continue
+        if cfg is None:
+            continue
+        if not resolve_reusable_token(cfg, hub_url=hub_url, handle=saved_handle):
+            continue
+        # Prefer numeric suffixes (-2, -3, ...) in ascending order over random hex suffixes.
+        if suffix.isdigit():
+            matches.append((0, int(suffix), saved_handle, cfg))
+        else:
+            matches.append((1, 0, saved_handle, cfg))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: (item[0], item[1], item[2]))
+    return matches[0][3]
 
 
 def get_spend_ledger_path(config_path: str | Path | None = None) -> Path:

@@ -566,4 +566,4 @@ def test_join_instructions_explain_roles_time_and_failures() -> None:
     # An agent whose shell is blocked must stop and ask, not hand-write the HTTP protocol.
     assert "That is not a reason to use Option B." in text
     assert "A blocked shell or an unanswered permission prompt is not that case." in text
-    assert "uvx --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' aiwatchdogs join" in text
+    assert "uvx --refresh --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' aiwatchdogs join" in text
