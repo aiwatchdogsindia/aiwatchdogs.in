@@ -4944,22 +4944,6 @@ code.font-mono {
   text-underline-offset: 3px;
 }
 
-.inflation-join-prompt {
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  padding: 12px;
-  overflow-wrap: anywhere;
-  user-select: all;
-}
-
-.inflation-join-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  margin: 12px 0;
-}
-
 .foot-analytics-link {
   color: inherit;
   text-decoration: underline;

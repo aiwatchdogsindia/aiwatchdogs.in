@@ -31,11 +31,11 @@ const LIVE_PROJECTS = [
   },
   {
     code: 'P3',
-    slug: 'independent-india-inflation',
-    title: 'Independent India Inflation',
-    tag: WORK_TYPE_TAGS.price_research,
+    slug: 'union-budget-unspent-funds',
+    title: 'Union Budget: budgeted but not spent',
+    tag: WORK_TYPE_TAGS.unspent_budget,
     summary:
-      'Rebuilds an independent state-by-state rural and urban CPI basket from published price records.',
+      'Reads every line of every Demand for Grants since 2014-15 from the official budget papers and reports what was budgeted but not spent.',
   },
 ];
 
@@ -118,8 +118,8 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
       <section className="how-section brief-problem">
         <h2>Why it exists</h2>
         <p>
-          Union and State governments publish millions of pages of budget PDFs, ministry websites,
-          and price and statistical releases across hundreds of fragmented portals. Almost no
+          Union and State governments publish millions of pages of budget PDFs, demands for grants,
+          and ministry websites across hundreds of fragmented portals. Almost no
           newsroom or civil-society team has the time or compute to read and cross-check them
           systematically.
         </p>

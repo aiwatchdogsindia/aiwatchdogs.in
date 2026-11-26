@@ -2162,7 +2162,14 @@ def load_dataset(
         secondary_sha256 = sec_ds.sha256
         secondary_digest_verified = sec_ds.digest_verified
         secondary_provenance = sec_ds.provenance
-        records = _join_secondary_records(records, sec_ds.records, secondary_ref, sec_ds.sha256)
+        if ctx.get("secondary_document") == "pages" and resolved_fmt == "pdf" and sec_ds.format == "pdf":
+            # A check that reads two official documents side by side (UB1): keep both sets of pages,
+            # each marked with the document it came from. Page numbers restart in the second one.
+            records = [{**rec, "document": "primary"} for rec in records] + [
+                {**rec, "document": "secondary"} for rec in sec_ds.records
+            ]
+        else:
+            records = _join_secondary_records(records, sec_ds.records, secondary_ref, sec_ds.sha256)
 
     records = _apply_context_filters(records, ctx)
     is_demo = _detect_demo_sample(source_ref, raw_text, parsed_json)

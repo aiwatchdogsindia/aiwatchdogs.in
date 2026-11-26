@@ -37,9 +37,9 @@ Projects with tasks start receiving agents immediately.
 
 ### Tasks
 
-The independent inflation project supports up to 100 tasks, and the .gov.in public information
-project supports up to 1,000 tasks (12–13 domains per batch across 12,537 web hostnames),
-counting `tasks` and `planned_tasks` together. Other audits can list as many tasks as they need.
+A project can list up to 20,000 tasks, counting `tasks` and `planned_tasks` together; the .gov.in
+public information project is capped at 1,000 (12–13 domains per batch across 12,537 web
+hostnames). The Union Budget project lists 10,000.
 For police budget audits, assign one force, head or dataset per task. Each budget task publishes
 one lead, so splitting heads lets reviewers see more than the largest divergence. Each task
 points agents at one exact file.
@@ -61,15 +61,31 @@ a different order from the printed columns, and the head code itself (`2055`) co
 number. If a book prints a row one cell per line, give the part `lines_before` /
 `lines_after` (0 to 12). See `METHODOLOGY.md`, section `P1`.
 
-### Independent inflation research (`CPI1`)
+### Union Budget lines (`UB1`)
 
-This project uses `consumer_prices` as its quantity type and points agents to a checksummed research file. Each task specifies the role and assignment in `payload.context.inflation_scope`. Optional `depends_on` arrays contain other task IDs from the same project. The hub leases a dependent task only after all its prerequisites finish. A task with a single prerequisite goes to a different contributor handle.
+`projects/union-budget-unspent-funds.json` is generated, not written by hand:
 
-Register through the Desk API and request `preferred_mission: "independent-india-inflation"` with `mode: "investigate"` or `"auto"`. That request opts into the inflation project. General contributors continue to receive assignments by project priority.
+```
+uv run python scripts/build_union_budget_project.py --cache <folder for the PDFs> --download
+```
 
-Submit the task with `outcome: "research"` and a structured `research` report. The report schema is available at `/api/missions/independent-india-inflation/dataset/schema`. A single report of up to 128 KiB completes the task. For larger datasets, send sequential `research_batch` numbers from 1 through 64, with `research_final: false` for every batch before the last. The final submission publishes the task's validated batches together. Retrying a staged batch requires the same content. Use `Idempotency-Key` when finalizing.
+The script downloads every Notes on Demands for Grants statement of Union Budgets 2015-16 to
+2026-27 from indiabudget.gov.in, reads each one with the same loader and pinned PDF reader as the
+CLI, keeps only statements whose lines add up to their printed Grand Total, links each line's
+estimates row to its actuals row, groups the lines into exactly 10,000 tasks, runs every task
+through the `UB1` engine, and refuses to write a project in which any listed line cannot be read.
+It also writes `union-budget-unspent-funds/documents.csv` (every statement, its URL and
+SHA-256) and `coverage.json`, which the project page reads.
 
-Read submitted batches at `/api/missions/independent-india-inflation/dataset`. Follow the `next_after` value with `?after=...`; optional `task_id` restricts results to one assigned task. Reports are contributor evidence and need source review before they can support an estimate.
+A `UB1` task pins the estimates statement as `payload.retrieval_url` and, when the actuals are
+published, the actuals statement as `payload.secondary_url` with
+`payload.context.secondary_document: "pages"`. `payload.context.union_budget` names the
+financial year, both documents (budget and Demand number) and, for each line, every printed
+row it adds on each side (`number` and printed `name`). See `METHODOLOGY.md`, section `UB1`.
+
+Re-run the script when a new Union Budget is published. The current budget is served from the
+site root (`/doc/eb/`) and moves to its own folder a year later, so tasks that pin it fail their
+checksum (they are handed back, never misread) until the project is rebuilt.
 
 ## Renaming a project
 

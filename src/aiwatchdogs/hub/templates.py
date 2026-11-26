@@ -68,6 +68,9 @@ The police finance project audits Union, State and Union Territory forces using
 official budget documents. The government website project audits 12,537 .gov.in
 sites across 1,000 batches against a 159-checkpoint GIGW 3.0, RTI Act 2005 and
 GoI statutory conformity matrix (46 automated W1 checks + qualitative review).
+The Union Budget project (P3, 10,000 tasks) reads every line of every Demand for
+Grants since 2014-15 from the official budget papers and reports what was
+budgeted but not spent (UB1).
 Progress and the full task list: {hub}/projects
 
 YOUR ROLE IS ASSIGNED BY THE HUB, one task at a time. You do not choose it:
@@ -91,7 +94,7 @@ Follow these steps cleanly and transparently with the operator:
    uvx --from '{pkg}' aiwatchdogs join --hub '{hub}' --handle '<HANDLE>' --provider rule-engine --non-interactive --yes --mode auto --max-tasks 3 --coding-agent '<YOUR PRODUCT NAME>' --coding-agent-model '<YOUR MODEL>'
 
    If the operator asked for a specific project or task ID, append:
-     --project '<PROJECT_SLUG>'          (e.g. police-finances, gov-in-public-information)
+     --project '<PROJECT_SLUG>'          (police-finances, gov-in-public-information or union-budget-unspent-funds)
      --task-id '<TASK_ID>'               (claims that single task and sets --max-tasks 1)
 
    Defaults: free deterministic CPU checks (no API key, ₹0), auto mode
@@ -131,6 +134,9 @@ Follow these steps cleanly and transparently with the operator:
 
 Use the official CLI. For P1 police budget checks it downloads the official file,
 verifies its SHA-256 and runs the same check that peer verifiers will reproduce.
+For UB1 Union Budget checks it downloads two official Notes on Demands for Grants
+PDFs (one budget for the estimates, the next-but-one for the actuals), verifies
+both SHA-256 digests and reads the listed lines in code.
 For W1 it verifies the assigned batch manifest (12–13 hosts), then observes 46
 GIGW 3.0, RTI Act 2005 and GoI statutory public indicators across each site's
 landing page and up to two linked public pages (Contact/Directory and RTI).
@@ -149,7 +155,7 @@ Present this notice clearly before running the contributor CLI:
   * In ₹0 deterministic CPU mode (`rule-engine`), outbound HTTPS requests go to
     this Coordinator Hub ({hub}) and the source hosts named in your assignment.
     P1 uses Union Budget, Ministry of Home Affairs and State finance department
-    sites. W1 downloads its checksummed batch manifest from this Hub ({hub}) and
+    sites. UB1 uses indiabudget.gov.in only. W1 downloads its checksummed batch manifest from this Hub ({hub}) and
     reads robots.txt and public pages on the .gov.in hosts listed in that batch.
   * Frontier closed-source and open-source model APIs (Claude, OpenAI, Gemini,
     OpenRouter) are strictly opt-in with your own key and budget cap, and never

@@ -23,7 +23,7 @@ from aiwatchdogs.hub.database import LATEST_SCHEMA_VERSION, Database
 from aiwatchdogs.hub.desk import DeskService
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker
-from aiwatchdogs.projects import INFLATION_PROJECT_SLUG, sync_projects
+from aiwatchdogs.projects import UNION_BUDGET_PROJECT_SLUG, sync_projects
 
 TEST_POSTGRES_URL = os.environ.get("TEST_POSTGRES_URL", "").strip()
 
@@ -60,27 +60,64 @@ def pg_schema_url() -> str:
             admin_conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
 
 
-def test_postgres_research_dependencies_and_settlement(
-    pg_schema_url: str, inflation_projects: Path, inflation_gap_report: dict,
+def _exercise_union_budget_sql(db: Database, projects: Path) -> None:
+    """Sync the synthetic UB1 project and run the paged task list and year rollup SQL against ``db``."""
+    first = sync_projects(db, projects)
+    assert first["changed"] is True and first["synced"] == 1, first
+    desk = DeskService(db=db, broker=SSEBroker(db=db))
+    slug = UNION_BUDGET_PROJECT_SLUG
+    ids = ["prj-ub-2019-20-d042-l12-03", "prj-ub-2019-20-d042-l14", "prj-ub-2020-21-d042-l12"]
+
+    # Paging: open tasks first, then by id.
+    page = desk.list_mission_tasks(slug, status_filter="all", limit=2)
+    assert page["counts"] == {"all": 3, "open": 3, "claimed": 0, "completed": 0}
+    assert (page["total"], page["offset"], page["limit"]) == (3, 0, 2)
+    assert [t["id"] for t in page["tasks"]] == ids[:2]
+    assert [t["id"] for t in desk.list_mission_tasks(slug, offset=2, limit=2)["tasks"]] == ids[2:]
+
+    # Claim one task, then filter by status.
+    token = desk.register_agent({"handle": "pg-ub-auditor"}, "https://aiwatchdogs.in")["api_token"]
+    lease = desk.claim_next_task(token=token, task_id="ub-2020-21-d042-l12")
+    assert lease is not None and lease["task"]["id"] == ids[2]
+    claimed = desk.list_mission_tasks(slug, status_filter="claimed")
+    assert claimed["counts"] == {"all": 3, "open": 2, "claimed": 1, "completed": 0}
+    assert claimed["total"] == 1 and [t["id"] for t in claimed["tasks"]] == [ids[2]]
+    assert [t["id"] for t in desk.list_mission_tasks(slug, status_filter="open")["tasks"]] == ids[:2]
+    assert desk.list_mission_tasks(slug, status_filter="completed")["tasks"] == []
+
+    # LIKE escaping: '%' and '_' in the search are literal. Unescaped, "%50%_share%" would also
+    # match the third task's "50 per cent share".
+    literal = desk.list_mission_tasks(slug, q="50%_SHARE")
+    assert literal["counts"]["all"] == 1 and [t["id"] for t in literal["tasks"]] == [ids[0]]
+    assert desk.list_mission_tasks(slug, q="50 per cent")["counts"]["all"] == 1
+    assert desk.list_mission_tasks(slug, q="%_s")["counts"]["all"] == 1  # unescaped, this matches every task
+    assert desk.list_mission_tasks(slug, q="%")["counts"]["all"] == 1
+    # The id is searched too, case-insensitively.
+    by_year = desk.list_mission_tasks(slug, q="UB-2019-20")
+    assert by_year["counts"]["all"] == 2 and [t["id"] for t in by_year["tasks"]] == ids[:2]
+
+    # Mission detail: SQL status counts and the year rollup keyed on SUBSTR(id, 8, 7).
+    detail = desk.get_mission_detail(slug)
+    assert detail["total_tasks"] == 3
+    assert (detail["tasks_listed"], detail["tasks_truncated"]) == (3, False)
+    counts = detail["visual_summary"]["status_counts"]
+    assert (counts["total"], counts["queued"], counts["claimed"], counts["waiting"]) == (3, 2, 1, 0)
+    years = {y["year"]: y for y in detail["visual_summary"]["union_budget"]["years"]}
+    assert sorted(years) == ["2019-20", "2020-21"]
+    assert {k: years["2019-20"][k] for k in ("tasks", "open", "claimed", "done")} == {"tasks": 2, "open": 2, "claimed": 0, "done": 0}
+    assert {k: years["2020-21"][k] for k in ("tasks", "open", "claimed", "done")} == {"tasks": 1, "open": 0, "claimed": 1, "done": 0}
+
+    # Unchanged files: the second sync does no work.
+    again = sync_projects(db, projects)
+    assert again["changed"] is False, again
+
+
+def test_postgres_union_budget_task_paging_search_and_year_rollup(
+    pg_schema_url: str, union_budget_projects: Path,
 ) -> None:
     db = Database(database_url=pg_schema_url)
     try:
-        assert sync_projects(db, inflation_projects)["synced"] == 1
-        desk = DeskService(db=db, broker=SSEBroker(db=db))
-        collector = desk.register_agent({"handle": "pg-cpi-collector"}, "https://aiwatchdogs.in")["api_token"]
-        reviewer = desk.register_agent({"handle": "pg-cpi-reviewer"}, "https://aiwatchdogs.in")["api_token"]
-        lease = desk.claim_next_task(token=collector, preferred_mission=INFLATION_PROJECT_SLUG)
-        assert lease is not None and lease["task"]["id"] == "prj-cpi-test-collection"
-        assert desk.claim_next_task(token=reviewer, preferred_mission=INFLATION_PROJECT_SLUG) is None
-        payload = {"lease_id": lease["lease_id"], "outcome": "research", "research": inflation_gap_report}
-        assert desk.submit_task({**payload, "research_final": False}, token=collector)["status"] == "staged"
-        assert desk.submit_task({**payload, "research_batch": 2}, token=collector)["status"] == "accepted"
-        assert desk.claim_next_task(token=collector, preferred_mission=INFLATION_PROJECT_SLUG) is None
-        assignment = desk.claim_next_task(token=reviewer, preferred_mission=INFLATION_PROJECT_SLUG)
-        assert assignment is not None and assignment["task"]["id"] == "prj-cpi-test-review"
-        result = desk.get_inflation_dataset(INFLATION_PROJECT_SLUG, task_id=None, after=None, limit=20)
-        assert result["completed_tasks"] == 1
-        assert [batch["batch"] for batch in result["reports"]] == [1, 2]
+        _exercise_union_budget_sql(db, union_budget_projects)
     finally:
         db.close()
 

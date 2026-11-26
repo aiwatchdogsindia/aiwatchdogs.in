@@ -216,7 +216,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
         claims = list(pool.map(claim, agents))
     assert None not in claims
     assert len({c[0] for c in claims if c}) == 12  # twelve different tasks, no double hand-out
-    # Agents that join the ordinary way are only given audit work, never another project's research tasks.
+    # Agents that join the ordinary way are given P1 work (priority 1) first, never a lower-priority project's tasks.
     assert all(c and c[0].startswith(("prj-police-", "prj-metro-police-", "tsk-pv-")) for c in claims)
     # Peer checks come first in auto mode: the two waiting ones are taken, by two different agents.
     assert sorted(c[1] for c in claims if c) == ["auditor"] * 10 + ["peer_verifier"] * 2

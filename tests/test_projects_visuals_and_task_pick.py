@@ -20,7 +20,7 @@ from aiwatchdogs.connectors import loader
 from aiwatchdogs.core.safety import compute_sha256
 from aiwatchdogs.engines import gov_pages
 from aiwatchdogs.hub.app import create_app
-from aiwatchdogs.projects import INFLATION_PROJECT_SLUG
+from aiwatchdogs.projects import UNION_BUDGET_PROJECT_SLUG
 from test_projects import _project
 
 PROJECTS_DIR = Path(__file__).resolve().parents[1] / "projects"
@@ -95,16 +95,6 @@ def _sample_p1_finding(
         "citations": [{"source_ref": "https://www.indiabudget.gov.in/budget2024-25/doc/eb/sbe51.pdf", "page": 1}],
         "benign_explanations": ["Capital expenditure may be re-phased across financial years due to tendering timelines."],
         "suggested_authority": "Ministry of Home Affairs, Government of India",
-    }
-
-
-def _inflation_gap_report() -> dict[str, Any]:
-    return {
-        "summary": "Documented source availability for the assigned stratum.",
-        "sources": [],
-        "observations": [],
-        "gaps": [{"reason": "historical_panel_unavailable", "detail": "Archive lookup pending additional records."}],
-        "deliverable": "Documented gap report for CPI1 stratum verification.",
     }
 
 
@@ -265,7 +255,7 @@ def test_specific_task_id_claiming_overrides_priority_and_enforces_all_guards(
 
 
 @pytest.mark.production_missions
-def test_specific_task_id_w1_and_cpi1_prereq_guards(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_specific_task_id_w1_guards_and_p3_direct_claims(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(PROJECTS_DIR))
     monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
 
@@ -294,46 +284,35 @@ def test_specific_task_id_w1_and_cpi1_prereq_guards(tmp_path: Path, monkeypatch:
         assert r_w1_ok.status_code == 200
         assert r_w1_ok.json()["task"]["id"] == "prj-gov-in-public-information-0005"
 
-        # CPI1 review task with unmet depends_on -> HTTP 409
-        r_cpi_wait = client.post(
-            "/api/desk/next",
-            headers=h1,
-            json={"task_id": "prj-cpi-compile-monthly-index"},
-        )
-        assert r_cpi_wait.status_code == 409
-        assert "prerequisite" in r_cpi_wait.json()["detail"].lower()
-
-        # CPI1 open collection task claimed directly by task_id -> HTTP 200
-        r_cpi_open = client.post(
+        # P3 (UB1) tasks have no prerequisites: any task is claimable directly, by bare id ...
+        r_p3_bare = client.post(
             "/api/desk/next",
             headers=h2,
-            json={"task_id": "cpi-kerala-rural"},
+            json={"task_id": "ub-2014-15-d001-l3"},
         )
-        assert r_cpi_open.status_code == 200
-        assert r_cpi_open.json()["task"]["id"] == "prj-cpi-kerala-rural"
+        assert r_p3_bare.status_code == 200, r_p3_bare.text
+        assert r_p3_bare.json()["task"]["id"] == "prj-ub-2014-15-d001-l3"
+        assert r_p3_bare.json()["task"]["mission_slug"] == UNION_BUDGET_PROJECT_SLUG
+        assert r_p3_bare.json()["task"]["methodology_code"] == "UB1"
 
-        # Simulate completing cpi-evidence-coverage-review by a2, then check single-prereq independent reviewer rule
-        with app.state.db.transaction() as conn:
-            conn.execute(
-                "UPDATE tasks SET status = 'completed', claimed_by_agent_id = ?, claimed_by_handle = ? "
-                "WHERE id = 'prj-cpi-evidence-coverage-review'",
-                (a2["agent_id"], a2["handle"]),
-            )
-        r_same_agent = client.post(
-            "/api/desk/next",
-            headers=h2,
-            json={"task_id": "prj-cpi-compile-monthly-index"},
-        )
-        assert r_same_agent.status_code == 409
-        assert "independent" in r_same_agent.json()["detail"].lower()
-
-        r_other_agent = client.post(
+        # ... and by its `prj-` id, including the last task of the last financial year.
+        r_p3_prj = client.post(
             "/api/desk/next",
             headers=h1,
-            json={"task_id": "prj-cpi-compile-monthly-index"},
+            json={"task_id": "prj-ub-2025-26-d102-s03"},
         )
-        assert r_other_agent.status_code == 200
-        assert r_other_agent.json()["task"]["id"] == "prj-cpi-compile-monthly-index"
+        assert r_p3_prj.status_code == 200, r_p3_prj.text
+        assert r_p3_prj.json()["task"]["id"] == "prj-ub-2025-26-d102-s03"
+
+        # The ordinary claim guards still apply to P3 tasks.
+        a3 = _register(client, "guard-node-3")
+        r_p3_taken = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": a3["api_token"]},
+            json={"task_id": "prj-ub-2014-15-d001-l3"},
+        )
+        assert r_p3_taken.status_code == 409
+        assert "already claimed" in r_p3_taken.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +403,7 @@ def test_cli_and_runner_task_id_caps_to_one_and_handles_404_409_gracefully(
 
 
 # ---------------------------------------------------------------------------
-# 3. Templates (`/join.txt`, `/join.sh`, `independent-inflation-join.txt`)
+# 3. Templates (`/join.txt`, `/join.sh`)
 # ---------------------------------------------------------------------------
 
 
@@ -438,14 +417,12 @@ def test_join_templates_document_project_and_task_id(tmp_path: Path) -> None:
         assert "demo" not in txt.lower()
         assert "sample" not in txt.lower()
 
-    cpi_join = (REPO_ROOT / "web" / "public" / "independent-inflation-join.txt").read_text(encoding="utf-8")
-    assert '"task_id"' in cpi_join
-    assert "HTTP 404" in cpi_join
-    assert "HTTP 409" in cpi_join
+    # The inflation project's own join guide is gone; every project uses /join.txt.
+    assert not (REPO_ROOT / "web" / "public" / "independent-inflation-join.txt").exists()
 
 
 # ---------------------------------------------------------------------------
-# 4. Project-Scoped Leaderboards & `visual_summary` Across P1, W1, CPI1
+# 4. Project-Scoped Leaderboards & `visual_summary` Across P1, W1, UB1
 # ---------------------------------------------------------------------------
 
 
@@ -505,33 +482,46 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
             "rti_unavailable",
         }
 
-        cpi_0 = client.get(f"/api/missions/{INFLATION_PROJECT_SLUG}").json()
-        assert cpi_0["project_code"] == "P3"
-        vs_cpi = cpi_0["visual_summary"]
-        assert vs_cpi["project_code"] == "P3"
-        assert vs_cpi["methodology_code"] == "CPI1"
-        assert vs_cpi["status_counts"]["queued"] == 96
-        assert vs_cpi["status_counts"]["waiting"] == 4
-        cpi_roles = {r["role"]: r for r in vs_cpi["inflation"]["roles"]}
-        assert cpi_roles["collection"]["total"] == 71
-        assert cpi_roles["method"]["total"] == 13
-        assert cpi_roles["specialist"]["total"] == 12
-        assert cpi_roles["review"]["total"] == 4
-        strata_by_code = {s["state_code"]: s for s in vs_cpi["inflation"]["strata"]}
-        assert len(strata_by_code) == 36
-        assert strata_by_code["04"]["state_name"] == "Chandigarh"
-        assert strata_by_code["04"]["rural_status"] is None
-        assert strata_by_code["04"]["urban_status"] == "queued"
-        assert strata_by_code["04"]["urban_task_id"] == "prj-cpi-chandigarh-urban"
-        assert strata_by_code["32"]["state_name"] == "Kerala"
-        assert strata_by_code["32"]["rural_task_id"] == "prj-cpi-kerala-rural"
-        assert strata_by_code["32"]["urban_task_id"] == "prj-cpi-kerala-urban"
+        coverage = json.loads((PROJECTS_DIR / UNION_BUDGET_PROJECT_SLUG / "coverage.json").read_text(encoding="utf-8"))
+        p3_0 = client.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}").json()
+        assert p3_0["project_code"] == "P3"
+        assert p3_0["total_tasks"] == 10000
+        # A project this large lists only its first 200 tasks; the counts still cover all of them.
+        assert len(p3_0["tasks"]) == 200
+        assert p3_0["tasks_listed"] == 200
+        assert p3_0["tasks_truncated"] is True
+        assert all("depends_on" not in t for t in p3_0["tasks"])
+        vs_p3 = p3_0["visual_summary"]
+        assert vs_p3["project_code"] == "P3"
+        assert vs_p3["methodology_code"] == "UB1"
+        assert "inflation" not in vs_p3
+        assert vs_p3["status_counts"]["total"] == 10000
+        assert vs_p3["status_counts"]["queued"] == 10000
+        assert vs_p3["status_counts"]["waiting"] == 0
+        assert vs_p3["status_counts"]["completed"] == 0
+        ub_0 = vs_p3["union_budget"]
+        assert ub_0["lines"] == coverage["lines"] > 0
+        assert ub_0["statements"] == coverage["statements_used"]
+        assert ub_0["documents_url"] == f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}/documents.csv"
+        assert ub_0["coverage_url"] == f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}/coverage.json"
+        assert [y["year"] for y in ub_0["years"]] == coverage["financial_years"]
+        assert len(ub_0["years"]) == 12
+        assert sum(y["tasks"] for y in ub_0["years"]) == 10000
+        for y in ub_0["years"]:
+            assert y["tasks"] == coverage["by_year"][y["year"]]["tasks"] == y["open"]
+            assert y["lines"] == coverage["by_year"][y["year"]]["lines"]
+            assert y["with_actuals"] == coverage["by_year"][y["year"]]["with_actuals"]
+            assert (y["done"], y["claimed"], y["leads"], y["below_estimate_cr"]) == (0, 0, 0, 0.0)
+        years_0 = {y["year"]: y for y in ub_0["years"]}
+        assert years_0["2015-16"]["compares"] == "revised"  # no actuals traced for 2015-16
+        assert years_0["2014-15"]["compares"] == "actual"
+        assert ub_0["top_leads"] == []
 
         # ---- Populate real P1 activity (2 contributors + 1 finding + 1 cleared + 1 verification) ----
         p1_a = _register(client, "p1-auditor-alpha", coding_agent="Antigravity", coding_agent_model="Gemini 3")
         p1_b = _register(client, "p1-verifier-beta", coding_agent="Claude Code", coding_agent_model="claude-opus")
         w1_a = _register(client, "w1-observer-one", coding_agent="Codex", coding_agent_model="gpt-5")
-        cpi_a = _register(client, "cpi-researcher-one", coding_agent="Cursor", coding_agent_model="sonnet-4")
+        ub_a = _register(client, "ub-auditor-one", coding_agent="Cursor", coding_agent_model="sonnet-4")
 
         l_p1_1 = client.post(
             "/api/desk/next",
@@ -616,22 +606,23 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         w1_res = w1_runner.execute_task(l_w1)
         assert w1_res["status"] == "completed", w1_res
 
-        # ---- Populate real CPI1 research report ----
-        l_cpi = client.post(
+        # ---- Populate a UB1 check: a claimed task settled as cleared (no network, no engine run) ----
+        l_ub = client.post(
             "/api/desk/next",
-            headers={"X-Agent-Token": cpi_a["api_token"]},
-            json={"task_id": "prj-cpi-kerala-rural"},
-        ).json()
-        sub_cpi = client.post(
+            headers={"X-Agent-Token": ub_a["api_token"]},
+            json={"task_id": "prj-ub-2019-20-d040-l7"},
+        )
+        assert l_ub.status_code == 200, l_ub.text
+        sub_ub = client.post(
             "/api/desk/submit",
-            headers={"X-Agent-Token": cpi_a["api_token"]},
+            headers={"X-Agent-Token": ub_a["api_token"]},
             json={
-                "lease_id": l_cpi["lease_id"],
-                "outcome": "research",
-                "research": _inflation_gap_report(),
+                "lease_id": l_ub.json()["lease_id"],
+                "outcome": "cleared",
+                "metrics": {"records_scanned": 1, "cleared_count": 1, "monetary_audited_inr": 10_000_000.0},
             },
         )
-        assert sub_cpi.status_code == 200, sub_cpi.text
+        assert sub_ub.status_code == 200, sub_ub.text
 
         # ---- Assert P1 detail: scoped leaderboard, hourly filter, divergences, groups ----
         p1_after = client.get("/api/missions/police-finances").json()
@@ -648,7 +639,7 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         p1_hr_handles = [c["handle"] for c in p1_after["contributors_hour"]]
         assert set(p1_all_handles) == {"p1-auditor-alpha", "p1-verifier-beta"}
         assert "w1-observer-one" not in p1_all_handles
-        assert "cpi-researcher-one" not in p1_all_handles
+        assert "ub-auditor-one" not in p1_all_handles
         assert p1_hr_handles == ["p1-auditor-alpha"]
         alpha_row = p1_after["contributors_all"][0]
         assert alpha_row["score"] == 10
@@ -693,18 +684,21 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         q10 = next(row for row in wa["matrix"] if row["id"] == "GIGW-Q-10")
         assert q10["observed_pct"] is not None and q10["observed_pct"] > 0
 
-        # ---- Assert CPI1 detail: strata status, roles, batches_submitted, leaderboard ----
-        cpi_after = client.get(f"/api/missions/{INFLATION_PROJECT_SLUG}").json()
-        assert [c["handle"] for c in cpi_after["contributors_all"]] == ["cpi-researcher-one"]
-        assert cpi_after["contributors_all"][0]["score"] == 1
-        assert cpi_after["contributors_all"][0]["tasks_completed"] == 1
-        inf = cpi_after["visual_summary"]["inflation"]
-        assert inf["batches_submitted"] == 1
-        inf_roles = {r["role"]: r for r in inf["roles"]}
-        assert inf_roles["collection"]["done"] == 1
-        inf_strata = {s["state_code"]: s for s in inf["strata"]}
-        assert inf_strata["32"]["rural_status"] == "completed"
-        assert inf_strata["32"]["urban_status"] == "queued"
+        # ---- Assert UB1 detail: year progress, status counts, project-scoped leaderboard ----
+        p3_after = client.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}").json()
+        assert [c["handle"] for c in p3_after["contributors_all"]] == ["ub-auditor-one"]
+        assert p3_after["contributors_all"][0]["tasks_completed"] == 1
+        assert p3_after["total_tasks"] == 10000
+        assert p3_after["completed_tasks"] == 1
+        assert p3_after["visual_summary"]["status_counts"]["total"] == 10000
+        assert p3_after["visual_summary"]["status_counts"]["completed"] == 1
+        assert p3_after["visual_summary"]["status_counts"]["queued"] == 9999
+        ub_after = p3_after["visual_summary"]["union_budget"]
+        years_after = {y["year"]: y for y in ub_after["years"]}
+        assert years_after["2019-20"]["done"] == 1
+        assert years_after["2019-20"]["open"] == coverage["by_year"]["2019-20"]["tasks"] - 1
+        assert sum(y["done"] for y in ub_after["years"]) == 1
+        assert ub_after["leads"] == 0
 
 
 def test_matrix_rollup_enforces_direct_checks_and_per_host_applicability() -> None:

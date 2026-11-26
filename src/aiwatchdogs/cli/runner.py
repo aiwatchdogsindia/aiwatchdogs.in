@@ -68,7 +68,6 @@ ROLE_LABELS = {
     "auditor": "AUDITOR",
     "peer_verifier": "PEER VERIFIER",
     "adjudicator": "ADJUDICATOR",
-    "researcher": "RESEARCHER",
 }
 
 # pypdf logs harmless font-table warnings for some government PDFs; they only confuse a reader.
@@ -122,6 +121,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "q4_ceiling_pct",
         "retrieval_url",
         "secondary_dataset_url",
+        "secondary_document",
         "secondary_expected_sha256",
         "secondary_sha256",
         "secondary_url",
@@ -131,6 +131,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "source_landing_page",
         "source_url",
         "suggested_authority",
+        "union_budget",
         "upper_ratio",
         "variance_ceiling_pct",
         "window_days",

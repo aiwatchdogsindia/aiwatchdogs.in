@@ -14,7 +14,9 @@ existing record (tasks, findings, history) to the new slug instead of starting a
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import inspect
 import json
 import logging
 import math
@@ -23,7 +25,6 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -40,7 +41,7 @@ TASK_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 CANONICAL_PROJECT_CODES: dict[str, str] = {
     "police-finances": "P1",
     "gov-in-public-information": "P2",
-    "independent-india-inflation": "P3",
+    "union-budget-unspent-funds": "P3",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -93,12 +94,14 @@ REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisd
 MAX_FORMER_SLUGS = 10
 _COLUMN_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
 MAX_PART_WINDOW_LINES = 12
-INFLATION_PROJECT_SLUG = "independent-india-inflation"
-INFLATION_METHODOLOGY = "CPI1"
-MAX_LARGE_PROJECT_TASKS = 100
+UNION_BUDGET_PROJECT_SLUG = "union-budget-unspent-funds"
+UNION_BUDGET_METHODOLOGY = "UB1"
 MAX_WEBSITE_PROJECT_TASKS = 1000
+MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
 SYNC_STATE_KEY = "community_projects"
+# Set once a sync has accepted every project file as it is on disk: the same files need no second look.
+FILES_STATE_KEY = "community_project_files"
 
 
 @dataclass
@@ -132,19 +135,79 @@ def default_projects_dir() -> Path:
 def _known_methodologies() -> set[str]:
     from aiwatchdogs.engines.registry import _ENGINE_DISPATCH
 
-    return set(_ENGINE_DISPATCH) | {INFLATION_METHODOLOGY, "W1"}
+    return set(_ENGINE_DISPATCH) | {"W1"}
+
+
+# Every accusatory-term pattern needs one of these letter runs to match. Plain printable ASCII is
+# left unchanged by the lint's normalisation, so text without any of them cannot match and is not
+# scanned further. A project with ten thousand tasks has ten thousand titles to check.
+_TERM_STEMS = ("scam", "corrupt", "brib", "fraud", "kickback", "guilty", "stolen", "rigged", "crook", "loot", "embezzl")
+
+
+@functools.lru_cache(maxsize=4096)
+def _scan_terms_cached(text: str) -> tuple[str, ...]:
+    if text.isascii() and text.isprintable():
+        lowered = text.lower()
+        if not any(stem in lowered for stem in _TERM_STEMS):
+            return ()
+    return tuple(scan_forbidden_terms(text))
 
 
 def _scan_terms(text: str) -> list[str]:
-    return scan_forbidden_terms(text or "")
+    return list(_scan_terms_cached(text or ""))
 
 
-def _is_https(url: Any) -> bool:
+@functools.lru_cache(maxsize=8192)
+def _is_https_text(url: str) -> bool:
     try:
         validate_safe_http_url(url, require_https=True, allow_private=False)
         return True
     except ValueError:
         return False
+
+
+def _is_https(url: Any) -> bool:
+    if isinstance(url, str):
+        return _is_https_text(url)
+    try:
+        validate_safe_http_url(url, require_https=True, allow_private=False)
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
+def _has_personal_data(value: Any) -> tuple[bool, list[str]]:
+    """``contains_pii`` over a project, checking each distinct (field, value) pair once.
+
+    The check looks at one string at a time, and at one field name with its value, so a pair
+    that occurs ten thousand times needs checking only once.
+    """
+    pairs: dict[tuple[str, Any], None] = {}
+    bare: dict[Any, None] = {}
+
+    def walk(item: Any, key: str | None, depth: int) -> None:
+        if depth > 32:
+            return
+        if isinstance(item, dict):
+            for k, v in item.items():
+                if isinstance(k, str):
+                    walk(v, k, depth + 1)
+                else:
+                    walk(v, None, depth + 1)
+        elif isinstance(item, (list, tuple, set)):
+            for v in item:
+                walk(v, key, depth + 1)
+        elif isinstance(item, (str, int, float, bool)) or item is None:
+            try:
+                if key is None:
+                    bare[item] = None
+                else:
+                    pairs[(key, item)] = None
+            except TypeError:
+                pass
+
+    walk(value, None, 0)
+    return contains_pii([{key: item} for key, item in pairs] + list(bare))
 
 
 def _validate_github_immutability(url: str) -> str | None:
@@ -337,15 +400,12 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     if not isinstance(planned, list):
         errors.append("'planned_tasks' must be a list.")
         planned = []
-    is_inflation = slug == INFLATION_PROJECT_SLUG and methodology == INFLATION_METHODOLOGY
-    if (slug == INFLATION_PROJECT_SLUG or methodology == INFLATION_METHODOLOGY) and not is_inflation:
-        errors.append(f"Methodology {INFLATION_METHODOLOGY} is reserved for '{INFLATION_PROJECT_SLUG}'.")
     is_website = slug == "gov-in-public-information" and methodology == "W1"
     if (slug == "gov-in-public-information" or methodology == "W1") and not is_website:
         errors.append("Methodology W1 is reserved for gov-in-public-information.")
-    if is_inflation and len(tasks) + len(planned) > MAX_LARGE_PROJECT_TASKS:
+    if len(tasks) + len(planned) > MAX_PROJECT_TASKS:
         errors.append(
-            f"A project can list at most {MAX_LARGE_PROJECT_TASKS} tasks ('tasks' and 'planned_tasks' together)."
+            f"A project can list at most {MAX_PROJECT_TASKS:,} tasks ('tasks' and 'planned_tasks' together)."
         )
     if is_website and len(tasks) + len(planned) > MAX_WEBSITE_PROJECT_TASKS:
         errors.append(
@@ -370,7 +430,6 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         errors.append("A project with no tasks yet must use \"status\": \"needs_data\".")
 
     seen_task_ids: set[str] = set()
-    dependencies: dict[str, list[str]] = {}
     for i, task in enumerate(tasks):
         where = f"tasks[{i}]"
         if not isinstance(task, dict):
@@ -398,28 +457,14 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(f"{where}.methodology_code must be one of {sorted(known)}.")
         if (code == "W1") != is_website or (is_website and task.get("financial_quantity_type") != "public_website_information"):
             errors.append(f"{where} must use the website audit project, methodology and quantity type together.")
-        if is_inflation and (code != INFLATION_METHODOLOGY or task.get("financial_quantity_type") != "consumer_prices"):
-            errors.append(f"{where} must use {INFLATION_METHODOLOGY} and the consumer_prices quantity type.")
-        elif not is_inflation and code == INFLATION_METHODOLOGY:
-            errors.append(f"{where}.methodology_code {INFLATION_METHODOLOGY} is reserved for '{INFLATION_PROJECT_SLUG}'.")
+        if code == UNION_BUDGET_METHODOLOGY and task.get("financial_quantity_type") != "budget_and_treasury_expenditure":
+            errors.append(f"{where} must use the budget_and_treasury_expenditure quantity type with {UNION_BUDGET_METHODOLOGY}.")
         if "depends_on" in task:
-            deps = task["depends_on"]
-            if not is_inflation:
-                errors.append(f"{where}.depends_on is available to {INFLATION_METHODOLOGY} tasks.")
-            elif (
-                not isinstance(deps, list)
-                or len(deps) > MAX_LARGE_PROJECT_TASKS
-                or any(not isinstance(dep, str) or not TASK_ID_RE.fullmatch(dep) or len(dep) > 60 for dep in deps)
-            ):
-                errors.append(f"{where}.depends_on must be a list of task IDs in this project.")
-            elif isinstance(tid, str):
-                dependencies[tid] = deps
+            errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
         if not isinstance(payload, dict):
             errors.append(f"{where}.payload is required.")
             continue
-        if is_inflation and "depends_on" in payload:
-            errors.append(f"{where}.depends_on belongs on the task, outside of 'payload'.")
         url = payload.get("retrieval_url")
         if not _is_https(url):
             errors.append(f"{where}.payload.retrieval_url must be a public https:// link to the exact file.")
@@ -468,14 +513,21 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                     )
                 if code == "P1":
                     _validate_p1_context(ctx, where, errors)
+                # Reading a second PDF page by page is how UB1 compares two budgets; no other check does.
+                reads_two = ctx.get("secondary_document")
+                if reads_two is not None and (code != UNION_BUDGET_METHODOLOGY or reads_two != "pages"):
+                    errors.append(f"{where}.payload.context.secondary_document is only 'pages', and only for {UNION_BUDGET_METHODOLOGY}.")
+                if code == UNION_BUDGET_METHODOLOGY and (reads_two == "pages") != (sec_url not in (None, "")):
+                    errors.append(
+                        f"{where} must set payload.secondary_url and context.secondary_document 'pages' together."
+                    )
+        if code == UNION_BUDGET_METHODOLOGY:
+            from aiwatchdogs.engines.union_budget import validate_context
 
-    for tid, deps in dependencies.items():
-        if len(deps) != len(set(deps)) or any(dep not in seen_task_ids for dep in deps):
-            errors.append(f"Task '{tid}' must list distinct prerequisites from this project's tasks.")
-    try:
-        TopologicalSorter(dependencies).prepare()
-    except CycleError:
-        errors.append("Research task prerequisites must be acyclic.")
+            errors.extend(validate_context(ctx, where))
+            spec = ctx.get("union_budget") if isinstance(ctx, dict) else None
+            if isinstance(spec, dict) and (spec.get("actuals_document") is not None) != (sec_url not in (None, "")):
+                errors.append(f"{where} must pin the actuals statement as payload.secondary_url exactly when it names one.")
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -506,22 +558,82 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     pii_payload = dict(data)
     if isinstance(posted_by, dict):
         pii_payload["posted_by"] = {k: v for k, v in posted_by.items() if k != "url"}
-    has_pii, tags = contains_pii(pii_payload)
+    has_pii, tags = _has_personal_data(pii_payload)
     if has_pii:
         errors.append(f"Remove personal data from the project ({', '.join(sorted(set(tags)))}).")
 
     return errors
 
 
-def load_project_files(directory: Path | None = None) -> list[ProjectFile]:
-    """Load every ``*.json`` project (files starting with ``_`` are templates and are skipped)."""
+def _project_paths(root: Path) -> list[Path]:
+    return [path for path in sorted(root.glob("*.json")) if not path.name.startswith("_")]
+
+
+def _validation_code_digest() -> str:
+    """A digest of the code that decides whether a project file is valid."""
+    from aiwatchdogs.core import safety
+    from aiwatchdogs.engines import union_budget
+
+    digest = hashlib.sha256()
+    for module in (inspect.getmodule(validate_project), safety, union_budget):
+        source = inspect.getsourcefile(module) if module is not None else None
+        if source and Path(source).exists():
+            digest.update(Path(source).read_bytes())
+    return digest.hexdigest()
+
+
+def files_fingerprint(directory: Path | None = None) -> str:
+    """A digest of the project files as they are on disk, and of the code that validates them.
+
+    Reading and hashing the files is cheap; validating ten thousand tasks is not. The same bytes
+    under the same code always validate and sync the same way, so a match means there is no work.
+    """
     root = directory or default_projects_dir()
-    files: list[ProjectFile] = []
+    digest = hashlib.sha256()
+    digest.update(f"files-v1:sync-v{SYNC_LOGIC_VERSION}:{_validation_code_digest()}:".encode())
+    if root.is_dir():
+        for path in _project_paths(root):
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                raw = b""
+            digest.update(path.name.encode())
+            digest.update(len(raw).to_bytes(8, "big"))
+            digest.update(raw)
+    return digest.hexdigest()
+
+
+def _fingerprint_int(hex_digest: str) -> int:
+    # seed_state.version is a 32-bit INTEGER; keep the fingerprint inside that range.
+    return int(hex_digest[:7], 16)
+
+
+# One validated load per process and per state of the files. Callers must not change the result.
+_LOADED: dict[str, tuple[str, list[ProjectFile]]] = {}
+
+
+def load_project_files(directory: Path | None = None) -> list[ProjectFile]:
+    """Load every ``*.json`` project (files starting with ``_`` are templates and are skipped).
+
+    The validated result is kept for the life of the process and reused while the files are
+    unchanged. Treat it as read-only.
+    """
+    root = directory or default_projects_dir()
     if not root.is_dir():
-        return files
-    for path in sorted(root.glob("*.json")):
-        if path.name.startswith("_"):
-            continue
+        return []
+    key = str(root.resolve())
+    state = files_fingerprint(root)
+    cached = _LOADED.get(key)
+    if cached is not None and cached[0] == state:
+        return cached[1]
+    files = _load_and_validate(root)
+    _LOADED[key] = (state, files)
+    return files
+
+
+def _load_and_validate(root: Path) -> list[ProjectFile]:
+    files: list[ProjectFile] = []
+    for path in _project_paths(root):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
@@ -574,26 +686,67 @@ def former_slugs(data: Any) -> list[str]:
     return [x for x in raw if isinstance(x, str) and SLUG_RE.match(x) and len(x) <= 64]
 
 
-def slug_aliases(directory: Path | None = None) -> dict[str, str]:
-    """Map every earlier slug to the project's current slug, so old links keep working."""
+def files_already_accepted(db: Any, directory: Path | None = None) -> bool:
+    """Has a sync already accepted every project file exactly as it is on disk now?"""
+    root = directory or default_projects_dir()
+    if not root.is_dir():
+        return False
+    state = _fingerprint_int(files_fingerprint(root))
+    try:
+        with db.read() as conn:
+            row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (FILES_STATE_KEY,)).fetchone()
+    except Exception:  # an unreadable state table only costs a full validation
+        return False
+    return row is not None and int(row["version"]) == state
+
+
+_HEADERS: dict[str, tuple[str, list[dict[str, Any]]]] = {}
+
+
+def _accepted_headers(root: Path) -> list[dict[str, Any]]:
+    """The slug, earlier slugs and project code of every file, read without validating again."""
+    key = str(root.resolve())
+    state = files_fingerprint(root)
+    cached = _HEADERS.get(key)
+    if cached is not None and cached[0] == state:
+        return cached[1]
+    headers: list[dict[str, Any]] = []
+    for path in _project_paths(root):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        headers.append({k: data.get(k) for k in ("slug", "formerly", "project_code")})
+    _HEADERS[key] = (state, headers)
+    return headers
+
+
+def _valid_headers(directory: Path | None, db: Any | None) -> list[dict[str, Any]]:
+    root = directory or default_projects_dir()
+    if db is not None and files_already_accepted(db, root):
+        return _accepted_headers(root)
+    return [pf.data for pf in load_project_files(root) if not pf.errors and pf.slug]
+
+
+def slug_aliases(directory: Path | None = None, *, db: Any | None = None) -> dict[str, str]:
+    """Map every earlier slug to the project's current slug, so old links keep working.
+
+    With ``db``, files the hub has already accepted are read without being validated again.
+    """
     out: dict[str, str] = {}
-    for pf in load_project_files(directory):
-        if pf.errors or not pf.slug:
+    for data in _valid_headers(directory, db):
+        slug = data.get("slug")
+        if not isinstance(slug, str) or not slug:
             continue
-        for old in former_slugs(pf.data):
-            out.setdefault(old, pf.slug)
+        for old in former_slugs(data):
+            out.setdefault(old, slug)
     return out
 
 
-def project_codes_by_slug(directory: Path | None = None) -> dict[str, str]:
+def project_codes_by_slug(directory: Path | None = None, *, db: Any | None = None) -> dict[str, str]:
     """Map every project slug to its sequential public project code (P1, P2, P3, ...)."""
     out = dict(CANONICAL_PROJECT_CODES)
-    for pf in load_project_files(directory):
-        if pf.errors or not pf.slug:
-            continue
-        code = pf.data.get("project_code")
-        if isinstance(code, str) and PROJECT_CODE_RE.fullmatch(code.strip()):
-            out[pf.slug] = code.strip()
+    for data in _valid_headers(directory, db):
+        slug, code = data.get("slug"), data.get("project_code")
+        if isinstance(slug, str) and slug and isinstance(code, str) and PROJECT_CODE_RE.fullmatch(code.strip()):
+            out[slug] = code.strip()
     return out
 
 
@@ -647,8 +800,7 @@ def _fingerprint(files: list[ProjectFile]) -> int:
     for pf in files:
         digest.update(pf.path.name.encode())
         digest.update(json.dumps(pf.data, sort_keys=True).encode())
-    # seed_state.version is a 32-bit INTEGER; keep the fingerprint inside that range.
-    return int(digest.hexdigest()[:7], 16)
+    return _fingerprint_int(digest.hexdigest())
 
 
 def _utc_now_iso() -> str:
@@ -663,6 +815,7 @@ def _run_sync_in_tx(
     skipped: list[dict[str, Any]],
     fingerprint: int,
     allow_archive_all: bool,
+    files_state: int | None = None,
 ) -> dict[str, Any]:
     """Apply all curated project upserts using bulk reads + batched executemany writes."""
     from aiwatchdogs.hub.database import dumps_json
@@ -670,6 +823,7 @@ def _run_sync_in_tx(
     # Re-check fingerprint after acquiring advisory lock to prevent redundant cold-start writes.
     locked_row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
     if locked_row is not None and int(locked_row["version"]) == fingerprint:
+        _record_files_state(conn, files_state if not skipped else None, _utc_now_iso())
         return {"synced": 0, "skipped": skipped, "changed": False}
 
     now = _utc_now_iso()
@@ -776,7 +930,7 @@ def _run_sync_in_tx(
         for task in tasks:
             tid = project_task_id(task["id"])
             code = task.get("methodology_code", methodology)
-            task_type = "research" if code == INFLATION_METHODOLOGY else "anomaly_scan"
+            task_type = "anomaly_scan"
             work_type = task.get("type", DEFAULT_WORK_TYPE)
             est_tokens = task["estimated_tokens"]
             est_basis = task["estimate_basis"]
@@ -788,8 +942,6 @@ def _run_sync_in_tx(
             payload.setdefault("source_url", payload.get("source_landing_page", ""))
             payload.setdefault("is_demo_sample", False)
             payload["project_slug"] = d["slug"]
-            if task_type == "research":
-                payload["depends_on"] = [project_task_id(dep) for dep in task.get("depends_on", [])]
             payload_str = dumps_json(payload)
 
             existing = existing_by_id.get(tid)
@@ -977,7 +1129,22 @@ def _run_sync_in_tx(
         """,
         (SYNC_STATE_KEY, fingerprint, now),
     )
+    _record_files_state(conn, files_state if not skipped else None, now)
     return {"synced": len(valid), "skipped": skipped, "changed": True}
+
+
+def _record_files_state(conn: Any, files_state: int | None, now: str) -> None:
+    """Remember that these exact files were all accepted (or forget it when one was skipped)."""
+    if files_state is None:
+        conn.execute("DELETE FROM seed_state WHERE key = ?", (FILES_STATE_KEY,))
+        return
+    conn.execute(
+        """
+        INSERT INTO seed_state (key, version, updated_at) VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET version = excluded.version, updated_at = excluded.updated_at
+        """,
+        (FILES_STATE_KEY, files_state, now),
+    )
 
 
 def sync_projects(
@@ -1000,6 +1167,11 @@ def sync_projects(
     if not root.is_dir():
         return {"synced": 0, "skipped": [], "changed": False, "warning": f"Projects directory not found: {root}"}
 
+    # Nothing on disk has changed since a sync accepted every file: no parsing, no validation.
+    if files_already_accepted(db, root):
+        return {"synced": 0, "skipped": [], "changed": False}
+    files_state = _fingerprint_int(files_fingerprint(root))
+
     files = load_project_files(root)
     valid = [pf for pf in files if not pf.errors]
     skipped = [{"file": pf.path.name, "errors": pf.errors} for pf in files if pf.errors]
@@ -1007,8 +1179,14 @@ def sync_projects(
 
     with db.read() as conn:
         row = conn.execute("SELECT version FROM seed_state WHERE key = ?", (SYNC_STATE_KEY,)).fetchone()
-        if row is not None and int(row["version"]) == fingerprint:
-            return {"synced": 0, "skipped": skipped, "changed": False}
+        unchanged = row is not None and int(row["version"]) == fingerprint
+    if unchanged:
+        if not skipped:
+            with db.transaction() as conn:
+                _record_files_state(conn, files_state, _utc_now_iso())
+        return {"synced": 0, "skipped": skipped, "changed": False}
+
+    with db.read() as conn:
         if not valid and not allow_archive_all:
             existing_active = conn.execute(
                 "SELECT COUNT(*) AS c FROM missions WHERE is_community_project = 1 AND status != 'archived'"
@@ -1043,6 +1221,7 @@ def sync_projects(
                         skipped=skipped,
                         fingerprint=fingerprint,
                         allow_archive_all=allow_archive_all,
+                        files_state=files_state,
                     )
             else:
                 return _run_sync_in_tx(
@@ -1052,6 +1231,7 @@ def sync_projects(
                     skipped=skipped,
                     fingerprint=fingerprint,
                     allow_archive_all=allow_archive_all,
+                    files_state=files_state,
                 )
 
         # Another cold-start instance currently holds the sync lock; wait outside any transaction.

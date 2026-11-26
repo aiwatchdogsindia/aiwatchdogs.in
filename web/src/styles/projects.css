@@ -147,13 +147,6 @@
   white-space: nowrap;
 }
 
-.pv-tooltip--state {
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: 190px;
-}
-
 .pv-tooltip--mosaic {
   bottom: calc(100% + 8px);
   right: 0;
@@ -692,7 +685,7 @@
 }
 
 /* ============================================================================
-   5. PROJECT RESULTS VISUALISER (P1, W1, CPI1)
+   5. PROJECT RESULTS VISUALISER (P1, W1, UB1)
    ============================================================================ */
 
 .pv-results {
@@ -771,8 +764,7 @@
 }
 
 .pv-mini-legend,
-.pv-gigw-legend,
-.pv-cpi-matrix-legend {
+.pv-gigw-legend {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -782,8 +774,7 @@
 }
 
 .pv-mini-legend span,
-.pv-gigw-legend span,
-.pv-cpi-matrix-legend span {
+.pv-gigw-legend span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -970,7 +961,7 @@
   color: var(--ink-4);
 }
 
-/* ---------- Horizontal Coverage Bars (P1 Groups & CPI1 Roles) ---------- */
+/* ---------- Horizontal Coverage Bars (P1 Groups) ---------- */
 
 .pv-group-list {
   display: flex;
@@ -1659,162 +1650,196 @@
   color: var(--ink-4);
 }
 
-/* ---------- CPI1 Rural vs Urban State/UT Matrix ---------- */
+/* ---------- UB1 Union Budget lines: year table & largest shortfalls ---------- */
 
-.pv-cpi-roles {
-  padding: 14px 16px;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-8);
-  background: var(--paper);
+.pv-ub-years-wrap {
+  width: 100%;
+  overflow-x: auto;
 }
 
-.pv-cpi-roles-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px 18px;
+.pv-ub-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
 }
 
-.pv-cpi-matrix-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.pv-cpi-matrix-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px 16px;
-  flex-wrap: wrap;
-}
-
-.pv-cpi-filters {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.pv-cpi-matrix {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 8px;
-}
-
-.pv-state-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--r-6);
-  border: 1px solid var(--rule);
-  background: var(--paper);
-  min-width: 0;
-  transition: border-color 0.14s ease, background-color 0.14s ease;
-}
-
-.pv-state-card:hover,
-.pv-state-card.is-hovered {
-  border-color: var(--rule-strong);
-  background: #FAF9F6;
-}
-
-.pv-state-info {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.pv-state-code {
-  font-family: var(--font-code);
-  font-size: 11px;
+.pv-ub-caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 10px;
+  font-size: 12.5px;
   color: var(--ink-4);
-  background: var(--sunk);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 1px 5px;
-  flex-shrink: 0;
 }
 
-.pv-state-name {
-  font-size: 13px;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.pv-ub-years th,
+.pv-ub-years td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+  text-align: left;
 }
 
-.pv-state-cells {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.pv-sector-cell {
-  width: 26px;
-  height: 24px;
-  padding: 0;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  font-family: var(--font-code);
+.pv-ub-years thead th {
   font-size: 11px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-4);
+  border-bottom-color: var(--rule);
+  white-space: nowrap;
 }
 
-.pv-sector-cell:disabled {
-  cursor: default;
+.pv-ub-years tbody tr:last-child th,
+.pv-ub-years tbody tr:last-child td {
+  border-bottom: none;
 }
 
-.pv-sector-cell--completed {
-  background: var(--pv-done);
-  color: #FFFFFF;
+.pv-ub-years tbody tr:hover {
+  background: var(--sunk);
 }
 
-.pv-sector-cell--claimed {
-  background: var(--pv-claimed);
-  color: #FFFFFF;
+.pv-ub-table .num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-.pv-sector-cell--queued {
-  background: var(--pv-open-soft);
-  border-color: var(--pv-open-border);
-  color: var(--ink-2);
+.pv-ub-year {
+  font-weight: 500;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pv-ub-years td:nth-child(2) {
+  width: 42%;
+  min-width: 96px;
+}
+
+.pv-ub-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: var(--rule-strong);
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
-.pv-sector-cell--queued:not(:disabled):hover,
-.pv-sector-cell--queued:not(:disabled):focus-visible {
-  background: var(--pv-open);
-  border-color: var(--ink);
-  transform: translateY(-1px);
-  outline: none;
+.pv-ub-link:hover {
+  text-decoration-color: var(--ink);
 }
 
-.pv-sector-cell--waiting {
-  background: var(--sunk);
-  border: 1px dashed var(--pv-waiting);
+.pv-ub-link:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.pv-ub-note {
+  display: block;
+  max-width: 16ch;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.3;
+  white-space: normal;
+  color: var(--in-work-ink);
+}
+
+.pv-ub-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 400;
   color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
 }
 
-.pv-sector-cell--none {
-  background: transparent;
-  border: 1px solid var(--rule-soft);
-  color: var(--ink-5);
+.pv-ub-bar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: var(--r-999);
+  background: var(--pv-open-soft);
+  border: 1px solid var(--pv-open-border);
+  overflow: hidden;
 }
 
-.pv-sector-cell.is-copied {
-  background: var(--pv-done-strong);
-  border-color: var(--pv-done-strong);
-  color: #FFFFFF;
+.pv-ub-bar-seg {
+  display: block;
+  height: 100%;
+}
+
+.pv-ub-bar-seg--done {
+  background: var(--pv-done);
+}
+
+.pv-ub-bar-seg--claimed {
+  background: var(--pv-claimed);
+}
+
+.pv-ub-mini-track {
+  display: block;
+  width: 64px;
+  height: 4px;
+  margin: 4px 0 0 auto;
+  border-radius: var(--r-999);
+  background: var(--sunk);
+  overflow: hidden;
+}
+
+.pv-ub-mini-fill {
+  display: block;
+  height: 100%;
+  margin-left: auto;
+  background: var(--ink-5);
+}
+
+.pv-ub-guide p {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.pv-ub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 4px 0 10px;
+}
+
+.pv-ub-links .inline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pv-ub-ext {
+  display: inline;
+}
+
+.pv-ub-leads .table-wrap {
+  background: var(--paper);
+}
+
+.pv-ub-leads .pv-ub-caption {
+  padding: 10px 14px 0;
+}
+
+.pv-ub-leads .ledger-table td,
+.pv-ub-leads .ledger-table th {
+  padding: 10px 12px;
+}
+
+.pv-ub-line {
+  min-width: 200px;
+  max-width: 360px;
 }
 
 /* ============================================================================
@@ -2002,6 +2027,14 @@
   font-size: 13px;
 }
 
+.project-task-picker-hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-4);
+}
+
 .task-pagination-bar {
   display: flex;
   align-items: center;
@@ -2102,14 +2135,19 @@
     flex-basis: 100%;
   }
 
+  .pv-ub-years th,
+  .pv-ub-years td {
+    padding: 6px 4px;
+  }
+
+  .pv-ub-mini-track {
+    display: none;
+  }
+
   .pv-mosaic-grid {
     grid-template-columns: repeat(auto-fill, minmax(18px, 1fr));
     gap: 4px;
     padding: 9px;
-  }
-
-  .pv-cpi-matrix {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   }
 
   .pv-tooltip--compact {
@@ -2118,8 +2156,7 @@
   }
 
   .pv-tooltip--donut,
-  .pv-tooltip--bar,
-  .pv-tooltip--state {
+  .pv-tooltip--bar {
     left: 0;
     transform: none;
     max-width: min(280px, 84vw);
