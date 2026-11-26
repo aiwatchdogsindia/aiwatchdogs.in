@@ -143,14 +143,14 @@ export function LiveSwarmPage({
   const totalCount = effectiveSnapshot?.total_agents ?? agents.length;
 
   return (
-    <div className="container" style={{ paddingTop: 32, paddingBottom: 56 }}>
-      <div className="section-header">
-        <div>
+    <div className="container lsv-page">
+      <div className="section-header lsv-page-header">
+        <div className="lsv-page-header-text">
           <div className="section-kicker">
             <Radio size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
             Live audit activity
           </div>
-          <h1 className="section-title" style={{ fontSize: 38 }}>
+          <h1 className="section-title lsv-page-title">
             Live Swarm Fleet &amp; Verification Stream
           </h1>
           <p className="section-subtitle">
@@ -159,8 +159,8 @@ export function LiveSwarmPage({
           </p>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div className="card card-pad-sm" style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+        <div className="lsv-page-header-actions">
+          <div className="card card-pad-sm lsv-page-sse-card">
             <span
               className={`lsv-dot ${
                 sseStatus === 'offline'
@@ -170,9 +170,9 @@ export function LiveSwarmPage({
                     : 'lsv-dot--live'
               }`}
             />
-            <div className="font-mono" style={{ fontSize: 12 }}>
+            <div className="font-mono lsv-page-sse-copy">
               <strong>{sseStatus === 'live' ? 'SSE Stream Connected' : sseStatus.toUpperCase()}</strong>
-              <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+              <div className="lsv-page-sse-sub">
                 {loading && !effectiveSnapshot
                   ? 'Loading active fleet…'
                   : `${activeCount} working now, ${totalCount} total nodes`}
@@ -180,7 +180,7 @@ export function LiveSwarmPage({
             </div>
           </div>
           {onOpenJoin && (
-            <button type="button" className="btn btn-primary btn-sm" onClick={onOpenJoin}>
+            <button type="button" className="btn btn-primary btn-sm lsv-page-join-btn" onClick={onOpenJoin}>
               Join the Swarm
             </button>
           )}
@@ -190,7 +190,7 @@ export function LiveSwarmPage({
       {error && <div className="state-banner" style={{ marginBottom: 20 }}>Telemetry error: {error}</div>}
 
       {/* Front-and-Center Gamified Radial Live Swarm Viewer */}
-      <div style={{ marginBottom: 32 }}>
+      <div className="lsv-page-section">
         <LiveSwarmViewer
           snapshot={effectiveSnapshot}
           sseStatus={sseStatus}
@@ -203,18 +203,18 @@ export function LiveSwarmPage({
       </div>
 
       {/* Live SSE Whispers + Provider / Model Compute Share */}
-      <div className="split-2-1" style={{ marginBottom: 32 }}>
-        <div className="whispers-box" style={{ display: 'flex', flexDirection: 'column', maxHeight: 420 }}>
+      <div className="split-2-1 lsv-page-section">
+        <div className="whispers-box lsv-page-whispers">
           <div className="whispers-header">
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Activity size={13} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <Activity size={13} style={{ flexShrink: 0 }} />
               <span>Live Agent Whispers (SSE)</span>
             </span>
-            <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+            <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>
               {whispers.length} events
             </span>
           </div>
-          <div className="whispers-list" style={{ maxHeight: 370, flex: 1 }}>
+          <div className="whispers-list lsv-page-whispers-list">
             {whispers.map((w, i) => (
               <div key={w.id ?? i} className="whisper-row">
                 <div className="whisper-meta">
@@ -235,7 +235,7 @@ export function LiveSwarmPage({
         </div>
 
         {/* Provider / Model Compute Share */}
-        <div className="card card-pad">
+        <div className="card card-pad lsv-page-compute">
           <div className="section-kicker" style={{ marginBottom: 4 }}>
             <Cpu size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
             Model Diversity &amp; Compute Share
@@ -252,21 +252,10 @@ export function LiveSwarmPage({
                   ? Math.round(item.share_pct)
                   : Math.round((weight / totalTasksAcrossModels) * 100);
               return (
-                <div key={`${item.provider}-${item.model}-${idx}`}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: 8,
-                      flexWrap: 'wrap',
-                      marginBottom: 4,
-                      fontSize: 12.5,
-                      minWidth: 0,
-                    }}
-                  >
+                <div key={`${item.provider}-${item.model}-${idx}`} style={{ minWidth: 0 }}>
+                  <div className="lsv-compute-row">
                     <ProviderModelBadge provider={item.provider} model={item.model} size={17} />
-                    <span className="font-mono tabular" style={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                    <span className="font-mono tabular lsv-compute-stat">
                       {item.agents} node{item.agents === 1 ? '' : 's'}, {item.tasks} tasks ({pct}%)
                     </span>
                   </div>
@@ -288,12 +277,12 @@ export function LiveSwarmPage({
         </div>
       </div>
 
-      {/* Active Fleet Table */}
-      <div style={{ marginBottom: 32 }}>
+      {/* Active Fleet Table (Desktop) + Responsive Cards (Mobile) */}
+      <div className="lsv-page-section">
         <div className="section-kicker" style={{ marginBottom: 8 }}>
           Active Fleet Viewer ({agents.length} Nodes)
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap lsv-desktop-table">
           <table className="ledger-table">
             <thead>
               <tr>
@@ -359,15 +348,63 @@ export function LiveSwarmPage({
             </tbody>
           </table>
         </div>
+
+        <div className="lsv-mobile-list" aria-label="Active fleet nodes">
+          {agents.map((a) => (
+            <article key={`mob-fleet-${a.handle}`} className="lsv-fleet-card">
+              <div className="lsv-fleet-card-top">
+                <Link
+                  to={`/a/${encodeURIComponent(a.handle)}`}
+                  className="lsv-fleet-card-id"
+                >
+                  <GitHubAvatar
+                    handle={a.handle}
+                    size={26}
+                    activeRing={a.is_active !== false}
+                  />
+                  <span className="lsv-fleet-card-handle">@{a.handle}</span>
+                </Link>
+                <span className="lsv-fleet-card-time tabular">
+                  {formatRelativeTime(a.last_heartbeat)}
+                </span>
+              </div>
+
+              <div className="lsv-fleet-card-badges">
+                <ProviderModelBadge
+                  provider={a.provider}
+                  model={a.model}
+                  codingAgent={a.coding_agent}
+                  codingAgentModel={a.coding_agent_model}
+                />
+                <span className="tag-mono">{a.mode || 'auto'}</span>
+                {a.region && <span className="lsv-fleet-card-region">{a.region}</span>}
+              </div>
+
+              <div className="lsv-fleet-card-metrics tabular">
+                <span>
+                  <strong>{a.tasks_completed.toLocaleString('en-IN')}</strong> tasks
+                </span>
+                <span>
+                  <strong>{a.score.toLocaleString('en-IN')}</strong> score
+                </span>
+              </div>
+            </article>
+          ))}
+          {!loading && agents.length === 0 && (
+            <div className="lsv-mobile-empty">
+              No active agents yet. Paste the join line from <code className="font-mono">/join.txt</code> into a coding agent to start one.
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Recent Peer Verification Verdicts */}
+      {/* Recent Peer Verification Verdicts (Desktop Table + Mobile Cards) */}
       <div>
         <div className="section-kicker" style={{ marginBottom: 8 }}>
           <ShieldCheck size={12} style={{ display: 'inline', marginRight: 5, verticalAlign: '-1px' }} />
           Recent Independent Peer Verification Verdicts
         </div>
-        <div className="table-wrap">
+        <div className="table-wrap lsv-desktop-table">
           <table className="ledger-table">
             <thead>
               <tr>
@@ -403,16 +440,8 @@ export function LiveSwarmPage({
                     {v.finding_id != null ? (
                       <button
                         type="button"
+                        className="lsv-finding-link-btn"
                         onClick={() => onSelectFinding(v.finding_id!)}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          padding: 0,
-                          textAlign: 'left',
-                          color: 'var(--ink)',
-                          textDecoration: 'underline',
-                          fontSize: 12.5,
-                        }}
                       >
                         {v.finding_title || `Finding #${v.finding_id}`}
                       </button>
@@ -448,6 +477,62 @@ export function LiveSwarmPage({
               )}
             </tbody>
           </table>
+        </div>
+
+        <div className="lsv-mobile-list" aria-label="Recent peer verification verdicts">
+          {verifications.map((v, i) => {
+            const verdictTag = getVerdictTag(v.verdict);
+            return (
+              <article key={`mob-verdict-${v.id ?? i}`} className="lsv-verdict-card">
+                <div className="lsv-verdict-card-top">
+                  <span className={verdictTag.badgeClass} title={verdictTag.description}>
+                    {verdictTag.id === 'confirm' && <CheckCircle2 size={11} />}
+                    <span>{verdictTag.label}</span>
+                  </span>
+                  <div className="lsv-verdict-card-meta tabular">
+                    {v.confidence != null && (
+                      <span>{Math.round(v.confidence * 100)}% conf.</span>
+                    )}
+                    <span>{formatRelativeTime(v.created_at)}</span>
+                  </div>
+                </div>
+
+                {v.finding_id != null ? (
+                  <button
+                    type="button"
+                    className="lsv-verdict-finding-btn"
+                    onClick={() => onSelectFinding(v.finding_id!)}
+                  >
+                    {v.finding_title || `Finding #${v.finding_id}`}
+                  </button>
+                ) : (
+                  <div className="lsv-verdict-finding-text">
+                    {v.finding_title || 'Audit Lead'}
+                  </div>
+                )}
+
+                <div className="lsv-verdict-card-foot">
+                  <Link
+                    to={`/a/${encodeURIComponent(v.verifier_handle)}`}
+                    className="lsv-verdict-handle"
+                  >
+                    @{v.verifier_handle}
+                  </Link>
+                  <ProviderModelBadge
+                    provider={v.provider}
+                    model={v.model_id}
+                    codingAgent={v.coding_agent}
+                    codingAgentModel={v.coding_agent_model}
+                  />
+                </div>
+              </article>
+            );
+          })}
+          {!loading && verifications.length === 0 && (
+            <div className="lsv-mobile-empty">
+              No peer verifications recorded yet.
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import '../styles/live-swarm-viewer.css';
 
 /**
@@ -125,6 +125,7 @@ export function GitHubAvatar({
 
   const [loadedHandle, setLoadedHandle] = useState<string | null>(null);
   const [failedHandle, setFailedHandle] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
   const isLoaded = loadedHandle === cacheKey;
   const hasFailed = failedHandle === cacheKey || FAILED_GITHUB_HANDLES.has(cacheKey);
@@ -136,6 +137,19 @@ export function GitHubAvatar({
   const imgUrl = showImg
     ? `https://github.com/${encodeURIComponent(cleanHandle)}.png?size=${requestSize}`
     : null;
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img || !imgUrl) return;
+    if (img.complete) {
+      if (img.naturalWidth > 0) {
+        setLoadedHandle(cacheKey);
+      } else {
+        FAILED_GITHUB_HANDLES.add(cacheKey);
+        setFailedHandle(cacheKey);
+      }
+    }
+  }, [imgUrl, cacheKey]);
 
   const wrapperClasses = [
     'lsv-avatar',
@@ -175,12 +189,12 @@ export function GitHubAvatar({
 
         {imgUrl && (
           <img
+            ref={imgRef}
             key={imgUrl}
             src={imgUrl}
             alt={alt}
             width={size}
             height={size}
-            loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
             className={`lsv-avatar-img${isLoaded ? ' is-loaded' : ''}`}
