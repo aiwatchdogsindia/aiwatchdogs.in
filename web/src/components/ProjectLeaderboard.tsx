@@ -1,10 +1,12 @@
+import { ExternalLink } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from '../router';
+import { Link, useRouter } from '../router';
 import type { AgentRecord } from '../types';
 import { copyToClipboard, formatRelativeTime } from '../utils';
 import { AgentBadge } from './AgentLogos';
-import { GitHubAvatar } from './GitHubAvatar';
+import { GitHubAvatar, normalizeHandle } from './GitHubAvatar';
 import { JoinOneLineButton } from './JoinOneLineButton';
+import { githubProfileUrl } from './LiveSwarmViewer';
 import { useToast } from './Toast';
 
 export interface ProjectLeaderboardProps {
@@ -51,11 +53,12 @@ export function ProjectLeaderboard({
   hourAgents,
   joinPrompt,
   joinButtonLabel = 'Join the effort: copy one line',
-  joinHelperText = 'Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle, zero questions).',
+  joinHelperText = 'Paste one line to start free ₹0 checks (auto-uses your public GitHub handle).',
   scoreUnit = 'points',
   showSeeAllLink = true,
   compact = false,
 }: ProjectLeaderboardProps) {
+  const { navigate } = useRouter();
   const toast = useToast();
   const [lbWindow, setLbWindow] = useState<'hour' | 'all'>('all');
   const [copiedYours, setCopiedYours] = useState(false);
@@ -69,13 +72,22 @@ export function ProjectLeaderboard({
     };
   }, []);
 
-  const maxRows = compact ? 5 : 6;
+  const maxRows = compact ? 5 : 10;
 
   const lbRows = useMemo(() => {
-    if (lbWindow === 'hour') {
-      return hourAgents.filter((a) => resolveScore(a, scoreUnit) > 0).slice(0, maxRows);
+    const source = lbWindow === 'hour' ? hourAgents : allTimeAgents;
+    const seen = new Set<string>();
+    const deduped: AgentRecord[] = [];
+    for (const agent of source) {
+      const key = agent.handle.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(agent);
     }
-    return allTimeAgents.slice(0, maxRows);
+    if (lbWindow === 'hour') {
+      return deduped.filter((a) => resolveScore(a, scoreUnit) > 0).slice(0, maxRows);
+    }
+    return deduped.slice(0, maxRows);
   }, [allTimeAgents, hourAgents, lbWindow, maxRows, scoreUnit]);
 
   const lastActive = useMemo(() => {
@@ -179,16 +191,50 @@ export function ProjectLeaderboard({
 
         {lbRows.map((agent, idx) => {
           const figure = resolveScore(agent, scoreUnit);
+          const cleanHandle = normalizeHandle(agent.handle);
+          const ghUrl = githubProfileUrl(cleanHandle);
+          const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
           return (
-            <Link
+            <div
               key={agent.handle}
-              to={`/a/${encodeURIComponent(agent.handle)}`}
+              role="link"
+              tabIndex={0}
               className="lb-row"
+              style={{ cursor: 'pointer' }}
+              onClick={() => navigate(profilePath)}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  navigate(profilePath);
+                }
+              }}
             >
               <span className="lb-rank tabular">{idx + 1}</span>
               <GitHubAvatar handle={agent.handle} size={36} />
               <div className="lb-main">
-                <span className="lb-handle">@{agent.handle}</span>
+                {ghUrl ? (
+                  <a
+                    href={ghUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="lb-handle inline-link"
+                    title={`Open @${cleanHandle} on GitHub`}
+                    aria-label={`Open @${cleanHandle} on GitHub`}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      width: 'fit-content',
+                      color: 'inherit',
+                    }}
+                  >
+                    <span>@{cleanHandle}</span>
+                    <ExternalLink size={12} style={{ opacity: 0.55, flexShrink: 0 }} aria-hidden="true" />
+                  </a>
+                ) : (
+                  <span className="lb-handle">@{cleanHandle}</span>
+                )}
                 <span className="lb-meta">
                   <span className="lb-meta-time">
                     last check {formatRelativeTime(agent.last_heartbeat)}
@@ -213,7 +259,7 @@ export function ProjectLeaderboard({
                   {resolveScoreLabel(figure, lbWindow, scoreUnit)}
                 </span>
               </div>
-            </Link>
+            </div>
           );
         })}
 

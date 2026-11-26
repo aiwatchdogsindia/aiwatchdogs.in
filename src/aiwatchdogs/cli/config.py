@@ -304,9 +304,15 @@ def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
     if not cleaned:
         return None
 
+    fallback_without_token: AgentConfig | None = None
+
     if _peek_handle(DEFAULT_CONFIG_PATH) == cleaned:
         try:
-            return load_config(DEFAULT_CONFIG_PATH)
+            loaded = load_config(DEFAULT_CONFIG_PATH)
+            if loaded is not None:
+                if loaded.api_token.strip():
+                    return loaded
+                fallback_without_token = fallback_without_token or loaded
         except ValueError:
             pass
 
@@ -325,20 +331,101 @@ def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
                     try:
                         loaded = load_config(xdg_agent)
                         if loaded is not None and _clean_handle(loaded.handle) == cleaned:
-                            return loaded
+                            if loaded.api_token.strip():
+                                return loaded
+                            fallback_without_token = fallback_without_token or loaded
                     except ValueError:
                         pass
                 xdg_legacy = xdg_dir / "config.json"
                 if _peek_handle(xdg_legacy) == cleaned:
                     try:
-                        return load_config(xdg_legacy)
+                        loaded = load_config(xdg_legacy)
+                        if loaded is not None:
+                            if loaded.api_token.strip():
+                                return loaded
+                            fallback_without_token = fallback_without_token or loaded
                     except ValueError:
                         pass
                 xdg_node = _load_legacy_node_config(xdg_dir / LEGACY_NODE_FILENAME)
                 if xdg_node is not None and _clean_handle(xdg_node.handle) == cleaned:
                     return xdg_node
 
-    return None
+    return fallback_without_token
+
+
+def _config_has_file_token_for_hub(cfg: AgentConfig | None, *, hub_url: str, handle: str) -> bool:
+    if cfg is None:
+        return False
+    if not cfg.api_token.strip():
+        return False
+    return (
+        normalize_hub_origin(cfg.hub_url) == normalize_hub_origin(hub_url)
+        and _clean_handle(cfg.handle) == _clean_handle(handle)
+    )
+
+
+def find_saved_config_for_handle(handle: str, *, hub_url: str) -> AgentConfig | None:
+    """Exhaustively search all local credential files for an exact ``handle`` match.
+
+    Checks ``agents/<handle>.json``, legacy ``config.json``, legacy ``node.json``, and
+    ``$XDG_CONFIG_HOME/aiwatchdogs/...`` (when using the default config directory),
+    preferring a file that holds a valid API token scoped to ``hub_url``.
+    """
+    cleaned = _clean_handle(handle)
+    if not cleaned:
+        return None
+
+    candidates: list[AgentConfig] = []
+
+    if _HANDLE_FILE_RE.fullmatch(cleaned):
+        try:
+            per_handle_path = get_handle_config_path(cleaned)
+            loaded = load_config(per_handle_path)
+            if loaded is not None and _clean_handle(loaded.handle) == cleaned:
+                candidates.append(loaded)
+        except ValueError:
+            pass
+
+    if _peek_handle(DEFAULT_CONFIG_PATH) == cleaned:
+        try:
+            loaded = load_config(DEFAULT_CONFIG_PATH)
+            if loaded is not None and _clean_handle(loaded.handle) == cleaned:
+                candidates.append(loaded)
+        except ValueError:
+            pass
+
+    node_cfg = _load_legacy_node_config(DEFAULT_CONFIG_PATH.parent / LEGACY_NODE_FILENAME)
+    if node_cfg is not None and _clean_handle(node_cfg.handle) == cleaned:
+        candidates.append(node_cfg)
+
+    if DEFAULT_CONFIG_PATH == _INITIAL_DEFAULT_CONFIG_PATH:
+        xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
+        if xdg:
+            xdg_dir = Path(xdg).expanduser() / "aiwatchdogs"
+            if xdg_dir != DEFAULT_CONFIG_PATH.parent:
+                if _HANDLE_FILE_RE.fullmatch(cleaned):
+                    try:
+                        loaded = load_config(xdg_dir / AGENTS_DIRNAME / f"{cleaned}.json")
+                        if loaded is not None and _clean_handle(loaded.handle) == cleaned:
+                            candidates.append(loaded)
+                    except ValueError:
+                        pass
+                xdg_legacy = xdg_dir / "config.json"
+                if _peek_handle(xdg_legacy) == cleaned:
+                    try:
+                        loaded = load_config(xdg_legacy)
+                        if loaded is not None and _clean_handle(loaded.handle) == cleaned:
+                            candidates.append(loaded)
+                    except ValueError:
+                        pass
+                xdg_node = _load_legacy_node_config(xdg_dir / LEGACY_NODE_FILENAME)
+                if xdg_node is not None and _clean_handle(xdg_node.handle) == cleaned:
+                    candidates.append(xdg_node)
+
+    for cand in candidates:
+        if _config_has_file_token_for_hub(cand, hub_url=hub_url, handle=cleaned):
+            return cand
+    return candidates[0] if candidates else None
 
 
 def find_saved_config_for_prefix(base_handle: str, *, hub_url: str) -> AgentConfig | None:

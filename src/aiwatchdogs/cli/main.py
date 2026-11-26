@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 import re
 import secrets
 import signal
@@ -24,10 +25,11 @@ from aiwatchdogs.cli.config import (
     DEFAULT_FREE_MAX_TASKS,
     DEFAULT_HUB_URL,
     DEFAULT_PAID_MAX_TASKS,
+    ENV_HANDLE,
     AgentConfig,
     AmbiguousConfigError,
     explicit_config_path,
-    find_saved_config_for_prefix,
+    find_saved_config_for_handle,
     get_config_path,
     get_spend_ledger_path,
     load_config,
@@ -43,7 +45,6 @@ from aiwatchdogs.cli.identity import (
     fallback_handle,
     is_fallback_handle,
     is_generic_agent_handle,
-    with_handle_suffix,
 )
 from aiwatchdogs.cli.providers import (
     RULE_ENGINE_PROVIDER,
@@ -337,8 +338,8 @@ def _make_event_printer() -> Any:
             console.print("[dim]Returned a task that an earlier interrupted run of this handle was still holding.[/dim]")
         elif event == "claim_refused":
             console.print(
-                "[yellow]The hub would not hand out another task right now (address rate limit, or this handle "
-                "already holds two unfinished tasks). Nothing is lost; run again in a few minutes.[/yellow]"
+                "[yellow]The hub would not hand out another task right now (transient rate limit or "
+                "this handle reached its concurrent active-task ceiling). Nothing is lost; run again shortly.[/yellow]"
             )
         elif event == "task_claim_rejected":
             status_code = data.get("status_code")
@@ -425,14 +426,23 @@ def _resolve_config_path(handle: str | None = None) -> Path:
         raise typer.Exit(code=2) from exc
 
 
-def _safe_load_existing_config(handle: str | None = None) -> tuple[AgentConfig | None, bool]:
+def _safe_load_existing_config(
+    handle: str | None = None,
+    *,
+    hub_url: str | None = None,
+) -> tuple[AgentConfig | None, bool]:
     """Load existing config safely without deleting or overwriting corrupt files.
 
-    With a handle whose own file does not exist yet, falls back to reading (never rewriting)
-    the legacy config.json when it belongs to that same handle, so its token is reused.
+    When ``handle`` is provided and no explicit config path is pinned, checks
+    ``agents/<handle>.json`` as well as legacy ``config.json`` and ``node.json``
+    (and XDG fallback) so saved credentials for that exact handle are always reused.
     """
     cfg_path = _resolve_config_path(handle)
     existed = cfg_path.is_file()
+    if handle and explicit_config_path() is None and hub_url:
+        found = find_saved_config_for_handle(handle, hub_url=hub_url)
+        if found is not None:
+            return found, existed
     if not existed:
         if handle and explicit_config_path() is None:
             return load_legacy_config_for_handle(handle), False
@@ -447,62 +457,44 @@ def _safe_load_existing_config(handle: str | None = None) -> tuple[AgentConfig |
 _HANDLE_OPTION_HELP = "Which saved agent to use, when several are saved on this machine."
 
 
-def _register_with_collision_fallback(
+def _register_single_profile(
     runner: AgentRunner,
     cfg: AgentConfig,
     *,
     hub_clean: str,
-    allow_auto_suffix: bool,
 ) -> tuple[dict[str, Any], Path]:
-    """Register with the Hub, reusing saved suffixed creds or retrying with a short suffix on HTTP 409."""
-    base_handle = cfg.handle
-    suffix_candidates = ["2", "3", secrets.token_hex(2), secrets.token_hex(2), secrets.token_hex(2)]
-    attempt = 0
-    tried_saved_prefix = False
-    while True:
-        try:
+    """Register or reconnect enforcing one GitHub username = one public profile.
+
+    NEVER auto-mints `-2` / `-3` / `-4` duplicate handles on HTTP 409. If the Hub returns
+    HTTP 409 (handle already registered), exhaustively re-checks all local credential stores
+    for that exact handle (`agents/<handle>.json`, `config.json`, `node.json`, XDG fallback,
+    and `AIWATCHDOGS_API_TOKEN`) and retries once as `@<handle>` when a matching token exists.
+    """
+    try:
+        reg = runner.register(save=True)
+        saved_path = Path(runner.config_path) if runner.config_path is not None else _resolve_config_path(cfg.handle)
+        return reg, saved_path
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code != 409:
+            raise
+        recovered_cfg: AgentConfig | None = None
+        if explicit_config_path() is None:
+            recovered_cfg = find_saved_config_for_handle(cfg.handle, hub_url=hub_clean)
+        else:
+            recovered_cfg, _ = _safe_load_existing_config(cfg.handle, hub_url=hub_clean)
+        recovered_token = resolve_reusable_token(recovered_cfg, hub_url=hub_clean, handle=cfg.handle)
+        if recovered_token and recovered_token != cfg.api_token:
+            cfg.api_token = recovered_token
+            if explicit_config_path() is None:
+                runner.config_path = _resolve_config_path(cfg.handle)
+            console.print(
+                f"[dim]Found saved local credentials for '@{_safe_rich(cfg.handle)}'; "
+                "reconnecting to your existing GitHub profile...[/dim]"
+            )
             reg = runner.register(save=True)
             saved_path = Path(runner.config_path) if runner.config_path is not None else _resolve_config_path(cfg.handle)
-            if cfg.handle != base_handle:
-                console.print(
-                    f"[yellow]Note:[/yellow] Registered as [bold]@{_safe_rich(cfg.handle)}[/bold] because "
-                    f"[bold]@{_safe_rich(base_handle)}[/bold] is already registered on this Hub without a local token here. "
-                    f"To credit future runs directly to @{_safe_rich(base_handle)}, copy "
-                    f"~/.config/aiwatchdogs/agents/{_safe_rich(base_handle)}.json from your original machine "
-                    "or export AIWATCHDOGS_API_TOKEN."
-                )
             return reg, saved_path
-        except httpx.HTTPStatusError as exc:
-            if (
-                not allow_auto_suffix
-                or exc.response.status_code != 409
-                or attempt >= len(suffix_candidates)
-            ):
-                raise
-            prev_handle = cfg.handle
-            candidate: str | None = None
-            cand_token = ""
-            if not tried_saved_prefix and explicit_config_path() is None:
-                tried_saved_prefix = True
-                saved_pref = find_saved_config_for_prefix(base_handle, hub_url=hub_clean)
-                if saved_pref is not None and saved_pref.handle and saved_pref.handle != prev_handle:
-                    candidate = saved_pref.handle.strip().lstrip("@").lower()
-                    cand_token = resolve_reusable_token(saved_pref, hub_url=hub_clean, handle=candidate)
-            if not candidate:
-                candidate = with_handle_suffix(base_handle, suffix_candidates[attempt])
-                attempt += 1
-                if candidate == prev_handle:
-                    continue
-                cand_existing, _ = _safe_load_existing_config(candidate)
-                cand_token = resolve_reusable_token(cand_existing, hub_url=hub_clean, handle=candidate)
-            cfg.handle = candidate
-            cfg.api_token = cand_token
-            if explicit_config_path() is None:
-                runner.config_path = _resolve_config_path(candidate)
-            console.print(
-                f"[dim]Handle '{_safe_rich(prev_handle)}' is already registered on this Hub; "
-                f"retrying as '{_safe_rich(candidate)}'...[/dim]"
-            )
+        raise
 
 
 @app.command()
@@ -627,14 +619,14 @@ def join(
     suggested_handle = ""
 
     if explicit_handle is not None:
-        existing, had_existing_file = _safe_load_existing_config(explicit_handle)
+        existing, had_existing_file = _safe_load_existing_config(explicit_handle, hub_url=hub_clean)
         suggested_handle = explicit_handle
         handle_source = "explicit --handle"
     else:
         # 1. If the operator pinned AIWATCHDOGS_CONFIG_PATH and it holds a valid token for this hub, reuse it.
         saved_candidate: AgentConfig | None = None
         if explicit_config_path() is not None:
-            saved_candidate, had_existing_file = _safe_load_existing_config(None)
+            saved_candidate, had_existing_file = _safe_load_existing_config(None, hub_url=hub_clean)
             if (
                 saved_candidate is not None
                 and saved_candidate.handle
@@ -661,7 +653,7 @@ def join(
                 gh_existing: AgentConfig | None = None
                 gh_had_file = False
                 if explicit_config_path() is None:
-                    gh_existing, gh_had_file = _safe_load_existing_config(detected_gh)
+                    gh_existing, gh_had_file = _safe_load_existing_config(detected_gh, hub_url=hub_clean)
                 elif saved_candidate is not None and saved_candidate.handle.strip().lstrip("@").lower() == detected_gh:
                     gh_existing = saved_candidate
                     gh_had_file = had_existing_file
@@ -812,7 +804,7 @@ def join(
 
     # Each handle has its own credential file, so joining never overwrites another agent's token.
     chosen_handle = chosen_handle.strip().lstrip("@").lower()
-    existing, had_existing_file = _safe_load_existing_config(chosen_handle)
+    existing, had_existing_file = _safe_load_existing_config(chosen_handle, hub_url=hub_clean)
 
     # Reuse stored token ONLY when both normalized hub origin AND handle match!
     reused_token = resolve_reusable_token(existing, hub_url=hub_clean, handle=chosen_handle)
@@ -874,10 +866,6 @@ def join(
         )
         return
 
-    # Auto-suffix 409 handle collisions whenever the handle was auto-picked (never clobbering
-    # an explicit --handle request or a pre-existing pinned AIWATCHDOGS_CONFIG_PATH file).
-    allow_auto_suffix = (not handle_was_explicit) and not (explicit_config_path() is not None and had_existing_file)
-
     with AgentRunner(
         cfg,
         provider_cfg=selected_prov,
@@ -887,11 +875,10 @@ def join(
         allow_insecure_http=allow_insecure_http,
     ) as runner:
         try:
-            reg, cfg_path = _register_with_collision_fallback(
+            reg, cfg_path = _register_single_profile(
                 runner,
                 cfg,
                 hub_clean=hub_clean,
-                allow_auto_suffix=allow_auto_suffix,
             )
         except httpx.HTTPError as exc:
             # CRITICAL: NEVER overwrite or destroy an existing local config/credential on HTTP error!
@@ -900,12 +887,21 @@ def join(
                 if had_existing_file
                 else "No local config file was written."
             )
-            hint_msg = ""
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 409:
-                hint_msg = "\nTip: retry with a different --handle suffix, or omit --handle to auto-pick an available one."
+                safe_h = _safe_rich(cfg.handle)
+                err_console.print(
+                    f"[red]Handle '@{safe_h}' is already registered on {_safe_rich(hub_clean)}.[/red]\n"
+                    "AI Watchdogs enforces one GitHub username = one public profile = one scoreboard entry "
+                    f"(will NOT create a duplicate '@{safe_h}-2' profile).\n"
+                    f"To run this machine under your existing '@{safe_h}' profile, either:\n"
+                    f"  1. Copy ~/.config/aiwatchdogs/agents/{safe_h}.json from the original machine where you registered, OR\n"
+                    "  2. Export AIWATCHDOGS_API_TOKEN=<your-saved-token> and re-run `aiwatchdogs join`.\n"
+                    f"{preserve_msg}"
+                )
+                raise typer.Exit(code=1) from exc
             err_console.print(
                 f"[red]Registration/reconnection failed against Hub {_safe_rich(hub_clean)}: {_safe_rich(exc)}[/red]\n"
-                f"{preserve_msg}{hint_msg}"
+                f"{preserve_msg}"
             )
             raise typer.Exit(code=1) from exc
 
@@ -993,8 +989,41 @@ def run(
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
     clean_handle = (handle or "").strip().lstrip("@").lower() or None
-    cfg_path = _resolve_config_path(clean_handle)
-    saved, had_existing_file = _safe_load_existing_config(clean_handle)
+    target_hub_hint = (hub or DEFAULT_HUB_URL).rstrip("/")
+    saved: AgentConfig | None = None
+    had_existing_file = False
+    if clean_handle is None and explicit_config_path() is None and not os.environ.get(ENV_HANDLE, "").strip():
+        try:
+            cfg_path = get_config_path()
+            saved, had_existing_file = _safe_load_existing_config(None, hub_url=target_hub_hint)
+        except AmbiguousConfigError:
+            detected_gh, _ = detect_github_handle()
+            gh_cfg = find_saved_config_for_handle(detected_gh, hub_url=target_hub_hint) if detected_gh else None
+            if detected_gh and gh_cfg is not None:
+                clean_handle = detected_gh
+                cfg_path = _resolve_config_path(detected_gh)
+                saved = gh_cfg
+                had_existing_file = cfg_path.is_file()
+            else:
+                cfg_path = _resolve_config_path(None)
+        else:
+            # If only a stale `<gh>-2` file exists in agents/, still prioritize `<gh>` when
+            # saved credentials exist for `<gh>` in config.json / node.json / agents/<gh>.json.
+            if saved is not None and saved.handle:
+                detected_gh, _ = detect_github_handle()
+                saved_norm = saved.handle.strip().lstrip("@").lower()
+                if detected_gh and saved_norm.startswith(f"{detected_gh}-"):
+                    gh_cfg = find_saved_config_for_handle(detected_gh, hub_url=hub or saved.hub_url)
+                    if gh_cfg is not None and resolve_reusable_token(
+                        gh_cfg, hub_url=hub or saved.hub_url, handle=detected_gh
+                    ):
+                        clean_handle = detected_gh
+                        cfg_path = _resolve_config_path(detected_gh)
+                        saved = gh_cfg
+                        had_existing_file = cfg_path.is_file()
+    else:
+        cfg_path = _resolve_config_path(clean_handle)
+        saved, had_existing_file = _safe_load_existing_config(clean_handle, hub_url=target_hub_hint)
     identity_changed = False
 
     if saved is None:

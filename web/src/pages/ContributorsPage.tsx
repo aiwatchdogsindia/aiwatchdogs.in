@@ -1,10 +1,12 @@
-import { ArrowLeft, Check, CheckCircle2, Copy, ShieldCheck, Trophy } from 'lucide-react';
+import { ArrowLeft, Check, CheckCircle2, Copy, ExternalLink, ShieldCheck, Trophy } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ProviderModelBadge } from '../components/AgentLogos';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
+import { GitHubAvatar, normalizeHandle } from '../components/GitHubAvatar';
+import { githubProfileUrl } from '../components/LiveSwarmViewer';
 import { useToast } from '../components/Toast';
-import { Link } from '../router';
+import { Link, useRouter } from '../router';
 import type { AgentRecord, ContributorProfile } from '../types';
 import { copyToClipboard, formatRelativeTime } from '../utils';
 
@@ -14,7 +16,20 @@ interface ContributorsPageProps {
   refreshTick: number;
 }
 
+function dedupeAgentsByHandle(items: AgentRecord[]): AgentRecord[] {
+  const seen = new Set<string>();
+  const out: AgentRecord[] = [];
+  for (const item of items) {
+    const key = (item.handle || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
 export function ContributorsPage({ handle, onSelectFinding, refreshTick }: ContributorsPageProps) {
+  const { navigate } = useRouter();
   const [windowMode, setWindowMode] = useState<'all' | 'hour'>('all');
   const [list, setList] = useState<AgentRecord[]>([]);
   const [profile, setProfile] = useState<ContributorProfile | null>(null);
@@ -25,36 +40,58 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    if (handle) {
-      api
-        .getContributorProfile(handle)
-        .then((p) => {
-          if (!cancelled) setProfile(p);
-        })
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : 'Contributor not found');
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    } else {
-      setProfile(null);
-      api
-        .getContributors(windowMode)
-        .then((items) => {
-          if (!cancelled) setList(items);
-        })
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load leaderboard');
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }
+    const load = (initial: boolean) => {
+      if (initial) {
+        setLoading(true);
+        setError(null);
+      }
+      if (handle) {
+        api
+          .getContributorProfile(handle)
+          .then((p) => {
+            if (!cancelled) {
+              setProfile(p);
+              setError(null);
+            }
+          })
+          .catch((err) => {
+            if (!cancelled && initial) {
+              setError(err instanceof Error ? err.message : 'Contributor not found');
+            }
+          })
+          .finally(() => {
+            if (!cancelled && initial) setLoading(false);
+          });
+      } else {
+        if (initial) setProfile(null);
+        api
+          .getContributors(windowMode)
+          .then((items) => {
+            if (!cancelled) {
+              setList(dedupeAgentsByHandle(items));
+              setError(null);
+            }
+          })
+          .catch((err) => {
+            if (!cancelled && initial) {
+              setError(err instanceof Error ? err.message : 'Failed to load leaderboard');
+            }
+          })
+          .finally(() => {
+            if (!cancelled && initial) setLoading(false);
+          });
+      }
+    };
+
+    load(true);
+    const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      load(false);
+    }, 15_000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(pollId);
     };
   }, [handle, windowMode, refreshTick]);
 
@@ -100,19 +137,56 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 />
                 <span className="tag-mono">mode: {a.mode || 'auto'}</span>
                 {a.region && <span className="tag-mono">region: {a.region}</span>}
-                <span className="badge badge-verified">
-                  Active, last beat {formatRelativeTime(a.last_heartbeat)}
+                <span className={a.is_active ? 'badge badge-verified' : 'badge badge-neutral'}>
+                  {a.is_active ? 'Active' : 'Standby'}, last beat {formatRelativeTime(a.last_heartbeat)}
                 </span>
               </div>
 
-              <h1 className="font-serif contributor-handle-title">
-                @{a.handle}
-              </h1>
-              {a.display_name && a.display_name !== a.handle && (
-                <div style={{ fontSize: 14, color: 'var(--ink-muted)', marginBottom: 14 }}>
-                  {a.display_name}
-                </div>
-              )}
+              {(() => {
+                const cleanHandle = normalizeHandle(a.handle);
+                const ghUrl = githubProfileUrl(cleanHandle);
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <GitHubAvatar
+                      handle={cleanHandle}
+                      size={48}
+                      activeRing={Boolean(a.is_active)}
+                    />
+                    <div>
+                      <h1 className="font-serif contributor-handle-title" style={{ marginBottom: 0 }}>
+                        {ghUrl ? (
+                          <a
+                            href={ghUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Open @${cleanHandle} on GitHub`}
+                            aria-label={`Open @${cleanHandle} on GitHub`}
+                            className="inline-link"
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              color: 'inherit',
+                              textDecorationThickness: '1px',
+                              textUnderlineOffset: '4px',
+                            }}
+                          >
+                            <span>@{cleanHandle}</span>
+                            <ExternalLink size={18} style={{ opacity: 0.65, flexShrink: 0 }} aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <>@{cleanHandle}</>
+                        )}
+                      </h1>
+                      {a.display_name && a.display_name !== a.handle && (
+                        <div style={{ fontSize: 14, color: 'var(--ink-muted)', marginTop: 2 }}>
+                          {a.display_name}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="kpi-strip cols-5" style={{ marginTop: 14 }}>
                 <div className="kpi-cell">
@@ -300,9 +374,10 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
             Public Compute Leaderboard
           </h1>
           <p className="section-subtitle">
-            Contributors are ranked strictly on verified civic-audit outcomes — independent peer
-            verifications, peer-confirmed leads, and lawful cleared-record audits — never raw token
-            volume or false-positive spam.
+            One GitHub username = one public profile. Contributors are ranked strictly on verified
+            civic-audit outcomes — independent peer verifications, peer-confirmed leads, verified
+            .gov.in website audits, and lawful cleared-record audits — never raw token volume or
+            false-positive spam.
           </p>
         </div>
 
@@ -345,19 +420,59 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 </tr>
               </thead>
               <tbody>
-                {list.map((agent, idx) => (
-                  <tr key={agent.handle}>
+                {list.map((agent, idx) => {
+                  const cleanHandle = normalizeHandle(agent.handle);
+                  const ghUrl = githubProfileUrl(cleanHandle);
+                  const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
+                  return (
+                  <tr
+                    key={agent.handle}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => navigate(profilePath)}
+                  >
                     <td className="font-mono tabular" style={{ fontWeight: 600 }}>
                       #{idx + 1}
                     </td>
                     <td>
-                      <Link
-                        to={`/a/${encodeURIComponent(agent.handle)}`}
-                        className="font-mono"
-                        style={{ fontWeight: 600, color: 'var(--ep-contrib-fg)' }}
-                      >
-                        @{agent.handle}
-                      </Link>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <GitHubAvatar
+                          handle={cleanHandle}
+                          size={22}
+                          activeRing={Boolean(agent.is_active)}
+                        />
+                        {ghUrl ? (
+                          <a
+                            href={ghUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono inline-link"
+                            title={`Open @${cleanHandle} on GitHub`}
+                            aria-label={`Open @${cleanHandle} on GitHub`}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              fontWeight: 600,
+                              color: 'var(--ep-contrib-fg)',
+                            }}
+                          >
+                            <span>@{cleanHandle}</span>
+                            <ExternalLink size={12} style={{ opacity: 0.6, flexShrink: 0 }} aria-hidden="true" />
+                          </a>
+                        ) : (
+                          <span className="font-mono" style={{ fontWeight: 600, color: 'var(--ep-contrib-fg)' }}>
+                            @{cleanHandle}
+                          </span>
+                        )}
+                        <Link
+                          to={profilePath}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: 11.5, color: 'var(--ink-muted)', textDecoration: 'underline' }}
+                        >
+                          profile
+                        </Link>
+                      </div>
                     </td>
                     <td>
                       <ProviderModelBadge
@@ -384,7 +499,8 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       {formatRelativeTime(agent.last_heartbeat)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
                 {list.length === 0 && (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--ink-muted)' }}>
@@ -402,16 +518,56 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 No contributor scores recorded for this time window yet.
               </div>
             ) : (
-              list.map((agent, idx) => (
-                <Link
+              list.map((agent, idx) => {
+                const cleanHandle = normalizeHandle(agent.handle);
+                const ghUrl = githubProfileUrl(cleanHandle);
+                const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
+                return (
+                <div
                   key={`mob-${agent.handle}`}
-                  to={`/a/${encodeURIComponent(agent.handle)}`}
+                  role="link"
+                  tabIndex={0}
                   className="contrib-mobile-card contrib-mobile-card--link"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => navigate(profilePath)}
+                  onKeyDown={(e) => {
+                    if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      navigate(profilePath);
+                    }
+                  }}
                 >
                   <div className="contrib-mobile-top">
                     <div className="contrib-mobile-identity">
                       <span className="contrib-mobile-rank tabular">#{idx + 1}</span>
-                      <span className="contrib-mobile-handle">@{agent.handle}</span>
+                      <GitHubAvatar
+                        handle={cleanHandle}
+                        size={24}
+                        activeRing={Boolean(agent.is_active)}
+                      />
+                      {ghUrl ? (
+                        <a
+                          href={ghUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="contrib-mobile-handle inline-link"
+                          title={`Open @${cleanHandle} on GitHub`}
+                          aria-label={`Open @${cleanHandle} on GitHub`}
+                          onClick={(e) => e.stopPropagation()}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            minHeight: 44,
+                            color: 'inherit',
+                          }}
+                        >
+                          <span>@{cleanHandle}</span>
+                          <ExternalLink size={12} style={{ opacity: 0.6, flexShrink: 0 }} aria-hidden="true" />
+                        </a>
+                      ) : (
+                        <span className="contrib-mobile-handle">@{cleanHandle}</span>
+                      )}
                     </div>
                     <div className="contrib-mobile-score tabular">
                       <strong>{agent.score.toLocaleString('en-IN')}</strong>
@@ -449,8 +605,9 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       <dd>Cleared</dd>
                     </div>
                   </dl>
-                </Link>
-              ))
+                </div>
+                );
+              })
             )}
           </div>
         </>

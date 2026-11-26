@@ -59,8 +59,9 @@ MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
 CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.7"
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
-MAX_RATE_LIMIT_WAITS = 8
+MAX_RATE_LIMIT_WAITS = 12
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
+MAX_CLAIM_429_BACKOFFS = 4
 MAX_TRANSPORT_RETRIES = 3
 RETRYABLE_HUB_STATUS = frozenset({502, 503, 504})
 # After this many consecutive source-fetch failures in a row the node stops claiming:
@@ -225,6 +226,21 @@ def _retry_after_seconds(resp: httpx.Response) -> float | None:
         return max(1.0, min(float(raw.strip()), MAX_RATE_LIMIT_WAIT_SECONDS))
     except ValueError:
         return None
+
+
+def _is_lease_cap_429(resp: httpx.Response) -> bool:
+    """Return True when a 429 is the Hub's explicit concurrent-lease cap (not a transient rate limit)."""
+    if resp.status_code != 429 or resp.headers.get("Retry-After") is not None:
+        return False
+    detail = ""
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            detail = str(body.get("detail") or "")
+    except ValueError:
+        detail = resp.text[:300]
+    low = detail.lower()
+    return "active task lease" in low or "already holds" in low
 
 
 class RunSummary(BaseModel):
@@ -1288,9 +1304,13 @@ class AgentRunner:
                 self._sleep(delay)
                 continue
             if resp.status_code == 429:
-                pause = _retry_after_seconds(resp)
-                if pause is None or waited >= rate_limit_waits:
+                if _is_lease_cap_429(resp):
                     return resp
+                if waited >= rate_limit_waits:
+                    return resp
+                pause = _retry_after_seconds(resp)
+                if pause is None:
+                    pause = min(MAX_RATE_LIMIT_WAIT_SECONDS, 2.0 * (2 ** waited))
                 waited += 1
                 delay = pause + random.uniform(0.2, 3.0)  # spread nodes that share one address
                 self._emit("hub_retry", {"what": what, "reason": "rate_limited", "delay": round(delay, 1)})
@@ -2538,6 +2558,7 @@ class AgentRunner:
         )
         self.last_summary = summary
         source_failures = 0
+        consecutive_claim_429 = 0
 
         self._emit(
             "run_started",
@@ -2560,8 +2581,31 @@ class AgentRunner:
                     lease = self.claim_next(preferred_mission=preferred_mission, task_id=target_task_id)
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code == 429:
-                        # Still refused after waiting: either the address is saturated or this handle
-                        # already holds its two leases. Stop cleanly; nothing is lost.
+                        is_lease_cap = _is_lease_cap_429(exc.response)
+                        if is_lease_cap and not continuous:
+                            # This handle already holds its concurrent lease cap; stop cleanly without spinning.
+                            summary.stopped_reason = "hub_busy_or_lease_cap"
+                            self._emit("claim_refused", {"detail": exc.response.text[:300]})
+                            break
+                        if consecutive_claim_429 < MAX_CLAIM_429_BACKOFFS:
+                            consecutive_claim_429 += 1
+                            base_wait = _retry_after_seconds(exc.response)
+                            if base_wait is None:
+                                base_wait = min(
+                                    MAX_RATE_LIMIT_WAIT_SECONDS,
+                                    max(self.poll_interval, 5.0 * (2 ** (consecutive_claim_429 - 1))),
+                                )
+                            delay = base_wait + random.uniform(0.2, 2.0)
+                            self._emit(
+                                "hub_retry",
+                                {
+                                    "what": "claim",
+                                    "reason": "lease_cap_busy" if is_lease_cap else "rate_limited",
+                                    "delay": round(delay, 1),
+                                },
+                            )
+                            self._sleep(delay)
+                            continue
                         summary.stopped_reason = "hub_busy_or_lease_cap"
                         self._emit("claim_refused", {"detail": exc.response.text[:300]})
                         break
@@ -2586,6 +2630,7 @@ class AgentRunner:
                         )
                         break
                     raise
+                consecutive_claim_429 = 0
                 if lease is None:
                     if continuous and not target_task_id:
                         self._sleep(self.poll_interval)

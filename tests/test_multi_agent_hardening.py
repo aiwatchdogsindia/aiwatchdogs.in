@@ -176,7 +176,7 @@ def test_multi_agent_same_ip_rate_limits_isolated_per_agent(
     with TestClient(create_app(db_path=tmp_path / "rl.db", seed=True)) as client:
         ip_hdr = {"x-vercel-forwarded-for": "198.51.100.42"}
 
-        # 25 distinct coding agents behind one NAT IP can all register cleanly (limit=60/min, was 20/min).
+        # 25 distinct coding agents behind one NAT IP can all register cleanly with zero rate-limit 429s.
         tokens: list[str] = []
         for i in range(25):
             r = client.post(
@@ -187,23 +187,16 @@ def test_multi_agent_same_ip_rate_limits_isolated_per_agent(
             assert r.status_code == 200, (i, r.text)
             tokens.append(r.json()["api_token"])
 
-        # Agent 0 hits its own per-agent desk_next cap (60/min) -> 61st call returns 429 with Retry-After.
-        for i in range(60):
+        # Rapid volunteer desk polling/claims are never throttled with HTTP 429 on desk work endpoints.
+        for i in range(100):
             r = client.post(
                 "/api/desk/next",
                 headers={**ip_hdr, "X-Agent-Token": tokens[0]},
                 json={"mode": "verify"},
             )
             assert r.status_code == 204, (i, r.status_code)
-        r_over = client.post(
-            "/api/desk/next",
-            headers={**ip_hdr, "X-Agent-Token": tokens[0]},
-            json={"mode": "verify"},
-        )
-        assert r_over.status_code == 429
-        assert "retry-after" in r_over.headers
 
-        # Agent 1 behind the EXACT SAME IP is NOT starved by Agent 0's per-agent 429!
+        # Agent 1 behind the exact same IP is equally unthrottled.
         r_other = client.post(
             "/api/desk/next",
             headers={**ip_hdr, "X-Agent-Token": tokens[1]},
@@ -590,7 +583,11 @@ def test_dropped_claim_reply_replays_exact_lease_without_acquiring_second_lease(
         assert active_rows[0]["claim_request_id"]
         assert int(claim_events["c"]) == 1
 
-        # Even at MAX_CONCURRENT_LEASES_PER_AGENT=2, replaying the 2nd claim's request_id returns 200 (not 429).
+        # Multiple parallel sessions under one GitHub handle are permitted (MAX_CONCURRENT_LEASES_PER_AGENT = 50),
+        # and replaying an active claim's request_id returns 200 even when the lease cap is reached.
+        from aiwatchdogs.hub import desk as desk_mod
+
+        assert desk_mod.MAX_CONCURRENT_LEASES_PER_AGENT == 50
         req2 = "claim-at-cap-req-2"
         second = tc.post(
             "/api/desk/next",
@@ -598,21 +595,34 @@ def test_dropped_claim_reply_replays_exact_lease_without_acquiring_second_lease(
             json={"mode": "investigate", "request_id": req2},
         )
         assert second.status_code == 200
-        replay_second = tc.post(
-            "/api/desk/next",
-            headers={"X-Agent-Token": token, "Idempotency-Key": req2},
-            json={"mode": "investigate", "request_id": req2},
-        )
-        assert replay_second.status_code == 200
-        assert replay_second.json()["lease_id"] == second.json()["lease_id"]
-
-        # A genuinely NEW request_id while holding 2 leases still hits the 429 lease cap.
+        # A 3rd parallel claim under the same handle succeeds by default (no artificial 2-lease block).
         third = tc.post(
             "/api/desk/next",
-            headers={"X-Agent-Token": token, "Idempotency-Key": "claim-over-cap-3"},
-            json={"mode": "investigate", "request_id": "claim-over-cap-3"},
+            headers={"X-Agent-Token": token, "Idempotency-Key": "claim-parallel-3"},
+            json={"mode": "investigate", "request_id": "claim-parallel-3"},
         )
-        assert third.status_code == 429
+        assert third.status_code == 200
+
+        # When the ceiling IS reached, replaying an existing request_id still returns 200 while a brand-new claim gets 429.
+        orig_cap = desk_mod.MAX_CONCURRENT_LEASES_PER_AGENT
+        desk_mod.MAX_CONCURRENT_LEASES_PER_AGENT = 3
+        try:
+            replay_second = tc.post(
+                "/api/desk/next",
+                headers={"X-Agent-Token": token, "Idempotency-Key": req2},
+                json={"mode": "investigate", "request_id": req2},
+            )
+            assert replay_second.status_code == 200
+            assert replay_second.json()["lease_id"] == second.json()["lease_id"]
+
+            fourth = tc.post(
+                "/api/desk/next",
+                headers={"X-Agent-Token": token, "Idempotency-Key": "claim-over-cap-4"},
+                json={"mode": "investigate", "request_id": "claim-over-cap-4"},
+            )
+            assert fourth.status_code == 429
+        finally:
+            desk_mod.MAX_CONCURRENT_LEASES_PER_AGENT = orig_cap
 
 
 def test_claim_next_raises_on_empty_502_and_empty_200_instead_of_empty_queue() -> None:

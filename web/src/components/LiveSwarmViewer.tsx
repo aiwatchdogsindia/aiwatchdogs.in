@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  ExternalLink,
   Radio,
   Sparkles,
   Users,
@@ -224,6 +225,34 @@ function resolveRoleVisual(node: LiveSwarmNode): RoleVisual {
   return ROLE_VISUALS.idle;
 }
 
+const GITHUB_USERNAME_RE = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/i;
+const NON_GITHUB_FALLBACK_RE = /^civic-/i;
+const SYNTHETIC_NON_GITHUB_HANDLES = new Set([
+  'hub',
+  'system',
+  'swarm',
+  'swarm-node',
+  'unknown-node',
+  'peer-node',
+  'coordinator',
+  'anonymous',
+  'guest',
+]);
+
+/**
+ * Return the canonical GitHub profile URL for a real GitHub username, or null
+ * for synthetic / `civic-*` sandbox fallback handles.
+ */
+export function githubProfileUrl(rawHandle: string | null | undefined): string | null {
+  const clean = normalizeHandle(rawHandle || '');
+  if (!clean) return null;
+  if (NON_GITHUB_FALLBACK_RE.test(clean)) return null;
+  if (SYNTHETIC_NON_GITHUB_HANDLES.has(clean.toLowerCase())) return null;
+  if (clean.includes('--')) return null;
+  if (!GITHUB_USERNAME_RE.test(clean)) return null;
+  return `https://github.com/${encodeURIComponent(clean)}`;
+}
+
 function statusPriority(node: LiveSwarmNode): number {
   const s = (node.status || '').toLowerCase();
   if (s === 'working') return 0;
@@ -231,6 +260,41 @@ function statusPriority(node: LiveSwarmNode): number {
   if (s === 'active') return 2;
   if (s === 'recent') return 3;
   return 4;
+}
+
+function parseTimestampMs(iso: string | null | undefined): number {
+  if (!iso) return 0;
+  const ts = Date.parse(iso);
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
+/**
+ * Deduplicate and order live swarm nodes:
+ * 1. Active workers/verifiers ahead of recent/idle nodes.
+ * 2. Recency (`last_seen_at DESC`, then `created_at DESC`) ahead of `tasks_completed`
+ *    so newly joined contributors appear on the canvas immediately instead of being
+ *    hidden behind older idle accounts.
+ */
+export function sortLiveSwarmNodes(nodes: LiveSwarmNode[]): LiveSwarmNode[] {
+  const seen = new Set<string>();
+  const deduped: LiveSwarmNode[] = [];
+  for (const node of nodes) {
+    const key = normalizeHandle(node.handle).toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(node);
+  }
+  return deduped.sort((a, b) => {
+    const diff = statusPriority(a) - statusPriority(b);
+    if (diff !== 0) return diff;
+    const seenDiff = parseTimestampMs(b.last_seen_at) - parseTimestampMs(a.last_seen_at);
+    if (seenDiff !== 0) return seenDiff;
+    const createdDiff = parseTimestampMs(b.created_at) - parseTimestampMs(a.created_at);
+    if (createdDiff !== 0) return createdDiff;
+    const tasksDiff = (b.tasks_completed ?? 0) - (a.tasks_completed ?? 0);
+    if (tasksDiff !== 0) return tasksDiff;
+    return normalizeHandle(a.handle).localeCompare(normalizeHandle(b.handle));
+  });
 }
 
 function formatTickingAge(iso: string | null | undefined, nowMs: number): string {
@@ -506,23 +570,11 @@ export function LiveSwarmViewer({
   const animateActive = inView && tabVisible && !reducedMotion;
   const joinCommand = oneLiner ?? buildCanonicalJoinPrompt();
 
-  // Deduplicate and sort nodes: active workers first, then verifiers, then recent/idle
-  const sortedNodes = useMemo(() => {
-    const raw = snapshot?.active_nodes ?? [];
-    const seen = new Set<string>();
-    const deduped: LiveSwarmNode[] = [];
-    for (const node of raw) {
-      const key = normalizeHandle(node.handle).toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      deduped.push(node);
-    }
-    return deduped.sort((a, b) => {
-      const diff = statusPriority(a) - statusPriority(b);
-      if (diff !== 0) return diff;
-      return (b.tasks_completed ?? 0) - (a.tasks_completed ?? 0);
-    });
-  }, [snapshot?.active_nodes]);
+  // Deduplicate and sort nodes: active workers/verifiers first, then recency (last_seen_at / created_at DESC)
+  const sortedNodes = useMemo(
+    () => sortLiveSwarmNodes(snapshot?.active_nodes ?? []),
+    [snapshot?.active_nodes],
+  );
 
   const orbitItems: OrbitSeatItem[] = useMemo(() => {
     const realNodes = sortedNodes.slice(0, 6);
@@ -911,7 +963,7 @@ export function LiveSwarmViewer({
                     )}
                   </div>
                   <div className="lsv-card-stats">
-                    <span>Instant opt-in · zero prompts</span>
+                    <span>Auto-uses your public GitHub handle</span>
                   </div>
                 </button>
               );
@@ -1158,9 +1210,26 @@ export function LiveSwarmViewer({
             />
             <div className="lsv-inspector-info">
               <div className="lsv-inspector-top">
-                <strong className="lsv-inspector-handle">
-                  @{normalizeHandle(selectedNode.handle)}
-                </strong>
+                {(() => {
+                  const selClean = normalizeHandle(selectedNode.handle);
+                  const selGhUrl = githubProfileUrl(selClean);
+                  return selGhUrl ? (
+                    <a
+                      href={selGhUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="lsv-inspector-handle inline-link"
+                      title={`Open @${selClean} on GitHub`}
+                      aria-label={`Open @${selClean} on GitHub`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: 'inherit' }}
+                    >
+                      <strong>@{selClean}</strong>
+                      <ExternalLink size={13} style={{ opacity: 0.65, flexShrink: 0 }} aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <strong className="lsv-inspector-handle">@{selClean}</strong>
+                  );
+                })()}
                 <span
                   className={`lsv-status-badge ${
                     isNodeActivelyWorking(selectedNode) ? 'is-live' : 'is-recent'

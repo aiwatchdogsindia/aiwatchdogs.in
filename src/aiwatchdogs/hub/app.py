@@ -845,7 +845,7 @@ def create_app(
     # ------------------------------------------------------------------
 
     _PUBLIC_READ_CACHE = "public, max-age=0, s-maxage=5, stale-while-revalidate=15"
-    _LIVE_SWARM_CACHE = "public, max-age=0, s-maxage=3, stale-while-revalidate=10"
+    _LIVE_SWARM_CACHE = "public, max-age=0, s-maxage=1, stale-while-revalidate=2"
 
     @application.get("/api/head")
     def api_head(response: Response) -> dict[str, Any]:
@@ -1080,40 +1080,8 @@ def create_app(
         return desk.list_sources()
 
     # ------------------------------------------------------------------
-    # Desk Coordination Plane
+    # Desk Coordination Plane (unlimited volunteer contributions — zero rate-limit throttling)
     # ------------------------------------------------------------------
-
-    def _desk_rate_limit(
-        request: Request,
-        x_agent_token: str | None,
-        action: str,
-        *,
-        per_agent_limit: int,
-        ip_ceiling: int,
-        window_seconds: int = 60,
-    ) -> None:
-        """Rate-limit authenticated Desk traffic per agent token plus a higher aggregate IP ceiling.
-
-        Many coding agents on one laptop/NAT or behind a shared edge IP each receive their own
-        per-agent quota while unauthenticated callers and single-IP floods remain bounded.
-        """
-        client_ip = _extract_client_ip(request)
-        cleaned_tok = (x_agent_token or "").strip()
-        if cleaned_tok:
-            tok_key = compute_token_digest(cleaned_tok).split(":", 1)[-1][:24]
-            desk.check_rate_limits(
-                [
-                    (f"{action}:tok:{tok_key}", per_agent_limit),
-                    (f"{action}:ip:{client_ip}", ip_ceiling),
-                ],
-                window_seconds=window_seconds,
-            )
-        else:
-            desk.check_rate_limit(
-                bucket_key=f"{action}:ip:{client_ip}",
-                limit=per_agent_limit,
-                window_seconds=window_seconds,
-            )
 
     @application.post("/api/agents/register")
     def api_agents_register(
@@ -1123,11 +1091,6 @@ def create_app(
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        desk.check_rate_limit(
-            bucket_key=f"agent_register:{_extract_client_ip(request)}",
-            limit=60,
-            window_seconds=60,
-        )
         _require_current_cli(request)
         response.headers["Cache-Control"] = "no-store"
         return desk.register_agent(
@@ -1172,13 +1135,6 @@ def create_app(
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> Response | dict[str, Any]:
-        _desk_rate_limit(
-            request,
-            x_agent_token,
-            "desk_next",
-            per_agent_limit=60,
-            ip_ceiling=600,
-        )
         _require_current_cli(request)
         claimed = desk.claim_next_task(
             token=x_agent_token,
@@ -1201,13 +1157,6 @@ def create_app(
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> dict[str, Any]:
-        _desk_rate_limit(
-            request,
-            x_agent_token,
-            "desk_beat",
-            per_agent_limit=120,
-            ip_ceiling=1200,
-        )
         response.headers["Cache-Control"] = "no-store"
         return desk.heartbeat(
             lease_id=body.lease_id,
@@ -1223,13 +1172,6 @@ def create_app(
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> dict[str, Any]:
-        _desk_rate_limit(
-            request,
-            x_agent_token,
-            "desk_release",
-            per_agent_limit=60,
-            ip_ceiling=600,
-        )
         response.headers["Cache-Control"] = "no-store"
         return desk.release_task(
             lease_id=body.lease_id,
@@ -1245,13 +1187,6 @@ def create_app(
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> dict[str, Any]:
-        _desk_rate_limit(
-            request,
-            x_agent_token,
-            "desk_usage",
-            per_agent_limit=30,
-            ip_ceiling=300,
-        )
         response.headers["Cache-Control"] = "no-store"
         return desk.report_usage(task_ids=body.task_ids, usage=body.usage, token=x_agent_token)
 
@@ -1263,13 +1198,6 @@ def create_app(
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        _desk_rate_limit(
-            request,
-            x_agent_token,
-            "desk_submit",
-            per_agent_limit=60,
-            ip_ceiling=600,
-        )
         _require_current_cli(request)
         response.headers["Cache-Control"] = "no-store"
         return desk.submit_task(
@@ -1313,8 +1241,15 @@ def create_app(
     @application.get("/robots.txt", response_class=PlainTextResponse)
     @application.head("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
     def robots_txt(request: Request) -> PlainTextResponse:
+        robots_body = render_robots_txt(_public_base_url(request))
+        if "User-agent: Twitterbot" not in robots_body:
+            robots_body = robots_body.replace(
+                "User-agent: OAI-SearchBot",
+                "User-agent: Twitterbot\nAllow: /\n\nUser-agent: OAI-SearchBot",
+                1,
+            )
         return PlainTextResponse(
-            content=render_robots_txt(_public_base_url(request)),
+            content=robots_body,
             media_type="text/plain; charset=utf-8",
             headers={"Cache-Control": "public, max-age=300, s-maxage=300"},
         )
