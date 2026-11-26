@@ -122,6 +122,8 @@ export interface LiveSwarmViewerProps {
   onSelectFinding?: (findingId: string | number) => void;
   /** Heading override (defaults to "Live swarm viewer"). */
   title?: string;
+  /** Semantic heading level for the viewer title (defaults to "h2"). */
+  headingAs?: 'h1' | 'h2';
   /** Hide the outer header when embedded inside a section that supplies its own heading. */
   hideHeader?: boolean;
   /** Optional extra CSS class on the outer container. */
@@ -434,9 +436,11 @@ export function LiveSwarmViewer({
   onOpenJoin,
   onSelectFinding,
   title = 'Live swarm viewer',
+  headingAs = 'h2',
   hideHeader = false,
   className = '',
 }: LiveSwarmViewerProps) {
+  const HeadingTag = headingAs;
   const toast = useToast();
   const stageRef = useRef<HTMLDivElement | null>(null);
 
@@ -670,7 +674,7 @@ export function LiveSwarmViewer({
       {!hideHeader && (
         <div className="lsv-header">
           <div className="lsv-header-left">
-            <h2 className="lsv-title">{title}</h2>
+            <HeadingTag className="lsv-title">{title}</HeadingTag>
             <span className="lsv-freshness" aria-live="polite">
               <span
                 className={`lsv-dot ${
@@ -812,7 +816,7 @@ export function LiveSwarmViewer({
                     <circle r="3.4" fill={strokeColor} opacity="0.95">
                       <animateMotion
                         dur={`${durSec.toFixed(2)}s`}
-                        begin={`${(item.slotIndex * 0.45).toFixed(2)}s`}
+                        begin={`-${(item.slotIndex * 0.55 + 0.35).toFixed(2)}s`}
                         repeatCount="indefinite"
                         path={spokeToHub}
                       />
@@ -820,7 +824,7 @@ export function LiveSwarmViewer({
                     <circle r="2.2" fill="#1FA319" opacity="0.72">
                       <animateMotion
                         dur={`${(durSec * 1.35).toFixed(2)}s`}
-                        begin={`${(item.slotIndex * 0.65 + 0.9).toFixed(2)}s`}
+                        begin={`-${(item.slotIndex * 0.75 + 0.9).toFixed(2)}s`}
                         repeatCount="indefinite"
                         path={spokeFromHub}
                       />

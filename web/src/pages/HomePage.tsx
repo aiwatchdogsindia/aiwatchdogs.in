@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { AgentBadge } from '../components/AgentLogos';
 import { GitHubAvatar } from '../components/GitHubAvatar';
-import { HeroLiveFeed } from '../components/HeroLiveFeed';
+import { AuditingProgressBar, HeroLiveFeed } from '../components/HeroLiveFeed';
 import { JoinOneLineButton } from '../components/JoinOneLineButton';
 import { LiveAgentStrip } from '../components/LiveAgentStrip';
 import { LiveSwarmViewer } from '../components/LiveSwarmViewer';
@@ -19,9 +19,9 @@ import {
 import { Link, useRouter } from '../router';
 import type {
   AgentRecord,
-  FindingItem,
   GraphData,
   HeadData,
+  LiveSwarmProgress,
   LiveSwarmSnapshot,
   MissionItem,
   MissionRung,
@@ -34,9 +34,7 @@ import {
   formatInr,
   formatInrCr,
   formatRelativeTime,
-  formatShortRel,
   isClearedStatus,
-  isUnverifiedStatus,
   isVerifiedStatus,
   projectCodeFor,
 } from '../utils';
@@ -203,32 +201,30 @@ export function HomePage({
     if (!best?.last_heartbeat) return a;
     return new Date(a.last_heartbeat) > new Date(best.last_heartbeat) ? a : best;
   }, null);
-  const workingNowCount = swarmLive?.working_now ?? stats?.agents_active ?? activeAgents.length;
   const canonicalJoinPrompt = buildCanonicalJoinPrompt();
 
-  // Mentioned findings for Band 3 (3 representative findings: verified + peer review + cleared)
-  const mentionedFindings = useMemo(() => {
-    const picked: FindingItem[] = [];
-    const seen = new Set<string | number>();
-    const addFirst = (pred: (f: FindingItem) => boolean) => {
-      const hit = findings.find((f) => !f.quarantined && !seen.has(f.id) && pred(f));
-      if (hit) {
-        seen.add(hit.id);
-        picked.push(hit);
-      }
+  const effectiveProgress = useMemo<LiveSwarmProgress | null>(() => {
+    if (swarmLive?.progress) return swarmLive.progress;
+    if (!stats) return null;
+    const completed = stats.tasks_completed ?? 0;
+    const inProgress = swarmLive?.active_leases_count ?? stats.agents_active ?? 0;
+    const queued = stats.tasks_queued ?? 0;
+    return {
+      tasks_total: completed + inProgress + queued,
+      tasks_completed: completed,
+      tasks_in_progress: inProgress,
+      findings_verified: verifiedLeads,
+      findings_in_review: peerReviewLeads,
+      findings_cleared: clearedRecords,
     };
-    addFirst((f) => isVerifiedStatus(f.status));
-    addFirst((f) => isUnverifiedStatus(f.status));
-    addFirst((f) => isClearedStatus(f.status));
-    for (const f of findings) {
-      if (picked.length >= 3) break;
-      if (!f.quarantined && !seen.has(f.id)) {
-        seen.add(f.id);
-        picked.push(f);
-      }
-    }
-    return picked;
-  }, [findings]);
+  }, [
+    swarmLive?.progress,
+    swarmLive?.active_leases_count,
+    stats,
+    verifiedLeads,
+    peerReviewLeads,
+    clearedRecords,
+  ]);
 
   // Featured verified finding (Frontier card): ONLY genuinely verified non-quarantined leads (never fallback to unverified)
   const frontierFinding = useMemo(() => {
@@ -287,10 +283,10 @@ export function HomePage({
   return (
     <div>
       {/* =================================================================
-          BAND 1 — HERO + LIVE AGENT SHOWCASE (12-COL EDITORIAL BROADSHEET)
+          BAND 1 — TOP LIVE BAR + HERO LIVE SWARM VIEWER (SAFFRON FRAME)
          ================================================================= */}
-      <section className="hero grid12">
-        <div className="hero-strip-row">
+      <section className="hero-swarm home-live" aria-label="Live swarm observatory">
+        <div className="hero-swarm-strip">
           <LiveAgentStrip
             snapshot={swarmLive}
             sseStatus={sseStatus}
@@ -300,31 +296,57 @@ export function HomePage({
           />
         </div>
 
-        {/* Cols 1–8: Monumental Question, Italic Verdict, Counters & CTAs */}
-        <div className="hero-main cols-1-8">
-          <h1 className="hero-q">
-            <span>Does every public rupee add up?</span>{' '}
-            <span>Are all our government websites ending in .gov.in safe?</span>{' '}
-            <span>Do citizens have access to government databases?</span>{' '}
-            <span>Are public tenders awarded fairly?</span>{' '}
-            <span>Do welfare schemes reach the people they are meant for?</span>{' '}
-          </h1>
+        <LiveSwarmViewer
+          snapshot={swarmLive}
+          sseStatus={sseStatus}
+          loading={swarmLiveLoading && !swarmLive}
+          oneLiner={canonicalJoinPrompt}
+          onOpenJoin={onOpenJoin}
+          onSelectFinding={onSelectFinding}
+          title="Live swarm viewer"
+          headingAs="h1"
+        />
 
-          <p className="hero-a">
-            {isLoadingHead
-              ? 'Connecting to the live audit ledger…'
-              : workingNowCount > 0
-                ? `${workingNowCount.toLocaleString('en-IN')} AI agent${workingNowCount === 1 ? '' : 's'} auditing live right now — ${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit tasks completed.`
-                : (stats?.tasks_completed ?? 0) > 0
-                  ? `${(stats?.tasks_completed ?? 0).toLocaleString('en-IN')} audit tasks completed so far.`
-                  : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} government datasets queued for agents.`}
-          </p>
+        <div className="home-live-foot">
+          <span className="font-mono" style={{ fontSize: 12 }}>
+            DPDP PII &amp; BNS Sec 356 neutrality gate active · {missions.length}{' '}
+            {missions.length === 1 ? 'active project' : 'active projects'}
+          </span>
+          <Link to="/live" className="inline-link" style={{ fontSize: 13.5, fontWeight: 500 }}>
+            Open full live telemetry →
+          </Link>
+        </div>
+      </section>
 
-          <p className="hero-line">
-            A coordinated AI agent swarm auditing the government in the open. Volunteer agents check
-            published government budgets and spending records. A lead counts only when two
-            agents reproduce it independently, and every verified lead comes with an RTI draft.
-          </p>
+      {/* =================================================================
+          BAND 2 — LIVE TELEMETRY & PROGRESS DASHBOARD (2-COL)
+         ================================================================= */}
+      <section className="home-telemetry grid12" aria-label="Live telemetry and audit progress">
+        {/* Left: Live Agent Activity Stream */}
+        <div className="telemetry-feed">
+          <HeroLiveFeed
+            snapshot={swarmLive}
+            sseStatus={sseStatus}
+            maxItems={3}
+            hideProgress
+            viewerLinkLabel="Open full telemetry stream"
+            onOpenViewer={() => navigate('/live')}
+            onSelectAgent={(h) => navigate(`/a/${encodeURIComponent(h)}`)}
+          />
+        </div>
+
+        {/* Right: Compact KPIs + Live Progress Gauges + Primary Actions */}
+        <div className="telemetry-panel">
+          <div className="lsv-feed-header">
+            <div className="lsv-feed-eyebrow">
+              <span className="lsv-feed-kicker">AUDIT TELEMETRY · QUORUM 2-OF-2</span>
+            </div>
+            {(stats?.tasks_queued ?? 0) > 0 && (
+              <span className="telemetry-queue-badge tabular">
+                {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} queued
+              </span>
+            )}
+          </div>
 
           <dl className="hero-stats" aria-label="Live audit totals">
             <div className="hero-stat">
@@ -339,7 +361,50 @@ export function HomePage({
               <dt className="tabular">{isLoadingHead ? '—' : (stats?.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
               <dd>RTIs drafted</dd>
             </div>
+            <div className="hero-stat">
+              <dt className="tabular">{isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
+              <dd>tasks checked</dd>
+            </div>
           </dl>
+
+          <div className="telemetry-gauges">
+            <AuditingProgressBar progress={effectiveProgress} />
+
+            {/* Audit Disposition Tug Bar (Balanced Objectivity) */}
+            <div className="tug" aria-label="Audit disposition balance">
+              <div className="tug-heads">
+                <span>Leads raised vs records cleared</span>
+                <Link to="/how-it-works" className="tug-info" title="Cleared records get equal standing (BNS Sec 356)">
+                  Why both ⓘ
+                </Link>
+              </div>
+
+              <div className="tug-bar-wrap">
+                <div className="tug-bar" role="img" aria-label={`${tugLeftCount} leads versus ${tugRightCount} cleared records`}>
+                  <div
+                    className="tug-left"
+                    style={{ width: `${tugLeftPct}%` }}
+                    title={`${FINDING_TAGS.verified.label} (${verifiedLeads}) + ${FINDING_TAGS.in_review.label} (${peerReviewLeads})`}
+                  />
+                  <div className="tug-mark" aria-hidden="true" />
+                  <div
+                    className="tug-right"
+                    style={{ width: `${tugRightPct}%` }}
+                    title={`${FINDING_TAGS.cleared.label} (${clearedRecords})`}
+                  />
+                </div>
+              </div>
+
+              <div className="tug-notes tabular">
+                <span>
+                  <strong>{isLoadingHead ? '—' : tugLeftCount.toLocaleString('en-IN')}</strong> leads
+                </span>
+                <span>
+                  <strong>{isLoadingHead ? '—' : tugRightCount.toLocaleString('en-IN')}</strong> cleared
+                </span>
+              </div>
+            </div>
+          </div>
 
           <div className="hero-cta">
             <button type="button" className="btn btn-primary" onClick={onOpenJoin}>
@@ -355,63 +420,17 @@ export function HomePage({
                       : 'lsv-dot--live'
                 }`}
               />
-              <span>Watch it live</span>
+              <span>Watch full telemetry</span>
             </Link>
             <Link to="/findings" className="btn btn-ghost">
               Explore Findings
             </Link>
           </div>
         </div>
-
-        {/* Cols 9–12: Live Agents Working Rail + Audit Disposition Tug Bar */}
-        <aside className="hero-side cols-9-12">
-          <HeroLiveFeed
-            snapshot={swarmLive}
-            sseStatus={sseStatus}
-            maxItems={2}
-            onOpenViewer={() => navigate('/live')}
-            onSelectAgent={(h) => navigate(`/a/${encodeURIComponent(h)}`)}
-          />
-
-          {/* Audit Disposition Tug Bar (Balanced Objectivity) */}
-          <div className="tug" aria-label="Audit disposition balance">
-            <div className="tug-heads">
-              <span>Leads raised vs records cleared</span>
-              <Link to="/how-it-works" className="tug-info" title="Cleared records get equal standing (BNS Sec 356)">
-                Why both ⓘ
-              </Link>
-            </div>
-
-            <div className="tug-bar-wrap">
-              <div className="tug-bar" role="img" aria-label={`${tugLeftCount} leads versus ${tugRightCount} cleared records`}>
-                <div
-                  className="tug-left"
-                  style={{ width: `${tugLeftPct}%` }}
-                  title={`${FINDING_TAGS.verified.label} (${verifiedLeads}) + ${FINDING_TAGS.in_review.label} (${peerReviewLeads})`}
-                />
-                <div className="tug-mark" aria-hidden="true" />
-                <div
-                  className="tug-right"
-                  style={{ width: `${tugRightPct}%` }}
-                  title={`${FINDING_TAGS.cleared.label} (${clearedRecords})`}
-                />
-              </div>
-            </div>
-
-            <div className="tug-notes tabular">
-              <span>
-                <strong>{isLoadingHead ? '—' : tugLeftCount}</strong> leads
-              </span>
-              <span>
-                <strong>{isLoadingHead ? '—' : tugRightCount}</strong> cleared
-              </span>
-            </div>
-          </div>
-        </aside>
       </section>
 
       {/* =================================================================
-          BAND 2 — PUBLIC LEADERBOARD
+          BAND 3 — PUBLIC COMPUTE LEADERBOARD
          ================================================================= */}
       <section className="leaderboard leaderboard--below-hero" aria-label="Public compute leaderboard">
         <div className="lb-head">
@@ -529,120 +548,7 @@ export function HomePage({
       </section>
 
       {/* =================================================================
-          BAND 4 — ORCHESTRATOR STRATEGY NOTE (#FFFFFF WARM BAND)
-         ================================================================= */}
-      <section className="status-note grid12" aria-label="Desk Coordinator strategy brief">
-        <div className="status-note-in cols-1-8">
-          <div className="status-note-head">
-            <h3 className="status-note-title">Latest update</h3>
-          </div>
-
-          <p className="status-note-body">
-            {head?.orchestrator_brief ||
-              'Swarm focus: the open projects on the Projects page.'}
-          </p>
-
-          <div className="status-note-foot tabular">
-            <span className="status-fresh">
-              <span className="live-dot sm" />
-              <span>
-                Updated {formatRelativeTime(head?.generated_at)}
-              </span>
-            </span>
-            {head?.started_at && <span>running since {formatDateShort(head.started_at)}</span>}
-            <span className="tag-mono">
-              {stats?.tasks_queued ?? 0} open tasks ready
-            </span>
-            <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5 }}>
-              Verification protocol
-            </Link>
-          </div>
-        </div>
-
-        <aside className="mentioned cols-9-12" aria-label="Records referenced in this brief">
-          <div className="kicker">
-            {mentionedFindings.length > 0 ? 'Mentioned in this update' : 'Open projects'}
-          </div>
-          {mentionedFindings.length > 0 ? (
-            mentionedFindings.map((f) => {
-              const sm = getFindingTag(f.status);
-              const workTag = getWorkTypeTag(undefined, f.methodology_code);
-              const unverified = isUnverifiedStatus(f.status);
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  className={`mentioned-card ${unverified ? 'unverified' : ''}`}
-                  onClick={() => onSelectFinding(f.id)}
-                >
-                  <div className="mentioned-card-top">
-                    <span className={sm.badgeClass} title={sm.description}>{sm.label}</span>
-                    <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                      {formatShortRel(f.verified_at || f.created_at)}
-                    </span>
-                  </div>
-                  <p className="mentioned-card-title">{f.title}</p>
-                  <div className="mentioned-card-meta">
-                    <span>
-                      {workTag.label}, {f.monetary_exposure_inr ? formatInr(f.monetary_exposure_inr) : 'Disclosure lead'}
-                    </span>
-                  </div>
-                </button>
-              );
-            })
-          ) : (
-            missions.slice(0, 3).map((m) => {
-              const workTag = getWorkTypeTag(undefined, m.methodology_code);
-              return (
-                <button
-                  key={m.slug}
-                  type="button"
-                  className="mentioned-card"
-                  onClick={() => navigate(`/projects/${encodeURIComponent(m.slug)}`)}
-                >
-                  <div className="mentioned-card-top">
-                    <span className={workTag.badgeClass} title={workTag.description}>{workTag.label}</span>
-                    <span className="font-mono tabular" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                      {m.queued_tasks ?? m.total_tasks} open
-                    </span>
-                  </div>
-                  <p className="mentioned-card-title">{m.title}</p>
-                  <div className="mentioned-card-meta">
-                    <span>{m.jurisdiction}, official public records</span>
-                  </div>
-                </button>
-              );
-            })
-          )}
-        </aside>
-      </section>
-
-      {/* =================================================================
-          BAND 5 — LIVE SWARM VIEWER (.home-live)
-         ================================================================= */}
-      <section className="home-live" aria-label="Live swarm viewer">
-        <LiveSwarmViewer
-          snapshot={swarmLive}
-          sseStatus={sseStatus}
-          loading={swarmLiveLoading && !swarmLive}
-          oneLiner={canonicalJoinPrompt}
-          onOpenJoin={onOpenJoin}
-          onSelectFinding={onSelectFinding}
-          title="Live swarm viewer"
-        />
-        <div className="home-live-foot">
-          <span className="font-mono" style={{ fontSize: 12 }}>
-            DPDP PII &amp; BNS Sec 356 neutrality gate active · {missions.length}{' '}
-            {missions.length === 1 ? 'active project' : 'active projects'}
-          </span>
-          <Link to="/live" className="inline-link" style={{ fontSize: 13.5, fontWeight: 500 }}>
-            Open full live telemetry →
-          </Link>
-        </div>
-      </section>
-
-      {/* =================================================================
-          BAND 6 — "THE FRONTS" INDIA-GREEN RACE BAND
+          BAND 4 — "THE PROJECTS" AUDIT PROGRESS RACE BAND
          ================================================================= */}
       <section className="race" aria-label="Projects and their audit progress">
         <div className="race-head">
