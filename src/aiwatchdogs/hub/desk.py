@@ -103,7 +103,7 @@ MAX_LEASE_TOTAL_MINUTES = 180
 MAX_CONCURRENT_LEASES_PER_AGENT = 50
 MAX_ADJUDICATION_ROUNDS = 3
 MAX_WHISPERS_PER_LEASE = 25
-LIVE_AGENT_WINDOW_SECONDS = 900
+LIVE_AGENT_WINDOW_SECONDS = 120
 MAX_LIVE_SWARM_NODES = 50
 MAX_LIVE_RECENT_JOINS = 15
 MAX_LIVE_SWARM_WHISPERS = 20
@@ -777,6 +777,7 @@ class DeskService:
         window_score: int | None = None,
         all_time_score: int | None = None,
         hourly_event_score: int | None = None,
+        activity_telemetry: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         last_hb = _parse_iso(row["last_heartbeat_at"])
         now = datetime.now(timezone.utc)
@@ -785,6 +786,24 @@ class DeskService:
         comp_score = int(all_time_score if all_time_score is not None else (row["compute_score"] or 0))
         hr_score = int(hourly_event_score if hourly_event_score is not None else 0)
         eff_score = int(window_score if window_score is not None else comp_score)
+        tasks_completed = int(row["tasks_completed"] or 0)
+        tel = activity_telemetry or {}
+        score_10m = int(tel.get("score_10m", 0) or 0)
+        score_1h = int(tel["score_1h"]) if "score_1h" in tel else hr_score
+        checks_10m = int(tel.get("checks_10m", 0) or 0)
+        checks_1h = int(tel.get("checks_1h", 0) or 0)
+        raw_pts_36h = tel.get("hourly_points_36h")
+        raw_chk_36h = tel.get("hourly_checks_36h")
+        hourly_points_36h = (
+            [int(v) for v in raw_pts_36h]
+            if isinstance(raw_pts_36h, list) and len(raw_pts_36h) == 36
+            else [0] * 36
+        )
+        hourly_checks_36h = (
+            [int(v) for v in raw_chk_36h]
+            if isinstance(raw_chk_36h, list) and len(raw_chk_36h) == 36
+            else [0] * 36
+        )
         return {
             "id": row["id"],
             "agent_id": row["id"],
@@ -800,7 +819,7 @@ class DeskService:
             "status": "active" if is_online else "idle",
             "is_active": is_online,
             "heartbeat_age_seconds": max(0, age_sec),
-            "tasks_completed": int(row["tasks_completed"] or 0),
+            "tasks_completed": tasks_completed,
             "findings_submitted": int(row["findings_submitted"] or 0),
             "findings_verified": int(row["findings_verified"] or 0),
             "verifications_done": int(row["verifications_done"] or 0),
@@ -809,6 +828,13 @@ class DeskService:
             "score": eff_score,
             "window_score": eff_score,
             "hourly_score": hr_score,
+            "score_10m": score_10m,
+            "score_1h": score_1h,
+            "checks_10m": checks_10m,
+            "checks_1h": checks_1h,
+            "checks_total": tasks_completed,
+            "hourly_points_36h": hourly_points_36h,
+            "hourly_checks_36h": hourly_checks_36h,
             "current_task_id": row["current_task_id"],
             "joined_at": row["joined_at"],
             "last_heartbeat_at": row["last_heartbeat_at"],
@@ -1304,6 +1330,110 @@ class DeskService:
             ).fetchall()
         }
         return all_time, hourly
+
+    def _fetch_activity_telemetry_maps(
+        self,
+        conn: Any,
+        *,
+        handle: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        """Batch-fetch 10m / 1h sliding windows and 36-hour per-hour sparklines in 2 queries."""
+        now_dt = datetime.now(timezone.utc)
+        now_ts = now_dt.timestamp()
+        cutoff_36h = (
+            (now_dt - timedelta(hours=36, seconds=2))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        telemetry: dict[str, dict[str, Any]] = {}
+
+        def _entry(h: str) -> dict[str, Any]:
+            rec = telemetry.get(h)
+            if rec is None:
+                rec = {
+                    "score_10m": 0,
+                    "score_1h": 0,
+                    "checks_10m": 0,
+                    "checks_1h": 0,
+                    "hourly_points_36h": [0] * 36,
+                    "hourly_checks_36h": [0] * 36,
+                }
+                telemetry[h] = rec
+            return rec
+
+        if handle is not None:
+            se_rows = conn.execute(
+                "SELECT agent_handle, points, created_at FROM score_events "
+                "WHERE agent_handle = ? AND created_at >= ?",
+                (handle, cutoff_36h),
+            ).fetchall()
+            task_rows = conn.execute(
+                "SELECT claimed_by_handle, completed_at, updated_at FROM tasks "
+                "WHERE claimed_by_handle = ? AND status IN ('completed', 'settled') "
+                "AND COALESCE(completed_at, updated_at) >= ?",
+                (handle, cutoff_36h),
+            ).fetchall()
+        else:
+            se_rows = conn.execute(
+                "SELECT agent_handle, points, created_at FROM score_events "
+                "WHERE created_at >= ?",
+                (cutoff_36h,),
+            ).fetchall()
+            task_rows = conn.execute(
+                "SELECT claimed_by_handle, completed_at, updated_at FROM tasks "
+                "WHERE status IN ('completed', 'settled') "
+                "AND claimed_by_handle IS NOT NULL "
+                "AND COALESCE(completed_at, updated_at) >= ?",
+                (cutoff_36h,),
+            ).fetchall()
+
+        for sr in se_rows:
+            h = str(sr["agent_handle"] or "").strip()
+            if not h:
+                continue
+            dt = _parse_iso(sr["created_at"])
+            if dt is None:
+                continue
+            delta = now_ts - dt.timestamp()
+            if delta < 0:
+                if delta < -5.0:
+                    continue
+                delta = 0.0
+            idx = 35 - int(delta // 3600)
+            if not (0 <= idx < 36):
+                continue
+            pts = int(sr["points"] or 0)
+            rec = _entry(h)
+            rec["hourly_points_36h"][idx] += pts
+            if delta <= 3600.0:
+                rec["score_1h"] += pts
+            if delta <= 600.0:
+                rec["score_10m"] += pts
+
+        for tr in task_rows:
+            h = str(tr["claimed_by_handle"] or "").strip()
+            if not h:
+                continue
+            dt = _parse_iso(tr["completed_at"] or tr["updated_at"])
+            if dt is None:
+                continue
+            delta = now_ts - dt.timestamp()
+            if delta < 0:
+                if delta < -5.0:
+                    continue
+                delta = 0.0
+            idx = 35 - int(delta // 3600)
+            if not (0 <= idx < 36):
+                continue
+            rec = _entry(h)
+            rec["hourly_checks_36h"][idx] += 1
+            if delta <= 3600.0:
+                rec["checks_1h"] += 1
+            if delta <= 600.0:
+                rec["checks_10m"] += 1
+
+        return telemetry
 
     def _fetch_corrections_map(
         self, conn: Any, finding_ids: list[str] | None = None
@@ -1896,7 +2026,8 @@ class DeskService:
                     started_candidates.append((parsed, ts_val))
             started_at = min(started_candidates, key=lambda item: item[0])[1] if started_candidates else generated_at
 
-            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
+            all_time_scores, _hourly_scores = self._fetch_score_maps(conn)
+            activity_telemetry = self._fetch_activity_telemetry_maps(conn)
             total_agents_count = int(conn.execute("SELECT COUNT(*) AS c FROM agents").fetchone()["c"])
             all_agents = conn.execute(
                 "SELECT * FROM agents ORDER BY compute_score DESC, joined_at DESC LIMIT 200"
@@ -1905,7 +2036,12 @@ class DeskService:
                 self._serialize_agent(
                     r,
                     all_time_score=all_time_scores.get(r["handle"], int(r["compute_score"] or 0)),
-                    hourly_event_score=hourly_scores.get(r["handle"], 0),
+                    hourly_event_score=(
+                        activity_telemetry[r["handle"]]["score_1h"]
+                        if r["handle"] in activity_telemetry
+                        else 0
+                    ),
+                    activity_telemetry=activity_telemetry.get(r["handle"]),
                 )
                 for r in all_agents
             ]
@@ -2503,8 +2639,10 @@ class DeskService:
     def _compute_mission_contributors(
         self, conn: Any, mission_id: str
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        now_dt = datetime.now(timezone.utc)
+        now_ts = now_dt.timestamp()
         cutoff = (
-            (datetime.now(timezone.utc) - timedelta(hours=1))
+            (now_dt - timedelta(hours=1))
             .replace(microsecond=0)
             .isoformat()
             .replace("+00:00", "Z")
@@ -2514,6 +2652,8 @@ class DeskService:
 
         tasks_all: dict[str, int] = {}
         tasks_hour: dict[str, int] = {}
+        tasks_10m: dict[str, int] = {}
+        tasks_36h: dict[str, list[int]] = {}
         cleared_task_ids_all: dict[str, set[str]] = {}
         cleared_task_ids_hour: dict[str, set[str]] = {}
 
@@ -2521,7 +2661,7 @@ class DeskService:
             "SELECT id, claimed_by_handle, task_type, completed_at, updated_at, "
             "CASE WHEN task_type != 'peer_verify' AND methodology_code != 'W1' "
             "AND output_json LIKE '%\"cleared\"%' THEN output_json ELSE '' END AS output_json "
-            "FROM tasks WHERE mission_id = ? AND status = 'completed' AND claimed_by_handle IS NOT NULL",
+            "FROM tasks WHERE mission_id = ? AND status IN ('completed', 'settled') AND claimed_by_handle IS NOT NULL",
             (mission_id,),
         ).fetchall():
             h = str(tr["claimed_by_handle"] or "").strip()
@@ -2530,10 +2670,20 @@ class DeskService:
             all_handles.add(h)
             tasks_all[h] = tasks_all.get(h, 0) + 1
             ts = str(tr["completed_at"] or tr["updated_at"] or "")
-            in_hour = bool(ts and ts >= cutoff)
+            dt = _parse_iso(ts)
+            delta = (now_ts - dt.timestamp()) if dt is not None else None
+            if delta is not None and -5.0 <= delta < 0:
+                delta = 0.0
+            in_hour = bool((delta is not None and 0.0 <= delta <= 3600.0) or (ts and ts >= cutoff))
             if in_hour:
                 hour_handles.add(h)
                 tasks_hour[h] = tasks_hour.get(h, 0) + 1
+            if delta is not None and 0.0 <= delta <= 600.0:
+                tasks_10m[h] = tasks_10m.get(h, 0) + 1
+            if delta is not None and delta >= 0.0:
+                idx = 35 - int(delta // 3600)
+                if 0 <= idx < 36:
+                    tasks_36h.setdefault(h, [0] * 36)[idx] += 1
             if tr["task_type"] != "peer_verify" and tr["output_json"]:
                 out = loads_json(tr["output_json"], {})
                 if isinstance(out, dict) and out.get("outcome") == "cleared":
@@ -2586,6 +2736,8 @@ class DeskService:
 
         se_all: dict[str, int] = {}
         se_hour: dict[str, int] = {}
+        se_10m: dict[str, int] = {}
+        se_36h: dict[str, list[int]] = {}
         for sr in conn.execute(
             """
             SELECT se.agent_handle, se.event_type, se.points, se.ref_id, se.created_at
@@ -2621,10 +2773,23 @@ class DeskService:
             pts = int(sr["points"] or 0)
             all_handles.add(h)
             se_all[h] = se_all.get(h, 0) + pts
-            in_hour = bool(sr["created_at"] and str(sr["created_at"]) >= cutoff)
+            se_dt = _parse_iso(sr["created_at"])
+            se_delta = (now_ts - se_dt.timestamp()) if se_dt is not None else None
+            if se_delta is not None and -5.0 <= se_delta < 0:
+                se_delta = 0.0
+            in_hour = bool(
+                (se_delta is not None and 0.0 <= se_delta <= 3600.0)
+                or (sr["created_at"] and str(sr["created_at"]) >= cutoff)
+            )
             if in_hour:
                 hour_handles.add(h)
                 se_hour[h] = se_hour.get(h, 0) + pts
+            if se_delta is not None and 0.0 <= se_delta <= 600.0:
+                se_10m[h] = se_10m.get(h, 0) + pts
+            if se_delta is not None and se_delta >= 0.0:
+                idx = 35 - int(se_delta // 3600)
+                if 0 <= idx < 36:
+                    se_36h.setdefault(h, [0] * 36)[idx] += pts
             if sr["event_type"] == "cleared_scan" and sr["ref_id"]:
                 ref_id = str(sr["ref_id"])
                 cleared_task_ids_all.setdefault(h, set()).add(ref_id)
@@ -2656,7 +2821,10 @@ class DeskService:
             all_score = all_pts if all_pts > 0 else tasks_all.get(handle, 0)
             hr_pts = se_hour.get(handle, 0)
             hr_score = hr_pts if hr_pts > 0 else tasks_hour.get(handle, 0)
+            score_10m_val = se_10m.get(handle, 0) if all_pts > 0 else tasks_10m.get(handle, 0)
             eff_score = hr_score if hourly else all_score
+            pts_36h = list(se_36h[handle]) if handle in se_36h else [0] * 36
+            chk_36h = list(tasks_36h[handle]) if handle in tasks_36h else [0] * 36
 
             ar = agent_rows.get(handle)
             if ar is not None:
@@ -2696,6 +2864,13 @@ class DeskService:
             base["score"] = int(eff_score)
             base["window_score"] = int(eff_score)
             base["hourly_score"] = int(hr_score)
+            base["score_10m"] = int(score_10m_val)
+            base["score_1h"] = int(hr_score)
+            base["checks_10m"] = int(tasks_10m.get(handle, 0))
+            base["checks_1h"] = int(tasks_hour.get(handle, 0))
+            base["checks_total"] = int(tasks_all.get(handle, 0))
+            base["hourly_points_36h"] = pts_36h
+            base["hourly_checks_36h"] = chk_36h
             return base
 
         contributors_all = [_build_entry(h, hourly=False) for h in all_handles]
@@ -4354,7 +4529,8 @@ class DeskService:
 
     def get_live(self) -> dict[str, Any]:
         with self.db.read() as conn:
-            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
+            all_time_scores, _hourly_scores = self._fetch_score_maps(conn)
+            activity_telemetry = self._fetch_activity_telemetry_maps(conn)
             total_agents = int(conn.execute("SELECT COUNT(*) AS c FROM agents").fetchone()["c"])
             agent_rows = conn.execute(
                 "SELECT * FROM agents ORDER BY last_heartbeat_at DESC, compute_score DESC LIMIT 200"
@@ -4363,7 +4539,12 @@ class DeskService:
                 self._serialize_agent(
                     r,
                     all_time_score=all_time_scores.get(r["handle"], int(r["compute_score"] or 0)),
-                    hourly_event_score=hourly_scores.get(r["handle"], 0),
+                    hourly_event_score=(
+                        activity_telemetry[r["handle"]]["score_1h"]
+                        if r["handle"] in activity_telemetry
+                        else 0
+                    ),
+                    activity_telemetry=activity_telemetry.get(r["handle"]),
                 )
                 for r in agent_rows
             ]
@@ -4445,7 +4626,8 @@ class DeskService:
         """Fast read-only snapshot of live swarm telemetry for the Live Swarm Viewer & Hero Showcase."""
         now_dt = datetime.now(timezone.utc).replace(microsecond=0)
         generated_at = now_dt.isoformat().replace("+00:00", "Z")
-        live_cutoff = (now_dt - timedelta(seconds=LIVE_AGENT_WINDOW_SECONDS)).isoformat().replace("+00:00", "Z")
+        live_cutoff_dt = now_dt - timedelta(seconds=LIVE_AGENT_WINDOW_SECONDS)
+        live_cutoff = live_cutoff_dt.isoformat().replace("+00:00", "Z")
         hour_cutoff = (now_dt - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
 
         with self.db.read() as conn:
@@ -4508,21 +4690,14 @@ class DeskService:
                 if ahandle and ahandle not in lease_by_handle:
                     lease_by_handle[ahandle] = lease_info
 
-            # 2. Aggregate agent totals & live working_now count (active lease OR heartbeat within live window).
+            # 2. Aggregate agent totals & live working_now count (ONLY fresh heartbeats within live window).
             agent_agg = conn.execute(
                 """
                 SELECT
                     COUNT(*) AS total_agents,
                     COALESCE(SUM(CASE
-                        WHEN a.revoked_at IS NULL AND a.status != 'revoked' AND (
-                            a.last_heartbeat_at >= ?
-                            OR EXISTS (
-                                SELECT 1 FROM tasks t
-                                WHERE t.claimed_by_agent_id = a.id
-                                  AND t.status = 'claimed'
-                                  AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
-                            )
-                        )
+                        WHEN a.revoked_at IS NULL AND a.status != 'revoked'
+                         AND a.last_heartbeat_at >= ?
                         THEN 1 ELSE 0
                     END), 0) AS working_now,
                     MAX(CASE
@@ -4532,13 +4707,13 @@ class DeskService:
                     END) AS last_agent_heartbeat_at
                 FROM agents a
                 """,
-                (live_cutoff, generated_at),
+                (live_cutoff,),
             ).fetchone()
             total_agents = int(agent_agg["total_agents"] or 0) if agent_agg is not None else 0
             working_now = int(agent_agg["working_now"] or 0) if agent_agg is not None else 0
             last_agent_hb = str(agent_agg["last_agent_heartbeat_at"] or "").strip() or None if agent_agg is not None else None
 
-            # 3. Prioritized active/recent/idle agent nodes (active lease holders first).
+            # 3. Prioritized active/recent/idle agent nodes (ONLY freshly heartbeating lease holders rank 0).
             node_rows = conn.execute(
                 """
                 SELECT
@@ -4555,7 +4730,7 @@ class DeskService:
                     a.joined_at,
                     a.last_heartbeat_at,
                     CASE
-                        WHEN EXISTS (
+                        WHEN a.last_heartbeat_at >= ? AND EXISTS (
                             SELECT 1 FROM tasks t
                             WHERE t.claimed_by_agent_id = a.id
                               AND t.status = 'claimed'
@@ -4569,7 +4744,7 @@ class DeskService:
                 ORDER BY activity_rank ASC, a.last_heartbeat_at DESC, a.tasks_completed DESC, a.handle ASC
                 LIMIT ?
                 """,
-                (generated_at, live_cutoff, MAX_LIVE_SWARM_NODES),
+                (live_cutoff, generated_at, live_cutoff, MAX_LIVE_SWARM_NODES),
             ).fetchall()
 
             # 4. Batch-fetch latest non-quarantined whisper per displayed agent (zero N+1).
@@ -4625,22 +4800,24 @@ class DeskService:
                 aid = str(nr["id"])
                 handle = str(nr["handle"])
                 rank = int(nr["activity_rank"] if nr["activity_rank"] is not None else 2)
-                lease = lease_by_agent_id.get(aid) or lease_by_handle.get(handle)
-                if lease is not None:
+                hb_dt = _parse_iso(nr["last_heartbeat_at"])
+                is_fresh_hb = hb_dt is not None and hb_dt >= live_cutoff_dt
+                lease = (lease_by_agent_id.get(aid) or lease_by_handle.get(handle)) if is_fresh_hb else None
+                if is_fresh_hb and lease is not None:
                     node_status = lease["node_status"]
                     role_val: str | None = lease["role"]
                     cur_task_id: str | None = lease["task_id"]
                     cur_task_title: str | None = lease["task_title"]
                     cur_project_slug: str | None = lease["project_slug"]
                     prog_pct: int | None = lease["progress_pct"]
-                elif rank == 0:
+                elif is_fresh_hb and rank == 0:
                     node_status = "working"
                     role_val = "auditor"
                     cur_task_id = None
                     cur_task_title = None
                     cur_project_slug = None
                     prog_pct = None
-                elif rank == 1:
+                elif is_fresh_hb:
                     node_status = "recent"
                     role_val = None
                     cur_task_id = None
@@ -4648,6 +4825,8 @@ class DeskService:
                     cur_project_slug = None
                     prog_pct = None
                 else:
+                    # Stalled/inactive beyond LIVE_AGENT_WINDOW_SECONDS: classify as idle and strip
+                    # stale lease/progress fields even if an unexpired claimed lease remains in DB.
                     node_status = "idle"
                     role_val = None
                     cur_task_id = None
@@ -4678,7 +4857,7 @@ class DeskService:
                     }
                 )
 
-            # 5. Most recently joined agents for the hero ticker.
+            # 5. Most recently joined agents for the hero ticker (live ONLY when heartbeat >= live_cutoff).
             join_rows = conn.execute(
                 """
                 SELECT
@@ -4690,12 +4869,6 @@ class DeskService:
                     a.last_heartbeat_at,
                     CASE
                         WHEN a.last_heartbeat_at >= ?
-                          OR EXISTS (
-                              SELECT 1 FROM tasks t
-                              WHERE t.claimed_by_agent_id = a.id
-                                AND t.status = 'claimed'
-                                AND (t.lease_expires_at IS NULL OR t.lease_expires_at >= ?)
-                          )
                         THEN 1 ELSE 0
                     END AS is_working
                 FROM agents a
@@ -4703,7 +4876,7 @@ class DeskService:
                 ORDER BY a.joined_at DESC, a.id DESC
                 LIMIT ?
                 """,
-                (live_cutoff, generated_at, MAX_LIVE_RECENT_JOINS),
+                (live_cutoff, MAX_LIVE_RECENT_JOINS),
             ).fetchall()
             recent_joins = [
                 {
@@ -4938,12 +5111,14 @@ class DeskService:
             rows = conn.execute(
                 "SELECT * FROM agents ORDER BY compute_score DESC, tasks_completed DESC LIMIT 200"
             ).fetchall()
-            all_time_scores, hourly_scores = self._fetch_score_maps(conn)
+            all_time_scores, _hourly_scores = self._fetch_score_maps(conn)
+            activity_telemetry = self._fetch_activity_telemetry_maps(conn)
             contributors: list[dict[str, Any]] = []
             for r in rows:
                 handle = str(r["handle"])
                 all_score = all_time_scores.get(handle, int(r["compute_score"] or 0))
-                hour_score = hourly_scores.get(handle, 0)
+                tel = activity_telemetry.get(handle)
+                hour_score = tel["score_1h"] if tel is not None else 0
                 score = hour_score if window_norm == "hour" else all_score
                 contributors.append(
                     self._serialize_agent(
@@ -4951,6 +5126,7 @@ class DeskService:
                         window_score=score,
                         all_time_score=all_score,
                         hourly_event_score=hour_score,
+                        activity_telemetry=tel,
                     )
                 )
 
@@ -4975,11 +5151,15 @@ class DeskService:
             row = conn.execute("SELECT * FROM agents WHERE handle = ?", (norm_handle,)).fetchone()
             if row is None:
                 raise HTTPException(status_code=404, detail=f"Contributor '{handle}' not found")
-            all_score, hour_score = self._fetch_single_agent_scores(conn, norm_handle)
+            all_score, _hour_score = self._fetch_single_agent_scores(conn, norm_handle)
+            activity_telemetry = self._fetch_activity_telemetry_maps(conn, handle=norm_handle)
+            tel = activity_telemetry.get(norm_handle)
+            hour_score = tel["score_1h"] if tel is not None else 0
             agent = self._serialize_agent(
                 row,
                 all_time_score=all_score if all_score > 0 else int(row["compute_score"] or 0),
                 hourly_event_score=hour_score,
+                activity_telemetry=tel,
             )
 
             f_rows = conn.execute(

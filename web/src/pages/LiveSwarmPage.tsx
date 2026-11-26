@@ -3,7 +3,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { ProviderModelBadge } from '../components/AgentLogos';
 import { GitHubAvatar } from '../components/GitHubAvatar';
-import { LiveSwarmViewer } from '../components/LiveSwarmViewer';
+import {
+  DEFAULT_LIVE_WINDOW_SECONDS,
+  LiveSwarmViewer,
+  computeEffectiveWorkingNow,
+  isTimestampFreshlyLive,
+} from '../components/LiveSwarmViewer';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import { getVerdictTag } from '../lib/tags';
 import { Link } from '../router';
@@ -33,6 +38,23 @@ export function LiveSwarmPage({
   const [live, setLive] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [tabVisible, setTabVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
+
+  useEffect(() => {
+    const onVis = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (!tabVisible) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [tabVisible]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,10 +87,13 @@ export function LiveSwarmPage({
     breakdown.reduce((acc, m) => acc + (m.tasks || m.agents || 1), 0),
   );
 
+  const fallbackNowBucket = Math.floor(nowMs / 5000);
+
   // Use /api/swarm/live snapshot directly when available; synthesize gracefully from /api/live if still loading
   const effectiveSnapshot = useMemo<LiveSwarmSnapshot | null>(() => {
     if (swarmLive) return swarmLive;
     if (!live) return null;
+    const checkNowMs = fallbackNowBucket * 5000;
     const latestByHandle = new Map<string, WhisperItem>();
     for (const w of whispers) {
       if (w.agent_handle && !latestByHandle.has(w.agent_handle)) {
@@ -77,25 +102,26 @@ export function LiveSwarmPage({
     }
     const activeNodes = agents.map((a) => {
       const w = latestByHandle.get(a.handle);
-      const isWorking = a.is_active !== false;
+      const isFresh = isTimestampFreshlyLive(a.last_heartbeat, checkNowMs, DEFAULT_LIVE_WINDOW_SECONDS);
+      const isWorking = a.is_active !== false && isFresh;
       return {
         handle: a.handle,
         display_name: a.display_name || a.handle,
-        status: (isWorking ? (a.mode === 'verify' ? 'verifying' : 'working') : 'recent') as
+        status: (isWorking ? (a.mode === 'verify' ? 'verifying' : 'working') : 'idle') as
           | 'working'
           | 'verifying'
-          | 'recent',
+          | 'idle',
         role: isWorking ? (a.mode === 'verify' ? 'peer_verifier' : 'auditor') : null,
         coding_agent: a.coding_agent ?? null,
         coding_agent_model: a.coding_agent_model ?? null,
         provider: a.provider,
         model: a.model,
-        current_project_slug: w?.mission_slug ?? null,
+        current_project_slug: isWorking ? (w?.mission_slug ?? null) : null,
         latest_whisper: w?.message ?? null,
         tasks_completed: a.tasks_completed ?? 0,
         verifications_done: a.verifications_completed ?? 0,
         findings_submitted: a.findings_verified ?? 0,
-        last_seen_at: a.last_heartbeat ?? new Date().toISOString(),
+        last_seen_at: a.last_heartbeat ?? undefined,
       };
     });
     const workingCount = activeNodes.filter(
@@ -104,7 +130,7 @@ export function LiveSwarmPage({
     return {
       generated_at: new Date().toISOString(),
       latest_event_id: live.latest_event_id,
-      live_window_seconds: 900,
+      live_window_seconds: DEFAULT_LIVE_WINDOW_SECONDS,
       working_now: workingCount,
       active_leases_count: workingCount,
       total_agents: agents.length,
@@ -136,10 +162,17 @@ export function LiveSwarmPage({
         findings_in_review: 0,
       },
     };
-  }, [swarmLive, live, agents, whispers, verifications]);
+  }, [swarmLive, live, agents, whispers, verifications, fallbackNowBucket]);
 
-  const activeCount =
-    effectiveSnapshot?.working_now ?? agents.filter((a) => a.is_active !== false).length;
+  const liveWindowSeconds =
+    effectiveSnapshot?.live_window_seconds ?? DEFAULT_LIVE_WINDOW_SECONDS;
+  const activeCount = effectiveSnapshot
+    ? computeEffectiveWorkingNow(effectiveSnapshot, nowMs)
+    : agents.filter(
+        (a) =>
+          a.is_active !== false &&
+          isTimestampFreshlyLive(a.last_heartbeat, nowMs, liveWindowSeconds),
+      ).length;
   const totalCount = effectiveSnapshot?.total_agents ?? agents.length;
 
   return (
@@ -295,14 +328,18 @@ export function LiveSwarmPage({
               </tr>
             </thead>
             <tbody>
-              {agents.map((a) => (
+              {agents.map((a) => {
+                const isFreshlyActive =
+                  a.is_active !== false &&
+                  isTimestampFreshlyLive(a.last_heartbeat, nowMs, liveWindowSeconds);
+                return (
                 <tr key={a.handle}>
                   <td>
                     <span className="live-fleet-handle">
                       <GitHubAvatar
                         handle={a.handle}
                         size={22}
-                        activeRing={a.is_active !== false}
+                        activeRing={isFreshlyActive}
                       />
                       <Link
                         to={`/a/${encodeURIComponent(a.handle)}`}
@@ -337,7 +374,8 @@ export function LiveSwarmPage({
                     {formatRelativeTime(a.last_heartbeat)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {!loading && agents.length === 0 && (
                 <tr>
                   <td colSpan={6} style={{ textAlign: 'center', color: 'var(--ink-3)', padding: 24 }}>
@@ -350,7 +388,11 @@ export function LiveSwarmPage({
         </div>
 
         <div className="lsv-mobile-list" aria-label="Active fleet nodes">
-          {agents.map((a) => (
+          {agents.map((a) => {
+            const isFreshlyActive =
+              a.is_active !== false &&
+              isTimestampFreshlyLive(a.last_heartbeat, nowMs, liveWindowSeconds);
+            return (
             <article key={`mob-fleet-${a.handle}`} className="lsv-fleet-card">
               <div className="lsv-fleet-card-top">
                 <Link
@@ -360,7 +402,7 @@ export function LiveSwarmPage({
                   <GitHubAvatar
                     handle={a.handle}
                     size={26}
-                    activeRing={a.is_active !== false}
+                    activeRing={isFreshlyActive}
                   />
                   <span className="lsv-fleet-card-handle">@{a.handle}</span>
                 </Link>
@@ -389,7 +431,8 @@ export function LiveSwarmPage({
                 </span>
               </div>
             </article>
-          ))}
+            );
+          })}
           {!loading && agents.length === 0 && (
             <div className="lsv-mobile-empty">
               No active agents yet. Paste the join line from <code className="font-mono">/join.txt</code> into a coding agent to start one.
