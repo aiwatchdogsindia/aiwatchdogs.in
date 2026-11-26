@@ -16,6 +16,7 @@ import inspect
 import json
 import logging
 import os
+import queue
 import re
 import sqlite3
 import threading
@@ -68,7 +69,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 10
+LATEST_SCHEMA_VERSION = 11
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -465,6 +466,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_api_token_hash ON agents(api_token_h
 CREATE INDEX IF NOT EXISTS idx_agents_score ON agents(compute_score DESC);
 CREATE INDEX IF NOT EXISTS idx_ledger_date ON treasury_ledger(entry_date DESC);
 CREATE INDEX IF NOT EXISTS idx_rate_limit_updated ON rate_limit_buckets(updated_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_mission_status_type ON tasks(mission_id, status, task_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_claim_queue ON tasks(status, task_type, available_at, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_tasks_mission_slug_status ON tasks(mission_slug, status, task_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_tasks_claimed_agent_status ON tasks(claimed_by_agent_id, status);
+CREATE INDEX IF NOT EXISTS idx_tasks_mission_completed_amt ON tasks(mission_id, status, monetary_audited_inr);
+CREATE INDEX IF NOT EXISTS idx_findings_mission_status_quar ON findings(mission_id, status, quarantined);
 """ + RESEARCH_BATCHES_SQL
 
 # Named editorial corrections for the 4 confirmed defective published dossiers from the
@@ -926,14 +934,24 @@ class _NoOpCursor:
 
 
 class _PgConnectionAdapter:
-    """Thin adapter exposing sqlite3.Connection-compatible execute/executescript over psycopg v3."""
+    """Thin adapter exposing sqlite3.Connection-compatible execute/executescript over a pooled psycopg v3 conn."""
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, conn: Any) -> None:
         self._db = db
+        self._conn = conn
         self._stmt_count = 0
+
+    @property
+    def conn(self) -> Any:
+        return self._conn
 
     def reset_stmt_count(self) -> None:
         self._stmt_count = 0
+
+    def _active_conn(self) -> Any:
+        if self._conn is None or self._conn.closed or getattr(self._conn, "broken", False):
+            self._conn = self._db._replace_pg_connection(self._conn)
+        return self._conn
 
     def execute(self, sql: str, params: Sequence[Any] | None = None) -> Any:
         has_params = params is not None and len(params) > 0
@@ -941,7 +959,7 @@ class _PgConnectionAdapter:
         if translated is None:
             return _NoOpCursor()
 
-        conn = self._db._ensure_pg_connection()
+        conn = self._active_conn()
         try:
             if has_params:
                 cursor = conn.execute(translated, tuple(params))  # type: ignore[arg-type]
@@ -954,7 +972,8 @@ class _PgConnectionAdapter:
             # and retry once if no prior statement has executed in this unit of work.
             if self._stmt_count > 0:
                 raise
-            conn = self._db._reconnect_pg()
+            conn = self._db._replace_pg_connection(self._conn)
+            self._conn = conn
             if has_params:
                 cursor = conn.execute(translated, tuple(params))  # type: ignore[arg-type]
             else:
@@ -970,7 +989,7 @@ class _PgConnectionAdapter:
         if translated is None:
             return _NoOpCursor()
 
-        conn = self._db._ensure_pg_connection()
+        conn = self._active_conn()
         try:
             with conn.cursor() as cur:
                 cur.executemany(translated, rows)
@@ -979,7 +998,8 @@ class _PgConnectionAdapter:
         except _PG_TRANSIENT_ERRORS:
             if self._stmt_count > 0:
                 raise
-            conn = self._db._reconnect_pg()
+            conn = self._db._replace_pg_connection(self._conn)
+            self._conn = conn
             with conn.cursor() as cur:
                 cur.executemany(translated, rows)
             self._stmt_count += 1
@@ -990,12 +1010,12 @@ class _PgConnectionAdapter:
             self.execute(stmt)
 
     def commit(self) -> None:
-        conn = self._db._pg_conn
+        conn = self._conn
         if conn is not None and not conn.closed:
             conn.commit()
 
     def rollback(self) -> None:
-        conn = self._db._pg_conn
+        conn = self._conn
         if conn is not None and not conn.closed:
             conn.rollback()
 
@@ -1860,6 +1880,24 @@ def _migrate_v10_research_batches(conn: Any, *, is_postgres: bool) -> None:
     conn.execute(RESEARCH_BATCHES_SQL)
 
 
+_V11_SWARM_SCALE_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_tasks_mission_status_type ON tasks(mission_id, status, task_type)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_claim_queue ON tasks(status, task_type, available_at, created_at, id)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_mission_slug_status ON tasks(mission_slug, status, task_type)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_claimed_agent_status ON tasks(claimed_by_agent_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_mission_completed_amt ON tasks(mission_id, status, monetary_audited_inr)",
+    "CREATE INDEX IF NOT EXISTS idx_findings_mission_status_quar ON findings(mission_id, status, quarantined)",
+)
+
+
+def _migrate_v11_swarm_scale_indexes(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v11: composite indexes for concurrent multi-agent claims and project/dashboard queries."""
+    _ = is_postgres
+    for stmt in _V11_SWARM_SCALE_INDEXES:
+        conn.execute(stmt)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1871,6 +1909,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (8, "008_token_usage", _migrate_v8_token_usage),
     (9, "009_purge_legacy_missions", _migrate_v9_purge_legacy_missions),
     (10, "010_research_batches", _migrate_v10_research_batches),
+    (11, "011_swarm_scale_indexes", _migrate_v11_swarm_scale_indexes),
 )
 
 
@@ -1885,8 +1924,24 @@ def is_read_only_deployment() -> bool:
     return os.environ.get("VERCEL_ENV", "").strip().lower() in {"preview", "development"}
 
 
+def _env_int_clamped(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    try:
+        val = int(os.environ.get(name, str(default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(val, maximum))
+
+
+def _env_float_clamped(name: str, default: float, *, minimum: float, maximum: float) -> float:
+    try:
+        val = float(os.environ.get(name, str(default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(val, maximum))
+
+
 class Database:
-    """Thread-safe dual-backend database wrapper (Neon Postgres + SQLite WAL)."""
+    """Thread-safe dual-backend database wrapper (pooled Neon Postgres + SQLite WAL)."""
 
     def __init__(
         self,
@@ -1900,8 +1955,14 @@ class Database:
         self._lock = threading.RLock()
         self._tx_depth = 0
         self._conn: sqlite3.Connection | None = None
-        self._pg_conn: Any = None
-        self._pg_adapter: _PgConnectionAdapter | None = None
+        self._pg_pool_max = _env_int_clamped("AIWATCHDOGS_PG_POOL_MAX", 8, minimum=1, maximum=32)
+        self._pg_pool_timeout = _env_float_clamped("AIWATCHDOGS_PG_POOL_TIMEOUT", 15.0, minimum=1.0, maximum=60.0)
+        self._pg_pool: queue.LifoQueue[Any] = queue.LifoQueue(maxsize=self._pg_pool_max)
+        self._pg_pool_sem = threading.BoundedSemaphore(self._pg_pool_max)
+        self._pg_pool_lock = threading.Lock()
+        self._pg_all_conns: set[Any] = set()
+        self._pg_closed = False
+        self._local = threading.local()
 
         # Explicit local db_path always selects SQLite (so pytest tmp_path never hits Neon),
         # unless db_path itself is a postgres:// URL.
@@ -1923,8 +1984,9 @@ class Database:
             self.is_postgres = True
             self._database_url: str | None = enforce_pg_sslmode(pg_url)
             self.db_path: Path | None = None
-            self._pg_conn = self._open_pg_connection()
-            self._pg_adapter = _PgConnectionAdapter(self)
+            # Eagerly verify connectivity with one warm pooled connection on startup
+            first_conn = self._open_pg_connection()
+            self._pg_pool.put_nowait(first_conn)
         else:
             if db_path is None and (require_postgres or is_postgres_required()):
                 raise RuntimeError(
@@ -1992,31 +2054,86 @@ class Database:
         )
         if self.read_only:
             conn.read_only = True  # every transaction is BEGIN READ ONLY; Postgres itself refuses writes
+        with self._pg_pool_lock:
+            self._pg_all_conns.add(conn)
         return conn
 
-    def _ensure_pg_connection(self) -> Any:
-        if self._pg_conn is None or self._pg_conn.closed or getattr(self._pg_conn, "broken", False):
-            self._pg_conn = self._open_pg_connection()
-        return self._pg_conn
-
-    def _reconnect_pg(self) -> Any:
-        old = self._pg_conn
-        if old is not None and not old.closed:
+    def _discard_pg_connection(self, conn: Any) -> None:
+        if conn is None:
+            return
+        with self._pg_pool_lock:
+            self._pg_all_conns.discard(conn)
+        if not getattr(conn, "closed", True):
             try:
-                old.close()
+                conn.close()
             except Exception:
                 pass
-        self._pg_conn = self._open_pg_connection()
-        return self._pg_conn
+
+    def _checkout_pg_connection(self) -> Any:
+        if self._pg_closed:
+            raise RuntimeError("Database pool is closed.")
+        if not self._pg_pool_sem.acquire(timeout=self._pg_pool_timeout):
+            raise RuntimeError(
+                f"PostgreSQL connection pool exhausted (max={self._pg_pool_max}, timeout={self._pg_pool_timeout}s)."
+            )
+        try:
+            while True:
+                try:
+                    conn = self._pg_pool.get_nowait()
+                except queue.Empty:
+                    return self._open_pg_connection()
+                if conn is None or conn.closed or getattr(conn, "broken", False):
+                    self._discard_pg_connection(conn)
+                    continue
+                return conn
+        except Exception:
+            self._pg_pool_sem.release()
+            raise
+
+    def _checkin_pg_connection(self, conn: Any) -> None:
+        try:
+            if (
+                self._pg_closed
+                or conn is None
+                or conn.closed
+                or getattr(conn, "broken", False)
+            ):
+                self._discard_pg_connection(conn)
+                return
+            try:
+                self._pg_pool.put_nowait(conn)
+            except queue.Full:
+                self._discard_pg_connection(conn)
+        finally:
+            self._pg_pool_sem.release()
+
+    def _replace_pg_connection(self, old_conn: Any) -> Any:
+        self._discard_pg_connection(old_conn)
+        return self._open_pg_connection()
+
+    def _reconnect_pg(self) -> Any:
+        """Close all idle pooled PostgreSQL connections and warm one fresh connection."""
+        while True:
+            try:
+                old = self._pg_pool.get_nowait()
+            except queue.Empty:
+                break
+            self._discard_pg_connection(old)
+        fresh = self._open_pg_connection()
+        try:
+            self._pg_pool.put_nowait(fresh)
+        except queue.Full:
+            self._discard_pg_connection(fresh)
+        return fresh
 
     def _read_applied_versions_unlocked(self, conn: Any) -> set[int]:
         try:
             rows = conn.execute("SELECT version FROM schema_migrations").fetchall()
             return {int(r["version"]) for r in rows}
         except Exception:
-            if self.is_postgres and self._pg_adapter is not None:
+            if self.is_postgres:
                 try:
-                    self._pg_adapter.rollback()
+                    conn.rollback()
                 except Exception:
                     pass
             return set()
@@ -2086,80 +2203,115 @@ class Database:
         statement_timeout_ms: int = 10_000,
         lock_timeout_ms: int = 5_000,
     ) -> Iterator[Any]:
-        """Acquire write lock and yield a transactional database connection."""
+        """Yield a transactional database connection (pooled on Postgres; locked on SQLite)."""
         if self.read_only:
             raise ReadOnlyDatabaseError("This deployment is read-only.")
+        if self.is_postgres:
+            state = self._local
+            cur_depth = int(getattr(state, "pg_depth", 0))
+            cur_adapter = getattr(state, "pg_adapter", None)
+            cur_mode = getattr(state, "pg_mode", None)
+            if cur_depth > 0 and cur_adapter is not None and cur_mode == "write":
+                state.pg_depth = cur_depth + 1
+                try:
+                    yield cur_adapter
+                finally:
+                    state.pg_depth = cur_depth
+                return
+
+            raw_conn = self._checkout_pg_connection()
+            adapter = _PgConnectionAdapter(self, raw_conn)
+            prev_state = (cur_adapter, cur_depth, cur_mode)
+            state.pg_adapter = adapter
+            state.pg_depth = 1
+            state.pg_mode = "write"
+            try:
+                adapter.reset_stmt_count()
+                adapter.execute(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
+                adapter.execute(f"SET LOCAL lock_timeout = {int(lock_timeout_ms)}")
+                yield adapter
+                adapter.commit()
+            except Exception:
+                try:
+                    adapter.rollback()
+                except Exception:
+                    pass
+                raise
+            finally:
+                state.pg_adapter, state.pg_depth, state.pg_mode = prev_state
+                self._checkin_pg_connection(adapter.conn)
+            return
+
         with self._lock:
+            assert self._conn is not None
             is_outer = self._tx_depth == 0
             self._tx_depth += 1
             try:
-                if self.is_postgres:
-                    assert self._pg_adapter is not None
-                    if is_outer:
-                        self._ensure_pg_connection()
-                        self._pg_adapter.reset_stmt_count()
-                        self._pg_adapter.execute(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
-                        self._pg_adapter.execute(f"SET LOCAL lock_timeout = {int(lock_timeout_ms)}")
-                    yield self._pg_adapter
-                    if is_outer:
-                        self._pg_adapter.commit()
-                else:
-                    assert self._conn is not None
-                    if is_outer:
-                        self._conn.execute("BEGIN IMMEDIATE")
-                    yield self._conn
-                    if is_outer:
-                        self._conn.execute("COMMIT")
+                if is_outer:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                yield self._conn
+                if is_outer:
+                    self._conn.execute("COMMIT")
             except Exception:
                 if is_outer:
-                    if self.is_postgres and self._pg_adapter is not None:
-                        try:
-                            self._pg_adapter.rollback()
-                        except Exception:
-                            pass
-                    elif self._conn is not None:
-                        try:
-                            if self._conn.in_transaction:
-                                self._conn.execute("ROLLBACK")
-                        except Exception:
-                            pass
+                    try:
+                        if self._conn.in_transaction:
+                            self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
                 raise
             finally:
                 self._tx_depth -= 1
 
     @contextmanager
     def read(self, *, statement_timeout_ms: int = 10_000) -> Iterator[Any]:
-        """Acquire lock and yield database connection for consistent read-only snapshots."""
+        """Yield a database connection for consistent read-only snapshots (concurrent on Postgres)."""
+        if self.is_postgres:
+            state = self._local
+            cur_depth = int(getattr(state, "pg_depth", 0))
+            cur_adapter = getattr(state, "pg_adapter", None)
+            cur_mode = getattr(state, "pg_mode", None)
+            if cur_depth > 0 and cur_adapter is not None:
+                state.pg_depth = cur_depth + 1
+                try:
+                    yield cur_adapter
+                finally:
+                    state.pg_depth = cur_depth
+                return
+
+            raw_conn = self._checkout_pg_connection()
+            adapter = _PgConnectionAdapter(self, raw_conn)
+            prev_state = (cur_adapter, cur_depth, cur_mode)
+            state.pg_adapter = adapter
+            state.pg_depth = 1
+            state.pg_mode = "read"
+            try:
+                adapter.reset_stmt_count()
+                adapter.execute(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
+                yield adapter
+            finally:
+                # Release implicit Postgres read transaction cleanly so PgBouncer never stays IDLE IN TRANSACTION
+                try:
+                    adapter.rollback()
+                except Exception:
+                    pass
+                state.pg_adapter, state.pg_depth, state.pg_mode = prev_state
+                self._checkin_pg_connection(adapter.conn)
+            return
+
         with self._lock:
-            if self.is_postgres:
-                assert self._pg_adapter is not None
-                is_outer = self._tx_depth == 0
-                if is_outer:
-                    self._ensure_pg_connection()
-                    self._pg_adapter.reset_stmt_count()
-                    self._pg_adapter.execute(f"SET LOCAL statement_timeout = {int(statement_timeout_ms)}")
-                try:
-                    yield self._pg_adapter
-                finally:
-                    # Release implicit Postgres read transaction cleanly so PgBouncer never stays IDLE IN TRANSACTION
-                    if is_outer:
-                        try:
-                            self._pg_adapter.rollback()
-                        except Exception:
-                            pass
-            else:
-                assert self._conn is not None
-                started_tx = self._tx_depth == 0 and not self._conn.in_transaction
-                if started_tx:
-                    self._conn.execute("BEGIN DEFERRED")
-                try:
-                    yield self._conn
-                finally:
-                    if started_tx and self._conn.in_transaction:
-                        try:
-                            self._conn.execute("ROLLBACK")
-                        except Exception:
-                            pass
+            assert self._conn is not None
+            started_tx = self._tx_depth == 0 and not self._conn.in_transaction
+            if started_tx:
+                self._conn.execute("BEGIN DEFERRED")
+            try:
+                yield self._conn
+            finally:
+                if started_tx and self._conn.in_transaction:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
 
     def health_check(self) -> bool:
         """Verify database connectivity cleanly on SQLite or Neon Postgres."""
@@ -2170,8 +2322,7 @@ class Database:
         except Exception:
             if self.is_postgres:
                 try:
-                    with self._lock:
-                        self._reconnect_pg()
+                    self._reconnect_pg()
                     with self.read() as conn:
                         row = conn.execute("SELECT 1 AS ok").fetchone()
                         return bool(row and row["ok"] == 1)
@@ -2180,12 +2331,25 @@ class Database:
             return False
 
     def close(self) -> None:
-        """Close the underlying database connection."""
+        """Close all database connections in the pool."""
         with self._lock:
             if self.is_postgres:
-                if self._pg_conn is not None and not self._pg_conn.closed:
-                    self._pg_conn.close()
-                self._pg_conn = None
+                self._pg_closed = True
+                while True:
+                    try:
+                        conn = self._pg_pool.get_nowait()
+                    except queue.Empty:
+                        break
+                    self._discard_pg_connection(conn)
+                with self._pg_pool_lock:
+                    remaining = list(self._pg_all_conns)
+                    self._pg_all_conns.clear()
+                for conn in remaining:
+                    if not getattr(conn, "closed", True):
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
             elif self._conn is not None:
                 self._conn.close()
                 self._conn = None

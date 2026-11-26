@@ -76,7 +76,7 @@ function PageFallback() {
 }
 
 function AppShell() {
-  const { pathname, search } = useRouter();
+  const { pathname, search, navigate } = useRouter();
   const { isAgentView } = useAgentView();
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
 
@@ -177,12 +177,19 @@ function AppShell() {
     };
   }, []);
 
-  // Allow opening finding drawer via ?finding=... query parameter (stable dossier URLs)
+  // Allow opening finding drawer via ?finding=... query parameter or direct /findings/:id URL
   useEffect(() => {
     const sp = new URLSearchParams(search);
     const fid = sp.get('finding');
-    if (fid) setSelectedFindingId(fid);
-  }, [search]);
+    if (fid) {
+      setSelectedFindingId(fid);
+      return;
+    }
+    if (cleanPath.startsWith('/findings/')) {
+      const pathFid = safeDecodeURIComponent(cleanPath.slice('/findings/'.length));
+      if (pathFid) setSelectedFindingId(pathFid);
+    }
+  }, [search, cleanPath]);
 
   // Scope SSE connection strictly to live-telemetry routes (/ and /live)
   const { status: sseStatus } = useSwarmStream(
@@ -197,6 +204,8 @@ function AppShell() {
           [
             'agent_joined',
             'finding_submitted',
+            'scan_cleared',
+            'website_batch_observed',
             'verification_recorded',
             'finding_verified',
             'finding_corrected',
@@ -271,7 +280,7 @@ function AppShell() {
       );
     }
 
-    if (cleanPath === '/findings') {
+    if (cleanPath === '/findings' || cleanPath.startsWith('/findings/')) {
       return (
         <Suspense fallback={<PageFallback />}>
           <FindingsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
@@ -301,7 +310,7 @@ function AppShell() {
       );
     }
 
-    if (cleanPath === '/contributors') {
+    if (cleanPath === '/contributors' || cleanPath === '/leaderboard') {
       return (
         <Suspense fallback={<PageFallback />}>
           <ContributorsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
@@ -423,7 +432,12 @@ function AppShell() {
         <Suspense fallback={null}>
           <FindingDrawer
             findingId={selectedFindingId}
-            onClose={() => setSelectedFindingId(null)}
+            onClose={() => {
+              setSelectedFindingId(null);
+              if (cleanPath.startsWith('/findings/')) {
+                navigate('/findings');
+              }
+            }}
             onRtiCreated={triggerFullRefresh}
           />
         </Suspense>

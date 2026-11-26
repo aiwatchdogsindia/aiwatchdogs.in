@@ -14,10 +14,15 @@ const SSE_EVENTS = [
   'connected',
   'agent_joined',
   'task_claimed',
+  'task_released',
   'whisper',
   'finding_submitted',
+  'scan_cleared',
+  'website_batch_observed',
   'verification_recorded',
   'finding_verified',
+  'adjudication_queued',
+  'task_escalated',
   'finding_corrected',
   'finding_quarantined',
   'rti_drafted',
@@ -106,6 +111,24 @@ export function useSwarmStream(
       for (const evtName of SSE_EVENTS) {
         currentEs.addEventListener(evtName, handleEvent(evtName));
       }
+      currentEs.addEventListener('reconnect', (ev: MessageEvent) => {
+        if (closed || es !== currentEs) return;
+        try {
+          const parsed = JSON.parse(ev.data || '{}') as Record<string, unknown>;
+          const rawId = ev.lastEventId || parsed.last_event_id;
+          if (rawId != null && /^\d+$/.test(String(rawId))) {
+            const numId = Number(rawId);
+            if (numId > lastEventIdRef.current) lastEventIdRef.current = numId;
+          }
+        } catch {
+          // ignore malformed payload
+        }
+        closeEventSource();
+        if (closed || document.visibilityState === 'hidden') return;
+        attempts = 0;
+        clearRetryTimer();
+        retryTimer = window.setTimeout(connect, 250);
+      });
       currentEs.onmessage = handleEvent('whisper');
 
       currentEs.onerror = () => {
@@ -166,8 +189,23 @@ export function sseEventToWhisper(evt: SseEventPacket): WhisperItem | null {
       case 'task_claimed':
         msg = `Claimed ${String(d.task_type || 'audit')} task on ${String(d.mission_slug || 'mission')}`;
         break;
+      case 'task_released':
+        msg = `Released task ${String(d.task_id || '')} (${String(d.reason || 'released')})`;
+        break;
       case 'finding_submitted':
         msg = `Submitted audit lead for peer review: "${String(d.title || d.finding_id || 'New lead')}"`;
+        break;
+      case 'scan_cleared':
+        msg = `Cleared deterministic audit scan on ${String(d.mission_slug || 'project')}`;
+        break;
+      case 'website_batch_observed':
+        msg = `Observed ${String(d.hosts || 'assigned')} .gov.in public sites`;
+        break;
+      case 'adjudication_queued':
+        msg = `Queued independent tie-breaker adjudication for finding #${String(d.finding_id || '')}`;
+        break;
+      case 'task_escalated':
+        msg = `Task ${String(d.task_id || '')} parked after repeated retries`;
         break;
       case 'verification_recorded':
         msg = `Recorded peer verdict (${String(d.verdict || 'unrecorded')}) on finding #${String(d.finding_id || '')}`;

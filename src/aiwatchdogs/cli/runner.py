@@ -75,6 +75,24 @@ logging.getLogger("pypdf").setLevel(logging.ERROR)
 MAX_INLINE_RECORDS = 5_000
 _SAFE_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SAFE_HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
+_SHA256_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _pid_is_alive(pid: int) -> bool:
+    """Return True if a local OS process with ``pid`` appears to be running."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
 
 # Strict allowlist of task context keys forwarded to connectors/engines.
 # Security-sensitive keys (allow_local_files, use_cache, secondary_path, secondary_records,
@@ -1147,16 +1165,41 @@ class AgentRunner:
             path.parent.mkdir(parents=True, exist_ok=True)
             fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump({"hub": self.config.normalized_hub_origin, "handle": self.config.handle, "lease_id": lease_id}, fh)
+                json.dump(
+                    {
+                        "hub": self.config.normalized_hub_origin,
+                        "handle": self.config.handle,
+                        "lease_id": lease_id,
+                        "pid": os.getpid(),
+                    },
+                    fh,
+                )
         except OSError:
             pass
 
-    def _clear_lease_note(self) -> None:
+    def _clear_lease_note(self, *, lease_id: str | None = None) -> None:
         path = self._lease_note_path()
         if path is None:
             return
         try:
-            path.unlink()
+            if path.is_file():
+                try:
+                    note = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    note = None
+                if isinstance(note, dict):
+                    owner_pid = note.get("pid")
+                    if (
+                        isinstance(owner_pid, int)
+                        and not isinstance(owner_pid, bool)
+                        and owner_pid != os.getpid()
+                        and _pid_is_alive(owner_pid)
+                    ):
+                        # Another live process using the same handle owns this lease note; never delete it.
+                        return
+                    if lease_id and str(note.get("lease_id") or "").strip() not in ("", lease_id):
+                        return
+                path.unlink()
         except OSError:
             pass
 
@@ -1169,6 +1212,17 @@ class AgentRunner:
             note = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             note = None
+        if isinstance(note, dict):
+            owner_pid = note.get("pid")
+            if (
+                isinstance(owner_pid, int)
+                and not isinstance(owner_pid, bool)
+                and owner_pid != os.getpid()
+                and _pid_is_alive(owner_pid)
+            ):
+                # Do not revoke a lease held by a sibling agent still running with the same handle.
+                self._emit("lease_note_active_sibling", {"pid": owner_pid, "lease_id": note.get("lease_id")})
+                return False
         self._clear_lease_note()
         if not isinstance(note, dict):
             return False
@@ -1511,10 +1565,11 @@ class AgentRunner:
         cleaned_id = str(finding_id or "").strip()
         if not _SAFE_FINDING_ID_RE.fullmatch(cleaned_id):
             raise ValueError(f"Invalid finding_id format: {cleaned_id!r}")
-        resp = self._client.get(
-            self._url(f"/api/findings/{quote(cleaned_id, safe='')}"),
+        resp = self._hub_send(
+            "GET",
+            f"/api/findings/{quote(cleaned_id, safe='')}",
             headers=self._auth_headers(),
-            **self._request_kwargs(),
+            what="fetch_finding",
         )
         if resp.status_code != 200:
             return None
@@ -1591,7 +1646,12 @@ class AgentRunner:
             if "allow_local_files" in params:
                 kwargs["allow_local_files"] = self.allow_local_files
             if "use_cache" in params:
-                kwargs["use_cache"] = False
+                # Enable SHA-256-verified caching ONLY when the task pins an exact 64-hex digest.
+                # Untrusted task payloads cannot force caching of unpinned URLs; loader re-verifies SHA-256
+                # and refuses to cache payloads containing PII.
+                kwargs["use_cache"] = bool(
+                    expected_sha256 and _SHA256_HEX_RE.fullmatch(expected_sha256.strip())
+                )
             if "expected_sha256" in params and expected_sha256:
                 kwargs["expected_sha256"] = expected_sha256
             if "secondary_expected_sha256" in params and secondary_expected_sha256:

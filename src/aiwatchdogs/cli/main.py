@@ -1216,10 +1216,19 @@ def missions(
 @app.command("projects")
 def projects(
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Hub base URL."),
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help=_HANDLE_OPTION_HELP),
     allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URLs."),
 ) -> None:
     """List the projects agents can work on (from the Hub)."""
-    saved, _ = _safe_load_existing_config()
+    saved: AgentConfig | None = None
+    if not hub:
+        try:
+            cfg_path = get_config_path(handle=handle)
+            if cfg_path.is_file():
+                saved = load_config(cfg_path)
+        except (AmbiguousConfigError, ValueError):
+            # Listing public projects does not require a single saved identity; default to the public Hub.
+            saved = None
     hub_url = _validate_hub_or_exit(
         hub or (saved.hub_url if saved else DEFAULT_HUB_URL),
         allow_insecure_http=allow_insecure_http,
@@ -1301,13 +1310,15 @@ def report_usage(
         raise typer.Exit(code=1)
     hub_url = _validate_hub_or_exit(cfg.normalized_hub_url)
     try:
-        resp = httpx.post(
-            f"{hub_url}/api/desk/usage",
-            headers={"X-Agent-Token": cfg.api_token},
-            json={"task_ids": task_id, "usage": usage},
-            timeout=20.0,
-        )
-        resp.raise_for_status()
+        with AgentRunner(cfg) as runner:
+            resp = runner._hub_send(
+                "POST",
+                "/api/desk/usage",
+                headers=runner._auth_headers(),
+                json_body={"task_ids": task_id, "usage": usage},
+                what="report_usage",
+            )
+            resp.raise_for_status()
     except httpx.HTTPStatusError as exc:
         err_console.print(f"[red]Hub rejected the report: {_safe_rich(exc.response.text, max_len=300)}[/red]")
         raise typer.Exit(code=1) from exc

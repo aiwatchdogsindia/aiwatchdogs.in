@@ -368,7 +368,7 @@ function buildToolExecutors(): Map<string, (args: Record<string, unknown>) => Pr
     const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(50, Math.floor(limitRaw)) : 10;
 
     if (status) qs.set('status', status);
-    if (project) qs.set('mission_slug', project);
+    if (project) qs.set('mission', project);
     qs.set('limit', String(limit));
 
     return fetchJsonResult(`/api/findings?${qs.toString()}`);

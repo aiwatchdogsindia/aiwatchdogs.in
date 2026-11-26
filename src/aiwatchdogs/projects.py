@@ -582,6 +582,38 @@ def _validation_code_digest() -> str:
     return digest.hexdigest()
 
 
+# Cache SHA-256 digests of large (>=100 KiB) project files by stat signature so cold starts
+# calling sync_projects + slug_aliases + project_codes_by_slug don't re-hash 22+ MB five times.
+_LARGE_FILE_HASH_THRESHOLD = 100 * 1024
+_FILE_DIGEST_CACHE: dict[tuple[str, int, int, int, int], bytes] = {}
+
+
+def _file_digest(path: Path) -> tuple[int, bytes]:
+    try:
+        st = path.stat()
+    except OSError:
+        return 0, hashlib.sha256(b"").digest()
+    if st.st_size >= _LARGE_FILE_HASH_THRESHOLD:
+        cache_key = (str(path.resolve()), st.st_size, st.st_mtime_ns, st.st_ctime_ns, st.st_ino)
+        cached = _FILE_DIGEST_CACHE.get(cache_key)
+        if cached is not None:
+            return st.st_size, cached
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            return 0, hashlib.sha256(b"").digest()
+        h = hashlib.sha256(raw).digest()
+        if len(_FILE_DIGEST_CACHE) > 64:
+            _FILE_DIGEST_CACHE.clear()
+        _FILE_DIGEST_CACHE[cache_key] = h
+        return len(raw), h
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return 0, hashlib.sha256(b"").digest()
+    return len(raw), hashlib.sha256(raw).digest()
+
+
 def files_fingerprint(directory: Path | None = None) -> str:
     """A digest of the project files as they are on disk, and of the code that validates them.
 
@@ -590,16 +622,13 @@ def files_fingerprint(directory: Path | None = None) -> str:
     """
     root = directory or default_projects_dir()
     digest = hashlib.sha256()
-    digest.update(f"files-v1:sync-v{SYNC_LOGIC_VERSION}:{_validation_code_digest()}:".encode())
+    digest.update(f"files-v2:sync-v{SYNC_LOGIC_VERSION}:{_validation_code_digest()}:".encode())
     if root.is_dir():
         for path in _project_paths(root):
-            try:
-                raw = path.read_bytes()
-            except OSError:
-                raw = b""
+            size, file_hash = _file_digest(path)
             digest.update(path.name.encode())
-            digest.update(len(raw).to_bytes(8, "big"))
-            digest.update(raw)
+            digest.update(size.to_bytes(8, "big"))
+            digest.update(file_hash)
     return digest.hexdigest()
 
 
@@ -703,6 +732,29 @@ def files_already_accepted(db: Any, directory: Path | None = None) -> bool:
 _HEADERS: dict[str, tuple[str, list[dict[str, Any]]]] = {}
 
 
+def _read_header_fields(path: Path) -> dict[str, Any]:
+    """Read top-level ``slug``, ``formerly`` and ``project_code`` without parsing 19 MB ``tasks`` arrays."""
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return {}
+    if size >= _LARGE_FILE_HASH_THRESHOLD:
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                head = fh.read(16384)
+            # Only fast-parse when the header sits cleanly before the top-level `"tasks"` array.
+            marker = re.search(r',\s*"tasks"\s*:\s*\[', head)
+            if marker is not None:
+                prefix = head[: marker.start()].rstrip() + "\n}"
+                parsed = json.loads(prefix)
+                if isinstance(parsed, dict) and "slug" in parsed:
+                    return {k: parsed.get(k) for k in ("slug", "formerly", "project_code")}
+        except (OSError, ValueError):
+            pass
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {k: data.get(k) for k in ("slug", "formerly", "project_code")} if isinstance(data, dict) else {}
+
+
 def _accepted_headers(root: Path) -> list[dict[str, Any]]:
     """The slug, earlier slugs and project code of every file, read without validating again."""
     key = str(root.resolve())
@@ -710,10 +762,7 @@ def _accepted_headers(root: Path) -> list[dict[str, Any]]:
     cached = _HEADERS.get(key)
     if cached is not None and cached[0] == state:
         return cached[1]
-    headers: list[dict[str, Any]] = []
-    for path in _project_paths(root):
-        data = json.loads(path.read_text(encoding="utf-8"))
-        headers.append({k: data.get(k) for k in ("slug", "formerly", "project_code")})
+    headers = [_read_header_fields(path) for path in _project_paths(root)]
     _HEADERS[key] = (state, headers)
     return headers
 

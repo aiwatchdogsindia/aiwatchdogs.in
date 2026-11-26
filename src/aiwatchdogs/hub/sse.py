@@ -372,6 +372,15 @@ class SSEBroker:
                     remaining = deadline - loop.time()
                     if remaining <= 0:
                         yield f": keepalive {utc_now_iso()}\n\n"
+                        yield self._format_sse(
+                            "reconnect",
+                            {
+                                "type": "reconnect",
+                                "reason": "stream_cycle",
+                                "last_event_id": last_sent_id,
+                                "timestamp": utc_now_iso(),
+                            },
+                        )
                         return
                     wait_timeout = min(wait_timeout, remaining)
 
@@ -390,13 +399,21 @@ class SSEBroker:
                         return
                 except asyncio.TimeoutError:
                     now_t = loop.time()
-                    if now_t - last_keepalive >= eff_keepalive or (
-                        deadline is not None and (deadline - now_t) <= 0
-                    ):
+                    if deadline is not None and (deadline - now_t) <= 0:
+                        yield f": keepalive {utc_now_iso()}\n\n"
+                        yield self._format_sse(
+                            "reconnect",
+                            {
+                                "type": "reconnect",
+                                "reason": "stream_cycle",
+                                "last_event_id": last_sent_id,
+                                "timestamp": utc_now_iso(),
+                            },
+                        )
+                        return
+                    if now_t - last_keepalive >= eff_keepalive:
                         yield f": keepalive {utc_now_iso()}\n\n"
                         last_keepalive = now_t
-                        if deadline is not None and (deadline - now_t) <= 0:
-                            return
         except (asyncio.CancelledError, GeneratorExit):
             return
         finally:

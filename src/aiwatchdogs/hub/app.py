@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from aiwatchdogs.core.safety import compute_token_digest
 from aiwatchdogs.core.usage import MAX_TOKENS, UsageReport
 from aiwatchdogs.hub.agent_access import (
     build_link_header,
@@ -813,8 +814,11 @@ def create_app(
     # Public Read Plane
     # ------------------------------------------------------------------
 
+    _PUBLIC_READ_CACHE = "public, max-age=0, s-maxage=5, stale-while-revalidate=15"
+
     @application.get("/api/head")
-    def api_head() -> dict[str, Any]:
+    def api_head(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.get_head()
 
     @application.get("/api/events")
@@ -873,11 +877,13 @@ def create_app(
             raise
 
     @application.get("/api/missions")
-    def api_missions() -> dict[str, Any]:
+    def api_missions(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.list_missions()
 
     @application.get("/api/missions/{slug}")
-    def api_mission_detail(slug: str) -> dict[str, Any]:
+    def api_mission_detail(slug: str, response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.get_mission_detail(slug)
 
     @application.get("/api/missions/{slug}/observations/{task_id}")
@@ -958,11 +964,13 @@ def create_app(
 
     @application.get("/api/graveyard")
     def api_graveyard(
+        response: Response,
         cause: str | None = Query(default=None, max_length=40),
         project: str | None = Query(default=None, max_length=120),
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=50_000),
     ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.list_graveyard(cause=cause, project=project, limit=limit, offset=offset)
 
     @application.post("/api/findings/{finding_id}/rti-draft")
@@ -981,17 +989,21 @@ def create_app(
         return desk.create_or_get_rti_draft(finding_id, public_authority=authority, preview=preview)
 
     @application.get("/api/graph")
-    def api_graph() -> dict[str, Any]:
+    def api_graph(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.get_graph()
 
     @application.get("/api/live")
-    def api_live() -> dict[str, Any]:
+    def api_live(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.get_live()
 
     @application.get("/api/contributors")
     def api_contributors(
+        response: Response,
         window: Literal["all", "hour"] = Query(default="all"),
     ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
         return desk.list_contributors(window=window)
 
     @application.get("/api/contributors/{handle}")
@@ -1035,6 +1047,38 @@ def create_app(
     # Desk Coordination Plane
     # ------------------------------------------------------------------
 
+    def _desk_rate_limit(
+        request: Request,
+        x_agent_token: str | None,
+        action: str,
+        *,
+        per_agent_limit: int,
+        ip_ceiling: int,
+        window_seconds: int = 60,
+    ) -> None:
+        """Rate-limit authenticated Desk traffic per agent token plus a higher aggregate IP ceiling.
+
+        Many coding agents on one laptop/NAT or behind a shared edge IP each receive their own
+        per-agent quota while unauthenticated callers and single-IP floods remain bounded.
+        """
+        client_ip = _extract_client_ip(request)
+        cleaned_tok = (x_agent_token or "").strip()
+        if cleaned_tok:
+            tok_key = compute_token_digest(cleaned_tok).split(":", 1)[-1][:24]
+            desk.check_rate_limits(
+                [
+                    (f"{action}:tok:{tok_key}", per_agent_limit),
+                    (f"{action}:ip:{client_ip}", ip_ceiling),
+                ],
+                window_seconds=window_seconds,
+            )
+        else:
+            desk.check_rate_limit(
+                bucket_key=f"{action}:ip:{client_ip}",
+                limit=per_agent_limit,
+                window_seconds=window_seconds,
+            )
+
     @application.post("/api/agents/register")
     def api_agents_register(
         body: RegisterAgentRequest,
@@ -1044,7 +1088,7 @@ def create_app(
     ) -> dict[str, Any]:
         desk.check_rate_limit(
             bucket_key=f"agent_register:{_extract_client_ip(request)}",
-            limit=20,
+            limit=60,
             window_seconds=60,
         )
         _require_current_cli(request)
@@ -1089,10 +1133,12 @@ def create_app(
         request: Request,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> Response | dict[str, Any]:
-        desk.check_rate_limit(
-            bucket_key=f"desk_next:{_extract_client_ip(request)}",
-            limit=60,
-            window_seconds=60,
+        _desk_rate_limit(
+            request,
+            x_agent_token,
+            "desk_next",
+            per_agent_limit=60,
+            ip_ceiling=600,
         )
         _require_current_cli(request)
         claimed = desk.claim_next_task(
@@ -1115,10 +1161,12 @@ def create_app(
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> dict[str, Any]:
-        desk.check_rate_limit(
-            bucket_key=f"desk_beat:{_extract_client_ip(request)}",
-            limit=120,
-            window_seconds=60,
+        _desk_rate_limit(
+            request,
+            x_agent_token,
+            "desk_beat",
+            per_agent_limit=120,
+            ip_ceiling=1200,
         )
         response.headers["Cache-Control"] = "no-store"
         return desk.heartbeat(
@@ -1135,10 +1183,12 @@ def create_app(
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> dict[str, Any]:
-        desk.check_rate_limit(
-            bucket_key=f"desk_release:{_extract_client_ip(request)}",
-            limit=60,
-            window_seconds=60,
+        _desk_rate_limit(
+            request,
+            x_agent_token,
+            "desk_release",
+            per_agent_limit=60,
+            ip_ceiling=600,
         )
         response.headers["Cache-Control"] = "no-store"
         return desk.release_task(
@@ -1155,10 +1205,12 @@ def create_app(
         response: Response,
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
     ) -> dict[str, Any]:
-        desk.check_rate_limit(
-            bucket_key=f"desk_usage:{_extract_client_ip(request)}",
-            limit=30,
-            window_seconds=60,
+        _desk_rate_limit(
+            request,
+            x_agent_token,
+            "desk_usage",
+            per_agent_limit=30,
+            ip_ceiling=300,
         )
         response.headers["Cache-Control"] = "no-store"
         return desk.report_usage(task_ids=body.task_ids, usage=body.usage, token=x_agent_token)
@@ -1171,10 +1223,12 @@ def create_app(
         x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
-        desk.check_rate_limit(
-            bucket_key=f"desk_submit:{_extract_client_ip(request)}",
-            limit=60,
-            window_seconds=60,
+        _desk_rate_limit(
+            request,
+            x_agent_token,
+            "desk_submit",
+            per_agent_limit=60,
+            ip_ceiling=600,
         )
         response.headers["Cache-Control"] = "no-store"
         return desk.submit_task(

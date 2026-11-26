@@ -23,8 +23,11 @@ import re
 import socket
 import stat
 import tempfile
+import threading
+import time
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -56,6 +59,13 @@ DEFAULT_MAX_PDF_CHARS = 50_000_000
 DEFAULT_MAX_SHARED_STRINGS = 500_000
 DEFAULT_MAX_REDIRECTS = 5
 DEFAULT_CACHE_TTL_SECONDS = 3600
+_PINNED_MEM_CACHE_MAX_ENTRIES = 16
+_PINNED_MEM_CACHE_MAX_BYTES = 64 * 1024 * 1024  # 64 MiB bounded in-process cache for SHA-256-pinned artifacts
+_PINNED_MEM_CACHE_LOCK = threading.Lock()
+_PINNED_MEM_CACHE: OrderedDict[tuple[str, str], tuple[bytes, str, str]] = OrderedDict()
+_PINNED_MEM_CACHE_BYTES = 0
+_RETRYABLE_SOURCE_STATUS = frozenset({429, 500, 502, 503, 504})
+_MAX_SOURCE_RETRIES = 2
 
 _ORIGINAL_HTTPX_GET = httpx.Client.get
 _ORIGINAL_HTTPX_STREAM = httpx.Client.stream
@@ -791,6 +801,57 @@ def _persist_raw_cache_if_clean(
         pass
 
 
+def _read_pinned_mem_cache(
+    url: str,
+    expected_sha256: str | None,
+    max_download_bytes: int,
+) -> tuple[bytes, str, str] | None:
+    if not expected_sha256:
+        return None
+    key = (url, expected_sha256.lower())
+    with _PINNED_MEM_CACHE_LOCK:
+        entry = _PINNED_MEM_CACHE.get(key)
+        if entry is None:
+            return None
+        raw_bytes, content_type, fetched_at = entry
+        if len(raw_bytes) > max_download_bytes or compute_sha256(raw_bytes).lower() != key[1]:
+            _PINNED_MEM_CACHE.pop(key, None)
+            return None
+        _PINNED_MEM_CACHE.move_to_end(key)
+        return raw_bytes, content_type, fetched_at
+
+
+def _store_pinned_mem_cache(
+    url: str,
+    expected_sha256: str | None,
+    raw_bytes: bytes,
+    content_type: str,
+    fetched_at: str,
+    *,
+    has_pii: bool,
+) -> None:
+    global _PINNED_MEM_CACHE_BYTES
+    if has_pii or not expected_sha256 or not raw_bytes:
+        return
+    if len(raw_bytes) > _PINNED_MEM_CACHE_MAX_BYTES // 2:
+        return
+    key = (url, expected_sha256.lower())
+    if compute_sha256(raw_bytes).lower() != key[1]:
+        return
+    with _PINNED_MEM_CACHE_LOCK:
+        prev = _PINNED_MEM_CACHE.pop(key, None)
+        if prev is not None:
+            _PINNED_MEM_CACHE_BYTES = max(0, _PINNED_MEM_CACHE_BYTES - len(prev[0]))
+        while _PINNED_MEM_CACHE and (
+            len(_PINNED_MEM_CACHE) >= _PINNED_MEM_CACHE_MAX_ENTRIES
+            or _PINNED_MEM_CACHE_BYTES + len(raw_bytes) > _PINNED_MEM_CACHE_MAX_BYTES
+        ):
+            _, evicted = _PINNED_MEM_CACHE.popitem(last=False)
+            _PINNED_MEM_CACHE_BYTES = max(0, _PINNED_MEM_CACHE_BYTES - len(evicted[0]))
+        _PINNED_MEM_CACHE[key] = (raw_bytes, content_type, fetched_at)
+        _PINNED_MEM_CACHE_BYTES += len(raw_bytes)
+
+
 def _fetch_remote_bytes(
     url: str,
     timeout: float = 60.0,
@@ -806,6 +867,9 @@ def _fetch_remote_bytes(
 
     cache_enabled = use_cache and os.environ.get("AIWATCHDOGS_DISABLE_CACHE") != "1"
     if cache_enabled:
+        mem_hit = _read_pinned_mem_cache(url, expected_sha256, max_download_bytes)
+        if mem_hit is not None:
+            return mem_hit[0], mem_hit[1], mem_hit[2], True
         hit = _read_validated_cache(url, expected_sha256, max_download_bytes)
         if hit is not None:
             return hit[0], hit[1], hit[2], True
@@ -815,77 +879,96 @@ def _fetch_remote_bytes(
         "Accept": "application/json, text/csv, application/pdf, application/zip, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, text/html;q=0.9, text/plain;q=0.8, */*;q=0.5",
     }
     fetched_at = _utc_now_iso()
-    current_url = url
     raw_bytes = b""
     content_type = ""
+    live_transport = httpx.Client.get is _ORIGINAL_HTTPX_GET and httpx.Client.stream is _ORIGINAL_HTTPX_STREAM
+    max_attempts = (1 + _MAX_SOURCE_RETRIES) if live_transport else 1
 
     # Never enable automatic redirect following: validate every redirect hop BEFORE connecting.
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=False) as client:
-        for _hop in range(DEFAULT_MAX_REDIRECTS + 1):
-            _validate_public_https_url(current_url, resolve_dns=True)
-            if httpx.Client.get is _ORIGINAL_HTTPX_GET:
-                with client.stream("GET", current_url) as response:
-                    if response.status_code in {301, 302, 303, 307, 308}:
-                        location = response.headers.get("location", "").strip()
-                        if not location:
-                            raise ValueError(f"Redirect response from {current_url} missing Location header.")
-                        next_url = urljoin(current_url, location)
-                        _validate_public_https_url(next_url, resolve_dns=True)
-                        current_url = next_url
-                        continue
-                    final_url = str(getattr(response, "url", "") or current_url)
-                    if _is_url(final_url):
-                        _validate_public_https_url(final_url, resolve_dns=False)
-                    if response.status_code in {401, 403}:
-                        raise PermissionError(
-                            f"Remote source {current_url} returned HTTP {response.status_code}. "
-                            "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
-                        )
-                    response.raise_for_status()
-                    content_type = response.headers.get("content-type", "")
-                    cl_hdr = response.headers.get("content-length")
-                    if cl_hdr and cl_hdr.isdigit() and int(cl_hdr) > max_download_bytes:
-                        raise ValueError(
-                            f"Remote artifact {current_url} declares Content-Length={int(cl_hdr)} bytes, "
-                            f"exceeding limit of {max_download_bytes} bytes."
-                        )
-                    buf = bytearray()
-                    for chunk in response.iter_bytes():
-                        buf.extend(chunk)
-                        if len(buf) > max_download_bytes:
-                            raise ValueError(
-                                f"Remote artifact {current_url} exceeded maximum allowed download size of {max_download_bytes} bytes."
+        for attempt in range(max_attempts):
+            current_url = url
+            try:
+                for _hop in range(DEFAULT_MAX_REDIRECTS + 1):
+                    _validate_public_https_url(current_url, resolve_dns=True)
+                    if httpx.Client.get is _ORIGINAL_HTTPX_GET:
+                        with client.stream("GET", current_url) as response:
+                            if response.status_code in {301, 302, 303, 307, 308}:
+                                location = response.headers.get("location", "").strip()
+                                if not location:
+                                    raise ValueError(f"Redirect response from {current_url} missing Location header.")
+                                next_url = urljoin(current_url, location)
+                                _validate_public_https_url(next_url, resolve_dns=True)
+                                current_url = next_url
+                                continue
+                            final_url = str(getattr(response, "url", "") or current_url)
+                            if _is_url(final_url):
+                                _validate_public_https_url(final_url, resolve_dns=False)
+                            if response.status_code in {401, 403}:
+                                raise PermissionError(
+                                    f"Remote source {current_url} returned HTTP {response.status_code}. "
+                                    "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
+                                )
+                            response.raise_for_status()
+                            content_type = response.headers.get("content-type", "")
+                            cl_hdr = response.headers.get("content-length")
+                            if cl_hdr and cl_hdr.isdigit() and int(cl_hdr) > max_download_bytes:
+                                raise ValueError(
+                                    f"Remote artifact {current_url} declares Content-Length={int(cl_hdr)} bytes, "
+                                    f"exceeding limit of {max_download_bytes} bytes."
+                                )
+                            buf = bytearray()
+                            for chunk in response.iter_bytes():
+                                buf.extend(chunk)
+                                if len(buf) > max_download_bytes:
+                                    raise ValueError(
+                                        f"Remote artifact {current_url} exceeded maximum allowed download size of {max_download_bytes} bytes."
+                                    )
+                            raw_bytes = bytes(buf)
+                            break
+                    else:
+                        response = client.get(current_url)
+                        if response.status_code in {301, 302, 303, 307, 308}:
+                            location = response.headers.get("location", "").strip()
+                            if not location:
+                                raise ValueError(f"Redirect response from {current_url} missing Location header.")
+                            next_url = urljoin(current_url, location)
+                            _validate_public_https_url(next_url, resolve_dns=True)
+                            current_url = next_url
+                            continue
+                        final_url = str(getattr(response, "url", "") or current_url)
+                        if _is_url(final_url):
+                            _validate_public_https_url(final_url, resolve_dns=False)
+                        if response.status_code in {401, 403}:
+                            raise PermissionError(
+                                f"Remote source {current_url} returned HTTP {response.status_code}. "
+                                "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
                             )
-                    raw_bytes = bytes(buf)
-                    break
-            else:
-                response = client.get(current_url)
-                if response.status_code in {301, 302, 303, 307, 308}:
-                    location = response.headers.get("location", "").strip()
-                    if not location:
-                        raise ValueError(f"Redirect response from {current_url} missing Location header.")
-                    next_url = urljoin(current_url, location)
-                    _validate_public_https_url(next_url, resolve_dns=True)
-                    current_url = next_url
-                    continue
-                final_url = str(getattr(response, "url", "") or current_url)
-                if _is_url(final_url):
-                    _validate_public_https_url(final_url, resolve_dns=False)
-                if response.status_code in {401, 403}:
-                    raise PermissionError(
-                        f"Remote source {current_url} returned HTTP {response.status_code}. "
-                        "AI Watchdogs does not bypass authentication walls or access controls (IT Act Sec 43)."
-                    )
-                response.raise_for_status()
-                content_type = response.headers.get("content-type", "")
-                raw_bytes = response.content
-                if len(raw_bytes) > max_download_bytes:
-                    raise ValueError(
-                        f"Remote artifact {current_url} size {len(raw_bytes)} bytes exceeds limit of {max_download_bytes} bytes."
-                    )
+                        response.raise_for_status()
+                        content_type = response.headers.get("content-type", "")
+                        raw_bytes = response.content
+                        if len(raw_bytes) > max_download_bytes:
+                            raise ValueError(
+                                f"Remote artifact {current_url} size {len(raw_bytes)} bytes exceeds limit of {max_download_bytes} bytes."
+                            )
+                        break
+                else:
+                    raise ValueError(f"Remote source {url} exceeded maximum allowed redirects ({DEFAULT_MAX_REDIRECTS}).")
                 break
-        else:
-            raise ValueError(f"Remote source {url} exceeded maximum allowed redirects ({DEFAULT_MAX_REDIRECTS}).")
+            except httpx.HTTPStatusError as exc:
+                if (
+                    attempt + 1 < max_attempts
+                    and exc.response is not None
+                    and exc.response.status_code in _RETRYABLE_SOURCE_STATUS
+                ):
+                    time.sleep(1.5 * (2**attempt))
+                    continue
+                raise
+            except httpx.TransportError:
+                if attempt + 1 < max_attempts:
+                    time.sleep(1.5 * (2**attempt))
+                    continue
+                raise
 
         # Refuse to scrape or bypass CAPTCHA/anti-bot HTML pages.
         if "text/html" in content_type.lower() or raw_bytes[:512].lstrip().lower().startswith((b"<!doctype html", b"<html")):
@@ -2183,8 +2266,16 @@ def load_dataset(
         if tag not in combined_redactions:
             combined_redactions.append(tag)
 
-    # Persist opt-in raw cache ONLY after verifying zero PII was present in the payload.
+    # Persist opt-in / pinned-SHA-256 cache ONLY after verifying zero PII was present in the payload.
     if is_remote and resolved_use_cache and not from_cache and os.environ.get("AIWATCHDOGS_DISABLE_CACHE") != "1":
+        _store_pinned_mem_cache(
+            source_ref,
+            resolved_expected_sha,
+            raw_bytes,
+            content_type,
+            fetched_at,
+            has_pii=bool(combined_redactions),
+        )
         _persist_raw_cache_if_clean(
             source_ref,
             raw_bytes,

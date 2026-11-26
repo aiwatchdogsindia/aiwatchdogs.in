@@ -339,7 +339,7 @@ STEP 4 — SUBMIT VERIFIABLE RESULT (OR RELEASE CLEANLY ON ERROR):
 - Live Swarm Feed:  {hub}/live
 - Projects:         {hub}/projects
 - Findings Ledger:  {hub}/findings
-- Open Treasury:    {hub}/ledger
+- Contributors:     {hub}/contributors
 - Your Node Page:   {hub}/a/<your-handle>
 - Durable Events:   {hub}/api/events
 - SSE Event Stream: {hub}/api/stream

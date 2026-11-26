@@ -9,6 +9,7 @@ import math
 import os
 import re
 import secrets
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -32,7 +33,7 @@ from aiwatchdogs.core.safety import (
     validate_safe_http_url,
     verify_token_digest,
 )
-from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usage, summarise_tokens
+from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usage, summarise_tokens, tokens_used
 from aiwatchdogs.engines.gigw_matrix import (
     MATRIX_VERSION as W1_MATRIX_VERSION,
     VALID_CHECK_STATES as W1_VALID_CHECK_STATES,
@@ -83,7 +84,7 @@ MAX_PROJECT_TASKS_LISTED = 2000
 LARGE_PROJECT_TASKS_LISTED = 200
 MAX_TASK_PAGE = 100
 # Projects an agent may ask for by name even when the hub hands work out by priority.
-OPEN_CHOICE_PROJECTS = frozenset({"gov-in-public-information", UNION_BUDGET_PROJECT_SLUG})
+OPEN_CHOICE_PROJECTS = frozenset({"police-finances", "gov-in-public-information", UNION_BUDGET_PROJECT_SLUG})
 
 # What the desk asks an agent to be for one task. Sent with every claim so that any agent,
 # whatever tool runs it, knows its job without reading the task type.
@@ -586,6 +587,10 @@ class DeskService:
         self.project_codes: dict[str, str] = dict(CANONICAL_PROJECT_CODES)
         self.db = db
         self.broker = broker
+        self._rate_limit_prune_lock = threading.Lock()
+        self._last_rate_limit_prune: float = 0.0
+        self._w1_cache_lock = threading.Lock()
+        self._w1_visual_cache: dict[str, tuple[tuple[Any, ...], dict[str, Any]]] = {}
 
     # ------------------------------------------------------------------
     # Row serializers
@@ -638,6 +643,7 @@ class DeskService:
         unique_coverage_inr: float | None = None,
         cleared_findings_count: int | None = None,
         token_rows: list[tuple[str, int | None, Any]] | None = None,
+        token_summary: dict[str, Any] | None = None,
         *,
         project_code: str | None = None,
         primary_total_tasks: int | None = None,
@@ -722,7 +728,11 @@ class DeskService:
             "project_scope": loads_json(_row_get(row, "project_scope_json", "{}") or "{}", {}),
             "enlisted_pr_url": str(_row_get(row, "enlisted_pr_url", "") or ""),
             "planned_tasks": planned,
-            "token_summary": summarise_tokens(token_rows or [], planned),
+            "token_summary": (
+                token_summary
+                if token_summary is not None
+                else summarise_tokens(token_rows or [], planned)
+            ),
         }
 
     @staticmethod
@@ -1064,6 +1074,70 @@ class DeskService:
     # Internal write helpers
     # ------------------------------------------------------------------
 
+    def check_rate_limits(
+        self,
+        checks: list[tuple[str, int]],
+        *,
+        window_seconds: int = 60,
+    ) -> None:
+        """Atomically enforce one or more distributed DB-backed fixed-window rate limits."""
+        if os.environ.get("AIWATCHDOGS_DISABLE_RATE_LIMIT", "").strip().lower() in {"1", "true", "yes"}:
+            return
+        if not checks:
+            return
+        now_sec = int(time.time())
+        win = max(1, int(window_seconds))
+        win_start = (now_sec // win) * win
+        retry_after = max(1, (win_start + win) - now_sec)
+        now_iso = utc_now_iso()
+
+        should_prune = False
+        now_mono = time.monotonic()
+        if now_mono - self._last_rate_limit_prune >= 300.0:
+            with self._rate_limit_prune_lock:
+                if now_mono - self._last_rate_limit_prune >= 300.0:
+                    self._last_rate_limit_prune = now_mono
+                    should_prune = True
+
+        exceeded = False
+        with self.db.transaction() as conn:
+            for raw_key, limit in checks:
+                key = raw_key[:160]
+                conn.execute(
+                    """
+                    INSERT INTO rate_limit_buckets (bucket_key, window_start, count, updated_at)
+                    VALUES (?, ?, 1, ?)
+                    ON CONFLICT(bucket_key) DO UPDATE SET
+                        count = CASE
+                            WHEN rate_limit_buckets.window_start = excluded.window_start
+                            THEN rate_limit_buckets.count + 1
+                            ELSE 1
+                        END,
+                        window_start = excluded.window_start,
+                        updated_at = excluded.updated_at
+                    """,
+                    (key, win_start, now_iso),
+                )
+                row = conn.execute(
+                    "SELECT count FROM rate_limit_buckets WHERE bucket_key = ?",
+                    (key,),
+                ).fetchone()
+                current = int(row["count"]) if row is not None else 1
+                if current > limit:
+                    exceeded = True
+            if should_prune:
+                conn.execute(
+                    "DELETE FROM rate_limit_buckets WHERE window_start < ?",
+                    (now_sec - 3600,),
+                )
+
+        if exceeded:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded; please retry shortly.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
     def check_rate_limit(
         self,
         bucket_key: str,
@@ -1072,40 +1146,7 @@ class DeskService:
         window_seconds: int = 60,
     ) -> None:
         """Distributed DB-backed fixed-window rate limiter safe across multi-instance Fluid Compute."""
-        if os.environ.get("AIWATCHDOGS_DISABLE_RATE_LIMIT", "").strip().lower() in {"1", "true", "yes"}:
-            return
-        now_sec = int(time.time())
-        win = max(1, int(window_seconds))
-        win_start = (now_sec // win) * win
-        retry_after = max(1, (win_start + win) - now_sec)
-        now_iso = utc_now_iso()
-        with self.db.transaction() as conn:
-            conn.execute(
-                """
-                INSERT INTO rate_limit_buckets (bucket_key, window_start, count, updated_at)
-                VALUES (?, ?, 1, ?)
-                ON CONFLICT(bucket_key) DO UPDATE SET
-                    count = CASE
-                        WHEN rate_limit_buckets.window_start = excluded.window_start
-                        THEN rate_limit_buckets.count + 1
-                        ELSE 1
-                    END,
-                    window_start = excluded.window_start,
-                    updated_at = excluded.updated_at
-                """,
-                (bucket_key[:160], win_start, now_iso),
-            )
-            row = conn.execute(
-                "SELECT count FROM rate_limit_buckets WHERE bucket_key = ?",
-                (bucket_key[:160],),
-            ).fetchone()
-            current = int(row["count"]) if row is not None else 1
-            if current > limit:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Rate limit exceeded; please retry shortly.",
-                    headers={"Retry-After": str(retry_after)},
-                )
+        self.check_rate_limits([(bucket_key, limit)], window_seconds=window_seconds)
 
     def _redact_quarantined_finding_artifacts(self, conn: Any, finding_id: str, now: str) -> None:
         """Atomically redact tasks, whispers, and events linked to a quarantined finding (DPDP/BNS)."""
@@ -1367,11 +1408,11 @@ class DeskService:
                     "UPDATE agents SET current_task_id = NULL WHERE id = ? AND current_task_id = ?",
                     (row["claimed_by_agent_id"], row["id"]),
                 )
-        self._requeue_parked_tasks(conn, now)
+        self._requeue_parked_tasks(conn, now, is_postgres=self.db.is_postgres)
         return len(expired)
 
     @staticmethod
-    def _requeue_parked_tasks(conn: Any, now: str) -> None:
+    def _requeue_parked_tasks(conn: Any, now: str, *, is_postgres: bool = False) -> None:
         """Put tasks parked after repeated failed attempts back on the queue once they have cooled down.
 
         Three releases or lapsed leases park a task. On a volunteer swarm those are usually a node's
@@ -1388,17 +1429,27 @@ class DeskService:
         if now_dt is None:
             return
         cutoff = (now_dt - timedelta(minutes=minutes)).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-        conn.execute(
-            """
-            UPDATE tasks
-            SET status = 'queued', retry_count = 0, available_at = NULL, updated_at = ?
+        lock_clause = " FOR UPDATE SKIP LOCKED" if is_postgres else ""
+        parked = conn.execute(
+            f"""
+            SELECT id FROM tasks
             WHERE status = 'needs_adjudication' AND updated_at < ?
               AND task_type IN ('anomaly_scan', 'ingest_parse', 'peer_verify')
               AND (target_finding_id IS NULL OR target_finding_id IN (
                   SELECT id FROM findings WHERE status = 'peer_review' AND COALESCE(quarantined, 0) = 0
               ))
+            LIMIT 50{lock_clause}
             """,
-            (now, cutoff),
+            (cutoff,),
+        ).fetchall()
+        if not parked:
+            return
+        ids = [str(r["id"]) for r in parked]
+        ph = ",".join("?" for _ in ids)
+        conn.execute(
+            f"UPDATE tasks SET status = 'queued', retry_count = 0, available_at = NULL, updated_at = ? "
+            f"WHERE id IN ({ph}) AND status = 'needs_adjudication'",
+            [now, *ids],
         )
 
     def _authenticate_agent(
@@ -1531,16 +1582,24 @@ class DeskService:
         qty_workload: dict[str, float] = {}
         qty_missions: dict[str, set[str]] = {}
 
-        task_rows = conn.execute(
-            """
-            SELECT id, mission_id, mission_slug, task_type, dataset_key,
-                   financial_quantity_type, monetary_audited_inr, payload_json
-            FROM tasks
-            WHERE status IN ('completed', 'settled')
-              AND task_type IN ('anomaly_scan', 'ingest_parse')
-              AND COALESCE(monetary_audited_inr, 0) > 0
-            """
-        ).fetchall()
+        mission_ids = [str(r["id"]) for r in mission_rows]
+        if mission_ids:
+            ph = ",".join("?" for _ in mission_ids)
+            task_rows = conn.execute(
+                f"""
+                SELECT id, mission_id, mission_slug, task_type, dataset_key,
+                       financial_quantity_type, monetary_audited_inr,
+                       CASE WHEN COALESCE(dataset_key, '') = '' THEN payload_json ELSE '' END AS payload_json
+                FROM tasks
+                WHERE mission_id IN ({ph})
+                  AND status IN ('completed', 'settled')
+                  AND task_type IN ('anomaly_scan', 'ingest_parse')
+                  AND COALESCE(monetary_audited_inr, 0) > 0
+                """,
+                mission_ids,
+            ).fetchall()
+        else:
+            task_rows = []
 
         missions_with_task_amounts: set[str] = set()
         for t in task_rows:
@@ -1552,13 +1611,16 @@ class DeskService:
             if amt <= 0:
                 continue
             missions_with_task_amounts.add(mid)
-            payload = loads_json(t["payload_json"], {})
-            dkey = str(
-                _row_get(t, "dataset_key", "")
-                or (payload.get("dataset_key") if isinstance(payload, dict) else "")
-                or (payload.get("dataset_url") if isinstance(payload, dict) else "")
-                or t["id"]
-            ).strip()
+            raw_dkey = str(_row_get(t, "dataset_key", "") or "").strip()
+            if raw_dkey:
+                dkey = raw_dkey
+            else:
+                payload = loads_json(t["payload_json"], {})
+                dkey = str(
+                    (payload.get("dataset_key") if isinstance(payload, dict) else "")
+                    or (payload.get("dataset_url") if isinstance(payload, dict) else "")
+                    or t["id"]
+                ).strip()
             qtype = str(
                 _row_get(t, "financial_quantity_type", "")
                 or _row_get(m_row, "financial_quantity_type", "")
@@ -2156,6 +2218,7 @@ class DeskService:
         conn: Any,
         mission_id: str | None = None,
         max_rungs: int = 24,
+        mission_ids: list[str] | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
         stage_order = {
             ("verified", "finding"): 0,
@@ -2176,29 +2239,39 @@ class DeskService:
             "AND (COALESCE(qf.quarantined, 0) = 1 OR qf.status = 'quarantined')))"
         )
         if mission_id is not None:
-            f_rows = conn.execute(
-                "SELECT id, mission_id, title, status, quarantined, created_at FROM findings "
-                "WHERE mission_id = ? AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
-                "ORDER BY created_at DESC LIMIT 300",
-                (mission_id,),
-            ).fetchall()
-            t_rows = conn.execute(
-                f"SELECT t.id, t.mission_id, t.title, t.task_type, t.status, t.target_finding_id, t.created_at "
-                f"FROM tasks t WHERE t.mission_id = ? AND t.status != 'retired' AND {quarantine_task_guard} "
-                f"ORDER BY t.created_at DESC LIMIT 300",
-                (mission_id,),
-            ).fetchall()
+            target_mids = [mission_id]
+            per_mission_limit = 300
+        elif mission_ids is not None:
+            target_mids = list(mission_ids)
+            per_mission_limit = max(48, max_rungs * 2)
         else:
-            f_rows = conn.execute(
-                "SELECT id, mission_id, title, status, quarantined, created_at FROM findings "
-                "WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
-                "ORDER BY created_at DESC LIMIT 500"
-            ).fetchall()
-            t_rows = conn.execute(
-                f"SELECT t.id, t.mission_id, t.title, t.task_type, t.status, t.target_finding_id, t.created_at "
-                f"FROM tasks t WHERE t.status != 'retired' AND {quarantine_task_guard} "
-                f"ORDER BY t.created_at DESC LIMIT 500"
-            ).fetchall()
+            target_mids = [
+                str(r["id"])
+                for r in conn.execute("SELECT id FROM missions WHERE status != 'archived'").fetchall()
+            ]
+            per_mission_limit = max(48, max_rungs * 2)
+
+        f_rows: list[Any] = []
+        t_rows: list[Any] = []
+        for mid in target_mids:
+            f_rows.extend(
+                conn.execute(
+                    "SELECT id, mission_id, title, status, quarantined, created_at FROM findings "
+                    "WHERE mission_id = ? AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (mid, per_mission_limit),
+                ).fetchall()
+            )
+            t_rows.extend(
+                conn.execute(
+                    f"SELECT t.id, t.mission_id, t.title, t.task_type, t.status, t.target_finding_id, t.created_at "
+                    f"FROM tasks t WHERE t.mission_id = ? AND t.status != 'retired' AND {quarantine_task_guard} "
+                    f"ORDER BY CASE t.status WHEN 'completed' THEN 0 WHEN 'settled' THEN 0 WHEN 'claimed' THEN 1 "
+                    f"WHEN 'failed' THEN 2 WHEN 'needs_adjudication' THEN 2 ELSE 3 END, "
+                    f"t.created_at DESC LIMIT ?",
+                    (mid, per_mission_limit),
+                ).fetchall()
+            )
 
         for r in f_rows:
             if _is_quarantined_row(r):
@@ -2305,14 +2378,14 @@ class DeskService:
                 "GROUP BY mission_id"
             ).fetchall()
         }
-        rungs_map = self._build_mission_rungs(conn)
         # Archived missions (the original M1–M8 and removed projects) keep their public record
         # but are not listed, mapped or offered new scans.
         rows = conn.execute(
             "SELECT * FROM missions WHERE status != 'archived' ORDER BY priority ASC, id ASC"
         ).fetchall()
+        rungs_map = self._build_mission_rungs(conn, mission_ids=[str(r["id"]) for r in rows])
         mission_unique_inr, coverage_summary = self._compute_coverage_summary(conn, rows)
-        token_rows = self._token_rows(conn)
+        token_summaries = self._token_summaries(conn, rows)
         missions = [
             self._serialize_mission(
                 r,
@@ -2322,7 +2395,7 @@ class DeskService:
                 rungs=rungs_map.get(r["id"], []),
                 unique_coverage_inr=mission_unique_inr.get(str(r["id"]), 0.0),
                 cleared_findings_count=cleared_findings_map.get(r["id"], 0),
-                token_rows=token_rows.get(str(r["id"]), []),
+                token_summary=token_summaries.get(str(r["id"])),
                 project_code=self.resolve_project_code(r["slug"], str(r["methodology_code"] or "")),
                 primary_total_tasks=primary_total_map.get(r["id"], int(r["total_tasks"] or 0)),
                 primary_completed_tasks=primary_done_map.get(r["id"], int(r["completed_tasks"] or 0)),
@@ -2365,7 +2438,9 @@ class DeskService:
         cleared_task_ids_hour: dict[str, set[str]] = {}
 
         for tr in conn.execute(
-            "SELECT id, claimed_by_handle, task_type, completed_at, updated_at, output_json "
+            "SELECT id, claimed_by_handle, task_type, completed_at, updated_at, "
+            "CASE WHEN task_type != 'peer_verify' AND methodology_code != 'W1' "
+            "AND output_json LIKE '%\"cleared\"%' THEN output_json ELSE '' END AS output_json "
             "FROM tasks WHERE mission_id = ? AND status = 'completed' AND claimed_by_handle IS NOT NULL",
             (mission_id,),
         ).fetchall():
@@ -2604,6 +2679,23 @@ class DeskService:
 
         mid = str(mission_row["id"])
         if methodology_code == "W1":
+            latest_row = conn.execute(
+                "SELECT COALESCE(MAX(COALESCE(completed_at, updated_at)), '') AS ts "
+                "FROM tasks WHERE mission_id = ? AND methodology_code = 'W1' AND status = 'completed'",
+                (mid,),
+            ).fetchone()
+            cache_key = (
+                mid,
+                completed_cnt,
+                total_cnt,
+                str(latest_row["ts"] if latest_row else ""),
+            )
+            with self._w1_cache_lock:
+                cached_entry = self._w1_visual_cache.get(mid)
+                if cached_entry is not None and cached_entry[0] == cache_key:
+                    summary["website_audit"] = dict(cached_entry[1])
+                    return summary
+
             hosts_observed = 0
             hosts_unassessable = 0
             cp_counts: dict[str, dict[str, int]] = {
@@ -2654,7 +2746,7 @@ class DeskService:
                         if val in W1_VALID_CHECK_STATES:
                             cp_counts[key][val] += 1
 
-            summary["website_audit"] = build_website_audit_visual_payload(
+            w1_payload = build_website_audit_visual_payload(
                 batches_done=completed_cnt,
                 batches_total=total_cnt,
                 hosts_observed=hosts_observed,
@@ -2663,6 +2755,9 @@ class DeskService:
                 reasons=reasons,
                 host_observations=host_observations,
             )
+            with self._w1_cache_lock:
+                self._w1_visual_cache[mid] = (cache_key, w1_payload)
+            summary["website_audit"] = dict(w1_payload)
             return summary
 
         if methodology_code == UNION_BUDGET_METHODOLOGY:
@@ -2823,7 +2918,7 @@ class DeskService:
                 rungs=rungs,
                 unique_coverage_inr=mission_unique_inr.get(str(mid), 0.0),
                 cleared_findings_count=cf_cnt,
-                token_rows=self._token_rows(conn, str(mid)).get(str(mid), []),
+                token_summary=self._token_summaries(conn, [row]).get(str(mid)),
                 project_code=self.resolve_project_code(row["slug"], str(row["methodology_code"] or "")),
                 primary_total_tasks=primary_total if primary_total > 0 else int(row["total_tasks"] or 0),
                 primary_completed_tasks=primary_done if primary_total > 0 else int(row["completed_tasks"] or 0),
@@ -5010,13 +5105,13 @@ class DeskService:
 
                 # New scans only for live projects; peer verification of existing leads may still finish.
                 clauses.append(
-                    "(t.task_type = 'peer_verify' OR t.mission_id IN "
-                    "(SELECT id FROM missions WHERE status NOT IN ('archived', 'paused', 'needs_data')))"
+                    "(t.task_type = 'peer_verify' OR m.status NOT IN ('archived', 'paused', 'needs_data'))"
                 )
 
                 if not website_observations:
                     clauses.append("t.methodology_code != 'W1'")
-                preferred_slug = (preferred_mission or "").strip()[:120]
+                raw_pref = (preferred_mission or "").strip()[:120]
+                preferred_slug = self.resolve_slug(raw_pref) if raw_pref else ""
                 # Research tasks belonged to a project that has ended; they are never handed out.
                 clauses.append("t.task_type != 'research'")
                 if preferred_slug and (_agents_may_choose_project() or preferred_slug in OPEN_CHOICE_PROJECTS):
@@ -5033,16 +5128,17 @@ class DeskService:
 
                 # Live projects before archived ones, then the team's project priority (1 first), then peer
                 # checks before new scans, then oldest first.
-                # Atomic single-row claim: on Postgres lock at most 1 eligible row (FOR UPDATE SKIP LOCKED LIMIT 1)
-                lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
+                # Atomic single-row claim: lock ONLY the candidate task row (`FOR UPDATE OF t SKIP LOCKED`)
+                # so concurrent claims never lock-wait on the joined `missions` row.
+                lock_clause = " FOR UPDATE OF t SKIP LOCKED" if self.db.is_postgres else ""
                 cand = conn.execute(
                     f"""
                     SELECT t.* FROM tasks t
+                    JOIN missions m ON m.id = t.mission_id
                     WHERE {' AND '.join(clauses)}
                     ORDER BY
-                        (SELECT CASE WHEN m.status = 'archived' THEN 1 ELSE 0 END
-                         FROM missions m WHERE m.id = t.mission_id) ASC,
-                        (SELECT m.priority FROM missions m WHERE m.id = t.mission_id) ASC,
+                        CASE WHEN m.status = 'archived' THEN 1 ELSE 0 END ASC,
+                        m.priority ASC,
                         CASE t.task_type WHEN 'peer_verify' THEN 0 ELSE 1 END,
                         COALESCE(t.available_at, t.created_at) ASC,
                         t.created_at ASC,
@@ -5440,7 +5536,28 @@ class DeskService:
                     "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
                     "last_heartbeat_at = ? WHERE id = ?", (now, agent["id"]),
                 )
-                self._emit_durable_event(conn, envelopes, "website_batch_observed", result, now=now)
+                w1_msg = whisper_text or f"Observed {len(rows)} .gov.in public sites ({task['title'][:90]})."
+                w1_whisper = self._insert_whisper(
+                    conn,
+                    agent_handle=str(agent["handle"]),
+                    provider=agent["provider"],
+                    model=agent["model"],
+                    mission_slug=mission["slug"],
+                    event_type="website_batch_observed",
+                    message=w1_msg,
+                )
+                self._emit_durable_event(
+                    conn,
+                    envelopes,
+                    "website_batch_observed",
+                    {
+                        **result,
+                        "agent_handle": str(agent["handle"]),
+                        "mission_slug": mission["slug"],
+                    },
+                    now=now,
+                )
+                self._emit_durable_event(conn, envelopes, "whisper", w1_whisper, now=now)
             elif outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
@@ -5537,6 +5654,79 @@ class DeskService:
     def _planned_tasks(row: Any) -> list[dict[str, Any]]:
         planned = loads_json(_row_get(row, "planned_tasks_json", "[]") or "[]", [])
         return [p for p in planned if isinstance(p, dict)] if isinstance(planned, list) else []
+
+    def _token_summaries(
+        self, conn: Any, mission_rows: list[Any]
+    ) -> dict[str, dict[str, Any]]:
+        """Aggregate project token estimates and reported usage in SQL without scanning all task rows into Python."""
+        mission_ids = [str(r["id"]) for r in mission_rows]
+        if not mission_ids:
+            return {}
+        ph = ",".join("?" for _ in mission_ids)
+        agg_by_mid: dict[str, dict[str, int]] = {}
+        for r in conn.execute(
+            f"""
+            SELECT mission_id,
+                   SUM(CASE WHEN estimated_tokens IS NOT NULL THEN 1 ELSE 0 END) AS estimated_cnt,
+                   COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL THEN estimated_tokens ELSE 0 END), 0) AS total_est,
+                   COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL AND status != 'completed' THEN estimated_tokens ELSE 0 END), 0) AS remaining_est,
+                   SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_cnt
+            FROM tasks
+            WHERE mission_id IN ({ph}) AND status != 'retired'
+            GROUP BY mission_id
+            """,
+            mission_ids,
+        ).fetchall():
+            agg_by_mid[str(r["mission_id"])] = {
+                "estimated": int(r["estimated_cnt"] or 0),
+                "total": int(r["total_est"] or 0),
+                "remaining": int(r["remaining_est"] or 0),
+                "done": int(r["completed_cnt"] or 0),
+            }
+
+        used_by_mid: dict[str, int] = {}
+        reported_by_mid: dict[str, int] = {}
+        for r in conn.execute(
+            f"""
+            SELECT mission_id, usage_json
+            FROM tasks
+            WHERE mission_id IN ({ph})
+              AND status = 'completed'
+              AND usage_json IS NOT NULL
+              AND usage_json != ''
+              AND usage_json != '{{}}'
+            """,
+            mission_ids,
+        ).fetchall():
+            spent = tokens_used(loads_json(r["usage_json"], {}))
+            if spent is not None:
+                mid = str(r["mission_id"])
+                reported_by_mid[mid] = reported_by_mid.get(mid, 0) + 1
+                used_by_mid[mid] = used_by_mid.get(mid, 0) + int(spent)
+
+        out: dict[str, dict[str, Any]] = {}
+        for row in mission_rows:
+            mid = str(row["id"])
+            agg = agg_by_mid.get(mid, {})
+            estimated = int(agg.get("estimated", 0))
+            total = int(agg.get("total", 0))
+            remaining = int(agg.get("remaining", 0))
+            done = int(agg.get("done", 0))
+            for item in self._planned_tasks(row):
+                estimated += 1
+                est_val = int(item.get("estimated_tokens") or 0)
+                total += est_val
+                remaining += est_val
+            reported = reported_by_mid.get(mid, 0)
+            used = used_by_mid.get(mid, 0)
+            out[mid] = {
+                "estimated_tokens": total if estimated else None,
+                "remaining_tokens": remaining if estimated else None,
+                "tokens_used": used if reported else None,
+                "reported_tasks": reported,
+                "completed_tasks": done,
+            }
+        return out
 
     def _token_rows(self, conn: Any, mission_id: str | None = None) -> dict[str, list[tuple[str, int | None, Any]]]:
         where, params = (
@@ -6772,7 +6962,18 @@ class DeskService:
                     (dumps_json(excl), now, rt["id"]),
                 )
 
-        if has_pii_or_legal_flag:
+        def _settle_open_peer_checks() -> None:
+            conn.execute(
+                """
+                UPDATE agents
+                SET current_task_id = NULL
+                WHERE current_task_id IN (
+                    SELECT id FROM tasks
+                    WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status = 'claimed'
+                )
+                """,
+                (finding_id,),
+            )
             conn.execute(
                 """
                 UPDATE tasks
@@ -6781,6 +6982,9 @@ class DeskService:
                 """,
                 (now, now, finding_id),
             )
+
+        if has_pii_or_legal_flag:
+            _settle_open_peer_checks()
             conn.execute(
                 """
                 INSERT OR IGNORE INTO finding_corrections (
@@ -6833,14 +7037,7 @@ class DeskService:
             )
 
         elif new_status in ("disputed", "retracted_false_positive"):
-            conn.execute(
-                """
-                UPDATE tasks
-                SET status = 'settled', updated_at = ?, completed_at = ?
-                WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status IN ('queued', 'claimed')
-                """,
-                (now, now, finding_id),
-            )
+            _settle_open_peer_checks()
 
         elif promoted:
             conn.execute(
@@ -6859,14 +7056,7 @@ class DeskService:
                 ref_id=finding_id,
                 now=now,
             )
-            conn.execute(
-                """
-                UPDATE tasks
-                SET status = 'settled', updated_at = ?, completed_at = ?
-                WHERE target_finding_id = ? AND task_type = 'peer_verify' AND status IN ('queued', 'claimed')
-                """,
-                (now, now, finding_id),
-            )
+            _settle_open_peer_checks()
             existing_rti = conn.execute(
                 "SELECT id FROM rti_drafts WHERE finding_id = ?", (finding_id,)
             ).fetchone()
