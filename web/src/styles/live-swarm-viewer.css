@@ -1,0 +1,1638 @@
+/* =========================================================================
+   AI Watchdogs · India — Live Swarm Viewer, Live Agent Strip, Hero Live Feed
+   & GitHub Avatar Stylesheet (scoped strictly under .lsv-* classes)
+   Harmonizes with tokens.css (Geist Serif + Geist Mono + Tiranga palette)
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   Shared Pulsing Dots
+   ------------------------------------------------------------------------- */
+.lsv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.lsv-dot--live {
+  background: #22A559;
+  box-shadow: 0 0 0 3px rgba(34, 165, 89, 0.18);
+  animation: lsvBreathe 2.3s ease-in-out infinite;
+}
+
+.lsv-dot--amber {
+  background: var(--flag-saffron, #FF9933);
+  box-shadow: 0 0 0 3px rgba(255, 153, 51, 0.22);
+  animation: lsvBreatheAmber 2s ease-in-out infinite;
+}
+
+.lsv-dot--offline {
+  background: #B8B2A7;
+  box-shadow: none;
+}
+
+@keyframes lsvBreathe {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(34, 165, 89, 0.22);
+  }
+  55% {
+    box-shadow: 0 0 0 6px rgba(34, 165, 89, 0);
+  }
+}
+
+@keyframes lsvBreatheAmber {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgba(255, 153, 51, 0.25);
+  }
+  55% {
+    box-shadow: 0 0 0 6px rgba(255, 153, 51, 0);
+  }
+}
+
+@keyframes lsvHubPulse {
+  0% {
+    transform: scale(0.94);
+    opacity: 0.72;
+  }
+  100% {
+    transform: scale(1.28);
+    opacity: 0;
+  }
+}
+
+@keyframes lsvRoleHalo {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(var(--lsv-role-rgb, 200, 90, 50), 0.42);
+  }
+  65% {
+    box-shadow: 0 0 0 6px rgba(var(--lsv-role-rgb, 200, 90, 50), 0);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   1. GitHubAvatar (.lsv-avatar)
+   ------------------------------------------------------------------------- */
+.lsv-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.lsv-avatar--active {
+  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 3.5px #22A559;
+}
+
+.lsv-avatar-clip {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid rgba(27, 26, 23, 0.08);
+  background: #F4F2EC;
+  display: block;
+}
+
+.lsv-avatar-identicon {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.lsv-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.lsv-avatar-img.is-loaded {
+  opacity: 1;
+}
+
+.lsv-avatar-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid #FFFFFF;
+  background: #22A559;
+}
+
+.lsv-avatar-dot--verifying {
+  background: #138808;
+}
+
+.lsv-avatar-dot--recent {
+  background: var(--flag-saffron, #FF9933);
+}
+
+.lsv-avatar-dot--idle {
+  background: #B8B2A7;
+}
+
+/* -------------------------------------------------------------------------
+   2. LiveAgentStrip (.lsv-strip) — Hero Top Pill + Recent Joins Ticker
+   ------------------------------------------------------------------------- */
+.lsv-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.lsv-strip-pill-wrap {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+.lsv-strip-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 12px 4px 14px;
+  background: #FFFFFF;
+  border: 1px solid #E4E1DA;
+  border-radius: var(--r-999, 999px);
+  box-shadow: 0 1px 2px rgba(27, 26, 23, 0.04), 0 4px 14px rgba(27, 26, 23, 0.06);
+  color: #1B1A17;
+  font-family: var(--font-serif);
+  font-size: 13.5px;
+  line-height: 1.2;
+}
+
+.lsv-strip-live-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lsv-strip-live-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #1B1A17;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.lsv-strip-live-link:hover {
+  color: #0F7306;
+}
+
+.lsv-strip-live-text strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lsv-strip-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #7D776D;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.lsv-strip-info-btn:hover,
+.lsv-strip-info-btn:focus-visible {
+  color: #1B1A17;
+  background: #F2EFEA;
+  outline: none;
+}
+
+.lsv-strip-sep {
+  width: 1px;
+  height: 20px;
+  background: #E6E3DC;
+  flex-shrink: 0;
+}
+
+.lsv-strip-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 4px 4px 2px;
+  border: none;
+  background: transparent;
+  color: #1B1A17;
+  font-family: var(--font-serif);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: var(--r-999, 999px);
+  transition: color 0.15s ease;
+}
+
+.lsv-strip-copy-btn:hover {
+  color: #0F7306;
+}
+
+.lsv-strip-copy-btn:focus-visible {
+  outline: 2px solid #1B1A17;
+  outline-offset: 2px;
+}
+
+.lsv-strip-copy-btn.is-copied {
+  color: #0F7306;
+}
+
+.lsv-strip-copy-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6B665C;
+  transition: color 0.15s ease;
+}
+
+.lsv-strip-copy-btn:hover .lsv-strip-copy-icon {
+  color: #1B1A17;
+}
+
+/* Floating Popover under Strip Pill */
+.lsv-strip-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 10px);
+  width: min(410px, calc(100vw - 32px));
+  background: #FFFFFF;
+  border: 1px solid #D5D0C6;
+  border-radius: var(--r-14, 14px);
+  box-shadow: var(--shadow-pop, 0 8px 28px rgba(27, 26, 23, 0.12));
+  padding: 15px 16px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: #1B1A17;
+}
+
+.lsv-strip-popover-title {
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6E685D;
+}
+
+.lsv-strip-popover-body {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #3F3B34;
+}
+
+.lsv-strip-popover-code {
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 9px 11px;
+  background: #FAF9F6;
+  border: 1px solid #E6E3DC;
+  border-radius: var(--r-8, 8px);
+  color: #1B1A17;
+  word-break: break-word;
+}
+
+.lsv-strip-popover-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lsv-strip-popover-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lsv-text-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12.5px;
+  color: #575249;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lsv-text-btn:hover {
+  color: #1B1A17;
+}
+
+/* Scrollable @handle Joined Pills */
+.lsv-strip-joins {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 44px 2px 2px;
+  cursor: grab;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+}
+
+.lsv-strip-joins::-webkit-scrollbar {
+  display: none;
+}
+
+.lsv-strip-joins:active {
+  cursor: grabbing;
+}
+
+.lsv-join-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 12px 4px 5px;
+  min-height: 34px;
+  background: #FFFFFF;
+  border: 1px solid #E6E3DC;
+  border-radius: var(--r-999, 999px);
+  font-size: 12.5px;
+  line-height: 1.2;
+  color: #1B1A17;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+}
+
+.lsv-join-chip:hover {
+  border-color: #1B1A17;
+  box-shadow: 0 2px 8px rgba(27, 26, 23, 0.06);
+  transform: translateY(-1px);
+}
+
+.lsv-join-chip.is-working {
+  border-color: #B9DFB4;
+}
+
+.lsv-join-chip--invite {
+  border-style: dashed;
+  border-color: #C9C3B5;
+  background: rgba(255, 255, 255, 0.8);
+  padding-left: 11px;
+}
+
+.lsv-join-handle {
+  font-weight: 600;
+  color: #1B1A17;
+}
+
+.lsv-join-time {
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  color: #7D776D;
+}
+
+/* -------------------------------------------------------------------------
+   3. HeroLiveFeed (.lsv-feed) — Hero Right Rail Whispers + Progress Bar
+   ------------------------------------------------------------------------- */
+.lsv-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  color: #1B1A17;
+}
+
+.lsv-feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lsv-feed-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lsv-feed-kicker {
+  font-family: var(--font-code);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #6E685D;
+}
+
+.lsv-feed-active-badge {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: #0F7306;
+  background: #EAF6E8;
+  border: 1px solid #C2E3BE;
+  border-radius: var(--r-999, 999px);
+  padding: 2px 8px;
+}
+
+.lsv-feed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lsv-feed-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.lsv-feed-card--featured {
+  background: #FFFFFF;
+  border: 1px solid #E5E1D9;
+  border-radius: var(--r-12, 12px);
+  padding: 15px 16px 40px;
+  box-shadow: 0 1px 3px rgba(27, 26, 23, 0.04);
+}
+
+.lsv-feed-card--featured:hover {
+  border-color: #CFC9BE;
+  box-shadow: 0 4px 14px rgba(27, 26, 23, 0.06);
+}
+
+.lsv-feed-card--stream {
+  padding: 12px 14px 16px;
+  border-radius: var(--r-10, 10px);
+  border: 1px solid transparent;
+}
+
+.lsv-feed-card--stream:hover {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: #EAE6DE;
+}
+
+.lsv-feed-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: #7D776D;
+}
+
+.lsv-feed-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.lsv-feed-handle {
+  color: #575249;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.lsv-feed-handle:hover {
+  color: #1B1A17;
+  text-decoration: underline;
+}
+
+.lsv-feed-arrow {
+  color: #ACA69B;
+  flex-shrink: 0;
+}
+
+.lsv-feed-target {
+  color: #7D776D;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lsv-feed-time {
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: #8A8479;
+}
+
+.lsv-feed-time.is-fresh {
+  color: #138808;
+  font-weight: 500;
+}
+
+.lsv-feed-body {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: #1B1A17;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Floating dark "Open in the hub →" pill */
+.lsv-feed-hub-pill {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: var(--r-999, 999px);
+  background: #1B1A17;
+  color: #FFFFFF;
+  font-family: var(--font-serif);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.18);
+  transition: opacity 0.16s ease, transform 0.16s ease, background-color 0.15s ease;
+}
+
+.lsv-feed-card--featured .lsv-feed-hub-pill {
+  opacity: 0.96;
+}
+
+.lsv-feed-card--stream .lsv-feed-hub-pill {
+  opacity: 0;
+  transform: translateY(3px);
+  pointer-events: none;
+}
+
+.lsv-feed-card--stream:hover .lsv-feed-hub-pill,
+.lsv-feed-card--stream:focus-within .lsv-feed-hub-pill {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.lsv-feed-hub-pill:hover {
+  background: #0F7306;
+  color: #FFFFFF;
+}
+
+.lsv-feed-footer-link {
+  padding-top: 12px;
+  border-top: 1px solid #E6E3DC;
+}
+
+.lsv-feed-viewer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  font-weight: 500;
+  color: #1B1A17;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 4px;
+  transition: color 0.15s ease;
+}
+
+.lsv-feed-viewer-link:hover {
+  color: #0F7306;
+}
+
+/* Auditing Progress Bar */
+.lsv-progress {
+  position: relative;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lsv-progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lsv-progress-title {
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #1B1A17;
+}
+
+.lsv-progress-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #8A8479;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.lsv-progress-info-btn:hover,
+.lsv-progress-info-btn:focus-visible {
+  color: #1B1A17;
+  background: #F2EFEA;
+  outline: none;
+}
+
+.lsv-progress-tooltip {
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 9px 11px;
+  background: #FFFFFF;
+  border: 1px solid #DDD8CE;
+  border-radius: var(--r-8, 8px);
+  color: #4A463E;
+  box-shadow: 0 3px 12px rgba(27, 26, 23, 0.08);
+}
+
+.lsv-progress-bar-wrap {
+  position: relative;
+  padding: 5px 0;
+}
+
+.lsv-progress-track {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 4px;
+  background: #E7E3DA;
+  display: flex;
+  overflow: visible;
+}
+
+.lsv-progress-fill {
+  height: 100%;
+  background: #1B1A17;
+  border-radius: 4px 0 0 4px;
+  transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lsv-progress-active {
+  height: 100%;
+  background: #FF9933;
+  opacity: 0.72;
+  transition: width 0.45s ease;
+}
+
+.lsv-progress-marker {
+  position: absolute;
+  top: -5px;
+  width: 2.5px;
+  height: 22px;
+  border-radius: 2px;
+  background: #C2412D;
+  transform: translateX(-50%);
+  transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lsv-progress-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  color: #7D776D;
+}
+
+.lsv-progress-labels strong {
+  color: #1B1A17;
+  font-weight: 600;
+}
+
+/* -------------------------------------------------------------------------
+   4. LiveSwarmViewer (.lsv-root) — Radial Hub-and-Spoke Live Canvas
+   ------------------------------------------------------------------------- */
+.lsv-root {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.lsv-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+}
+
+.lsv-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lsv-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  color: var(--ink, #1B1A17);
+}
+
+.lsv-freshness {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--ink-4, #6E685D);
+}
+
+.lsv-freshness-text {
+  font-variant-numeric: tabular-nums;
+}
+
+.lsv-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lsv-summary-stat {
+  font-family: var(--font-code);
+  font-size: 12.5px;
+  color: var(--ink-3, #575249);
+}
+
+/* Radial Stage Container (always luminous warm ivory surface even inside saffron zone) */
+.lsv-stage {
+  position: relative;
+  width: 100%;
+  min-height: 580px;
+  border-radius: var(--r-20, 20px);
+  border: 1px solid #E3DFD7;
+  background:
+    radial-gradient(46% 52% at 20% 34%, rgba(242, 189, 170, 0.28) 0%, rgba(242, 189, 170, 0) 72%),
+    radial-gradient(42% 46% at 82% 68%, rgba(235, 228, 188, 0.30) 0%, rgba(235, 228, 188, 0) 74%),
+    radial-gradient(36% 42% at 50% 50%, rgba(255, 241, 224, 0.50) 0%, rgba(255, 241, 224, 0) 70%),
+    #FDFCF9;
+  overflow: hidden;
+  color: #1B1A17;
+  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.03);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Aspect-locked inner coordinate frame so SVG spokes and HTML cards align to sub-pixel precision */
+.lsv-canvas-frame {
+  position: relative;
+  width: 100%;
+  max-width: 920px;
+  aspect-ratio: 920 / 580;
+}
+
+.lsv-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* Center Dark SWARM Hub (centered dead-on at 50%, 50% spoke convergence) */
+.lsv-hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 96px;
+  height: 96px;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+.lsv-hub-rings {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(27, 26, 23, 0.14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 18px rgba(27, 26, 23, 0.07);
+}
+
+.lsv-hub-rings::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  border: 1px solid rgba(27, 26, 23, 0.10);
+}
+
+.lsv-hub-rings.is-pulsing::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(34, 165, 89, 0.50);
+  animation: lsvHubPulse 2.6s ease-out infinite;
+}
+
+.lsv-hub-disc {
+  position: relative;
+  z-index: 1;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: #181715;
+  color: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.lsv-hub-word {
+  font-family: var(--font-code);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.1;
+  color: #FFFFFF;
+}
+
+.lsv-hub-count {
+  font-family: var(--font-code);
+  font-size: 8.5px;
+  color: #7EE081;
+  letter-spacing: 0.04em;
+}
+
+.lsv-hub-pill {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--r-999, 999px);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(6px);
+  border: 1px solid #E3DFD7;
+  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.06);
+  font-family: var(--font-code);
+  font-size: 11px;
+  line-height: 1.3;
+  color: #575249;
+  white-space: nowrap;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lsv-hub-pill.is-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.12s ease;
+}
+
+.lsv-hub-pill.is-clickable:hover {
+  border-color: #1B1A17;
+  transform: translate(-50%, -1px);
+}
+
+.lsv-hub-pill-verb {
+  font-weight: 600;
+}
+
+.lsv-hub-pill--emerald .lsv-hub-pill-verb {
+  color: #138808;
+}
+
+.lsv-hub-pill--saffron .lsv-hub-pill-verb {
+  color: #A84F00;
+}
+
+.lsv-hub-pill--neutral .lsv-hub-pill-verb {
+  color: #3F3B34;
+}
+
+.lsv-hub-pill-target {
+  color: #1B1A17;
+  font-weight: 500;
+}
+
+.lsv-hub-pill-sep,
+.lsv-hub-pill-time {
+  color: #8A8479;
+}
+
+/* Orbiting Agent Cards (Desktop) */
+.lsv-orbit-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lsv-card {
+  position: absolute;
+  width: 224px;
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  background: #FFFFFF;
+  border: 1px solid rgba(27, 26, 23, 0.09);
+  border-radius: var(--r-14, 14px);
+  padding: 13px 15px;
+  text-align: left;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #1B1A17;
+  box-shadow: 0 2px 6px rgba(27, 26, 23, 0.04), 0 8px 22px rgba(27, 26, 23, 0.06);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.18s ease,
+    transform 0.16s ease;
+}
+
+.lsv-card:hover {
+  border-color: rgba(27, 26, 23, 0.32);
+  box-shadow: 0 4px 12px rgba(27, 26, 23, 0.08), 0 12px 28px rgba(27, 26, 23, 0.09);
+  transform: translate(-50%, calc(-50% - 2px));
+  z-index: 9;
+}
+
+.lsv-card:focus-visible {
+  outline: 2px solid #1B1A17;
+  outline-offset: 2px;
+  z-index: 10;
+}
+
+.lsv-card.is-selected {
+  border-color: var(--lsv-role-color, #1B1A17);
+  box-shadow:
+    0 0 0 2px rgba(var(--lsv-role-rgb, 27, 26, 23), 0.18),
+    0 8px 26px rgba(27, 26, 23, 0.11);
+  z-index: 10;
+}
+
+.lsv-card.is-idle {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.lsv-card--invite {
+  border: 1.5px dashed #C7C0B3;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 2px 8px rgba(27, 26, 23, 0.03);
+}
+
+.lsv-card--invite:hover {
+  border-style: solid;
+  border-color: #1B1A17;
+  background: #FFFFFF;
+}
+
+.lsv-card--invite.is-copied {
+  border-style: solid;
+  border-color: #138808;
+  background: #F4FBF3;
+}
+
+.lsv-card--standby {
+  border: 1px dashed #D9D3C7;
+  background: rgba(255, 255, 255, 0.68);
+  box-shadow: none;
+}
+
+.lsv-card--standby:hover {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: #8A8479;
+}
+
+.lsv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.lsv-role-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: #9E978B;
+}
+
+.lsv-role-dot.is-pulsing {
+  animation: lsvRoleHalo 2.4s ease-in-out infinite;
+}
+
+.lsv-role-dot--invite {
+  background: var(--flag-saffron, #FF9933);
+}
+
+.lsv-role-dot--idle {
+  background: #C4BEB3;
+}
+
+.lsv-card-handle {
+  font-family: var(--font-code);
+  font-size: 13px;
+  font-weight: 600;
+  color: #1B1A17;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.lsv-card-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-serif);
+  font-size: 12px;
+  line-height: 1.3;
+  color: #6B655B;
+  min-width: 0;
+}
+
+.lsv-card-brand-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.lsv-card-sub-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.lsv-card-activity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: #1B1A17;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+.lsv-card-activity--cta {
+  color: #0F7306;
+  font-weight: 500;
+}
+
+.lsv-card-activity-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.lsv-card-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: #8A8479;
+  margin-top: 2px;
+}
+
+.lsv-card-microbar {
+  width: 44px;
+  height: 4px;
+  border-radius: 999px;
+  background: #ECE8E0;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.lsv-card-microbar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.35s ease;
+}
+
+/* Role Legend (Bottom-Left) */
+.lsv-legend {
+  position: absolute;
+  left: 18px;
+  bottom: 16px;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 11px;
+  border-radius: var(--r-999, 999px);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(27, 26, 23, 0.08);
+  font-family: var(--font-code);
+  font-size: 10.5px;
+  color: #6B655B;
+}
+
+.lsv-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lsv-legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+/* Bottom-Right Overflow Pill ("... +N more agents") */
+.lsv-more-pill {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px dashed #B9B2A5;
+  border-radius: var(--r-999, 999px);
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #2C2924;
+  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.06);
+  transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
+}
+
+.lsv-more-pill:hover,
+.lsv-more-pill.is-open {
+  border-style: solid;
+  border-color: #1B1A17;
+  background: #FFFFFF;
+  transform: translateY(-1px);
+}
+
+.lsv-more-dots {
+  color: #8A8479;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+/* Selected Agent Inspector Strip */
+.lsv-inspector {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 15px 18px;
+  background: #FFFFFF;
+  border: 1px solid #DDD8CE;
+  border-radius: var(--r-14, 14px);
+  box-shadow: 0 3px 14px rgba(27, 26, 23, 0.06);
+  color: #1B1A17;
+}
+
+.lsv-inspector-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.lsv-inspector-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.lsv-inspector-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lsv-inspector-handle {
+  font-family: var(--font-code);
+  font-size: 14px;
+  font-weight: 600;
+  color: #1B1A17;
+}
+
+.lsv-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: var(--r-999, 999px);
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+
+.lsv-status-badge.is-live {
+  background: #EBF7EA;
+  border: 1px solid #BDE2B8;
+  color: #0F7306;
+}
+
+.lsv-status-badge.is-recent {
+  background: #F4F2ED;
+  border: 1px solid #DDD8CE;
+  color: #575249;
+}
+
+.lsv-inspector-whisper {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.48;
+  color: #2A2620;
+}
+
+.lsv-inspector-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  color: #7D776D;
+}
+
+.lsv-inspector-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.lsv-inspector-profile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: var(--r-999, 999px);
+  background: #1B1A17;
+  color: #FFFFFF;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.lsv-inspector-profile-link:hover {
+  background: #0F7306;
+  color: #FFFFFF;
+}
+
+.lsv-inspector-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid #E6E3DC;
+  background: transparent;
+  color: #6E685D;
+}
+
+.lsv-inspector-close:hover {
+  border-color: #1B1A17;
+  color: #1B1A17;
+}
+
+/* Expandable Live Roster Drawer */
+.lsv-roster {
+  background: #FFFFFF;
+  border: 1px solid #E3DFD7;
+  border-radius: var(--r-16, 16px);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: #1B1A17;
+}
+
+.lsv-roster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lsv-roster-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #1B1A17;
+}
+
+.lsv-roster-title-row h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.lsv-roster-filters {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--r-8, 8px);
+  background: #F4F2ED;
+}
+
+.lsv-roster-tab {
+  border: none;
+  background: transparent;
+  padding: 5px 11px;
+  border-radius: var(--r-6, 6px);
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  color: #575249;
+  transition: background-color 0.14s ease, color 0.14s ease;
+}
+
+.lsv-roster-tab.is-active {
+  background: #1B1A17;
+  color: #FFFFFF;
+}
+
+.lsv-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
+  gap: 10px;
+}
+
+.lsv-roster-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px 14px;
+  background: #FDFCF9;
+  border: 1px solid #EAE6DE;
+  border-radius: var(--r-12, 12px);
+  text-decoration: none;
+  color: #1B1A17;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.lsv-roster-card:hover {
+  border-color: #1B1A17;
+  background: #FFFFFF;
+}
+
+.lsv-roster-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lsv-roster-card-id {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.lsv-roster-seen {
+  font-family: var(--font-code);
+  font-size: 10.5px;
+  color: #8A8479;
+  flex-shrink: 0;
+}
+
+.lsv-roster-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  font-size: 13.5px;
+  color: #7D776D;
+}
+
+/* Mobile Card Grid (hidden on desktop, active <= 860px) */
+.lsv-mobile-grid {
+  display: none;
+}
+
+/* Pause state when offscreen/tab-hidden */
+.lsv-stage.is-paused .lsv-hub-rings::after,
+.lsv-stage.is-paused .lsv-role-dot,
+.lsv-stage.is-paused .lsv-dot {
+  animation-play-state: paused;
+}
+
+/* -------------------------------------------------------------------------
+   5. Responsive Breakpoints
+   ------------------------------------------------------------------------- */
+@media (max-width: 1040px) {
+  .lsv-card {
+    width: 196px;
+    padding: 11px 12px;
+  }
+}
+
+@media (max-width: 860px) {
+  .lsv-strip {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .lsv-strip-pill {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    border-radius: var(--r-16, 16px);
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .lsv-strip-sep {
+    display: none;
+  }
+
+  .lsv-stage {
+    min-height: auto;
+    padding: 20px 16px 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .lsv-canvas-frame {
+    aspect-ratio: auto;
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .lsv-svg,
+  .lsv-orbit-layer,
+  .lsv-legend {
+    display: none;
+  }
+
+  .lsv-hub {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: auto;
+    height: auto;
+    transform: none;
+    gap: 10px;
+  }
+
+  .lsv-hub-pill {
+    position: static;
+    transform: none;
+  }
+
+  .lsv-hub-pill.is-clickable:hover {
+    transform: translateY(-1px);
+  }
+
+  .lsv-mobile-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+  }
+
+  .lsv-mob-card {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 13px;
+    background: #FFFFFF;
+    border: 1px solid #E5E1D9;
+    border-left: 3px solid var(--lsv-role-color, #9E978B);
+    border-radius: var(--r-12, 12px);
+    text-align: left;
+    color: #1B1A17;
+    box-shadow: 0 2px 8px rgba(27, 26, 23, 0.04);
+  }
+
+  .lsv-mob-card.is-selected {
+    border-color: var(--lsv-role-color, #1B1A17);
+  }
+
+  .lsv-mob-card--invite {
+    border-style: dashed;
+    border-left-style: dashed;
+    border-color: #C7C0B3;
+    background: rgba(255, 255, 255, 0.85);
+  }
+
+  .lsv-more-pill {
+    right: 16px;
+    bottom: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .lsv-mobile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lsv-strip-copy-label {
+    font-size: 12.5px;
+  }
+
+  .lsv-feed-card--featured {
+    padding: 13px 14px 40px;
+  }
+
+  .lsv-inspector {
+    padding: 13px 14px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   6. Accessibility: Reduced Motion
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .lsv-dot--live,
+  .lsv-dot--amber,
+  .lsv-hub-rings.is-pulsing::after,
+  .lsv-role-dot.is-pulsing {
+    animation: none !important;
+  }
+
+  .lsv-card,
+  .lsv-join-chip,
+  .lsv-feed-hub-pill,
+  .lsv-progress-fill,
+  .lsv-progress-marker {
+    transition: none !important;
+  }
+}
