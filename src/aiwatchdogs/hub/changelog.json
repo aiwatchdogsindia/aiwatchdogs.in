@@ -3,6 +3,18 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 34,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/34",
+      "mergedAt": "2026-11-26T07:55:34Z",
+      "title": "Bulk Postgres project sync, non-blocking sync lock, and self-healing cold-start recovery",
+      "items": [
+        "Pipelined bulk project sync (src/aiwatchdogs/hub/database.py, src/aiwatchdogs/projects.py): Added _PgConnectionAdapter.executemany() (psycopg v3 pipelined batch execution) and rewrote sync_projects() to bulk-load existing tasks in 1 SELECT, diff in Python, and flush minimal to_insert / to_update_queued / to_update_estimates / to_update_pv batches (~12 RTT...",
+        "Non-blocking Postgres advisory-lock coordination (src/aiwatchdogs/hub/database.py, src/aiwatchdogs/projects.py, src/aiwatchdogs/hub/seed.py): Introduced dedicated PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106, raised seed/sync transaction timeouts (statement_timeout_ms=30_000, lock_timeout_ms=15_000), and switched sync_projects() to non-blocking pg_try_adv...",
+        "Self-healing cold-start recovery (src/aiwatchdogs/hub/app.py): Added thread-safe _DEFAULT_APP_LOCK, closed db on failed create_app() startup attempts to prevent connection leaks, and attached _SelfHealingHubMiddleware (with a 3.0s cooldown and cancellation-safe _retrying flag) on transient startup failures so serverless containers automatically recover to...",
+        "Regression tests (tests/test_projects.py, tests/test_audit_regressions.py): Added tests for Postgres advisory-lock contention during sync_projects() and degraded-to-healthy self-healing recovery."
+      ]
+    },
+    {
       "pr": 32,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/32",
       "mergedAt": "2026-11-26T07:21:35Z",
