@@ -185,6 +185,26 @@ def load_host_scopes() -> dict[str, frozenset[str]]:
     return {"union_hosts": frozenset(), "ministry_dept_hosts": frozenset()}
 
 
+# Canonical State, UT, municipal, and judiciary namespaces that must never be counted under Union-only scope.
+NON_UNION_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "andamannicobar.gov.in", "ap.gov.in", "arunachal.gov.in", "arunachalpradesh.gov.in",
+        "assam.gov.in", "bihar.gov.in", "cg.gov.in", "cgstate.gov.in", "chandigarh.gov.in",
+        "chhattisgarh.gov.in", "daman.gov.in", "dd.gov.in", "delhi.gov.in", "dnh.gov.in",
+        "dnhdd.gov.in", "goa.gov.in", "gujarat.gov.in", "haryana.gov.in", "haryanapolice.gov.in",
+        "hp.gov.in", "himachal.gov.in", "jharkhand.gov.in", "jk.gov.in", "jammukashmir.gov.in",
+        "karnataka.gov.in", "kerala.gov.in", "lsgkerala.gov.in", "ladakh.gov.in",
+        "lakshadweep.gov.in", "maharashtra.gov.in", "mahaonline.gov.in", "manipur.gov.in",
+        "meghalaya.gov.in", "mizoram.gov.in", "mn.gov.in", "mp.gov.in", "mponline.gov.in",
+        "nagaland.gov.in", "odisha.gov.in", "orissa.gov.in", "puducherry.gov.in", "punjab.gov.in",
+        "py.gov.in", "rajasthan.gov.in", "sikkim.gov.in", "tamilnadu.gov.in", "telangana.gov.in",
+        "tn.gov.in", "tripura.gov.in", "uk.gov.in", "up.gov.in", "upsdc.gov.in",
+        "uttarakhand.gov.in", "uttarpradesh.gov.in", "wb.gov.in", "westbengal.gov.in",
+        "dcourts.gov.in", "ecourts.gov.in", "mcgm.gov.in", "bbmp.gov.in", "ghmc.gov.in",
+    }
+)
+
+
 def host_matches_applicability(
     domain: str,
     applicability: str | None,
@@ -202,6 +222,8 @@ def host_matches_applicability(
         return not is_rti_sec24_exempt(host)
     scopes = host_scopes if host_scopes is not None else load_host_scopes()
     if scope == "central_govt_and_union_bodies":
+        if host in NON_UNION_SUFFIXES or any(host.endswith("." + s) for s in NON_UNION_SUFFIXES):
+            return False
         return host in scopes.get("union_hosts", frozenset())
     if scope == "ministries_and_departments":
         return host in scopes.get("ministry_dept_hosts", frozenset())

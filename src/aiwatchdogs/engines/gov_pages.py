@@ -424,13 +424,15 @@ class Page(HTMLParser):
             elif tag in {"object", "embed"}:
                 ptype = attributes.get("type", "").strip()
                 classid = attributes.get("classid", "").strip().lower()
-                src_or_data = " ".join(
-                    (attributes.get("src", ""), attributes.get("data", ""), attributes.get("codebase", ""))
+                resource_attrs = (
+                    attributes.get("src", "").strip(),
+                    attributes.get("data", "").strip(),
+                    attributes.get("codebase", "").strip(),
                 )
                 if (
                     LEGACY_PLUGIN_MIME_RE.search(ptype)
                     or classid.startswith("clsid:")
-                    or LEGACY_PLUGIN_EXT_RE.search(src_or_data)
+                    or any(LEGACY_PLUGIN_EXT_RE.search(val) for val in resource_attrs if val)
                 ):
                     self.has_legacy_plugin = True
             elif tag == "param":

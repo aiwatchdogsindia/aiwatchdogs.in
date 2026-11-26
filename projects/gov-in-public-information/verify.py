@@ -68,22 +68,115 @@ def batches(assignments):
         start = end
 
 
+NON_UNION_TIERS = frozenset({"state", "local", "judiciary", "legislature"})
+NON_UNION_KINDS = frozenset({"local", "district", "court", "legislature"})
+STATE_UT_MUNICIPAL_ROOTS = frozenset(
+    {
+        "andamannicobar.gov.in",
+        "ap.gov.in",
+        "arunachal.gov.in",
+        "arunachalpradesh.gov.in",
+        "assam.gov.in",
+        "bihar.gov.in",
+        "cg.gov.in",
+        "cgstate.gov.in",
+        "chandigarh.gov.in",
+        "chhattisgarh.gov.in",
+        "daman.gov.in",
+        "dd.gov.in",
+        "delhi.gov.in",
+        "dnh.gov.in",
+        "dnhdd.gov.in",
+        "goa.gov.in",
+        "gujarat.gov.in",
+        "haryana.gov.in",
+        "haryanapolice.gov.in",
+        "hp.gov.in",
+        "himachal.gov.in",
+        "jharkhand.gov.in",
+        "jk.gov.in",
+        "jammukashmir.gov.in",
+        "karnataka.gov.in",
+        "kerala.gov.in",
+        "lsgkerala.gov.in",
+        "ladakh.gov.in",
+        "lakshadweep.gov.in",
+        "maharashtra.gov.in",
+        "mahaonline.gov.in",
+        "manipur.gov.in",
+        "meghalaya.gov.in",
+        "mizoram.gov.in",
+        "mn.gov.in",
+        "mp.gov.in",
+        "mponline.gov.in",
+        "nagaland.gov.in",
+        "odisha.gov.in",
+        "orissa.gov.in",
+        "puducherry.gov.in",
+        "punjab.gov.in",
+        "py.gov.in",
+        "rajasthan.gov.in",
+        "sikkim.gov.in",
+        "tamilnadu.gov.in",
+        "telangana.gov.in",
+        "tn.gov.in",
+        "tripura.gov.in",
+        "uk.gov.in",
+        "up.gov.in",
+        "upsdc.gov.in",
+        "uttarakhand.gov.in",
+        "uttarpradesh.gov.in",
+        "wb.gov.in",
+        "westbengal.gov.in",
+        "dcourts.gov.in",
+        "ecourts.gov.in",
+        "mcgm.gov.in",
+        "bbmp.gov.in",
+        "ghmc.gov.in",
+    }
+)
+
+
+def _is_non_union_host(row, web_by_domain):
+    domain = row["domain"].strip().lower()
+    root_domain = (row.get("root_domain") or "").strip().lower()
+    if (
+        row.get("tier") in NON_UNION_TIERS
+        or row.get("kind") in NON_UNION_KINDS
+        or row.get("state")
+    ):
+        return True
+    if domain in STATE_UT_MUNICIPAL_ROOTS or root_domain in STATE_UT_MUNICIPAL_ROOTS:
+        return True
+    if any(domain.endswith("." + root) for root in STATE_UT_MUNICIPAL_ROOTS):
+        return True
+    root_rec = web_by_domain.get(root_domain)
+    if root_rec and (
+        root_rec.get("tier") in NON_UNION_TIERS
+        or root_rec.get("kind") in NON_UNION_KINDS
+        or root_rec.get("state")
+    ):
+        return True
+    return False
+
+
 def host_scopes(source):
     """Extract deterministic host applicability scopes from the pinned Data Libertarian snapshot."""
     if hashlib.sha256(source).hexdigest() != SNAPSHOT_SHA256:
         raise ValueError("Snapshot SHA-256 differs from the November 13, 2026 inventory")
-    rows = json.loads(source)["records"]
+    web_rows = [row for row in json.loads(source)["records"] if row.get("role") == "web"]
+    web_by_domain = {row["domain"].strip().lower(): row for row in web_rows}
     union_hosts = []
     ministry_dept_hosts = []
-    for row in rows:
-        if row.get("role") != "web":
-            continue
+    for row in web_rows:
         domain = row["domain"].strip().lower()
         tier = row.get("tier")
         state = row.get("state")
         ministry = row.get("ministry")
         kind = row.get("kind")
-        if tier in {"union", "apex", "missions"} or (tier == "uncharted" and ministry and not state):
+        if (
+            tier in {"union", "apex", "missions"} or (tier == "uncharted" and ministry and not state)
+        ) and not _is_non_union_host(row, web_by_domain):
             union_hosts.append(domain)
         if kind in {"ministry", "department"}:
             ministry_dept_hosts.append(domain)

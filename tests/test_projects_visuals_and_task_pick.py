@@ -722,6 +722,21 @@ def test_matrix_rollup_enforces_direct_checks_and_per_host_applicability() -> No
         if cp["verification_mode"] != "automated_http_html":
             assert cp.get("w1_check_keys") == [], f"Proxy w1_check_keys leaked on {cp['id']}"
 
+    # State, municipal, and judiciary domains must NEVER appear in Union-only host scope
+    from aiwatchdogs.engines.gigw_matrix import host_matches_applicability, load_host_scopes
+
+    union_hosts = load_host_scopes()["union_hosts"]
+    for non_union in (
+        "forests.tn.gov.in",
+        "portal.mcgm.gov.in",
+        "ukpcb.uk.gov.in",
+        "pcb.ap.gov.in",
+        "rera.delhi.gov.in",
+        "hcservices.ecourts.gov.in",
+    ):
+        assert non_union not in union_hosts, f"Non-Union host leaked into union_hosts: {non_union}"
+        assert not host_matches_applicability(non_union, "central_govt_and_union_bodies")
+
     def _obs(domain: str, overrides: dict[str, str]) -> dict[str, Any]:
         checks = dict.fromkeys(W1_CHECKS, "not_observed")
         checks.update(overrides)

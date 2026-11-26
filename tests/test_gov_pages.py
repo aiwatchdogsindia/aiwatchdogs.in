@@ -465,6 +465,18 @@ def test_direct_checks_do_not_conflate_footer_viewport_tenders_or_non_hindi_scri
     assert c["bilingual_unicode"] == "observed"
     assert c["hindi_english_bilingual"] == "not_observed"
 
+    # Bare legacy plugin embeds/objects WITHOUT explicit type or classid MUST fail no_legacy_plugins
+    for plugin_tag in (
+        '<embed src="/banner.swf">',
+        '<object data="/intro.swf?v=1"></object>',
+        '<object codebase="/legacy/viewer.cab"></object>',
+        '<applet code="NoticeTicker.class"></applet>',
+    ):
+        plugin_html = f"<main>Official department public portal with citizen services. {plugin_tag}</main>"
+        serve(monkeypatch, {HOME + "robots.txt": (404, {}, ""), HOME: (200, HTML, plugin_html)})
+        r_plug = audit.observe_site({"domain": HOST})
+        assert r_plug["checks"]["no_legacy_plugins"] == "not_observed", plugin_tag
+
     # Verify STQC/CQW certification variants and API Setu Open Data link match cleanly
     for badge_phrase in ("STQC Certified", "STQC certification valid", "CQW Certificate", "CQW certified"):
         page_html = f"<main>Official department public portal with services. {badge_phrase}.</main><a href='https://apisetu.gov.in/'>API Setu</a>"
