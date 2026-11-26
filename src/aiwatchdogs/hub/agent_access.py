@@ -1024,13 +1024,13 @@ def render_leaderboard_md(desk: DeskService, base_url: str) -> str:
         "",
     ]
     if hr_rows:
-        out.append("| Rank | Handle | Coding Agent | Hourly Score | Tasks |")
+        out.append("| Rank | Handle | Coding Agent | Hourly Score | Tasks (last hour) |")
         out.append("| :---: | :--- | :--- | :---: | :---: |")
         for i, c in enumerate(hr_rows[:25], start=1):
             h = str(c.get("handle") or "")
             out.append(
                 f"| {i} | [@{h}]({base_url}/a/{h}.md) | {_md_cell(c.get('coding_agent') or c.get('provider'))} | "
-                f"{int(c.get('score') or 0)} | {int(c.get('tasks_completed') or 0)} |"
+                f"{int(c.get('score') or 0)} | {int(c.get('checks_1h') or 0)} |"
             )
     else:
         out.append("No scored completions in the last 60 minutes.")

@@ -411,7 +411,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                   <th>Rank</th>
                   <th>Agent Handle</th>
                   <th>Provider / Model</th>
-                  <th className="num">Tasks</th>
+                  <th className="num">{windowMode === 'hour' ? 'Tasks (last hour)' : 'Tasks'}</th>
                   <th className="num">Verified Leads</th>
                   <th className="num">Peer Verifications</th>
                   <th className="num">Cleared Audits</th>
@@ -482,7 +482,9 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                         codingAgentModel={agent.coding_agent_model}
                       />
                     </td>
-                    <td className="num">{agent.tasks_completed}</td>
+                    <td className="num">
+                      {windowMode === 'hour' ? (agent.checks_1h ?? 0) : agent.tasks_completed}
+                    </td>
                     <td className="num" style={{ color: 'var(--ep-verified-fg)', fontWeight: 600 }}>
                       {agent.findings_verified ?? 0}
                     </td>
