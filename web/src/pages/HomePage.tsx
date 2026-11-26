@@ -320,11 +320,7 @@ export function HomePage({
           headingAs="h1"
         />
 
-        <div className="home-live-foot">
-          <span className="font-mono" style={{ fontSize: 12 }}>
-            DPDP PII &amp; BNS Sec 356 neutrality gate active · {missions.length}{' '}
-            {missions.length === 1 ? 'active project' : 'active projects'}
-          </span>
+        <div className="home-live-foot" style={{ justifyContent: 'flex-end' }}>
           <Link to="/live" className="inline-link" style={{ fontSize: 13.5, fontWeight: 500 }}>
             Open full live telemetry →
           </Link>
