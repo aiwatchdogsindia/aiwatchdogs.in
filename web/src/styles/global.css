@@ -763,14 +763,8 @@ code.font-mono {
 .sev-low { color: var(--ink-3); font-weight: 500; }
 
 /* =========================================================================
-   3. BAND 1 — HERO (12-Col Editorial Broadsheet)
+   3. EYEBROW BAR (Shared Pill Component)
    ========================================================================= */
-.hero {
-  background: var(--paper);
-  padding: 34px var(--gutter) 44px;
-  row-gap: 26px;
-}
-
 .eyebrow-row {
   grid-column: 1 / -1;
   display: flex;
@@ -945,208 +939,15 @@ code.font-mono {
   color: var(--ink-4);
 }
 
-/* Hero Main (Cols 1-8) */
-.hero-main {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.hero-q {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(48px, 5.4vw, 80px);
-  line-height: 1.02;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-}
-
-.hero-q em {
-  font-style: italic;
-  font-weight: 400;
-}
-
-.hero-a {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 400;
-  font-size: clamp(22px, 2.2vw, 31px);
-  line-height: 1.18;
-  color: var(--ink-3);
-}
-
-.hero-line {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: 17.5px;
-  line-height: 1.58;
-  letter-spacing: 0.004em;
-  color: var(--ink-2);
-  max-width: 630px;
-}
-
-.hero-counters {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 14px;
-  font-family: var(--font-serif);
-  font-size: 16px;
-  font-weight: 400;
-  color: var(--ink-3);
-}
-
-.hero-counters .num {
-  font-family: var(--font-serif);
-  font-variant-numeric: tabular-nums;
-  font-weight: 400;
-  font-size: 20px;
-  color: var(--ink);
-}
-
-.hero-counters-dot {
-  color: var(--ink-5);
-}
-
-.hero-progress {
-  margin: -8px 0 0;
-  font-family: var(--font-serif);
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  letter-spacing: 0.01em;
-  line-height: 1.55;
-  color: var(--ink-4);
-}
-
 .hero-cta {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
   margin-top: 2px;
 }
 
-/* Hero Side (Cols 9-12: Borderless Whispers + Borderless Tug Bar) */
-.hero-side {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  align-items: stretch;
-}
-
-.whispers {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex: 1 1 auto;
-}
-
-.whispers-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.whispers-eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sse-mini {
-  font-family: var(--font-serif);
-  font-size: 11.5px;
-  color: var(--green);
-  letter-spacing: 0.08em;
-}
-
-.sse-mini.reconnecting { color: var(--accent-deep); }
-.sse-mini.offline { color: var(--ink-4); }
-
-.whisper-list {
-  display: flex;
-  flex-direction: column;
-}
-
-.whisper-item {
-  padding: 10px 2px;
-  border-bottom: 1px solid var(--rule);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.whisper-item:first-child {
-  background: var(--raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-10);
-  padding: 13px 15px;
-  margin-bottom: 2px;
-}
-
-.whisper-item:first-child .whisper-time-tag {
-  color: var(--green);
-  font-weight: 400;
-}
-
-.whisper-item-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-family: var(--font-serif);
-  font-variant-numeric: tabular-nums;
-  font-size: 12px;
-  color: var(--ink-4);
-}
-
-.whisper-item-agent {
-  color: var(--ink-2);
-  font-weight: 400;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.whisper-item-agent:hover {
-  color: var(--public);
-  text-decoration: underline;
-}
-
-.whisper-item-msg {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.48;
-  color: var(--ink-2);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.whisper-item:first-child .whisper-item-msg {
-  -webkit-line-clamp: 3;
-}
-
-.whisper-link {
-  font-size: 13.5px;
-  font-weight: 400;
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  align-self: flex-start;
-}
-
-.whisper-link:hover {
-  color: var(--green);
-}
-
-/* Borderless Audit Disposition Tug Bar (flush bottom of hero-side) */
+/* Borderless Audit Disposition Tug Bar */
 .tug {
   margin-top: auto;
   display: flex;
@@ -1235,119 +1036,7 @@ code.font-mono {
 }
 
 /* =========================================================================
-   5. BAND 3 — ORCHESTRATOR STRATEGY NOTE (#FFFFFF Warm Band)
-   ========================================================================= */
-.status-note {
-  background: var(--warm);
-  border-bottom: 1px solid var(--rule);
-  padding: var(--section) var(--gutter);
-  row-gap: 32px;
-}
-
-.status-note-in {
-  max-width: 760px;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.status-note-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--ink-4);
-}
-
-.status-note-body {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
-  font-size: clamp(20px, 2vw, 26px);
-  line-height: 1.38;
-  color: var(--ink);
-}
-
-.status-note-foot {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-4);
-}
-
-.status-fresh {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--green);
-  font-weight: 500;
-}
-
-.mentioned {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.mentioned-card {
-  background: var(--raised);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-10);
-  padding: 15px 16px;
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  transition: border-color 0.15s ease;
-  width: 100%;
-}
-
-.mentioned-card:hover {
-  border-color: var(--ink);
-}
-
-.mentioned-card.unverified {
-  border-style: dashed;
-  border-color: var(--conjecture-stroke);
-}
-
-.mentioned-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.mentioned-card-title {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--ink);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.mentioned-card.unverified .mentioned-card-title {
-  font-style: italic;
-  color: var(--ink-2);
-}
-
-.mentioned-card-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--ink-4);
-}
-
-/* =========================================================================
-   6. BAND 4 — PUBLIC LEADERBOARD
+   6. BAND 3 — PUBLIC LEADERBOARD
    ========================================================================= */
 .leaderboard {
   background: var(--paper);
@@ -3967,10 +3656,6 @@ code.font-mono {
     white-space: normal;
     max-width: 100%;
   }
-  .hero {
-    padding: 32px var(--gutter) 44px;
-    row-gap: 28px;
-  }
   .eyebrow-row {
     flex-direction: column;
     align-items: stretch;
@@ -3993,15 +3678,6 @@ code.font-mono {
   }
   .just-joined {
     display: none;
-  }
-  .hero-q {
-    font-size: clamp(38px, 11vw, 56px);
-  }
-  .hero-a {
-    font-size: 24px;
-  }
-  .hero-line {
-    font-size: 16px;
   }
   .hero-cta .btn {
     min-height: 44px;
@@ -4558,46 +4234,16 @@ code.font-mono {
   height: 72px;
 }
 
-.hero {
-  padding-block: 40px 52px;
-  row-gap: 32px;
-}
-
-.hero .just-joined {
-  display: none;
-}
-
-.hero-main {
-  gap: 22px;
-}
-
-.hero-q {
-  font-size: clamp(42px, 4.6vw, 66px);
-  line-height: 1.04;
-}
-
-.hero-a {
-  font-size: clamp(19px, 1.55vw, 23px);
-  line-height: 1.35;
-  color: var(--ink-2);
-}
-
-.hero-line {
-  font-size: 17px;
-  line-height: 1.6;
-  max-width: 34em;
-  color: var(--ink-3);
-}
-
 .hero-stats {
-  margin: 4px 0 0;
+  margin: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, auto));
-  justify-content: start;
-  gap: 12px 40px;
-  padding-top: 18px;
-  border-top: 1px solid var(--rule);
-  max-width: 640px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 16px;
+  padding: 15px 18px;
+  background: var(--raised);
+  border: 1px solid #E5E1D9;
+  border-radius: var(--r-12);
+  box-shadow: 0 1px 3px rgba(27, 26, 23, 0.03);
 }
 
 .hero-stat {
@@ -4610,40 +4256,21 @@ code.font-mono {
 .hero-stat dt {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 30px;
+  gap: 6px;
+  font-size: 28px;
   line-height: 1;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   color: var(--ink);
 }
 
 .hero-stat dd {
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
+  line-height: 1.25;
   color: var(--ink-4);
 }
 
-.hero-side {
-  gap: 32px;
-  align-self: start;
-}
-
-.hero-side .whispers {
-  flex: 0 0 auto;
-}
-
-.hero-side .tug {
-  margin-top: 0;
-}
-
 @media (max-width: 760px) {
-  .hero-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px 24px;
-  }
-  .hero-stat dt {
-    font-size: 26px;
-  }
   .brand-tag {
     display: none;
   }
@@ -5092,8 +4719,7 @@ code.font-mono {
 
 /* No pulsing / decorative status dots; the text already says what is live. */
 .live-dot,
-.pulse-dot,
-.hero-counters-dot {
+.pulse-dot {
   display: none !important;
 }
 
@@ -5131,8 +4757,6 @@ code.font-mono {
 }
 
 /* Headlines are set upright; italic stays only where it means "unverified". */
-.hero-q em,
-.hero-a,
 .return-card.grave .return-card-title,
 .foot-brand {
   font-style: normal;
@@ -5141,7 +4765,6 @@ code.font-mono {
 /* Labels read as plain small text, not tracked uppercase eyebrows. */
 .kicker,
 .section-kicker,
-.whispers-eyebrow .kicker,
 .how-eyebrow,
 .foot-col-title,
 .foot-heading,
@@ -5155,12 +4778,6 @@ code.font-mono {
   text-transform: none !important;
   letter-spacing: 0 !important;
   font-size: 14px !important;
-  font-weight: 600;
-}
-
-.status-note-title {
-  margin: 0;
-  font-size: 18px;
   font-weight: 600;
 }
 
@@ -5243,14 +4860,6 @@ code.font-mono {
   display: none;
 }
 
-.mentioned-card {
-  background: none;
-  border: 0;
-  border-top: 1px solid var(--rule);
-  border-radius: 0;
-  padding: 12px 0 0;
-}
-
 .project-list {
   gap: 0;
   border-top: 1px solid var(--rule-strong);
@@ -5271,11 +4880,6 @@ code.font-mono {
 .project-card:hover .project-title {
   text-decoration: underline;
   text-underline-offset: 4px;
-}
-
-.sse-mini {
-  text-transform: none !important;
-  letter-spacing: 0 !important;
 }
 
 /* Masthead: large emblem. Keep zero vertical negative margins on .brand-logo so
@@ -5312,23 +4916,6 @@ code.font-mono {
   line-height: 1.35;
   max-width: 300px;
   text-wrap: balance;
-}
-
-/* Hero: a short list of questions instead of one oversized headline */
-.hero-q {
-  display: flex;
-  flex-direction: column;
-  font-size: clamp(22px, 2.1vw, 30px);
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-.hero-q span {
-  padding-block: 11px;
-  border-bottom: 1px solid var(--rule);
-  text-wrap: balance;
-}
-.hero-q span:first-child {
-  padding-top: 0;
 }
 
 @media (max-width: 1280px) {
@@ -5578,20 +5165,148 @@ code.font-mono {
 }
 
 /* =========================================================================
-   LIVE AGENT SHOWCASE & LIVE SWARM VIEWER INTEGRATION
+   LANDING OBSERVATORY — HERO LIVE SWARM VIEWER + TELEMETRY DASHBOARD
    ========================================================================= */
-.hero {
-  padding-top: 22px;
-  row-gap: 20px;
+
+/* Band 1: Full-width saffron-framed Live Swarm Viewer right above the fold */
+.hero-swarm.home-live {
+  border-top: 0;
+  border-bottom: 1px solid var(--rule);
+  padding: 16px var(--gutter) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.hero-main {
-  gap: 14px;
-}
-
-.hero-strip-row {
-  grid-column: 1 / -1;
+.hero-swarm-strip {
+  width: 100%;
   min-width: 0;
+}
+
+.hero-swarm .lsv-root {
+  gap: 10px;
+}
+
+.hero-swarm .lsv-title {
+  font-size: clamp(24px, 2.3vw, 32px);
+  line-height: 1.06;
+}
+
+.hero-swarm .lsv-stage {
+  min-height: 500px;
+  border-color: rgba(27, 26, 23, 0.16);
+  box-shadow: 0 3px 16px rgba(27, 26, 23, 0.08);
+}
+
+.hero-swarm .lsv-canvas-frame {
+  max-width: 816px;
+}
+
+.hero-swarm .lsv-card {
+  width: 212px;
+  padding: 11px 13px;
+}
+
+.hero-swarm .lsv-strip-pill {
+  border-color: rgba(27, 26, 23, 0.15);
+  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.08);
+}
+
+.hero-swarm .lsv-join-chip {
+  border-color: rgba(27, 26, 23, 0.15);
+}
+
+.hero-swarm .lsv-join-chip--invite {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(27, 26, 23, 0.34);
+}
+
+/* Keep light-surface button tokens crisp inside the floating white strip popover */
+.hero-swarm .lsv-strip-popover {
+  --paper: #FFFFFF;
+  --raised: #FFFFFF;
+  --ink: #1B1A17;
+  --ink-2: #3F3B34;
+  --ink-3: #575249;
+  --ink-4: #635E54;
+  --chakra: #1B1A17;
+  --on-chakra: #FFFFFF;
+  --chakra-hover: #2A2620;
+}
+
+.home-live-foot {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+}
+
+.home-live .lsv-freshness {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(27, 26, 23, 0.14);
+  padding: 4px 11px;
+  border-radius: 999px;
+  color: #1B1A17;
+}
+
+.home-live .lsv-summary-stat {
+  color: #1B1A17;
+  font-weight: 500;
+}
+
+/* Band 2: Clean 2-column Live Telemetry & Progress Dashboard */
+.home-telemetry {
+  background: var(--paper);
+  padding: 36px var(--gutter) 40px;
+  row-gap: 24px;
+  align-items: start;
+}
+
+.telemetry-feed {
+  grid-column: 1 / span 6;
+  min-width: 0;
+}
+
+.telemetry-panel {
+  grid-column: 7 / span 6;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.telemetry-queue-badge {
+  font-family: var(--font-code);
+  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-999);
+  padding: 2px 9px;
+}
+
+.telemetry-gauges {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 18px;
+  background: var(--raised);
+  border: 1px solid #E5E1D9;
+  border-radius: var(--r-12);
+  box-shadow: 0 1px 3px rgba(27, 26, 23, 0.03);
+}
+
+.telemetry-gauges .lsv-progress {
+  margin-top: 0;
+}
+
+.telemetry-gauges .tug {
+  margin-top: 0;
+  padding-top: 16px;
+  border-top: 1px solid #ECE9E2;
 }
 
 .hero-watch-live-btn {
@@ -5608,26 +5323,21 @@ code.font-mono {
   border-top: 1px solid var(--rule);
 }
 
-.home-live-foot {
-  margin-top: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  color: var(--ink-2);
+@media (max-width: 960px) {
+  .telemetry-feed,
+  .telemetry-panel {
+    grid-column: 1 / -1;
+  }
 }
 
-.home-live .lsv-freshness {
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(27, 26, 23, 0.12);
-  padding: 4px 11px;
-  border-radius: 999px;
-  color: #1B1A17;
-}
+@media (max-width: 860px) {
+  .hero-swarm .lsv-stage {
+    min-height: auto;
+  }
 
-.home-live .lsv-summary-stat {
-  color: #2A2620;
+  .hero-swarm .lsv-canvas-frame {
+    max-width: 100%;
+  }
 }
 
 .live-fleet-handle {
@@ -5660,9 +5370,9 @@ code.font-mono {
   .band,
   .site-header,
   .just-in,
-  .hero,
+  .hero-swarm,
+  .home-telemetry,
   .leaderboard,
-  .status-note,
   .home-live,
   .race,
   .numbers,
@@ -5845,41 +5555,43 @@ code.font-mono {
     padding: 6px 12px;
   }
 
-  /* 3. Hero band — balanced mobile type scale & compact vertical rhythm */
-  .hero {
-    padding-top: 16px;
-    padding-bottom: 28px;
-    row-gap: 18px;
-  }
-
-  .hero-main {
+  /* 3. Landing Observatory Hero (Band 1) & Telemetry Dashboard (Band 2) */
+  .hero-swarm.home-live {
+    padding-top: 14px;
+    padding-bottom: 18px;
     gap: 12px;
   }
 
-  .hero-q {
-    font-size: clamp(17.5px, 4.6vw, 20px);
-    line-height: 1.24;
+  .hero-swarm .lsv-stage {
+    min-height: auto;
   }
 
-  .hero-q span {
-    padding-block: 7px;
+  .hero-swarm .lsv-canvas-frame {
+    max-width: 100%;
   }
 
-  .hero-a {
-    font-size: 17.5px;
-    line-height: 1.36;
+  .hero-swarm .lsv-header {
+    gap: 6px;
   }
 
-  .hero-line {
-    font-size: 15px;
-    line-height: 1.54;
+  .hero-swarm .lsv-title {
+    font-size: clamp(22px, 6.2vw, 28px);
+  }
+
+  .home-telemetry {
+    padding-top: 24px;
+    padding-bottom: 28px;
+    row-gap: 22px;
+  }
+
+  .telemetry-panel {
+    gap: 14px;
   }
 
   .hero-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px 14px;
-    padding-top: 12px;
-    max-width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 14px;
+    padding: 13px 14px;
   }
 
   .hero-stat dt {
@@ -5889,6 +5601,15 @@ code.font-mono {
   .hero-stat dd {
     font-size: 12.5px;
     line-height: 1.3;
+  }
+
+  .telemetry-gauges {
+    padding: 14px;
+    gap: 14px;
+  }
+
+  .telemetry-gauges .tug {
+    padding-top: 14px;
   }
 
   .hero-cta {
@@ -5902,10 +5623,6 @@ code.font-mono {
     flex: 1 1 auto;
   }
 
-  .hero-side {
-    gap: 20px;
-  }
-
   .tug-heads {
     flex-wrap: wrap;
     gap: 4px 10px;
@@ -5914,7 +5631,7 @@ code.font-mono {
   .tug-info {
     display: inline-flex;
     align-items: center;
-    min-height: 40px;
+    min-height: 44px;
   }
 
   /* 4. Prevent .inline-link from causing 360px/375px horizontal overflow */
@@ -5929,7 +5646,7 @@ code.font-mono {
   .return-card-action {
     display: inline-flex;
     align-items: center;
-    min-height: 40px;
+    min-height: 44px;
   }
 
   /* 5. Leaderboard — spacious handle column, full-width join CTA, 44px tabs */
@@ -6004,22 +5721,7 @@ code.font-mono {
     overflow-wrap: anywhere;
   }
 
-  /* 6. Status note & mentioned cards */
-  .status-note {
-    row-gap: 24px;
-  }
-
-  .status-note-body {
-    font-size: 19px;
-    line-height: 1.42;
-  }
-
-  .mentioned-card-top,
-  .mentioned-card-meta {
-    flex-wrap: wrap;
-  }
-
-  /* 7. Live organism fallback polish */
+  /* 6. Live organism fallback polish */
   .gate-verdict {
     max-width: 100%;
     white-space: normal;
@@ -6777,12 +6479,21 @@ code.font-mono {
     font-size: 18px;
   }
 
+  .hero-cta {
+    align-items: stretch;
+  }
+
   .hero-cta .btn:first-child {
     flex: 1 1 100%;
   }
 
   .hero-cta .btn:not(:first-child) {
-    flex: 1 1 calc(50% - 5px);
+    flex: 1 1 150px;
+    padding: 10px 10px;
+    gap: 6px;
+    font-size: 13.5px;
+    white-space: normal;
+    text-align: center;
   }
 
   .join-cta-label {

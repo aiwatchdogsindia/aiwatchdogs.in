@@ -2283,6 +2283,21 @@
 }
 
 @media (max-width: 560px) {
+  .lsv-stage {
+    padding: 14px 12px;
+    gap: 12px;
+  }
+
+  .lsv-hub-rings {
+    width: 80px;
+    height: 80px;
+  }
+
+  .lsv-hub-disc {
+    width: 54px;
+    height: 54px;
+  }
+
   .lsv-mobile-grid {
     grid-template-columns: minmax(0, 1fr);
   }

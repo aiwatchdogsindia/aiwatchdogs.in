@@ -29,12 +29,149 @@ export interface HeroLiveFeedProps {
   sseStatus?: 'connecting' | 'live' | 'reconnecting' | 'offline';
   /** Number of whisper cards to show (defaults to 2 to match hero right rail balance). */
   maxItems?: number;
+  /** Hide the embedded Auditing progress bar when placed in a separate dashboard column. */
+  hideProgress?: boolean;
+  /** Optional custom label for the bottom link to /live. */
+  viewerLinkLabel?: string;
   /** Optional click callback when "Open the live swarm viewer →" or "Open in the hub →" is clicked. */
   onOpenViewer?: () => void;
   /** Optional callback when an agent handle is clicked. */
   onSelectAgent?: (handle: string) => void;
   /** Optional extra CSS class. */
   className?: string;
+}
+
+export interface AuditingProgressBarProps {
+  progress?: LiveSwarmProgress | null;
+  className?: string;
+}
+
+/**
+ * Reusable live auditing progress gauge with interactive explainer tooltip.
+ */
+export function AuditingProgressBar({
+  progress = null,
+  className = '',
+}: AuditingProgressBarProps) {
+  const [progressInfoOpen, setProgressInfoOpen] = useState(false);
+  const progressInfoRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!progressInfoOpen) return;
+    const onDocClick = (e: MouseEvent) => {
+      if (progressInfoRef.current && !progressInfoRef.current.contains(e.target as Node)) {
+        setProgressInfoOpen(false);
+      }
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setProgressInfoOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [progressInfoOpen]);
+
+  const tasksTotal = progress?.tasks_total ?? 0;
+  const tasksCompleted = progress?.tasks_completed ?? 0;
+  const tasksInProgress = progress?.tasks_in_progress ?? 0;
+  const findingsVerified = progress?.findings_verified ?? 0;
+  const findingsInReview = progress?.findings_in_review ?? 0;
+
+  const fillPct = useMemo(() => {
+    if (tasksTotal > 0) {
+      const ratio = (tasksCompleted / tasksTotal) * 100;
+      return tasksCompleted > 0 ? Math.max(4, Math.min(98, ratio)) : 0;
+    }
+    const totalFindings = findingsVerified + findingsInReview;
+    if (totalFindings > 0) {
+      return Math.max(6, Math.min(96, (findingsVerified / totalFindings) * 100));
+    }
+    return 0;
+  }, [tasksTotal, tasksCompleted, findingsVerified, findingsInReview]);
+
+  const activePct = useMemo(() => {
+    if (tasksTotal <= 0 || tasksInProgress <= 0) return 0;
+    return Math.min(100 - fillPct, Math.max(2, (tasksInProgress / tasksTotal) * 100));
+  }, [tasksTotal, tasksInProgress, fillPct]);
+
+  return (
+    <div
+      className={`lsv-progress${className ? ` ${className}` : ''}`}
+      ref={progressInfoRef}
+      aria-label="Swarm auditing progress"
+    >
+      <div className="lsv-progress-head">
+        <span className="lsv-progress-title">Auditing progress</span>
+        <button
+          type="button"
+          className="lsv-progress-info-btn"
+          aria-label="How auditing progress is measured"
+          aria-expanded={progressInfoOpen}
+          onClick={() => setProgressInfoOpen((v) => !v)}
+        >
+          <Info size={14} />
+        </button>
+      </div>
+
+      {progressInfoOpen && (
+        <div className="lsv-progress-tooltip" role="note">
+          Completed deterministic audit tasks across active projects. Leads only enter the
+          verified ledger after independent 2-of-2 peer reproduction.
+        </div>
+      )}
+
+      <div className="lsv-progress-bar-wrap">
+        <div
+          className="lsv-progress-track"
+          role="progressbar"
+          aria-valuenow={Math.round(fillPct)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={
+            tasksTotal > 0
+              ? `${tasksCompleted} of ${tasksTotal} audit tasks completed`
+              : `${findingsVerified} verified leads`
+          }
+        >
+          <div className="lsv-progress-fill" style={{ width: `${fillPct}%` }} />
+          {activePct > 0 && (
+            <div
+              className="lsv-progress-active"
+              style={{ width: `${activePct}%` }}
+              title={`${tasksInProgress} tasks currently leased`}
+            />
+          )}
+          <div
+            className="lsv-progress-marker"
+            style={{ left: `clamp(3px, ${fillPct}%, calc(100% - 4px))` }}
+            aria-hidden="true"
+          />
+        </div>
+      </div>
+
+      <div className="lsv-progress-labels tabular">
+        <span>
+          {tasksTotal > 0 ? (
+            <>
+              <strong>{tasksCompleted.toLocaleString('en-IN')}</strong> of{' '}
+              {tasksTotal.toLocaleString('en-IN')} tasks checked
+            </>
+          ) : (
+            <>
+              <strong>{findingsVerified.toLocaleString('en-IN')}</strong> verified leads
+            </>
+          )}
+        </span>
+        <span>
+          {findingsVerified.toLocaleString('en-IN')} verified ·{' '}
+          {findingsInReview.toLocaleString('en-IN')} in review
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function formatWhisperAge(iso: string | null | undefined, nowMs: number): string {
@@ -84,13 +221,13 @@ export function HeroLiveFeed({
   workingNow: workingNowProp,
   sseStatus = 'live',
   maxItems = 2,
+  hideProgress = false,
+  viewerLinkLabel = 'Open the live swarm viewer',
   onOpenViewer,
   onSelectAgent,
   className = '',
 }: HeroLiveFeedProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [progressInfoOpen, setProgressInfoOpen] = useState(false);
-  const progressInfoRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -98,24 +235,6 @@ export function HeroLiveFeed({
     }, 5000);
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    if (!progressInfoOpen) return;
-    const onDocClick = (e: MouseEvent) => {
-      if (progressInfoRef.current && !progressInfoRef.current.contains(e.target as Node)) {
-        setProgressInfoOpen(false);
-      }
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setProgressInfoOpen(false);
-    };
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [progressInfoOpen]);
 
   const whispers = whispersProp ?? snapshot?.live_whispers ?? [];
   const progress = progressProp !== undefined ? progressProp : (snapshot?.progress ?? null);
@@ -128,26 +247,6 @@ export function HeroLiveFeed({
 
   const tasksTotal = progress?.tasks_total ?? 0;
   const tasksCompleted = progress?.tasks_completed ?? 0;
-  const tasksInProgress = progress?.tasks_in_progress ?? 0;
-  const findingsVerified = progress?.findings_verified ?? 0;
-  const findingsInReview = progress?.findings_in_review ?? 0;
-
-  const fillPct = useMemo(() => {
-    if (tasksTotal > 0) {
-      const ratio = (tasksCompleted / tasksTotal) * 100;
-      return tasksCompleted > 0 ? Math.max(4, Math.min(98, ratio)) : 0;
-    }
-    const totalFindings = findingsVerified + findingsInReview;
-    if (totalFindings > 0) {
-      return Math.max(6, Math.min(96, (findingsVerified / totalFindings) * 100));
-    }
-    return 0;
-  }, [tasksTotal, tasksCompleted, findingsVerified, findingsInReview]);
-
-  const activePct = useMemo(() => {
-    if (tasksTotal <= 0 || tasksInProgress <= 0) return 0;
-    return Math.min(100 - fillPct, Math.max(2, (tasksInProgress / tasksTotal) * 100));
-  }, [tasksTotal, tasksInProgress, fillPct]);
 
   const dotClass =
     sseStatus === 'offline'
@@ -255,86 +354,15 @@ export function HeroLiveFeed({
         )}
       </div>
 
-      {/* Prominent Underlined Link to Full Live Swarm Viewer */}
+      {/* Prominent Underlined Link to Full Live Telemetry */}
       <div className="lsv-feed-footer-link">
         <Link to="/live" className="lsv-feed-viewer-link" onClick={onOpenViewer}>
-          Open the live swarm viewer <span aria-hidden="true">→</span>
+          {viewerLinkLabel} <span aria-hidden="true">→</span>
         </Link>
       </div>
 
-      {/* Auditing Progress Bar */}
-      <div className="lsv-progress" ref={progressInfoRef} aria-label="Swarm auditing progress">
-        <div className="lsv-progress-head">
-          <span className="lsv-progress-title">Auditing progress</span>
-          <button
-            type="button"
-            className="lsv-progress-info-btn"
-            aria-label="How auditing progress is measured"
-            aria-expanded={progressInfoOpen}
-            onClick={() => setProgressInfoOpen((v) => !v)}
-          >
-            <Info size={14} />
-          </button>
-        </div>
-
-        {progressInfoOpen && (
-          <div className="lsv-progress-tooltip" role="note">
-            Completed deterministic audit tasks across active projects. Leads only enter the
-            verified ledger after independent 2-of-2 peer reproduction.
-          </div>
-        )}
-
-        <div className="lsv-progress-bar-wrap">
-          <div
-            className="lsv-progress-track"
-            role="progressbar"
-            aria-valuenow={Math.round(fillPct)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={
-              tasksTotal > 0
-                ? `${tasksCompleted} of ${tasksTotal} audit tasks completed`
-                : `${findingsVerified} verified leads`
-            }
-          >
-            <div
-              className="lsv-progress-fill"
-              style={{ width: `${fillPct}%` }}
-            />
-            {activePct > 0 && (
-              <div
-                className="lsv-progress-active"
-                style={{ width: `${activePct}%` }}
-                title={`${tasksInProgress} tasks currently leased`}
-              />
-            )}
-            <div
-              className="lsv-progress-marker"
-              style={{ left: `clamp(3px, ${fillPct}%, calc(100% - 4px))` }}
-              aria-hidden="true"
-            />
-          </div>
-        </div>
-
-        <div className="lsv-progress-labels tabular">
-          <span>
-            {tasksTotal > 0 ? (
-              <>
-                <strong>{tasksCompleted.toLocaleString('en-IN')}</strong> of{' '}
-                {tasksTotal.toLocaleString('en-IN')} tasks checked
-              </>
-            ) : (
-              <>
-                <strong>{findingsVerified.toLocaleString('en-IN')}</strong> verified leads
-              </>
-            )}
-          </span>
-          <span>
-            {findingsVerified.toLocaleString('en-IN')} verified ·{' '}
-            {findingsInReview.toLocaleString('en-IN')} in review
-          </span>
-        </div>
-      </div>
+      {/* Auditing Progress Bar (hidden when placed in a separate dashboard column) */}
+      {!hideProgress && <AuditingProgressBar progress={progress} />}
     </aside>
   );
 }
