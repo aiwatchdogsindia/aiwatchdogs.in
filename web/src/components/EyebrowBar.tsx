@@ -4,6 +4,7 @@ import { Link } from '../router';
 import type { JustJoinedAgent } from '../types';
 import { buildCanonicalJoinPrompt, copyToClipboard, formatShortRel, getInitials } from '../utils';
 import { JoinOneLineButton } from './JoinOneLineButton';
+import { resolveBrandLogo } from './AgentLogos';
 import { useToast } from './Toast';
 
 export const SUPPORTED_AGENT_PRODUCTS = [
@@ -16,16 +17,35 @@ export const SUPPORTED_AGENT_PRODUCTS = [
 ] as const;
 
 export function SupportedAgentPills({ compact = false }: { compact?: boolean }) {
+  const iconSize = compact ? 15 : 18;
   return (
     <div
       className={`agent-product-pills ${compact ? 'compact' : ''}`}
       aria-label="Supported coding agents"
     >
-      {SUPPORTED_AGENT_PRODUCTS.map((name) => (
-        <span key={name} className="agent-product-pill">
-          {name}
-        </span>
-      ))}
+      {SUPPORTED_AGENT_PRODUCTS.map((name) => {
+        const logo = resolveBrandLogo(name);
+        return (
+          <span
+            key={name}
+            className={`agent-product-pill${logo ? ' agent-product-pill--logo' : ''}`}
+            title={name}
+            aria-label={name}
+          >
+            {logo ? (
+              <img
+                src={logo.src}
+                alt=""
+                width={iconSize}
+                height={iconSize}
+                className="brand-logo-icon"
+              />
+            ) : (
+              name
+            )}
+          </span>
+        );
+      })}
     </div>
   );
 }

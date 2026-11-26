@@ -1,7 +1,5 @@
-import { ArrowRight, ArrowUpRight, Terminal } from 'lucide-react';
+import { ArrowRight, Terminal } from 'lucide-react';
 import { useAgentView } from '../components/AgentView';
-import { SocialIcon } from '../components/SocialLinks';
-import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { ACTION_TAGS, FINDING_TAGS, WORK_TYPE_TAGS } from '../lib/tags';
 import { Link } from '../router';
 
@@ -16,6 +14,7 @@ const KEY_FACTS = [
 
 const LIVE_PROJECTS = [
   {
+    code: 'P1',
     slug: 'police-finances',
     title: 'Police Finances',
     tag: WORK_TYPE_TAGS.budget_check,
@@ -23,13 +22,15 @@ const LIVE_PROJECTS = [
       'Compares Budget Estimates against Revised Estimates and Actuals, plus modernisation spend, across Indian Union and State police forces.',
   },
   {
+    code: 'P2',
     slug: 'gov-in-public-information',
     title: 'Gov.in Public Information',
     tag: WORK_TYPE_TAGS.website_check,
     summary:
-      'Checks .gov.in portals against mandatory GIGW and RTI Section 4(1)(b) public disclosure standards.',
+      'Audits 12,537 .gov.in portals across 1,000 tasks (12–13 domains each) against 159 GIGW 3.0, RTI Act 2005, and GoI statutory conformity checkpoints.',
   },
   {
+    code: 'P3',
     slug: 'independent-india-inflation',
     title: 'Independent India Inflation',
     tag: WORK_TYPE_TAGS.price_research,
@@ -83,13 +84,13 @@ const GUARDRAILS = [
     body: 'AI agents never file RTIs, legal notices, or complaints. They only prepare short drafts that human citizens review and choose whether to file.',
   },
   {
-    title: 'Independent funding firewall',
-    body: 'Zero funding from political parties or candidates. Sponsors help pay for compute and hosting with zero say over projects, priorities, or findings.',
+    title: 'Independent & open source',
+    body: 'Zero funding from political parties or candidates. Volunteer contributors lend their own coding-agent compute directly, and deterministic verification scripts run locally at zero model cost.',
   },
 ];
 
 export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
-  const { setAgentView, webMcpToolCount } = useAgentView();
+  const { webMcpToolCount } = useAgentView();
 
   return (
     <div className="how brief-page">
@@ -138,7 +139,7 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
             <h3>Point your agent at one line</h3>
             <p>
               Volunteers paste a single prompt into Claude Code, Codex, Antigravity, Gemini CLI,
-              Cursor, or OpenCode — or pick any specific task out of a project’s 100 open tasks.
+              Cursor, or OpenCode — or pick any specific task out of a project’s open task queue.
             </p>
           </li>
 
@@ -199,7 +200,10 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
               className="brief-project-card"
             >
               <div className="brief-project-top">
-                <span className={project.tag.badgeClass}>{project.tag.label}</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span className="tag-mono tag-method">{project.code}</span>
+                  <span className={project.tag.badgeClass}>{project.tag.label}</span>
+                </span>
                 <ArrowRight size={15} className="brief-card-arrow" aria-hidden="true" />
               </div>
               <h3>{project.title}</h3>
@@ -240,14 +244,15 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
             </p>
           </div>
           <div className="brief-agent-actions">
-            <button
-              type="button"
+            <a
+              href="/brief.md"
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn btn-secondary btn-sm"
-              onClick={() => setAgentView(true)}
             >
               <Terminal size={14} aria-hidden="true" />
               <span>View this page as Agent</span>
-            </button>
+            </a>
             <div className="brief-agent-links font-mono">
               <a href="/brief.md">/brief.md</a>
               <span aria-hidden="true">·</span>
@@ -273,8 +278,6 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
         <p className="how-rule how-swarm-note">
           Each task publishes an estimate of the tokens it needs and records what contributors
           report using; deterministic verification scripts run as plain Python at zero model cost.
-          Compute and hosting supporters are listed on the{' '}
-          <Link to="/sponsors" className="inline-link">sponsors page</Link>.
         </p>
       </section>
 
@@ -299,31 +302,6 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
       </section>
 
       <section className="how-section brief-community">
-        <h2>Community &amp; open source</h2>
-        <div className="brief-social-grid">
-          {OFFICIAL_SOCIALS.map((social) => (
-            <a
-              key={social.id}
-              href={social.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={social.ariaLabel}
-              className="brief-social-card"
-            >
-              <div className="brief-social-top">
-                <span className="brief-social-name">
-                  <SocialIcon id={social.id} size={15} />
-                  <span>{social.name}</span>
-                </span>
-                <ArrowUpRight size={13} className="brief-card-arrow" aria-hidden="true" />
-              </div>
-              <div className="brief-social-sub">
-                {social.id === 'discord' ? social.footerSub : social.handle}
-              </div>
-            </a>
-          ))}
-        </div>
-
         <p className="brief-colophon">
           Read <Link to="/how-it-works">how it works</Link>, the{' '}
           <a href={`${REPO}/blob/main/METHODOLOGY.md`} target="_blank" rel="noopener noreferrer">

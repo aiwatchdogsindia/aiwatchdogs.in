@@ -1,5 +1,5 @@
 import { ArrowUpRight } from 'lucide-react';
-import { FEED_PATH, OFFICIAL_SOCIALS, type SocialId } from '../lib/socials';
+import { OFFICIAL_SOCIALS, type SocialId } from '../lib/socials';
 
 interface SocialIconProps {
   id: SocialId;
@@ -144,63 +144,5 @@ export function SocialPillList({ className = 'social-pills' }: SocialPillListPro
         </a>
       ))}
     </div>
-  );
-}
-
-interface CommunityShowcaseProps {
-  variant?: 'band' | 'embedded';
-}
-
-export function CommunityShowcase({ variant = 'band' }: CommunityShowcaseProps) {
-  return (
-    <section
-      className={variant === 'band' ? 'community-band' : 'community-embedded'}
-      aria-label="Socials"
-    >
-      <div className="community-head">
-        <div>
-          <h2 className={variant === 'band' ? 'community-title' : 'section-title'} style={variant === 'embedded' ? { fontSize: 25 } : undefined}>
-            Follow verified dispatches &amp; build in the open
-          </h2>
-          <p className="community-sub">
-            Follow verified leads on X, Instagram, and Telegram, join the AI Watchdogs community on
-            Discord, or contribute on GitHub. Or subscribe to the <a href={FEED_PATH}>RSS feed</a>.
-          </p>
-        </div>
-      </div>
-
-      <div className="community-grid">
-        {OFFICIAL_SOCIALS.map((social) => (
-          <a
-            key={social.id}
-            href={social.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={social.ariaLabel}
-            className="community-card"
-          >
-            <div className="community-card-top">
-              <span className="community-icon-box" aria-hidden="true">
-                <SocialIcon id={social.id} size={18} />
-              </span>
-              <ArrowUpRight size={16} aria-hidden="true" className="community-arrow" />
-            </div>
-
-            <div className="community-card-body">
-              <h3 className="community-name">{social.name}</h3>
-              <div className="community-handle font-mono">
-                {social.id === 'discord' ? social.footerSub : social.handle}
-              </div>
-              <p className="community-desc">{social.tagline}</p>
-            </div>
-
-            <div className="community-cta">
-              <span>{social.cta}</span>
-              
-            </div>
-          </a>
-        ))}
-      </div>
-    </section>
   );
 }

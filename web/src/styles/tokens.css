@@ -161,20 +161,20 @@
   --ink-muted: var(--ink-3);
   --ink-faint: var(--ink-4);
 
-  --ep-verified-fg: var(--green);
-  --ep-verified-bg: var(--green-bg);
-  --ep-verified-bd: #B4DDAF;
+  --ep-verified-fg: #0E6B06;
+  --ep-verified-bg: #E8F5E6;
+  --ep-verified-bd: #A9D8A3;
 
-  --ep-review-fg: var(--conjecture-ink);
-  --ep-review-bg: transparent;
-  --ep-review-bd: var(--conjecture-stroke);
+  --ep-review-fg: #3F3B34;
+  --ep-review-bg: #F7F5F0;
+  --ep-review-bd: #756F64;
 
-  --ep-cleared-fg: var(--ink-3);
-  --ep-cleared-bg: transparent;
-  --ep-cleared-bd: var(--rule-strong);
+  --ep-cleared-fg: #3F3B34;
+  --ep-cleared-bg: #F3F2EE;
+  --ep-cleared-bd: #C5BFB3;
 
-  --ep-disputed-fg: var(--red);
-  --ep-disputed-bg: var(--red-bg);
+  --ep-disputed-fg: #962917;
+  --ep-disputed-bg: #FBEAE7;
   --ep-disputed-bd: #E2B8B0;
 
   --ep-rti-fg: var(--in-work-ink);

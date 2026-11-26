@@ -50,7 +50,9 @@ def test_evidence_retains_presence_without_contact_values(monkeypatch):
     )
     result = audit.observe_site({"domain": HOST})
     assert list(seen) == [HOME + "robots.txt", HOME, HOME + "contact/"]
-    assert set(result["checks"].values()) == {"observed"}
+    assert len(result["checks"]) == 42
+    assert all(result["checks"][k] == "observed" for k in audit.LEGACY_CHECKS)
+    assert result["checks"]["gov_email_domain"] == "observed"
     assert result["pages"] == [HOME, HOME + "contact/"]
     assert result["reason"] is None and result["observed_at"].endswith("Z")
     assert "110 001" not in json.dumps(result)
@@ -167,7 +169,10 @@ def test_pin_address_keep_tls_and_host_identity(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", make_client)
     result = audit.observe_site({"domain": HOST})
     assert result["reason"] is None and len(calls) == 2
-    assert set(result["checks"].values()) == {"not_observed"}
+    assert all(result["checks"][k] == "not_observed" for k in audit.LEGACY_CHECKS)
+    assert result["checks"]["https_valid_tls"] == "observed"
+    assert result["checks"]["gov_domain_canonical"] == "observed"
+    assert result["checks"]["gov_email_domain"] == "not_applicable"
 
 
 def test_uses_manifest_landing_page_and_www_alias(monkeypatch):
@@ -281,3 +286,146 @@ def test_hidden_contacts_do_not_count(monkeypatch):
     assert seen == [HOME + "robots.txt", HOME]
     assert all(result["checks"][key] == "not_observed" for key in ("contact_link", "email", "telephone"))
     assert result["checks"]["help_link"] == "observed"
+
+
+FULL_COMPLIANT_HEADERS = {
+    "content-type": "text/html; charset=utf-8",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "SAMEORIGIN",
+    "server": "NIC-Web",
+}
+
+FULL_COMPLIANT_HOME = """<!doctype html>
+<html lang="en-IN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Official portal of Department of Education, Government of India">
+  <link rel="stylesheet" href="/site.css">
+  <title>Department of Education, Government of India</title>
+</head>
+<body>
+  <header>
+    <a href="#main-content">Skip to main content</a>
+    <img src="/emblem.png" alt="State Emblem of India">
+    <a href="/hi/">हिन्दी</a>
+    <a href="/screen-reader-access">Screen Reader Access</a>
+  </header>
+  <nav>
+    <a href="/about-us">About Us</a>
+    <a href="/contact-us">Contact Us</a>
+    <a href="/rti">Right to Information</a>
+    <a href="/citizens-charter">Citizen's Charter</a>
+    <a href="/acts-and-rules">Acts & Rules</a>
+    <a href="/help">Help</a>
+    <a href="/feedback">Feedback</a>
+    <a href="/sitemap">Sitemap</a>
+    <a href="https://pgportal.gov.in/" target="_blank" rel="noopener">CPGRAMS Public Grievances</a>
+    <a href="https://www.india.gov.in/" target="_blank" rel="noopener">National Portal of India</a>
+    <a href="https://x.com/govindia" target="_blank" rel="noopener">Official X</a>
+  </nav>
+  <main id="main-content">
+    <h1>Department of Education Public Portal</h1>
+    <form role="search"><label for="q">Search</label><input id="q" type="search"></form>
+    <a href="/report.pdf">Annual Report (PDF, 1.2 MB)</a>
+    <table><caption>Summary</caption><thead><tr><th scope="col">Scheme</th></tr></thead><tbody><tr><td>Schools</td></tr></tbody></table>
+  </main>
+  <footer>
+    <p>Content owned by Ministry of Education, Government of India. Last updated on 26 November 2026.</p>
+    <a href="/website-policies">Website Policies</a>
+    <a href="/privacy-policy">Privacy Policy</a>
+    <a href="/terms-and-conditions">Terms and Conditions</a>
+  </footer>
+</body>
+</html>"""
+
+FULL_COMPLIANT_RTI = """
+<h1>Right to Information — Suo Motu Disclosure under Section 4(1)(b)</h1>
+<p>Central Public Information Officer (CPIO) and First Appellate Authority details are published in Manual 16.</p>
+<p>Web Information Manager: Director (IT), Department of Education.</p>
+"""
+
+
+def test_full_42_checks_compliant_site_and_three_page_crawl(monkeypatch):
+    seen = serve(
+        monkeypatch,
+        {
+            HOME + "robots.txt": (404, {}, ""),
+            HOME: (200, FULL_COMPLIANT_HEADERS, FULL_COMPLIANT_HOME),
+            HOME + "contact-us": (200, HTML, CONTACT_HTML),
+            HOME + "rti": (200, HTML, FULL_COMPLIANT_RTI),
+        },
+    )
+    result = audit.observe_site({"domain": HOST})
+    assert seen == [HOME + "robots.txt", HOME, HOME + "contact-us", HOME + "rti"]
+    assert result["outcome"] == "observed" and result["reason"] is None
+    assert result["pages"] == [HOME, HOME + "contact-us", HOME + "rti"]
+    assert len(result["checks"]) == 42
+    not_obs = {k: v for k, v in result["checks"].items() if v != "observed"}
+    assert not_obs == {}, f"Expected all 42 checks observed, got {not_obs}"
+    dumped = json.dumps(result)
+    assert "office[at]" not in dumped and "12345678" not in dumped and "NIC-Web" not in dumped
+
+
+def test_negative_signals_banner_leak_commercial_email_and_a11y_gaps(monkeypatch):
+    bad_headers = {
+        "content-type": "text/html; charset=utf-8",
+        "server": "Apache/2.4.58 (Ubuntu)",
+        "x-powered-by": "PHP/8.2.10",
+    }
+    bad_html = """<html><body>
+    <div id="dup">Department portal currently under construction — coming soon.</div>
+    <div id="dup">Email queries to depthelp@gmail.com for assistance.</div>
+    <img src="/banner.jpg">
+    <form><input type="text" name="query"></form>
+    <table><tr><td>No header cells</td></tr></table>
+    <a href="/notice.pdf">Download Notice</a>
+    <a href="https://external.example.org/doc">External resource</a>
+    </body></html>"""
+    serve(monkeypatch, {HOME + "robots.txt": (404, {}, ""), HOME: (200, bad_headers, bad_html)})
+    result = audit.observe_site({"domain": HOST})
+    c = result["checks"]
+    assert c["server_banner_obscured"] == "not_observed"
+    assert c["hsts_header"] == "not_observed"
+    assert c["security_headers"] == "not_observed"
+    assert c["no_under_construction"] == "not_observed"
+    assert c["unique_dom_ids"] == "not_observed"
+    assert c["img_alt_text"] == "not_observed"
+    assert c["form_input_labels"] == "not_observed"
+    assert c["data_table_headers"] == "not_observed"
+    assert c["download_metadata"] == "not_observed"
+    assert c["external_link_notice"] == "not_observed"
+    assert c["html_lang_attr"] == "not_observed"
+    assert c["email"] == "observed"
+    assert c["gov_email_domain"] == "not_observed"
+    assert "Apache/2.4.58" not in json.dumps(result) and "depthelp@gmail.com" not in json.dumps(result)
+
+
+def test_rti_sec24_exempt_agency_and_blocked_rti_subpage(monkeypatch):
+    exempt_host = "bsf.gov.in"
+    exempt_home = f"https://{exempt_host}/"
+    serve(
+        monkeypatch,
+        {
+            exempt_home + "robots.txt": (404, {}, ""),
+            exempt_home: (200, HTML, "<main>Border Security Force official public information portal.</main>"),
+        },
+    )
+    exempt_res = audit.observe_site({"domain": exempt_host})
+    assert exempt_res["checks"]["rti_link"] == "not_applicable"
+    assert exempt_res["checks"]["pio_faa_disclosure"] == "not_applicable"
+
+    # Non-exempt host whose RTI subpage is disallowed by robots.txt marks pio_faa_disclosure unassessable
+    serve(
+        monkeypatch,
+        {
+            HOME + "robots.txt": (200, {}, "User-agent: *\nDisallow: /rti"),
+            HOME: (200, HTML, "<main>District portal with public citizen services.</main><a href='/rti'>RTI</a>"),
+        },
+    )
+    blocked_rti = audit.observe_site({"domain": HOST})
+    assert blocked_rti["outcome"] == "observed"
+    assert blocked_rti["reason"] == "rti_unavailable"
+    assert blocked_rti["checks"]["rti_link"] == "observed"
+    assert blocked_rti["checks"]["pio_faa_disclosure"] == "unassessable"

@@ -54,7 +54,7 @@ CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
-CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.3"
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.4"
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
 MAX_RATE_LIMIT_WAITS = 8
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
@@ -1734,14 +1734,14 @@ class AgentRunner:
             if primary_matched is not True or not 1 <= len(dataset.records) <= 126:
                 raise ValueError("Website audit requires a checksummed batch of 1–126 websites.")
             rows = []
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                for index in range(0, len(dataset.records), 12):
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                for index in range(0, len(dataset.records), 13):
                     if not self.heartbeat(
                         lease_id, whisper=f"Reviewed {index} of {len(dataset.records)} assigned websites",
                         progress_pct=20 + 75 * index // len(dataset.records),
                     ):
                         return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
-                    rows.extend(pool.map(observe_site, dataset.records[index:index + 12]))
+                    rows.extend(pool.map(observe_site, dataset.records[index:index + 13]))
             response = self.submit(lease_id, outcome="observations", observations=rows)
             return {"status": "completed", "task_id": task_id, "outcome": "observations", "response": response}
 

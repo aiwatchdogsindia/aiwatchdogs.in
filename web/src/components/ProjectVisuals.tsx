@@ -1,4 +1,14 @@
-import { BarChart3, Check, Copy, Globe, Layers, TrendingUp } from 'lucide-react';
+import {
+  BarChart3,
+  Check,
+  Copy,
+  ExternalLink,
+  Globe,
+  Layers,
+  RotateCcw,
+  Search,
+  TrendingUp,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FINDING_TAGS,
@@ -9,74 +19,18 @@ import {
   getTaskTag,
   getWorkTypeTag,
 } from '../lib/tags';
-import type { FindingItem, MissionItem, MissionTask } from '../types';
-import { formatInrCr } from '../utils';
+import type {
+  FindingItem,
+  MissionItem,
+  MissionTask,
+  ProjectVisualSummary,
+  VisualWebsiteCheckpoint,
+  VisualWebsiteMatrixItem,
+  WebsiteVerificationMode,
+} from '../types';
+import { formatInrCr, safeExternalUrl } from '../utils';
 
-export interface ProjectVisualSummary {
-  methodology_code: string;
-  status_counts: {
-    completed: number;
-    claimed: number;
-    queued: number;
-    waiting: number;
-    planned: number;
-    total: number;
-    pct_complete: number;
-    audits_done: number;
-    audits_total: number;
-    checks_done: number;
-    checks_total: number;
-  };
-  budget_audit?: {
-    verified_count: number;
-    peer_review_count: number;
-    cleared_count: number;
-    disputed_count: number;
-    total_exposure_inr_cr: number;
-    top_divergences: Array<{
-      finding_id: string;
-      entity_name: string;
-      title: string;
-      pct_difference: number | null;
-      monetary_exposure_inr_cr: number;
-      status: string;
-      severity: string;
-      fiscal_year: string;
-      rule_triggered: string;
-    }>;
-    groups: Array<{ label: string; done: number; total: number; pct: number }>;
-  };
-  website_audit?: {
-    batches_done: number;
-    batches_total: number;
-    hosts_observed: number;
-    hosts_unassessable: number;
-    hosts_total: number;
-    checkpoints: Array<{
-      key: string;
-      label: string;
-      observed: number;
-      not_observed: number;
-      unassessable: number;
-      observed_pct: number;
-      not_observed_pct: number;
-      unassessable_pct: number;
-    }>;
-    reasons: Record<string, number>;
-  };
-  inflation?: {
-    batches_submitted: number;
-    roles: Array<{ role: string; label: string; done: number; total: number; pct: number }>;
-    strata: Array<{
-      state_code: string;
-      state_name: string;
-      rural_status: string | null;
-      urban_status: string | null;
-      rural_task_id: string | null;
-      urban_task_id: string | null;
-    }>;
-  };
-}
+export type { ProjectVisualSummary };
 
 export interface CompactProgressBarProps {
   completed: number;
@@ -151,6 +105,7 @@ const W1_REASON_LABELS: Record<string, string> = {
   fetch_failed: 'Fetch failed / timeout',
   unsupported_page: 'Unsupported page format',
   contact_unavailable: 'Contact page unavailable',
+  rti_unavailable: 'RTI page unavailable',
 };
 
 function calcPct(part: number, total: number): number {
@@ -435,6 +390,8 @@ export function CompactProgressBar({
    2. PROJECT PROGRESS WIDGET (Top-of-project Donut + Interactive Task Mosaic)
    ============================================================================ */
 
+const MOSAIC_PAGE_SIZE = 100;
+
 export function ProjectProgressWidget({
   mission,
   visualSummary,
@@ -444,7 +401,13 @@ export function ProjectProgressWidget({
   const [activeBucket, setActiveBucket] = useState<StatusBucket | null>(null);
   const [hoveredTileIdx, setHoveredTileIdx] = useState<number | null>(null);
   const [copiedTaskId, setCopiedTaskId] = useState<string | null>(null);
+  const [mosaicPage, setMosaicPage] = useState(0);
   const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setMosaicPage(0);
+    setHoveredTileIdx(null);
+  }, [mission.slug]);
 
   useEffect(() => {
     return () => {
@@ -464,9 +427,11 @@ export function ProjectProgressWidget({
     [tasks],
   );
 
-  // Primary audit/research tasks for the mosaic grid (excluding peer_verify unless only peer_verify exist)
+  // Primary audit/research tasks for the mosaic grid (excluding peer_verify/verify_lead unless only peer checks exist)
   const mosaicTasks = useMemo(() => {
-    const primary = tasks.filter((t) => t.task_type !== 'peer_verify');
+    const primary = tasks.filter(
+      (t) => t.task_type !== 'peer_verify' && t.task_type !== 'verify_lead',
+    );
     return primary.length > 0 ? primary : tasks;
   }, [tasks]);
 
@@ -501,7 +466,9 @@ export function ProjectProgressWidget({
         else waitingCount += 1;
       }
       const totalCount = mosaicTasks.length;
-      const peerChecks = tasks.filter((t) => t.task_type === 'peer_verify');
+      const peerChecks = tasks.filter(
+        (t) => t.task_type === 'peer_verify' || t.task_type === 'verify_lead',
+      );
       const peerDone = peerChecks.filter(
         (t) => t.status === 'completed' || t.status === 'settled',
       ).length;
@@ -566,6 +533,18 @@ export function ProjectProgressWidget({
   const activeSeg = activeBucket
     ? segments.find((s) => s.key === activeBucket) ?? null
     : null;
+
+  const mosaicPageCount = Math.max(1, Math.ceil(mosaicTasks.length / MOSAIC_PAGE_SIZE));
+  const safeMosaicPage = Math.min(mosaicPage, mosaicPageCount - 1);
+  const mosaicStart = mosaicTasks.length > 120 ? safeMosaicPage * MOSAIC_PAGE_SIZE : 0;
+  const mosaicEnd =
+    mosaicTasks.length > 120
+      ? Math.min(mosaicTasks.length, mosaicStart + MOSAIC_PAGE_SIZE)
+      : mosaicTasks.length;
+  const visibleMosaicTasks = useMemo(
+    () => mosaicTasks.slice(mosaicStart, mosaicEnd),
+    [mosaicTasks, mosaicStart, mosaicEnd],
+  );
 
   const hoveredTile = hoveredTileIdx !== null ? mosaicTasks[hoveredTileIdx] ?? null : null;
   const hoveredTileBucket = hoveredTile ? classifyTaskStatus(hoveredTile, completedIds) : null;
@@ -748,17 +727,49 @@ export function ProjectProgressWidget({
               className="pv-mosaic-wrap"
               onMouseLeave={() => setHoveredTileIdx(null)}
             >
+              {mosaicTasks.length > 120 ? (
+                <div className="pv-mosaic-pager" role="navigation" aria-label="Task mosaic blocks">
+                  <span className="pv-mosaic-pager-label tabular">
+                    Tasks {(mosaicStart + 1).toLocaleString('en-IN')}–
+                    {mosaicEnd.toLocaleString('en-IN')} of{' '}
+                    {mosaicTasks.length.toLocaleString('en-IN')}
+                  </span>
+                  <div className="pv-mosaic-blocks">
+                    {Array.from({ length: mosaicPageCount }, (_, pageIdx) => {
+                      const from = pageIdx * MOSAIC_PAGE_SIZE + 1;
+                      const to = Math.min(mosaicTasks.length, (pageIdx + 1) * MOSAIC_PAGE_SIZE);
+                      const isCurrent = pageIdx === safeMosaicPage;
+                      return (
+                        <button
+                          key={pageIdx}
+                          type="button"
+                          className={`pv-mosaic-block-btn tabular${isCurrent ? ' is-active' : ''}`}
+                          aria-current={isCurrent ? 'page' : undefined}
+                          onClick={() => {
+                            setMosaicPage(pageIdx);
+                            setHoveredTileIdx(null);
+                          }}
+                        >
+                          {from}–{to}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
               <div
                 className="pv-mosaic-grid"
                 role="grid"
                 aria-label={`${mosaicTasks.length} project tasks`}
               >
-                {mosaicTasks.map((task, idx) => {
+                {visibleMosaicTasks.map((task, localIdx) => {
+                  const globalIdx = mosaicStart + localIdx;
                   const bucket = classifyTaskStatus(task, completedIds);
                   const taskTag = getTaskTag(task.status, bucket === 'waiting');
                   const isOpen = bucket === 'queued';
                   const isCopied = copiedTaskId === String(task.id);
-                  const isHovered = hoveredTileIdx === idx;
+                  const isHovered = hoveredTileIdx === globalIdx;
                   const isBucketFiltered = activeBucket !== null && activeBucket !== bucket;
                   const contributor = task.claimed_by_handle || task.claimed_by;
 
@@ -767,12 +778,12 @@ export function ProjectProgressWidget({
                       key={task.id}
                       type="button"
                       className={`pv-tile pv-tile--${bucket}${isHovered ? ' is-hovered' : ''}${isBucketFiltered ? ' is-dimmed' : ''}${isCopied ? ' is-copied' : ''}`}
-                      onMouseEnter={() => setHoveredTileIdx(idx)}
-                      onFocus={() => setHoveredTileIdx(idx)}
+                      onMouseEnter={() => setHoveredTileIdx(globalIdx)}
+                      onFocus={() => setHoveredTileIdx(globalIdx)}
                       onBlur={() => setHoveredTileIdx(null)}
                       onClick={() => handleTileClick(task, bucket)}
-                      aria-label={`${task.title || `Task ${idx + 1}`}: ${taskTag.label}, ${fmtPct(tileWeightPct)} of project${contributor ? `, by @${contributor}` : ''}${isOpen && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
-                      title={task.title || `Task ${idx + 1}`}
+                      aria-label={`${task.title || `Task ${globalIdx + 1}`}: ${taskTag.label}, ${fmtPct(tileWeightPct)} of project${contributor ? `, by @${contributor}` : ''}${isOpen && onCopyTaskPrompt ? '. Click to copy 1-line prompt' : ''}`}
+                      title={task.title || `Task ${globalIdx + 1}`}
                     >
                       {isCopied ? <Check size={11} aria-hidden="true" /> : null}
                     </button>
@@ -1204,7 +1215,50 @@ function BudgetAuditVisualizer({
   );
 }
 
-/* ---------- 3B. W1 Website Audit 7-Checkpoint GIGW Stacked Bar Chart ---------- */
+/* ---------- 3B. W1 Website Audit: Exhaustive GIGW 3.0 + RTI Act 2005 + GoI Statutory Matrix ---------- */
+
+type FrameworkFilter = 'all' | 'gigw' | 'rti' | 'statutory';
+type ModeFilter = 'all' | WebsiteVerificationMode;
+
+const W1_INITIAL_CHECKS = 10;
+const MATRIX_INITIAL_ROWS = 15;
+
+const VERIFICATION_MODE_META: Record<
+  WebsiteVerificationMode,
+  { label: string; shortLabel: string; badgeClass: string; hint: string }
+> = {
+  automated_http_html: {
+    label: 'Automated',
+    shortLabel: 'Automated',
+    badgeClass: 'badge badge-verified',
+    hint: 'Checked deterministically via read-only HTTP, TLS, and HTML DOM rules',
+  },
+  agent_inspection: {
+    label: 'Frontier agent',
+    shortLabel: 'Agent',
+    badgeClass: 'badge badge-progress',
+    hint: 'Evaluated by a frontier AI agent reading public pages and linked disclosures',
+  },
+  internal_governance: {
+    label: 'Internal governance',
+    shortLabel: 'Governance',
+    badgeClass: 'badge badge-waiting',
+    hint: 'Internal agency governance obligation; public disclosure indicators noted where observable',
+  },
+};
+
+const AUTOMATION_COVERAGE_LABELS: Record<string, string> = {
+  full: 'Full automated HTTP/HTML/TLS check',
+  partial_public_indicator: 'Partial public indicator via automated check',
+  none: 'Manual / qualitative or internal only',
+};
+
+function classifyFramework(framework?: string | null): Exclude<FrameworkFilter, 'all'> {
+  const f = (framework || '').trim().toLowerCase();
+  if (f.includes('gigw')) return 'gigw';
+  if (f.includes('rti') || f.includes('dopt')) return 'rti';
+  return 'statutory';
+}
 
 function WebsiteAuditVisualizer({
   mission,
@@ -1215,59 +1269,196 @@ function WebsiteAuditVisualizer({
 }) {
   const [hoveredCell, setHoveredCell] = useState<{
     key: string;
-    segment: 'observed' | 'not_observed' | 'unassessable' | 'row';
+    segment: 'observed' | 'not_observed' | 'unassessable' | 'not_applicable' | 'row';
   } | null>(null);
   const [hoveredReason, setHoveredReason] = useState<string | null>(null);
+  const [frameworkFilter, setFrameworkFilter] = useState<FrameworkFilter>('all');
+  const [selectedSectionId, setSelectedSectionId] = useState<string>('all');
+  const [modeFilter, setModeFilter] = useState<ModeFilter>('all');
+  const [matrixQuery, setMatrixQuery] = useState('');
+  const [showAllW1, setShowAllW1] = useState(false);
+  const [showAllMatrix, setShowAllMatrix] = useState(false);
 
   const web = visualSummary?.website_audit;
   const batchesDone = web?.batches_done ?? mission.completed_tasks ?? 0;
-  const batchesTotal = web?.batches_total ?? mission.total_tasks ?? 100;
+  const batchesTotal = web?.batches_total ?? mission.total_tasks ?? 1000;
   const hostsObserved = web?.hosts_observed ?? 0;
   const hostsUnassessable = web?.hosts_unassessable ?? 0;
   const hostsTotal = web?.hosts_total ?? hostsObserved + hostsUnassessable;
+  const totalDirectoryHosts = web?.total_directory_hosts ?? 0;
   const hasObservations = batchesDone > 0 && hostsTotal > 0;
+
+  const matrixSummary = web?.matrix_summary;
+  const sections = useMemo(() => web?.sections ?? [], [web?.sections]);
+  const matrixItems = useMemo(() => web?.matrix ?? [], [web?.matrix]);
+  const hasRichMatrix = Boolean(matrixSummary && matrixItems.length > 0);
 
   const foundTag = WEBSITE_OUTCOME_TAGS.found;
   const missingTag = WEBSITE_OUTCOME_TAGS.missing;
   const unreachableTag = WEBSITE_OUTCOME_TAGS.unreachable;
 
-  const checkpoints = useMemo(() => {
+  const checkpoints = useMemo<VisualWebsiteCheckpoint[]>(() => {
     if (web?.checkpoints && web.checkpoints.length > 0) {
       return web.checkpoints;
     }
     return DEFAULT_W1_CHECKPOINTS.map((c) => ({
       key: c.key,
       label: c.label,
+      description: c.hint,
       observed: 0,
       not_observed: 0,
       unassessable: 0,
+      not_applicable: 0,
       observed_pct: 0,
       not_observed_pct: 0,
       unassessable_pct: 0,
+      not_applicable_pct: 0,
     }));
-  }, [web]);
+  }, [web?.checkpoints]);
+
+  const sectionById = useMemo(
+    () => Object.fromEntries(sections.map((s) => [s.id, s])),
+    [sections],
+  );
+
+  const w1Sections = useMemo(() => {
+    const present = new Set<string>();
+    for (const cp of checkpoints) {
+      if (cp.section) present.add(cp.section);
+    }
+    if (sections.length > 0) {
+      return sections.filter((s) => present.has(s.id) || (s.w1_check_keys?.length ?? 0) > 0);
+    }
+    return Array.from(present).map((id) => ({
+      id,
+      name: id,
+      short_name: id.replace(/_/g, ' '),
+      framework: '',
+      total_checkpoints: 0,
+      automated_count: 0,
+      agent_count: 0,
+      internal_count: 0,
+      w1_check_keys: [],
+      avg_observed_pct: null,
+    }));
+  }, [checkpoints, sections]);
+
+  const filteredCheckpoints = useMemo(() => {
+    let list = checkpoints;
+    if (selectedSectionId !== 'all') {
+      const sec = sectionById[selectedSectionId];
+      const secKeySet = sec?.w1_check_keys?.length ? new Set(sec.w1_check_keys) : null;
+      list = list.filter(
+        (cp) => cp.section === selectedSectionId || (secKeySet ? secKeySet.has(cp.key) : false),
+      );
+    } else if (frameworkFilter !== 'all') {
+      list = list.filter((cp) => classifyFramework(cp.framework) === frameworkFilter);
+    }
+    return list;
+  }, [checkpoints, selectedSectionId, sectionById, frameworkFilter]);
+
+  const visibleCheckpoints =
+    showAllW1 || selectedSectionId !== 'all' || frameworkFilter !== 'all'
+      ? filteredCheckpoints
+      : filteredCheckpoints.slice(0, W1_INITIAL_CHECKS);
+
+  const filteredMatrix = useMemo<VisualWebsiteMatrixItem[]>(() => {
+    const q = matrixQuery.trim().toLowerCase();
+    return matrixItems.filter((item) => {
+      if (frameworkFilter !== 'all' && classifyFramework(item.framework) !== frameworkFilter) {
+        return false;
+      }
+      if (selectedSectionId !== 'all' && item.section_id !== selectedSectionId) {
+        return false;
+      }
+      if (modeFilter !== 'all' && item.verification_mode !== modeFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        item.id.toLowerCase().includes(q) ||
+        item.title.toLowerCase().includes(q) ||
+        item.requirement_text.toLowerCase().includes(q) ||
+        (item.section_name || '').toLowerCase().includes(q) ||
+        (item.citation || '').toLowerCase().includes(q) ||
+        (item.wcag_reference || '').toLowerCase().includes(q) ||
+        (item.risks_addressed || []).some((r) => r.toLowerCase().includes(q)) ||
+        (item.w1_check_keys || []).some((k) => k.toLowerCase().includes(q))
+      );
+    });
+  }, [matrixItems, frameworkFilter, selectedSectionId, modeFilter, matrixQuery]);
+
+  const visibleMatrix = showAllMatrix ? filteredMatrix : filteredMatrix.slice(0, MATRIX_INITIAL_ROWS);
+  const hasActiveMatrixFilters =
+    frameworkFilter !== 'all' ||
+    selectedSectionId !== 'all' ||
+    modeFilter !== 'all' ||
+    matrixQuery.trim().length > 0;
 
   const reasonEntries = useMemo(() => {
     if (!web?.reasons) return [];
     return Object.entries(web.reasons)
       .filter(([, count]) => count > 0)
       .sort((a, b) => b[1] - a[1]);
-  }, [web]);
+  }, [web?.reasons]);
 
   const hintByKey = useMemo(
     () => Object.fromEntries(DEFAULT_W1_CHECKPOINTS.map((c) => [c.key, c.hint])),
     [],
   );
 
+  const hasAnyNotApplicable = useMemo(
+    () => checkpoints.some((cp) => (cp.not_applicable ?? 0) > 0),
+    [checkpoints],
+  );
+
+  const handleSelectSection = (secId: string) => {
+    setSelectedSectionId((prev) => (prev === secId ? 'all' : secId));
+    setShowAllMatrix(false);
+  };
+
+  const handleSelectFramework = (fw: FrameworkFilter) => {
+    setFrameworkFilter(fw);
+    if (fw !== 'all' && selectedSectionId !== 'all') {
+      const sec = sectionById[selectedSectionId];
+      if (sec && classifyFramework(sec.framework) !== fw) {
+        setSelectedSectionId('all');
+      }
+    }
+    setShowAllMatrix(false);
+  };
+
+  const handleToggleMode = (mode: ModeFilter) => {
+    setModeFilter((prev) => (prev === mode ? 'all' : mode));
+    setShowAllMatrix(false);
+  };
+
+  const handleResetFilters = () => {
+    setFrameworkFilter('all');
+    setSelectedSectionId('all');
+    setModeFilter('all');
+    setMatrixQuery('');
+    setShowAllMatrix(false);
+  };
+
+  const totalCheckpointsCount = matrixSummary?.total_checkpoints ?? checkpoints.length;
+
   return (
-    <section className="card card-pad pv-results" aria-label="GIGW website audit visual results">
+    <section className="card card-pad pv-results" aria-label="GIGW 3.0 and RTI conformity audit results">
+      {/* HEADER */}
       <div className="pv-results-head">
         <div className="pv-results-title-wrap">
           <span className="kicker">
             <Globe size={12} aria-hidden="true" />
-            GIGW 3.0 checkpoints · {WORK_TYPE_TAGS.website_check.label}
+            {hasRichMatrix
+              ? `GIGW 3.0 · RTI Act 2005 · GoI Statutory Conformity`
+              : `GIGW 3.0 checkpoints · ${WORK_TYPE_TAGS.website_check.label}`}
           </span>
-          <h2 className="pv-results-title">7-checkpoint .gov.in disclosure profile</h2>
+          <h2 className="pv-results-title">
+            {hasRichMatrix
+              ? `${totalCheckpointsCount.toLocaleString('en-IN')}-checkpoint .gov.in conformity matrix`
+              : `${checkpoints.length}-checkpoint .gov.in disclosure profile`}
+          </h2>
         </div>
 
         <div className="pv-summary-pills tabular">
@@ -1275,6 +1466,11 @@ function WebsiteAuditVisualizer({
             Batches {TASK_TAGS.done.label}: {batchesDone}/{batchesTotal} (
             {fmtPct(calcPct(batchesDone, batchesTotal))})
           </span>
+          {totalDirectoryHosts > 0 ? (
+            <span className="tag-mono">
+              {totalDirectoryHosts.toLocaleString('en-IN')} .gov.in domains
+            </span>
+          ) : null}
           <span className={foundTag.badgeClass}>
             {hostsObserved.toLocaleString('en-IN')} hosts checked
           </span>
@@ -1286,175 +1482,676 @@ function WebsiteAuditVisualizer({
         </div>
       </div>
 
-      <div className="pv-gigw-legend">
-        <span>
-          <i className="pv-dot pv-dot--verified" /> {foundTag.label}
-        </span>
-        <span>
-          <i className="pv-dot pv-dot--not-obs" /> {missingTag.label}
-        </span>
-        <span>
-          <i className="pv-dot pv-dot--unassess" /> {unreachableTag.label}
-        </span>
-        <span className="pv-gigw-legend-hint">Hover any bar segment for exact host counts &amp; %</span>
-      </div>
+      {/* FRAMEWORK & VERIFICATION MODE OVERVIEW STRIP */}
+      {matrixSummary ? (
+        <div className="pv-matrix-overview" aria-label="Conformity matrix overview by verification mode">
+          <button
+            type="button"
+            className={`pv-overview-tile${modeFilter === 'all' && frameworkFilter === 'all' && selectedSectionId === 'all' ? ' is-active' : ''}`}
+            onClick={handleResetFilters}
+          >
+            <span className="pv-overview-kicker">Unified checklist</span>
+            <strong className="pv-overview-num tabular">
+              {matrixSummary.total_checkpoints.toLocaleString('en-IN')}
+            </strong>
+            <span className="pv-overview-sub tabular">
+              {matrixSummary.gigw_checkpoints} GIGW 3.0 · {matrixSummary.rti_checkpoints} RTI ·{' '}
+              {matrixSummary.statutory_other_checkpoints} GoI Statutory
+            </span>
+          </button>
 
-      {!hasObservations ? (
-        <div className="pv-zero-banner">
-          <strong>0 of {batchesTotal.toLocaleString('en-IN')} batches reported yet.</strong> Stacked{' '}
-          {foundTag.label} / {missingTag.label} / {unreachableTag.label} percentages across all 7
-          GIGW checkpoints fill in automatically as volunteers submit website batches. Hover any
-          checkpoint below to see what the reader checks.
+          <button
+            type="button"
+            className={`pv-overview-tile pv-overview-tile--auto${modeFilter === 'automated_http_html' ? ' is-active' : ''}`}
+            onClick={() => handleToggleMode('automated_http_html')}
+            aria-pressed={modeFilter === 'automated_http_html'}
+          >
+            <span className="pv-overview-kicker">
+              <i className="pv-dot pv-dot--verified" /> Automated HTTP/HTML/TLS
+            </span>
+            <strong className="pv-overview-num tabular">
+              {matrixSummary.automated_http_html.toLocaleString('en-IN')}
+            </strong>
+            <span className="pv-overview-sub tabular">
+              Across {matrixSummary.w1_automated_checks_count} deterministic checks
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`pv-overview-tile pv-overview-tile--agent${modeFilter === 'agent_inspection' ? ' is-active' : ''}`}
+            onClick={() => handleToggleMode('agent_inspection')}
+            aria-pressed={modeFilter === 'agent_inspection'}
+          >
+            <span className="pv-overview-kicker">
+              <i className="pv-dot pv-dot--claimed" /> Frontier agent inspection
+            </span>
+            <strong className="pv-overview-num tabular">
+              {matrixSummary.agent_inspection.toLocaleString('en-IN')}
+            </strong>
+            <span className="pv-overview-sub">
+              Qualitative disclosures, WCAG &amp; RTI Sec 4(1)(b)
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`pv-overview-tile pv-overview-tile--internal${modeFilter === 'internal_governance' ? ' is-active' : ''}`}
+            onClick={() => handleToggleMode('internal_governance')}
+            aria-pressed={modeFilter === 'internal_governance'}
+          >
+            <span className="pv-overview-kicker">
+              <i className="pv-dot pv-dot--unassess" /> Internal governance
+            </span>
+            <strong className="pv-overview-num tabular">
+              {matrixSummary.internal_governance.toLocaleString('en-IN')}
+            </strong>
+            <span className="pv-overview-sub">
+              Agency processes (public indicators noted)
+            </span>
+          </button>
         </div>
       ) : null}
 
-      <div className="pv-gigw-chart" onMouseLeave={() => setHoveredCell(null)}>
-        {checkpoints.map((cp) => {
-          const isRowHovered = hoveredCell?.key === cp.key;
-          const rowTotal = cp.observed + cp.not_observed + cp.unassessable;
-          const obsPct = rowTotal > 0 ? calcPct(cp.observed, rowTotal) : cp.observed_pct;
-          const notObsPct = rowTotal > 0 ? calcPct(cp.not_observed, rowTotal) : cp.not_observed_pct;
-          const unassPct = rowTotal > 0 ? calcPct(cp.unassessable, rowTotal) : cp.unassessable_pct;
+      {/* PANEL A: 8-SECTION CATEGORY BREAKDOWN */}
+      {sections.length > 0 ? (
+        <div className="pv-sections-block" aria-label="Conformity sections breakdown">
+          <div className="pv-chart-subhead">
+            <h3>
+              <Layers size={14} aria-hidden="true" /> Coverage across {sections.length} conformity
+              sections
+            </h3>
+            <span className="pv-chart-note">
+              Click any section to filter checks and matrix rows
+            </span>
+          </div>
 
-          return (
-            <div
-              key={cp.key}
-              className={`pv-gigw-row${isRowHovered ? ' is-hovered' : ''}`}
-              onMouseEnter={() => {
-                if (!hasObservations) setHoveredCell({ key: cp.key, segment: 'row' });
+          <div className="pv-sections-grid">
+            {sections.map((sec) => {
+              const isSelected = selectedSectionId === sec.id;
+              const isFwDimmed =
+                frameworkFilter !== 'all' && classifyFramework(sec.framework) !== frameworkFilter;
+              const total = Math.max(1, sec.total_checkpoints);
+              const autoPct = calcPct(sec.automated_count, total);
+              const agentPct = calcPct(sec.agent_count, total);
+              const intPct = calcPct(sec.internal_count, total);
+
+              return (
+                <button
+                  key={sec.id}
+                  type="button"
+                  className={`pv-section-card${isSelected ? ' is-selected' : ''}${isFwDimmed ? ' is-dimmed' : ''}`}
+                  onClick={() => handleSelectSection(sec.id)}
+                  aria-pressed={isSelected}
+                >
+                  <div className="pv-section-top">
+                    <span className="pv-section-fw">{sec.framework}</span>
+                    <span className="pv-section-count tabular">{sec.total_checkpoints}</span>
+                  </div>
+                  <div className="pv-section-name">{sec.name}</div>
+                  <div
+                    className="pv-section-bar"
+                    aria-hidden="true"
+                    title={`${sec.automated_count} automated, ${sec.agent_count} frontier agent, ${sec.internal_count} internal`}
+                  >
+                    {sec.automated_count > 0 ? (
+                      <span
+                        className="pv-section-seg pv-section-seg--auto"
+                        style={{ width: `${autoPct}%` }}
+                      />
+                    ) : null}
+                    {sec.agent_count > 0 ? (
+                      <span
+                        className="pv-section-seg pv-section-seg--agent"
+                        style={{ width: `${agentPct}%` }}
+                      />
+                    ) : null}
+                    {sec.internal_count > 0 ? (
+                      <span
+                        className="pv-section-seg pv-section-seg--internal"
+                        style={{ width: `${intPct}%` }}
+                      />
+                    ) : null}
+                  </div>
+                  <div className="pv-section-foot tabular">
+                    <span>
+                      {sec.automated_count} auto · {sec.agent_count} agent
+                      {sec.internal_count > 0 ? ` · ${sec.internal_count} gov` : ''}
+                    </span>
+                    <strong className={sec.avg_observed_pct != null ? 'pv-section-obs' : 'pv-section-pending'}>
+                      {sec.avg_observed_pct != null ? `${fmtPct(sec.avg_observed_pct)} obs` : 'Pending'}
+                    </strong>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* PANEL B: AUTOMATED W1 CHECKS STACKED BAR CHART */}
+      <div className="pv-chart-card pv-w1-panel">
+        <div className="pv-chart-subhead">
+          <div className="pv-w1-subhead-title">
+            <h3>
+              Automated HTTP/HTML/TLS checks ({filteredCheckpoints.length}
+              {filteredCheckpoints.length !== checkpoints.length ? ` of ${checkpoints.length}` : ''})
+            </h3>
+            <span className="pv-chart-note">
+              Deterministic read-only checks run across every reachable .gov.in host in each batch
+            </span>
+          </div>
+
+          <div className="pv-gigw-legend">
+            <span>
+              <i className="pv-dot pv-dot--verified" /> {foundTag.label}
+            </span>
+            <span>
+              <i className="pv-dot pv-dot--not-obs" /> {missingTag.label}
+            </span>
+            <span>
+              <i className="pv-dot pv-dot--unassess" /> {unreachableTag.label}
+            </span>
+            {hasAnyNotApplicable ? (
+              <span>
+                <i className="pv-dot pv-dot--review" /> Exempt / N/A
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {w1Sections.length > 1 ? (
+          <div className="pv-w1-filters" role="group" aria-label="Filter automated checks by section">
+            <button
+              type="button"
+              className={`btn btn-xs ${selectedSectionId === 'all' && frameworkFilter === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => {
+                setSelectedSectionId('all');
+                setFrameworkFilter('all');
               }}
             >
-              {isRowHovered ? (
-                <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
-                  <div className="pv-tooltip-title">{cp.label}</div>
+              All ({checkpoints.length})
+            </button>
+            {w1Sections.map((sec) => (
+              <button
+                key={sec.id}
+                type="button"
+                className={`btn btn-xs ${selectedSectionId === sec.id ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => handleSelectSection(sec.id)}
+              >
+                {sec.short_name || sec.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {!hasObservations ? (
+          <div className="pv-zero-banner" style={{ marginBottom: 12 }}>
+            <strong>0 of {batchesTotal.toLocaleString('en-IN')} batches reported yet.</strong> Stacked{' '}
+            {foundTag.label} / {missingTag.label} / {unreachableTag.label} percentages across all{' '}
+            {checkpoints.length} automated HTTP/HTML/TLS checks fill in automatically as volunteers submit
+            website batches. Hover any check below to see what the reader verifies.
+          </div>
+        ) : null}
+
+        {visibleCheckpoints.length > 0 ? (
+          <div className="pv-gigw-chart" onMouseLeave={() => setHoveredCell(null)}>
+            {visibleCheckpoints.map((cp) => {
+              const isRowHovered = hoveredCell?.key === cp.key;
+              const naCount = cp.not_applicable ?? 0;
+              const rowTotal = cp.observed + cp.not_observed + cp.unassessable + naCount;
+              const obsPct = rowTotal > 0 ? calcPct(cp.observed, rowTotal) : cp.observed_pct;
+              const notObsPct = rowTotal > 0 ? calcPct(cp.not_observed, rowTotal) : cp.not_observed_pct;
+              const unassPct = rowTotal > 0 ? calcPct(cp.unassessable, rowTotal) : cp.unassessable_pct;
+              const naPct = rowTotal > 0 ? calcPct(naCount, rowTotal) : (cp.not_applicable_pct ?? 0);
+              const cpHint =
+                cp.description || hintByKey[cp.key] || 'Checked on landing page and linked public pages';
+              const cpIds = cp.checkpoint_ids && cp.checkpoint_ids.length > 0 ? cp.checkpoint_ids : null;
+
+              return (
+                <div
+                  key={cp.key}
+                  className={`pv-gigw-row${isRowHovered ? ' is-hovered' : ''}`}
+                  onMouseEnter={() => {
+                    if (!hasObservations) setHoveredCell({ key: cp.key, segment: 'row' });
+                  }}
+                >
+                  {isRowHovered ? (
+                    <div className="pv-tooltip pv-tooltip--bar" role="tooltip">
+                      <div className="pv-tooltip-title">
+                        {cp.label}
+                        {cpIds ? ` (${cpIds.slice(0, 4).join(', ')}${cpIds.length > 4 ? '…' : ''})` : ''}
+                      </div>
+                      {hasObservations && rowTotal > 0 ? (
+                        <div className="pv-tooltip-row tabular">
+                          <span className={hoveredCell?.segment === 'observed' ? 'is-emph' : ''}>
+                            {foundTag.label}: {cp.observed.toLocaleString('en-IN')} ({fmtPct(obsPct)})
+                          </span>
+                          <span>·</span>
+                          <span className={hoveredCell?.segment === 'not_observed' ? 'is-emph' : ''}>
+                            {missingTag.label}: {cp.not_observed.toLocaleString('en-IN')} (
+                            {fmtPct(notObsPct)})
+                          </span>
+                          <span>·</span>
+                          <span className={hoveredCell?.segment === 'unassessable' ? 'is-emph' : ''}>
+                            {unreachableTag.label}: {cp.unassessable.toLocaleString('en-IN')} (
+                            {fmtPct(unassPct)})
+                          </span>
+                          {naCount > 0 ? (
+                            <>
+                              <span>·</span>
+                              <span className={hoveredCell?.segment === 'not_applicable' ? 'is-emph' : ''}>
+                                Exempt/N/A: {naCount.toLocaleString('en-IN')} ({fmtPct(naPct)})
+                              </span>
+                            </>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="pv-tooltip-row">
+                          {cpHint} · 0.0% {foundTag.label.toLowerCase()} so far
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+
+                  <div className="pv-gigw-label" title={cpHint}>
+                    <span>{cp.label}</span>
+                    {cp.framework ? <span className="pv-gigw-sub">{cp.framework}</span> : null}
+                  </div>
+
                   {hasObservations && rowTotal > 0 ? (
-                    <div className="pv-tooltip-row tabular">
-                      <span className={hoveredCell?.segment === 'observed' ? 'is-emph' : ''}>
-                        {foundTag.label}: {cp.observed.toLocaleString('en-IN')} ({fmtPct(obsPct)})
-                      </span>
-                      <span>·</span>
-                      <span className={hoveredCell?.segment === 'not_observed' ? 'is-emph' : ''}>
-                        {missingTag.label}: {cp.not_observed.toLocaleString('en-IN')} (
-                        {fmtPct(notObsPct)})
-                      </span>
-                      <span>·</span>
-                      <span className={hoveredCell?.segment === 'unassessable' ? 'is-emph' : ''}>
-                        {unreachableTag.label}: {cp.unassessable.toLocaleString('en-IN')} (
-                        {fmtPct(unassPct)})
-                      </span>
+                    <div
+                      className="pv-gigw-track"
+                      role="group"
+                      aria-label={`${cp.label}: ${fmtPct(obsPct)} ${foundTag.label}, ${fmtPct(notObsPct)} ${missingTag.label}, ${fmtPct(unassPct)} ${unreachableTag.label}${naCount > 0 ? `, ${fmtPct(naPct)} exempt or N/A` : ''}`}
+                    >
+                      {cp.observed > 0 ? (
+                        <button
+                          type="button"
+                          className={`pv-gigw-seg pv-gigw-seg--obs${hoveredCell?.key === cp.key && hoveredCell.segment === 'observed' ? ' is-active' : ''}`}
+                          style={{ width: `${obsPct}%` }}
+                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
+                          onFocus={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
+                          onBlur={() => setHoveredCell(null)}
+                          aria-label={`${cp.label} ${foundTag.label}: ${cp.observed} hosts (${fmtPct(obsPct)})`}
+                        />
+                      ) : null}
+                      {cp.not_observed > 0 ? (
+                        <button
+                          type="button"
+                          className={`pv-gigw-seg pv-gigw-seg--notobs${hoveredCell?.key === cp.key && hoveredCell.segment === 'not_observed' ? ' is-active' : ''}`}
+                          style={{ width: `${notObsPct}%` }}
+                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
+                          onFocus={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
+                          onBlur={() => setHoveredCell(null)}
+                          aria-label={`${cp.label} ${missingTag.label}: ${cp.not_observed} hosts (${fmtPct(notObsPct)})`}
+                        />
+                      ) : null}
+                      {cp.unassessable > 0 ? (
+                        <button
+                          type="button"
+                          className={`pv-gigw-seg pv-gigw-seg--unass${hoveredCell?.key === cp.key && hoveredCell.segment === 'unassessable' ? ' is-active' : ''}`}
+                          style={{ width: `${unassPct}%` }}
+                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
+                          onFocus={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
+                          onBlur={() => setHoveredCell(null)}
+                          aria-label={`${cp.label} ${unreachableTag.label}: ${cp.unassessable} hosts (${fmtPct(unassPct)})`}
+                        />
+                      ) : null}
+                      {naCount > 0 ? (
+                        <button
+                          type="button"
+                          className={`pv-gigw-seg pv-gigw-seg--na${hoveredCell?.key === cp.key && hoveredCell.segment === 'not_applicable' ? ' is-active' : ''}`}
+                          style={{ width: `${naPct}%` }}
+                          onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'not_applicable' })}
+                          onFocus={() => setHoveredCell({ key: cp.key, segment: 'not_applicable' })}
+                          onBlur={() => setHoveredCell(null)}
+                          aria-label={`${cp.label} exempt or not applicable: ${naCount} hosts (${fmtPct(naPct)})`}
+                        />
+                      ) : null}
                     </div>
                   ) : (
-                    <div className="pv-tooltip-row">
-                      {hintByKey[cp.key] || 'Checked on landing page and linked contact page'} · 0.0%{' '}
-                      {foundTag.label.toLowerCase()} so far
+                    <div
+                      className="pv-gigw-track pv-gigw-track--skeleton"
+                      tabIndex={0}
+                      role="note"
+                      aria-label={`${cp.label}: 0.0% ${foundTag.label}, waiting for first batch`}
+                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'row' })}
+                      onBlur={() => setHoveredCell(null)}
+                    >
+                      <span className="pv-gigw-skeleton-hint">Awaiting first batch</span>
                     </div>
                   )}
+
+                  <div className="pv-gigw-val tabular">
+                    <strong>{fmtPct(obsPct)}</strong>
+                    <span>{foundTag.label}</span>
+                  </div>
                 </div>
-              ) : null}
-
-              <div className="pv-gigw-label">{cp.label}</div>
-
-              {hasObservations && rowTotal > 0 ? (
-                <div
-                  className="pv-gigw-track"
-                  role="group"
-                  aria-label={`${cp.label}: ${fmtPct(obsPct)} ${foundTag.label}, ${fmtPct(notObsPct)} ${missingTag.label}, ${fmtPct(unassPct)} ${unreachableTag.label}`}
-                >
-                  {cp.observed > 0 ? (
-                    <button
-                      type="button"
-                      className={`pv-gigw-seg pv-gigw-seg--obs${hoveredCell?.key === cp.key && hoveredCell.segment === 'observed' ? ' is-active' : ''}`}
-                      style={{ width: `${obsPct}%` }}
-                      onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
-                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'observed' })}
-                      onBlur={() => setHoveredCell(null)}
-                      aria-label={`${cp.label} ${foundTag.label}: ${cp.observed} hosts (${fmtPct(obsPct)})`}
-                    />
-                  ) : null}
-                  {cp.not_observed > 0 ? (
-                    <button
-                      type="button"
-                      className={`pv-gigw-seg pv-gigw-seg--notobs${hoveredCell?.key === cp.key && hoveredCell.segment === 'not_observed' ? ' is-active' : ''}`}
-                      style={{ width: `${notObsPct}%` }}
-                      onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
-                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'not_observed' })}
-                      onBlur={() => setHoveredCell(null)}
-                      aria-label={`${cp.label} ${missingTag.label}: ${cp.not_observed} hosts (${fmtPct(notObsPct)})`}
-                    />
-                  ) : null}
-                  {cp.unassessable > 0 ? (
-                    <button
-                      type="button"
-                      className={`pv-gigw-seg pv-gigw-seg--unass${hoveredCell?.key === cp.key && hoveredCell.segment === 'unassessable' ? ' is-active' : ''}`}
-                      style={{ width: `${unassPct}%` }}
-                      onMouseEnter={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
-                      onFocus={() => setHoveredCell({ key: cp.key, segment: 'unassessable' })}
-                      onBlur={() => setHoveredCell(null)}
-                      aria-label={`${cp.label} ${unreachableTag.label}: ${cp.unassessable} hosts (${fmtPct(unassPct)})`}
-                    />
-                  ) : null}
-                </div>
-              ) : (
-                <div
-                  className="pv-gigw-track pv-gigw-track--skeleton"
-                  tabIndex={0}
-                  role="note"
-                  aria-label={`${cp.label}: 0.0% ${foundTag.label}, waiting for first batch`}
-                  onFocus={() => setHoveredCell({ key: cp.key, segment: 'row' })}
-                  onBlur={() => setHoveredCell(null)}
-                >
-                  <span className="pv-gigw-skeleton-hint">Awaiting first batch</span>
-                </div>
-              )}
-
-              <div className="pv-gigw-val tabular">
-                <strong>{fmtPct(obsPct)}</strong>
-                <span>{foundTag.label}</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Access-Limitation Summary Pills */}
-      <div className="pv-reasons-bar">
-        <span className="kicker">Why sites were {unreachableTag.label.toLowerCase()}</span>
-        {reasonEntries.length > 0 ? (
-          <div className="pv-reason-pills" onMouseLeave={() => setHoveredReason(null)}>
-            {reasonEntries.map(([key, count]) => {
-              const shareOfHosts = calcPct(count, Math.max(1, hostsTotal));
-              const shareOfUnass = calcPct(count, Math.max(1, hostsUnassessable));
-              return (
-                <span
-                  key={key}
-                  className="pv-reason-pill tabular"
-                  tabIndex={0}
-                  role="note"
-                  onMouseEnter={() => setHoveredReason(key)}
-                  onFocus={() => setHoveredReason(key)}
-                  onBlur={() => setHoveredReason(null)}
-                >
-                  {hoveredReason === key ? (
-                    <span className="pv-tooltip pv-tooltip--pill" role="tooltip">
-                      {formatReasonLabel(key)}: {count.toLocaleString('en-IN')} hosts (
-                      {fmtPct(shareOfHosts)} of total · {fmtPct(shareOfUnass)} of{' '}
-                      {unreachableTag.label.toLowerCase()})
-                    </span>
-                  ) : null}
-                  <span>{formatReasonLabel(key)}</span>
-                  <strong>{count.toLocaleString('en-IN')}</strong>
-                </span>
               );
             })}
           </div>
         ) : (
-          <span className="pv-reasons-empty">
-            No {unreachableTag.label.toLowerCase()} sites logged yet (robots.txt blocks, timeouts,
-            and unavailable contact pages are tracked separately from {missingTag.label.toLowerCase()}{' '}
-            items).
-          </span>
+          <div className="pv-empty-box">
+            No automated HTTP/HTML/TLS checks map directly to this filter — inspect the full conformity matrix
+            below for frontier-agent and governance checkpoints.
+          </div>
         )}
+
+        {selectedSectionId === 'all' &&
+        frameworkFilter === 'all' &&
+        filteredCheckpoints.length > W1_INITIAL_CHECKS ? (
+          <div className="pv-list-more">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setShowAllW1((v) => !v)}
+            >
+              {showAllW1
+                ? `Show fewer automated checks`
+                : `Show all ${filteredCheckpoints.length} automated checks`}
+            </button>
+          </div>
+        ) : null}
+
+        {/* Access-Limitation Summary Pills */}
+        <div className="pv-reasons-bar" style={{ marginTop: 14 }}>
+          <span className="kicker">Why sites were {unreachableTag.label.toLowerCase()}</span>
+          {reasonEntries.length > 0 ? (
+            <div className="pv-reason-pills" onMouseLeave={() => setHoveredReason(null)}>
+              {reasonEntries.map(([key, count]) => {
+                const shareOfHosts = calcPct(count, Math.max(1, hostsTotal));
+                const shareOfUnass = calcPct(count, Math.max(1, hostsUnassessable));
+                return (
+                  <span
+                    key={key}
+                    className="pv-reason-pill tabular"
+                    tabIndex={0}
+                    role="note"
+                    onMouseEnter={() => setHoveredReason(key)}
+                    onFocus={() => setHoveredReason(key)}
+                    onBlur={() => setHoveredReason(null)}
+                  >
+                    {hoveredReason === key ? (
+                      <span className="pv-tooltip pv-tooltip--pill" role="tooltip">
+                        {formatReasonLabel(key)}: {count.toLocaleString('en-IN')} hosts (
+                        {fmtPct(shareOfHosts)} of total · {fmtPct(shareOfUnass)} of{' '}
+                        {unreachableTag.label.toLowerCase()})
+                      </span>
+                    ) : null}
+                    <span>{formatReasonLabel(key)}</span>
+                    <strong>{count.toLocaleString('en-IN')}</strong>
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <span className="pv-reasons-empty">
+              No {unreachableTag.label.toLowerCase()} sites logged yet (robots.txt blocks, timeouts,
+              and unavailable contact pages are tracked separately from {missingTag.label.toLowerCase()}{' '}
+              items).
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* PANEL C: EXHAUSTIVE SEARCHABLE & EXPANDABLE CONFORMITY MATRIX */}
+      {matrixItems.length > 0 ? (
+        <div className="pv-chart-card pv-matrix-explorer" aria-label="Exhaustive conformity matrix explorer">
+          <div className="pv-matrix-head">
+            <div>
+              <h3 className="pv-matrix-title">
+                Exhaustive conformity checklist ({filteredMatrix.length.toLocaleString('en-IN')} of{' '}
+                {matrixItems.length.toLocaleString('en-IN')})
+              </h3>
+              <p className="pv-matrix-sub">
+                Every official GIGW 3.0 Annexure II &amp; Guidelines checkpoint, RTI Act 2005
+                proactive disclosure clause, and GoI statutory/policy requirement checked across
+                the .gov.in directory. Click any row for full requirement text, citations, mapped
+                automated checks, and legal caveats.
+              </p>
+            </div>
+            {web?.matrix_endpoint ? (
+              <a href={web.matrix_endpoint} className="inline-link pv-matrix-json-link">
+                Raw matrix JSON
+              </a>
+            ) : null}
+          </div>
+
+          {/* Framework tabs + Verification Mode pills + Section dropdown + Search */}
+          <div className="pv-matrix-toolbar">
+            <div className="pv-matrix-tabs" role="group" aria-label="Filter by legal framework">
+              {(
+                [
+                  ['all', `All (${matrixSummary?.total_checkpoints ?? matrixItems.length})`],
+                  ['gigw', `GIGW 3.0 (${matrixSummary?.gigw_checkpoints ?? 88})`],
+                  ['rti', `RTI Act 2005 (${matrixSummary?.rti_checkpoints ?? 42})`],
+                  ['statutory', `Statutory & Policy (${matrixSummary?.statutory_other_checkpoints ?? 29})`],
+                ] as const
+              ).map(([fwKey, fwLabel]) => (
+                <button
+                  key={fwKey}
+                  type="button"
+                  aria-pressed={frameworkFilter === fwKey}
+                  className={`btn btn-xs ${frameworkFilter === fwKey ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => handleSelectFramework(fwKey)}
+                >
+                  {fwLabel}
+                </button>
+              ))}
+            </div>
+
+            <div className="pv-matrix-controls">
+              <div className="pv-matrix-search-wrap">
+                <Search size={13} className="pv-matrix-search-icon" aria-hidden="true" />
+                <input
+                  type="search"
+                  className="input-field pv-matrix-search"
+                  placeholder="Search ID (GIGW-Q-01, RTI-4-1-b-xvi), WCAG, risk code, or requirement…"
+                  aria-label="Search conformity checkpoints"
+                  value={matrixQuery}
+                  onChange={(e) => {
+                    setMatrixQuery(e.target.value);
+                    setShowAllMatrix(false);
+                  }}
+                />
+              </div>
+
+              <select
+                className="select-field pv-matrix-select"
+                aria-label="Filter by conformity section"
+                value={selectedSectionId}
+                onChange={(e) => {
+                  setSelectedSectionId(e.target.value);
+                  setShowAllMatrix(false);
+                }}
+              >
+                <option value="all">All {sections.length} sections</option>
+                {sections.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} ({s.total_checkpoints})
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="select-field pv-matrix-select"
+                aria-label="Filter by verification mode"
+                value={modeFilter}
+                onChange={(e) => {
+                  setModeFilter(e.target.value as ModeFilter);
+                  setShowAllMatrix(false);
+                }}
+              >
+                <option value="all">All verification modes</option>
+                <option value="automated_http_html">
+                  Automated HTTP/HTML ({matrixSummary?.automated_http_html ?? ''})
+                </option>
+                <option value="agent_inspection">
+                  Frontier agent ({matrixSummary?.agent_inspection ?? ''})
+                </option>
+                <option value="internal_governance">
+                  Internal governance ({matrixSummary?.internal_governance ?? ''})
+                </option>
+              </select>
+
+              {hasActiveMatrixFilters ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={handleResetFilters}
+                >
+                  <RotateCcw size={12} aria-hidden="true" />
+                  <span>Reset</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {visibleMatrix.length > 0 ? (
+            <div className="pv-matrix-list">
+              {visibleMatrix.map((item) => {
+                const modeMeta =
+                  VERIFICATION_MODE_META[item.verification_mode] ??
+                  VERIFICATION_MODE_META.agent_inspection;
+                const safeSrc = safeExternalUrl(item.source_url);
+                const covLabel =
+                  AUTOMATION_COVERAGE_LABELS[item.automation_coverage] || item.automation_coverage;
+
+                return (
+                  <details key={item.id} className="pv-matrix-item">
+                    <summary className="pv-matrix-summary">
+                      <span className="pv-matrix-id font-mono">{item.id}</span>
+                      <div className="pv-matrix-main">
+                        <span className="pv-matrix-item-title">{item.title}</span>
+                        <span className="pv-matrix-item-meta">
+                          {item.section_name}
+                          {item.citation ? ` · ${item.citation}` : ''}
+                        </span>
+                      </div>
+                      <div className="pv-matrix-badges">
+                        {item.wcag_level ? (
+                          <span className="tag-mono pv-wcag-pill">WCAG {item.wcag_level}</span>
+                        ) : null}
+                        <span className={modeMeta.badgeClass} title={modeMeta.hint}>
+                          {modeMeta.label}
+                        </span>
+                        <span className="pv-matrix-obs tabular">
+                          {item.observed_pct != null
+                            ? `${fmtPct(item.observed_pct)}`
+                            : item.verification_mode === 'automated_http_html'
+                              ? 'Pending'
+                              : modeMeta.shortLabel}
+                        </span>
+                      </div>
+                    </summary>
+
+                    <div className="pv-matrix-detail">
+                      <p className="pv-matrix-req">{item.requirement_text}</p>
+
+                      <dl className="pv-matrix-dl">
+                        <div>
+                          <dt>Framework &amp; citation</dt>
+                          <dd>
+                            <span>
+                              <strong>{item.framework}</strong>
+                              {item.citation ? ` — ${item.citation}` : ''}
+                            </span>
+                            {safeSrc ? (
+                              <a
+                                href={safeSrc}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-link pv-matrix-source-link"
+                              >
+                                <span>Official source</span>
+                                <ExternalLink size={11} aria-hidden="true" />
+                              </a>
+                            ) : null}
+                          </dd>
+                        </div>
+
+                        {item.conformance_level || item.wcag_reference ? (
+                          <div>
+                            <dt>Conformance</dt>
+                            <dd>
+                              {[item.conformance_level, item.wcag_reference]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </dd>
+                          </div>
+                        ) : null}
+
+                        <div>
+                          <dt>Verification coverage</dt>
+                          <dd>
+                            <span>{covLabel}</span>
+                            {item.w1_check_keys.length > 0 ? (
+                              <span className="pv-matrix-keys">
+                                {item.w1_check_keys.map((k) => (
+                                  <code key={k} className="tag-mono">
+                                    {k}
+                                  </code>
+                                ))}
+                              </span>
+                            ) : null}
+                          </dd>
+                        </div>
+
+                        {item.risks_addressed && item.risks_addressed.length > 0 ? (
+                          <div>
+                            <dt>GIGW risk codes</dt>
+                            <dd className="pv-matrix-keys">
+                              {item.risks_addressed.map((r) => (
+                                <span key={r} className="tag-mono">
+                                  {r}
+                                </span>
+                              ))}
+                            </dd>
+                          </div>
+                        ) : null}
+
+                        {item.public_disclosure_indicator ? (
+                          <div>
+                            <dt>Public indicator</dt>
+                            <dd>{item.public_disclosure_indicator}</dd>
+                          </div>
+                        ) : null}
+
+                        {item.caveats ? (
+                          <div>
+                            <dt>Guardrails &amp; caveats</dt>
+                            <dd>{item.caveats}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              No conformity checkpoints match your active filters. Try clearing your search or
+              filters above.
+            </div>
+          )}
+
+          {filteredMatrix.length > MATRIX_INITIAL_ROWS ? (
+            <div className="pv-list-more">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => setShowAllMatrix((v) => !v)}
+              >
+                {showAllMatrix
+                  ? 'Show fewer checkpoints'
+                  : `Show all ${filteredMatrix.length.toLocaleString('en-IN')} matching checkpoints`}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

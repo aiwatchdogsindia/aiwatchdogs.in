@@ -31,7 +31,13 @@ from aiwatchdogs.core.usage import DEFAULT_WORK_TYPE, MAX_TOKENS, PEER_ESTIMATE_
 
 PROJECT_ID_PREFIX = "project-"
 SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+PROJECT_CODE_RE = re.compile(r"^P[1-9][0-9]*$")
 TASK_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+CANONICAL_PROJECT_CODES: dict[str, str] = {
+    "police-finances": "P1",
+    "gov-in-public-information": "P2",
+    "independent-india-inflation": "P3",
+}
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
 ENLISTED_PR_URL_RE = re.compile(r"^https://github\.com/aiwatchdogsindia/aiwatchdogs\.in/pull/[1-9][0-9]*$")
@@ -86,6 +92,7 @@ MAX_PART_WINDOW_LINES = 12
 INFLATION_PROJECT_SLUG = "independent-india-inflation"
 INFLATION_METHODOLOGY = "CPI1"
 MAX_LARGE_PROJECT_TASKS = 100
+MAX_WEBSITE_PROJECT_TASKS = 1000
 DEFAULT_PRIORITY = 5
 SYNC_STATE_KEY = "community_projects"
 
@@ -241,6 +248,11 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         if filename_stem is not None and filename_stem != slug:
             errors.append(f"File name must match the slug: rename it to '{slug}.json'.")
 
+    project_code = data.get("project_code")
+    if project_code not in (None, ""):
+        if not isinstance(project_code, str) or not PROJECT_CODE_RE.fullmatch(project_code.strip()):
+            errors.append("'project_code' must be a sequential project code like P1, P2, P3.")
+
     formerly = data.get("formerly", [])
     if not isinstance(formerly, list) or len(formerly) > MAX_FORMER_SLUGS:
         errors.append(f"'formerly' must be a list of at most {MAX_FORMER_SLUGS} earlier slugs.")
@@ -327,9 +339,13 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
     is_website = slug == "gov-in-public-information" and methodology == "W1"
     if (slug == "gov-in-public-information" or methodology == "W1") and not is_website:
         errors.append("Methodology W1 is reserved for gov-in-public-information.")
-    if (is_inflation or is_website) and len(tasks) + len(planned) > MAX_LARGE_PROJECT_TASKS:
+    if is_inflation and len(tasks) + len(planned) > MAX_LARGE_PROJECT_TASKS:
         errors.append(
             f"A project can list at most {MAX_LARGE_PROJECT_TASKS} tasks ('tasks' and 'planned_tasks' together)."
+        )
+    if is_website and len(tasks) + len(planned) > MAX_WEBSITE_PROJECT_TASKS:
+        errors.append(
+            f"A website audit project can list at most {MAX_WEBSITE_PROJECT_TASKS} tasks ('tasks' and 'planned_tasks' together)."
         )
     if not tasks and not planned:
         errors.append("'planned_tasks' must list at least one task with a type and estimated_tokens.")
@@ -509,12 +525,20 @@ def load_project_files(directory: Path | None = None) -> list[ProjectFile]:
             continue
         files.append(ProjectFile(path=path, data=data, errors=validate_project(data, filename_stem=path.stem)))
     slugs: dict[str, Path] = {}
+    project_codes: dict[str, Path] = {}
     task_ids: dict[str, Path] = {}
     for pf in files:
         if pf.slug in slugs:
             pf.errors.append(f"Slug '{pf.slug}' is already used by {slugs[pf.slug].name}.")
         else:
             slugs[pf.slug] = pf.path
+        pcode = pf.data.get("project_code") if isinstance(pf.data, dict) else None
+        if isinstance(pcode, str) and pcode.strip():
+            code_clean = pcode.strip()
+            if code_clean in project_codes and project_codes[code_clean] != pf.path:
+                pf.errors.append(f"project_code '{code_clean}' is already used by {project_codes[code_clean].name}.")
+            else:
+                project_codes[code_clean] = pf.path
     former: dict[str, Path] = {}
     for pf in files:
         for old in former_slugs(pf.data):
@@ -554,6 +578,18 @@ def slug_aliases(directory: Path | None = None) -> dict[str, str]:
             continue
         for old in former_slugs(pf.data):
             out.setdefault(old, pf.slug)
+    return out
+
+
+def project_codes_by_slug(directory: Path | None = None) -> dict[str, str]:
+    """Map every project slug to its sequential public project code (P1, P2, P3, ...)."""
+    out = dict(CANONICAL_PROJECT_CODES)
+    for pf in load_project_files(directory):
+        if pf.errors or not pf.slug:
+            continue
+        code = pf.data.get("project_code")
+        if isinstance(code, str) and PROJECT_CODE_RE.fullmatch(code.strip()):
+            out[pf.slug] = code.strip()
     return out
 
 
@@ -809,8 +845,38 @@ def sync_projects(
                 )
             if getattr(db, "is_postgres", False):
                 conn.execute("SELECT id FROM missions WHERE id = ? FOR UPDATE", (mid,))
-            cnt = conn.execute("SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ?", (mid,)).fetchone()
-            conn.execute("UPDATE missions SET total_tasks = ? WHERE id = ?", (int(cnt["c"]), mid))
+            # Retire obsolete unstarted primary tasks removed or superseded in the project file,
+            # while strictly preserving any claimed/completed tasks and peer_verify history.
+            current_task_ids = [project_task_id(t["id"]) for t in tasks]
+            if current_task_ids:
+                existing_queued = conn.execute(
+                    "SELECT id FROM tasks WHERE mission_id = ? AND status = 'queued' "
+                    "AND task_type != 'peer_verify' AND claimed_by_agent_id IS NULL AND completed_at IS NULL",
+                    (mid,),
+                ).fetchall()
+                keep_ids = set(current_task_ids)
+                obsolete_ids = [str(r["id"]) for r in existing_queued if str(r["id"]) not in keep_ids]
+                for idx in range(0, len(obsolete_ids), 200):
+                    chunk = obsolete_ids[idx : idx + 200]
+                    ph = ",".join("?" for _ in chunk)
+                    conn.execute(
+                        f"DELETE FROM tasks WHERE mission_id = ? AND status = 'queued' "
+                        f"AND task_type != 'peer_verify' AND claimed_by_agent_id IS NULL AND completed_at IS NULL "
+                        f"AND id IN ({ph})",
+                        (mid, *chunk),
+                    )
+            cnt = conn.execute(
+                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify'",
+                (mid,),
+            ).fetchone()
+            done_cnt = conn.execute(
+                "SELECT COUNT(*) AS c FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status = 'completed'",
+                (mid,),
+            ).fetchone()
+            conn.execute(
+                "UPDATE missions SET total_tasks = ?, completed_tasks = ? WHERE id = ?",
+                (int(cnt["c"]), int(done_cnt["c"]), mid),
+            )
 
         # A project whose file was removed from the repository is archived (its record stays).
         active_ids = [project_mission_id(pf.data["slug"]) for pf in valid]

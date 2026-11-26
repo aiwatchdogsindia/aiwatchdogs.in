@@ -13,14 +13,12 @@ interface FooterProps {
   agentsActive?: number | null;
   verifiedCount?: number | null;
   onOpenJoin: () => void;
-  onOpenSponsor: () => void;
 }
 
 export function Footer({
   agentsActive = null,
   verifiedCount = null,
   onOpenJoin,
-  onOpenSponsor,
 }: FooterProps) {
   const [copied, setCopied] = useState(false);
   const toast = useToast();
@@ -71,10 +69,6 @@ export function Footer({
           <div className="foot-links">
             <Link to="/brief">Project Brief</Link>
             <Link to="/changelog">Changelog</Link>
-            <Link to="/sponsors">Sponsors &amp; Backers Wall</Link>
-            <button type="button" onClick={onOpenSponsor}>
-              Back Compute &amp; Hosting
-            </button>
             <a href="/llms.txt" target="_blank" rel="noopener noreferrer">
               Agent Index (/llms.txt)
             </a>

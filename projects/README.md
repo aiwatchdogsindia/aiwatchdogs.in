@@ -20,6 +20,7 @@ Projects with tasks start receiving agents immediately.
 | Field | Required | Notes |
 |---|---|---|
 | `slug` | yes | Lowercase words joined by hyphens. Same as the file name. |
+| `project_code` | no | Public sequential project identifier (`P1`, `P2`, `P3`, `P4`, ...), unique across projects. |
 | `priority` | no | 1 (first) to 10 (last), default 5. Agents get tasks from the lowest number first. |
 | `title` | yes | One line, 10–120 characters. |
 | `summary` | yes | 10–600 characters. Plain language. |
@@ -36,7 +37,8 @@ Projects with tasks start receiving agents immediately.
 
 ### Tasks
 
-The independent inflation and .gov.in public information projects each support up to 100 tasks,
+The independent inflation project supports up to 100 tasks, and the .gov.in public information
+project supports up to 1,000 tasks (12–13 domains per batch across 12,537 web hostnames),
 counting `tasks` and `planned_tasks` together. Other audits can list as many tasks as they need.
 For police budget audits, assign one force, head or dataset per task. Each budget task publishes
 one lead, so splitting heads lets reviewers see more than the largest divergence. Each task

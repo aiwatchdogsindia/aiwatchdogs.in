@@ -29,8 +29,31 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
     with TestClient(create_app(db_path=tmp_path / "hub.db", seed=True)) as client:
         public_url = f"/api/missions/{SLUG}"
         dashboard = client.get(public_url).json()
-        assert len({task["id"] for task in dashboard["tasks"]}) == 100
+        assert len({task["id"] for task in dashboard["tasks"]}) == 1000
         assert all(task["status"] == "queued" for task in dashboard["tasks"])
+
+        # Matrix endpoint returns all 159 checkpoints, 8 sections, 42 W1 checks
+        mat_resp = client.get(f"{public_url}/matrix")
+        assert mat_resp.status_code == 200
+        mat = mat_resp.json()
+        assert mat["matrix_version"] == "gigw-3.0-rti-2005-v1"
+        assert mat["summary"]["total_checkpoints"] == 159
+        assert mat["summary"]["w1_automated_checks_count"] == 42
+        assert len(mat["checkpoints"]) == 159
+        assert len(mat["sections"]) == 8
+        assert client.get("/api/missions/police-finances/matrix").status_code == 404
+
+        # Batch CSV endpoint serves exact checksummed manifests & rejects traversal / out-of-range names
+        import hashlib
+        b1_resp = client.get(f"{public_url}/batches/batch-0001.csv")
+        assert b1_resp.status_code == 200
+        assert "text/csv" in b1_resp.headers["content-type"]
+        assert "immutable" in b1_resp.headers.get("cache-control", "")
+        b1_task = next(t for t in dashboard["tasks"] if t["id"] == "prj-gov-in-public-information-0001")
+        assert hashlib.sha256(b1_resp.content).hexdigest() == b1_task["expected_sha256"]
+        assert client.get(f"{public_url}/batches/batch-1000.csv").status_code == 200
+        for bad_name in ("batch-0000.csv", "batch-1001.csv", "batch-001.csv", "verify.py", "..%2Fgov-in-public-information.json"):
+            assert client.get(f"{public_url}/batches/{bad_name}").status_code == 404
 
         inflation = client.get("/api/missions/independent-india-inflation").json()
         assert len({task["id"] for task in inflation["tasks"]}) == 100
@@ -64,7 +87,7 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         batch = PROJECTS / SLUG / Path(urlsplit(retrieval_url).path).name
         with batch.open(newline="") as file:
             assignments = list(csv.DictReader(file))
-        assert len(assignments) in (125, 126)
+        assert len(assignments) in (12, 13)
         unreachable = assignments[0]["domain"]
 
         def fetch_manifest(url, **kwargs):
@@ -76,8 +99,10 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
                 raise gov_pages.Unavailable("fetch_failed")
             if urlsplit(url).path == "/contact":
                 html = "<p>Public enquiries go to the information desk at help [at] example [dot] gov [dot] in.</p>"
+            elif urlsplit(url).path == "/rti":
+                html = "<p>Right to Information Act Section 4(1)(b) disclosures. CPIO and First Appellate Authority listed.</p>"
             else:
-                html = "<p>Public services and information from the department.</p><a href='/contact'>Contact us</a>"
+                html = "<p>Public services and information from the department.</p><a href='/contact'>Contact us</a><a href='/rti'>RTI</a>"
             return url, gov_pages.Page(html)
 
         monkeypatch.setattr(loader, "_fetch_remote_bytes", fetch_manifest)
@@ -90,6 +115,7 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
         assert response.status_code == 200, response.text
         report = response.json()
         assert report["review_status"] == "volunteer_observations"
+        assert report["matrix_version"] == "gigw-3.0-rti-2005-v1"
         assert report["manifest_sha256"] == task["payload"]["expected_sha256"]
         by_domain = {row["domain"]: row for row in report["observations"]}
         assert set(by_domain) == {row["domain"] for row in assignments}
@@ -100,21 +126,25 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
             row = by_domain[assignment["domain"]]
             assert row["outcome"] == "observed"
             assert row["pages"][0] == assignment["url"]
+            assert len(row["pages"]) == 3
             assert row["checks"]["contact_link"] == row["checks"]["email"] == "observed"
+            assert row["checks"]["gov_email_domain"] == "observed"
+            assert row["checks"]["rti_link"] == row["checks"]["pio_faa_disclosure"] == "observed"
             assert row["checks"]["postal_address"] == "not_observed"
         dashboard = client.get(public_url).json()
-        assert len(dashboard["tasks"]) == 100
+        assert len(dashboard["tasks"]) == 1000
         assert sum(task["status"] == "completed" for task in dashboard["tasks"]) == 1
 
 
 @pytest.mark.parametrize("fault", [
     "future", "stale", "personal_path", "encoded_private_path", "arbitrary_contact_gap",
     "missing_contact_page", "impossible_unknown", "two_pages_without_link", "wrong_host",
+    "invalid_not_applicable", "rti_na_non_exempt", "inconsistent_rti_unavailable",
 ])
 def test_public_report_rejects_inconsistent_or_private_evidence(monkeypatch, fault):
     monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(PROJECTS))
     payload = json.loads((PROJECTS / f"{SLUG}.json").read_text())["tasks"][0]["payload"]
-    with (PROJECTS / SLUG / "batch-001.csv").open(newline="") as file:
+    with (PROJECTS / SLUG / "batch-0001.csv").open(newline="") as file:
         rows = [{
             "domain": entry["domain"], "observed_at": "2026-11-25T08:30:00Z",
             "outcome": "unassessable", "reason": "robots_restricted", "pages": [],
@@ -142,6 +172,13 @@ def test_public_report_rejects_inconsistent_or_private_evidence(monkeypatch, fau
         row["pages"].append(root + "contact")
     elif fault == "wrong_host":
         row["pages"] = ["https://other.gov.in/contact"]
+    elif fault == "invalid_not_applicable":
+        row["checks"]["about_link"] = "not_applicable"
+    elif fault == "rti_na_non_exempt":
+        row["checks"]["rti_link"] = "not_applicable"
+    elif fault == "inconsistent_rti_unavailable":
+        row["reason"] = "rti_unavailable"
+        row["checks"]["rti_link"] = "observed"
     with pytest.raises(HTTPException) as exc:
         validate_batch(payload, rows, lease_started_at="2026-11-25T08:20:00Z", received_at="2026-11-25T08:35:00Z")
     assert exc.value.status_code == 422

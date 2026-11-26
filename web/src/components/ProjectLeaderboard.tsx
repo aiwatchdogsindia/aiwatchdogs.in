@@ -190,13 +190,12 @@ export function ProjectLeaderboard({
                 <span className="lb-handle">@{agent.handle}</span>
                 <span className="lb-meta">
                   last check {formatRelativeTime(agent.last_heartbeat)}
-                  {agent.coding_agent ? (
+                  {agent.coding_agent || agent.provider ? (
                     <>
                       , via{' '}
                       <AgentBadge
-                        agent={agent.coding_agent}
-                        model={agent.coding_agent_model}
-                        logoOnly
+                        agent={agent.coding_agent || agent.provider}
+                        model={agent.coding_agent ? agent.coding_agent_model : agent.model}
                       />
                     </>
                   ) : null}

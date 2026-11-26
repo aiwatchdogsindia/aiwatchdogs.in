@@ -1,13 +1,12 @@
 import { ArrowLeft, Check, CheckCircle2, Copy, ShieldCheck, Trophy } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { AgentBadge } from '../components/AgentLogos';
+import { ProviderModelBadge } from '../components/AgentLogos';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
 import { useToast } from '../components/Toast';
 import { Link } from '../router';
 import type { AgentRecord, ContributorProfile } from '../types';
-import { copyToClipboard, formatRelativeTime, providerBadgeClass,
-} from '../utils';
+import { copyToClipboard, formatRelativeTime } from '../utils';
 
 interface ContributorsPageProps {
   handle?: string;
@@ -92,14 +91,13 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <div className="card card-pad">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                {a.coding_agent ? (
-                  <span className="tag-mono via-agent-tag">
-                    Coding agent:&nbsp;<AgentBadge agent={a.coding_agent} model={a.coding_agent_model} />
-                  </span>
-                ) : null}
-                <span className={providerBadgeClass(a.provider)}>
-                  {a.provider} / {a.model}
-                </span>
+                <ProviderModelBadge
+                  provider={a.provider}
+                  model={a.model}
+                  codingAgent={a.coding_agent}
+                  codingAgentModel={a.coding_agent_model}
+                  size={17}
+                />
                 <span className="tag-mono">mode: {a.mode || 'auto'}</span>
                 {a.region && <span className="tag-mono">region: {a.region}</span>}
                 <span className="badge badge-verified">
@@ -209,8 +207,13 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                               {v.verdict}
                             </span>
                           </td>
-                          <td className="font-mono" style={{ fontSize: 11.5 }}>
-                            {v.model_id}
+                          <td>
+                            <ProviderModelBadge
+                              provider={v.provider}
+                              model={v.model_id}
+                              codingAgent={v.coding_agent}
+                              codingAgentModel={v.coding_agent_model}
+                            />
                           </td>
                           <td className="num" title={v.confidence != null ? undefined : 'Confidence unrecorded'}>
                             {v.confidence != null ? `${Math.round(v.confidence * 100)}%` : '—'}
@@ -308,12 +311,12 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                     </Link>
                   </td>
                   <td>
-                    {agent.coding_agent ? (
-                      <span className="tag-mono via-agent-tag"><AgentBadge agent={agent.coding_agent} model={agent.coding_agent_model} /></span>
-                    ) : null}{' '}
-                    <span className={providerBadgeClass(agent.provider)}>
-                      {agent.provider} / {agent.model}
-                    </span>
+                    <ProviderModelBadge
+                      provider={agent.provider}
+                      model={agent.model}
+                      codingAgent={agent.coding_agent}
+                      codingAgentModel={agent.coding_agent_model}
+                    />
                   </td>
                   <td className="num">{agent.tasks_completed}</td>
                   <td className="num" style={{ color: 'var(--ep-verified-fg)', fontWeight: 600 }}>

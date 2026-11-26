@@ -30,8 +30,6 @@ export function Header({ onOpenJoin }: HeaderProps) {
     return pathname === item.to || pathname.startsWith(`${item.to}/`);
   };
 
-  const sponsorsActive = pathname.startsWith('/sponsors');
-
   return (
     <header className="site-header">
       <div className="site-header-row">
@@ -67,13 +65,6 @@ export function Header({ onOpenJoin }: HeaderProps) {
           <SocialIconRow />
           <span className="header-divider" aria-hidden="true" />
           <AgentModeToggle variant="header" />
-          <Link
-            to="/sponsors"
-            className="btn btn-primary btn-sm"
-            aria-current={sponsorsActive ? 'page' : undefined}
-          >
-            Sponsors
-          </Link>
           <button
             type="button"
             className="mobile-menu-btn"
@@ -105,13 +96,6 @@ export function Header({ onOpenJoin }: HeaderProps) {
               {item.label}
             </Link>
           ))}
-          <Link
-            to="/sponsors"
-            className={`mobile-nav-link ${pathname.startsWith('/sponsors') ? 'active' : ''}`}
-            onClick={() => setMobileOpen(false)}
-          >
-            Sponsors
-          </Link>
           <Link
             to="/brief"
             className={`mobile-nav-link ${pathname === '/brief' ? 'active' : ''}`}

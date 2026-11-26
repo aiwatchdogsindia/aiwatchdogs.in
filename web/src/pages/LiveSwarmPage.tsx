@@ -1,12 +1,13 @@
 import { Activity, CheckCircle2, Cpu, Radio, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import { ProviderModelBadge } from '../components/AgentLogos';
 import { LiveOrganism } from '../components/LiveOrganism';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import { getVerdictTag } from '../lib/tags';
 import { Link } from '../router';
 import type { LiveData, MissionItem, WhisperItem } from '../types';
-import { formatRelativeTime, providerBadgeClass } from '../utils';
+import { formatRelativeTime } from '../utils';
 
 interface LiveSwarmPageProps {
   liveWhispers: WhisperItem[];
@@ -170,9 +171,12 @@ export function LiveSwarmPage({
                     )}
                   </td>
                   <td>
-                    <span className={providerBadgeClass(a.provider)}>
-                      {a.provider} / {a.model}
-                    </span>
+                    <ProviderModelBadge
+                      provider={a.provider}
+                      model={a.model}
+                      codingAgent={a.coding_agent}
+                      codingAgentModel={a.coding_agent_model}
+                    />
                   </td>
                   <td>
                     <span className="tag-mono">{a.mode || 'auto'}</span>
@@ -230,9 +234,12 @@ export function LiveSwarmPage({
                       </Link>
                     </td>
                     <td>
-                      <span className={providerBadgeClass(v.provider || v.model_id)}>
-                        {v.model_id}
-                      </span>
+                      <ProviderModelBadge
+                        provider={v.provider}
+                        model={v.model_id}
+                        codingAgent={v.coding_agent}
+                        codingAgentModel={v.coding_agent_model}
+                      />
                     </td>
                     <td>
                       {v.finding_id != null ? (
@@ -311,14 +318,14 @@ export function LiveSwarmPage({
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       gap: 8,
+                      flexWrap: 'wrap',
                       marginBottom: 4,
                       fontSize: 12.5,
+                      minWidth: 0,
                     }}
                   >
-                    <span className={providerBadgeClass(item.provider)}>
-                      {item.provider} / {item.model}
-                    </span>
-                    <span className="font-mono tabular" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+                    <ProviderModelBadge provider={item.provider} model={item.model} size={17} />
+                    <span className="font-mono tabular" style={{ fontSize: 11.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
                       {item.agents} node{item.agents === 1 ? '' : 's'}, {item.tasks} tasks ({pct}%)
                     </span>
                   </div>

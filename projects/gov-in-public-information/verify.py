@@ -1,9 +1,9 @@
-"""Reproduce the 100 assignments from the Data Libertarian directory snapshot.
+"""Reproduce the 1,000 assignments from the Data Libertarian directory snapshot.
 
 Download gov/data/snapshot.json at commit 2801dc7d932115c86aee39e51f4702799e1b0adc
 from https://github.com/piyushbodaa/datalibertarian, then run
     python projects/gov-in-public-information/verify.py path/to/snapshot.json
-Add --write to regenerate the CSV files.
+Add --write to regenerate the 1,000 CSV files.
 """
 
 import argparse
@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 DIRECTORY = Path(__file__).resolve().parent
 SNAPSHOT_SHA256 = "e995ecdb2f87c8f1941fd259603afb9ccbd56f32e7ce06f733052b9eff6cb19c"
-BATCHES = 100
+BATCHES = 1000
 HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+gov\.in")
 # The directory sometimes cites an application action, session or document.
 # Keep known home page forms and language landing pages. Otherwise start at /.
@@ -64,23 +64,25 @@ def batches(assignments):
         writer = csv.writer(buf, lineterminator="\n")
         writer.writerow(("domain", "url"))
         writer.writerows(assignments[start:end])
-        yield f"batch-{number:03d}.csv", buf.getvalue().encode("utf-8")
+        yield f"batch-{number:04d}.csv", buf.getvalue().encode("utf-8")
         start = end
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("snapshot", type=Path)
-    parser.add_argument("--write", action="store_true", help="recreate the CSV files")
+    parser.add_argument("--write", action="store_true", help="recreate the 1,000 CSV files")
     args = parser.parse_args()
     expected = dict(batches(inventory(args.snapshot.read_bytes())))
     if args.write:
+        for old in DIRECTORY.glob("batch-*.csv"):
+            old.unlink()
         for name, content in expected.items():
             (DIRECTORY / name).write_bytes(content)
         return
     paths = {p.name for p in DIRECTORY.glob("batch-*.csv")}
     if paths != set(expected):
-        raise ValueError("Manifest filenames differ from the 100 expected batches")
+        raise ValueError("Manifest filenames differ from the 1,000 expected batches")
     project = json.loads(DIRECTORY.with_suffix(".json").read_text())
     if len(project["tasks"]) != BATCHES:
         raise ValueError("Expected one task per manifest")
@@ -90,13 +92,10 @@ def main():
         payload = task["payload"]
         if payload["expected_sha256"] != hashlib.sha256(content).hexdigest():
             raise ValueError(f"Project checksum differs for {name}")
-        if not re.fullmatch(
-            r"https://raw\.githubusercontent\.com/aiwatchdogsindia/aiwatchdogs\.in/"
-            rf"[a-f0-9]{{40}}/projects/gov-in-public-information/{re.escape(name)}",
-            payload["retrieval_url"],
-        ):
-            raise ValueError(f"Project URL differs for {name}")
-    print("Verified 100 batches covering 12,537 unique web hostnames. 26 infrastructure entries excluded.")
+        expected_url = f"https://aiwatchdogs.in/api/missions/gov-in-public-information/batches/{name}"
+        if payload["retrieval_url"] != expected_url:
+            raise ValueError(f"Project URL differs for {name}: got {payload['retrieval_url']!r}")
+    print("Verified 1,000 batches covering 12,537 unique web hostnames. 26 infrastructure entries excluded.")
 
 
 if __name__ == "__main__":
