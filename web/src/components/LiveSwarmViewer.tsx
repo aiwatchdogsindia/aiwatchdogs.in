@@ -210,11 +210,11 @@ function resolveRoleVisual(node: LiveSwarmNode): RoleVisual {
   if (status === 'idle' || status === 'recent') {
     return ROLE_VISUALS.idle;
   }
-  if (role.includes('verif') || status === 'verifying') {
-    return ROLE_VISUALS.peer_verifier;
-  }
   if (role.includes('adjudic') || role.includes('tie')) {
     return ROLE_VISUALS.adjudicator;
+  }
+  if (role.includes('verif') || status === 'verifying') {
+    return ROLE_VISUALS.peer_verifier;
   }
   if (role.includes('audit') || status === 'working' || status === 'active') {
     return ROLE_VISUALS.auditor;
@@ -252,10 +252,10 @@ function formatRoleSubtitle(node: LiveSwarmNode, visual: RoleVisual): {
 } {
   const rawRole = (node.role || '').toLowerCase();
   const roleText =
-    rawRole.includes('verif')
-      ? 'Peer Verifier'
-      : rawRole.includes('adjudic')
-        ? 'Adjudicator'
+    rawRole.includes('adjudic') || rawRole.includes('tie')
+      ? 'Adjudicator'
+      : rawRole.includes('verif')
+        ? 'Peer Verifier'
         : rawRole.includes('audit')
           ? 'Auditor'
           : isNodeActivelyWorking(node)
@@ -288,10 +288,10 @@ function formatLiveActionLine(node: LiveSwarmNode): string {
   const status = (node.status || '').toLowerCase();
   const role = (node.role || '').toLowerCase();
   const verb =
-    status === 'verifying' || role.includes('verif')
-      ? 'verifying'
-      : role.includes('adjudic')
-        ? 'adjudicating'
+    role.includes('adjudic') || role.includes('tie')
+      ? 'adjudicating'
+      : status === 'verifying' || role.includes('verif')
+        ? 'verifying'
         : 'auditing';
 
   if (node.current_task_title) {
@@ -354,7 +354,9 @@ function formatHubEventPill(
       return (
         et === 'finding_verified' ||
         et === 'verification_recorded' ||
+        et === 'cleared' ||
         et === 'scan_cleared' ||
+        et === 'website_batch_observed' ||
         et === 'finding_submitted' ||
         et === 'task_claimed'
       );
@@ -380,7 +382,7 @@ function formatHubEventPill(
     verb = 'verified';
   } else if (et === 'verification_recorded') {
     verb = 'checked';
-  } else if (et === 'scan_cleared' || et === 'website_batch_observed') {
+  } else if (et === 'cleared' || et === 'scan_cleared' || et === 'website_batch_observed') {
     verb = 'cleared';
   } else if (et === 'finding_submitted') {
     verb = 'flagged';
@@ -1165,11 +1167,15 @@ export function LiveSwarmViewer({
                       isNodeActivelyWorking(selectedNode) ? 'lsv-dot--live' : 'lsv-dot--offline'
                     }`}
                   />
-                  {selectedNode.status === 'verifying'
-                    ? 'Peer verifying'
-                    : isNodeActivelyWorking(selectedNode)
-                      ? 'Working live'
-                      : 'Recently active'}
+                  {((selectedNode.role || '').toLowerCase().includes('adjudic') ||
+                    (selectedNode.role || '').toLowerCase().includes('tie')) &&
+                  isNodeActivelyWorking(selectedNode)
+                    ? 'Adjudicating'
+                    : selectedNode.status === 'verifying'
+                      ? 'Peer verifying'
+                      : isNodeActivelyWorking(selectedNode)
+                        ? 'Working live'
+                        : 'Recently active'}
                 </span>
                 <ProviderModelBadge
                   codingAgent={selectedNode.coding_agent}
