@@ -28,13 +28,24 @@ import type {
   MissionItem,
   MissionTask,
   ProjectVisualSummary,
+  VisualOnlyOneBidAuthority,
+  VisualOnlyOneBidCohortCounts,
+  VisualOnlyOneBidRepeatWinner,
   VisualParliamentHouseCounts,
   VisualParliamentMinistry,
   VisualWebsiteCheckpoint,
   VisualWebsiteMatrixItem,
   WebsiteVerificationMode,
 } from '../types';
-import { formatAssuranceStatus, formatInrCr, safeExternalUrl } from '../utils';
+import {
+  formatAssuranceStatus,
+  formatInr,
+  formatInrCr,
+  formatProcurementAmountType,
+  formatProcurementSignal,
+  formatSingleBidMechanism,
+  safeExternalUrl,
+} from '../utils';
 
 export type { ProjectVisualSummary };
 
@@ -1143,6 +1154,16 @@ export function ProjectResultsVisualizer({
   if (code === 'P6') {
     return (
       <ParliamentsToDoListVisualizer
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P7') {
+    return (
+      <OnlyOneBidVisualiser
         mission={mission}
         visualSummary={visualSummary}
         onSelectFinding={onSelectFinding}
@@ -4142,6 +4163,1441 @@ function ParliamentsToDoListVisualizer({
             Assurance leads appear here as contributor agents verify tasks. Every entry cites the
             verbatim original promise, recorded Digital Sansad status, and what the follow-up actually
             answered with SHA-256 provenance.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3G. P7 Only One Bid: single-bidder tenders & repeat-winner procurement patterns (2016–2026) ---------- */
+
+const P7_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/only-one-bid/METHODOLOGY.md';
+export const P7_DEFAULT_HOOK =
+  'When a public tender draws only one bid — or the same contractor keeps winning — what do the official records show?';
+const P7_INITIAL_AUTHORITIES = 12;
+const P7_INITIAL_WINNERS = 10;
+
+export type P7CohortKey = 'single_bidder' | 'repeat_winner' | 'both';
+
+export interface P7NormalizedCohort {
+  key: P7CohortKey;
+  label: string;
+  shortLabel: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  flagged_inr_cr: number;
+}
+
+export interface P7NormalizedSignal {
+  key:
+    | 'single_bidder_repeat_winner'
+    | 'unexplained_single_bidder'
+    | 'repeat_winner_concentration'
+    | 'short_window_or_process_gap';
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  fillClass: string;
+  count: number;
+  sharePct: number;
+}
+
+export function p7CohortLabel(cohort: string): string {
+  const k = (cohort || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (k === 'single_bidder' || k === 'sb') return 'Single Bidder';
+  if (k === 'repeat_winner' || k === 'rw') return 'Repeat Winner';
+  if (k === 'both' || k === 'bo' || k === 'single_bidder_repeat_winner') {
+    return 'Both: Single Bid + Repeat Winner';
+  }
+  return cohort ? cohort.replace(/_/g, ' ') : 'Procurement Cohort';
+}
+
+export function p7SignalLabel(signal: string): string {
+  return formatProcurementSignal(signal).label;
+}
+
+/** Exact procuring-authority prefix token matching every P7 task title (`"${authority} · FY..."`). */
+export function p7AuthorityFilterQuery(authority: string): string {
+  const clean = authority.trim();
+  return clean ? `${clean} ·` : '';
+}
+
+/** Filter token for a 10-year row in P7 (`FY2021-22` when provided, else the year token). */
+export function p7YearFilterQuery(year: string, fiscalYear?: string): string {
+  const fy = (fiscalYear || '').trim();
+  if (fy) return fy;
+  return (year || '').trim();
+}
+
+/** Normalize Track A `year_range` (either `["2016", "2026"]` or `"2016–2026"`) into a display range. */
+export function p7FormatYearRange(raw?: string | string[] | null): string {
+  if (Array.isArray(raw)) {
+    const clean = raw.map((x) => String(x || '').trim()).filter(Boolean);
+    if (clean.length >= 2) return `${clean[0]}–${clean[clean.length - 1]}`;
+    if (clean.length === 1) return clean[0];
+    return '2016–2026';
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.trim();
+  }
+  return '2016–2026';
+}
+
+export function p7NormalizeCohorts(
+  byCohort?: Record<string, VisualOnlyOneBidCohortCounts | number> | null,
+): {
+  singleBidder: P7NormalizedCohort;
+  repeatWinner: P7NormalizedCohort;
+  both: P7NormalizedCohort;
+  totalTasks: number;
+  totalDone: number;
+  totalClaimed: number;
+  totalOpen: number;
+} {
+  const readBucket = (
+    key: P7CohortKey,
+    shortLabel: string,
+    aliases: string[],
+  ): P7NormalizedCohort => {
+    let raw: VisualOnlyOneBidCohortCounts | number | undefined;
+    for (const [k, v] of Object.entries(byCohort || {})) {
+      const norm = k.trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (aliases.includes(norm)) {
+        raw = v;
+        break;
+      }
+    }
+    if (typeof raw === 'number') {
+      const tasks = Math.max(0, raw);
+      return {
+        key,
+        label: p7CohortLabel(key),
+        shortLabel,
+        tasks,
+        done: 0,
+        claimed: 0,
+        open: tasks,
+        pct: 0,
+        leads: 0,
+        flagged_inr_cr: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    const tasks = Math.max(0, Number(obj?.tasks) || 0);
+    const done = Math.max(0, Number(obj?.done) || 0);
+    const claimed = Math.max(0, Number(obj?.claimed) || 0);
+    const open =
+      obj?.open != null ? Math.max(0, Number(obj.open) || 0) : Math.max(0, tasks - done - claimed);
+    const pct =
+      obj?.pct != null && Number.isFinite(Number(obj.pct))
+        ? Math.max(0, Number(obj.pct))
+        : calcPct(done, tasks);
+    return {
+      key,
+      label: p7CohortLabel(key),
+      shortLabel,
+      tasks,
+      done,
+      claimed,
+      open,
+      pct,
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      flagged_inr_cr: Math.max(0, Number(obj?.flagged_inr_cr) || 0),
+    };
+  };
+
+  const singleBidder = readBucket('single_bidder', 'Single Bidder', ['single_bidder', 'sb']);
+  const repeatWinner = readBucket('repeat_winner', 'Repeat Winner', ['repeat_winner', 'rw']);
+  const both = readBucket('both', 'Both: Single Bid + Repeat', [
+    'both',
+    'bo',
+    'single_bidder_repeat_winner',
+  ]);
+
+  return {
+    singleBidder,
+    repeatWinner,
+    both,
+    totalTasks: singleBidder.tasks + repeatWinner.tasks + both.tasks,
+    totalDone: singleBidder.done + repeatWinner.done + both.done,
+    totalClaimed: singleBidder.claimed + repeatWinner.claimed + both.claimed,
+    totalOpen: singleBidder.open + repeatWinner.open + both.open,
+  };
+}
+
+export function p7NormalizeSignals(bySignal?: Record<string, number> | null): {
+  items: P7NormalizedSignal[];
+  total: number;
+} {
+  const ordered: Array<{
+    key: P7NormalizedSignal['key'];
+    fillClass: string;
+  }> = [
+    { key: 'single_bidder_repeat_winner', fillClass: 'pv-p7-signal-fill--combined' },
+    { key: 'unexplained_single_bidder', fillClass: 'pv-p7-signal-fill--single' },
+    { key: 'repeat_winner_concentration', fillClass: 'pv-p7-signal-fill--repeat' },
+    { key: 'short_window_or_process_gap', fillClass: 'pv-p7-signal-fill--process' },
+  ];
+
+  const counts = ordered.map(({ key }) => Math.max(0, Number(bySignal?.[key]) || 0));
+  const total = counts.reduce((acc, n) => acc + n, 0);
+
+  const items: P7NormalizedSignal[] = ordered.map(({ key, fillClass }, idx) => {
+    const meta = formatProcurementSignal(key);
+    const count = counts[idx];
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      fillClass,
+      count,
+      sharePct: calcPct(count, total),
+    };
+  });
+
+  return { items, total };
+}
+
+export function p7FilterAuthorities(
+  authorities: VisualOnlyOneBidAuthority[],
+  query: string,
+  cohortFilter: 'all' | P7CohortKey = 'all',
+  jurisdictionFilter = 'all',
+): VisualOnlyOneBidAuthority[] {
+  const q = query.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+  return authorities.filter((a) => {
+    if (cohortFilter === 'single_bidder' && (a.single_bidder_tasks ?? 0) <= 0) return false;
+    if (cohortFilter === 'repeat_winner' && (a.repeat_winner_tasks ?? 0) <= 0) return false;
+    if (cohortFilter === 'both' && (a.both_tasks ?? 0) <= 0) return false;
+    if (jur && jur !== 'all' && (a.jurisdiction || '').trim().toLowerCase() !== jur) return false;
+    if (!q) return true;
+    return (
+      a.authority.toLowerCase().includes(q) ||
+      (a.authority_key || '').toLowerCase().includes(q) ||
+      (a.jurisdiction || '').toLowerCase().includes(q) ||
+      (a.portal || '').toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p7FilterRepeatWinners(
+  winners: VisualOnlyOneBidRepeatWinner[],
+  query: string,
+  jurisdictionFilter = 'all',
+): VisualOnlyOneBidRepeatWinner[] {
+  const q = query.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+  return winners.filter((w) => {
+    if (jur && jur !== 'all' && (w.jurisdiction || '').trim().toLowerCase() !== jur) return false;
+    if (!q) return true;
+    return (
+      w.winner_name.toLowerCase().includes(q) ||
+      (w.normalized_winner_key || '').toLowerCase().includes(q) ||
+      w.authority.toLowerCase().includes(q) ||
+      (w.jurisdiction || '').toLowerCase().includes(q) ||
+      (w.portal || '').toLowerCase().includes(q)
+    );
+  });
+}
+
+function p7ShortText(text?: string | null, maxLen = 140): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+export function OnlyOneBidVisualiser({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p7 = visualSummary?.only_one_bid;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [selectedCohort, setSelectedCohort] = useState<'all' | P7CohortKey>('all');
+  const [selectedJurisdiction, setSelectedJurisdiction] = useState('all');
+  const [authorityQuery, setAuthorityQuery] = useState('');
+  const [showAllAuthorities, setShowAllAuthorities] = useState(false);
+  const [winnerQuery, setWinnerQuery] = useState('');
+  const [showAllWinners, setShowAllWinners] = useState(false);
+
+  const hook = p7?.hook?.trim() || P7_DEFAULT_HOOK;
+  const yearRange = p7FormatYearRange(p7?.year_range);
+  const totalTasks = p7?.total_tasks ?? mission.total_tasks ?? 0;
+  const portalsCovered = p7?.portals_covered ?? 0;
+  const authorities = p7?.top_authorities ?? [];
+  const authoritiesCovered = p7?.authorities_covered ?? authorities.length;
+  const repeatWinners = p7?.top_repeat_winners ?? [];
+  const distinctRepeatWinners = p7?.distinct_repeat_winners ?? repeatWinners.length;
+  const years = p7?.years ?? [];
+  const jurisdictions = p7?.jurisdictions ?? [];
+  const topLeads = p7?.top_leads ?? [];
+  const anchor = p7?.anchor_case ?? null;
+
+  const leads = p7?.leads ?? 0;
+  const verified = p7?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p7?.peer_review ?? mission.peer_review_count ?? 0;
+  const clearedTasks = p7?.cleared_tasks ?? mission.cleared_tasks_count ?? 0;
+  const flaggedTotalCr = p7?.flagged_total_inr_cr ?? 0;
+  const documentsUrl = p7?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p7?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const cohorts = useMemo(() => p7NormalizeCohorts(p7?.by_cohort), [p7?.by_cohort]);
+  const signals = useMemo(() => p7NormalizeSignals(p7?.by_signal), [p7?.by_signal]);
+
+  const filteredAuthorities = useMemo(
+    () => p7FilterAuthorities(authorities, authorityQuery, selectedCohort, selectedJurisdiction),
+    [authorities, authorityQuery, selectedCohort, selectedJurisdiction],
+  );
+  const visibleAuthorities =
+    showAllAuthorities ||
+    authorityQuery.trim().length > 0 ||
+    selectedCohort !== 'all' ||
+    selectedJurisdiction !== 'all'
+      ? filteredAuthorities
+      : filteredAuthorities.slice(0, P7_INITIAL_AUTHORITIES);
+
+  const filteredWinners = useMemo(
+    () => p7FilterRepeatWinners(repeatWinners, winnerQuery, selectedJurisdiction),
+    [repeatWinners, winnerQuery, selectedJurisdiction],
+  );
+  const visibleWinners =
+    showAllWinners || winnerQuery.trim().length > 0 || selectedJurisdiction !== 'all'
+      ? filteredWinners
+      : filteredWinners.slice(0, P7_INITIAL_WINNERS);
+
+  const cohortDenominator = cohorts.totalTasks || totalTasks;
+  const singleCohortPct = calcPct(cohorts.singleBidder.tasks, cohortDenominator);
+  const repeatCohortPct = calcPct(cohorts.repeatWinner.tasks, cohortDenominator);
+  const bothCohortPct = calcPct(cohorts.both.tasks, cohortDenominator);
+
+  const maxYearFlagged = Math.max(1, ...years.map((y) => y.flagged_inr_cr || 0));
+
+  const anchorSignal = anchor?.signal_category
+    ? formatProcurementSignal(anchor.signal_category)
+    : null;
+  const anchorMech = anchor?.single_bid_mechanism
+    ? formatSingleBidMechanism(anchor.single_bid_mechanism)
+    : null;
+  const anchorTargetInr = anchor
+    ? anchor.award_value_inr != null && anchor.award_value_inr > 0
+      ? anchor.award_value_inr
+      : anchor.tender_estimate_inr != null && anchor.tender_estimate_inr > 0
+        ? anchor.tender_estimate_inr
+        : anchor.target_value_inr_cr != null && anchor.target_value_inr_cr > 0
+          ? anchor.target_value_inr_cr * 1e7
+          : null
+    : null;
+  const anchorCohortInr = anchor
+    ? anchor.winner_cohort_total_inr != null && anchor.winner_cohort_total_inr > 0
+      ? anchor.winner_cohort_total_inr
+      : anchor.winner_cohort_total_inr_cr != null && anchor.winner_cohort_total_inr_cr > 0
+        ? anchor.winner_cohort_total_inr_cr * 1e7
+        : null
+    : null;
+  const anchorPrimaryUrl = safeExternalUrl(anchor?.record_url || anchor?.source_url);
+  const anchorSecondaryUrl = safeExternalUrl(anchor?.secondary_url);
+
+  const cohortCards: Array<{
+    bucket: P7NormalizedCohort;
+    pct: number;
+    btnClass: string;
+    desc: string;
+  }> = [
+    {
+      bucket: cohorts.singleBidder,
+      pct: singleCohortPct,
+      btnClass: 'pv-p7-cohort-btn--single',
+      desc: 'One effective bid recorded',
+    },
+    {
+      bucket: cohorts.repeatWinner,
+      pct: repeatCohortPct,
+      btnClass: 'pv-p7-cohort-btn--repeat',
+      desc: 'Multi-award concentration cohort',
+    },
+    {
+      bucket: cohorts.both,
+      pct: bothCohortPct,
+      btnClass: 'pv-p7-cohort-btn--both',
+      desc: 'Single-bid award to repeat winner',
+    },
+  ];
+
+  return (
+    <section className="card card-pad pv-results" aria-label="Only One Bid procurement audit results">
+      {/* Header + Summary Pills */}
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Only One Bid ({yearRange})</h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">{fmtCount(totalTasks)} tender tasks</span>
+          {portalsCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(portalsCovered)} {portalsCovered === 1 ? 'portal' : 'portals'}
+            </span>
+          ) : null}
+          {authoritiesCovered > 0 ? (
+            <span className="tag-mono">{fmtCount(authoritiesCovered)} authorities</span>
+          ) : null}
+          {distinctRepeatWinners > 0 ? (
+            <span className="tag-mono">{fmtCount(distinctRepeatWinners)} repeat winners</span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'pattern lead' : 'pattern leads'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+          {clearedTasks > 0 ? (
+            <span className={FINDING_TAGS.cleared.badgeClass}>
+              {fmtCount(clearedTasks)} {FINDING_TAGS.cleared.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Headline KPIs + Interactive Cohort & 4-Signal Breakdown */}
+      <div className="pv-p7-overview">
+        <div className="pv-p7-kpi-grid">
+          <div className="pv-overview-tile pv-p7-kpi--tasks">
+            <span className="pv-overview-kicker">Procurement tasks ({yearRange})</span>
+            <span className="pv-overview-num tabular">{fmtCount(totalTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {portalsCovered > 0 ? `${fmtCount(portalsCovered)} portals · ` : ''}
+              {fmtCount(authoritiesCovered)} procuring authorities
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p7-kpi--leads">
+            <span className="pv-overview-kicker">Pattern leads &amp; cleared</span>
+            <span className="pv-overview-num tabular">{fmtCount(leads)}</span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(verified)} verified · {fmtCount(inReview)} in review · {fmtCount(clearedTasks)} cleared
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p7-kpi--winners">
+            <span className="pv-overview-kicker">Distinct repeat winners</span>
+            <span className="pv-overview-num tabular">{fmtCount(distinctRepeatWinners)}</span>
+            <span className="pv-overview-sub tabular">
+              Entity-normalized multi-award cohorts
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p7-kpi--value">
+            <span className="pv-overview-kicker">Flagged target value</span>
+            <span className="pv-overview-num tabular">
+              {flaggedTotalCr > 0 ? formatInrCr(flaggedTotalCr) : '₹0 Cr'}
+            </span>
+            <span className="pv-overview-sub">
+              Target tenders only (never double-counted)
+            </span>
+          </div>
+        </div>
+
+        {/* Interactive Cohort Breakdown */}
+        {cohorts.totalTasks > 0 ? (
+          <div className="pv-p7-cohort-panel">
+            <div className="pv-p7-cohort-head">
+              <h3>Cohort breakdown (select a cohort to filter authorities)</h3>
+              <div className="pv-mini-legend">
+                <span>
+                  <i className="pv-dot pv-p7-dot--single" aria-hidden="true" /> Single Bidder
+                </span>
+                <span>
+                  <i className="pv-dot pv-p7-dot--repeat" aria-hidden="true" /> Repeat Winner
+                </span>
+                <span>
+                  <i className="pv-dot pv-p7-dot--both" aria-hidden="true" /> Both
+                </span>
+                {selectedCohort !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedCohort('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All cohorts</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              className="pv-p7-cohort-bar"
+              role="img"
+              aria-label={`Procurement cohorts across ${fmtCount(cohorts.totalTasks)} tasks: ${fmtCount(cohorts.singleBidder.tasks)} Single Bidder (${fmtPct(singleCohortPct)}), ${fmtCount(cohorts.repeatWinner.tasks)} Repeat Winner (${fmtPct(repeatCohortPct)}), ${fmtCount(cohorts.both.tasks)} Both Single Bid and Repeat Winner (${fmtPct(bothCohortPct)})`}
+            >
+              {singleCohortPct > 0 ? (
+                <span
+                  className="pv-p7-seg pv-p7-seg--single"
+                  style={{ width: `${singleCohortPct}%` }}
+                  title={`Single Bidder: ${fmtCount(cohorts.singleBidder.tasks)} (${fmtPct(singleCohortPct)})`}
+                />
+              ) : null}
+              {repeatCohortPct > 0 ? (
+                <span
+                  className="pv-p7-seg pv-p7-seg--repeat"
+                  style={{ width: `${repeatCohortPct}%` }}
+                  title={`Repeat Winner: ${fmtCount(cohorts.repeatWinner.tasks)} (${fmtPct(repeatCohortPct)})`}
+                />
+              ) : null}
+              {bothCohortPct > 0 ? (
+                <span
+                  className="pv-p7-seg pv-p7-seg--both"
+                  style={{ width: `${bothCohortPct}%` }}
+                  title={`Both: Single Bid + Repeat Winner: ${fmtCount(cohorts.both.tasks)} (${fmtPct(bothCohortPct)})`}
+                />
+              ) : null}
+            </div>
+
+            <div className="pv-p7-cohort-cards" role="group" aria-label="Filter by procurement cohort">
+              {cohortCards.map(({ bucket, pct, btnClass, desc }) => {
+                const isSelected = selectedCohort === bucket.key;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    className={`pv-p7-cohort-btn ${btnClass}`}
+                    onClick={() =>
+                      setSelectedCohort((prev) => (prev === bucket.key ? 'all' : bucket.key))
+                    }
+                  >
+                    <span className="pv-p7-cohort-btn-top">
+                      <span className="pv-p7-cohort-name">{bucket.label}</span>
+                      <span className="pv-p7-cohort-share tabular">{fmtPct(pct)}</span>
+                    </span>
+                    <span className="pv-p7-cohort-num tabular">{fmtCount(bucket.tasks)} tasks</span>
+                    <span className="pv-p7-cohort-sub tabular">
+                      {fmtCount(bucket.done)}/{fmtCount(bucket.tasks)} checked ({fmtPct(bucket.pct)})
+                      {bucket.claimed > 0 ? ` · ${fmtCount(bucket.claimed)} running` : ''}
+                    </span>
+                    <span className="pv-p7-cohort-sub">{desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* 4-Signal Breakdown */}
+        <div className="pv-p7-cohort-panel">
+          <div className="pv-p7-cohort-head">
+            <h3>Signal categories (4 deterministic procurement checks)</h3>
+            <span className="pv-chart-note tabular">
+              {signals.total > 0
+                ? `${fmtCount(signals.total)} flagged ${signals.total === 1 ? 'lead' : 'leads'} across 4 rule groups`
+                : 'Counts populate as contributor agents verify procurement tasks'}
+            </span>
+          </div>
+          <div className="pv-p7-signals-grid">
+            {signals.items.map((sig) => (
+              <div key={sig.key} className="pv-p7-signal-row">
+                <div className="pv-p7-signal-top">
+                  <span className={sig.chipClass}>{sig.label}</span>
+                  <span className="pv-p7-signal-count tabular">
+                    <strong>{fmtCount(sig.count)}</strong>
+                    {signals.total > 0 ? ` (${fmtPct(sig.sharePct)})` : ''}
+                  </span>
+                </div>
+                <span className="pv-p7-signal-track" aria-hidden="true">
+                  <span
+                    className={`pv-p7-signal-fill ${sig.fillClass}`}
+                    style={{ width: `${sig.count > 0 ? Math.max(4, sig.sharePct) : 0}%` }}
+                  />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Featured Anchor Case Dossier Card */}
+      {anchor ? (
+        <article className="pv-p6-anchor" aria-label="Featured public procurement record">
+          <div className="pv-p6-anchor-head">
+            <div className="pv-p6-anchor-meta">
+              <span className="pv-p6-anchor-eyebrow">Featured case · Official procurement record</span>
+              {anchor.portal ? <span className="tag-mono">{anchor.portal}</span> : null}
+              {anchor.jurisdiction ? <span className="tag-mono">{anchor.jurisdiction}</span> : null}
+              <span className="tag-mono">{anchor.authority}</span>
+              {anchor.fiscal_year ? (
+                <span className="tag-mono tabular">{anchor.fiscal_year}</span>
+              ) : null}
+              {anchor.tender_id || anchor.ocid ? (
+                <span className="tag-mono font-mono">{anchor.tender_id || anchor.ocid}</span>
+              ) : null}
+              {anchor.procurement_method ? (
+                <span className="tag-mono">{anchor.procurement_method}</span>
+              ) : null}
+            </div>
+            {anchorSignal ? (
+              <span className={anchorSignal.chipClass}>{anchorSignal.label}</span>
+            ) : null}
+          </div>
+
+          <h3 className="pv-p6-anchor-title">
+            {anchor.tender_title || anchor.title || `${anchor.authority} — ${anchor.tender_id || 'Featured Tender'}`}
+          </h3>
+
+          {anchor.summary ? <p className="pv-p6-anchor-people">{anchor.summary}</p> : null}
+
+          <div className="pv-p6-anchor-grid">
+            <div className="pv-p6-anchor-col">
+              <div className="pv-p6-anchor-label">01 · Bid competition</div>
+              <p className="pv-p6-anchor-text tabular">
+                {anchor.bids_received != null ? (
+                  <>
+                    <strong>{fmtCount(anchor.bids_received)}</strong>{' '}
+                    {anchor.bids_received === 1 ? 'bid received' : 'bids received'}
+                  </>
+                ) : anchor.effective_bids != null ? (
+                  <>
+                    <strong>{fmtCount(anchor.effective_bids)}</strong> effective{' '}
+                    {anchor.effective_bids === 1 ? 'bid' : 'bids'}
+                  </>
+                ) : (
+                  'Bid count unrecorded in summary'
+                )}
+                {anchor.technically_qualified_bids != null
+                  ? ` · ${fmtCount(anchor.technically_qualified_bids)} technically qualified`
+                  : ''}
+                {anchorMech ? ` (${anchorMech})` : ''}
+                {anchor.bid_window_days != null
+                  ? ` · ${fmtCount(anchor.bid_window_days)}-day bid window.`
+                  : '.'}
+              </p>
+            </div>
+
+            <div className="pv-p6-anchor-col">
+              <div className="pv-p6-anchor-label">02 · Repeat-winner pattern</div>
+              <p className="pv-p6-anchor-text tabular">
+                <strong>{anchor.winner_name || 'Awardee unrecorded'}</strong>
+                {anchor.winner_total_wins != null && anchor.winner_total_wins > 0
+                  ? ` — ${fmtCount(anchor.winner_total_wins)} recorded awards at this authority`
+                  : ''}
+                {anchor.winner_single_bid_wins != null && anchor.winner_single_bid_wins > 0
+                  ? ` (${fmtCount(anchor.winner_single_bid_wins)} single-bid)`
+                  : ''}
+                {anchor.winner_share_by_count_pct != null
+                  ? ` · ${anchor.winner_share_by_count_pct.toFixed(1)}% share`
+                  : ''}
+                {anchor.consecutive_win_streak != null && anchor.consecutive_win_streak >= 2
+                  ? ` · ${fmtCount(anchor.consecutive_win_streak)}-win streak`
+                  : ''}
+                .
+              </p>
+            </div>
+
+            <div className="pv-p6-anchor-col">
+              <div className="pv-p6-anchor-label">03 · Target value vs cohort &amp; rule</div>
+              <p className="pv-p6-anchor-text tabular">
+                <strong>
+                  {formatProcurementAmountType(anchor.amount_type)}:{' '}
+                  {anchorTargetInr != null ? formatInr(anchorTargetInr) : 'Unrecorded'}
+                </strong>
+                {anchorCohortInr != null
+                  ? ` (Repeat cohort context: ${formatInr(anchorCohortInr)} — tracked separately).`
+                  : '.'}
+                {anchor.governing_instrument ? ` Benchmark: ${anchor.governing_instrument}.` : ''}
+              </p>
+            </div>
+          </div>
+
+          <div className="pv-p6-anchor-actions">
+            {anchor.finding_id && onSelectFinding ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => onSelectFinding(anchor.finding_id!)}
+              >
+                Inspect full dossier
+              </button>
+            ) : onFilterTasks ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() =>
+                  onFilterTasks(anchor.tender_id || p7AuthorityFilterQuery(anchor.authority))
+                }
+              >
+                Find task in queue
+              </button>
+            ) : null}
+            {anchorPrimaryUrl ? (
+              <a
+                className="inline-link"
+                href={anchorPrimaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Official procurement record <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+              </a>
+            ) : null}
+            {anchorSecondaryUrl ? (
+              <a
+                className="inline-link"
+                href={anchorSecondaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Companion shard <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+              </a>
+            ) : null}
+          </div>
+        </article>
+      ) : null}
+
+      {/* 10-Year Trend (2016–2026) + How to Read This & Official Source Downloads */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>10-year trend ({yearRange})</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-p7-dot--single" aria-hidden="true" /> Single Bidder
+              </span>
+              <span>
+                <i className="pv-dot pv-p7-dot--repeat" aria-hidden="true" /> Repeat Winner
+              </span>
+              <span>
+                <i className="pv-dot pv-p7-dot--both" aria-hidden="true" /> Both
+              </span>
+            </div>
+          </div>
+
+          {years.length > 0 ? (
+            <div className="pv-ub-years-wrap">
+              <table className="pv-ub-table pv-ub-years">
+                <caption className="pv-ub-caption">
+                  Procurement tasks, cohort split, verification progress, and flagged target value per year.
+                  {onFilterTasks ? ' Choose a year to filter tasks below.' : ''}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Year</th>
+                    <th scope="col">Cohort split &amp; progress</th>
+                    <th scope="col" className="num">
+                      Cohort counts
+                    </th>
+                    <th scope="col" className="num">
+                      Leads / Flagged
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {years.map((y) => {
+                    const total = Math.max(0, y.tasks);
+                    const sb = Math.max(0, y.single_bidder_tasks ?? 0);
+                    const rw = Math.max(0, y.repeat_winner_tasks ?? 0);
+                    const bo = Math.max(0, y.both_tasks ?? 0);
+                    const cohortSum = Math.max(total, sb + rw + bo);
+                    const sbPct = calcPct(sb, cohortSum);
+                    const rwPct = calcPct(rw, cohortSum);
+                    const boPct = calcPct(bo, cohortSum);
+                    const donePct = calcPct(y.done, total);
+                    const yearFilter = p7YearFilterQuery(y.year, y.fiscal_year);
+
+                    return (
+                      <tr key={y.year}>
+                        <th scope="row" className="pv-ub-year">
+                          {onFilterTasks ? (
+                            <button
+                              type="button"
+                              className="pv-ub-link"
+                              onClick={() => onFilterTasks(yearFilter)}
+                              aria-label={`Show tasks for ${y.fiscal_year || y.year}`}
+                            >
+                              {y.fiscal_year ? plainFiscalYear(y.fiscal_year) : y.year}
+                            </button>
+                          ) : (
+                            <span>{y.fiscal_year ? plainFiscalYear(y.fiscal_year) : y.year}</span>
+                          )}
+                        </th>
+                        <td className="pv-ub-years-checked">
+                          <span
+                            className="pv-ub-bar"
+                            role="img"
+                            aria-label={`${y.year}: ${fmtCount(sb)} single bidder, ${fmtCount(rw)} repeat winner, ${fmtCount(bo)} both; ${fmtCount(y.done)} of ${fmtCount(total)} tasks checked (${fmtPct(donePct)})`}
+                          >
+                            {sbPct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-p7-seg--single"
+                                style={{ width: `${Math.max(sbPct, 2)}%` }}
+                              />
+                            ) : null}
+                            {rwPct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-p7-seg--repeat"
+                                style={{ width: `${Math.max(rwPct, 2)}%` }}
+                              />
+                            ) : null}
+                            {boPct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-p7-seg--both"
+                                style={{ width: `${Math.max(boPct, 2)}%` }}
+                              />
+                            ) : null}
+                          </span>
+                          <span className="pv-ub-sub tabular">
+                            {fmtCount(y.done)}/{fmtCount(total)} checked ({fmtPct(donePct)})
+                            {y.claimed > 0 ? ` · ${fmtCount(y.claimed)} running` : ''}
+                          </span>
+                        </td>
+                        <td className="num pv-ub-years-lines" data-label="Cohort counts">
+                          <span className="pv-ub-cell-val">{fmtCount(total)} tasks</span>
+                          <span className="pv-ub-sub">
+                            {fmtCount(sb)} SB · {fmtCount(rw)} RW · {fmtCount(bo)} Both
+                          </span>
+                        </td>
+                        <td className="num pv-ub-years-below" data-label="Leads / Flagged">
+                          <span className="pv-ub-cell-val">
+                            {y.flagged_inr_cr > 0 ? formatInrCr(y.flagged_inr_cr) : '—'}
+                          </span>
+                          <span className="pv-ub-sub">
+                            {fmtCount(y.leads)} {y.leads === 1 ? 'lead' : 'leads'}
+                          </span>
+                          {y.flagged_inr_cr > 0 ? (
+                            <span className="pv-ub-mini-track" aria-hidden="true">
+                              <span
+                                className="pv-ub-mini-fill"
+                                style={{
+                                  width: `${Math.max(3, (y.flagged_inr_cr / maxYearFlagged) * 100)}%`,
+                                }}
+                              />
+                            </span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              Ten-year procurement coverage ({yearRange}) appears here once the hub loads the Only One Bid index.
+            </div>
+          )}
+
+          {jurisdictions.length > 0 ? (
+            <div className="pv-p7-jurisdictions" role="group" aria-label="Filter by jurisdiction">
+              <span className="pv-p7-jur-label">Jurisdictions:</span>
+              <button
+                type="button"
+                className={`btn btn-xs ${selectedJurisdiction === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setSelectedJurisdiction('all')}
+              >
+                All ({fmtCount(jurisdictions.length)})
+              </button>
+              {jurisdictions.map((j) => {
+                const active = selectedJurisdiction === j.jurisdiction;
+                return (
+                  <button
+                    key={j.jurisdiction}
+                    type="button"
+                    className={`btn btn-xs ${active ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() =>
+                      setSelectedJurisdiction((prev) =>
+                        prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                      )
+                    }
+                  >
+                    {j.jurisdiction} ({fmtCount(j.tasks)})
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Every task re-computes bid counts, entity-normalized awardee shares, and bid windows
+            directly from SHA-256-verified official Indian procurement disclosures ({yearRange})
+            against <strong>GFR 2017 Rules 166 &amp; 173(xx)</strong>, <strong>CVC Single-Bid
+            Guidelines</strong>, and State procurement rules where applicable.
+          </p>
+          <p>
+            Single-bidder tenders with documented PAC/OEM, proprietary, or emergency exemptions,
+            competitive multi-bid awards within concentration thresholds, and de minimis purchases
+            under ₹5 lakh (GFR R154/155) are published as {FINDING_TAGS.cleared.label} with equal
+            standing.
+          </p>
+          <p>
+            To prevent double-counting, each lead&rsquo;s exposure counts <strong>only the target
+            tender&rsquo;s own awarded or estimated value</strong>; multi-award cohort totals are
+            always displayed separately for context. Every lead carries at least three lawful
+            benign explanations and requires three independent peer verifications before reaching{' '}
+            {FINDING_TAGS.verified.label}.
+          </p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Procurement sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P7_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p7?.generated_on ? (
+            <p className="pv-chart-note">
+              Procurement index built {p7.generated_on}
+              {p7.as_of_date && p7.as_of_date !== p7.generated_on ? ` · as of ${p7.as_of_date}` : ''}.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Searchable Procuring Authorities Table */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>Procuring authorities ({fmtCount(authorities.length)})</h3>
+          <span className="pv-chart-note">
+            Click any authority to filter its exact tender tasks below
+          </span>
+        </div>
+
+        {authorities.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={authorityQuery}
+                  onChange={(e) => setAuthorityQuery(e.target.value)}
+                  placeholder={`Filter ${fmtCount(authorities.length)} authorities, states, or portals…`}
+                  aria-label="Filter procuring authorities"
+                />
+              </div>
+              <div className="pv-p6-filter-pills" role="group" aria-label="Filter authorities by cohort">
+                {(['all', 'single_bidder', 'repeat_winner', 'both'] as const).map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    aria-pressed={selectedCohort === c}
+                    className={`btn btn-xs ${selectedCohort === c ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() => setSelectedCohort(c)}
+                  >
+                    {c === 'all'
+                      ? 'All'
+                      : c === 'single_bidder'
+                        ? 'Single Bidder'
+                        : c === 'repeat_winner'
+                          ? 'Repeat Winner'
+                          : 'Both'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {visibleAuthorities.length > 0 ? (
+              <div className="pv-ub-years-wrap">
+                <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                  <caption className="pv-ub-caption">
+                    Procuring authorities covered in the 2016–2026 procurement dataset.
+                    {onFilterTasks ? ' Choose an authority to filter its exact tasks below.' : ''}
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Procuring authority</th>
+                      <th scope="col">Cohort split &amp; checked</th>
+                      <th scope="col" className="num">
+                        Single-bid / Repeat
+                      </th>
+                      <th scope="col" className="num">
+                        Leads / Flagged
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleAuthorities.map((a) => {
+                      const total = Math.max(0, a.tasks);
+                      const sb = Math.max(0, a.single_bidder_tasks ?? 0);
+                      const rw = Math.max(0, a.repeat_winner_tasks ?? 0);
+                      const bo = Math.max(0, a.both_tasks ?? 0);
+                      const sumC = Math.max(total, sb + rw + bo);
+                      const sbPct = calcPct(sb, sumC);
+                      const rwPct = calcPct(rw, sumC);
+                      const boPct = calcPct(bo, sumC);
+                      const doneCount = a.done != null ? Math.max(0, a.done) : null;
+                      const claimedCount = a.claimed != null ? Math.max(0, a.claimed) : 0;
+                      const donePct = doneCount != null ? calcPct(doneCount, total) : 0;
+                      const filterQuery = p7AuthorityFilterQuery(a.authority);
+
+                      return (
+                        <tr
+                          key={a.authority_key || a.authority}
+                          className={onFilterTasks ? 'pv-p6-ministry-row--interactive' : undefined}
+                          onClick={
+                            onFilterTasks
+                              ? (e) => {
+                                  const target = e.target as HTMLElement | null;
+                                  if (target?.closest('a, button')) return;
+                                  if (window.getSelection?.()?.toString()) return;
+                                  onFilterTasks(filterQuery);
+                                }
+                              : undefined
+                          }
+                        >
+                          <th scope="row" className="pv-ub-year pv-p7-authority-name">
+                            {onFilterTasks ? (
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                onClick={() => onFilterTasks(filterQuery)}
+                                aria-label={`Show tasks for ${a.authority}`}
+                              >
+                                {a.authority}
+                              </button>
+                            ) : (
+                              <span>{a.authority}</span>
+                            )}
+                            {a.jurisdiction || a.portal ? (
+                              <span className="pv-ub-sub">
+                                {[a.jurisdiction, a.portal].filter(Boolean).join(' · ')}
+                              </span>
+                            ) : null}
+                          </th>
+                          <td className="pv-ub-years-checked">
+                            <span
+                              className="pv-ub-bar"
+                              role="img"
+                              aria-label={`${a.authority}: ${fmtCount(sb)} single bidder, ${fmtCount(rw)} repeat winner, ${fmtCount(bo)} both${doneCount != null ? `; ${fmtCount(doneCount)} of ${fmtCount(total)} tasks checked` : `; ${fmtCount(total)} tender tasks`}`}
+                            >
+                              {sbPct > 0 ? (
+                                <span
+                                  className="pv-ub-bar-seg pv-p7-seg--single"
+                                  style={{ width: `${Math.max(sbPct, 2)}%` }}
+                                />
+                              ) : null}
+                              {rwPct > 0 ? (
+                                <span
+                                  className="pv-ub-bar-seg pv-p7-seg--repeat"
+                                  style={{ width: `${Math.max(rwPct, 2)}%` }}
+                                />
+                              ) : null}
+                              {boPct > 0 ? (
+                                <span
+                                  className="pv-ub-bar-seg pv-p7-seg--both"
+                                  style={{ width: `${Math.max(boPct, 2)}%` }}
+                                />
+                              ) : null}
+                            </span>
+                            <span className="pv-ub-sub tabular">
+                              {doneCount != null
+                                ? `${fmtCount(doneCount)}/${fmtCount(total)} checked (${fmtPct(donePct)})${
+                                    claimedCount > 0 ? ` · ${fmtCount(claimedCount)} running` : ''
+                                  }`
+                                : `${fmtCount(total)} tender tasks`}
+                            </span>
+                          </td>
+                          <td className="num pv-ub-years-lines" data-label="Single-bid / Repeat">
+                            <span className="pv-ub-cell-val">
+                              {a.single_bid_rate_pct != null
+                                ? `${a.single_bid_rate_pct.toFixed(1)}% SB rate`
+                                : `${fmtCount(sb + bo)} single-bid`}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(sb)} SB · {fmtCount(rw)} RW · {fmtCount(bo)} Both
+                            </span>
+                          </td>
+                          <td className="num pv-ub-years-below" data-label="Leads / Flagged">
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(a.leads)} {a.leads === 1 ? 'lead' : 'leads'}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {a.flagged_inr_cr != null && a.flagged_inr_cr > 0
+                                ? formatInrCr(a.flagged_inr_cr)
+                                : `${fmtCount(total)} tasks`}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No procuring authorities match the current search or cohort filter.
+              </div>
+            )}
+
+            {authorityQuery.trim().length === 0 &&
+            selectedCohort === 'all' &&
+            selectedJurisdiction === 'all' &&
+            filteredAuthorities.length > P7_INITIAL_AUTHORITIES ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllAuthorities((v) => !v)}
+                >
+                  {showAllAuthorities
+                    ? `Show top ${P7_INITIAL_AUTHORITIES} authorities`
+                    : `Show all ${fmtCount(filteredAuthorities.length)} authorities`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Procuring authority coverage appears here once the hub loads the procurement index.
+          </div>
+        )}
+      </div>
+
+      {/* Top Repeat-Winner Concentration Clusters (Strictly Neutral Wording) */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>Repeat-Winner Concentration Clusters ({fmtCount(repeatWinners.length)})</h3>
+          <span className="pv-chart-note">
+            Cohort totals shown for context — separate from individual tender exposure
+          </span>
+        </div>
+        <p className="pv-p7-neutral-note">
+          Statistical multi-award concentration patterns observed in published government award
+          records. Repeat awards may reflect lawful rate contracts, specialised OEM/PAC capability,
+          or competitive L1 bidding; inspect individual dossiers for statutory context and benign
+          explanations.
+        </p>
+
+        {repeatWinners.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={winnerQuery}
+                  onChange={(e) => setWinnerQuery(e.target.value)}
+                  placeholder={`Filter ${fmtCount(repeatWinners.length)} repeat-winner clusters or authorities…`}
+                  aria-label="Filter repeat-winner concentration clusters"
+                />
+              </div>
+            </div>
+
+            {visibleWinners.length > 0 ? (
+              <div className="table-wrap pv-ub-leads-wrap">
+                <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                  <caption className="pv-ub-caption">
+                    Top repeat-winner concentration clusters by authority across 2016–2026 procurement disclosures.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Awardee &amp; Procuring Authority</th>
+                      <th scope="col" className="num">
+                        Recorded Wins
+                      </th>
+                      <th scope="col" className="num">
+                        Authority Share
+                      </th>
+                      <th scope="col" className="num">
+                        Cohort Total (Context)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleWinners.map((w, idx) => {
+                      const wins = w.winner_total_wins ?? w.total_wins ?? w.win_count ?? 0;
+                      const singleWins = w.winner_single_bid_wins ?? w.single_bid_wins ?? 0;
+                      const shareCount = w.winner_share_by_count_pct ?? w.share_by_count_pct ?? null;
+                      const shareVal = w.winner_share_by_value_pct ?? w.share_by_value_pct ?? null;
+                      const singleBidShare = wins > 0 ? calcPct(singleWins, wins) : null;
+                      const cohortCr = w.cohort_total_inr_cr ?? w.total_value_inr_cr ?? null;
+                      const cohortInr =
+                        w.winner_cohort_total_inr != null && w.winner_cohort_total_inr > 0
+                          ? w.winner_cohort_total_inr
+                          : w.cohort_total_inr != null && w.cohort_total_inr > 0
+                            ? w.cohort_total_inr
+                            : cohortCr != null && cohortCr > 0
+                              ? cohortCr * 1e7
+                              : null;
+                      const sampleIds = w.related_tender_ids ?? w.sample_tender_ids ?? [];
+                      const authFilter = p7AuthorityFilterQuery(w.authority);
+                      const barPct = Math.min(
+                        100,
+                        Math.max(4, shareCount ?? shareVal ?? singleBidShare ?? 0),
+                      );
+
+                      return (
+                        <tr key={`${w.normalized_winner_key || w.winner_name}-${w.authority_key || w.authority}-${idx}`}>
+                          <td className="pv-ub-line pv-p7-winner-col">
+                            <strong>{w.winner_name}</strong>
+                            <span className="pv-ub-sub">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(authFilter)}
+                                  aria-label={`Filter tasks for ${w.authority}`}
+                                >
+                                  {w.authority}
+                                </button>
+                              ) : (
+                                w.authority
+                              )}
+                              {w.jurisdiction || w.portal
+                                ? ` · ${[w.jurisdiction, w.portal].filter(Boolean).join(' · ')}`
+                                : ''}
+                            </span>
+                            {sampleIds.length > 0 ? (
+                              <span className="pv-ub-sub font-mono">
+                                Tenders: {sampleIds.slice(0, 3).join(', ')}
+                                {sampleIds.length > 3 ? ` +${sampleIds.length - 3}` : ''}
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="num tabular" data-label="Recorded wins">
+                            <span className="pv-ub-cell-val">
+                              <strong>{fmtCount(wins)}</strong> {wins === 1 ? 'award' : 'awards'}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(singleWins)} single-bid
+                              {w.consecutive_win_streak != null && w.consecutive_win_streak >= 2
+                                ? ` · ${fmtCount(w.consecutive_win_streak)}-win streak`
+                                : ''}
+                            </span>
+                          </td>
+                          <td className="num tabular pv-ub-lead-below" data-label="Authority share">
+                            <span className="pv-ub-cell-val">
+                              {shareCount != null
+                                ? `${shareCount.toFixed(1)}% count`
+                                : singleBidShare != null
+                                  ? `${fmtPct(singleBidShare)} single-bid`
+                                  : '—'}
+                            </span>
+                            {shareVal != null ? (
+                              <span className="pv-ub-sub">{shareVal.toFixed(1)}% value</span>
+                            ) : w.tasks != null && w.tasks > 0 ? (
+                              <span className="pv-ub-sub">{fmtCount(w.tasks)} tasks</span>
+                            ) : null}
+                            {shareCount != null || shareVal != null || singleBidShare != null ? (
+                              <span className="pv-ub-mini-track" aria-hidden="true">
+                                <span
+                                  className="pv-ub-mini-fill"
+                                  style={{ width: `${barPct}%` }}
+                                />
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="num tabular" data-label="Cohort total (context)">
+                            <span className="pv-ub-cell-val">
+                              {cohortInr != null ? formatInr(cohortInr) : 'Unrecorded'}
+                            </span>
+                            {w.finding_id && onSelectFinding ? (
+                              <span className="pv-ub-sub">
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onSelectFinding(w.finding_id!)}
+                                >
+                                  Inspect lead
+                                </button>
+                              </span>
+                            ) : w.year_range ? (
+                              <span className="pv-ub-sub">{w.year_range}</span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No repeat-winner clusters match &ldquo;{winnerQuery}&rdquo;.
+              </div>
+            )}
+
+            {winnerQuery.trim().length === 0 &&
+            selectedJurisdiction === 'all' &&
+            filteredWinners.length > P7_INITIAL_WINNERS ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllWinners((v) => !v)}
+                >
+                  {showAllWinners
+                    ? `Show top ${P7_INITIAL_WINNERS} clusters`
+                    : `Show all ${fmtCount(filteredWinners.length)} clusters`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Repeat-winner concentration clusters appear here once the procurement coverage index loads.
+          </div>
+        )}
+      </div>
+
+      {/* Reported Procurement Pattern Leads Table */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>Procurement pattern leads reported so far</h3>
+          {topLeads.length > 0 ? (
+            <span className="pv-chart-note">
+              Target tender value separated from repeat-winner cohort total
+            </span>
+          ) : null}
+        </div>
+        {topLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                Single-bidder and repeat-winner procurement leads verified against official records.
+                {onSelectFinding ? ' Open any row to read the full tender dossier and citations.' : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Authority &amp; Tender</th>
+                  <th scope="col">Period &amp; Bids</th>
+                  <th scope="col">Awardee &amp; Pattern</th>
+                  <th scope="col" className="num">
+                    Target Tender Value
+                  </th>
+                  <th scope="col">Audit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const sig = formatProcurementSignal(lead.signal_category);
+                  const authLabel = lead.authority || lead.entity_name || 'Public Authority';
+                  const targetInr =
+                    lead.target_value_inr != null && lead.target_value_inr > 0
+                      ? lead.target_value_inr
+                      : lead.monetary_exposure_inr != null && lead.monetary_exposure_inr > 0
+                        ? lead.monetary_exposure_inr
+                        : (lead.target_value_inr_cr ?? lead.flagged_inr_cr ?? 0) > 0
+                          ? (lead.target_value_inr_cr ?? lead.flagged_inr_cr ?? 0) * 1e7
+                          : null;
+                  const cohortInr =
+                    lead.winner_cohort_total_inr != null && lead.winner_cohort_total_inr > 0
+                      ? lead.winner_cohort_total_inr
+                      : lead.winner_cohort_total_inr_cr != null && lead.winner_cohort_total_inr_cr > 0
+                        ? lead.winner_cohort_total_inr_cr * 1e7
+                        : null;
+                  const mech = formatSingleBidMechanism(lead.single_bid_mechanism);
+
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line pv-p7-lead-tender">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {authLabel}
+                            {lead.tender_id ? ` · ${lead.tender_id}` : ''}
+                          </button>
+                        ) : (
+                          <span>
+                            {authLabel}
+                            {lead.tender_id ? ` · ${lead.tender_id}` : ''}
+                          </span>
+                        )}
+                        <span className="pv-ub-sub">
+                          <span className={sig.chipClass}>{sig.shortLabel}</span>
+                          {lead.title ? ` · ${p7ShortText(lead.title, 85)}` : ''}
+                        </span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year pv-p7-lead-bids" data-label="Period & bids">
+                        <span>{lead.fiscal_year ? plainFiscalYear(lead.fiscal_year) : '—'}</span>
+                        <span className="pv-ub-sub">
+                          {lead.bids_received != null &&
+                          lead.technically_qualified_bids != null &&
+                          lead.bids_received !== lead.technically_qualified_bids
+                            ? `${fmtCount(lead.bids_received)} rec → ${fmtCount(lead.technically_qualified_bids)} qual`
+                            : lead.effective_bids != null
+                              ? `${fmtCount(lead.effective_bids)} ${lead.effective_bids === 1 ? 'bid' : 'bids'}`
+                              : lead.bids_received != null
+                                ? `${fmtCount(lead.bids_received)} ${lead.bids_received === 1 ? 'bid' : 'bids'}`
+                                : 'Bids unrecorded'}
+                          {mech ? ` · ${mech}` : ''}
+                          {lead.bid_window_days != null ? ` · ${fmtCount(lead.bid_window_days)}d window` : ''}
+                        </span>
+                      </td>
+                      <td className="pv-p7-lead-winner" data-label="Awardee & pattern">
+                        <span>{lead.winner_name || '—'}</span>
+                        <span className="pv-ub-sub tabular">
+                          {lead.winner_total_wins != null && lead.winner_total_wins > 0
+                            ? `${fmtCount(lead.winner_total_wins)} wins`
+                            : ''}
+                          {lead.winner_single_bid_wins != null && lead.winner_single_bid_wins > 0
+                            ? ` (${fmtCount(lead.winner_single_bid_wins)} SB)`
+                            : ''}
+                          {lead.winner_share_by_count_pct != null && lead.winner_share_by_count_pct > 0
+                            ? ` · ${lead.winner_share_by_count_pct.toFixed(1)}%`
+                            : ''}
+                          {lead.consecutive_win_streak != null && lead.consecutive_win_streak >= 2
+                            ? ` · ${fmtCount(lead.consecutive_win_streak)}x streak`
+                            : ''}
+                        </span>
+                      </td>
+                      <td className="num tabular pv-ub-lead-below" data-label="Target tender value">
+                        <strong>{targetInr != null ? formatInr(targetInr) : 'Unrecorded'}</strong>
+                        {cohortInr != null ? (
+                          <span className="pv-ub-sub">Cohort: {formatInr(cohortInr)}</span>
+                        ) : null}
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            Procurement pattern leads appear here as contributor agents verify tasks. Every entry
+            cites the official tender record, repeat-winner cohort (where applicable), and
+            jurisdiction-matched statutory benchmark with SHA-256 provenance.
           </div>
         )}
       </div>

@@ -540,6 +540,201 @@ export interface VisualParliamentsToDoList {
   coverage_url: string;
 }
 
+export interface VisualOnlyOneBidCohortCounts {
+  cohort?: string;
+  label?: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualOnlyOneBidYear {
+  /** Calendar or financial year label, e.g. "2016" or "2016-17". */
+  year: string;
+  fiscal_year?: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  single_bidder_tasks: number;
+  repeat_winner_tasks: number;
+  both_tasks: number;
+  leads: number;
+  flagged_inr_cr: number;
+}
+
+export interface VisualOnlyOneBidJurisdiction {
+  jurisdiction: string;
+  jurisdiction_level?: 'central' | 'state' | string;
+  portal?: string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  single_bidder_tasks?: number;
+  repeat_winner_tasks?: number;
+  both_tasks?: number;
+  authorities?: number;
+  leads?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualOnlyOneBidAuthority {
+  authority: string;
+  authority_key?: string;
+  jurisdiction?: string;
+  jurisdiction_level?: 'central' | 'state' | string;
+  portal?: string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  single_bidder_tasks?: number;
+  repeat_winner_tasks?: number;
+  both_tasks?: number;
+  single_bid_rate_pct?: number | null;
+  distinct_repeat_winners?: number;
+  leads: number;
+  verified?: number;
+  flagged_inr_cr?: number;
+  total_value_inr_cr?: number;
+}
+
+export interface VisualOnlyOneBidRepeatWinner {
+  winner_name: string;
+  normalized_winner_key?: string;
+  authority: string;
+  authority_key?: string;
+  jurisdiction?: string;
+  portal?: string;
+  win_count?: number;
+  total_wins?: number;
+  winner_total_wins?: number;
+  single_bid_wins?: number;
+  winner_single_bid_wins?: number;
+  total_value_inr_cr?: number | null;
+  cohort_total_inr_cr?: number | null;
+  cohort_total_inr?: number | null;
+  winner_cohort_total_inr?: number | null;
+  share_by_count_pct?: number | null;
+  winner_share_by_count_pct?: number | null;
+  share_by_value_pct?: number | null;
+  winner_share_by_value_pct?: number | null;
+  consecutive_win_streak?: number | null;
+  tasks?: number;
+  leads?: number;
+  year_range?: string;
+  sample_tender_ids?: string[];
+  related_tender_ids?: string[];
+  finding_id?: string | null;
+}
+
+export interface VisualOnlyOneBidAnchorCase {
+  task_id?: string;
+  case_key?: string;
+  finding_id?: string | null;
+  portal?: string;
+  authority: string;
+  jurisdiction?: string;
+  jurisdiction_level?: 'central' | 'state' | string;
+  tender_id?: string;
+  ocid?: string;
+  tender_title?: string;
+  title?: string;
+  fiscal_year?: string;
+  audit_mode?: string;
+  signal_category?: string;
+  procurement_method?: string;
+  bids_received?: number | null;
+  technically_qualified_bids?: number | null;
+  effective_bids?: number | null;
+  single_bid_mechanism?: string | null;
+  bid_window_days?: number | null;
+  winner_name?: string;
+  winner_total_wins?: number | null;
+  winner_single_bid_wins?: number | null;
+  winner_share_by_count_pct?: number | null;
+  winner_share_by_value_pct?: number | null;
+  consecutive_win_streak?: number | null;
+  amount_type?: string;
+  award_value_inr?: number | null;
+  tender_estimate_inr?: number | null;
+  target_value_inr_cr?: number | null;
+  winner_cohort_total_inr?: number | null;
+  winner_cohort_total_inr_cr?: number | null;
+  governing_instrument?: string;
+  summary?: string;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  record_url?: string | null;
+}
+
+export interface VisualOnlyOneBidLead {
+  finding_id: string;
+  title: string;
+  authority?: string;
+  entity_name?: string;
+  jurisdiction?: string;
+  portal?: string;
+  fiscal_year?: string;
+  tender_id?: string;
+  ocid?: string;
+  audit_mode?: string;
+  signal_category: string;
+  verdict?: string;
+  bids_received?: number | null;
+  technically_qualified_bids?: number | null;
+  effective_bids?: number | null;
+  single_bid_mechanism?: string | null;
+  bid_window_days?: number | null;
+  winner_name?: string;
+  winner_total_wins?: number | null;
+  winner_single_bid_wins?: number | null;
+  winner_share_by_count_pct?: number | null;
+  consecutive_win_streak?: number | null;
+  amount_type?: string;
+  target_value_inr?: number | null;
+  target_value_inr_cr?: number | null;
+  flagged_inr_cr?: number | null;
+  monetary_exposure_inr?: number | null;
+  winner_cohort_total_inr?: number | null;
+  winner_cohort_total_inr_cr?: number | null;
+  status: string;
+}
+
+export interface VisualOnlyOneBid {
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  total_tasks: number;
+  year_range?: string | string[];
+  portals_covered?: number;
+  authorities_covered?: number;
+  distinct_repeat_winners?: number;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_total_inr_cr: number;
+  by_cohort?: Record<string, VisualOnlyOneBidCohortCounts | number>;
+  by_signal?: Record<string, number>;
+  years?: VisualOnlyOneBidYear[];
+  jurisdictions?: VisualOnlyOneBidJurisdiction[];
+  top_authorities?: VisualOnlyOneBidAuthority[];
+  top_repeat_winners?: VisualOnlyOneBidRepeatWinner[];
+  anchor_case?: VisualOnlyOneBidAnchorCase | null;
+  top_leads?: VisualOnlyOneBidLead[];
+  documents_url?: string;
+  coverage_url?: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -549,6 +744,7 @@ export interface ProjectVisualSummary {
   one_road_two_bills?: VisualOneRoadTwoBills;
   one_teacher_five_grades?: VisualOneTeacherFiveGrades;
   parliaments_to_do_list?: VisualParliamentsToDoList;
+  only_one_bid?: VisualOnlyOneBid;
 }
 
 export interface MissionItem {

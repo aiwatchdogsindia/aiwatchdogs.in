@@ -248,6 +248,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Tracks formal ministerial assurances on Digital Sansad, citing the original promise, recorded status, and what the follow-up actually answered.',
   ),
+  single_bid_procurement: makeTag(
+    'single_bid_procurement',
+    'Tender competition',
+    'work',
+    'project',
+    'Audits official Indian government procurement records (2016–2026) for single-bidder tenders, repeat-winner concentration, and compressed bid windows against GFR 2017 and CVC guidelines.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
@@ -481,6 +488,7 @@ export function getWorkTypeTag(
     if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
     if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
     if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
+    if (m === 'P7') return WORK_TYPE_TAGS.single_bid_procurement;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -490,6 +498,7 @@ export function getWorkTypeTag(
   if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
   if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
   if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
+  if (m === 'P7') return WORK_TYPE_TAGS.single_bid_procurement;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -646,6 +655,7 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
       WORK_TYPE_TAGS.duplicate_billing,
       WORK_TYPE_TAGS.school_staffing,
       WORK_TYPE_TAGS.parliament_assurances,
+      WORK_TYPE_TAGS.single_bid_procurement,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,

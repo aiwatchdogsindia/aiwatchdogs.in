@@ -2285,6 +2285,514 @@
   color: var(--ink-3);
 }
 
+/* ---------- P7 Only One Bid: procurement cohorts, signals, 10-year trend, authorities, clusters & dossier ---------- */
+
+.p7-signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--r-999);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid var(--rule);
+}
+
+.p7-signal--combined {
+  color: #8A2C17;
+  background: #FCEEEB;
+  border-color: #E2B8B0;
+}
+
+.p7-signal--single {
+  color: var(--in-work-ink);
+  background: #FFF4E6;
+  border-color: var(--in-work-ring);
+}
+
+.p7-signal--repeat {
+  color: #5E3A00;
+  background: #FDF7E7;
+  border-color: #E5C887;
+}
+
+.p7-signal--process {
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p7-signal--other {
+  color: var(--ink-3);
+  background: var(--sunk);
+  border-color: var(--rule);
+}
+
+/* P7 FindingCard tender competition strip */
+.fc-p7-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-6);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+}
+
+.fc-p7-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 6px;
+}
+
+.fc-p7-facts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.fc-p7-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fc-p7-fact-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+}
+
+.fc-p7-fact-val {
+  font-size: 12.5px;
+  line-height: 1.42;
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+
+.fc-p7-cohort-sep {
+  color: var(--ink-3);
+}
+
+/* P7 FindingDrawer structured tender dossier */
+.drawer-p7-card {
+  border-left: 3px solid var(--accent);
+}
+
+.drawer-p7-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.38;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+
+.drawer-p7-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.drawer-p7-grid-full {
+  grid-column: 1 / -1;
+}
+
+.drawer-p7-stat-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.drawer-p7-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.42;
+  border-bottom: 1px solid var(--rule-soft);
+  padding-bottom: 4px;
+}
+
+.drawer-p7-stat-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.drawer-p7-stat-row dt {
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+
+.drawer-p7-stat-row dd {
+  margin: 0;
+  color: var(--ink);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.drawer-p7-values-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.drawer-p7-value-box {
+  padding: 10px 12px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.drawer-p7-value-box--target {
+  border-top: 2px solid var(--accent);
+}
+
+.drawer-p7-value-box--cohort {
+  border-top: 2px solid var(--rule-strong);
+}
+
+.drawer-p7-value-kicker {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.drawer-p7-value-num {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-top: 3px;
+}
+
+.drawer-p7-value-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.drawer-p7-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.drawer-citation-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-bottom: 4px;
+}
+
+.drawer-citation-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--r-999);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--in-work-ink);
+  background: #FFF4E6;
+  border: 1px solid var(--in-work-ring);
+}
+
+/* P7 Visualiser (OnlyOneBidVisualiser) */
+.pv-p7-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pv-p7-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pv-p7-kpi--tasks {
+  border-top: 2px solid var(--ink);
+}
+
+.pv-p7-kpi--leads {
+  border-top: 2px solid var(--accent);
+}
+
+.pv-p7-kpi--winners {
+  border-top: 2px solid #8A4200;
+}
+
+.pv-p7-kpi--value {
+  border-top: 2px solid var(--green);
+}
+
+.pv-p7-cohort-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-8);
+  background: var(--sunk);
+}
+
+.pv-p7-cohort-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.pv-p7-cohort-head h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pv-p7-cohort-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-999);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.pv-p7-seg {
+  display: block;
+  height: 100%;
+}
+
+.pv-p7-seg--single,
+.pv-p7-dot--single {
+  background: var(--accent);
+}
+
+.pv-p7-seg--repeat,
+.pv-p7-dot--repeat {
+  background: #8A4200;
+}
+
+.pv-p7-seg--both,
+.pv-p7-dot--both {
+  background: #C2412D;
+}
+
+.pv-p7-cohort-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pv-p7-cohort-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 11px 13px;
+  text-align: left;
+  border-radius: var(--r-6);
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.pv-p7-cohort-btn:hover {
+  border-color: var(--ink-4);
+}
+
+.pv-p7-cohort-btn[aria-pressed='true'] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+  background: var(--paper);
+}
+
+.pv-p7-cohort-btn--single {
+  border-top: 2px solid var(--accent);
+}
+
+.pv-p7-cohort-btn--repeat {
+  border-top: 2px solid #8A4200;
+}
+
+.pv-p7-cohort-btn--both {
+  border-top: 2px solid #C2412D;
+}
+
+.pv-p7-cohort-btn-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pv-p7-cohort-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pv-p7-cohort-share {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.pv-p7-cohort-num {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.pv-p7-cohort-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.pv-p7-signals-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+
+.pv-p7-signal-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+}
+
+.pv-p7-signal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pv-p7-signal-count {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.pv-p7-signal-track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--r-999);
+  background: var(--sunk);
+  overflow: hidden;
+}
+
+.pv-p7-signal-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--r-999);
+}
+
+.pv-p7-signal-fill--combined {
+  background: #C2412D;
+}
+
+.pv-p7-signal-fill--single {
+  background: var(--accent);
+}
+
+.pv-p7-signal-fill--repeat {
+  background: #8A4200;
+}
+
+.pv-p7-signal-fill--process {
+  background: var(--ink-4);
+}
+
+.pv-p7-jurisdictions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.pv-p7-jur-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  margin-right: 4px;
+}
+
+.pv-p7-section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pv-p7-neutral-note {
+  margin: -4px 0 4px;
+  font-size: 13px;
+  line-height: 1.48;
+  color: var(--ink-3);
+}
+
+.pv-p7-authority-name {
+  white-space: normal;
+  min-width: 180px;
+  max-width: 280px;
+}
+
+.pv-p7-winner-col {
+  min-width: 210px;
+  max-width: 340px;
+}
+
+.pv-p7-share-bar-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pv-p7-lead-tender {
+  min-width: 200px;
+  max-width: 340px;
+}
+
+.pv-p7-lead-bids {
+  min-width: 140px;
+}
+
+.pv-p7-lead-winner {
+  min-width: 170px;
+  max-width: 260px;
+}
+
 /* ============================================================================
    6. PROJECT CARDS, COLLAPSIBLE DISCLOSURES & COMPACT TASK PICKER
    ============================================================================ */
@@ -2634,7 +3142,8 @@
   }
 
   .pv-matrix-overview,
-  .pv-sections-grid {
+  .pv-sections-grid,
+  .pv-p7-kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -2649,7 +3158,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .pv-p6-anchor-grid {
+  .pv-p6-anchor-grid,
+  .pv-p7-cohort-cards,
+  .pv-p7-signals-grid,
+  .drawer-p7-grid,
+  .drawer-p7-values-split,
+  .fc-p7-facts-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -3466,6 +3980,29 @@
     max-width: none;
     padding-top: 4px;
     border-top: 1px solid var(--rule-soft);
+  }
+
+  .pv-p7-cohort-panel {
+    padding: 12px;
+  }
+
+  .pv-p7-cohort-btn {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .pv-p7-authority-name,
+  .pv-p7-winner-col,
+  .pv-p7-lead-tender,
+  .pv-p7-lead-bids,
+  .pv-p7-lead-winner {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .pv-p7-jurisdictions .btn-xs {
+    min-height: 40px;
+    padding: 6px 10px;
   }
 
   .pv-ub-leads td[data-label]::before {

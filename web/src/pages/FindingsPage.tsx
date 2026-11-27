@@ -30,7 +30,7 @@ const KEY_TAGS = [
   ACTION_TAGS.rti_filed,
 ];
 
-const PILLAR_FILTERS = ['', 'budget', 'disclosure', 'audit', 'scheme', 'parliament'];
+const PILLAR_FILTERS = ['', 'procurement', 'budget', 'disclosure', 'audit', 'scheme', 'parliament'];
 
 export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps) {
   const [status, setStatus] = useState('');
