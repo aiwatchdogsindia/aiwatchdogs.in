@@ -125,6 +125,7 @@ export interface AgentRecord {
   is_active?: boolean;
   heartbeat_age_seconds?: number;
   last_heartbeat?: string;
+  last_check_at?: string;
   joined_at?: string;
   tasks_completed: number;
   findings_submitted?: number;
@@ -814,7 +815,15 @@ export interface LiveData {
   agents: AgentRecord[];
   whispers: WhisperItem[];
   recent_verifications: PeerVerification[];
-  model_breakdown: Array<{ provider: string; model: string; agents: number; tasks: number; share_pct?: number }>;
+  model_breakdown: Array<{
+    provider: string;
+    model: string;
+    coding_agent?: string;
+    coding_agent_model?: string;
+    agents: number;
+    tasks: number;
+    share_pct?: number;
+  }>;
   latest_event_id?: number;
 }
 
@@ -872,6 +881,7 @@ export interface LiveSwarmProgress {
   tasks_in_progress: number;
   findings_verified: number;
   findings_in_review: number;
+  findings_cleared?: number;
 }
 
 export interface LiveSwarmSnapshot {

@@ -5,6 +5,7 @@ import { AgentViewPanel, AgentViewProvider, useAgentView } from './components/Ag
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { JustInBar } from './components/JustInBar';
+import { computeEffectiveWorkingNow } from './components/LiveSwarmViewer';
 import { ToastProvider } from './components/Toast';
 import type { SseStatus } from './hooks/useSwarmStream';
 import { HomePage } from './pages/HomePage';
@@ -94,9 +95,26 @@ function AppShell() {
   const [swarmLiveLoading, setSwarmLiveLoading] = useState(true);
   const [liveWhispers, setLiveWhispers] = useState<WhisperItem[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [tabVisible, setTabVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [selectedFindingId, setSelectedFindingId] = useState<string | number | null>(null);
+
+  useEffect(() => {
+    const onVis = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (!tabVisible) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 2000);
+    return () => window.clearInterval(id);
+  }, [tabVisible]);
 
   const fetchSwarmLive = useCallback(async () => {
     try {
@@ -176,6 +194,20 @@ function AppShell() {
     return deriveLiveSwarmSnapshot(head, liveWhispers);
   }, [swarmLive, head, liveWhispers]);
 
+  const effectiveWorkingNow = useMemo<number | null>(() => {
+    if (effectiveSwarmLive) {
+      return computeEffectiveWorkingNow(effectiveSwarmLive, nowMs);
+    }
+    return head ? head.stats.agents_active : null;
+  }, [effectiveSwarmLive, head, nowMs]);
+
+  const effectiveVerifiedCount = useMemo<number | null>(() => {
+    const headVerified = head?.stats.findings_verified;
+    const swarmVerified = effectiveSwarmLive?.progress?.findings_verified;
+    if (headVerified == null && swarmVerified == null) return null;
+    return Math.max(headVerified ?? 0, swarmVerified ?? 0);
+  }, [head?.stats.findings_verified, effectiveSwarmLive?.progress?.findings_verified]);
+
   // Strictly verified, non-quarantined finding only (never fall back to unverified or disputed)
   const fallbackVerified =
     head?.recent_findings.find((f) => isVerifiedStatus(f.status) && !f.quarantined) ?? null;
@@ -186,6 +218,7 @@ function AppShell() {
         <HomePage
           head={head}
           swarmLive={effectiveSwarmLive}
+          effectiveWorkingNow={effectiveWorkingNow}
           swarmLiveLoading={swarmLiveLoading && !effectiveSwarmLive}
           sseStatus={sseStatus}
           loading={headLoading}
@@ -299,6 +332,7 @@ function AppShell() {
       <HomePage
         head={head}
         swarmLive={effectiveSwarmLive}
+        effectiveWorkingNow={effectiveWorkingNow}
         swarmLiveLoading={swarmLiveLoading && !effectiveSwarmLive}
         sseStatus={sseStatus}
         loading={headLoading}
@@ -357,8 +391,8 @@ function AppShell() {
       </main>
 
       <Footer
-        agentsActive={head ? head.stats.agents_active : null}
-        verifiedCount={head ? head.stats.findings_verified : null}
+        agentsActive={effectiveWorkingNow}
+        verifiedCount={effectiveVerifiedCount}
         onOpenJoin={() => setJoinOpen(true)}
       />
 

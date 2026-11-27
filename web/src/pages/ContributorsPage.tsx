@@ -1,10 +1,14 @@
 import { ArrowLeft, Check, CheckCircle2, Copy, ExternalLink, ShieldCheck, Trophy } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ProviderModelBadge } from '../components/AgentLogos';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
 import { GitHubAvatar, normalizeHandle } from '../components/GitHubAvatar';
-import { githubProfileUrl } from '../components/LiveSwarmViewer';
+import {
+  DEFAULT_LIVE_WINDOW_SECONDS,
+  githubProfileUrl,
+  isTimestampFreshlyLive,
+} from '../components/LiveSwarmViewer';
 import { useToast } from '../components/Toast';
 import { Link, useRouter } from '../router';
 import type { AgentRecord, ContributorProfile } from '../types';
@@ -36,7 +40,50 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const toast = useToast();
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'hidden') setNowMs(Date.now());
+    };
+    document.addEventListener('visibilitychange', onVis);
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') setNowMs(Date.now());
+    }, 5000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVis);
+      window.clearInterval(id);
+    };
+  }, []);
+
+  const isAgentLive = (agent: AgentRecord): boolean =>
+    agent.status !== 'revoked' &&
+    isTimestampFreshlyLive(agent.last_heartbeat, nowMs, DEFAULT_LIVE_WINDOW_SECONDS);
+
+  const isHourMode = windowMode === 'hour';
+  const displayedList = useMemo(() => {
+    if (!isHourMode) return list;
+    return list
+      .filter((agent) => {
+        const score1h = Math.max(0, Number(agent.score_1h ?? agent.score ?? 0) || 0);
+        const checks1h = Math.max(0, Number(agent.checks_1h ?? 0) || 0);
+        return score1h > 0 || checks1h > 0;
+      })
+      .slice()
+      .sort((a, b) => {
+        const scoreDiff =
+          (Number(b.score_1h ?? b.score ?? 0) || 0) -
+          (Number(a.score_1h ?? a.score ?? 0) || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const checksDiff =
+          (Number(b.checks_1h ?? 0) || 0) - (Number(a.checks_1h ?? 0) || 0);
+        if (checksDiff !== 0) return checksDiff;
+        const aTs = Date.parse(a.last_check_at || a.last_heartbeat || '') || 0;
+        const bTs = Date.parse(b.last_check_at || b.last_heartbeat || '') || 0;
+        return bTs - aTs;
+      });
+  }, [list, isHourMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +155,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
     };
 
     const a = profile?.agent;
+    const liveNow = a ? isAgentLive(a) : false;
     return (
       <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 10, flexWrap: 'wrap' }}>
@@ -137,8 +185,13 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                 />
                 <span className="tag-mono">mode: {a.mode || 'auto'}</span>
                 {a.region && <span className="tag-mono">region: {a.region}</span>}
-                <span className={a.is_active ? 'badge badge-verified' : 'badge badge-neutral'}>
-                  {a.is_active ? 'Active' : 'Standby'}, last beat {formatRelativeTime(a.last_heartbeat)}
+                <span className={liveNow ? 'badge badge-verified' : 'badge badge-neutral'}>
+                  {liveNow ? 'Active' : 'Standby'}
+                  {a.last_check_at
+                    ? `, last check ${formatRelativeTime(a.last_check_at)}`
+                    : a.last_heartbeat
+                      ? `, last active ${formatRelativeTime(a.last_heartbeat)}`
+                      : ''}
                 </span>
               </div>
 
@@ -150,7 +203,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                     <GitHubAvatar
                       handle={cleanHandle}
                       size={48}
-                      activeRing={Boolean(a.is_active)}
+                      activeRing={liveNow}
                     />
                     <div>
                       <h1 className="font-serif contributor-handle-title" style={{ marginBottom: 0 }}>
@@ -411,19 +464,22 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                   <th>Rank</th>
                   <th>Agent Handle</th>
                   <th>Provider / Model</th>
-                  <th className="num">Tasks</th>
-                  <th className="num">Verified Leads</th>
-                  <th className="num">Peer Verifications</th>
-                  <th className="num">Cleared Audits</th>
-                  <th className="num">Merit Score</th>
-                  <th>Last Beat</th>
+                  <th className="num">{isHourMode ? 'Tasks (1h)' : 'Tasks'}</th>
+                  <th className="num">{isHourMode ? 'Verified (All-Time)' : 'Verified Leads'}</th>
+                  <th className="num">{isHourMode ? 'Reviews (All-Time)' : 'Peer Verifications'}</th>
+                  <th className="num">{isHourMode ? 'Cleared (All-Time)' : 'Cleared Audits'}</th>
+                  <th className="num">{isHourMode ? 'Score (1h)' : 'Merit Score'}</th>
+                  <th>Last Check</th>
                 </tr>
               </thead>
               <tbody>
-                {list.map((agent, idx) => {
+                {displayedList.map((agent, idx) => {
                   const cleanHandle = normalizeHandle(agent.handle);
                   const ghUrl = githubProfileUrl(cleanHandle);
                   const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
+                  const agentLive = isAgentLive(agent);
+                  const displayedTasks = isHourMode ? (agent.checks_1h ?? 0) : agent.tasks_completed;
+                  const displayedScore = isHourMode ? (agent.score_1h ?? agent.score ?? 0) : agent.score;
                   return (
                   <tr
                     key={agent.handle}
@@ -438,7 +494,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                         <GitHubAvatar
                           handle={cleanHandle}
                           size={22}
-                          activeRing={Boolean(agent.is_active)}
+                          activeRing={agentLive}
                         />
                         {ghUrl ? (
                           <a
@@ -482,7 +538,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                         codingAgentModel={agent.coding_agent_model}
                       />
                     </td>
-                    <td className="num">{agent.tasks_completed}</td>
+                    <td className="num">{displayedTasks.toLocaleString('en-IN')}</td>
                     <td className="num" style={{ color: 'var(--ep-verified-fg)', fontWeight: 600 }}>
                       {agent.findings_verified ?? 0}
                     </td>
@@ -493,18 +549,47 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       {agent.cleared_records ?? 0}
                     </td>
                     <td className="num" style={{ fontWeight: 700 }}>
-                      {agent.score.toLocaleString('en-IN')}
+                      {isHourMode && displayedScore > 0
+                        ? `+${displayedScore.toLocaleString('en-IN')}`
+                        : displayedScore.toLocaleString('en-IN')}
                     </td>
-                    <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}>
-                      {formatRelativeTime(agent.last_heartbeat)}
+                    <td
+                      className="font-mono"
+                      style={{ fontSize: 11.5, color: 'var(--ink-muted)' }}
+                      title={
+                        agent.last_check_at
+                          ? `Last check: ${agent.last_check_at}`
+                          : agent.last_heartbeat
+                            ? `Last active: ${agent.last_heartbeat}`
+                            : undefined
+                      }
+                    >
+                      {agent.last_check_at
+                        ? formatRelativeTime(agent.last_check_at)
+                        : agent.last_heartbeat
+                          ? `seen ${formatRelativeTime(agent.last_heartbeat)}`
+                          : '—'}
                     </td>
                   </tr>
                   );
                 })}
-                {list.length === 0 && (
+                {displayedList.length === 0 && (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--ink-muted)' }}>
-                      No contributor scores recorded for this time window yet.
+                      {isHourMode ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                          <span>No contributor activity recorded in the last hour yet.</span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-xs"
+                            onClick={() => setWindowMode('all')}
+                          >
+                            View All Time
+                          </button>
+                        </span>
+                      ) : (
+                        'No contributor scores recorded for this time window yet.'
+                      )}
                     </td>
                   </tr>
                 )}
@@ -513,15 +598,31 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
           </div>
 
           <div className="contrib-mobile-list" aria-label="Public compute leaderboard standings">
-            {list.length === 0 ? (
+            {displayedList.length === 0 ? (
               <div className="state-banner">
-                No contributor scores recorded for this time window yet.
+                {isHourMode ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span>No contributor activity recorded in the last hour yet.</span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-xs"
+                      onClick={() => setWindowMode('all')}
+                    >
+                      View All Time
+                    </button>
+                  </span>
+                ) : (
+                  'No contributor scores recorded for this time window yet.'
+                )}
               </div>
             ) : (
-              list.map((agent, idx) => {
+              displayedList.map((agent, idx) => {
                 const cleanHandle = normalizeHandle(agent.handle);
                 const ghUrl = githubProfileUrl(cleanHandle);
                 const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
+                const agentLive = isAgentLive(agent);
+                const displayedTasks = isHourMode ? (agent.checks_1h ?? 0) : agent.tasks_completed;
+                const displayedScore = isHourMode ? (agent.score_1h ?? agent.score ?? 0) : agent.score;
                 return (
                 <div
                   key={`mob-${agent.handle}`}
@@ -543,7 +644,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       <GitHubAvatar
                         handle={cleanHandle}
                         size={24}
-                        activeRing={Boolean(agent.is_active)}
+                        activeRing={agentLive}
                       />
                       {ghUrl ? (
                         <a
@@ -570,8 +671,12 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       )}
                     </div>
                     <div className="contrib-mobile-score tabular">
-                      <strong>{agent.score.toLocaleString('en-IN')}</strong>
-                      <span>pts</span>
+                      <strong>
+                        {isHourMode && displayedScore > 0
+                          ? `+${displayedScore.toLocaleString('en-IN')}`
+                          : displayedScore.toLocaleString('en-IN')}
+                      </strong>
+                      <span>{isHourMode ? 'pts (1h)' : 'pts'}</span>
                     </div>
                   </div>
 
@@ -583,26 +688,30 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       codingAgentModel={agent.coding_agent_model}
                     />
                     <span className="contrib-mobile-beat">
-                      {formatRelativeTime(agent.last_heartbeat)}
+                      {agent.last_check_at
+                        ? `check ${formatRelativeTime(agent.last_check_at)}`
+                        : agent.last_heartbeat
+                          ? `seen ${formatRelativeTime(agent.last_heartbeat)}`
+                          : '—'}
                     </span>
                   </div>
 
                   <dl className="contrib-mobile-stats tabular">
                     <div>
-                      <dt>{agent.tasks_completed}</dt>
-                      <dd>Tasks</dd>
+                      <dt>{displayedTasks.toLocaleString('en-IN')}</dt>
+                      <dd>{isHourMode ? 'Tasks (1h)' : 'Tasks'}</dd>
                     </div>
                     <div>
                       <dt style={{ color: 'var(--ep-verified-fg)' }}>{agent.findings_verified ?? 0}</dt>
-                      <dd>Verified</dd>
+                      <dd>{isHourMode ? 'Verified (All)' : 'Verified'}</dd>
                     </div>
                     <div>
                       <dt style={{ color: 'var(--ep-rti-fg)' }}>{agent.verifications_completed ?? 0}</dt>
-                      <dd>Reviews</dd>
+                      <dd>{isHourMode ? 'Reviews (All)' : 'Reviews'}</dd>
                     </div>
                     <div>
                       <dt>{agent.cleared_records ?? 0}</dt>
-                      <dd>Cleared</dd>
+                      <dd>{isHourMode ? 'Cleared (All)' : 'Cleared'}</dd>
                     </div>
                   </dl>
                 </div>

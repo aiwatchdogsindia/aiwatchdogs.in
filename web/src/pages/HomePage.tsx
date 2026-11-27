@@ -2,7 +2,13 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { AuditingProgressBar, HeroLiveFeed } from '../components/HeroLiveFeed';
 import { LiveAgentStrip } from '../components/LiveAgentStrip';
-import { LiveSwarmViewer } from '../components/LiveSwarmViewer';
+import {
+  DEFAULT_LIVE_WINDOW_SECONDS,
+  LiveSwarmViewer,
+  computeEffectiveWorkingNow,
+  isNodeFreshlyLive,
+  isTimestampFreshlyLive,
+} from '../components/LiveSwarmViewer';
 import { PublicLeaderboard } from '../components/PublicLeaderboard';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
@@ -42,6 +48,7 @@ const ObservatoryMap = lazy(() =>
 interface HomePageProps {
   head: HeadData | null;
   swarmLive: LiveSwarmSnapshot | null;
+  effectiveWorkingNow?: number | null;
   swarmLiveLoading?: boolean;
   sseStatus: SseStatus;
   loading: boolean;
@@ -79,6 +86,7 @@ function fallbackRungsForMission(m: MissionItem): MissionRung[] {
 export function HomePage({
   head,
   swarmLive,
+  effectiveWorkingNow,
   swarmLiveLoading = false,
   sseStatus,
   loading,
@@ -92,6 +100,23 @@ export function HomePage({
   const [graphLoading, setGraphLoading] = useState(true);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [prevSeen, setPrevSeen] = useState<SeenSnapshot | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [tabVisible, setTabVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
+
+  useEffect(() => {
+    const onVis = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    if (!tabVisible) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 2000);
+    return () => window.clearInterval(id);
+  }, [tabVisible]);
 
   // Track returning visits in localStorage('aw.seen') for Card 1 ("Since your last visit")
   useEffect(() => {
@@ -145,10 +170,36 @@ export function HomePage({
   const isLoadingHead = loading && !head;
   const stats = head?.stats;
   const disp = head?.disposition;
-  const verifiedLeads = disp?.verified_leads ?? stats?.findings_verified ?? 0;
-  const peerReviewLeads = disp?.peer_review ?? stats?.findings_peer_review ?? 0;
+
+  const swarmIsFresher = useMemo(() => {
+    const headMs = Date.parse(head?.generated_at || '');
+    const swarmMs = Date.parse(swarmLive?.generated_at || '');
+    if (Number.isNaN(swarmMs)) return false;
+    if (Number.isNaN(headMs)) return true;
+    return swarmMs >= headMs;
+  }, [head?.generated_at, swarmLive?.generated_at]);
+
+  const baseVerifiedLeads = disp?.verified_leads ?? stats?.findings_verified ?? 0;
+  const basePeerReviewLeads = disp?.peer_review ?? stats?.findings_peer_review ?? 0;
+  const verifiedLeads = Math.max(baseVerifiedLeads, swarmLive?.progress?.findings_verified ?? 0);
+  const peerReviewLeads =
+    swarmLive?.progress != null && swarmIsFresher
+      ? swarmLive.progress.findings_in_review
+      : head
+        ? basePeerReviewLeads
+        : (swarmLive?.progress?.findings_in_review ?? 0);
   const clearedRecords = disp?.cleared_records ?? stats?.findings_cleared ?? 0;
   const clearedTasks = disp?.cleared_tasks ?? stats?.cleared_tasks_count ?? 0;
+
+  const effectiveTasksCompleted = Math.max(
+    stats?.tasks_completed ?? 0,
+    swarmLive?.progress?.tasks_completed ?? swarmLive?.tasks_completed_total ?? 0,
+  );
+
+  const liveWindowSeconds = swarmLive?.live_window_seconds ?? DEFAULT_LIVE_WINDOW_SECONDS;
+  const resolvedWorkingNow =
+    effectiveWorkingNow ??
+    (swarmLive ? computeEffectiveWorkingNow(swarmLive, nowMs) : (stats?.agents_active ?? 0));
 
   const tugLeftCount = verifiedLeads + peerReviewLeads;
   const tugRightCount = clearedRecords + clearedTasks;
@@ -161,34 +212,65 @@ export function HomePage({
 
   const missions = head?.missions ?? [];
   const findings = head?.recent_findings ?? [];
-  // Strictly active agents only — NEVER fall back to all-time contributors
-  const activeAgents = head?.active_agents ?? [];
+  // Strictly freshly-live agents within the 120s live window (never stale 60m rings)
   const activeHandleSet = useMemo(() => {
     const s = new Set<string>();
-    for (const a of activeAgents) s.add(a.handle.toLowerCase());
-    for (const n of swarmLive?.active_nodes ?? []) {
-      if (n.status === 'working' || n.status === 'verifying') {
-        s.add(n.handle.toLowerCase());
+    if (swarmLive) {
+      for (const n of swarmLive.active_nodes ?? []) {
+        if (isNodeFreshlyLive(n, nowMs, liveWindowSeconds)) {
+          const h = (n.handle || '').trim().toLowerCase();
+          if (h) s.add(h);
+        }
+      }
+      return s;
+    }
+    for (const a of head?.active_agents ?? []) {
+      if (
+        a.status !== 'revoked' &&
+        a.is_active !== false &&
+        isTimestampFreshlyLive(a.last_heartbeat, nowMs, DEFAULT_LIVE_WINDOW_SECONDS)
+      ) {
+        const h = (a.handle || '').trim().toLowerCase();
+        if (h) s.add(h);
       }
     }
     return s;
-  }, [activeAgents, swarmLive?.active_nodes]);
+  }, [swarmLive, head?.active_agents, nowMs, liveWindowSeconds]);
+
   const topContribs = useMemo(() => {
     const base = head?.top_contributors ?? [];
-    const seen = new Set<string>();
-    const merged: AgentRecord[] = [];
+    const byHandle = new Map<string, AgentRecord>();
+    const order: string[] = [];
+
     for (const agent of base) {
       const key = (agent.handle || '').trim().toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      merged.push(agent);
+      if (!key || byHandle.has(key)) continue;
+      byHandle.set(key, agent);
+      order.push(key);
     }
-    // Include newly joined / active swarm contributors if not yet present in the cached leaderboard response.
+
+    // Keep all rich telemetry entries from head.top_contributors intact; refresh
+    // last_heartbeat when swarmLive has a fresher last_seen_at (without clobbering
+    // score_1h/checks_1h/last_check_at) and append unseen active swarm contributors.
     for (const node of swarmLive?.active_nodes ?? []) {
       const key = (node.handle || '').trim().toLowerCase();
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      merged.push({
+      if (!key) continue;
+      const existing = byHandle.get(key);
+      if (existing) {
+        if (node.last_seen_at) {
+          const nodeMs = Date.parse(node.last_seen_at);
+          const existingMs = Date.parse(existing.last_heartbeat || '');
+          if (!Number.isNaN(nodeMs) && (Number.isNaN(existingMs) || nodeMs > existingMs)) {
+            byHandle.set(key, {
+              ...existing,
+              last_heartbeat: node.last_seen_at,
+            });
+          }
+        }
+        continue;
+      }
+      order.push(key);
+      byHandle.set(key, {
         handle: node.handle,
         display_name: node.display_name ?? undefined,
         provider: node.provider || 'rule-engine',
@@ -196,7 +278,7 @@ export function HomePage({
         coding_agent: node.coding_agent ?? undefined,
         coding_agent_model: node.coding_agent_model ?? undefined,
         status: String(node.status || 'recent'),
-        is_active: node.status === 'working' || node.status === 'verifying' || node.status === 'recent',
+        is_active: node.status === 'working' || node.status === 'verifying',
         last_heartbeat: node.last_seen_at ?? undefined,
         joined_at: node.created_at ?? undefined,
         tasks_completed: node.tasks_completed ?? 0,
@@ -205,19 +287,31 @@ export function HomePage({
         score: 0,
       });
     }
-    return merged;
+
+    return order.map((key) => byHandle.get(key)!);
   }, [head?.top_contributors, swarmLive?.active_nodes]);
   const canonicalJoinPrompt = buildCanonicalJoinPrompt();
 
   const effectiveProgress = useMemo<LiveSwarmProgress | null>(() => {
-    if (swarmLive?.progress) return swarmLive.progress;
-    if (!stats) return null;
-    const completed = stats.tasks_completed ?? 0;
-    const inProgress = swarmLive?.active_leases_count ?? stats.agents_active ?? 0;
-    const queued = stats.tasks_queued ?? 0;
+    if (!swarmLive?.progress && !stats) return null;
+    const inProgress =
+      swarmLive?.progress?.tasks_in_progress ??
+      swarmLive?.active_leases_count ??
+      resolvedWorkingNow;
+    const swarmTotal = swarmLive?.progress?.tasks_total ?? 0;
+    const tasksTotal =
+      swarmTotal > 0 && swarmIsFresher
+        ? Math.max(swarmTotal, effectiveTasksCompleted + inProgress)
+        : stats
+          ? Math.max(
+              swarmTotal,
+              (stats.tasks_completed ?? 0) + inProgress + (stats.tasks_queued ?? 0),
+              effectiveTasksCompleted + inProgress,
+            )
+          : Math.max(swarmTotal, effectiveTasksCompleted + inProgress);
     return {
-      tasks_total: completed + inProgress + queued,
-      tasks_completed: completed,
+      tasks_total: tasksTotal,
+      tasks_completed: effectiveTasksCompleted,
       tasks_in_progress: inProgress,
       findings_verified: verifiedLeads,
       findings_in_review: peerReviewLeads,
@@ -226,11 +320,24 @@ export function HomePage({
   }, [
     swarmLive?.progress,
     swarmLive?.active_leases_count,
+    swarmIsFresher,
     stats,
+    resolvedWorkingNow,
+    effectiveTasksCompleted,
     verifiedLeads,
     peerReviewLeads,
     clearedRecords,
   ]);
+
+  const effectiveTasksQueued =
+    effectiveProgress && effectiveProgress.tasks_total > 0 && swarmIsFresher
+      ? Math.max(
+          0,
+          effectiveProgress.tasks_total -
+            effectiveProgress.tasks_completed -
+            effectiveProgress.tasks_in_progress,
+        )
+      : (stats?.tasks_queued ?? 0);
 
   // Featured verified finding (Frontier card): ONLY genuinely verified non-quarantined leads (never fallback to unverified)
   const frontierFinding = useMemo(() => {
@@ -334,20 +441,20 @@ export function HomePage({
             <div className="lsv-feed-eyebrow">
               <span className="lsv-feed-kicker">AUDIT TELEMETRY · QUORUM 2-OF-2</span>
             </div>
-            {(stats?.tasks_queued ?? 0) > 0 && (
+            {effectiveTasksQueued > 0 && (
               <span className="telemetry-queue-badge tabular">
-                {(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} queued
+                {effectiveTasksQueued.toLocaleString('en-IN')} queued
               </span>
             )}
           </div>
 
           <dl className="hero-stats" aria-label="Live audit totals">
             <div className="hero-stat">
-              <dt className="tabular">{isLoadingHead ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
+              <dt className="tabular">{isLoadingHead && !swarmLive ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
               <dd>verified leads</dd>
             </div>
             <div className="hero-stat">
-              <dt className="tabular">{isLoadingHead ? '—' : peerReviewLeads.toLocaleString('en-IN')}</dt>
+              <dt className="tabular">{isLoadingHead && !swarmLive ? '—' : peerReviewLeads.toLocaleString('en-IN')}</dt>
               <dd>in review</dd>
             </div>
             <div className="hero-stat">
@@ -355,7 +462,7 @@ export function HomePage({
               <dd>RTIs drafted</dd>
             </div>
             <div className="hero-stat">
-              <dt className="tabular">{isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
+              <dt className="tabular">{isLoadingHead && !swarmLive ? '—' : effectiveTasksCompleted.toLocaleString('en-IN')}</dt>
               <dd>tasks checked</dd>
             </div>
           </dl>
@@ -428,8 +535,8 @@ export function HomePage({
       <PublicLeaderboard
         contributors={topContribs}
         totalContributors={stats?.agents_total ?? topContribs.length}
-        totalChecks={stats?.tasks_completed ?? 0}
-        queuedTasks={stats?.tasks_queued ?? 0}
+        totalChecks={effectiveTasksCompleted}
+        queuedTasks={effectiveTasksQueued}
         activeHandles={activeHandleSet}
         joinPrompt={canonicalJoinPrompt}
         className="leaderboard--below-hero"
@@ -556,7 +663,7 @@ export function HomePage({
         <ObservatoryMap
           graph={graph}
           loading={graphLoading}
-          agentsActive={stats?.agents_active ?? activeAgents.length}
+          agentsActive={resolvedWorkingNow}
           verifiedCount={verifiedLeads}
           missionsCount={missions.length}
           refreshTick={refreshTick}
@@ -594,15 +701,19 @@ export function HomePage({
             </dd>
           </div>
           <div className="count-item">
-            <dt>{isLoadingHead ? '—' : (stats?.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
+            <dt>{isLoadingHead && !swarmLive ? '—' : effectiveTasksCompleted.toLocaleString('en-IN')}</dt>
             <dd>audit tasks completed</dd>
           </div>
           <div className="count-item">
-            <dt>{isLoadingHead ? '—' : (stats?.agents_active ?? 0).toLocaleString('en-IN')}</dt>
+            <dt>
+              {isLoadingHead && effectiveWorkingNow == null && !swarmLive
+                ? '—'
+                : resolvedWorkingNow.toLocaleString('en-IN')}
+            </dt>
             <dd>agents active now</dd>
           </div>
           <div className="count-item">
-            <dt>{isLoadingHead ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
+            <dt>{isLoadingHead && !swarmLive ? '—' : verifiedLeads.toLocaleString('en-IN')}</dt>
             <dd>verified leads</dd>
           </div>
           <div className="count-item">

@@ -3,10 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import { projectCodeFor } from '../utils';
 import { normalizeHandle } from './GitHubAvatar';
-import type {
-  LiveSwarmProgress,
-  LiveSwarmSnapshot,
-  LiveSwarmWhisper,
+import {
+  computeEffectiveWorkingNow,
+  type LiveSwarmProgress,
+  type LiveSwarmSnapshot,
+  type LiveSwarmWhisper,
 } from './LiveSwarmViewer';
 import '../styles/live-swarm-viewer.css';
 
@@ -228,17 +229,27 @@ export function HeroLiveFeed({
   className = '',
 }: HeroLiveFeedProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [tabVisible, setTabVisible] = useState(() =>
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden',
+  );
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      if (document.visibilityState !== 'hidden') setNowMs(Date.now());
-    }, 5000);
-    return () => window.clearInterval(id);
+    const onVis = () => setTabVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
+
+  useEffect(() => {
+    if (!tabVisible) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [tabVisible]);
 
   const whispers = whispersProp ?? snapshot?.live_whispers ?? [];
   const progress = progressProp !== undefined ? progressProp : (snapshot?.progress ?? null);
-  const workingNow = workingNowProp ?? snapshot?.working_now ?? 0;
+  const workingNow =
+    workingNowProp ?? (snapshot ? computeEffectiveWorkingNow(snapshot, nowMs) : 0);
 
   const visibleWhispers = useMemo(
     () => whispers.slice(0, Math.max(1, Math.min(3, maxItems))),
