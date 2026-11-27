@@ -244,6 +244,9 @@ def _parse_datetime_flex(value: Any) -> datetime | None:
         "%Y-%m-%d %H:%M:%S",
         "%Y-%m-%d %H:%M",
         "%Y-%m-%d",
+        "%Y/%m/%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y/%m/%d",
         "%Y-%d-%m %H:%M:%S",
         "%Y-%d-%m %H:%M",
         "%Y-%d-%m",
@@ -1705,17 +1708,18 @@ _WB_META_PREFIX_RE = re.compile(
 )
 _WB_SIGNED_INR_RE_1 = re.compile(
     r"(?:signed\s+contract\s+price|final\s+contract\s+price|contract\s+price|awarded\s+(?:price|value|amount))"
-    r"[^0-9\n]{0,40}?(?:INR|Rs\.?|₹|Indian\s+Rupees?)\s*([0-9][0-9,]*(?:\.\d+)?)",
+    r"[^0-9]{0,50}?(?:INR|Rs\.?|₹|Indian\s+Rupees?)\s*([0-9][0-9,]*(?:\.\d+)?)",
     re.IGNORECASE,
 )
 _WB_SIGNED_INR_RE_2 = re.compile(
     r"(?:signed\s+contract\s+price|final\s+contract\s+price|contract\s+price|awarded\s+(?:price|value|amount))"
-    r"[^0-9\n]{0,30}?([0-9][0-9,]*(?:\.\d+)?)\s*(?:INR|Indian\s+Rupees?)",
+    r"[^0-9]{0,50}?([0-9][0-9,]*(?:\.\d+)?)\s*(?:INR|Indian\s+Rupees?)",
     re.IGNORECASE,
 )
 _WB_AWARD_DATE_RE = re.compile(
     r"(?:contract\s+signature\s+date|date\s+of\s+contract\s+signature|date\s+of\s+award|award\s+date)"
-    r"\s*[:|]?\s*([0-9]{1,2}[-/\s][A-Za-z0-9]{2,9}[-/\s]20\d{2}|20\d{2}-\d{2}-\d{2})",
+    r"\s*[:|]?\s*(?:\(YYYY/MM/DD\)\s*|\([^)]{1,16}\)\s*)?"
+    r"([0-9]{1,2}[-/\s][A-Za-z0-9]{2,9}[-/\s]20\d{2}|20\d{2}[/-]\d{2}[/-]\d{2})",
     re.IGNORECASE,
 )
 _WB_DIRECT_METHODS = frozenset({"DIR", "CDS", "SSS"})
@@ -1853,7 +1857,8 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
 
         method_details = f"{method_code} ({method_name})".strip() if method_code and method_name else (method_code or method_name)
         buyer_name = str(
-            item.get("contact_organization")
+            item.get("agency_name")
+            or item.get("contact_organization")
             or item.get("implementing_agency")
             or item.get("borrower")
             or item.get("project_name")
@@ -1861,6 +1866,7 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
         ).strip()
         title = str(
             item.get("bid_description")
+            or item.get("noticetitle")
             or item.get("notice_description")
             or item.get("project_name")
             or bid_ref

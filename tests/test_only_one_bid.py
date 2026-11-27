@@ -1361,25 +1361,26 @@ def test_all_four_tier1_verified_source_formats_offline(tmp_path: Path) -> None:
     wb_payload = {
         "total": "4",
         "procnotices": [
-            # 1. Single-qualified after technical rejection (Evaluated absent, 2 Rejected present) + embedded phone PII!
+            # 1. Single-qualified after technical rejection (Evaluated absent, 2 Rejected present),
+            #    live WB STEP layout: agency_name, noticetitle, multi-line Signed Contract price, (YYYY/MM/DD) date, + PII!
             {
                 "id": "OP00200001",
                 "project_id": "P157054",
                 "project_name": "Madhya Pradesh Rural Connectivity Project",
                 "bid_reference_no": "IN-MPRRDA-101-CW-RFB",
-                "bid_description": "Rural road package 101",
+                "noticetitle": "Rural road package 101",
                 "procurement_method_code": "RFB",
                 "procurement_method_name": "Request for Bids",
                 "procurement_group_desc": "Works",
-                "contact_organization": "MP Rural Road Development Authority",
+                "agency_name": "MP Rural Road Development Authority",
                 "noticedate": "2022-05-10",
                 "notice_text": (
                     "<p>Bid Reference: IN-MPRRDA-101-CW-RFB</p>"
+                    "<p>Contract signature date (YYYY/MM/DD)<br/>2020/12/17</p>"
                     "<p><strong>Awarded Bidder(s):</strong></p>"
                     "<p>Name: M/S NARMADA BUILDERS PVT LTD (456789)<br/>"
                     "Address: Bhopal Ph. 9876543210 email test.vendor@gmail.com<br/>"
-                    "Signed Contract price: INR 32,500,000.00<br/>"
-                    "Contract signature date: 2022-05-01</p>"
+                    "Signed Contract price<br/>INR 145,167,240.00</p>"
                     "<p><strong>Rejected Bidder(s):</strong></p>"
                     "<p>Name: REJECTED FIRM A (111111)<br/>Reason for rejection: Technical</p>"
                     "<p>Name: REJECTED FIRM B (222222)<br/>Reason for rejection: Technical</p>"
@@ -1442,7 +1443,10 @@ def test_all_four_tier1_verified_source_formats_offline(tmp_path: Path) -> None:
     assert by_wb_id["OP00200001"]["bid_count"] == 3  # 1 awarded + 0 evaluated + 2 rejected
     assert by_wb_id["OP00200001"]["qualified_bid_count"] == 1
     assert by_wb_id["OP00200001"]["vendor_id"] == "456789"
-    assert by_wb_id["OP00200001"]["award_value_inr"] == 32_500_000.0
+    assert by_wb_id["OP00200001"]["buyer_name"] == "MP Rural Road Development Authority"
+    assert by_wb_id["OP00200001"]["tender_title"] == "Rural road package 101"
+    assert by_wb_id["OP00200001"]["award_date"] == "2020-12-17"
+    assert by_wb_id["OP00200001"]["award_value_inr"] == 145_167_240.0
     assert by_wb_id["OP00200002"]["bid_count"] == 1
     assert by_wb_id["OP00200002"]["procurement_method"] == "direct"
     assert by_wb_id["OP00200003"]["bid_count"] is None  # Awarded-only RFB NEVER misclassified as 1 bid!
@@ -1468,8 +1472,8 @@ def test_all_four_tier1_verified_source_formats_offline(tmp_path: Path) -> None:
     assert wlead.rule_triggered == "P7-COMBINED-SB-RW"
     assert wlead.anomaly_metrics["single_bid_mechanism"] == "single_qualified_after_rejection"
     assert wlead.anomaly_metrics["winner_single_bid_wins"] == 2
-    assert wlead.monetary_exposure_inr == 32_500_000.0
-    assert wlead.anomaly_metrics["winner_cohort_total_inr"] == 50_500_000.0
+    assert wlead.monetary_exposure_inr == 145_167_240.0
+    assert wlead.anomaly_metrics["winner_cohort_total_inr"] == 163_167_240.0
     assert "9876543210" not in wlead.summary
     assert "test.vendor@gmail.com" not in wlead.summary
 
