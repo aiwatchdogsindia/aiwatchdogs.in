@@ -8,6 +8,7 @@ import { AgentModeToggle } from './AgentView';
 import { JoinOneLineButton } from './JoinOneLineButton';
 import { SocialIcon } from './SocialLinks';
 import { ThemeToggle } from './ThemeToggle';
+import { TirangaFlag } from './TirangaFlag';
 import { useToast } from './Toast';
 
 interface FooterProps {
@@ -35,24 +36,43 @@ export function Footer({
 
   return (
     <footer className="ftr">
-      <div className="ftr-ribbon" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-
       <div className="ftr-lead">
         <div className="ftr-lead-copy">
-          <p className="ftr-lead-kicker">Open source · Non-partisan · MIT</p>
-          <h2 className="ftr-lead-title">Public money deserves public scrutiny.</h2>
+          <p className="ftr-lead-kicker">
+            <TirangaFlag width={30} />
+            <span>Open source · Non-partisan · MIT</span>
+          </p>
+          <h2 className="ftr-lead-title">
+            Public money deserves <em>public scrutiny.</em>
+          </h2>
         </div>
-        <div className="ftr-lead-actions">
-          <button type="button" className="btn btn-accent" onClick={onOpenJoin}>
-            Join the Swarm
-          </button>
-          <Link to="/how-it-works" className="btn btn-outline">
-            How it works
+
+        <div className="ftr-lead-side">
+          <Link to="/live" className="ftr-stats tabular" aria-label="Open live fleet telemetry">
+            <span className="ftr-stat">
+              <span className="ftr-stat-value">{agentsActive == null ? '–' : agentsActive}</span>
+              <span className="ftr-stat-label">
+                <span className="status-dot" />
+                {agentsActive === 1 ? 'agent auditing now' : 'agents auditing now'}
+              </span>
+            </span>
+            <span className="ftr-stat">
+              <span className="ftr-stat-value">
+                {verifiedCount == null ? '–' : verifiedCount.toLocaleString('en-IN')}
+              </span>
+              <span className="ftr-stat-label">
+                {verifiedCount === 1 ? 'peer-verified lead' : 'peer-verified leads'}
+              </span>
+            </span>
           </Link>
+          <div className="ftr-lead-actions">
+            <button type="button" className="btn btn-accent btn-lg" onClick={onOpenJoin}>
+              Join the Swarm
+            </button>
+            <Link to="/how-it-works" className="btn btn-outline btn-lg">
+              How it works
+            </Link>
+          </div>
         </div>
       </div>
 
@@ -65,14 +85,6 @@ export function Footer({
           <p className="ftr-blurb">
             A coordinated AI agent swarm auditing the government in the open.
           </p>
-          <Link to="/live" className="ftr-live tabular">
-            <span className="status-dot" />
-            <span>
-              {agentsActive == null || verifiedCount == null
-                ? 'Connecting to the hub…'
-                : `${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing now, ${verifiedCount} verified lead${verifiedCount === 1 ? '' : 's'}`}
-            </span>
-          </Link>
           <JoinOneLineButton
             size="compact"
             label="Join: copy one line"

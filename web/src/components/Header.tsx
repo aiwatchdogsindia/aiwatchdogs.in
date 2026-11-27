@@ -1,10 +1,11 @@
 import { Menu, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
 import { SocialIcon } from './SocialLinks';
 import { ThemeToggle } from './ThemeToggle';
+import { TirangaFlag } from './TirangaFlag';
 
 interface HeaderProps {
   onOpenJoin: () => void;
@@ -24,6 +25,9 @@ export function Header({ onOpenJoin }: HeaderProps) {
   const { pathname, hash } = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const [pill, setPill] = useState<{ left: number; width: number } | null>(null);
+  const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -53,17 +57,30 @@ export function Header({ onOpenJoin }: HeaderProps) {
     return pathname === item.to || pathname.startsWith(`${item.to}/`);
   };
 
+  const activeKey = NAV_ITEMS.find(isActive)?.key ?? null;
+  const pillKey = hoverKey ?? activeKey;
+
+  // The nav marker slides to the hovered link and rests on the current page
+  const placePill = useCallback(() => {
+    const nav = navRef.current;
+    const link = pillKey ? nav?.querySelector<HTMLElement>(`[data-nav="${pillKey}"]`) : null;
+    setPill(link ? { left: link.offsetLeft, width: link.offsetWidth } : null);
+  }, [pillKey]);
+
+  useLayoutEffect(placePill, [placePill]);
+
+  useEffect(() => {
+    window.addEventListener('resize', placePill);
+    void document.fonts?.ready.then(placePill);
+    return () => window.removeEventListener('resize', placePill);
+  }, [placePill]);
+
   return (
     <header className={`hdr ${scrolled ? 'is-scrolled' : ''} ${mobileOpen ? 'is-open' : ''}`}>
-      {/* Tiranga ribbon: saffron, white, green */}
-      <div className="hdr-ribbon" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-
       <div className="hdr-row">
         <Link to="/" className="hdr-brand" onClick={() => setMobileOpen(false)}>
+          <TirangaFlag className="hdr-flag" width={38} />
+          <span className="hdr-brand-rule" aria-hidden="true" />
           <img src="/logo.svg" alt="" className="hdr-logo" width={44} height={44} />
           <span className="hdr-wordmark">
             <span className="hdr-name">AI Watchdogs India</span>
@@ -71,11 +88,25 @@ export function Header({ onOpenJoin }: HeaderProps) {
           </span>
         </Link>
 
-        <nav className="hdr-nav" aria-label="Primary navigation">
+        <nav
+          className="hdr-nav"
+          aria-label="Primary navigation"
+          ref={navRef}
+          onMouseLeave={() => setHoverKey(null)}
+        >
+          <span
+            className={`hdr-nav-pill ${pill ? 'is-on' : ''} ${hoverKey && hoverKey !== activeKey ? 'is-preview' : ''}`}
+            style={pill ? { width: pill.width, transform: `translateX(${pill.left}px)` } : undefined}
+            aria-hidden="true"
+          />
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.key}
               to={item.to}
+              data-nav={item.key}
+              onMouseEnter={() => setHoverKey(item.key)}
+              onFocus={() => setHoverKey(item.key)}
+              onBlur={() => setHoverKey(null)}
               className={`hdr-link ${isActive(item) ? 'is-active' : ''}`}
               aria-current={isActive(item) ? 'page' : undefined}
             >

@@ -211,7 +211,7 @@
 }
 
 /* =========================================================================
-   Header — white field under a Tiranga ribbon
+   Header — white field, the flag at the leading edge
    ========================================================================= */
 .hdr {
   position: sticky;
@@ -229,54 +229,31 @@
   box-shadow: 0 8px 24px rgb(var(--shadow-color) / 0.07);
 }
 
+/* Condense once the page moves: shorter bar, tagline folds away */
+.hdr.is-scrolled .hdr-row {
+  height: 60px;
+}
+
+.hdr-tag {
+  max-height: 16px;
+  transition: max-height var(--dur-3) var(--ease-out), opacity var(--dur-2) ease;
+}
+
+.hdr.is-scrolled .hdr-tag {
+  max-height: 0;
+  opacity: 0;
+}
+
 .hdr.is-open {
   background: var(--header-bg);
-}
-
-.hdr-ribbon,
-.ftr-ribbon {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  height: 5px;
-}
-
-.hdr-ribbon span,
-.ftr-ribbon span {
-  transform-origin: left center;
-  animation: ribbonDraw 900ms var(--ease-out) both;
-}
-
-.hdr-ribbon span:nth-child(1),
-.ftr-ribbon span:nth-child(1) {
-  background: var(--flag-saffron);
-}
-
-.hdr-ribbon span:nth-child(2),
-.ftr-ribbon span:nth-child(2) {
-  background: var(--flag-white);
-  animation-delay: 140ms;
-}
-
-.hdr-ribbon span:nth-child(3),
-.ftr-ribbon span:nth-child(3) {
-  background: var(--flag-green);
-  animation-delay: 280ms;
-}
-
-@keyframes ribbonDraw {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
 }
 
 .hdr-row {
   display: flex;
   align-items: center;
   gap: 20px;
-  height: 68px;
+  height: 72px;
+  transition: height var(--dur-3) var(--ease-out);
   padding-left: max(var(--gutter), var(--safe-left));
   padding-right: max(var(--gutter), var(--safe-right));
 }
@@ -309,8 +286,9 @@
 }
 
 .hdr-name {
-  font-family: var(--font-serif);
-  font-size: 21px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 19px;
   line-height: 1;
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -323,55 +301,80 @@
   white-space: nowrap;
 }
 
+.hdr-flag {
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgb(var(--shadow-color) / 0.16));
+}
+
+.hdr-brand-rule {
+  width: 1px;
+  height: 26px;
+  margin-inline: 4px;
+  background: var(--rule);
+  flex-shrink: 0;
+}
+
+/* Navigation sits in a recessed track; a raised marker slides between links */
 .hdr-nav {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
   margin-inline: auto;
+  padding: 4px;
+  border: 1px solid var(--rule-soft);
+  border-radius: calc(var(--radius-sm) + 4px);
+  background: var(--sunk);
+}
+
+.hdr-nav-pill {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--raised);
+  box-shadow:
+    0 0 0 1px var(--rule),
+    0 2px 6px rgb(var(--shadow-color) / 0.1);
+  opacity: 0;
+  transition:
+    transform 360ms var(--ease-out),
+    width 360ms var(--ease-out),
+    opacity var(--dur-1) ease,
+    background-color var(--dur-1) ease;
+  pointer-events: none;
+}
+
+.hdr-nav-pill.is-on {
+  opacity: 1;
+}
+
+.hdr-nav-pill.is-preview {
+  background: color-mix(in srgb, var(--raised) 62%, transparent);
+  box-shadow: 0 0 0 1px var(--rule-soft);
 }
 
 .hdr-link {
   position: relative;
-  padding: 9px 11px;
+  z-index: 1;
+  padding: 9px 13px;
   border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 500;
   line-height: 1;
   color: var(--ink-3);
   white-space: nowrap;
-  transition: color var(--dur-1) ease, background-color var(--dur-1) ease;
-}
-
-.hdr-link::after {
-  content: '';
-  position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: 2px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--secondary);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform var(--dur-2) var(--ease-out);
+  transition: color var(--dur-1) ease;
 }
 
 .hdr-link:hover {
   color: var(--ink);
 }
 
-.hdr-link:hover::after {
-  transform: scaleX(1);
-  background: var(--rule-strong);
-}
-
 .hdr-link.is-active {
-  color: var(--ink);
-}
-
-.hdr-link.is-active::after {
-  transform: scaleX(1);
-  background: var(--secondary);
+  color: var(--primary-ink);
+  font-weight: 600;
 }
 
 .hdr-tools {
@@ -585,7 +588,7 @@
 }
 
 /* =========================================================================
-   Footer — Chakra navy field under the same ribbon. The footer keeps its
+   Footer — Chakra navy field. The footer keeps its
    own palette in both themes, so it re-scopes the tokens its children read.
    ========================================================================= */
 .ftr {
@@ -660,11 +663,6 @@
   }
 }
 
-.ftr-ribbon {
-  position: relative;
-  z-index: 1;
-}
-
 .ftr-lead,
 .ftr-grid,
 .ftr-bottom {
@@ -735,7 +733,8 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
+  font-weight: 600;
   font-size: 21px;
   letter-spacing: -0.02em;
   color: var(--ink);
@@ -962,8 +961,6 @@
     transform: none;
     transition: none;
   }
-  .hdr-ribbon span,
-  .ftr-ribbon span,
   .hdr-drawer-link {
     animation: none;
   }
@@ -1058,5 +1055,225 @@
     flex: 0 0 auto;
     width: auto;
     min-height: 40px;
+  }
+}
+
+/* Flag of India (components/TirangaFlag.tsx) */
+.tiranga {
+  display: block;
+  overflow: visible;
+}
+
+.tiranga-edge {
+  fill: none;
+  stroke: rgb(var(--shadow-color) / 0.22);
+  stroke-width: 0.8;
+}
+
+.tiranga-chakra {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wheelTurn 60s linear infinite;
+}
+
+.tiranga-sheen {
+  fill: rgba(255, 255, 255, 0.28);
+  transform-box: fill-box;
+  -webkit-mask: linear-gradient(100deg, transparent 30%, #000 50%, transparent 70%);
+  mask: linear-gradient(100deg, transparent 30%, #000 50%, transparent 70%);
+  animation: tirangaSheen 5.2s var(--ease-in-out) infinite;
+}
+
+@keyframes tirangaSheen {
+  0%, 20% { transform: translateX(0); }
+  80%, 100% { transform: translateX(200%); }
+}
+
+@media (max-width: 760px) {
+  .hdr-flag {
+    width: 30px;
+    height: 20px;
+  }
+  .hdr-brand-rule {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .hdr-logo {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tiranga-chakra,
+  .tiranga-sheen {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Footer, second pass: a rounded navy slab with the flag, live figures
+   and the closing line.
+   ------------------------------------------------------------------ */
+.ftr {
+  margin-top: var(--section);
+  border-radius: calc(var(--radius-md) * 2) calc(var(--radius-md) * 2) 0 0;
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgba(255, 153, 51, 0.1), transparent 55%),
+    radial-gradient(70% 90% at 0% 100%, rgba(19, 136, 8, 0.12), transparent 60%),
+    var(--paper);
+}
+
+.ftr-lead {
+  align-items: stretch;
+  padding-top: 72px;
+  padding-bottom: 60px;
+}
+
+.ftr-lead-kicker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.ftr-lead-title {
+  max-width: 13ch;
+  font-size: clamp(36px, 5vw, 68px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.ftr-lead-title em {
+  font-style: normal;
+  color: var(--ftr-saffron);
+}
+
+.ftr-lead-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 28px;
+}
+
+.ftr-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.ftr-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 168px;
+  padding: 16px 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.04);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition:
+    border-color var(--dur-2) ease,
+    background-color var(--dur-2) ease,
+    transform var(--dur-2) var(--ease-out);
+}
+
+.ftr-stats:hover .ftr-stat {
+  border-color: var(--rule-strong);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ftr-stats:hover .ftr-stat:first-child {
+  transform: translateY(-3px);
+}
+
+.ftr-stats:hover .ftr-stat:last-child {
+  transform: translateY(-3px);
+  transition-delay: 60ms;
+}
+
+.ftr-stat-value {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+}
+
+.ftr-stat-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+.ftr-col h4 {
+  position: relative;
+  padding-left: 14px;
+}
+
+.ftr-col h4::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: var(--radius-pill);
+  background: var(--ftr-saffron);
+}
+
+.ftr-col:nth-child(3) h4::before {
+  background: #FFFFFF;
+}
+
+.ftr-col:nth-child(4) h4::before {
+  background: var(--live);
+}
+
+.ftr-col:nth-child(5) h4::before {
+  background: #8FA0FF;
+}
+
+/* The wheel sits whole behind the closing line and reacts to the theme */
+.ftr::before,
+.ftr::after {
+  top: -210px;
+  right: 50%;
+  margin-right: -620px;
+  width: 720px;
+  height: 720px;
+}
+
+@media (max-width: 900px) {
+  .ftr-lead-side {
+    align-items: stretch;
+    width: 100%;
+  }
+  .ftr-stat {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .ftr {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+  .ftr-stat-value {
+    font-size: 28px;
+  }
+  .ftr::before,
+  .ftr::after {
+    width: 420px;
+    height: 420px;
+    top: -150px;
+    right: -170px;
+    margin-right: 0;
   }
 }

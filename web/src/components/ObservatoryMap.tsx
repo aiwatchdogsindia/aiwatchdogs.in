@@ -630,13 +630,13 @@ export function ObservatoryMap({
           ? Math.max(9.5 / cam.zoom, 11 / Math.sqrt(cam.zoom))
           : Math.max(9.5, 11 / Math.sqrt(cam.zoom));
         const maxLabelChars = isNarrowCanvas ? 18 : 26;
-        ctx.font = `600 ${titleWorldPx}px "Geist", system-ui, sans-serif`;
+        ctx.font = `600 ${titleWorldPx}px "Figtree", system-ui, sans-serif`;
         ctx.fillStyle = withAlpha(pal.ink, 0.88);
         ctx.textAlign = 'center';
         const shortLabel = `${cl.shortCode}, ${cl.label.length > maxLabelChars ? `${cl.label.slice(0, maxLabelChars - 1)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + (isNarrowCanvas ? 14 / cam.zoom : 16 / Math.sqrt(cam.zoom)));
 
-        ctx.font = `400 ${subWorldPx}px "Geist", system-ui, sans-serif`;
+        ctx.font = `400 ${subWorldPx}px "Figtree", system-ui, sans-serif`;
         ctx.fillStyle = withAlpha(pal.ink, 0.66);
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
@@ -830,7 +830,7 @@ export function ObservatoryMap({
         // Zoomed-in crisp node labels
         if (cam.zoom >= 1.32 || isPinned || isHov) {
           ctx.save();
-          ctx.font = `500 ${12.5 / Math.sqrt(cam.zoom)}px "Geist", system-ui, sans-serif`;
+          ctx.font = `500 ${12.5 / Math.sqrt(cam.zoom)}px "Figtree", system-ui, sans-serif`;
           ctx.fillStyle = isPinned || isHov ? pal.ink : withAlpha(pal.ink, 0.82);
           ctx.textAlign = 'left';
           const lbl = wn.node.label.length > 28 ? `${wn.node.label.slice(0, 27)}…` : wn.node.label;

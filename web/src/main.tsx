@@ -7,6 +7,8 @@ import './styles/tags-home.css';
 import './styles/agent-view.css';
 import './styles/shell.css';
 import './styles/hero.css';
+import './styles/home.css';
+import './styles/pages.css';
 import { App } from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 

@@ -397,7 +397,8 @@
 }
 
 .pv-donut-pct {
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
+  font-weight: 600;
   font-size: 32px;
   line-height: 1.05;
   color: var(--ink);
@@ -768,9 +769,9 @@
 
 .pv-results-title {
   margin: 4px 0 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
   font-size: clamp(22px, 2.1vw, 28px);
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.15;
   color: var(--ink);
 }
@@ -1251,9 +1252,9 @@
 }
 
 .pv-overview-num {
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
   font-size: 28px;
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.05;
   color: var(--ink);
 }

@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { AuditingProgressBar, HeroLiveFeed } from '../components/HeroLiveFeed';
+import { HomeSteps } from '../components/HomeSteps';
 import { HomeHero } from '../components/HomeHero';
 import { LiveAgentStrip } from '../components/LiveAgentStrip';
 import {
@@ -562,6 +563,8 @@ export function HomePage({
           </div>
         </div>
       </section>
+
+      <HomeSteps />
 
       {/* =================================================================
           BAND 3 — PUBLIC COMPUTE LEADERBOARD

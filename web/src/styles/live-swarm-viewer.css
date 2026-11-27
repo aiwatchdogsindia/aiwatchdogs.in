@@ -778,8 +778,8 @@
 
 .lsv-title {
   margin: 0;
-  font-family: var(--font-serif);
-  font-weight: 400;
+  font-family: var(--font-heading);
+  font-weight: 600;
   font-size: clamp(28px, 3vw, 40px);
   line-height: 1.06;
   letter-spacing: -0.015em;
@@ -1580,9 +1580,9 @@
 
 .lsv-roster-title-row h3 {
   margin: 0;
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
   font-size: 18px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .lsv-roster-filters {
