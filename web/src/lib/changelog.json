@@ -3,6 +3,61 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 46,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/46",
+      "mergedAt": "2026-11-27T09:12:50Z",
+      "title": "Finding drawer: show UB1/P1 citation lines and link each to its source PDF",
+      "items": [
+        "fall back to printed_line for the excerpt and to document for the title;",
+        "keep source_ref, which is added to the Citation type.",
+        "FindingDrawer.tsx: render one link per citation, sanitised through the existing safeExternalUrl, with target=\"_blank\" rel=\"noopener noreferrer\".",
+        "It uses the citation's own source_url when its sha256 differs from the finding's artifact_sha256, meaning the line was read from a second file such as the UB1 actuals statement.",
+        "Otherwise it uses source_ref, the finding's dataset, rather than a portal-homepage fallback in source_url.",
+        "This is the same rule as #41 uses for the .md finding pages."
+      ]
+    },
+    {
+      "pr": 41,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/41",
+      "mergedAt": "2026-11-27T09:12:46Z",
+      "title": "Link finding .md citations to the document each line was read from",
+      "items": [
+        "Link finding .md citations to the document each line was read from."
+      ]
+    },
+    {
+      "pr": 40,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/40",
+      "mergedAt": "2026-11-27T09:12:41Z",
+      "title": "Reuse SHA-256-pinned disk cache entries past the TTL",
+      "items": [
+        "the cached bytes must match the recorded digest and the pinned digest, or the entry is deleted and fetched again;",
+        "private 0700/0600 cache directory checks, and no caching of payloads with PII;",
+        "unpinned entries still expire on the TTL."
+      ]
+    },
+    {
+      "pr": 43,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/43",
+      "mergedAt": "2026-11-27T09:12:36Z",
+      "title": "Fix SyntaxError on Python 3.11 (the advertised minimum) and test it in CI",
+      "items": [
+        "The two f-strings: each inner string is now built first (fee_line, re_years) and then interpolated. The rendered text is identical.",
+        "New CI job python-minimum-version: it runs uv sync --locked + pytest on Python 3.11, so a future 3.12-only construct fails in CI instead of on volunteers' machines."
+      ]
+    },
+    {
+      "pr": 42,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/42",
+      "mergedAt": "2026-11-27T09:12:31Z",
+      "title": "Fix stale homepage leaderboard test that keeps CI red on main",
+      "items": [
+        "10 rows: HomePage.tsx renders <PublicLeaderboard …/> without a maxRows override, and PublicLeaderboard.tsx defaults to maxRows = 10.",
+        "Copy: the \"auto-uses your public GitHub handle\" text is in PublicLeaderboard.tsx (and still in ProjectLeaderboard.tsx). \"zero questions\" is absent from the homepage, ProjectLeaderboard and PublicLeaderboard.",
+        "GitHub links: the githubProfileUrl( + rel=\"noopener noreferrer\" checks now run on PublicLeaderboard.tsx instead of HomePage.tsx / ProjectLeaderboard.tsx, which now delegate rendering to it."
+      ]
+    },
+    {
       "pr": 38,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/38",
       "mergedAt": "2026-11-26T12:05:05Z",
