@@ -227,6 +227,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Compares what a Union Budget line was given with what was actually spent, from the official budget papers.',
   ),
+  duplicate_billing: makeTag(
+    'duplicate_billing',
+    'Duplicate billing',
+    'work',
+    'project',
+    'Checks official CAG Union Audit Reports for projects billed twice or claimed across two agencies while excluding legitimate cost-sharing.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
@@ -457,12 +464,14 @@ export function getWorkTypeTag(
     if (m === 'W1') return WORK_TYPE_TAGS.website_check;
     if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
     if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
+    if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
     return WORK_TYPE_TAGS.audit;
   }
 
   if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
   if (m === 'W1') return WORK_TYPE_TAGS.website_check;
   if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
+  if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -616,6 +625,7 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
       WORK_TYPE_TAGS.budget_check,
       WORK_TYPE_TAGS.website_check,
       WORK_TYPE_TAGS.unspent_budget,
+      WORK_TYPE_TAGS.duplicate_billing,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,

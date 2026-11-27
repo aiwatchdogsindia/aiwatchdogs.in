@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from aiwatchdogs.connectors import loader as connector_loader
 from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
-from aiwatchdogs.engines import fiscal, police, procurement, proximity, schemes, union_budget
+from aiwatchdogs.engines import fiscal, one_road_two_bills, police, procurement, proximity, schemes, union_budget
 
 ENGINE_VERSION = "2.0.0"
 
@@ -28,6 +28,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "M8": "M8-2026.11-v2",
     "P1": "P1-2026.11-v1",
     "UB1": "UB1-2026.11-v1",
+    "OR1": "OR1-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -206,6 +207,20 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://www.indiabudget.gov.in/budget2025-26/doc/eb/sbe46.pdf",
         "module": "aiwatchdogs.engines.union_budget",
     },
+    "OR1": {
+        "code": "OR1",
+        "name": "One Road, Two Bills: Union Duplicate Billing & Dual-Agency Claims",
+        "pillar": "audit",
+        "ruleset_version": RULESET_VERSIONS["OR1"],
+        "statutory_anchors": ["Constitution-Art-151", "CAG-DPC-Act-1971", "GFR-2017-R21", "GFR-2017-R62"],
+        "description": (
+            "Reads non-overlapping section windows of checksummed Union Government CAG Audit Report PDFs "
+            "(past 2 years) to identify documented duplicate billing, double payments, two receipts, or "
+            "irregular dual-agency claims on executed projects while excluding legitimate cost-sharing."
+        ),
+        "reference_dataset_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2026/5of2026UGEnglish-069ce38b4a151b0.15050638.pdf",
+        "module": "aiwatchdogs.engines.one_road_two_bills",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -219,6 +234,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "M8": (proximity.run_m8_corporate_proximity, proximity),
     "P1": (police.run_p1_police_budget_heads, police),
     "UB1": (union_budget.run_ub1_union_budget_lines, union_budget),
+    "OR1": (one_road_two_bills.run_or1_duplicate_billing, one_road_two_bills),
 }
 
 

@@ -144,6 +144,20 @@ The check used by the Union Budget project, P3 (`engines/union_budget.py`, rules
 * **Known limits:** money moved to another Demand (a scheme transferred between ministries), money financed outside the budget for a year (for example by loans to a public sector undertaking), equity infusions paid in kind, and organisational changes during the year (a departmental undertaking corporatised mid-year) are not visible in these statements. Leads state the printed figures and list these explanations; two independent peer verifiers reproduce every lead from the same files.
 * **Mandatory Benign Explanations Considered:** delayed approvals, tendering or land; vacant posts; lower demand in a demand-driven scheme; fresh releases held back while earlier releases are unspent with States or implementing agencies; schemes merged, renamed or moved; cess- and fund-financed lines; off-budget financing; and recoveries shown elsewhere in the statement.
 
+### `OR1` — One Road, Two Bills: Union Duplicate Billing & Dual-Agency Claims
+
+The check used by Project P4 (`one-road-two-bills`, `engines/one_road_two_bills.py`, ruleset `OR1-2026.11-v1`). It reads non-overlapping paragraph and section windows from checksummed Union Government CAG Audit Report PDFs from the past two years (`cag.gov.in`) to surface documented irregularities where a finished work, bill, or expenditure was paid twice or claimed across two agencies, departments, ministries, or schemes.
+
+* **Statutory Anchors:** Constitution Article 151 (CAG Audit Reports); CAG (DPC) Act 1971; GFR 2017 Rules 21 & 62.
+* **Input:** one official Union Government CAG Audit Report PDF, pinned by its exact CloudFront URL and SHA-256 (`context.one_road_two_bills`), listing 1 to 20 non-overlapping `(page, line_start, line_end)` section windows.
+* **Legitimate Co-Funding Exclusion:** Blocks describing standard cost-sharing or joint-funding arrangements (`cost sharing`, `60:40`, `50:50`, `centre-state share`, `matching grant`, `viability gap funding`, `pooled funding`) are explicitly cleared unless an explicit double-billing or paid-twice irregularity appears in the same section.
+* **Boilerplate Exclusion:** Table of Contents lines, figure captions, and audit-objective/methodology sentences (`to verify whether...`, `prevent duplicate...`) are excluded before signal matching.
+* **Two-Tier Signal Rules:**
+  * `duplicate_payment_or_billing`: explicit double payment, duplicate payment, paid/billed/claimed/reimbursed twice, double billing, duplicate voucher/invoice/bill, or two bills/vouchers/receipts.
+  * `dual_agency_or_scheme_overlap`: two agencies/departments/ministries/schemes or already-executed overlapping works co-occurring with an audit irregularity indicator and concrete spending context.
+* **Outcomes:** Matching sections emit neutral leads quoting exact report number, page, paragraph/section anchor, SHA-256 checksum, cited rupee amount (never fabricated if unprinted), and neutralized excerpt. Non-matching or co-funded blocks record `cleared`; missing pages record `unevaluable`.
+* **Mandatory Benign Explanations Considered:** Action Taken Notes (ATNs) or PAC reviews recording subsequent recoveries or adjustments; phased/component billing across Measurement Books; and legitimate cost-sharing routed through separate executing agencies.
+
 ### `W1` — `.gov.in` GIGW 3.0, RTI Act 2005 & GoI Statutory Conformity Audit
 
 The read-only website observation engine used by `gov-in-public-information` (`engines/gov_pages.py`, `engines/gigw_matrix.py`, matrix version `gigw-3.0-rti-2005-v1`). It audits all 12,537 web `.gov.in` hostnames from Data Libertarian's pinned snapshot across **1,000 batches** (12–13 domains per task) against a unified **159-checkpoint conformity matrix**:

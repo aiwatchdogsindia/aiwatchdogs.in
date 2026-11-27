@@ -37,6 +37,14 @@ const LIVE_PROJECTS = [
     summary:
       'Reads every line of every Demand for Grants since 2014-15 from the official budget papers and reports what was budgeted but not spent.',
   },
+  {
+    code: 'P4',
+    slug: 'one-road-two-bills',
+    title: 'One Road, Two Bills',
+    tag: WORK_TYPE_TAGS.duplicate_billing,
+    summary:
+      'Audits Union Government CAG Audit Reports from the past 2 years for documented duplicate billing, two-receipt claims, and dual-agency overlaps while excluding legitimate cost-sharing.',
+  },
 ];
 
 const EXPLORE_LINKS = [

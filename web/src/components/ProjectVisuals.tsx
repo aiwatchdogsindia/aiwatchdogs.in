@@ -931,6 +931,16 @@ export function ProjectResultsVisualizer({
       />
     );
   }
+  if (code === 'OR1') {
+    return (
+      <OneRoadTwoBillsVisualizer
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
   return (
     <BudgetAuditVisualizer
       mission={mission}
@@ -2606,6 +2616,305 @@ function UnionBudgetVisualizer({
           <div className="pv-empty-box">
             Leads appear here as agents finish checks. Each one cites the page and printed row of both
             budget documents.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3D. OR1 One Road, Two Bills: Union duplicate billing & dual-agency claims ---------- */
+
+const OR1_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/one-road-two-bills/METHODOLOGY.md';
+
+function signalLabel(signal: string): string {
+  if (signal === 'duplicate_payment_or_billing') return 'Duplicate billing / paid twice';
+  if (signal === 'dual_agency_or_scheme_overlap') return 'Dual-agency / scheme overlap';
+  return signal || 'Audit lead';
+}
+
+function OneRoadTwoBillsVisualizer({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const or1 = visualSummary?.one_road_two_bills;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const years = or1?.years ?? [];
+  const topLeads = or1?.top_leads ?? [];
+  const leads = or1?.leads ?? 0;
+  const flaggedCr = or1?.flagged_inr_cr ?? 0;
+  const verified = or1?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = or1?.peer_review ?? mission.peer_review_count ?? 0;
+  const documentsUrl = or1?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = or1?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+  const maxYearFlagged = Math.max(1, ...years.map((y) => y.flagged_inr_cr || 0));
+
+  return (
+    <section className="card card-pad pv-results" aria-label="One Road Two Bills results">
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Duplicate billing &amp; dual-agency claims</h2>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">{fmtCount(or1?.reports)} CAG Union reports</span>
+          <span className="tag-mono">{fmtCount(or1?.pages)} pages read</span>
+          <span className="tag-mono">{fmtCount(or1?.blocks)} section blocks</span>
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'lead' : 'leads'}
+            {flaggedCr > 0 ? ` · ${formatInrCr(flaggedCr)} cited` : ''}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Year by year</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-dot--verified" aria-hidden="true" /> {TASK_TAGS.done.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--claimed" aria-hidden="true" /> {TASK_TAGS.in_progress.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--open" aria-hidden="true" /> {TASK_TAGS.open.label}
+              </span>
+            </div>
+          </div>
+
+          {years.length > 0 ? (
+            <div className="pv-ub-years-wrap">
+              <table className="pv-ub-table pv-ub-years">
+                <caption className="pv-ub-caption">
+                  Checks done per report year, CAG Union reports and pages covered, and cited amounts so far.
+                  {onFilterTasks ? ' Choose a year to list its tasks.' : ''}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Year</th>
+                    <th scope="col">Checked</th>
+                    <th scope="col" className="num">
+                      Reports / Pages
+                    </th>
+                    <th scope="col" className="num">
+                      Cited amount
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {years.map((y) => {
+                    const total = Math.max(0, y.tasks);
+                    const donePct = calcPct(y.done, total);
+                    const claimedPct = calcPct(y.claimed, total);
+                    return (
+                      <tr key={y.year}>
+                        <th scope="row" className="pv-ub-year">
+                          {onFilterTasks ? (
+                            <button
+                              type="button"
+                              className="pv-ub-link"
+                              onClick={() => onFilterTasks(y.year)}
+                              aria-label={`Show tasks for ${y.year}`}
+                            >
+                              {y.year}
+                            </button>
+                          ) : (
+                            <span>{y.year}</span>
+                          )}
+                        </th>
+                        <td className="pv-ub-years-checked">
+                          <span
+                            className="pv-ub-bar"
+                            role="img"
+                            aria-label={`${fmtCount(y.done)} of ${fmtCount(total)} checks ${TASK_TAGS.done.label}, ${fmtCount(y.claimed)} ${TASK_TAGS.in_progress.label}`}
+                          >
+                            {donePct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-ub-bar-seg--done"
+                                style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                              />
+                            ) : null}
+                            {claimedPct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-ub-bar-seg--claimed"
+                                style={{ width: `${Math.max(claimedPct, 1.5)}%` }}
+                              />
+                            ) : null}
+                          </span>
+                          <span className="pv-ub-sub tabular">
+                            {fmtCount(y.done)}/{fmtCount(total)} · {fmtPct(donePct)}
+                            {y.claimed > 0 ? ` · ${fmtCount(y.claimed)} running` : ''}
+                          </span>
+                        </td>
+                        <td className="num pv-ub-years-lines" data-label="Reports / Pages">
+                          <span className="pv-ub-cell-val">{fmtCount(y.reports)} reports</span>
+                          <span className="pv-ub-sub">{fmtCount(y.pages)} pages</span>
+                        </td>
+                        <td className="num pv-ub-years-below" data-label="Cited amount">
+                          <span className="pv-ub-cell-val">
+                            {y.flagged_inr_cr > 0 ? formatInrCr(y.flagged_inr_cr) : '—'}
+                          </span>
+                          <span className="pv-ub-sub">
+                            {fmtCount(y.leads)} {y.leads === 1 ? 'lead' : 'leads'}
+                          </span>
+                          {y.flagged_inr_cr > 0 ? (
+                            <span className="pv-ub-mini-track" aria-hidden="true">
+                              <span
+                                className="pv-ub-mini-fill"
+                                style={{
+                                  width: `${Math.max(3, (y.flagged_inr_cr / maxYearFlagged) * 100)}%`,
+                                }}
+                              />
+                            </span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              Year-by-year coverage appears here once the hub loads this project&apos;s CAG report index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Each check inspects non-overlapping paragraph blocks from checksummed official CAG Union
+            Government Audit Report PDFs from the past two years. It looks for documented irregularities
+            where a finished work or bill was paid twice, billed twice, or claimed by two agencies.
+          </p>
+          <p>
+            Legitimate cost-sharing and co-funding (such as 60:40 or 50:50 Centre–State shares, matching
+            grants, or pooled funds) are explicitly cleared unless an explicit double-billing irregularity
+            is recorded.
+          </p>
+          <p>Two other agents independently verify every lead before it is marked {FINDING_TAGS.verified.label}.</p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              CAG reports used (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={OR1_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {or1?.generated_on ? (
+            <p className="pv-chart-note">Report index built {or1.generated_on}.</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>Duplicate billing &amp; dual-claim findings reported so far</h3>
+          {topLeads.length > 0 ? (
+            <span className="pv-chart-note">₹ crore cited in the CAG audit text</span>
+          ) : null}
+        </div>
+        {topLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                CAG Union audit observations citing duplicate billing or dual-agency overlap.
+                {onSelectFinding ? ' Open a row to see its exact page citation and excerpt.' : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Agency / Entity</th>
+                  <th scope="col">Report</th>
+                  <th scope="col" className="num">
+                    Page
+                  </th>
+                  <th scope="col">Signal</th>
+                  <th scope="col" className="num">
+                    Cited amount
+                  </th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.entity_name || lead.title}
+                          </button>
+                        ) : (
+                          <span>{lead.entity_name || lead.title}</span>
+                        )}
+                        {lead.entity_name && lead.title && lead.title !== lead.entity_name ? (
+                          <span className="pv-ub-sub">{lead.title}</span>
+                        ) : null}
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="Report">
+                        {lead.report_no || plainFiscalYear(lead.fiscal_year)}
+                      </td>
+                      <td className="num tabular" data-label="Page">
+                        {lead.page ?? '—'}
+                      </td>
+                      <td data-label="Signal">{signalLabel(lead.signal_category)}</td>
+                      <td className="num pv-ub-lead-below" data-label="Cited amount">
+                        <strong>
+                          {lead.flagged_inr_cr > 0 ? formatInrCr(lead.flagged_inr_cr) : 'Not quantified'}
+                        </strong>
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            Leads appear here as agents finish checks. Each one cites the exact CAG Union report, page,
+            paragraph, and SHA-256 checksum.
           </div>
         )}
       </div>

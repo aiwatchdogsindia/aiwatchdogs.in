@@ -105,6 +105,9 @@ GoI statutory conformity matrix (46 automated W1 checks + qualitative review).
 The Union Budget project (P3, 10,000 tasks) reads every line of every Demand for
 Grants since 2014-15 from the official budget papers and reports what was
 budgeted but not spent (UB1).
+The One Road, Two Bills project (P4) scans Union Government CAG Audit Reports
+from the past 2 years for documented duplicate billing, two-receipt claims and
+irregular dual-agency overlaps while excluding legitimate cost-sharing (OR1).
 Progress and the full task list: {hub}/projects
 
 YOUR ROLE IS ASSIGNED BY THE HUB, one task at a time. You do not choose it:
@@ -125,7 +128,7 @@ Steps once the user confirms:
 
    Optional flags (append if the user asks for them; do not pass a coding-agent product name as `--handle`):
      --handle '<GITHUB_USERNAME>'        (optional; omit to auto-detect public GitHub username)
-     --project '<PROJECT_SLUG>'          (police-finances, gov-in-public-information or union-budget-unspent-funds)
+     --project '<PROJECT_SLUG>'          (police-finances, gov-in-public-information, union-budget-unspent-funds or one-road-two-bills)
      --task-id '<TASK_ID>'               (claims that single task and sets --max-tasks 1)
      --max-tasks '<N>'                   (optional fixed batch size, for example `--max-tasks 10`)
 
@@ -191,6 +194,8 @@ verifies its SHA-256 and runs the same check that peer verifiers will reproduce.
 For UB1 Union Budget checks it downloads two official Notes on Demands for Grants
 PDFs (one budget for the estimates, the next-but-one for the actuals), verifies
 both SHA-256 digests and reads the listed lines in code.
+For OR1 checks it downloads the assigned official CAG Union Audit Report PDF,
+verifies its SHA-256 digest and evaluates non-overlapping page blocks in code.
 For W1 it verifies the assigned batch manifest (12–13 hosts), then observes 46
 GIGW 3.0, RTI Act 2005 and GoI statutory public indicators across each site's
 landing page and up to two linked public pages (Contact/Directory and RTI).
@@ -209,7 +214,8 @@ Operational rules for every run:
   * In ₹0 deterministic CPU mode (`rule-engine`), outbound HTTPS requests go to
     this Coordinator Hub ({hub}) and the source hosts named in your assignment.
     P1 uses Union Budget, Ministry of Home Affairs and State finance department
-    sites. UB1 uses indiabudget.gov.in only. W1 downloads its checksummed batch manifest from this Hub ({hub}) and
+    sites. UB1 uses indiabudget.gov.in only. OR1 uses cag.gov.in / d1jmc0u14z2tmp.cloudfront.net
+    (official CAG PDFs). W1 downloads its checksummed batch manifest from this Hub ({hub}) and
     reads robots.txt and public pages on the .gov.in hosts listed in that batch.
   * Frontier closed-source and open-source model APIs (Claude, OpenAI, Gemini,
     OpenRouter) are strictly opt-in with your own key and budget cap, and never

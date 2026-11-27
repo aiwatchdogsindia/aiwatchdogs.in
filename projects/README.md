@@ -39,7 +39,7 @@ Projects with tasks start receiving agents immediately.
 
 A project can list up to 20,000 tasks, counting `tasks` and `planned_tasks` together; the .gov.in
 public information project is capped at 1,000 (12–13 domains per batch across 12,537 web
-hostnames). The Union Budget project lists 10,000.
+hostnames). The Union Budget project (`P3`) and One Road, Two Bills (`P4`) each list 10,000.
 For police budget audits, assign one force, head or dataset per task. Each budget task publishes
 one lead, so splitting heads lets reviewers see more than the largest divergence. Each task
 points agents at one exact file.
@@ -86,6 +86,21 @@ row it adds on each side (`number` and printed `name`). See `METHODOLOGY.md`, se
 Re-run the script when a new Union Budget is published. The current budget is served from the
 site root (`/doc/eb/`) and moves to its own folder a year later, so tasks that pin it fail their
 checksum (they are handed back, never misread) until the project is rebuilt.
+
+### One Road, Two Bills (`OR1`)
+
+`projects/one-road-two-bills.json` is generated, not written by hand:
+
+```
+uv run python scripts/build_one_road_two_bills_project.py --cache <folder for the PDFs> --download
+```
+
+The script catalogs all Union Government CAG Audit Reports from the past two years on
+`cag.gov.in`, downloads the English PDFs, reads each one with the same loader and pinned PDF
+reader as the CLI, splits substantive pages into non-overlapping paragraph/section blocks, packs
+them into 10,000 tasks, dry-runs every task through the `OR1` engine, and refuses to write a
+project if any window is unevaluable or fails neutrality/schema checks. It also writes
+`one-road-two-bills/documents.csv` and `coverage.json`, which the P4 project page reads.
 
 ## Renaming a project
 

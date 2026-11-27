@@ -145,6 +145,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "mirror_name",
         "new_entity_days",
         "official_publisher",
+        "one_road_two_bills",
         "pac_note_threshold_inr",
         "q4_ceiling_pct",
         "retrieval_url",
@@ -184,12 +185,14 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
         "aggregate_level",
         "comparison_basis",
         "is_final_cost_overrun",
+        "signal_category",
     }
 )
 
 # Record-level identifier keys that must match exactly when present on both submitted and candidate leads.
 RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "line_key",
+    "window_key",
     "source_locator",
     "ocid",
     "tender_id",

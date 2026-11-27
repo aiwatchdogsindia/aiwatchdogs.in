@@ -161,12 +161,14 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'police-finances': 'P1',
   'gov-in-public-information': 'P2',
   'union-budget-unspent-funds': 'P3',
+  'one-road-two-bills': 'P4',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   P1: 'P1',
   W1: 'P2',
   UB1: 'P3',
+  OR1: 'P4',
 };
 
 /**
@@ -224,6 +226,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   UB1: {
     name: 'Union Budget lines: budget estimate vs revised estimate vs actual',
     rule: 'Reads a numbered line of the Notes on Demands for Grants from two checksummed Union Budget PDFs and reports the part of its budget estimate that was not spent, when that is 10% or more and at least Rs 1 crore.',
+  },
+  OR1: {
+    name: 'One Road, Two Bills: Union duplicate billing & dual-agency claims',
+    rule: 'Reads non-overlapping section windows of checksummed Union CAG Audit Report PDFs (past 2 years) for documented duplicate billing, double payments, two receipts, or irregular dual-agency claims while excluding legitimate cost-sharing.',
   },
 };
 

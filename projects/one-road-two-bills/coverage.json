@@ -1,0 +1,49 @@
+{
+  "generated_on": "2026-11-27",
+  "cutoff_date": "2024-11-27",
+  "report_years": [
+    "2024",
+    "2025",
+    "2026"
+  ],
+  "reports_discovered": 53,
+  "reports_used": 44,
+  "reports_skipped_no_pdf": 3,
+  "reports_excluded_state_mistag": 2,
+  "reports_unreadable_or_dup": 3,
+  "pages_used": 7085,
+  "blocks": 17203,
+  "tasks": 10000,
+  "by_year": {
+    "2024": {
+      "reports": 5,
+      "pages": 749,
+      "blocks": 1676,
+      "tasks": 1030
+    },
+    "2025": {
+      "reports": 33,
+      "pages": 5473,
+      "blocks": 13471,
+      "tasks": 7676
+    },
+    "2026": {
+      "reports": 6,
+      "pages": 863,
+      "blocks": 2056,
+      "tasks": 1294
+    }
+  },
+  "dry_run": {
+    "tasks_with_leads": 16,
+    "tasks_cleared": 9984,
+    "total_leads": 16,
+    "total_unevaluable": 0,
+    "excluded_legitimate_cofunding": 21,
+    "by_signal": {
+      "dual_agency_or_scheme_overlap": 2,
+      "duplicate_payment_or_billing": 14
+    },
+    "total_flagged_inr_cr": 29.02
+  }
+}

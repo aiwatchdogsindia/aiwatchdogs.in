@@ -42,6 +42,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "police-finances": "P1",
     "gov-in-public-information": "P2",
     "union-budget-unspent-funds": "P3",
+    "one-road-two-bills": "P4",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -96,6 +97,8 @@ _COLUMN_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
 MAX_PART_WINDOW_LINES = 12
 UNION_BUDGET_PROJECT_SLUG = "union-budget-unspent-funds"
 UNION_BUDGET_METHODOLOGY = "UB1"
+ONE_ROAD_TWO_BILLS_PROJECT_SLUG = "one-road-two-bills"
+ONE_ROAD_TWO_BILLS_METHODOLOGY = "OR1"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -459,6 +462,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(f"{where} must use the website audit project, methodology and quantity type together.")
         if code == UNION_BUDGET_METHODOLOGY and task.get("financial_quantity_type") != "budget_and_treasury_expenditure":
             errors.append(f"{where} must use the budget_and_treasury_expenditure quantity type with {UNION_BUDGET_METHODOLOGY}.")
+        if code == ONE_ROAD_TWO_BILLS_METHODOLOGY and task.get("financial_quantity_type") != "cag_report_monetary_figures":
+            errors.append(
+                f"{where} must use the cag_report_monetary_figures quantity type with {ONE_ROAD_TWO_BILLS_METHODOLOGY}."
+            )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
@@ -528,6 +535,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             spec = ctx.get("union_budget") if isinstance(ctx, dict) else None
             if isinstance(spec, dict) and (spec.get("actuals_document") is not None) != (sec_url not in (None, "")):
                 errors.append(f"{where} must pin the actuals statement as payload.secondary_url exactly when it names one.")
+        if code == ONE_ROAD_TWO_BILLS_METHODOLOGY:
+            from aiwatchdogs.engines.one_road_two_bills import validate_context as validate_or1_context
+
+            errors.extend(validate_or1_context(ctx, where))
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -572,10 +583,10 @@ def _project_paths(root: Path) -> list[Path]:
 def _validation_code_digest() -> str:
     """A digest of the code that decides whether a project file is valid."""
     from aiwatchdogs.core import safety
-    from aiwatchdogs.engines import union_budget
+    from aiwatchdogs.engines import one_road_two_bills, union_budget
 
     digest = hashlib.sha256()
-    for module in (inspect.getmodule(validate_project), safety, union_budget):
+    for module in (inspect.getmodule(validate_project), safety, union_budget, one_road_two_bills):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():
             digest.update(Path(source).read_bytes())

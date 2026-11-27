@@ -335,12 +335,58 @@ export interface VisualUnionBudget {
   coverage_url: string;
 }
 
+export interface VisualOneRoadTwoBillsYear {
+  year: string;
+  reports: number;
+  pages: number;
+  blocks: number;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  flagged_inr_cr: number;
+}
+
+export interface VisualOneRoadTwoBillsLead {
+  finding_id: string;
+  title: string;
+  entity_name: string;
+  fiscal_year: string;
+  status: string;
+  report_no: string;
+  page: number | null;
+  para_number: string;
+  signal_category: string;
+  flagged_inr_cr: number;
+}
+
+export interface VisualOneRoadTwoBills {
+  reports: number;
+  pages: number;
+  blocks: number;
+  report_years: string[];
+  generated_on: string;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_inr_cr: number;
+  by_signal: Record<string, number>;
+  years: VisualOneRoadTwoBillsYear[];
+  top_leads: VisualOneRoadTwoBillsLead[];
+  documents_url: string;
+  coverage_url: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
   budget_audit?: VisualBudgetAudit;
   website_audit?: VisualWebsiteAudit;
   union_budget?: VisualUnionBudget;
+  one_road_two_bills?: VisualOneRoadTwoBills;
 }
 
 export interface MissionItem {

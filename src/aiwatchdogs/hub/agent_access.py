@@ -631,6 +631,56 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "one_road_two_bills" in vs:
+        or1 = vs["one_road_two_bills"]
+        years = or1.get("years") or []
+        span = f"{years[0].get('year')} to {years[-1].get('year')}" if years else "past 2 years"
+        out.extend(
+            [
+                "## One Road, Two Bills (OR1)",
+                "",
+                f"- **CAG Union reports audited:** {int(or1.get('reports') or 0):,} "
+                f"({int(or1.get('pages') or 0):,} pages, {int(or1.get('blocks') or 0):,} section blocks; years {span})",
+                f"- **Leads so far:** {int(or1.get('leads') or 0):,} ({int(or1.get('verified') or 0):,} verified) · "
+                f"Rs {float(or1.get('flagged_inr_cr') or 0.0):,.2f} crore cited",
+                f"- **Reports indexed, with SHA-256 (CSV):** [{base_url}{or1.get('documents_url')}]({base_url}{or1.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{or1.get('coverage_url')}]({base_url}{or1.get('coverage_url')})",
+                "",
+                "Surfaces documented irregularities where an executed Union project or bill was paid twice or claimed "
+                "across two agencies, departments, ministries, or schemes, while excluding legitimate cost-sharing.",
+                "",
+                "### Year-by-Year Coverage",
+                "",
+                "| Report year | Checks done / total | Reports | Pages | Leads | Cited (Rs crore) |",
+                "| :--- | :---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for y in years:
+            out.append(
+                f"| {y.get('year')} | {int(y.get('done') or 0):,}/{int(y.get('tasks') or 0):,} | "
+                f"{int(y.get('reports') or 0):,} | {int(y.get('pages') or 0):,} | "
+                f"{int(y.get('leads') or 0):,} | {float(y.get('flagged_inr_cr') or 0.0):,.2f} |"
+            )
+        top = or1.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "",
+                    "### Duplicate Billing & Dual-Claim Leads So Far",
+                    "",
+                    "| Agency / Entity | Report | Page | Signal | Cited (Rs crore) | Status |",
+                    "| :--- | :--- | ---: | :--- | ---: | :--- |",
+                ]
+            )
+            for lead in top:
+                out.append(
+                    f"| [{_md_cell(lead.get('entity_name'), max_len=80)}]({base_url}/findings/{lead.get('finding_id')}.md) | "
+                    f"{_md_cell(lead.get('report_no'), max_len=40)} | {lead.get('page') or '—'} | "
+                    f"{_md_cell(lead.get('signal_category'))} | {float(lead.get('flagged_inr_cr') or 0.0):,.2f} | "
+                    f"{_status_label(lead.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -1212,11 +1262,12 @@ def render_brief_md(base_url: str) -> str:
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (3 Live Projects)",
+        "## What We're Auditing Right Now (4 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
         f"- **[Union Budget: budgeted but not spent]({base_url}/projects/union-budget-unspent-funds.md)** (`P3`) — Every line of every Demand for Grants since 2014-15, read from the official budget papers: budget estimate, revised estimate and actual expenditure, and what was not spent (10,000 tasks).",
+        f"- **[One Road, Two Bills]({base_url}/projects/one-road-two-bills.md)** (`P4`) — Union Government CAG Audit Reports (past 2 years) scanned for documented duplicate billing, two-receipt claims, and irregular dual-agency overlaps while excluding legitimate cost-sharing.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1464,7 +1515,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1 and UB1 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1 and OR1 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
         f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): Reviewable POSIX shell entrypoint launching `aiwatchdogs join` (interactive in a terminal; non-interactive without a TTY or with `--yes`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
@@ -1668,7 +1719,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills').",
                     }
                 },
                 "required": ["slug"],

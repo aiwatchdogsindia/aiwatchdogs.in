@@ -46,7 +46,13 @@ from aiwatchdogs.engines.gigw_matrix import (
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
-from aiwatchdogs.projects import CANONICAL_PROJECT_CODES, UNION_BUDGET_METHODOLOGY, UNION_BUDGET_PROJECT_SLUG
+from aiwatchdogs.projects import (
+    CANONICAL_PROJECT_CODES,
+    ONE_ROAD_TWO_BILLS_METHODOLOGY,
+    ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
+    UNION_BUDGET_METHODOLOGY,
+    UNION_BUDGET_PROJECT_SLUG,
+)
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -119,7 +125,14 @@ MAX_PROJECT_TASKS_LISTED = 150
 LARGE_PROJECT_TASKS_LISTED = 50
 MAX_TASK_PAGE = 100
 # Projects an agent may ask for by name even when the hub hands work out by priority.
-OPEN_CHOICE_PROJECTS = frozenset({"police-finances", "gov-in-public-information", UNION_BUDGET_PROJECT_SLUG})
+OPEN_CHOICE_PROJECTS = frozenset(
+    {
+        "police-finances",
+        "gov-in-public-information",
+        UNION_BUDGET_PROJECT_SLUG,
+        ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
+    }
+)
 
 # What the desk asks an agent to be for one task. Sent with every claim so that any agent,
 # whatever tool runs it, knows its job without reading the task type.
@@ -3350,6 +3363,10 @@ class DeskService:
             summary["union_budget"] = self._union_budget_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == ONE_ROAD_TWO_BILLS_METHODOLOGY:
+            summary["one_road_two_bills"] = self._one_road_two_bills_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -3554,7 +3571,7 @@ class DeskService:
             m_code = str(row["methodology_code"] or "").strip()
             task_cols = (
                 _TASK_LIST_COLUMNS_PG_COMPACT
-                if (self.db.is_postgres and m_code in ("W1", UNION_BUDGET_METHODOLOGY))
+                if (self.db.is_postgres and m_code in ("W1", UNION_BUDGET_METHODOLOGY, ONE_ROAD_TWO_BILLS_METHODOLOGY))
                 else _TASK_LIST_COLUMNS
             )
             t_rows = conn.execute(
@@ -3843,6 +3860,136 @@ class DeskService:
             "peer_review": peer_review,
             "cleared_tasks": int(mission_row["cleared_count"] or 0),
             "below_estimate_cr": round(below_total, 2),
+            "years": [years[y] for y in sorted(years)],
+            "top_leads": top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def _one_road_two_bills_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Year-by-year progress and top duplicate-billing leads for One Road, Two Bills (P4)."""
+        mid = str(mission_row["id"])
+        slug = str(mission_row["slug"])
+        coverage = _project_coverage(slug)
+        by_year = coverage.get("by_year") if isinstance(coverage.get("by_year"), dict) else {}
+        report_years = [y for y in coverage.get("report_years") or [] if isinstance(y, str)]
+        years: dict[str, dict[str, Any]] = {}
+
+        def year_row(year: str) -> dict[str, Any]:
+            planned = by_year.get(year) if isinstance(by_year.get(year), dict) else {}
+            return years.setdefault(
+                year,
+                {
+                    "year": year,
+                    "reports": int(planned.get("reports") or 0),
+                    "pages": int(planned.get("pages") or 0),
+                    "blocks": int(planned.get("blocks") or 0),
+                    "tasks": 0,
+                    "done": 0,
+                    "claimed": 0,
+                    "open": 0,
+                    "pct": 0.0,
+                    "leads": 0,
+                    "flagged_inr_cr": 0.0,
+                },
+            )
+
+        for year in report_years:
+            year_row(year)
+
+        # A task id carries its report year: 'prj-or1-2026-r125146-0001'.
+        for r in conn.execute(
+            "SELECT SUBSTR(id, 9, 4) AS yr, status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired' AND id LIKE 'prj-or1-%' GROUP BY yr, status",
+            (mid,),
+        ).fetchall():
+            yr = str(r["yr"] or "").strip()
+            if not yr:
+                continue
+            entry = year_row(yr)
+            n = int(r["c"])
+            entry["tasks"] += n
+            st = str(r["status"] or "")
+            if st == "completed":
+                entry["done"] += n
+            elif st == "claimed":
+                entry["claimed"] += n
+            elif st == "queued":
+                entry["open"] += n
+
+        live = (
+            "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+            "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+        )
+        leads = verified = peer_review = 0
+        flagged_total_cr = 0.0
+        by_signal: dict[str, int] = {
+            "duplicate_payment_or_billing": 0,
+            "dual_agency_or_scheme_overlap": 0,
+        }
+        for r in conn.execute(
+            f"SELECT fiscal_year, status, rule_triggered, COUNT(*) AS c, "
+            f"COALESCE(SUM(monetary_exposure_inr), 0) AS inr "
+            f"FROM findings WHERE {live} GROUP BY fiscal_year, status, rule_triggered",
+            (mid,),
+        ).fetchall():
+            n = int(r["c"])
+            crore = _safe_finite_float(r["inr"], 0.0) / 1e7
+            leads += n
+            flagged_total_cr += crore
+            st = str(r["status"] or "")
+            if st == "verified":
+                verified += n
+            elif st in ("peer_review", "raw_lead"):
+                peer_review += n
+            rule = str(r["rule_triggered"] or "")
+            if "DUPLICATE-BILLING" in rule:
+                by_signal["duplicate_payment_or_billing"] += n
+            elif "DUAL-AGENCY" in rule:
+                by_signal["dual_agency_or_scheme_overlap"] += n
+            year = str(r["fiscal_year"] or "").removeprefix("FY")
+            if year in years:
+                years[year]["leads"] += n
+                years[year]["flagged_inr_cr"] = round(years[year]["flagged_inr_cr"] + crore, 2)
+
+        for entry in years.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        top_leads: list[dict[str, Any]] = []
+        for r in conn.execute(
+            f"SELECT id, title, entity_name, fiscal_year, status, monetary_exposure_inr, anomaly_metrics_json "
+            f"FROM findings WHERE {live} ORDER BY monetary_exposure_inr DESC, id ASC LIMIT 15",
+            (mid,),
+        ).fetchall():
+            metrics = loads_json(r["anomaly_metrics_json"], {})
+            metrics = metrics if isinstance(metrics, dict) else {}
+            top_leads.append(
+                {
+                    "finding_id": str(r["id"]),
+                    "title": str(r["title"] or ""),
+                    "entity_name": str(r["entity_name"] or ""),
+                    "fiscal_year": str(r["fiscal_year"] or ""),
+                    "status": str(r["status"] or ""),
+                    "report_no": str(metrics.get("report_no") or ""),
+                    "page": int(metrics.get("page") or 0) if str(metrics.get("page") or "").isdigit() else None,
+                    "para_number": str(metrics.get("para_number") or ""),
+                    "signal_category": str(metrics.get("signal_category") or ""),
+                    "flagged_inr_cr": round(_safe_finite_float(r["monetary_exposure_inr"], 0.0) / 1e7, 2),
+                }
+            )
+
+        return {
+            "reports": int(coverage.get("reports_used") or 0),
+            "pages": int(coverage.get("pages_used") or 0),
+            "blocks": int(coverage.get("blocks") or 0),
+            "report_years": report_years,
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0),
+            "flagged_inr_cr": round(flagged_total_cr, 2),
+            "by_signal": by_signal,
             "years": [years[y] for y in sorted(years)],
             "top_leads": top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
