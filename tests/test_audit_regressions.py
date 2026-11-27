@@ -402,6 +402,7 @@ def test_finding4_hub_verification_enforcement_and_split_vote_adjudication(tmp_p
             peer1 = _register(client, "v4-peer1")
             peer2 = _register(client, "v4-peer2")
             peer3 = _register(client, "v4-peer3")
+            peer4 = _register(client, "v4-peer4")
 
             _, fid, _ = _submit_clean_finding(client, author)
 
@@ -550,10 +551,9 @@ def test_finding4_hub_verification_enforcement_and_split_vote_adjudication(tmp_p
             )
             assert r_p2.status_code == 200, r_p2.text
             p2_data = r_p2.json()
-            # Split vote auto-queues tie-breaker adjudication!
+            # 1 confirm + 1 dispute while slot #3 is still open -> stays in peer_review without premature adjudication!
             assert p2_data["finding_status"] == "peer_review"
-            assert p2_data["adjudication_queued"] is True
-            assert p2_data["adjudication_task_id"].startswith("tsk-adj-")
+            assert p2_data["adjudication_queued"] is False
 
             detail2 = client.get(f"/api/findings/{fid}").json()
             p2_verif = [v for v in detail2["verifications"] if v["verifier_handle"] == "v4-peer2"][0]
@@ -564,23 +564,13 @@ def test_finding4_hub_verification_enforcement_and_split_vote_adjudication(tmp_p
                 "neutrality_privacy": "unrecorded",
             }
 
-            # Author, Peer 1, and Peer 2 MUST all be excluded from claiming the tie-breaker adjudication!
-            for excluded_agent in (author, peer1, peer2):
-                ex_claim = client.post(
-                    "/api/desk/next",
-                    headers={"X-Agent-Token": excluded_agent["api_token"]},
-                    json={"handle": excluded_agent["handle"], "mode": "verify"},
-                )
-                assert ex_claim.status_code == 204
-
-            # Independent Peer 3 claims the tie-breaker adjudication and resolves it!
+            # Peer 3 claims the 3rd initial peer_verify slot and confirms -> 2C/1D (0.667 < 0.75) queues tie-breaker!
             p3_claim = client.post(
                 "/api/desk/next",
                 headers={"X-Agent-Token": peer3["api_token"]},
                 json={"handle": peer3["handle"], "mode": "verify"},
             )
             assert p3_claim.status_code == 200
-            assert p3_claim.json()["task"]["payload"]["review_type"] == "adjudication"
             r_p3 = client.post(
                 "/api/desk/submit",
                 headers={"X-Agent-Token": peer3["api_token"]},
@@ -589,20 +579,74 @@ def test_finding4_hub_verification_enforcement_and_split_vote_adjudication(tmp_p
                     "outcome": "verification",
                     "verification": {
                         "finding_id": fid,
-                        "verdict": "dispute",
-                        "review_type": "adjudication",
+                        "verdict": "confirm",
+                        "review_type": "computational_reproduction",
                         "checks": {
                             "bytes_digest": "pass",
-                            "deterministic_reproduction": "fail",
-                            "metric_tolerance": "fail",
+                            "deterministic_reproduction": "pass",
+                            "metric_tolerance": "pass",
                             "neutrality_privacy": "pass",
                         },
-                        "notes": "Tie-breaker confirms metric divergence.",
+                        "reproduced_metrics": {
+                            "artifact_sha256": expected_sha,
+                            "numerator": 81,
+                            "denominator": 228,
+                        },
                     },
                 },
             )
-            assert r_p3.status_code == 200
-            assert r_p3.json()["finding_status"] == "disputed"
+            assert r_p3.status_code == 200, r_p3.text
+            p3_data = r_p3.json()
+            assert p3_data["finding_status"] == "peer_review"
+            assert p3_data["adjudication_queued"] is True
+            assert p3_data["adjudication_task_id"] == f"tsk-adj-{fid}-3"
+
+            # Author, Peer 1, Peer 2, and Peer 3 MUST all be excluded from claiming the tie-breaker adjudication!
+            for excluded_agent in (author, peer1, peer2, peer3):
+                ex_claim = client.post(
+                    "/api/desk/next",
+                    headers={"X-Agent-Token": excluded_agent["api_token"]},
+                    json={"handle": excluded_agent["handle"], "mode": "verify"},
+                )
+                assert ex_claim.status_code == 204
+
+            # Independent Peer 4 claims the tie-breaker adjudication and confirms -> 3C/1D (0.75) promotes to verified!
+            p4_claim = client.post(
+                "/api/desk/next",
+                headers={"X-Agent-Token": peer4["api_token"]},
+                json={"handle": peer4["handle"], "mode": "verify"},
+            )
+            assert p4_claim.status_code == 200
+            assert p4_claim.json()["task"]["payload"]["review_type"] == "adjudication"
+            r_p4 = client.post(
+                "/api/desk/submit",
+                headers={"X-Agent-Token": peer4["api_token"]},
+                json={
+                    "lease_id": p4_claim.json()["lease_id"],
+                    "outcome": "verification",
+                    "verification": {
+                        "finding_id": fid,
+                        "verdict": "confirm",
+                        "review_type": "adjudication",
+                        "checks": {
+                            "bytes_digest": "pass",
+                            "deterministic_reproduction": "pass",
+                            "metric_tolerance": "pass",
+                            "neutrality_privacy": "pass",
+                        },
+                        "reproduced_metrics": {
+                            "artifact_sha256": expected_sha,
+                            "numerator": 81,
+                            "denominator": 228,
+                        },
+                        "notes": "Tie-breaker confirms reproduced metrics.",
+                    },
+                },
+            )
+            assert r_p4.status_code == 200, r_p4.text
+            assert r_p4.json()["finding_status"] == "verified"
+            assert r_p4.json()["confirm_count"] == 3
+            assert r_p4.json()["verification_score"] == pytest.approx(0.75)
     finally:
         app.state.db.close()
 

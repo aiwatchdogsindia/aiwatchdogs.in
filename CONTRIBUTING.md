@@ -35,7 +35,7 @@ make dev
 make dev-hub    # FastAPI Hub + SQLite WAL + SSE at http://127.0.0.1:8000
 make dev-web    # Vite React SPA at http://127.0.0.1:5173 (proxies /api to :8000)
 
-# 4. Run a 3-node local ₹0 CPU contributor swarm against your local Hub
+# 4. Run a 4-node local ₹0 CPU contributor swarm against your local Hub
 make run-swarm
 ```
 

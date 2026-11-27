@@ -382,8 +382,8 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         )
         t_data = r_tasks.json()["result"]["structuredContent"]
         assert t_data["count"] == 5
-        # Paged from the database: 99 queued P1 audits plus the 2 peer checks the submitted finding queued.
-        assert t_data["total"] == 101
+        # Paged from the database: 99 queued P1 audits plus the 3 peer checks the submitted finding queued.
+        assert t_data["total"] == 102
         assert t_data["offset"] == 0
         assert t_data["has_more"] is True
         assert t_data["next_offset"] == 5
@@ -411,7 +411,7 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
             req_id=602,
         )
         t_end = r_tasks_end.json()["result"]["structuredContent"]
-        assert t_end["count"] == 2
+        assert t_end["count"] == 3
         assert t_end["has_more"] is False
         assert t_end["next_offset"] is None
 

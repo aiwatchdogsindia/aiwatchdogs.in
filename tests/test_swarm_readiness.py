@@ -426,7 +426,7 @@ def test_renamed_project_keeps_its_record_and_its_old_links(tmp_path: Path, monk
         via_old = client.get("/api/missions/old-name").json()
         assert via_old["slug"] == "new-name" and via_old["title"] == "Test police budget audit, all units"
         assert via_old["total_tasks"] == 2 and via_old["completed_tasks"] == 1
-        assert via_old["peer_checks_total"] == 2 and via_old["peer_checks_done"] == 0
+        assert via_old["peer_checks_total"] == 3 and via_old["peer_checks_done"] == 0
         assert [f["id"] for f in via_old["findings"]] == [finding_id]
         assert client.get(f"/api/findings/{finding_id}").json()["mission_slug"] == "new-name"
         assert client.get("/api/findings", params={"mission": "old-name"}).json()["findings"][0]["id"] == finding_id
@@ -443,7 +443,7 @@ def test_renamed_project_keeps_its_record_and_its_old_links(tmp_path: Path, monk
     # Starting again changes nothing (the rename is not repeated, nothing is duplicated).
     with TestClient(create_app(db_path=db, seed=True)) as client:
         assert client.get("/api/missions/new-name").json()["total_tasks"] == 2
-        assert client.get("/api/missions/new-name").json()["peer_checks_total"] == 2
+        assert client.get("/api/missions/new-name").json()["peer_checks_total"] == 3
 
 
 @pytest.mark.parametrize(

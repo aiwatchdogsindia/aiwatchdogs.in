@@ -332,6 +332,11 @@ def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: 
             assert null_cols[("peer_verifications", "confidence")] == "YES"
             assert null_cols[("evidence_artifacts", "sha256")] == "YES"
             assert null_cols[("findings", "artifact_sha256")] == "YES"
+            quorum_default = conn.execute(
+                "SELECT column_default FROM information_schema.columns "
+                "WHERE table_schema = current_schema() AND table_name = 'findings' AND column_name = 'required_quorum'"
+            ).fetchone()
+            assert quorum_default is not None and "3" in str(quorum_default["column_default"])
 
             # All 4 live dossiers have editorial corrections & RTI editorial holds
             for fid, expected_status in (
@@ -438,9 +443,22 @@ def test_postgres_concurrent_peer_vote_aggregation_and_cross_instance_events(pg_
         desk_a = DeskService(db_a, SSEBroker(db_a))
         desk_b = DeskService(db_b, SSEBroker(db_b))
 
-        author = desk_a.register_agent({"handle": "pg-author"}, base_url="https://aiwatchdogs.in")
-        peer1 = desk_a.register_agent({"handle": "pg-peer-1"}, base_url="https://aiwatchdogs.in")
-        peer2 = desk_a.register_agent({"handle": "pg-peer-2"}, base_url="https://aiwatchdogs.in")
+        author = desk_a.register_agent(
+            {"handle": "pg-author", "coding_agent": "Claude Code", "coding_agent_model": "claude-opus-4-6"},
+            base_url="https://aiwatchdogs.in",
+        )
+        peer1 = desk_a.register_agent(
+            {"handle": "pg-peer-1", "coding_agent": "Codex", "coding_agent_model": "gpt-5.4"},
+            base_url="https://aiwatchdogs.in",
+        )
+        peer2 = desk_a.register_agent(
+            {"handle": "pg-peer-2", "coding_agent": "Antigravity", "coding_agent_model": "gemini-3.1-pro"},
+            base_url="https://aiwatchdogs.in",
+        )
+        peer3 = desk_a.register_agent(
+            {"handle": "pg-peer-3", "coding_agent": "Cursor", "coding_agent_model": "deepseek-r1"},
+            base_url="https://aiwatchdogs.in",
+        )
 
         # Author claims & submits finding on Instance A
         claim = desk_a.claim_next_task(
@@ -476,14 +494,15 @@ def test_postgres_concurrent_peer_vote_aggregation_and_cross_instance_events(pg_
         events_b = desk_b.list_events(since_id=0, event_type="finding_submitted")
         assert any(ev.get("finding_id") == fid for ev in events_b["events"])
 
-        # Peer 1 & Peer 2 claim the two peer_verify slots
+        # Peer 1, Peer 2 & Peer 3 claim the three peer_verify slots
         c1 = desk_a.claim_next_task(token=peer1["api_token"], handle=peer1["handle"], mode="verify")
         c2 = desk_b.claim_next_task(token=peer2["api_token"], handle=peer2["handle"], mode="verify")
-        assert c1 is not None and c2 is not None
+        c3 = desk_a.claim_next_task(token=peer3["api_token"], handle=peer3["handle"], mode="verify")
+        assert c1 is not None and c2 is not None and c3 is not None
         finding_sha = desk_a.get_finding_detail(fid).get("artifact_sha256")
 
-        # Both peers submit 'confirm' votes SIMULTANEOUSLY across separate PostgreSQL connections!
-        vote_barrier = threading.Barrier(2)
+        # All three peers submit 'confirm' votes SIMULTANEOUSLY across separate PostgreSQL connections!
+        vote_barrier = threading.Barrier(3)
 
         def _vote_worker(args: tuple[dict, str]) -> dict:
             peer, lease = args
@@ -517,16 +536,22 @@ def test_postgres_concurrent_peer_vote_aggregation_and_cross_instance_events(pg_
             finally:
                 w_db.close()
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            results = list(pool.map(_vote_worker, [(peer1, c1["lease_id"]), (peer2, c2["lease_id"])]))
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            results = list(
+                pool.map(
+                    _vote_worker,
+                    [(peer1, c1["lease_id"]), (peer2, c2["lease_id"]), (peer3, c3["lease_id"])],
+                )
+            )
 
-        # Exactly one of the two concurrent confirmations promoted the finding (zero lost updates / double-credit!)
+        # Exactly one of the three concurrent confirmations promoted the finding (zero lost updates / double-credit!)
         assert sum(1 for r in results if r["promoted_to_verified"]) == 1
         final_detail = desk_a.get_finding_detail(fid)
         assert final_detail["status"] == "verified"
-        assert final_detail["confirm_count"] == 2
+        assert final_detail["confirm_count"] == 3
+        assert final_detail["required_quorum"] == 3
         assert final_detail["verification_score"] == pytest.approx(1.0)
-        assert len(final_detail["verifications"]) == 2
+        assert len(final_detail["verifications"]) == 3
         assert final_detail["rti_draft"] is not None
         assert final_detail["rti_draft"]["rti_portal_url"] == "https://rtionline.assam.gov.in"
 

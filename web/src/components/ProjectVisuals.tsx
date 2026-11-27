@@ -2509,7 +2509,7 @@ function UnionBudgetVisualizer({
             wrongdoing. Ordinary reasons include late approvals, lower demand, money re-appropriated
             to another line, or a scheme merged into another line.
           </p>
-          <p>Two other agents re-check every lead before it is marked {FINDING_TAGS.verified.label}.</p>
+          <p>Three other agents re-check every lead before it is marked {FINDING_TAGS.verified.label}.</p>
           <div className="pv-ub-links">
             <a className="inline-link" href={documentsUrl}>
               Statements used (CSV)
@@ -2843,7 +2843,7 @@ function OneRoadTwoBillsVisualizer({
             grants, or pooled funds) are explicitly cleared unless an explicit double-billing irregularity
             is recorded.
           </p>
-          <p>Two other agents independently verify every lead before it is marked {FINDING_TAGS.verified.label}.</p>
+          <p>Three other agents independently verify every lead before it is marked {FINDING_TAGS.verified.label}.</p>
           <div className="pv-ub-links">
             <a className="inline-link" href={documentsUrl}>
               CAG reports used (CSV)
@@ -3138,7 +3138,7 @@ function OneTeacherFiveGradesVisualizer({
             States/UTs are surfaced where single-teacher share is &ge;10%, pupils per single-teacher school
             exceed 30:1 (RTE Schedule norm), or Government Primary schools average below 2.0 teachers.
           </p>
-          <p>Two independent agents verify every state observation before it is marked {FINDING_TAGS.verified.label}.</p>
+          <p>Three independent agents verify every state observation before it is marked {FINDING_TAGS.verified.label}.</p>
           <div className="pv-ub-links">
             <a className="inline-link" href={documentsUrl}>
               UDISE+ booklets (CSV)
@@ -3823,7 +3823,7 @@ function ParliamentsToDoListVisualizer({
           <p>
             Assurances still pending past 90 days, partly implemented, dropped without fulfillment, or fulfilled
             late / with unreadable follow-ups are raised as leads; timely fulfilled or &le;90-day assurances are
-            published as {FINDING_TAGS.cleared.label}. Two independent agents verify every lead before it is
+            published as {FINDING_TAGS.cleared.label}. Three independent agents verify every lead before it is
             marked {FINDING_TAGS.verified.label}.
           </p>
           <div className="pv-ub-links">

@@ -493,10 +493,10 @@ def test_shared_ub1_task_submits_and_verifies_every_qualifying_shortfall(
         resp = res.results[0]["response"]
         assert resp["findings_created"] == 3
         assert len(resp["finding_ids"]) == 3
-        assert resp["peer_verify_tasks_created"] == 6
+        assert resp["peer_verify_tasks_created"] == 9
 
-        # Both independent verifiers confirm all 3 findings (6 peer_verify tasks total).
-        for idx, handle in enumerate(("ub1-verifier-1", "ub1-verifier-2"), start=1):
+        # Three independent verifiers confirm all 3 findings (9 peer_verify tasks total).
+        for idx, handle in enumerate(("ub1-verifier-1", "ub1-verifier-2", "ub1-verifier-3"), start=1):
             ver = AgentRunner(
                 AgentConfig(
                     handle=handle,
@@ -518,7 +518,7 @@ def test_shared_ub1_task_submits_and_verifies_every_qualifying_shortfall(
         for fid in resp["finding_ids"]:
             f_detail = client.get(f"/api/findings/{fid}").json()
             assert f_detail["status"] == "verified"
-            assert f_detail["confirm_count"] == 2
+            assert f_detail["confirm_count"] == 3
 
         # Also verify actuals_reason distinction on _union_budget_summary (2015-16 unmatched vs 2025-26 not_published)
         with app.state.db.transaction() as conn:

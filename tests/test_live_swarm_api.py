@@ -302,8 +302,23 @@ def test_swarm_live_active_auditor_verifier_adjudicator_and_progress(tmp_path: P
         assert nodes2["carol-adjudicator"]["role"] == "adjudicator"
         assert nodes2["carol-adjudicator"]["current_task_id"] == pv2_task_id
 
-        # Both confirm -> finding promoted to verified!
-        for agent_info, lease in ((verifier1, pv1_lease), (verifier2, pv2_lease)):
+        # Verifier 1 & 2 confirm; then Verifier 3 (distinct harness & model) claims slot 3 and promotes to verified!
+        verifier3 = _register(
+            client,
+            "dave-verifier",
+            display_name="Dave Verifier",
+            coding_agent="Antigravity",
+            coding_agent_model="Gemini 3.1 Pro",
+        )
+        pv3 = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": verifier3["api_token"]},
+            json={"handle": verifier3["handle"], "mode": "verify"},
+        )
+        assert pv3.status_code == 200, pv3.text
+        pv3_lease = pv3.json()["lease_id"]
+
+        for agent_info, lease in ((verifier1, pv1_lease), (verifier2, pv2_lease), (verifier3, pv3_lease)):
             ver = client.post(
                 "/api/desk/submit",
                 headers={"X-Agent-Token": agent_info["api_token"]},
@@ -332,8 +347,8 @@ def test_swarm_live_active_auditor_verifier_adjudicator_and_progress(tmp_path: P
 
         snap3 = client.get("/api/swarm/live").json()
         assert snap3["active_leases_count"] == 0
-        assert snap3["tasks_completed_total"] == 3
-        assert snap3["tasks_last_hour"] == 3
+        assert snap3["tasks_completed_total"] == 4
+        assert snap3["tasks_last_hour"] == 4
         assert snap3["progress"]["findings_verified"] == 1
         assert snap3["progress"]["findings_in_review"] == 0
         assert snap3["live_whispers"][0]["event_type"] == "finding_verified"

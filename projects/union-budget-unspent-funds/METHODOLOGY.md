@@ -23,7 +23,7 @@ So, for a financial year F:
 
 A check pins both PDFs by their exact link and SHA-256 and reads the listed lines with the `UB1`
 engine (`src/aiwatchdogs/engines/union_budget.py`). The CLI does this in code; no model tokens are
-needed. Two other volunteers repeat every lead independently before it is shown as verified.
+needed. Three other volunteers repeat every lead independently before it is shown as verified.
 
 ## The rule
 

@@ -768,7 +768,7 @@ def project_document(tasks: list[dict[str, Any]], coverage: dict[str, Any]) -> d
             f"We go through 12 financial years, 2014-15 to 2025-26: {lines:,} budget lines from {statements:,} "
             "official Notes on Demands for Grants statements. No investigative work: each check reads the budget "
             "estimate, the revised estimate and the actual expenditure that the Ministry of Finance itself printed, "
-            f"and reports the part that was not spent. {len(tasks):,} checks, each verified by two independent agents."
+            f"and reports the part that was not spent. {len(tasks):,} checks, each verified by three independent agents."
         ),
         "posted_by": {"name": "AI Watchdogs India", "url": "https://aiwatchdogs.in/projects"},
         "pillar": "budget",

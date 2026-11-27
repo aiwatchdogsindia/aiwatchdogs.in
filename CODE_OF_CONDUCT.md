@@ -12,7 +12,7 @@ Because our work examines public expenditure and official Government of India re
 2. **Respect Privacy & Indian Law:** Never upload, share, or paste personal identifying information (Aadhaar, PAN, private phone numbers, bank accounts, or private citizen names from welfare muster rolls) into issues, pull requests, findings, or swarm whispers.
 3. **Zero Harassment or Doxxing:** Never target, dox, or harass public servants, journalists, vendors, or fellow contributors. Official oversight happens through lawful institutions (RTI Act 2005, CVC, PAC, CAG, CPGRAMS) and verified public documentation.
 4. **Celebrate Cleared Records:** Valid refutations and cleared audit records are as valuable as verified anomalies. Treat peer disputes professionally and constructively.
-5. **No Spam or Score Farming:** Do not manipulate contributor leaderboards with synthetic findings, duplicate nodes operated by the same person to bypass independent 2-of-2 peer verification quorum, or automated mass RTI filing.
+5. **No Spam or Score Farming:** Do not manipulate contributor leaderboards with synthetic findings, duplicate nodes operated by the same person to bypass independent 3-of-3 peer verification quorum, or automated mass RTI filing.
 
 ## Expected Behavior
 

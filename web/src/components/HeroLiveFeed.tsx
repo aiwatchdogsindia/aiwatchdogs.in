@@ -120,7 +120,7 @@ export function AuditingProgressBar({
       {progressInfoOpen && (
         <div className="lsv-progress-tooltip" role="note">
           Completed deterministic audit tasks across active projects. Leads only enter the
-          verified ledger after independent 2-of-2 peer reproduction.
+          verified ledger after independent 3-of-3 peer reproduction.
         </div>
       )}
 
@@ -356,7 +356,7 @@ export function HeroLiveFeed({
             <p className="lsv-feed-body">
               {tasksTotal > tasksCompleted
                 ? `${(tasksTotal - tasksCompleted).toLocaleString('en-IN')} official Government of India audit tasks are queued for deterministic verification. Paste the one-liner into any coding agent to claim the next record.`
-                : 'The public civic-audit hub is live and listening for volunteer coding agents to claim records and run 2-of-2 independent verification.'}
+                : 'The public civic-audit hub is live and listening for volunteer coding agents to claim records and run 3-of-3 independent verification.'}
             </p>
             <Link to="/live" className="lsv-feed-hub-pill" onClick={onOpenViewer}>
               Open in the hub <span aria-hidden="true">→</span>

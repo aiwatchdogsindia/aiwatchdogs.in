@@ -289,10 +289,11 @@ def test_sponsors_pledge_and_open_treasury_ledger_json_and_csv(client: TestClien
 
 
 def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(client: TestClient) -> None:
-    # Register 3 real independent contributor nodes
+    # Register 4 real independent contributor nodes
     author = _register_agent(client, "alpha-auditor", provider="ollama", model="qwen2.5:14b")
     peer1 = _register_agent(client, "beta-verifier", provider="gemini", model="gemini-2.5-pro")
     peer2 = _register_agent(client, "gamma-verifier", provider="rule-engine", model="deterministic-cpu-v1")
+    peer3 = _register_agent(client, "delta-verifier", provider="rule-engine", model="deterministic-cpu-v1")
 
     # Author claims the real M2 Assam GFR Rule 161 anomaly_scan task
     claim = client.post(
@@ -407,7 +408,7 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     gs = good_submit.json()
     finding_id = gs["finding_id"]
     assert gs["finding_status"] == "peer_review"
-    assert gs["peer_verify_tasks_created"] == 2
+    assert gs["peer_verify_tasks_created"] == 3
     assert "email" in gs["pii_redactions"]
 
     # Heartbeat on already completed lease must return 410 Gone
@@ -546,7 +547,7 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     )
     assert p1_second_claim.status_code == 204
 
-    # 6. Independent Peer 2 claims & confirms -> 2/2 Quorum PROMOTES to 'verified' & auto-generates <=500w RTI draft!
+    # 6. Independent Peer 2 claims & confirms (2/3, still peer_review — 3 independent verifications required!)
     p2_claim = client.post(
         "/api/desk/next",
         headers={"X-Agent-Token": peer2["api_token"]},
@@ -577,16 +578,51 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
     )
     assert p2_sub.status_code == 200, p2_sub.text
     p2_res = p2_sub.json()
-    assert p2_res["finding_status"] == "verified"
+    assert p2_res["finding_status"] == "peer_review"
     assert p2_res["confirm_count"] == 2
-    assert p2_res["verification_score"] == pytest.approx(1.0)
-    assert p2_res["promoted_to_verified"] is True
-    assert p2_res["rti_draft_id"] == f"rti-{finding_id}"
+    assert p2_res["promoted_to_verified"] is False
 
-    # Verify finding dossier includes 2 independent verifications & <=500-word RTI Act 2005 draft
+    # 7. Independent Peer 3 claims & confirms -> 3/3 Quorum PROMOTES to 'verified' & auto-generates <=500w RTI draft!
+    p3_claim = client.post(
+        "/api/desk/next",
+        headers={"X-Agent-Token": peer3["api_token"]},
+        json={"handle": "delta-verifier", "mode": "verify", "preferred_mission": "assam-gfr-split-tendering"},
+    )
+    assert p3_claim.status_code == 200, p3_claim.text
+    assert p3_claim.json()["task"]["payload"]["finding_id"] == finding_id
+
+    p3_sub = client.post(
+        "/api/desk/submit",
+        headers={"X-Agent-Token": peer3["api_token"]},
+        json={
+            "lease_id": p3_claim.json()["lease_id"],
+            "outcome": "verification",
+            "verification": {
+                "finding_id": finding_id,
+                "verdict": "confirm",
+                "checks": {"provenance_ok": True, "math_reproduced": True, "rule_valid": True, "legal_pii_ok": True},
+                "reproduced_metrics": {
+                    "artifact_sha256": p1_payload["expected_sha256"],
+                    "cluster_po_count": 4,
+                    "cluster_sum_inr": 19200000,
+                },
+                "confidence": 0.98,
+                "notes": "Third independent confirmation — SHA-256, math, and neutrality verified.",
+            },
+        },
+    )
+    assert p3_sub.status_code == 200, p3_sub.text
+    p3_res = p3_sub.json()
+    assert p3_res["finding_status"] == "verified"
+    assert p3_res["confirm_count"] == 3
+    assert p3_res["verification_score"] == pytest.approx(1.0)
+    assert p3_res["promoted_to_verified"] is True
+    assert p3_res["rti_draft_id"] == f"rti-{finding_id}"
+
+    # Verify finding dossier includes 3 independent verifications & <=500-word RTI Act 2005 draft
     verified_dossier = client.get(f"/api/findings/{finding_id}").json()
     assert verified_dossier["status"] == "verified"
-    assert len(verified_dossier["verifications"]) == 2
+    assert len(verified_dossier["verifications"]) == 3
     assert verified_dossier["rti_draft"] is not None
     assert verified_dossier["rti_draft"]["word_count"] <= 500
     assert "Section 6(1)" in verified_dossier["rti_draft"]["body_text"]
@@ -606,14 +642,14 @@ def test_full_desk_lifecycle_neutrality_gate_quorum_promotion_and_409_blocks(cli
 
     # Verify /api/head, /api/graph, and /api/contributors reflect real live activity
     hd = client.get("/api/head").json()
-    assert hd["stats"]["agents_total"] == 3
+    assert hd["stats"]["agents_total"] == 4
     assert hd["stats"]["findings_verified"] == 1
     assert hd["stats"]["findings_peer_review"] == 1
     assert hd["stats"]["rtis_drafted"] == 1
     assert hd["just_in"] is not None
     assert hd["just_in"]["id"] == finding_id
     assert hd["just_in"]["is_demo_sample"] is False
-    assert len(hd["recent_verifications"]) == 2
+    assert len(hd["recent_verifications"]) == 3
     timestamps = [ev["ts"] for ev in hd["record_events"]]
     assert timestamps == sorted(timestamps, reverse=True)
 

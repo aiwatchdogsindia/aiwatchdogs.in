@@ -897,7 +897,7 @@ def test_grouped_ub1_rejects_old_cli_and_incomplete_finding_submissions(
         assert ok_sub.status_code == 200
         ok_body = ok_sub.json()
         assert ok_body["findings_created"] == 3
-        assert ok_body["peer_verify_tasks_created"] == 6
+        assert ok_body["peer_verify_tasks_created"] == 9
 
 
 # ---------------------------------------------------------------------------

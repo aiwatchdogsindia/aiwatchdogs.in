@@ -397,7 +397,7 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
         res_a = auditor.run_loop(max_tasks=1, preferred_mission=ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG, task_id=task_id)
         assert res_a.findings_submitted == 1
 
-        for idx in (1, 2):
+        for idx in (1, 2, 3):
             pv = AgentRunner(
                 AgentConfig(
                     handle=f"p5-verifier-{idx}",

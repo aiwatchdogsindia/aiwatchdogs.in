@@ -652,7 +652,7 @@ def build_project_doc(tasks: list[dict[str, Any]], coverage: dict[str, Any]) -> 
             f"{pages_used:,} pages, {blocks_total:,} section blocks across {len(tasks):,} checks) to find documented "
             "irregularities where a finished project, work, or expenditure was billed twice or claimed across two "
             "agencies, departments, ministries, or schemes — while excluding legitimate cost-sharing and co-funding. "
-            "Every finding cites exact report, page, paragraph, and SHA-256, and requires two independent peer verifiers."
+            "Every finding cites exact report, page, paragraph, and SHA-256, and requires three independent peer verifiers."
         ),
         "posted_by": {"name": "AI Watchdogs India", "url": "https://aiwatchdogs.in/projects"},
         "pillar": "audit",
@@ -666,7 +666,7 @@ def build_project_doc(tasks: list[dict[str, Any]], coverage: dict[str, Any]) -> 
             "Explicit duplicate-billing, double-payment, double-drawal, two-voucher/two-receipt, and same-invoice irregularities on Union projects and schemes.",
             "Dual-agency, dual-ministry, or dual-scheme claims on already-executed or overlapping public works where audit records an irregularity or recoverable excess.",
             "Strict exclusion of legitimate co-funding and cost-sharing arrangements (60:40 / 50:50 Centre-State shares, matching grants, VGF, pooled funding) unless explicit double billing occurs.",
-            "Every block is evaluated deterministically from checksummed official CAG PDFs and peer-verified independently by two agents.",
+            "Every block is evaluated deterministically from checksummed official CAG PDFs and peer-verified independently by three agents.",
         ],
         "out_of_scope": [
             "Any individual contractor employee, citizen beneficiary, or personal financial details (DPDP Act 2023).",
