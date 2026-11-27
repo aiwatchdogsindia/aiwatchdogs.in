@@ -734,6 +734,81 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "parliaments_to_do_list" in vs:
+        p6 = vs["parliaments_to_do_list"]
+        by_status = p6.get("by_recorded_status") or {}
+        ministries = p6.get("ministries") or []
+        anchor = p6.get("anchor_case")
+        out.extend(
+            [
+                "## Parliament's To-Do List (P6)",
+                "",
+                f"> {p6.get('hook') or 'A minister promised Parliament an answer. Did it ever get one?'}",
+                "",
+                f"- **Coverage:** {int(p6.get('total_tasks') or 0):,} formal ministerial assurances across "
+                f"{int(p6.get('ministries_covered') or len(ministries))} Union Ministries (Lok Sabha & Rajya Sabha)",
+                f"- **Recorded status on Digital Sansad:** {int(by_status.get('pending') or 0):,} pending · "
+                f"{int(by_status.get('fully_implemented') or 0):,} fully implemented · "
+                f"{int(by_status.get('partly_implemented') or 0):,} partly implemented · "
+                f"{int(by_status.get('dropped') or 0):,} dropped",
+                f"- **Leads so far:** {int(p6.get('leads') or 0):,} ({int(p6.get('verified') or 0):,} verified) · "
+                f"{int(p6.get('cleared_tasks') or 0):,} cleared",
+                f"- **Source records indexed, with SHA-256 (CSV):** [{base_url}{p6.get('documents_url')}]({base_url}{p6.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p6.get('coverage_url')}]({base_url}{p6.get('coverage_url')})",
+                "",
+            ]
+        )
+        if isinstance(anchor, dict) and anchor.get("assurance_ref"):
+            out.extend(
+                [
+                    "### Anchor Case",
+                    "",
+                    f"- **Assurance:** `{anchor.get('assurance_ref')}` ({anchor.get('house')}, Session {anchor.get('session')}, {anchor.get('promise_date')}) — **{anchor.get('ministry')}**",
+                    f"- **Subject:** {_md_cell(anchor.get('subject'), max_len=160)}",
+                    f"- **Original Promise:** {_md_cell(anchor.get('original_promise'), max_len=240)}",
+                    f"- **Recorded Status:** `{anchor.get('recorded_status')}`"
+                    + (f" ({anchor.get('days_elapsed')} days elapsed)" if anchor.get("days_elapsed") is not None else ""),
+                    f"- **Follow-Up Answer:** {_md_cell(anchor.get('followup_answer'), max_len=240)}",
+                    "",
+                ]
+            )
+        if ministries:
+            out.extend(
+                [
+                    "### Ministry Coverage (Top 20 by Pending Assurances)",
+                    "",
+                    "| Ministry | Checks done / total | Pending | Fulfilled | Partly / Dropped | Leads |",
+                    "| :--- | :---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for m in ministries[:20]:
+                other_cnt = int(m.get("other_count") or (int(m.get("partly_implemented_count") or 0) + int(m.get("dropped_count") or 0)))
+                out.append(
+                    f"| {_md_cell(m.get('ministry'), max_len=60)} | "
+                    f"{int(m.get('done') or 0):,}/{int(m.get('tasks') or 0):,} | "
+                    f"{int(m.get('pending_count') or 0):,} | {int(m.get('fulfilled_count') or 0):,} | "
+                    f"{other_cnt:,} | {int(m.get('leads') or 0):,} |"
+                )
+        top = p6.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "",
+                    "### Flagged Ministerial Assurances So Far",
+                    "",
+                    "| Assurance | Ministry | Recorded Status | Elapsed (Days) | Signal | Status |",
+                    "| :--- | :--- | :--- | ---: | :--- | :--- |",
+                ]
+            )
+            for row in top:
+                elapsed_txt = str(row["days_elapsed"]) if row.get("days_elapsed") is not None else "—"
+                out.append(
+                    f"| [{_md_cell(row.get('assurance_ref') or row.get('title'), max_len=40)}]({base_url}/findings/{row.get('finding_id')}.md) | "
+                    f"{_md_cell(row.get('ministry'), max_len=45)} | `{row.get('recorded_status')}` | "
+                    f"{elapsed_txt} | `{row.get('signal_category')}` | {_status_label(row.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -1331,13 +1406,14 @@ def render_brief_md(base_url: str) -> str:
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (5 Live Projects)",
+        "## What We're Auditing Right Now (6 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
         f"- **[Union Budget: budgeted but not spent]({base_url}/projects/union-budget-unspent-funds.md)** (`P3`) — Every line of every Demand for Grants since 2014-15, read from the official budget papers: budget estimate, revised estimate and actual expenditure, and what was not spent (10,000 tasks).",
         f"- **[One Road, Two Bills]({base_url}/projects/one-road-two-bills.md)** (`P4`) — Union Government CAG Audit Reports (past 2 years) scanned for documented duplicate billing, two-receipt claims, and irregular dual-agency overlaps while excluding legitimate cost-sharing.",
         f"- **[One Teacher, Five Grades]({base_url}/projects/one-teacher-five-grades.md)** (`P5`) — Official Ministry of Education UDISE+ national reports (2023-24 to 2025-26) audited across 100 State/UT tasks to map single-teacher schools, pupil overcrowding, and under-staffed Government Primary schools.",
+        f"- **[Parliament's To-Do List]({base_url}/projects/parliaments-to-do-list.md)** (`P6`) — A minister promised Parliament an answer. Did it ever get one? Auditing 1,000 formal ministerial assurances across Union Ministries on Digital Sansad, citing each original promise, recorded status, and what the follow-up actually answered.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1788,7 +1864,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list').",
                     }
                 },
                 "required": ["slug"],

@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from aiwatchdogs.engines import (
     fiscal,
     one_road_two_bills,
     one_teacher_five_grades,
+    parliaments_to_do_list,
     police,
     procurement,
     proximity,
@@ -39,6 +40,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "UB1": "UB1-2026.11-v1",
     "OR1": "OR1-2026.11-v1",
     "P5": "P5-2026.11-v1",
+    "P6": "P6-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -251,6 +253,25 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://dashboard.udiseplus.gov.in/report2026/static/media/UDISE+2025_26_Booklet_existing.edd7cd16d934a10377ba.pdf",
         "module": "aiwatchdogs.engines.one_teacher_five_grades",
     },
+    "P6": {
+        "code": "P6",
+        "name": "Parliament's To-Do List: Ministerial Assurances & Follow-Up Verification",
+        "pillar": "parliament",
+        "ruleset_version": RULESET_VERSIONS["P6"],
+        "statutory_anchors": [
+            "Lok-Sabha-Rule-323",
+            "Rajya-Sabha-Rule-211A",
+            "MPA-Assurances-Manual",
+            "RTI-Act-2005-Sec-4-1-b",
+        ],
+        "description": (
+            "Reads checksummed official Digital Sansad Lok Sabha and Rajya Sabha Government Assurance "
+            "records (plus linked Question and Implementation Report PDFs) across Union Ministries, "
+            "citing the original promise, recorded status, and what the follow-up actually answered."
+        ),
+        "reference_dataset_url": "https://sansad.in/api_ls/govtAssurance/assurances?loksabha=18&session=7&qNo=544&qType=SQ&page=1&size=20&locale=en",
+        "module": "aiwatchdogs.engines.parliaments_to_do_list",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -266,6 +287,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "UB1": (union_budget.run_ub1_union_budget_lines, union_budget),
     "OR1": (one_road_two_bills.run_or1_duplicate_billing, one_road_two_bills),
     "P5": (one_teacher_five_grades.run_p5_single_teacher_schools, one_teacher_five_grades),
+    "P6": (parliaments_to_do_list.run_p6_parliamentary_assurances, parliaments_to_do_list),
 }
 
 

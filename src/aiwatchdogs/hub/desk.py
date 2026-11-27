@@ -52,6 +52,8 @@ from aiwatchdogs.projects import (
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_METHODOLOGY,
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
+    PARLIAMENTS_TO_DO_LIST_METHODOLOGY,
+    PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
     UNION_BUDGET_METHODOLOGY,
     UNION_BUDGET_PROJECT_SLUG,
 )
@@ -134,6 +136,7 @@ OPEN_CHOICE_PROJECTS = frozenset(
         UNION_BUDGET_PROJECT_SLUG,
         ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
         ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
+        PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
     }
 )
 
@@ -3575,6 +3578,10 @@ class DeskService:
             summary["one_teacher_five_grades"] = self._one_teacher_five_grades_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == PARLIAMENTS_TO_DO_LIST_METHODOLOGY:
+            summary["parliaments_to_do_list"] = self._parliaments_to_do_list_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -4335,6 +4342,243 @@ class DeskService:
             "by_signal": by_signal,
             "years": [years[y] for y in sorted(years)],
             "top_states": top_states[:15],
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def _parliaments_to_do_list_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Ministry-by-ministry progress, status breakdown, anchor case, and top leads for P6."""
+        mid = str(mission_row["id"])
+        slug = str(mission_row["slug"])
+        coverage = _project_coverage(slug)
+        raw_by_house = coverage.get("by_house") if isinstance(coverage.get("by_house"), dict) else {}
+        raw_by_status = (
+            coverage.get("by_recorded_status") if isinstance(coverage.get("by_recorded_status"), dict) else {}
+        )
+        raw_ministries = coverage.get("ministries") if isinstance(coverage.get("ministries"), list) else []
+
+        by_house: dict[str, dict[str, Any]] = {}
+        for house_name in ("Lok Sabha", "Rajya Sabha"):
+            planned_h = raw_by_house.get(house_name) if isinstance(raw_by_house.get(house_name), dict) else {}
+            by_house[house_name] = {
+                "house": house_name,
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "pending_count": int(planned_h.get("pending") or planned_h.get("pending_count") or 0),
+                "fulfilled_count": int(
+                    planned_h.get("fully_implemented") or planned_h.get("fulfilled_count") or 0
+                ),
+                "partly_implemented_count": int(
+                    planned_h.get("partly_implemented") or planned_h.get("partly_implemented_count") or 0
+                ),
+                "dropped_count": int(planned_h.get("dropped") or planned_h.get("dropped_count") or 0),
+                "leads": 0,
+            }
+
+        ministries_by_name: dict[str, dict[str, Any]] = {}
+        ministries_by_key: dict[str, dict[str, Any]] = {}
+
+        def _ensure_ministry(name: str, mkey: str = "") -> dict[str, Any]:
+            clean_name = name.strip() or "Other Ministry"
+            key_norm = mkey.strip().lower() or re.sub(r"[^a-z0-9]+", "-", clean_name.lower()).strip("-")
+            existing = ministries_by_name.get(clean_name) or ministries_by_key.get(key_norm)
+            if existing is not None:
+                return existing
+            row_obj: dict[str, Any] = {
+                "ministry": clean_name,
+                "ministry_key": key_norm,
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "lok_sabha_tasks": 0,
+                "rajya_sabha_tasks": 0,
+                "pending_count": 0,
+                "fulfilled_count": 0,
+                "partly_implemented_count": 0,
+                "dropped_count": 0,
+                "other_count": 0,
+                "leads": 0,
+            }
+            ministries_by_name[clean_name] = row_obj
+            ministries_by_key[key_norm] = row_obj
+            return row_obj
+
+        for item in raw_ministries:
+            if not isinstance(item, dict):
+                continue
+            mname = str(item.get("ministry") or "").strip()
+            if not mname:
+                continue
+            entry = _ensure_ministry(mname, str(item.get("ministry_key") or ""))
+            entry["lok_sabha_tasks"] = int(item.get("lok_sabha_tasks") or 0)
+            entry["rajya_sabha_tasks"] = int(item.get("rajya_sabha_tasks") or 0)
+            entry["pending_count"] = int(item.get("pending_count") or 0)
+            entry["fulfilled_count"] = int(item.get("fulfilled_count") or 0)
+            entry["partly_implemented_count"] = int(item.get("partly_implemented_count") or 0)
+            entry["dropped_count"] = int(item.get("dropped_count") or 0)
+            entry["other_count"] = entry["partly_implemented_count"] + entry["dropped_count"]
+
+        for r in conn.execute(
+            "SELECT id, status, title FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired'",
+            (mid,),
+        ).fetchall():
+            tid = str(r["id"] or "")
+            st = str(r["status"] or "")
+            title = str(r["title"] or "")
+
+            house_name = "Rajya Sabha" if tid.startswith("prj-p6-rs-") else "Lok Sabha"
+            h_entry = by_house[house_name]
+            h_entry["tasks"] += 1
+            if st == "completed":
+                h_entry["done"] += 1
+            elif st == "claimed":
+                h_entry["claimed"] += 1
+            elif st == "queued":
+                h_entry["open"] += 1
+
+            if " · " in title:
+                mname = title.split(" · ", 1)[0].strip()
+                m_entry = _ensure_ministry(mname)
+                m_entry["tasks"] += 1
+                if st == "completed":
+                    m_entry["done"] += 1
+                elif st == "claimed":
+                    m_entry["claimed"] += 1
+                elif st == "queued":
+                    m_entry["open"] += 1
+
+        live = (
+            "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+            "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+        )
+        leads = verified = peer_review = 0
+        by_signal: dict[str, int] = {
+            "overdue_pending_assurance": 0,
+            "partly_implemented_assurance": 0,
+            "dropped_without_fulfillment": 0,
+            "delayed_or_unreadable_followup": 0,
+        }
+        top_leads: list[dict[str, Any]] = []
+        anchor_raw = coverage.get("anchor_case")
+        anchor_case: dict[str, Any] | None = dict(anchor_raw) if isinstance(anchor_raw, dict) else None
+        if anchor_case is not None:
+            anchor_case.setdefault("finding_id", None)
+        anchor_ref = str((anchor_case or {}).get("assurance_ref") or "").strip().upper()
+
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        for r in conn.execute(
+            f"SELECT id, title, entity_name, severity, status, anomaly_metrics_json "
+            f"FROM findings WHERE {live} ORDER BY id ASC",
+            (mid,),
+        ).fetchall():
+            leads += 1
+            st = str(r["status"] or "")
+            if st == "verified":
+                verified += 1
+            elif st in ("peer_review", "raw_lead"):
+                peer_review += 1
+
+            metrics = loads_json(r["anomaly_metrics_json"], {})
+            metrics = metrics if isinstance(metrics, dict) else {}
+            sig = str(metrics.get("signal_category") or "")
+            if sig in by_signal:
+                by_signal[sig] += 1
+
+            house_val = str(metrics.get("house") or "")
+            if house_val in by_house:
+                by_house[house_val]["leads"] += 1
+
+            mname = str(metrics.get("ministry") or "").strip()
+            mkey = str(metrics.get("ministry_key") or "").strip().lower()
+            m_entry = ministries_by_name.get(mname) or (ministries_by_key.get(mkey) if mkey else None)
+            if m_entry is not None:
+                m_entry["leads"] += 1
+
+            aref = str(metrics.get("assurance_ref") or "")
+            is_anchor = bool(metrics.get("is_anchor_case")) or (bool(anchor_ref) and aref.upper() == anchor_ref)
+            if is_anchor and anchor_case is not None and not anchor_case.get("finding_id"):
+                anchor_case["finding_id"] = str(r["id"])
+
+            raw_days = metrics.get("days_elapsed")
+            days_val = int(raw_days) if isinstance(raw_days, (int, float)) and not isinstance(raw_days, bool) else None
+            top_leads.append(
+                {
+                    "finding_id": str(r["id"]),
+                    "title": str(r["title"] or ""),
+                    "ministry": mname or str(r["entity_name"] or ""),
+                    "house": house_val,
+                    "session": str(metrics.get("session") or ""),
+                    "assurance_ref": aref,
+                    "promise_date": str(metrics.get("promise_date") or ""),
+                    "recorded_status": str(metrics.get("recorded_status") or ""),
+                    "signal_category": sig,
+                    "days_elapsed": days_val,
+                    "original_promise": str(metrics.get("original_promise") or ""),
+                    "followup_answer": str(metrics.get("followup_answer") or ""),
+                    "status": st,
+                    "_sort_anchor": 1 if is_anchor else 0,
+                    "_sort_sev": sev_rank.get(str(r["severity"] or "").lower(), 0),
+                }
+            )
+
+        for h_entry in by_house.values():
+            h_entry["pct"] = round(h_entry["done"] / h_entry["tasks"] * 100.0, 2) if h_entry["tasks"] else 0.0
+
+        ministries_list = list(ministries_by_name.values())
+        for m_entry in ministries_list:
+            m_entry["pct"] = round(m_entry["done"] / m_entry["tasks"] * 100.0, 2) if m_entry["tasks"] else 0.0
+        ministries_list.sort(
+            key=lambda m: (
+                -int(m["pending_count"]),
+                -int(m["tasks"]),
+                str(m["ministry"]).lower(),
+            )
+        )
+
+        top_leads.sort(
+            key=lambda x: (
+                -int(x["_sort_anchor"]),
+                -int(x["_sort_sev"]),
+                -(int(x["days_elapsed"]) if x["days_elapsed"] is not None else -1),
+                str(x["finding_id"]),
+            )
+        )
+        cleaned_top_leads = [
+            {k: v for k, v in item.items() if not k.startswith("_sort_")}
+            for item in top_leads[:15]
+        ]
+
+        by_recorded_status = {
+            "pending": int(raw_by_status.get("pending") or 0),
+            "fully_implemented": int(raw_by_status.get("fully_implemented") or 0),
+            "partly_implemented": int(raw_by_status.get("partly_implemented") or 0),
+            "dropped": int(raw_by_status.get("dropped") or 0),
+        }
+
+        return {
+            "hook": str(coverage.get("hook") or "A minister promised Parliament an answer. Did it ever get one?"),
+            "total_tasks": int(coverage.get("total_tasks") or mission_row["total_tasks"] or 0),
+            "ministries_covered": int(coverage.get("ministries_covered") or len(ministries_list)),
+            "houses": [h for h in ("Lok Sabha", "Rajya Sabha") if by_house[h]["tasks"] > 0 or h in raw_by_house],
+            "by_house": by_house,
+            "by_recorded_status": by_recorded_status,
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": str(coverage.get("as_of_date") or ""),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0),
+            "by_signal": by_signal,
+            "ministries": ministries_list,
+            "anchor_case": anchor_case,
+            "top_leads": cleaned_top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }

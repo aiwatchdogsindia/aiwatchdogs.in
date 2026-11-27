@@ -1938,6 +1938,10 @@ def _resolve_provenance(
         inferred_publisher = "Union Budget / Ministry of Finance (unverified third-party mirror)"
         inferred_landing = "https://indiabudget.gov.in"
         inferred_mirror = "GitHub Mirror (Varnasr/PolicyStack)"
+    elif host == "sansad.in" or host.endswith(".sansad.in"):
+        inferred_publisher = "Parliament of India (Digital Sansad)"
+        inferred_landing = "https://sansad.in"
+        inferred_mirror = None
     elif host in {"gov.in", "nic.in"} or host.endswith((".gov.in", ".nic.in")):
         inferred_publisher = host
         inferred_landing = source_ref
@@ -2254,6 +2258,12 @@ def load_dataset(
             # each marked with the document it came from. Page numbers restart in the second one.
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {**rec, "document": "secondary"} for rec in sec_ds.records
+            ]
+        elif isinstance(ctx.get("parliaments_to_do_list"), dict) and sec_ds.format == "pdf":
+            # P6 attaches an official Lok Sabha Question PDF or Rajya Sabha Implementation Report PDF
+            # alongside the primary Digital Sansad JSON record without reusing UB1's secondary_document flag.
+            records = [{**rec, "document": "primary"} for rec in records] + [
+                {**rec, "document": "secondary", "secondary_sha256": sec_ds.sha256} for rec in sec_ds.records
             ]
         else:
             records = _join_secondary_records(records, sec_ds.records, secondary_ref, sec_ds.sha256)

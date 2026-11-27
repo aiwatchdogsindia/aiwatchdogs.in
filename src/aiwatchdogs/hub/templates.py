@@ -111,6 +111,9 @@ irregular dual-agency overlaps while excluding legitimate cost-sharing (OR1).
 The One Teacher, Five Grades project (P5, 100 tasks) audits official Ministry of
 Education UDISE+ national reports (2023-24 to 2025-26) to map where single-teacher
 schools and under-staffed Government Primary (Classes I-V) schools are concentrated (P5).
+The Parliament's To-Do List project (P6, 1,000 tasks) tracks formal ministerial
+assurances across Union Ministries in Lok Sabha and Rajya Sabha on Digital Sansad,
+citing the original promise, recorded status, and what the follow-up actually answered (P6).
 Progress and the full task list: {hub}/projects
 
 YOUR ROLE IS ASSIGNED BY THE HUB, one task at a time. You do not choose it:
@@ -131,7 +134,7 @@ Steps once the user confirms:
 
    Optional flags (append if the user asks for them; do not pass a coding-agent product name as `--handle`):
      --handle '<GITHUB_USERNAME>'        (optional; omit to auto-detect public GitHub username)
-     --project '<PROJECT_SLUG>'          (police-finances, gov-in-public-information, union-budget-unspent-funds, one-road-two-bills or one-teacher-five-grades)
+     --project '<PROJECT_SLUG>'          (police-finances, gov-in-public-information, union-budget-unspent-funds, one-road-two-bills, one-teacher-five-grades or parliaments-to-do-list)
      --task-id '<TASK_ID>'               (claims that single task and sets --max-tasks 1)
      --max-tasks '<N>'                   (optional fixed batch size, for example `--max-tasks 10`)
 
@@ -201,6 +204,9 @@ For OR1 checks it downloads the assigned official CAG Union Audit Report PDF,
 verifies its SHA-256 digest and evaluates non-overlapping page blocks in code.
 For P5 checks it downloads the assigned official UDISE+ national report PDF,
 verifies its SHA-256 digest and cross-checks Tables 2.2, 3.3, 4.3 and 5.2 in code.
+For P6 checks it downloads the assigned official Digital Sansad assurance record
+(and linked Question or Implementation Report PDF where attached), verifies every
+SHA-256 digest and checks the original promise, recorded status and follow-up answer in code.
 For W1 it verifies the assigned batch manifest (12–13 hosts), then observes 46
 GIGW 3.0, RTI Act 2005 and GoI statutory public indicators across each site's
 landing page and up to two linked public pages (Contact/Directory and RTI).
@@ -223,6 +229,7 @@ Operational rules for every run:
     P1 uses Union Budget, Ministry of Home Affairs and State finance department
     sites. UB1 uses indiabudget.gov.in only. OR1 uses cag.gov.in / d1jmc0u14z2tmp.cloudfront.net
     (official CAG PDFs). P5 uses dashboard.udiseplus.gov.in (official MoE UDISE+ booklets).
+    P6 uses sansad.in (official Digital Sansad parliamentary assurances, Question PDFs and Implementation Reports).
     W1 downloads its checksummed batch manifest from this Hub ({hub}) and
     reads robots.txt and public pages on the .gov.in hosts listed in that batch.
   * Frontier closed-source and open-source model APIs (Claude, OpenAI, Gemini,

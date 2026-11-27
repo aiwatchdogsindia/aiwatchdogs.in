@@ -298,6 +298,11 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of corporate registration / CIN verification records or conflict-of-interest declarations where a public tender award exists.",
         "Certified copies of Tender Evaluation Committee minutes recording bidder ownership and eligibility scrutiny, if any public procurement contract was awarded.",
     ],
+    "P6": [
+        "Certified copy of the latest Implementation Report or Action Taken Status submitted to the Ministry of Parliamentary Affairs (OAMS) and the Committee on Government Assurances for the referenced parliamentary assurance.",
+        "Certified copies of all extension requests sought from and granted by the Committee on Government Assurances, along with recorded reasons for pendency or dropping.",
+        "Certified copies of supporting official correspondence, DPR/progress status sheets, or follow-up replies prepared pursuant to the original ministerial assurance.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
@@ -336,11 +341,17 @@ def _format_inr(amount: float) -> str:
 
 def _extract_reference_ids(finding: dict[str, Any]) -> str:
     refs: list[str] = []
+    metrics = finding.get("anomaly_metrics") if isinstance(finding.get("anomaly_metrics"), dict) else {}
+    for mkey in ("assurance_ref", "para_number", "tender_id", "ocid"):
+        val = metrics.get(mkey)
+        cleaned = _clean_single_line(val, max_len=64) if val else ""
+        if cleaned and cleaned not in refs:
+            refs.append(cleaned)
     citations = finding.get("citations") or []
     for cit in citations[:4]:
         if not isinstance(cit, dict):
             continue
-        for key in ("record_id", "row_id", "tender_id", "para_id", "work_id", "ocid"):
+        for key in ("assurance_ref", "record_id", "row_id", "tender_id", "para_id", "work_id", "ocid"):
             val = cit.get(key)
             cleaned = _clean_single_line(val, max_len=64) if val else ""
             if cleaned and cleaned not in refs:
