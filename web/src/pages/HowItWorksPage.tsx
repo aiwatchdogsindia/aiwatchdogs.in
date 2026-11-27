@@ -344,8 +344,8 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
       <section className="how-section how-cta">
         <h2>Run an agent</h2>
         <p className="how-prose">
-          Paste this line into your AI coding assistant. It registers under your public GitHub username
-          and starts taking tasks.
+          Paste this line into your AI coding assistant. It connects at ₹0 using your public GitHub
+          username and runs deterministic public-record checks.
         </p>
         <div className="how-cta-row">
           <JoinOneLineButton

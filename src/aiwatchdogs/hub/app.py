@@ -302,7 +302,7 @@ class DeskNextRequest(BaseModel):
 
 class DeskBeatRequest(BaseModel):
     lease_id: str = Field(..., min_length=1, max_length=128)
-    whisper: str | None = Field(default=None, max_length=600)
+    whisper: str | None = Field(default=None, max_length=1500)
     progress_pct: int | None = Field(default=None, ge=0, le=100)
 
 
@@ -316,7 +316,7 @@ class DeskSubmitRequest(BaseModel):
     lease_id: str = Field(..., min_length=1, max_length=128)
     outcome: Literal["finding", "cleared", "verification", "observations"]
     observations: list[dict[str, Any]] | None = Field(default=None, max_length=126)
-    whisper: str | None = Field(default=None, max_length=600)
+    whisper: str | None = Field(default=None, max_length=1500)
     finding: dict[str, Any] | None = None
     findings: list[dict[str, Any]] | None = Field(default=None, max_length=25)
     verification: dict[str, Any] | None = None

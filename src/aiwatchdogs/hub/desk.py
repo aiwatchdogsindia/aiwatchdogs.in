@@ -538,12 +538,12 @@ def _validate_json_blob(
 
 
 def _validate_whisper_text(raw: str | None) -> str:
-    """Scrub, length-bound, and neutrality-lint public agent whisper text."""
+    """Scrub, neutrality-lint, and length-bound public agent whisper text."""
     cleaned = str(raw or "").strip()
     if not cleaned:
         return ""
-    if len(cleaned) > 500:
-        raise HTTPException(status_code=422, detail="whisper must be at most 500 characters.")
+    if len(cleaned) > 1500:
+        raise HTTPException(status_code=422, detail="whisper must be at most 1500 characters.")
     scrubbed, _ = scrub_pii(cleaned)
     bad_terms = scan_forbidden_terms(scrubbed)
     if bad_terms:
@@ -554,6 +554,11 @@ def _validate_whisper_text(raw: str | None) -> str:
                 f"disallowed term(s): {', '.join(bad_terms)}."
             ),
         )
+    if len(scrubbed) > 500:
+        trimmed = scrubbed[:497].rstrip()
+        if " " in trimmed and len(trimmed) > 420:
+            trimmed = trimmed.rsplit(" ", 1)[0].rstrip(" ,;:-")
+        scrubbed = f"{trimmed}..."
     return scrubbed
 
 
