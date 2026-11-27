@@ -24,6 +24,7 @@ import argparse
 import collections
 import csv
 import hashlib
+import html
 import json
 import logging
 import math
@@ -123,9 +124,15 @@ def _http_get_text(url: str, timeout: int = 25) -> str:
 
 
 def _percent_encode_url(url: str) -> str:
-    parts = urllib.parse.urlsplit(url.strip())
+    unescaped = html.unescape(url.strip())
+    parts = urllib.parse.urlsplit(unescaped)
     encoded_path = urllib.parse.quote(urllib.parse.unquote(parts.path), safe="/:@!$&'()*+,;=-._~")
-    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, encoded_path, parts.query, parts.fragment))
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, encoded_path, parts.query, ""))
+
+
+def _clean_html_text(raw: str) -> str:
+    cleaned = raw.replace("&ndash ", "– ").replace("&amp ", "& ")
+    return " ".join(html.unescape(cleaned).split())
 
 
 def _parse_cag_date(raw: str) -> date | None:
@@ -181,17 +188,17 @@ def discover_union_reports(cache_dir: Path) -> tuple[list[ReportDoc], list[dict[
         for page in range(1, 25):
             url = CAG_LIST_URL.format(year=yrf, page=page)
             try:
-                html = _http_get_text(url)
+                listing_html = _http_get_text(url)
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
                     break
                 raise
-            items = re.findall(r"href=[\x27\"]/en/audit-report/details/(\d+)[\x27\"][^>]*>([^<]+)<", html)
+            items = re.findall(r"href=[\x27\"]/en/audit-report/details/(\d+)[\x27\"][^>]*>([^<]+)<", listing_html)
             if not items:
                 break
             for rid, title in items:
                 if rid not in discovered:
-                    discovered[rid] = (yrf, " ".join(title.split()))
+                    discovered[rid] = (yrf, _clean_html_text(title))
             time.sleep(0.1)
 
     docs: list[ReportDoc] = []
@@ -321,7 +328,12 @@ def _download_pdf(url: str, dest: Path) -> tuple[bool, str]:
 
 def ensure_downloads(docs: list[ReportDoc], download: bool) -> None:
     for doc in docs:
+        url_meta_path = doc.cache_path.with_suffix(".url.txt")
         if doc.cache_path.exists():
+            if url_meta_path.exists():
+                recorded = url_meta_path.read_text(encoding="utf-8").strip()
+                if recorded:
+                    doc.pdf_url = recorded
             continue
         if not download:
             doc.error = "missing_from_cache"
@@ -335,6 +347,8 @@ def ensure_downloads(docs: list[ReportDoc], download: bool) -> None:
                 ok, err = True, ""
             else:
                 err = err2 or err
+        if ok:
+            url_meta_path.write_text(doc.pdf_url + "\n", encoding="utf-8")
         if not ok:
             doc.error = err
             doc.status = err

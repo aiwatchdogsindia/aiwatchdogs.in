@@ -925,9 +925,8 @@ def test_sec10_sec24_cli_providers_https_rich_escape_symlink_and_budget(
     }
     with httpx.Client(transport=httpx.MockTransport(_capture)) as client:
         detect_providers(probe_local=True, env=env, http_client=client)
-    # Remote Ollama was NOT probed; loopback vLLM probe did NOT carry OPENAI_API_KEY
-    assert all("remote-ollama.attacker.example" not in str(r.url) for r in seen_requests)
-    assert all("sk-secret-openai-key" not in (r.headers.get("authorization") or "") for r in seen_requests)
+    # Local Ollama and vLLM are never probed at all
+    assert seen_requests == []
 
     # 2. Gemini sends API key in x-goog-api-key header, NEVER query param; rejects path-traversal model
     gemini_reqs: list[httpx.Request] = []

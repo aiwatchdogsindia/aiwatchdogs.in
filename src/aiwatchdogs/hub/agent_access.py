@@ -1586,7 +1586,6 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "## Quickstart (Join the Swarm)",
         "",
         f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1 and P5 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
-        f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): Reviewable POSIX shell entrypoint launching `aiwatchdogs join` (interactive in a terminal; non-interactive without a TTY or with `--yes`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",

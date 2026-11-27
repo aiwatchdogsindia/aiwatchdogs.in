@@ -215,9 +215,11 @@ published about real public institutions.
 1. RUNNING RULES, NETWORK SCOPE & LEGAL GUARDRAILS
 ================================================================================
 Operational rules for every run:
-- Local execution & outbound network destinations:
-  * In ₹0 deterministic CPU mode (`rule-engine`), outbound HTTPS requests go to
-    this Coordinator Hub ({hub}) and the source hosts named in your assignment.
+- Live Hub connection & outbound network destinations:
+  * Connects directly to this live Coordinator Hub ({hub}) to claim tasks and
+    submit results. In ₹0 deterministic Python mode (`rule-engine`), outbound
+    HTTPS requests go only to this Hub ({hub}) and the source hosts named in
+    your assignment.
     P1 uses Union Budget, Ministry of Home Affairs and State finance department
     sites. UB1 uses indiabudget.gov.in only. OR1 uses cag.gov.in / d1jmc0u14z2tmp.cloudfront.net
     (official CAG PDFs). P5 uses dashboard.udiseplus.gov.in (official MoE UDISE+ booklets).
@@ -244,17 +246,13 @@ Operational rules for every run:
   * Clearing compliant records earns equal civic credit — objectivity > volume!
 
 ================================================================================
-2. WAYS TO JOIN (CLI OR DIRECT HTTP DESK PROTOCOL)
+2. WAYS TO JOIN (OFFICIAL RUNNER OR DIRECT HTTP DESK PROTOCOL)
 ================================================================================
-Option A — Recommended (official CLI via uvx or shell entrypoint):
-  # Foreground CLI via uvx (₹0 deterministic CPU mode; auto-detects public GitHub username):
+Option A — Recommended (official runner via uvx connected to the live Hub):
+  # Foreground runner via uvx (₹0 deterministic Python mode; auto-detects public GitHub username):
   uvx --refresh --from '{pkg}' aiwatchdogs join --hub '{hub}' --provider rule-engine --non-interactive --yes --mode auto
-  # Or download, inspect, and run the POSIX shell entrypoint:
-  curl -fsSL '{hub}/join.sh' -o join.sh && sh join.sh
-  # Or directly inside a local checkout via uv:
-  uv run aiwatchdogs join --hub '{hub}'
 
-Option B — ADVANCED: Direct 4-Step HTTP Desk Protocol (only if the CLI cannot run;
+Option B — ADVANCED: Direct 4-Step HTTP Desk Protocol (only if the runner cannot run;
 hand-written audits must reproduce the project's deterministic check exactly or
 peer verifiers will reject them):
 

@@ -19,9 +19,8 @@ from aiwatchdogs.core.safety import lint_neutrality, scrub_pii
 
 RULE_ENGINE_PROVIDER = "rule-engine"
 RULE_ENGINE_MODEL = "deterministic-python-v1"
-RULE_ENGINE_LABEL = "Deterministic CPU Auditor (rule-engine) — ₹0 API cost"
+RULE_ENGINE_LABEL = "Deterministic Python Auditor (rule-engine) — ₹0 API cost"
 
-DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 DEFAULT_PROBE_TIMEOUT_S = 0.4
 DEFAULT_MAX_OUTPUT_TOKENS = 512
 
@@ -35,24 +34,10 @@ DEFAULT_PUBLIC_DATASET_HOSTS: tuple[dict[str, str], ...] = (
         "host": "",
         "destination": "The official host named in each task",
         "purpose": (
-            "Police budget checks download documents from Union Budget, Home Ministry and State "
-            "finance department sites. Website checks download the project's pinned GitHub batch "
-            "and read robots.txt and public pages on its assigned .gov.in hosts. The CLI shows "
-            "the dataset host before downloading the file and verifies its SHA-256."
+            "Budget, CAG, UDISE+ and website checks download official public records directly from "
+            "the host named in each task (and verify every pinned file's SHA-256 checksum before running)."
         ),
     },
-)
-
-PREFERRED_OLLAMA_PREFIXES = (
-    "qwen2.5",
-    "qwen3",
-    "llama3.3",
-    "llama3.2",
-    "llama3.1",
-    "mistral",
-    "gemma",
-    "deepseek",
-    "phi",
 )
 
 CLOUD_PROVIDER_SPECS: tuple[dict[str, str], ...] = (
@@ -296,7 +281,7 @@ def is_paid_provider(provider_cfg: ProviderInfo | dict[str, Any] | str | None) -
         return False
     if isinstance(provider_cfg, str):
         norm = provider_cfg.strip().lower()
-        if norm in ("", RULE_ENGINE_PROVIDER, "deterministic", "cpu", "offline", "ollama"):
+        if norm in ("", RULE_ENGINE_PROVIDER, "deterministic", "cpu", "offline"):
             return False
         return True
     cfg = (
@@ -305,10 +290,6 @@ def is_paid_provider(provider_cfg: ProviderInfo | dict[str, Any] | str | None) -
         else ProviderInfo.model_validate(provider_cfg)
     )
     if cfg.provider.strip().lower() == RULE_ENGINE_PROVIDER:
-        return False
-    if cfg.is_local and cfg.zero_cost:
-        if cfg.base_url and not _is_loopback_url(cfg.base_url):
-            return True
         return False
     return True
 
@@ -393,31 +374,17 @@ def describe_outbound_destinations(
             )
 
     paid = is_paid_provider(provider_cfg)
-    if provider_cfg.provider.strip().lower() == RULE_ENGINE_PROVIDER:
+    if not paid or provider_cfg.provider.strip().lower() == RULE_ENGINE_PROVIDER:
         llm_info: dict[str, Any] = {
             "destination": None,
             "provider": provider_cfg.provider,
             "model": provider_cfg.model,
-            "status": "offline_deterministic_cpu",
+            "status": "deterministic_python",
             "paid": False,
             "will_contact": False,
-            "purpose": "Zero external LLM calls — 100% deterministic local Python engine ($0.00 / ₹0).",
+            "purpose": "Zero external LLM calls — 100% deterministic Python engine ($0.00 / ₹0).",
         }
-        mode_summary = "Zero-dollar deterministic CPU mode (rule-engine; $0.00 LLM cap enforced)"
-    elif not paid:
-        llm_info = {
-            "destination": provider_cfg.base_url or DEFAULT_OLLAMA_HOST,
-            "provider": provider_cfg.provider,
-            "model": provider_cfg.model,
-            "status": "local_loopback_zero_cost",
-            "paid": False,
-            "will_contact": True,
-            "purpose": "Local loopback LLM for non-authoritative editorial commentary only ($0.00 / ₹0).",
-        }
-        mode_summary = (
-            f"Zero-dollar local loopback LLM ({provider_cfg.provider}/{provider_cfg.model} at "
-            f"{llm_info['destination']})"
-        )
+        mode_summary = "Zero-dollar deterministic mode (rule-engine; $0.00 LLM cap enforced)"
     elif allow_paid_provider and eff_session_cap > 0.0 and eff_daily_cap > 0.0:
         llm_info = {
             "destination": provider_cfg.base_url or "",
@@ -494,178 +461,19 @@ def _normalize_url(raw: str) -> str:
     return cleaned
 
 
-def _pick_ollama_model(models: list[str], preferred_env: str = "") -> str:
-    if preferred_env and preferred_env in models:
-        return preferred_env
-    lowered = [(m, m.lower()) for m in models]
-    for prefix in PREFERRED_OLLAMA_PREFIXES:
-        for original, low in lowered:
-            if low.startswith(prefix):
-                return original
-    if models:
-        return models[0]
-    return preferred_env or "qwen2.5:7b"
-
-
-def _probe_ollama(
-    base_url: str,
-    *,
-    http_client: httpx.Client | None = None,
-    timeout_s: float = DEFAULT_PROBE_TIMEOUT_S,
-) -> list[str] | None:
-    """Quick 400ms probe of Ollama /api/tags; returns list of installed model names or None."""
-    url = f"{base_url.rstrip('/')}/api/tags"
-    owns_client = http_client is None
-    client = http_client or httpx.Client(timeout=httpx.Timeout(timeout_s))
-    try:
-        resp = client.get(url, timeout=timeout_s)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        raw_models = data.get("models", []) if isinstance(data, dict) else []
-        names: list[str] = []
-        for item in raw_models:
-            if isinstance(item, dict) and item.get("name"):
-                names.append(str(item["name"]))
-            elif isinstance(item, str) and item.strip():
-                names.append(item.strip())
-        return names
-    except (httpx.HTTPError, ValueError, OSError):
-        return None
-    finally:
-        if owns_client:
-            client.close()
-
-
-def _probe_openai_compat_models(
-    base_url: str,
-    *,
-    api_key: str | None = None,
-    http_client: httpx.Client | None = None,
-    timeout_s: float = DEFAULT_PROBE_TIMEOUT_S,
-) -> list[str]:
-    """Best-effort 400ms probe of an OpenAI-compatible /models endpoint."""
-    normalized = base_url.rstrip("/")
-    candidate_urls = [f"{normalized}/models"]
-    if not normalized.endswith("/v1"):
-        candidate_urls.append(f"{normalized}/v1/models")
-
-    headers = {"Accept": "application/json"}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-
-    owns_client = http_client is None
-    client = http_client or httpx.Client(timeout=httpx.Timeout(timeout_s))
-    try:
-        for url in candidate_urls:
-            try:
-                resp = client.get(url, headers=headers, timeout=timeout_s)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    items = data.get("data", []) if isinstance(data, dict) else []
-                    names = [str(m["id"]) for m in items if isinstance(m, dict) and m.get("id")]
-                    if names:
-                        return names
-            except (httpx.HTTPError, ValueError, OSError):
-                continue
-        return []
-    finally:
-        if owns_client:
-            client.close()
-
-
 def detect_providers(
     *,
-    probe_local: bool = True,
+    probe_local: bool = False,
     env: Mapping[str, str] | None = None,
     http_client: httpx.Client | None = None,
     probe_timeout_s: float = DEFAULT_PROBE_TIMEOUT_S,
 ) -> list[ProviderInfo]:
-    """Detect available local & cloud LLM providers in <2s, always including rule-engine."""
+    """Detect configured frontier cloud API providers alongside the ₹0 deterministic rule-engine."""
+    _ = (probe_local, http_client, probe_timeout_s)
     active_env = os.environ if env is None else env
     detected: list[ProviderInfo] = []
 
-    # 1. Local Ollama (400ms probe of loopback OLLAMA_HOST or http://127.0.0.1:11434 ONLY; never probe remote hosts)
-    ollama_env_host = active_env.get("OLLAMA_HOST", "").strip()
-    ollama_url = _normalize_url(ollama_env_host or DEFAULT_OLLAMA_HOST)
-    ollama_is_local = _is_loopback_url(ollama_url)
-    ollama_model_env = active_env.get("OLLAMA_MODEL", "").strip()
-    if probe_local and ollama_is_local:
-        ollama_models = _probe_ollama(
-            ollama_url,
-            http_client=http_client,
-            timeout_s=probe_timeout_s,
-        )
-        if ollama_models is not None:
-            chosen = _pick_ollama_model(ollama_models, preferred_env=ollama_model_env)
-            detected.append(
-                ProviderInfo(
-                    provider="ollama",
-                    model=chosen,
-                    label=f"Local Ollama ({chosen}) — ₹0 API cost",
-                    available=True,
-                    is_local=True,
-                    zero_cost=True,
-                    base_url=ollama_url,
-                    detected_models=ollama_models or [chosen],
-                )
-            )
-    elif ollama_env_host:
-        chosen = ollama_model_env or "qwen2.5:7b"
-        detected.append(
-            ProviderInfo(
-                provider="ollama",
-                model=chosen,
-                label=(
-                    f"Local Ollama ({chosen}) — ₹0 API cost"
-                    if ollama_is_local
-                    else f"Remote Ollama ({chosen} @ {ollama_url})"
-                ),
-                available=True,
-                is_local=ollama_is_local,
-                zero_cost=ollama_is_local,
-                base_url=ollama_url,
-                detected_models=[chosen],
-            )
-        )
-
-    # 2. Local vLLM / OpenAI-compatible base URL (NEVER send OPENAI_API_KEY to third-party/vLLM endpoints!)
-    vllm_raw = (
-        active_env.get("VLLM_BASE_URL", "").strip()
-        or active_env.get("OPENAI_BASE_URL", "").strip()
-    )
-    if vllm_raw:
-        vllm_url = _normalize_url(vllm_raw)
-        vllm_is_local = _is_loopback_url(vllm_url)
-        vllm_key = active_env.get("VLLM_API_KEY", "").strip() or None
-        probed_models: list[str] = []
-        if probe_local and vllm_is_local:
-            probed_models = _probe_openai_compat_models(
-                vllm_url,
-                api_key=vllm_key,
-                http_client=http_client,
-                timeout_s=probe_timeout_s,
-            )
-        chosen_vllm = (
-            active_env.get("VLLM_MODEL", "").strip()
-            or active_env.get("OPENAI_MODEL", "").strip()
-            or (probed_models[0] if probed_models else "local-vllm")
-        )
-        detected.append(
-            ProviderInfo(
-                provider="vllm",
-                model=chosen_vllm,
-                label=f"OpenAI-Compatible / vLLM ({chosen_vllm})",
-                available=True,
-                is_local=vllm_is_local,
-                zero_cost=vllm_is_local,
-                base_url=vllm_url,
-                api_key_env="VLLM_API_KEY" if active_env.get("VLLM_API_KEY") else None,
-                detected_models=probed_models or [chosen_vllm],
-            )
-        )
-
-    # 3. Cloud BYO API keys (require explicit opt-in & positive budget before dispatch)
+    # 1. Opt-in frontier cloud API keys (require explicit opt-in & positive budget before dispatch)
     for spec in CLOUD_PROVIDER_SPECS:
         key_env = spec["api_key_env"]
         if active_env.get(key_env, "").strip():
@@ -684,14 +492,14 @@ def detect_providers(
                 )
             )
 
-    # 4. Always available: offline deterministic Python rule-engine
+    # 2. Always available: deterministic Python rule-engine (₹0)
     detected.append(rule_engine_provider())
     return detected
 
 
 def detect_best_provider(
     *,
-    probe_local: bool = True,
+    probe_local: bool = False,
     env: Mapping[str, str] | None = None,
     http_client: httpx.Client | None = None,
     probe_timeout_s: float = DEFAULT_PROBE_TIMEOUT_S,
@@ -718,7 +526,7 @@ def resolve_provider_config(
     *,
     base_url: str | None = None,
     env: Mapping[str, str] | None = None,
-    probe_local: bool = True,
+    probe_local: bool = False,
     http_client: httpx.Client | None = None,
     allow_paid_provider: bool = False,
 ) -> ProviderInfo:
@@ -743,51 +551,6 @@ def resolve_provider_config(
             return base.model_copy(update={"model": model})
         return base
 
-    if normalized == "ollama":
-        url = _normalize_url(base_url or active_env.get("OLLAMA_HOST", "") or DEFAULT_OLLAMA_HOST)
-        is_local = _is_loopback_url(url)
-        chosen_model = model or active_env.get("OLLAMA_MODEL", "").strip() or "qwen2.5:7b"
-        return ProviderInfo(
-            provider="ollama",
-            model=chosen_model,
-            label=(
-                f"Local Ollama ({chosen_model}) — ₹0 API cost"
-                if is_local
-                else f"Remote Ollama ({chosen_model} @ {url})"
-            ),
-            available=True,
-            is_local=is_local,
-            zero_cost=is_local,
-            base_url=url,
-            detected_models=[chosen_model],
-        )
-
-    if normalized in ("vllm", "openai-compatible"):
-        url = _normalize_url(
-            base_url
-            or active_env.get("VLLM_BASE_URL", "")
-            or active_env.get("OPENAI_BASE_URL", "")
-            or "http://127.0.0.1:8001/v1"
-        )
-        is_local = _is_loopback_url(url)
-        chosen_model = (
-            model
-            or active_env.get("VLLM_MODEL", "").strip()
-            or active_env.get("OPENAI_MODEL", "").strip()
-            or "local-vllm"
-        )
-        return ProviderInfo(
-            provider="vllm",
-            model=chosen_model,
-            label=f"OpenAI-Compatible / vLLM ({chosen_model})",
-            available=True,
-            is_local=is_local,
-            zero_cost=is_local,
-            base_url=url,
-            api_key_env="VLLM_API_KEY" if active_env.get("VLLM_API_KEY") else None,
-            detected_models=[chosen_model],
-        )
-
     for spec in CLOUD_PROVIDER_SPECS:
         if spec["provider"] == normalized:
             chosen_model = model or active_env.get(spec["model_env"], "").strip() or spec["default_model"]
@@ -803,7 +566,7 @@ def resolve_provider_config(
                 detected_models=[chosen_model],
             )
 
-    # Unknown provider string: degrade safely to rule-engine
+    # Unknown or removed provider string (e.g. legacy ollama/vllm): degrade safely to rule-engine
     return rule_engine_provider()
 
 
@@ -1061,36 +824,7 @@ def _call_llm_provider_with_usage(
     }
 
     try:
-        if provider == "ollama":
-            base = _validate_provider_endpoint_url(
-                provider_cfg.base_url or DEFAULT_OLLAMA_HOST, provider="ollama"
-            )
-            resp = client.post(
-                f"{base}/api/chat",
-                json={
-                    "model": provider_cfg.model,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"num_predict": DEFAULT_MAX_OUTPUT_TOKENS},
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                },
-                timeout=timeout_s,
-            )
-            if resp.status_code != 200:
-                return None, usage
-            usage["http_200"] = True
-            data = _parse_bounded_json(resp)
-            if isinstance(data, dict):
-                usage["prompt_tokens"] = data.get("prompt_eval_count")
-                usage["completion_tokens"] = data.get("eval_count")
-            message = data.get("message", {}) if isinstance(data, dict) else {}
-            content = message.get("content") if isinstance(message, dict) else None
-            return (str(content) if content else None), usage
-
-        if provider in ("vllm", "openai", "openrouter"):
+        if provider in ("openai", "openrouter"):
             default_base = (
                 "https://openrouter.ai/api/v1"
                 if provider == "openrouter"
@@ -1112,11 +846,8 @@ def _call_llm_provider_with_usage(
                 api_key = env.get("OPENAI_API_KEY", "").strip()
             elif provider == "openrouter":
                 api_key = env.get("OPENROUTER_API_KEY", "").strip()
-            elif provider == "vllm":
-                # NEVER fall back to OPENAI_API_KEY for arbitrary vLLM/OpenAI-compatible endpoints!
-                api_key = env.get("VLLM_API_KEY", "").strip()
 
-            if provider in ("openai", "openrouter") and not api_key:
+            if not api_key:
                 return None, usage
 
             headers: dict[str, str] = {"Content-Type": "application/json"}

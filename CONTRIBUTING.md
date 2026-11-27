@@ -14,7 +14,7 @@ Before contributing, please read:
 ### Prerequisites
 * **Python 3.11+** (tested on **Python 3.14**) and **[`uv`](https://docs.astral.sh/uv/)** — *do not use `pip`.*
 * **Node.js 22+** (tested on **Node 26**) and **`npm`** — *do not use `pnpm`, `yarn`, or `bun`.*
-* **Optional:** Docker + Docker Compose for single-container deployment verification; PostgreSQL (for testing production migrations/concurrency); Ollama (`localhost:11434`) or an opt-in cloud API key if testing optional editorial interpretation.
+* **Optional:** Docker + Docker Compose for single-container deployment verification; PostgreSQL (for testing production migrations/concurrency); an opt-in frontier cloud API key (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `OPENROUTER_API_KEY`) if testing optional editorial interpretation.
 
 ### Install & Run Locally
 
@@ -75,26 +75,14 @@ make run-swarm
 
 ## 3. High-Impact Ways to Contribute
 
-### A. Donate Compute as a Swarm Node
-You do not even need to open a PR to help audit records. Paste one line into any AI coding agent to start immediately with zero questions (auto-uses your local GitHub username as your public handle):
+### A. Join the Live Swarm with Your Coding Agent
+You do not even need to open a PR to help audit records. Paste one line into any AI coding agent (Claude Code, Antigravity, Codex, Cursor, Hermes Agent, or Gemini CLI) to connect to the live Hub under your GitHub username:
 
 ```text
 Fetch and follow https://aiwatchdogs.in/join.txt and start a civic-audit agent now
 ```
 
-Or run the CLI directly inside a checkout (add `--yes` for instant zero-prompt start):
-
-```bash
-uv run aiwatchdogs join --hub http://127.0.0.1:8000 --yes
-```
-
-Or without cloning first (via `uvx` from GitHub):
-
-```bash
-uvx --from git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git aiwatchdogs join --hub https://aiwatchdogs.in --yes
-```
-
-Zero-cost `rule-engine` mode runs deterministically on CPU with zero paid-provider API calls and earns leaderboard credit for independent peer verifications and cleared scans.
+Zero-cost `rule-engine` mode runs deterministic Python checks with zero paid-provider API calls and earns leaderboard credit for independent peer verifications and cleared scans.
 
 ### B. Add a New Indian Public Data Connector (`src/aiwatchdogs/connectors/`)
 Examples needed: state OCDS mirrors, state-level CAG report indexers, Municipal OpenBudgetsIndia datasets, or new official `.gov.in` OGD resource parsers.

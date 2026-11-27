@@ -30,6 +30,7 @@ from aiwatchdogs.cli.providers import (
     detect_best_provider,
     detect_providers,
     enrich_finding_summary,
+    resolve_provider_config,
 )
 from aiwatchdogs.cli.runner import AgentRunner, _compare_complete_metric_set
 from aiwatchdogs.core.models import LoadedDataset
@@ -258,23 +259,16 @@ def test_detect_providers_offline_fallback_rule_engine() -> None:
     assert providers[0].provider == RULE_ENGINE_PROVIDER
     assert providers[0].zero_cost is True
     assert "₹0" in providers[0].label
-    assert "CPU" in providers[0].label
+    assert "Deterministic" in providers[0].label
     assert best.provider == RULE_ENGINE_PROVIDER
 
 
-def test_detect_providers_ollama_vllm_and_cloud_keys() -> None:
+def test_detect_providers_cloud_keys_only_and_ignores_local_ollama_vllm() -> None:
+    seen_requests: list[httpx.Request] = []
+
     def _handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path == "/api/tags":
-            return httpx.Response(
-                200,
-                json={"models": [{"name": "llama3.1:8b"}, {"name": "qwen2.5:14b"}]},
-            )
-        if request.url.path.endswith("/models"):
-            return httpx.Response(
-                200,
-                json={"data": [{"id": "Qwen/Qwen2.5-32B-Instruct"}]},
-            )
-        return httpx.Response(404)
+        seen_requests.append(request)
+        return httpx.Response(500)
 
     env = {
         "OLLAMA_HOST": "http://127.0.0.1:11434",
@@ -291,10 +285,12 @@ def test_detect_providers_ollama_vllm_and_cloud_keys() -> None:
     elapsed = time.monotonic() - t0
 
     assert elapsed < 2.0
+    assert seen_requests == []
     names = [p.provider for p in providers]
-    assert names == ["ollama", "vllm", "gemini", "anthropic", "openai", "openrouter", "rule-engine"]
-    assert providers[0].model == "qwen2.5:14b"
-    assert providers[1].model == "Qwen/Qwen2.5-32B-Instruct"
+    assert names == ["gemini", "anthropic", "openai", "openrouter", "rule-engine"]
+    # Legacy/removed local provider strings degrade safely to rule-engine
+    assert resolve_provider_config("ollama", env=env).provider == RULE_ENGINE_PROVIDER
+    assert resolve_provider_config("vllm", env=env).provider == RULE_ENGINE_PROVIDER
 
 
 def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
@@ -319,9 +315,9 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
     assert det["neutrality_passed"] is True
     assert det["enriched_by"] == "rule-engine"
 
-    # 2. Ollama returning clean, neutral enriched JSON
-    def _ollama_ok(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/api/chat"
+    # 2. Opted-in cloud LLM returning clean, neutral enriched JSON
+    def _openai_ok(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/chat/completions")
         payload = {
             "summary": (
                 "Four sequential GeM purchase orders totaling INR 38.40 lakh fell within 95%-98% "
@@ -332,20 +328,26 @@ def test_enrich_finding_summary_llm_success_and_neutrality_fallback() -> None:
                 "Emergency replenishment during peak operational demand can require rapid repeat orders.",
             ],
         }
-        return httpx.Response(200, json={"message": {"content": json.dumps(payload)}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload)}}]})
 
-    ollama_cfg = ProviderInfo(
-        provider="ollama",
-        model="qwen2.5:14b",
-        label="Local Ollama",
-        is_local=True,
-        zero_cost=True,
-        base_url="http://127.0.0.1:11434",
+    openai_ok_cfg = ProviderInfo(
+        provider="openai",
+        model="gpt-4o-mini",
+        label="OpenAI",
+        api_key_env="OPENAI_API_KEY",
+        base_url="https://api.openai.com/v1",
     )
-    with httpx.Client(transport=httpx.MockTransport(_ollama_ok)) as client:
-        enriched = enrich_finding_summary(audit_lead, ollama_cfg, http_client=client)
+    with httpx.Client(transport=httpx.MockTransport(_openai_ok)) as client:
+        enriched = enrich_finding_summary(
+            audit_lead,
+            openai_ok_cfg,
+            http_client=client,
+            env={"OPENAI_API_KEY": "sk-test"},
+            allow_paid_provider=True,
+            max_usd=0.50,
+        )
     assert enriched["used_llm"] is True
-    assert enriched["enriched_by"] == "ollama/qwen2.5:14b"
+    assert enriched["enriched_by"] == "openai/gpt-4o-mini"
     assert enriched["neutrality_passed"] is True
     # Deterministic verified summary is NEVER overwritten; LLM text stays in separate editorial_interpretation
     assert enriched["summary"] == audit_lead["summary"]

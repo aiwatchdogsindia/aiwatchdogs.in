@@ -168,7 +168,7 @@ export function HeroEyebrowRow({
                   onOpenJoin();
                 }}
               >
-                More install options (CLI &amp; API)
+                Join details (/join.txt)
               </button>
             </div>
           </div>

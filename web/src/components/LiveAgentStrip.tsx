@@ -240,7 +240,7 @@ export function LiveAgentStrip({
                       onOpenJoin();
                     }}
                   >
-                    CLI &amp; API options
+                    Join instructions
                   </button>
                 )}
               </div>
