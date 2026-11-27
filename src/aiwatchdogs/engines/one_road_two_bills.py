@@ -53,7 +53,7 @@ _SUMMARY_REFERENCE_RE = re.compile(r"\(Para(?:graph)?\.?\s+(\d+(?:\.\d+)+)\)", r
 _RECOMMENDATION_HEADING_RE = re.compile(r"Recommendations?(?:\s*:\s*(.*))?", re.IGNORECASE)
 _RECOMMENDATION_SENTENCE_RE = re.compile(
     r"^(?:(?!(?:that|is|are|was|were|said|reported|stated|observed|found|noted|showed|revealed)\b)"
-    r"[\w’/-]+\s+){1,12}(?:may|should|must|shall)\b",
+    r"[\w’/-]+\s+){1,12}(?:may|should|must|shall)\b(?!\s+have\b)",
     re.IGNORECASE,
 )
 _AMOUNT_FOOTNOTE_RE = re.compile(
@@ -219,10 +219,11 @@ _NAMED_PAYER_PATTERN = rf"(?:{_LEGAL_ENTITY_PATTERN}|{_AGENCY_MENTION_RE.pattern
 _NAMED_PAYER_RE = re.compile(_NAMED_PAYER_PATTERN)
 # An unidentified uppercase subject can block attribution without supplying a payer name.
 _POSSIBLE_PAYER_PATTERN = rf"(?:{_NAMED_PAYER_PATTERN}|[A-Z][A-Z0-9&-]{{2,11}})"
+_RELATED_PAYER_PATTERN = r"(?i:(?:its|their|the)\s+(?:[a-z-]+\s+){0,2}(?:subsidiary|office|agency|department|contractor))"
 _PAYMENT_ACTOR_RE = re.compile(
     r"^(?:(?i:audit (?:observed|noticed|found) that|accordingly,|however,)\s+)?"
     rf"(?:(?i:the)\s+)?(?P<actor>{_POSSIBLE_PAYER_PATTERN})"
-    rf"(?P<others>(?:\s+(?:(?i:and|or|as well as)|&)\s+{_POSSIBLE_PAYER_PATTERN})*)"
+    rf"(?P<others>(?:\s+(?:(?i:and|or|as well as)|&)\s+(?:{_POSSIBLE_PAYER_PATTERN}|{_RELATED_PAYER_PATTERN}))*)"
     r"(?:\s+(?:had|has|have|also)){0,2}\s+"
     r"(?:paid|billed|reimbursed|made\s+(?:(?:an?|the|another|irregular|duplicate|double|additional|excess)\s+){0,4}"
     r"payments?)\b"
@@ -256,13 +257,20 @@ _CLAUSE_BREAK_RE = re.compile(
     r"[;—]\s*|,\s+(?!(?:resulting in|leading to|causing|thereby|amounting|which resulted in)\b)",
     re.IGNORECASE,
 )
-# A new subject and finite verb can introduce a different amount basis within a sentence.
-_EXPOSURE_CLAUSE_BREAK_RE = re.compile(
-    rf"{_CLAUSE_BREAK_RE.pattern}|\s+(?:and|but|whereas|while)\s+"
+# A new subject and finite verb can introduce a different payment within a sentence.
+_PAYMENT_CLAUSE_BREAK_RE = re.compile(
+    rf"{_CLAUSE_BREAK_RE.pattern}|(?P<coordinator>\s+(?:and|but|whereas|while)\s+)",
+    re.IGNORECASE,
+)
+_INDEPENDENT_SUBJECT_RE = re.compile(
     r"(?!(?:the\s+)?(?:resulting|consequent)\s+)"
-    r"(?=(?:(?:the|one|a|an|another|each|both|these|those)\s+|audit\s+)"
+    r"(?:(?:the|one|a|an|another|each|both|these|those)\s+|audit\s+)"
     r"(?:(?:[a-z][a-z-]*|Rs\.|[\d,.]+|₹[\d,.]*)\s+){0,8}"
-    r"(?:was|were|had|has|have|paid|billed|claimed|cost|observed|noticed|found)\b)",
+    r"(?:was|were|had|has|have|paid|billed|claimed|cost|observed|noticed|found)\b",
+    re.IGNORECASE,
+)
+_OVERPAYMENT_AMOUNT_RE = re.compile(
+    rf"the\s+overpayment\s+(?:was|amounted\s+to)\s+{_RUPEE_AMOUNT_PATTERN}\s*[.!?]?",
     re.IGNORECASE,
 )
 _FOLLOWUP_RE = re.compile(
@@ -422,15 +430,35 @@ def _extract_amounts_inr(text: str) -> list[float]:
     return amounts
 
 
+def _payment_clauses(sentence: str) -> Iterable[tuple[int, str]]:
+    """Use the same clause boundaries for payer and amount attribution."""
+    start = 0
+    for marker in _PAYMENT_CLAUSE_BREAK_RE.finditer(sentence):
+        if marker["coordinator"]:
+            right = sentence[marker.end():]
+            if not (_PAYMENT_ACTOR_RE.match(right) or _INDEPENDENT_SUBJECT_RE.match(right)):
+                continue
+            remainder = sentence[start:]
+            actor_text = _PARAGRAPH_ITEM_RE.sub("", remainder.lstrip())
+            actor = _PAYMENT_ACTOR_RE.match(actor_text)
+            actor_offset = len(remainder) - len(actor_text)
+            if actor and marker.start() - start < actor_offset + actor.end():
+                continue  # Keep compound payer names and coordinated payer subjects together.
+        yield start, sentence[start:marker.start()]
+        start = marker.end()
+    yield start, sentence[start:]
+
+
 def _exposure_amount(sentence: str, signal: re.Pattern[str]) -> float | None:
     if _RECOVERY_RE.search(sentence) or _MIXED_EXPOSURE_RE.search(sentence):
         return None
-    amounts = {
-        amount
-        for clause in _EXPOSURE_CLAUSE_BREAK_RE.split(sentence)
-        if signal.search(clause)
-        for amount in _extract_amounts_inr(clause)
-    }
+    amounts: set[float] = set()
+    preceding_signal = False
+    for _, clause in _payment_clauses(sentence):
+        has_signal = bool(signal.search(clause))
+        if has_signal or (preceding_signal and _OVERPAYMENT_AMOUNT_RE.fullmatch(clause.strip())):
+            amounts.update(_extract_amounts_inr(clause))
+        preceding_signal = has_signal
     return next(iter(amounts)) if len(amounts) == 1 else None
 
 
@@ -514,11 +542,11 @@ def _table_title(line: str, continuation: re.Match[str] | None) -> re.Match[str]
 def _table_heading(lines: list[str], index: int) -> tuple[re.Match[str] | None, bool]:
     line = lines[index].strip()
     continuation = _CONTINUED_TABLE_RE.match(line)
-    split_marker = (
-        _TABLE_TITLE_RE.fullmatch(line) and index + 1 < len(lines)
-        and _CONTINUATION_MARKER_RE.fullmatch(lines[index + 1].strip())
-    )
-    return _table_title(line, continuation), bool(continuation or split_marker)
+    title = _table_title(line, continuation)
+    if not continuation and title and (title.end() == len(line) or line[title.end():].lstrip().startswith(":")):
+        following = next((raw.strip() for raw in lines[index + 1:] if raw.strip()), "")
+        return title, bool(_CONTINUATION_MARKER_RE.fullmatch(following))
+    return title, bool(continuation)
 
 
 def _is_flattened_audit_table(
@@ -577,6 +605,12 @@ def _chapter_label(heading: re.Match[str]) -> tuple[str, str]:
     return " ".join(heading[3].casefold().split()), " ".join(heading[4].casefold().split())
 
 
+def _same_chapter(current: tuple[str, str], previous: tuple[str, str]) -> bool:
+    number, subtitle = current
+    prior_number, prior_subtitle = previous
+    return number == prior_number and (not subtitle or not prior_subtitle or subtitle == prior_subtitle)
+
+
 def _has_consecutive_chapter_pagination(
     lines: list[str], prior_lines: list[str], chapter: tuple[str, str],
 ) -> bool:
@@ -584,7 +618,7 @@ def _has_consecutive_chapter_pagination(
         _chapter_label(heading) for raw in prior_lines[:4]
         if (heading := _NUMBERED_HEADING_RE.match(raw.strip())) and heading[3]
     ), None)
-    if prior_chapter != chapter:
+    if prior_chapter is None or not _same_chapter(chapter, prior_chapter):
         return False
     prior_number, number = (
         next((int(match[1]) for line in page[:4] if (match := _PAGE_NUMBER_ONLY_RE.fullmatch(line))), None)
@@ -604,9 +638,7 @@ def _is_running_table_prefix(
         # Without a conflicting chapter, the caller checks for table headers and evidence of continuation.
         if prior_chapter is None:
             return True
-        number, subtitle = _chapter_label(heading)
-        prior_number, prior_subtitle = _chapter_label(prior_chapter)
-        return number == prior_number and (not subtitle or not prior_subtitle or subtitle == prior_subtitle)
+        return _same_chapter(_chapter_label(heading), _chapter_label(prior_chapter))
     if not title:
         return False
     following = next((
@@ -744,13 +776,8 @@ def resolve_enclosing_heading(pages: dict[int, str], page: int, line_start: int)
 
 def _payment_actor(sentence: str, signal: re.Pattern[str] | None = None, *, opener: str = "") -> str | None:
     """Return a named payer, None for an unresolved payer, or an empty string for no payer statement."""
-    boundaries = [(match.start(), match.end()) for match in _CLAUSE_BREAK_RE.finditer(sentence)]
-    boundaries.append((len(sentence), len(sentence)))
-    start = 0
     unresolved = False
-    for end, next_start in boundaries:
-        clause = sentence[start:end]
-        clause_start, start = start, next_start
+    for clause_start, clause in _payment_clauses(sentence):
         if signal is not None and not signal.search(clause):
             continue
         if match := _PAYMENT_ACTOR_RE.match(_PARAGRAPH_ITEM_RE.sub("", clause.strip())):
@@ -974,8 +1001,8 @@ def _evaluate_window(
 
     section = _find_enclosing_section(pages, page, observation.line)
     para_number, heading = section[:2] if section else ("", "")
-    if section and section[2] == page and _SECTION_NUMBER_RE.fullmatch(para_number):
-        is_summary = False
+    if is_summary and section and section[2] == page and _SECTION_NUMBER_RE.fullmatch(para_number):
+        is_summary = any(_EXECUTIVE_SUMMARY_RE.fullmatch(line.strip()) for line in page_lines[:prefix_end])
     actor = _payment_actor(evidence, signal_pattern)
     actor_source = None
     if actor == "" and section and section[0][0].isdigit():
