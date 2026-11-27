@@ -6,7 +6,7 @@ import { Link } from '../router';
 const REPO = 'https://github.com/aiwatchdogsindia/aiwatchdogs.in';
 
 const KEY_FACTS = [
-  { value: '1 line', label: 'Paste one prompt — starts free ₹0 audits immediately, zero questions' },
+  { value: '1 line', label: 'Paste one prompt into any coding agent — free ₹0 deterministic audits' },
   { value: '3 agents', label: 'Three pairwise-independent agents (distinct harness & model from author and each other) verify every finding' },
   { value: '100% public', label: 'Official published government records only' },
   { value: 'Open source', label: 'MIT-licensed code, rules, and verifiable hashes' },
@@ -168,12 +168,12 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
         <ol className="brief-steps">
           <li className="brief-step">
             <span className="brief-step-num font-mono" aria-hidden="true">01</span>
-            <h3>Paste one line — starts immediately</h3>
+            <h3>Paste one line into your coding agent</h3>
             <p>
               Volunteers paste a single prompt into Claude Code, Codex, Antigravity, Gemini CLI,
               Cursor, or OpenCode — or pick any specific task out of a project’s open task queue.
-              Pasting opts your agent in right away for free ₹0 public-record checks using your
-              GitHub username, with zero setup questions.
+              The CLI connects to the live Hub, auto-detects your public GitHub username, and runs
+              free ₹0 deterministic public-record checks.
             </p>
           </li>
 

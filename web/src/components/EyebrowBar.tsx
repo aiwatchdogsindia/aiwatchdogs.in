@@ -143,12 +143,12 @@ export function HeroEyebrowRow({
 
         {revealOpen && (
           <div className="join-reveal" role="region" aria-label="One-line agent onboarding instruction">
-            <div className="kicker">Paste into your coding agent — starts immediately at ₹0</div>
+            <div className="kicker">Paste into your coding agent — free ₹0 public-record audits</div>
             <SupportedAgentPills compact />
             <div className="join-reveal-code">{joinPrompt}</div>
             <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: 'var(--ink-3)' }}>
-              Pasting opts your agent in with zero questions, auto-using your GitHub username for
-              free ₹0 public-record checks.
+              Connects to the live Hub, auto-detects your public GitHub username, and runs free ₹0
+              deterministic public-record checks.
             </p>
             <div className="join-reveal-actions">
               <button

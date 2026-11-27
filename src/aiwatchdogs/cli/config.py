@@ -7,6 +7,7 @@ several agents on one machine never overwrite each other's token. The older sing
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -298,6 +299,32 @@ def _load_legacy_node_config(path: Path) -> AgentConfig | None:
     )
 
 
+def _fallback_temp_agents_dir() -> Path:
+    """Private per-user temp credential directory used only when ~/.config is read-only (e.g. sandboxes)."""
+    uid = getattr(os, "getuid", lambda: 0)()
+    return Path(tempfile.gettempdir()) / f"aiwatchdogs-{uid}" / AGENTS_DIRNAME
+
+
+def _load_temp_fallback_for_handle(cleaned: str) -> AgentConfig | None:
+    if not _HANDLE_FILE_RE.fullmatch(cleaned):
+        return None
+    candidate = _fallback_temp_agents_dir() / f"{cleaned}.json"
+    try:
+        if candidate.is_symlink() or not candidate.is_file():
+            return None
+        st = candidate.lstat()
+        if stat.S_ISLNK(st.st_mode):
+            return None
+        if hasattr(os, "getuid") and st.st_uid != os.getuid():
+            return None
+        loaded = load_config(candidate)
+        if loaded is not None and _clean_handle(loaded.handle) == cleaned:
+            return loaded
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
     """Return a legacy saved config (``config.json``, ``node.json``, or XDG fallback) matching ``handle``."""
     cleaned = _clean_handle(handle)
@@ -349,6 +376,11 @@ def load_legacy_config_for_handle(handle: str) -> AgentConfig | None:
                 xdg_node = _load_legacy_node_config(xdg_dir / LEGACY_NODE_FILENAME)
                 if xdg_node is not None and _clean_handle(xdg_node.handle) == cleaned:
                     return xdg_node
+        temp_cfg = _load_temp_fallback_for_handle(cleaned)
+        if temp_cfg is not None:
+            if temp_cfg.api_token.strip():
+                return temp_cfg
+            fallback_without_token = fallback_without_token or temp_cfg
 
     return fallback_without_token
 
@@ -421,6 +453,9 @@ def find_saved_config_for_handle(handle: str, *, hub_url: str) -> AgentConfig | 
                 xdg_node = _load_legacy_node_config(xdg_dir / LEGACY_NODE_FILENAME)
                 if xdg_node is not None and _clean_handle(xdg_node.handle) == cleaned:
                     candidates.append(xdg_node)
+        temp_cfg = _load_temp_fallback_for_handle(cleaned)
+        if temp_cfg is not None:
+            candidates.append(temp_cfg)
 
     for cand in candidates:
         if _config_has_file_token_for_hub(cand, hub_url=hub_url, handle=cleaned):
@@ -581,6 +616,28 @@ def save_config(
     cfg_path = get_config_path(path)
     payload = json.dumps(cfg_model.model_dump(mode="json"), indent=2, sort_keys=False) + "\n"
     return _atomic_write_text_0600(cfg_path, payload)
+
+
+def save_config_with_fallback(
+    config: AgentConfig | dict[str, Any],
+    path: str | Path | None = None,
+) -> tuple[Path, bool]:
+    """Persist AgentConfig, falling back to a private temp dir if ~/.config is read-only in a sandbox."""
+    cfg_model = config if isinstance(config, AgentConfig) else AgentConfig.model_validate(config)
+    try:
+        return save_config(cfg_model, path=path), False
+    except OSError as exc:
+        if exc.errno not in (errno.EACCES, errno.EPERM, errno.EROFS):
+            raise
+        if explicit_config_path() is not None:
+            raise
+        cleaned = _clean_handle(cfg_model.handle)
+        if cleaned and _HANDLE_FILE_RE.fullmatch(cleaned):
+            fallback_path = _fallback_temp_agents_dir() / f"{cleaned}.json"
+        else:
+            fallback_path = _fallback_temp_agents_dir().parent / "config.json"
+        payload = json.dumps(cfg_model.model_dump(mode="json"), indent=2, sort_keys=False) + "\n"
+        return _atomic_write_text_0600(fallback_path, payload), True
 
 
 def _utc_today_iso() -> str:

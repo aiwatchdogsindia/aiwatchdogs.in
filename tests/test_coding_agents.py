@@ -27,10 +27,41 @@ def test_normalize_coding_agent(raw: str, expected: str) -> None:
 
 
 def test_detect_claude_code_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in (
+        "AIWATCHDOGS_CODING_AGENT",
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CODEX_THREAD_ID",
+        "CODEX_SANDBOX",
+        "CODEX_CI",
+        "CODEX_MANAGED_BY_NPM",
+        "CODEX_SHELL",
+        "ANTIGRAVITY_AGENT",
+        "ANTIGRAVITY_CLI_ALIAS",
+        "AGY_SESSION_ID",
+        "GEMINI_CLI",
+        "CURSOR_AGENT",
+        "CURSOR_TRACE_ID",
+        "CURSOR_CLI",
+        "HERMES_AGENT",
+        "HERMES_SESSION_ID",
+        "OPENCODE",
+        "OPENCODE_CLIENT",
+        "WINDSURF_SESSION",
+        "CODEIUM_EDITOR",
+        "CLINE_ACTIVE",
+        "CLINE_TASK_ID",
+        "COPILOT_CLI",
+        "GITHUB_COPILOT_CLI",
+        "AMP_THREAD_ID",
+        "AMP_CLI",
+        "KIRO_AGENT",
+        "AIDER_MODEL",
+    ):
+        monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("CLAUDECODE", "1")
     assert detect_coding_agent() == "Claude Code"
     monkeypatch.delenv("CLAUDECODE")
-    monkeypatch.delenv("GEMINI_CLI", raising=False)
     assert detect_coding_agent() == ""
 
 

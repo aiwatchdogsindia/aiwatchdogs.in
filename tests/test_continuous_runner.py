@@ -507,3 +507,90 @@ def test_templates_use_max_tasks_zero_and_never_continuous() -> None:
     sh = render_join_sh("https://aiwatchdogs.in")
     assert "--max-tasks 0" in sh
     assert "--continuous" not in sh
+
+
+# ---------------------------------------------------------------------------
+# 5. Whisper sanitization, P6 cleared length cap & Hub 4xx error classification
+# ---------------------------------------------------------------------------
+
+
+def test_cleared_whisper_sanitization_prevents_422_and_hub_4xx_never_trips_sources_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aiwatchdogs.cli.runner import MAX_WHISPER_CHARS, _sanitize_whisper
+    from aiwatchdogs.engines.registry import EngineRunResult
+    from aiwatchdogs.hub.desk import _validate_whisper_text
+
+    # 1. Client-side _sanitize_whisper caps >500 chars cleanly & swaps out forbidden terms
+    long_summary = "P6 cleared LS USQ-18/07/4600: " + ("official assurance text " * 40)
+    sanitized = _sanitize_whisper(long_summary)
+    assert len(sanitized) <= MAX_WHISPER_CHARS <= 500
+    assert sanitized.endswith("...")
+
+    forbidden_title_whisper = _sanitize_whisper(
+        "Cleared 3 records in Education: Investigation into Financial Fraud and Corruption",
+        fallback="Cleared 3 records under P6 (task prj-p6-1): 0 statutory thresholds breached.",
+    )
+    assert "fraud" not in forbidden_title_whisper.lower()
+    assert "corrupt" not in forbidden_title_whisper.lower()
+    assert "Cleared 3 records under P6" in forbidden_title_whisper
+
+    # 2. Server-side _validate_whisper_text keeps BNS Sec 356 neutrality strict while bounding benign >500-char whispers
+    benign_800 = "P6 cleared LS SQ-18/07/164 (Railways): " + ("recorded implementation status " * 30)
+    clamped_server = _validate_whisper_text(benign_800)
+    assert len(clamped_server) <= 500
+    assert clamped_server.endswith("...")
+
+    with pytest.raises(Exception) as exc_info:
+        _validate_whisper_text(" ".join(["benign text"] * 45) + " corrupt scam")
+    assert getattr(exc_info.value, "status_code", None) == 422
+
+    # 3. End-to-end runner clears a task whose engine returns a 1,200-char summary + forbidden-term summary without 422
+    leases = [_lease("p6-long"), _lease("p6-forbidden")]
+    hub = _ScriptedHub(leases)
+    runner, _ = _make_runner(hub)
+    call_n = {"i": 0}
+
+    def _cleared_engine(*_a: Any, **_k: Any) -> EngineRunResult:
+        call_n["i"] += 1
+        if call_n["i"] == 1:
+            summary_txt = "P6 cleared long assurance: " + ("detail words " * 90)
+        else:
+            summary_txt = "P6 cleared question on Alleged Fraud and Scam Prevention"
+        return EngineRunResult(
+            methodology_code="P6",
+            records_scanned=3,
+            cleared_count=1,
+            monetary_audited_inr=0.0,
+            leads=[],
+            script_hash="test-script-hash",
+            summary=summary_txt,
+        )
+
+    monkeypatch.setattr(runner, "_invoke_engine", _cleared_engine)
+    summary = runner.run_loop(max_tasks=0)
+    assert summary.tasks_completed == 2
+    assert summary.cleared_submitted == 2
+    assert summary.errors == 0
+    submits = hub.bodies("/api/desk/submit")
+    assert len(submits) == 2
+    assert all(len(s.get("whisper") or "") <= 500 for s in submits)
+    assert "fraud" not in (submits[1].get("whisper") or "").lower()
+
+    # 4. Hub HTTP 422 on submit is classified as `hub_rejected` (NOT `network_error`) and NEVER triggers `sources_unreachable`!
+    reject_leases = [_lease(f"rej{i}") for i in range(1, 7)]
+
+    class _Hub422(_ScriptedHub):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/desk/submit":
+                return httpx.Response(422, json={"detail": "Validation failed on test payload"})
+            return super().__call__(request)
+
+    hub422 = _Hub422(reject_leases)
+    runner422, _ = _make_runner(hub422)
+    summary422 = runner422.run_loop(max_tasks=0)
+    assert summary422.errors == 6
+    assert summary422.stopped_reason == "queue_empty"  # 6 < MAX_CONSECUTIVE_TASK_ERRORS (10) and NOT sources_unreachable!
+    releases = hub422.bodies("/api/desk/release")
+    assert [r["reason"] for r in releases] == ["hub_rejected"] * 6
+    assert all("HTTP 422: Validation failed on test payload" in (res.get("error") or "") for res in summary422.results)

@@ -29,6 +29,7 @@ from aiwatchdogs.cli.config import (
     get_spend_ledger_path,
     normalize_hub_origin,
     save_config,
+    save_config_with_fallback,
     validate_hub_url,
 )
 from aiwatchdogs.cli.providers import (
@@ -40,7 +41,7 @@ from aiwatchdogs.cli.providers import (
     resolve_provider_config,
 )
 from aiwatchdogs.connectors.loader import LoadedDataset, load_dataset
-from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
+from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scan_forbidden_terms, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, run_engine
 
 SEVERITY_RANK: dict[str, int] = {
@@ -71,8 +72,10 @@ RETRYABLE_HUB_STATUS = frozenset({502, 503, 504})
 # A single bad URL (e.g. an upstream HTTP 403 or transient timeout) releases its lease cleanly
 # and moves straight on to the next task; the counter resets as soon as any task succeeds.
 MAX_CONSECUTIVE_SOURCE_FAILURES = 5
+MAX_CONSECUTIVE_TASK_ERRORS = 10
 SOURCE_FAILURE_BACKOFF_SECONDS = 1.0
 SOURCE_FAILURE_REASONS = frozenset({"network_error", "policy_blocked", "source_http_forbidden"})
+MAX_WHISPER_CHARS = 480
 LEASE_KEEPALIVE_INTERVAL_SECONDS = 180.0
 ROLE_LABELS = {
     "auditor": "AUDITOR",
@@ -86,6 +89,49 @@ MAX_INLINE_RECORDS = 5_000
 _SAFE_FINDING_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _SAFE_HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,39}$")
 _SHA256_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+def _sanitize_whisper(
+    raw: str | None,
+    *,
+    fallback: str = "Completed deterministic public-record audit step.",
+    max_len: int = MAX_WHISPER_CHARS,
+) -> str:
+    """Scrub PII, enforce neutrality, and clamp whisper text safely under the Hub's 500-char ceiling."""
+    text = " ".join(str(raw or "").split()).strip()
+    if not text:
+        return ""
+    scrubbed, _ = scrub_pii(text)
+    if scan_forbidden_terms(scrubbed):
+        fb_clean, _ = scrub_pii(" ".join(str(fallback or "").split()).strip())
+        if fb_clean and not scan_forbidden_terms(fb_clean):
+            scrubbed = fb_clean
+        else:
+            scrubbed = "Completed deterministic public-record audit step."
+    if len(scrubbed) > max_len:
+        limit = max(16, max_len - 3)
+        trimmed = scrubbed[:limit].rstrip()
+        if " " in trimmed and len(trimmed) > limit - 60:
+            trimmed = trimmed.rsplit(" ", 1)[0].rstrip(" ,;:-")
+        scrubbed = f"{trimmed}..."
+    return scrubbed
+
+
+def _http_status_error_detail(exc: httpx.HTTPStatusError) -> str:
+    """Format an httpx.HTTPStatusError with the Hub's JSON detail when available."""
+    resp = exc.response
+    status_code = resp.status_code if resp is not None else 0
+    detail = ""
+    if resp is not None:
+        try:
+            body = resp.json()
+            if isinstance(body, dict) and body.get("detail"):
+                detail = str(body["detail"]).strip()
+        except ValueError:
+            detail = (resp.text or "").strip()[:200]
+    if detail:
+        return f"HTTP {status_code}: {detail}"
+    return str(exc)
 
 
 def _pid_is_alive(pid: int) -> bool:
@@ -1449,7 +1495,10 @@ class AgentRunner:
             profile_url = self.config.profile_url
 
         if save:
-            save_config(self.config, path=self.config_path)
+            saved_path, used_fallback = save_config_with_fallback(self.config, path=self.config_path)
+            self.config_path = saved_path
+            if used_fallback:
+                self._emit("config_fallback", {"path": str(saved_path)})
 
         result = {**data, "profile_url": profile_url}
         self._emit("registered", result)
@@ -1503,7 +1552,12 @@ class AgentRunner:
         """Send live heartbeat + optional whisper. Returns False on 410 Gone."""
         body: dict[str, Any] = {"lease_id": lease_id}
         if whisper is not None:
-            body["whisper"] = whisper
+            safe_whisper = _sanitize_whisper(
+                whisper,
+                fallback="Running deterministic public-record audit step.",
+            )
+            if safe_whisper:
+                body["whisper"] = safe_whisper
         if progress_pct is not None:
             body["progress_pct"] = progress_pct
 
@@ -1678,7 +1732,12 @@ class AgentRunner:
             "idempotency_key": idem_key,
         }
         if whisper is not None:
-            body["whisper"] = whisper
+            safe_whisper = _sanitize_whisper(
+                whisper,
+                fallback=f"Submitted deterministic {outcome} audit result.",
+            )
+            if safe_whisper:
+                body["whisper"] = safe_whisper
         if observations is not None:
             body["observations"] = observations
         if finding is not None:
@@ -2044,11 +2103,16 @@ class AgentRunner:
 
         if not engine_res.leads:
             clean_summary, _ = scrub_pii(engine_res.summary)
+            neutral_cleared_fallback = (
+                f"Cleared {engine_res.records_scanned:,} records under {methodology_code} "
+                f"(task {task_id}): 0 statutory thresholds breached."
+            )
             if not self.heartbeat(
                 lease_id,
-                whisper=(
+                whisper=_sanitize_whisper(
                     f"Cleared {engine_res.records_scanned:,} records in {artifact_label} "
-                    f"under {methodology_code}: 0 statutory thresholds breached"
+                    f"under {methodology_code}: 0 statutory thresholds breached",
+                    fallback=neutral_cleared_fallback,
                 ),
                 progress_pct=90,
             ):
@@ -2056,8 +2120,11 @@ class AgentRunner:
             resp = self.submit(
                 lease_id,
                 outcome="cleared",
-                whisper=clean_summary
-                or f"Cleared {engine_res.records_scanned:,} records in {artifact_label} with zero statutory anomalies.",
+                whisper=_sanitize_whisper(
+                    clean_summary
+                    or f"Cleared {engine_res.records_scanned:,} records in {artifact_label} with zero statutory anomalies.",
+                    fallback=neutral_cleared_fallback,
+                ),
                 metrics=metrics,
             )
             return {
@@ -2553,6 +2620,26 @@ class AgentRunner:
     # Backwards-compatible internal alias
     _execute_peer_verify = _handle_peer_verify
 
+    def _is_hub_http_error(self, exc: httpx.HTTPStatusError) -> bool:
+        """Return True if an HTTPStatusError came from the Coordinator Hub rather than an upstream source host."""
+        req = getattr(exc, "request", None)
+        if req is None:
+            return False
+        req_url = str(req.url)
+        if not req_url:
+            return False
+        req_norm = normalize_hub_origin(req_url)
+
+        def _matches_base(base: str) -> bool:
+            return bool(base and (req_norm == base or req_norm.startswith(f"{base}/")))
+
+        if _matches_base(self.config.normalized_hub_origin):
+            return True
+        if self._external_client and str(self._client.base_url):
+            if _matches_base(normalize_hub_origin(str(self._client.base_url))):
+                return True
+        return False
+
     def execute_task(self, lease: dict[str, Any]) -> dict[str, Any]:
         """Execute a single claimed lease, releasing cleanly if any error occurs."""
         lease_id = str(lease["lease_id"])
@@ -2588,6 +2675,7 @@ class AgentRunner:
                 self._clear_lease_note(lease_id=lease_id)
                 self._emit("lease_gone", {"lease_id": lease_id})
                 return {"status": "aborted_410", "task_id": task.get("id"), "outcome": "aborted_410"}
+            error_msg = str(exc)
             if _is_digest_mismatch_exception(exc):
                 release_reason = "digest_mismatch"
                 safe_release_note = "Artifact SHA-256 digest mismatch."
@@ -2602,6 +2690,11 @@ class AgentRunner:
                 else:
                     release_reason = "policy_blocked"
                     safe_release_note = "Dataset source disallowed by local runner security policy."
+            elif isinstance(exc, httpx.HTTPStatusError) and self._is_hub_http_error(exc):
+                code = exc.response.status_code if exc.response is not None else 0
+                release_reason = "hub_rejected"
+                safe_release_note = f"Coordinator Hub rejected submission (HTTP {code})."
+                error_msg = _http_status_error_detail(exc)
             elif isinstance(exc, httpx.HTTPError):
                 release_reason = "network_error"
                 safe_release_note = f"Upstream fetch error ({type(exc).__name__})."
@@ -2619,7 +2712,7 @@ class AgentRunner:
                     "lease_id": lease_id,
                     "task_id": task.get("id"),
                     "reason": release_reason,
-                    "error": str(exc),
+                    "error": error_msg,
                 },
             )
             return {
@@ -2627,7 +2720,7 @@ class AgentRunner:
                 "task_id": task.get("id"),
                 "outcome": "released",
                 "reason": release_reason,
-                "error": str(exc),
+                "error": error_msg,
             }
 
     def run_loop(
@@ -2669,6 +2762,7 @@ class AgentRunner:
         )
         self.last_summary = summary
         source_failures = 0
+        consecutive_task_errors = 0
         consecutive_claim_429 = 0
 
         self._emit(
@@ -2761,8 +2855,13 @@ class AgentRunner:
                     summary.roles[role] = summary.roles.get(role, 0) + 1
                 if status == "error" and result.get("reason") in SOURCE_FAILURE_REASONS:
                     source_failures += 1
+                    consecutive_task_errors = 0
+                elif status == "error":
+                    source_failures = 0
+                    consecutive_task_errors += 1
                 else:
                     source_failures = 0
+                    consecutive_task_errors = 0
                 if status == "aborted_410":
                     summary.aborted_410 += 1
                 elif status == "error":
@@ -2800,8 +2899,15 @@ class AgentRunner:
                     summary.stopped_reason = "sources_unreachable"
                     self._emit("sources_unreachable", {"failures": source_failures})
                     break
+                if consecutive_task_errors >= MAX_CONSECUTIVE_TASK_ERRORS:
+                    summary.stopped_reason = "consecutive_errors"
+                    self._emit("consecutive_errors", {"errors": consecutive_task_errors})
+                    break
                 if source_failures > 0 and (effective_max == 0 or summary.tasks_claimed < effective_max):
                     delay = min(8.0, SOURCE_FAILURE_BACKOFF_SECONDS * source_failures)
+                    self._sleep(delay)
+                elif consecutive_task_errors > 0 and (effective_max == 0 or summary.tasks_claimed < effective_max):
+                    delay = min(5.0, 0.5 * consecutive_task_errors)
                     self._sleep(delay)
         except KeyboardInterrupt:
             summary.stopped_reason = "interrupted"

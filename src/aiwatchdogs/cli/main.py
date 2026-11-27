@@ -9,6 +9,7 @@ import re
 import secrets
 import signal
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +59,12 @@ from aiwatchdogs.cli.providers import (
 from aiwatchdogs.cli.runner import ROLE_LABELS, AgentRunner, role_of
 from aiwatchdogs.connectors.loader import load_dataset
 from aiwatchdogs.core.rti import generate_rti_draft
-from aiwatchdogs.core.coding_agents import detect_coding_agent, normalize_coding_agent, normalize_coding_agent_model
+from aiwatchdogs.core.coding_agents import (
+    detect_coding_agent,
+    detect_coding_agent_model,
+    normalize_coding_agent,
+    normalize_coding_agent_model,
+)
 from aiwatchdogs.core.safety import lint_neutrality, scrub_pii
 from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, run_engine
 
@@ -263,6 +269,17 @@ def _render_providers_table(providers: list[ProviderInfo]) -> None:
     console.print(table)
 
 
+def _enable_line_buffered_output() -> None:
+    """Flush stdout/stderr per line in piped non-TTY agent shells so live progress appears immediately."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(line_buffering=True)
+            except (OSError, ValueError):
+                pass
+
+
 def _make_event_printer() -> Any:
     def _on_event(event: str, data: dict[str, Any]) -> None:
         if event == "registered":
@@ -273,6 +290,12 @@ def _make_event_printer() -> Any:
                     border_style="green",
                 )
             )
+        elif event == "config_fallback":
+            console.print(
+                f"[yellow]Note:[/yellow] ~/.config is read-only in this environment; saved hub token (0600) at "
+                f"[bold]{_safe_rich(data.get('path'))}[/bold].",
+                soft_wrap=True,
+            )
         elif event == "run_started":
             max_t = int(data.get("max_tasks") or 0)
             profile = _safe_rich(data.get("profile_url") or "")
@@ -280,12 +303,14 @@ def _make_event_printer() -> Any:
                 console.print(
                     "[bold cyan]Starting continuous task loop[/bold cyan] "
                     "(unlimited ₹0 tasks until queue empty or Ctrl+C) · "
-                    f"Live profile: [underline cyan]{profile}[/underline cyan]"
+                    f"Live profile: [underline cyan]{profile}[/underline cyan]",
+                    soft_wrap=True,
                 )
             else:
                 console.print(
                     f"[bold cyan]Starting task loop[/bold cyan] (max {max_t} task(s)) · "
-                    f"Live profile: [underline cyan]{profile}[/underline cyan]"
+                    f"Live profile: [underline cyan]{profile}[/underline cyan]",
+                    soft_wrap=True,
                 )
         elif event == "task_claimed":
             task = data.get("task") or {}
@@ -352,6 +377,12 @@ def _make_event_printer() -> Any:
                 "[yellow]Stopping: this machine could not download the official source files "
                 f"({_safe_rich(data.get('failures'))} in a row). The tasks were handed back for other nodes. "
                 "Check that outbound HTTPS to the government hosts is allowed here, then run again.[/yellow]"
+            )
+        elif event == "consecutive_errors":
+            console.print(
+                "[yellow]Stopping after "
+                f"{_safe_rich(data.get('errors'))} consecutive task errors. "
+                "All leases were released cleanly; check the errors above or re-run with `uvx --refresh`.[/yellow]"
             )
 
     return _on_event
@@ -579,6 +610,7 @@ def join(
     ),
 ) -> None:
     """<60s onboarding: auto-detect GitHub handle & provider, register, and start auditing."""
+    _enable_line_buffered_output()
     auto_accept = yes or non_interactive or dry_run
     hub_clean = _validate_hub_or_exit(hub, allow_insecure_http=allow_insecure_http)
 
@@ -818,11 +850,24 @@ def join(
                 "(or configure [bold]gh auth login[/bold] / [bold]git config --global github.user <username>[/bold])."
             )
 
+    existing_agent = normalize_coding_agent(getattr(existing, "coding_agent", "") if existing else "")
     resolved_coding_agent = (
         normalize_coding_agent(coding_agent)
         or inferred_coding_agent
         or detect_coding_agent()
-        or normalize_coding_agent(getattr(existing, "coding_agent", "") if existing else "")
+        or existing_agent
+    )
+    same_coding_agent = (
+        not resolved_coding_agent or not existing_agent or resolved_coding_agent == existing_agent
+    )
+    resolved_coding_agent_model = (
+        normalize_coding_agent_model(coding_agent_model)
+        or detect_coding_agent_model()
+        or (
+            normalize_coding_agent_model(getattr(existing, "coding_agent_model", ""))
+            if (existing and same_coding_agent)
+            else ""
+        )
     )
     cfg = AgentConfig(
         handle=chosen_handle,
@@ -836,7 +881,7 @@ def join(
         daily_max_usd=max(0.0, chosen_daily_max_usd) if chosen_daily_max_usd is not None else None,
         allow_paid_provider=chosen_allow_paid,
         coding_agent=resolved_coding_agent,
-        coding_agent_model=normalize_coding_agent_model(coding_agent_model) or (normalize_coding_agent_model(getattr(existing, "coding_agent_model", "")) if existing else ""),
+        coding_agent_model=resolved_coding_agent_model,
     )
 
     cfg_path = _resolve_config_path(cfg.handle)
@@ -907,7 +952,8 @@ def join(
 
         console.print(
             f"[bold]Config saved atomically:[/bold] {_safe_rich(cfg_path)} (0600) · "
-            f"[bold]Follow your agent live:[/bold] {_safe_rich(reg['profile_url'])}"
+            f"[bold]Follow your agent live:[/bold] {_safe_rich(reg['profile_url'])}",
+            soft_wrap=True,
         )
 
         if no_run:
@@ -988,6 +1034,7 @@ def run(
     ),
 ) -> None:
     """Non-interactive headless watchdog runner using saved config or CLI flags."""
+    _enable_line_buffered_output()
     clean_handle = (handle or "").strip().lstrip("@").lower() or None
     target_hub_hint = (hub or DEFAULT_HUB_URL).rstrip("/")
     saved: AgentConfig | None = None
@@ -1091,12 +1138,19 @@ def run(
         if daily_max_usd is not None:
             cfg.daily_max_usd = daily_max_usd
 
-    if coding_agent:
-        cfg.coding_agent = normalize_coding_agent(coding_agent)
-    elif not cfg.coding_agent:
+    prev_coding_agent = normalize_coding_agent(cfg.coding_agent)
+    explicit_agent = normalize_coding_agent(coding_agent)
+    if explicit_agent:
+        cfg.coding_agent = explicit_agent
+    elif not prev_coding_agent:
         cfg.coding_agent = detect_coding_agent()
-    if coding_agent_model:
-        cfg.coding_agent_model = normalize_coding_agent_model(coding_agent_model)
+    explicit_model = normalize_coding_agent_model(coding_agent_model)
+    if explicit_model:
+        cfg.coding_agent_model = explicit_model
+    elif explicit_agent and prev_coding_agent and explicit_agent != prev_coding_agent:
+        cfg.coding_agent_model = detect_coding_agent_model()
+    elif not normalize_coding_agent_model(cfg.coding_agent_model):
+        cfg.coding_agent_model = detect_coding_agent_model()
 
     cfg.hub_url = _validate_hub_or_exit(cfg.hub_url, allow_insecure_http=allow_insecure_http)
 

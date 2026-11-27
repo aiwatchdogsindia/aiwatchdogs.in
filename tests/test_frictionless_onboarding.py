@@ -892,3 +892,267 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
         assert r_upgrade.exit_code == 0, r_upgrade.output
         assert "https://aiwatchdogs.in/a/newdev" in r_upgrade.stdout
         assert "civic-codex-beef" not in r_upgrade.stdout
+
+
+# ---------------------------------------------------------------------------
+# 6. Cross-Agent Resilience: Top-of-file Quickstart, Fallbacks, Detection, Sandbox Config
+# ---------------------------------------------------------------------------
+
+
+def test_join_txt_places_command_near_top_with_non_uvx_fallbacks_and_timeout_guidance() -> None:
+    text = render_join_txt("https://aiwatchdogs.in")
+    lines = text.splitlines()
+
+    # Exact CLI command MUST appear in the first 25 lines so output truncation in any AI agent never hides it!
+    cmd_line_idx = next(
+        idx
+        for idx, line in enumerate(lines, start=1)
+        if "uvx --refresh --from 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' aiwatchdogs join" in line
+    )
+    assert cmd_line_idx <= 25, f"Step 1 command slipped down to line {cmd_line_idx}"
+    # Keep total /join.txt compact enough for WebFetch / CLI tool buffers
+    assert len(lines) <= 220, f"/join.txt grew too long ({len(lines)} lines)"
+
+    # Non-uvx, non-git, and sandbox fallbacks must be right next to Step 1
+    top_60 = "\n".join(lines[:60])
+    assert "$HOME/.local/bin" in top_60
+    assert "pipx run" in top_60
+    assert "python3 -m venv" in top_60
+    assert "main.tar.gz" in top_60
+    assert "UV_CACHE_DIR" in top_60
+    assert "run_in_background" in top_60
+    assert "--max-tasks 5" in top_60
+
+
+def test_join_sh_discovers_user_local_bin_and_falls_back_to_pipx(tmp_path: Path) -> None:
+    sh_text = render_join_sh("https://aiwatchdogs.in")
+    script_path = tmp_path / "join.sh"
+    script_path.write_text(sh_text, encoding="utf-8")
+
+    # 1. uv/uvx installed only in $HOME/.local/bin (common in non-login AI agent shells!)
+    fake_home = tmp_path / "home"
+    local_bin = fake_home / ".local" / "bin"
+    local_bin.mkdir(parents=True)
+    for name in ("uv", "uvx"):
+        stub = local_bin / name
+        stub.write_text(f"#!/usr/bin/env sh\nprintf 'LOCAL_BIN:%s:%s\\n' '{name}' \"$*\"\n", encoding="utf-8")
+        stub.chmod(0o755)
+    # Minimal PATH without $HOME/.local/bin
+    res_local = subprocess.run(
+        ["sh", str(script_path), "--coding-agent", "Codex"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        start_new_session=True,
+        env={"PATH": "/usr/bin:/bin", "HOME": str(fake_home)},
+        check=False,
+    )
+    assert res_local.returncode == 0, res_local.stderr
+    assert "LOCAL_BIN:uvx:" in res_local.stdout
+    assert "--coding-agent Codex" in res_local.stdout
+
+    # 2. Neither uv nor uvx installed, only pipx present -> falls back to pipx cleanly!
+    #    Use an isolated PATH without system /usr/bin (where real uv may live) so only stubbed pipx is visible.
+    pipx_dir = tmp_path / "pipx_bin"
+    pipx_dir.mkdir()
+    pipx_stub = pipx_dir / "pipx"
+    pipx_stub.write_text("#!/bin/sh\nprintf 'PIPX_FALLBACK:%s\\n' \"$*\"\n", encoding="utf-8")
+    pipx_stub.chmod(0o755)
+    res_pipx = subprocess.run(
+        ["/bin/sh", str(script_path), "--max-tasks", "5"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        start_new_session=True,
+        env={"PATH": str(pipx_dir)},
+        check=False,
+    )
+    assert res_pipx.returncode == 0, res_pipx.stderr
+    assert "PIPX_FALLBACK:run --spec" in res_pipx.stdout
+    assert "main.tar.gz" in res_pipx.stdout  # no git in isolated PATH -> tarball fallback!
+    assert "aiwatchdogs join --hub https://aiwatchdogs.in --non-interactive --yes --max-tasks 5" in res_pipx.stdout
+
+
+def test_coding_agent_detection_placeholder_rejection_and_no_stale_model_carryover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aiwatchdogs.core.coding_agents import (
+        detect_coding_agent,
+        detect_coding_agent_model,
+        normalize_coding_agent,
+        normalize_coding_agent_model,
+    )
+
+    # Literal template placeholders & rule-engine names are ignored cleanly
+    for bogus in ("<YOUR PRODUCT NAME>", "YOUR PRODUCT NAME", "rule-engine", "deterministic-python-v1", "unknown"):
+        assert normalize_coding_agent(bogus) == ""
+    for bogus_m in ("<YOUR MODEL>", "YOUR MODEL", "rule-engine", "deterministic-python-v1", "n/a"):
+        assert normalize_coding_agent_model(bogus_m) == ""
+
+    # Clear all detection env vars before testing each harness
+    all_vars = (
+        "AIWATCHDOGS_CODING_AGENT",
+        "AIWATCHDOGS_CODING_AGENT_MODEL",
+        "CLAUDECODE",
+        "CLAUDE_CODE_ENTRYPOINT",
+        "CODEX_THREAD_ID",
+        "CODEX_SANDBOX",
+        "CODEX_CI",
+        "CODEX_MANAGED_BY_NPM",
+        "CODEX_SHELL",
+        "CODEX_MODEL",
+        "ANTIGRAVITY_AGENT",
+        "ANTIGRAVITY_CLI_ALIAS",
+        "AGY_SESSION_ID",
+        "GEMINI_CLI",
+        "GEMINI_MODEL",
+        "CURSOR_AGENT",
+        "CURSOR_TRACE_ID",
+        "CURSOR_CLI",
+        "CURSOR_MODEL",
+        "HERMES_AGENT",
+        "HERMES_SESSION_ID",
+        "OPENCODE",
+        "OPENCODE_CLIENT",
+        "OPENCODE_MODEL",
+        "WINDSURF_SESSION",
+        "CODEIUM_EDITOR",
+        "CLINE_ACTIVE",
+        "CLINE_TASK_ID",
+        "COPILOT_CLI",
+        "GITHUB_COPILOT_CLI",
+        "AMP_THREAD_ID",
+        "AMP_CLI",
+        "KIRO_AGENT",
+        "AIDER_MODEL",
+        "ANTHROPIC_MODEL",
+        "CLAUDE_MODEL",
+        "OPENAI_MODEL",
+    )
+    for var in all_vars:
+        monkeypatch.delenv(var, raising=False)
+
+    assert detect_coding_agent() == ""
+    assert detect_coding_agent_model() == ""
+
+    for env_var, env_val, expected in (
+        ("CLAUDECODE", "1", "Claude Code"),
+        ("CODEX_THREAD_ID", "thr_123", "Codex"),
+        ("ANTIGRAVITY_AGENT", "1", "Antigravity"),
+        ("GEMINI_CLI", "1", "Gemini CLI"),
+        ("CURSOR_AGENT", "1", "Cursor"),
+        ("HERMES_AGENT", "1", "Hermes Agent"),
+        ("OPENCODE", "1", "OpenCode"),
+        ("WINDSURF_SESSION", "ws_1", "Windsurf"),
+        ("CLINE_ACTIVE", "1", "Cline"),
+        ("COPILOT_CLI", "1", "GitHub Copilot"),
+        ("AIDER_MODEL", "claude-sonnet", "Aider"),
+    ):
+        monkeypatch.setenv(env_var, env_val)
+        assert detect_coding_agent() == expected
+        monkeypatch.delenv(env_var, raising=False)
+
+    monkeypatch.setenv("CODEX_MODEL", "gpt-6")
+    assert detect_coding_agent_model() == "gpt-6"
+    monkeypatch.delenv("CODEX_MODEL", raising=False)
+
+    # Switching harnesses on `join` must NOT carry over stale coding_agent_model from previous harness!
+    monkeypatch.delenv(ENV_CONFIG_PATH, raising=False)
+    monkeypatch.delenv(ENV_HANDLE, raising=False)
+    monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", tmp_path / "switch" / "config.json")
+    monkeypatch.setattr("aiwatchdogs.cli.main.detect_github_handle", lambda: ("switchdev", "gh auth status"))
+    monkeypatch.setattr(
+        "aiwatchdogs.cli.main.detect_providers",
+        lambda **kw: [
+            ProviderInfo(provider="rule-engine", model="deterministic-python-v1", label="CPU", is_local=True, zero_cost=True)
+        ],
+    )
+    hub_app = create_app(db_path=tmp_path / "switch.db", seed=True)
+    with TestClient(hub_app, base_url="https://aiwatchdogs.in") as asgi_client:
+        orig_init = AgentRunner.__init__
+
+        def _patched_init(self: AgentRunner, config: AgentConfig, **kwargs: Any) -> None:
+            kwargs.setdefault("http_client", asgi_client)
+            orig_init(self, config, **kwargs)
+
+        monkeypatch.setattr(AgentRunner, "__init__", _patched_init)
+
+        r1 = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+                "--coding-agent",
+                "Codex",
+                "--coding-agent-model",
+                "GPT-6",
+            ],
+        )
+        assert r1.exit_code == 0, r1.output
+        saved1 = load_config(get_handle_config_path("switchdev"))
+        assert saved1 is not None and saved1.coding_agent == "Codex" and saved1.coding_agent_model == "GPT-6"
+
+        # Now run in Claude Code without passing --coding-agent-model: must NOT stay paired with "GPT-6"!
+        r2 = cli_runner.invoke(
+            cli_app,
+            [
+                "join",
+                "--hub",
+                "https://aiwatchdogs.in",
+                "--provider",
+                "rule-engine",
+                "--non-interactive",
+                "--yes",
+                "--no-run",
+                "--coding-agent",
+                "Claude Code",
+            ],
+        )
+        assert r2.exit_code == 0, r2.output
+        saved2 = load_config(get_handle_config_path("switchdev"))
+        assert saved2 is not None and saved2.coding_agent == "Claude Code" and saved2.coding_agent_model == ""
+
+
+def test_sandbox_readonly_config_falls_back_to_temp_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import errno
+
+    monkeypatch.delenv(ENV_CONFIG_PATH, raising=False)
+    fallback_dir = tmp_path / "tmp_fallback" / "agents"
+    monkeypatch.setattr(cfg_mod, "_fallback_temp_agents_dir", lambda: fallback_dir)
+
+    orig_save = cfg_mod.save_config
+
+    def _ro_save(config: Any, path: Any = None) -> Path:
+        raise PermissionError(errno.EACCES, "Read-only ~/.config in sandbox")
+
+    monkeypatch.setattr(cfg_mod, "save_config", _ro_save)
+    cfg = AgentConfig(handle="sandboxdev", hub_url="https://aiwatchdogs.in", api_token="awd_sandbox_tok")
+    saved_path, used_fallback = cfg_mod.save_config_with_fallback(cfg, path=tmp_path / "ro" / "sandboxdev.json")
+    assert used_fallback is True
+    assert saved_path == fallback_dir / "sandboxdev.json"
+    assert saved_path.is_file()
+    assert (saved_path.lstat().st_mode & 0o777) == 0o600
+    monkeypatch.setattr(cfg_mod, "save_config", orig_save)
+
+    recovered = cfg_mod._load_temp_fallback_for_handle("sandboxdev")
+    assert recovered is not None and recovered.api_token == "awd_sandbox_tok"
+
+
+def test_frontend_onboarding_copy_has_zero_prompt_injection_phrasing() -> None:
+    for rel in (
+        "web/src/components/EyebrowBar.tsx",
+        "web/src/components/JoinModal.tsx",
+        "web/src/pages/BriefPage.tsx",
+        "web/src/pages/HowItWorksPage.tsx",
+    ):
+        src = (REPO_ROOT / rel).read_text(encoding="utf-8").lower()
+        assert "zero questions" not in src, f"Stale 'zero questions' phrase found in {rel}"
+        assert "zero setup questions" not in src, f"Stale 'zero setup questions' phrase found in {rel}"
