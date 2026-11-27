@@ -1,4 +1,4 @@
-"""Tests for Project P5 (one-teacher-five-grades) and deterministic engine OT1."""
+"""Tests for Project P5 (one-teacher-five-grades) and deterministic engine P5."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from aiwatchdogs.cli.config import AgentConfig
 from aiwatchdogs.cli.runner import AgentRunner
 from aiwatchdogs.core.safety import compute_sha256
-from aiwatchdogs.engines import one_teacher_five_grades as ot1
+from aiwatchdogs.engines import one_teacher_five_grades as p5_engine
 from aiwatchdogs.engines.registry import run_engine
 from aiwatchdogs.hub.app import create_app
 from aiwatchdogs.projects import (
@@ -133,7 +133,7 @@ def _synthetic_udise_records() -> list[dict[str, Any]]:
     ]
 
 
-def _ot1_ctx(state_name: str, *, academic_year: str = "2025-26", is_ut: bool = False) -> dict[str, Any]:
+def _p5_ctx(state_name: str, *, academic_year: str = "2025-26", is_ut: bool = False) -> dict[str, Any]:
     return {
         "retrieval_url": "https://dashboard.udiseplus.gov.in/report2026/static/media/test.pdf",
         "expected_sha256": "b" * 64,
@@ -142,7 +142,7 @@ def _ot1_ctx(state_name: str, *, academic_year: str = "2025-26", is_ut: bool = F
         "one_teacher_five_grades": {
             "academic_year": academic_year,
             "state_name": state_name,
-            "state_key": ot1.canonical_state_key(state_name),
+            "state_key": p5_engine.canonical_state_key(state_name),
             "is_ut": is_ut,
             "source_document_title": f"UDISE+ {academic_year} Booklet (Existing Structure)",
             "table_pages": {"table_2_2": 32, "table_3_3": 42, "table_4_3": 54, "table_5_2": 86},
@@ -150,15 +150,15 @@ def _ot1_ctx(state_name: str, *, academic_year: str = "2025-26", is_ut: bool = F
     }
 
 
-def test_ot1_flags_severe_concentration_overcrowding_and_gov_understaffing() -> None:
+def test_p5_flags_severe_concentration_overcrowding_and_gov_understaffing() -> None:
     records = _synthetic_udise_records()
-    res = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_ot1_ctx("Jharkhand"))
+    res = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_p5_ctx("Jharkhand"))
     assert res.unevaluable_count == 0
     assert res.cleared_count == 0
     assert len(res.leads) == 1
     lead = res.leads[0]
-    assert lead.methodology_code == "OT1"
-    assert lead.rule_triggered == "OT1-CONCENTRATION-OVERCROWDING"
+    assert lead.methodology_code == "P5"
+    assert lead.rule_triggered == "P5-CONCENTRATION-OVERCROWDING"
     assert lead.severity == "critical"
     m = lead.anomaly_metrics
     assert m["signal_category"] == "severe_concentration_and_overcrowding"
@@ -174,26 +174,26 @@ def test_ot1_flags_severe_concentration_overcrowding_and_gov_understaffing() -> 
     }
 
 
-def test_ot1_flags_high_concentration_and_overcrowding_only_separately() -> None:
+def test_p5_flags_high_concentration_and_overcrowding_only_separately() -> None:
     records = _synthetic_udise_records()
 
-    ap = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_ot1_ctx("Andhra Pradesh"))
+    ap = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_p5_ctx("Andhra Pradesh"))
     assert len(ap.leads) == 1
-    assert ap.leads[0].rule_triggered == "OT1-HIGH-CONCENTRATION"
+    assert ap.leads[0].rule_triggered == "P5-HIGH-CONCENTRATION"
     assert ap.leads[0].anomaly_metrics["single_teacher_share_pct"] == pytest.approx(26.88)
     assert ap.leads[0].anomaly_metrics["gov_primary_teachers_per_school"] == pytest.approx(2.15)
 
-    bihar = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_ot1_ctx("Bihar"))
+    bihar = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_p5_ctx("Bihar"))
     assert len(bihar.leads) == 1
-    assert bihar.leads[0].rule_triggered == "OT1-SEVERE-OVERCROWDING"
+    assert bihar.leads[0].rule_triggered == "P5-SEVERE-OVERCROWDING"
     assert bihar.leads[0].severity == "critical"
     assert bihar.leads[0].anomaly_metrics["students_per_single_teacher"] == pytest.approx(80.95)
 
 
-def test_ot1_clears_zero_single_teacher_uts_including_wrapped_names_and_marks_missing_unevaluable() -> None:
+def test_p5_clears_zero_single_teacher_uts_including_wrapped_names_and_marks_missing_unevaluable() -> None:
     records = _synthetic_udise_records()
 
-    chd = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_ot1_ctx("Chandigarh", is_ut=True))
+    chd = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_p5_ctx("Chandigarh", is_ut=True))
     assert chd.leads == []
     assert chd.cleared_count == 1
     assert chd.unevaluable_count == 0
@@ -201,13 +201,13 @@ def test_ot1_clears_zero_single_teacher_uts_including_wrapped_names_and_marks_mi
     dnh = run_engine(
         ONE_TEACHER_FIVE_GRADES_METHODOLOGY,
         records,
-        context=_ot1_ctx("Dadra & Nagar Haveli and Daman & Diu", is_ut=True),
+        context=_p5_ctx("Dadra & Nagar Haveli and Daman & Diu", is_ut=True),
     )
     assert dnh.leads == []
     assert dnh.cleared_count == 1
     assert dnh.unevaluable_count == 0
 
-    missing = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_ot1_ctx("Nonexistent State"))
+    missing = run_engine(ONE_TEACHER_FIVE_GRADES_METHODOLOGY, records, context=_p5_ctx("Nonexistent State"))
     assert missing.leads == []
     assert missing.cleared_count == 0
     assert missing.unevaluable_count == 1
@@ -251,7 +251,7 @@ def test_generated_p5_project_json_and_coverage_are_valid() -> None:
     project_path = PROJECTS_DIR / f"{ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG}.json"
     data = json.loads(project_path.read_text(encoding="utf-8"))
     assert data["project_code"] == "P5"
-    assert data["methodology_code"] == "OT1"
+    assert data["methodology_code"] == "P5"
     assert len(data["tasks"]) == 100
     assert validate_project(data, filename_stem=ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG) == []
 
@@ -259,6 +259,7 @@ def test_generated_p5_project_json_and_coverage_are_valid() -> None:
     for task in data["tasks"]:
         yr = task["payload"]["context"]["one_teacher_five_grades"]["academic_year"]
         by_yr[yr] += 1
+        assert task["id"].startswith("p5-")
     assert by_yr == {"2025-26": 36, "2024-25": 36, "2023-24": 28}
 
     cov = json.loads((PROJECTS_DIR / ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG / "coverage.json").read_text(encoding="utf-8"))
@@ -281,7 +282,7 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
     recs = _synthetic_udise_records()
     pdf_bytes = _minimal_multipage_pdf_bytes([r["raw_text"] for r in recs])
     pdf_sha = compute_sha256(pdf_bytes)
-    pdf_url = "https://dashboard.udiseplus.gov.in/report2026/static/media/synthetic-ot1.pdf"
+    pdf_url = "https://dashboard.udiseplus.gov.in/report2026/static/media/synthetic-p5.pdf"
 
     import httpx
 
@@ -332,7 +333,7 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
         detail = detail_resp.json()
         assert detail["project_code"] == "P5"
         vs = detail["visual_summary"]
-        assert vs["methodology_code"] == "OT1"
+        assert vs["methodology_code"] == "P5"
         assert vs["one_teacher_five_grades"]["total_tasks"] == 100
 
         assert client.get(f"/api/missions/{ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG}/documents.csv").status_code == 200
@@ -342,8 +343,8 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
         jt_resp = client.get("/join.txt")
         assert jt_resp.status_code == 200 and "one-teacher-five-grades" in jt_resp.text
 
-        # Insert a synthetic 4-page OT1 task (pages 1..4 matching our synthetic PDF) and verify Auditor + 2 Peers.
-        task_id = "prj-ot1-2025-26-synthetic-jharkhand"
+        # Insert a synthetic 4-page P5 task (pages 1..4 matching our synthetic PDF) and verify Auditor + 2 Peers.
+        task_id = "prj-p5-2025-26-synthetic-jharkhand"
         payload = {
             "retrieval_url": pdf_url,
             "dataset_url": pdf_url,
@@ -369,7 +370,7 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
                     title, instructions, payload_json, target_finding_id,
                     excluded_handles_json, status, dataset_key, financial_quantity_type,
                     work_type, estimated_tokens, estimate_basis, created_at, updated_at
-                ) VALUES (?, ?, ?, 'OT1', 'anomaly_scan', 'Synthetic OT1 Jharkhand check', 'Run OT1', ?, NULL, '[]',
+                ) VALUES (?, ?, ?, 'P5', 'anomaly_scan', 'Synthetic P5 Jharkhand check', 'Run P5', ?, NULL, '[]',
                           'queued', 'udise-synthetic-jharkhand', 'school_staffing_and_enrolment', 'run_check',
                           500, 'test', '2026-11-27T00:00:00Z', '2026-11-27T00:00:00Z')
                 """,
@@ -383,7 +384,7 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
 
         auditor = AgentRunner(
             AgentConfig(
-                handle="ot1-auditor-one",
+                handle="p5-auditor-one",
                 hub_url="http://testserver",
                 provider="rule-engine",
                 model="deterministic-cpu-v1",
@@ -399,7 +400,7 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
         for idx in (1, 2):
             pv = AgentRunner(
                 AgentConfig(
-                    handle=f"ot1-verifier-{idx}",
+                    handle=f"p5-verifier-{idx}",
                     hub_url="http://testserver",
                     provider="rule-engine",
                     model="deterministic-cpu-v1",
@@ -415,4 +416,4 @@ def test_p5_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
         findings = client.get(f"/api/findings?mission={ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG}").json()["findings"]
         assert len(findings) == 1
         assert findings[0]["status"] == "verified"
-        assert findings[0]["methodology_code"] == "OT1"
+        assert findings[0]["methodology_code"] == "P5"

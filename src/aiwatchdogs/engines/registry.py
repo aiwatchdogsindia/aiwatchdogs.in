@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, OT1)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5)."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "P1": "P1-2026.11-v1",
     "UB1": "UB1-2026.11-v1",
     "OR1": "OR1-2026.11-v2",
-    "OT1": "OT1-2026.11-v1",
+    "P5": "P5-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -231,11 +231,11 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2026/5of2026UGEnglish-069ce38b4a151b0.15050638.pdf",
         "module": "aiwatchdogs.engines.one_road_two_bills",
     },
-    "OT1": {
-        "code": "OT1",
+    "P5": {
+        "code": "P5",
         "name": "One Teacher, Five Grades: Single-Teacher & Primary School Concentration",
         "pillar": "scheme",
-        "ruleset_version": RULESET_VERSIONS["OT1"],
+        "ruleset_version": RULESET_VERSIONS["P5"],
         "statutory_anchors": [
             "Constitution-Art-21A",
             "RTE-Act-2009-Sec19-Schedule",
@@ -265,7 +265,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "P1": (police.run_p1_police_budget_heads, police),
     "UB1": (union_budget.run_ub1_union_budget_lines, union_budget),
     "OR1": (one_road_two_bills.run_or1_duplicate_billing, one_road_two_bills),
-    "OT1": (one_teacher_five_grades.run_ot1_single_teacher_schools, one_teacher_five_grades),
+    "P5": (one_teacher_five_grades.run_p5_single_teacher_schools, one_teacher_five_grades),
 }
 
 

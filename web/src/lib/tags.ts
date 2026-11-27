@@ -472,7 +472,7 @@ export function getWorkTypeTag(
     if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
     if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
     if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
-    if (m === 'OT1') return WORK_TYPE_TAGS.school_staffing;
+    if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -480,7 +480,7 @@ export function getWorkTypeTag(
   if (m === 'W1') return WORK_TYPE_TAGS.website_check;
   if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
   if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
-  if (m === 'OT1') return WORK_TYPE_TAGS.school_staffing;
+  if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
 
   return WORK_TYPE_TAGS.audit;
 }

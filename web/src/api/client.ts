@@ -433,17 +433,19 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
     (c): Citation => ({
       artifact_id: c.artifact_id as string | number | undefined,
       source_url: c.source_url ? String(c.source_url) : undefined,
+      source_ref: c.source_ref ? String(c.source_ref) : undefined,
       retrieval_url: c.retrieval_url ? String(c.retrieval_url) : undefined,
       official_publisher: c.official_publisher ? String(c.official_publisher) : undefined,
       source_landing_page: c.source_landing_page ? String(c.source_landing_page) : undefined,
       mirror_name: c.mirror_name ? String(c.mirror_name) : undefined,
-      title: c.title ? String(c.title) : undefined,
+      // UB1 and P1 citations name their statement in `document` and quote it in `printed_line`.
+      title: c.title || c.document ? String(c.title || c.document) : undefined,
       sha256: c.sha256 ? String(c.sha256) : undefined,
       page: (c.page ?? null) as string | number | null,
       para: (c.para ?? c.para_ref ?? null) as string | null,
       row_id: (c.row_id ?? null) as string | number | null,
       source_locator: formatLocator(c.source_locator),
-      excerpt: String(c.excerpt || c.raw_excerpt || ''),
+      excerpt: String(c.excerpt || c.raw_excerpt || c.printed_line || ''),
     }),
   );
   const trace = asRecord(raw.agent_trace ?? raw.agent_trace_json);
@@ -563,7 +565,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
           ? 'P3'
           : slug === 'one-road-two-bills' || methodologyCode.toUpperCase() === 'OR1'
             ? 'P4'
-            : slug === 'one-teacher-five-grades' || methodologyCode.toUpperCase() === 'OT1'
+            : slug === 'one-teacher-five-grades' || methodologyCode.toUpperCase() === 'P5'
               ? 'P5'
               : methodologyCode;
   return {

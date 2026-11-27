@@ -20,7 +20,7 @@ import { api } from '../api/client';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import { getFindingTag, getVerdictTag, getWorkTypeTag } from '../lib/tags';
 import { Link } from '../router';
-import type { FindingItem, RtiDraft, VerificationCheckState } from '../types';
+import type { Citation, FindingItem, RtiDraft, VerificationCheckState } from '../types';
 import {
   METHODOLOGY_DESCRIPTIONS,
   copyToClipboard,
@@ -79,6 +79,17 @@ function formatReviewKindLabel(kind?: string): { label: string; isEditorial: boo
   if (k.includes('editorial')) return { label: 'Editorial check', isEditorial: true };
   if (k.includes('adjudic')) return { label: 'Tie-breaker', isEditorial: true };
   return { label: 'Peer check', isEditorial: false };
+}
+
+/**
+ * The document a citation's line was read from. Two-document methods (UB1 actuals, P1 reference rows)
+ * cite a second PDF: its own source_url and a sha256 different from the finding's artifact. Otherwise
+ * prefer the finding's dataset (source_ref) over a portal-homepage fallback in source_url.
+ */
+function citationHref(cit: Citation, artifactSha?: string): string | null {
+  const ownDocument =
+    cit.source_url && cit.sha256 && artifactSha && cit.sha256 !== artifactSha ? cit.source_url : null;
+  return safeExternalUrl(ownDocument || cit.source_ref || cit.source_url);
 }
 
 export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawerProps) {
@@ -719,34 +730,49 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>
                           Pinpoint Citations ({finding.citations.length})
                         </div>
-                        {finding.citations.map((cit, i) => (
-                          <div
-                            key={i}
-                            style={{
-                              padding: '10px 12px',
-                              background: 'var(--bg-paper)',
-                              borderLeft: '2px solid var(--border-strong)',
-                              fontSize: 13,
-                            }}
-                          >
-                            <div className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>
-                              {[
-                                cit.title,
-                                cit.source_locator,
-                                cit.page != null ? `Page ${cit.page}` : null,
-                                cit.para ? `Para ${cit.para}` : null,
-                                cit.row_id != null ? `Row ${cit.row_id}` : null,
-                              ]
-                                .filter(Boolean)
-                                .join(', ') || 'Source record excerpt'}
-                            </div>
-                            {cit.excerpt && (
-                              <div style={{ color: 'var(--ink-primary)', fontStyle: 'italic' }}>
-                                “{cit.excerpt}”
+                        {finding.citations.map((cit, i) => {
+                          const citHref = citationHref(cit, finding.artifact_sha256);
+                          return (
+                            <div
+                              key={i}
+                              style={{
+                                padding: '10px 12px',
+                                background: 'var(--bg-paper)',
+                                borderLeft: '2px solid var(--border-strong)',
+                                fontSize: 13,
+                              }}
+                            >
+                              <div className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>
+                                {[
+                                  cit.title,
+                                  cit.source_locator,
+                                  cit.page != null ? `Page ${cit.page}` : null,
+                                  cit.para ? `Para ${cit.para}` : null,
+                                  cit.row_id != null ? `Row ${cit.row_id}` : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(', ') || 'Source record excerpt'}
                               </div>
-                            )}
-                          </div>
-                        ))}
+                              {cit.excerpt && (
+                                <div style={{ color: 'var(--ink-primary)', fontStyle: 'italic' }}>
+                                  “{cit.excerpt}”
+                                </div>
+                              )}
+                              {citHref && (
+                                <a
+                                  href={citHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                  style={{ marginTop: 4, wordBreak: 'break-all' }}
+                                >
+                                  <ExternalLink size={12} aria-hidden="true" />
+                                  <span>{citHref}</span>
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

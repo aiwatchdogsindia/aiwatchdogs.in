@@ -567,6 +567,8 @@ export interface TokenSummary {
 export interface Citation {
   artifact_id?: string | number;
   source_url?: string;
+  /** Primary dataset of the finding; stamped on every citation by the CLI. */
+  source_ref?: string;
   retrieval_url?: string;
   official_publisher?: string;
   source_landing_page?: string;

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build Project P5 (`one-teacher-five-grades`, methodology `OT1`, 100 tasks) from official UDISE+ PDFs.
+"""Build Project P5 (`one-teacher-five-grades`, methodology `P5`, 100 tasks) from official UDISE+ PDFs.
 
 Downloads and verifies the 3 pinned Ministry of Education (DoSEL) UDISE+ Existing Structure
 booklets (2025-26, 2024-25, 2023-24), parses Tables 2.2, 3.3, 4.3, and 5.2 for all States/UTs,
-dry-runs every single one of the 100 tasks through `run_engine("OT1", ...)`, validates the
+dry-runs every single one of the 100 tasks through `run_engine("P5", ...)`, validates the
 generated project JSON with `validate_project()`, and writes:
   - projects/one-teacher-five-grades.json
   - projects/one-teacher-five-grades/coverage.json
@@ -207,7 +207,7 @@ def _build_tasks_and_dry_run() -> tuple[list[dict[str, Any]], dict[str, Any], li
             printed_name, _ = t22_rows[skey]
             display_name = CANONICAL_STATE_DISPLAY.get(skey) or printed_name
             is_ut = skey in UT_KEYS
-            tid = f"ot1-{yr}-{skey}"
+            tid = f"p5-{yr}-{skey}"
             assert len(tid) <= 60, tid
 
             task_context = {
@@ -225,7 +225,7 @@ def _build_tasks_and_dry_run() -> tuple[list[dict[str, Any]], dict[str, Any], li
                 },
             }
 
-            result = run_engine("OT1", loaded.records, task_context, as_of_date="2026-11-27")
+            result = run_engine("P5", loaded.records, task_context, as_of_date="2026-11-27")
             if result.unevaluable_count > 0:
                 dry_run_unevaluable += result.unevaluable_count
                 raise RuntimeError(f"Task {tid} evaluated as unevaluable: {result.summary}")
@@ -318,7 +318,7 @@ def _build_tasks_and_dry_run() -> tuple[list[dict[str, Any]], dict[str, Any], li
 
 
 def _write_methodology_md() -> None:
-    content = """# Methodology `OT1` — One Teacher, Five Grades (`P5`)
+    content = """# Methodology `P5` — One Teacher, Five Grades
 
 ## Objective
 Map where **single-teacher schools** and **under-staffed Government Primary (Classes I–V) schools** are concentrated across India's States and Union Territories using official Ministry of Education **UDISE+** annual reports (`2023-24`, `2024-25`, and `2025-26`).
@@ -337,7 +337,7 @@ Total: **`100` deterministic tasks** across three consecutive academic cycles (`
 3. **Table 4.3** (*Number of teachers by management: Government*) — Government Total Teachers and Government Primary (Classes I–V) teachers.
 4. **Table 5.2** (*Enrolment of students by school management: Government*) — Government Total and Primary-level student enrolments.
 
-## Deterministic Rules (`OT1`)
+## Deterministic Rules (`P5`)
 1. **High Single-Teacher Concentration (`single_teacher_share_ge_10pct`)**: `single_teacher_schools / total_schools >= 10.0%` AND `single_teacher_schools >= 100`.
 2. **Severe Single-Teacher Overcrowding (`students_per_single_teacher_gt_30`)**: `single_teacher_enrolments / single_teacher_schools > 30.0` (exceeding the RTE Act 2009 Schedule `30:1` Primary PTR norm) AND `single_teacher_schools >= 500`.
 3. **Under-Staffed Government Primary I–V Schools (`gov_primary_avg_teachers_lt_2`)**: `gov_primary_1_5_teachers / gov_primary_1_5_schools < 2.0` (below the RTE Act 2009 statutory 2-teacher minimum for Primary schools) AND `gov_primary_1_5_schools >= 100`.
@@ -345,7 +345,7 @@ Total: **`100` deterministic tasks** across three consecutive academic cycles (`
 States and UTs below all thresholds are published as **Cleared** with equal standing and full extracted figures.
 
 ## Transparent Methodological Boundaries
-- In UDISE+ national booklets, **Table 2.2** reports single-teacher school counts across **all school managements combined**, whereas **Tables 3.3, 4.3, and 5.2** isolate **Government schools** specifically (Government Primary I–V schools account for 612,066 of all 722,498 Primary I–V schools nationally in 2025-26). Every `OT1` output explicitly publishes both sets of figures without conflating them.
+- In UDISE+ national booklets, **Table 2.2** reports single-teacher school counts across **all school managements combined**, whereas **Tables 3.3, 4.3, and 5.2** isolate **Government schools** specifically (Government Primary I–V schools account for 612,066 of all 722,498 Primary I–V schools nationally in 2025-26). Every `P5` output explicitly publishes both sets of figures without conflating them.
 - District-level and school-level (`11-digit UDISE code`) concentrations are listed in `planned_tasks` because UDISE+ public booklets publish State/UT matrices while bulk school/district CSV extracts require authenticated access on `udiseplus.gov.in`.
 """
     PROJECT_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
@@ -364,7 +364,7 @@ def main() -> None:
         "summary": (
             "Maps single-teacher schools and Government Primary (Classes I–V) staffing gaps across all 36 "
             "States & UTs over three consecutive Ministry of Education UDISE+ cycles (2023-24, 2024-25, 2025-26). "
-            "100 deterministic tasks cross-check UDISE+ Table 2.2 (single-teacher counts & enrolments) against "
+            "100 deterministic P5 tasks cross-check UDISE+ Table 2.2 (single-teacher counts & enrolments) against "
             "Government-only Tables 3.3, 4.3, and 5.2 against RTE Act 2009 Schedule norms (minimum 2 teachers per "
             "primary school and 30:1 PTR). Every figure is verified by two independent agents."
         ),

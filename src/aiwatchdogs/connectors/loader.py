@@ -59,6 +59,7 @@ DEFAULT_MAX_PDF_CHARS = 50_000_000
 DEFAULT_MAX_SHARED_STRINGS = 500_000
 DEFAULT_MAX_REDIRECTS = 5
 DEFAULT_CACHE_TTL_SECONDS = 3600
+_SHA256_PIN_RE = re.compile(r"[0-9a-fA-F]{64}")
 _PINNED_MEM_CACHE_MAX_ENTRIES = 16
 _PINNED_MEM_CACHE_MAX_BYTES = 64 * 1024 * 1024  # 64 MiB bounded in-process cache for SHA-256-pinned artifacts
 _PINNED_MEM_CACHE_LOCK = threading.Lock()
@@ -714,7 +715,10 @@ def _read_validated_cache(
             return None
         ttl = int(os.environ.get("AIWATCHDOGS_CACHE_TTL_SECONDS", str(DEFAULT_CACHE_TTL_SECONDS)))
         fetched_at = str(meta.get("fetched_at") or "")
-        if ttl > 0 and fetched_at:
+        # A SHA-256-pinned entry cannot go stale: its bytes are re-verified against the pin below,
+        # so age-based expiry would only force re-downloading identical official files.
+        pinned = bool(expected_sha256 and _SHA256_PIN_RE.fullmatch(expected_sha256.strip()))
+        if ttl > 0 and fetched_at and not pinned:
             try:
                 ft = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
                 age = (datetime.now(timezone.utc) - ft).total_seconds()

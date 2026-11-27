@@ -41,6 +41,27 @@ jobs:
         run: |
           uv run python -c "from aiwatchdogs.hub.templates import render_join_sh; s = render_join_sh('https://aiwatchdogs.in'); assert 'git+https://github.com/aiwatchdogsindia/aiwatchdogs.in.git' in s and 'uvx aiwatchdogs' not in s and 'exec </dev/tty' in s; print(s)" | sh -n
 
+  python-minimum-version:
+    name: Python 3.11 (minimum supported) Pytest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python 3.11
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install locked dependencies on the lowest requires-python
+        run: uv sync --locked
+
+      - name: Run the test suite on Python 3.11
+        run: uv run pytest -q
+
   postgres-integration:
     name: PostgreSQL 16 Migrations & Concurrency
     runs-on: ubuntu-latest
