@@ -4,7 +4,7 @@
 > **The government made a promise when it launched the scheme. Did it keep it?**
 
 ## Objective
-Audit **1,000 SHA-256-pinned Indian government scheme commitments** spanning the **Union Government** (`500` tasks) and **all 36 States & Union Territories** (`419` State + `81` UT tasks across all 28 States and 8 UTs) covering **324 unique schemes** and **670 unique live-verified official documents**. Every task compares an explicit launch promise (Union/State Budget, Finance Bill, RBI/NSE SGB notification, Parliamentary answer, or CAG-documented Government Order) against a subsequent statutory amendment, benefit cut, premature discontinuation, eligibility narrowing, exit restriction, or documented arrears record — failing closed as `unevaluable` whenever downloaded bytes fail SHA-256 verification or lack required verbatim documentary tokens.
+Audit **1,000 SHA-256-pinned Indian government scheme commitments** spanning the **Union Government** (`500` tasks) and **all 36 States & Union Territories** (`419` State + `81` UT tasks across all 28 States and 8 UTs) covering **322 unique schemes** and **668 unique live-verified official documents**. Every task compares an explicit launch promise (Union/State Budget, Finance Bill, RBI/NSE SGB notification, Parliamentary answer, or CAG-documented Government Order) against a subsequent statutory amendment, benefit cut, premature discontinuation, eligibility narrowing, exit restriction, or documented arrears record — failing closed as `unevaluable` whenever downloaded bytes fail SHA-256 verification or lack required verbatim documentary tokens.
 
 ## Flagship Anchor Case (Task #1: `p8-union-sgb-anchor-0001`)
 - **Scheme:** Sovereign Gold Bond (SGB) Scheme — Capital Gains Tax Exemption on Redemption
@@ -29,9 +29,9 @@ Audit **1,000 SHA-256-pinned Indian government scheme commitments** spanning the
   - `arrears_or_unfunded_promise`: `425`
   - `grandfathered_or_honored` (Cleared benchmark): `119`
 - **Deterministic Dry-Run (`as_of_date=2026-11-27`):** `881` leads · `119` cleared · `0` unevaluable (across all `1000` tasks)
-- **Verified Byte-Stable Source Domains (670 unique pinned URLs):**
+- **Verified Byte-Stable Source Domains (668 unique pinned URLs):**
   - `sansad.in`: `441` unique SHA-256-pinned documents
-  - `cag.gov.in`: `110` unique SHA-256-pinned documents
+  - `cag.gov.in`: `108` unique SHA-256-pinned documents
   - `prsindia.org`: `58` unique SHA-256-pinned documents
   - `nsearchives.nseindia.com`: `25` unique SHA-256-pinned documents
   - `www.indiabudget.gov.in`: `20` unique SHA-256-pinned documents
@@ -52,5 +52,5 @@ Audit **1,000 SHA-256-pinned Indian government scheme commitments** spanning the
 7. **Grandfathered or Honored (`Cleared`):** Verified launch terms honored or existing holders grandfathered intact (`119` tasks), published with equal journalistic standing.
 
 ## Legal, Privacy & Verification Safeguards
-- **Fail-Closed Verification:** Every primary and secondary URL is double-fetch byte-stability verified and SHA-256 pinned (`DigestMismatchError` on any byte change). `P8` confirms `>= 40` chars of readable text and 100% verbatim token presence in the verified document bytes before emitting any lead or cleared verdict.
+- **Fail-Closed Verification:** Every primary and secondary URL is double-fetch byte-stability verified and SHA-256 pinned (`DigestMismatchError` on any byte change). `P8` confirms `>= 40` chars of readable text and 100% verbatim word-boundary token presence in the verified document bytes before emitting any lead or cleared verdict.
 - **BNS Sec 356 Neutrality & DPDP Act 2023:** Zero forbidden accusatory terms and zero personal PII across `projects/sovereign-lies.json`, `coverage.json`, `documents.csv`, and `METHODOLOGY.md`. Every lead emits mandatory lawful benign explanations (parliamentary statutory amendment power, FRBM fiscal consolidation, bullion/macroeconomic cycles, arbitrage prevention, and e-KYC deduplication).

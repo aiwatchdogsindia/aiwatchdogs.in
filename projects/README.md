@@ -134,13 +134,13 @@ The script fetches, caches, and SHA-256 pins immutable/byte-stable shards (all `
 
 ### Sovereign Lies (`P8`)
 
-`projects/sovereign-lies.json` is generated from live-verified, double-fetch byte-stable official Union and State/UT primary records across **1,000 tasks** (`500` Union + `419` State + `81` UT covering **all 28 States and all 8 Union Territories**, `324` unique schemes, `670` unique SHA-256-pinned documents across 11 verified domains), anchored by Task #1 `p8-union-sgb-anchor-0001` (**Sovereign Gold Bond Scheme**, Finance Bill 2016 Clause 28 Sec 47(viic) redemption capital-gains tax exemption vs. Union Budget 2026-27 / Finance Bill 2026 Clause 35 Sec 70(1)(x) original-issue-subscriber-only walk-back, followed by all 67/67 SGB tranches):
+`projects/sovereign-lies.json` is generated from live-verified, double-fetch byte-stable official Union and State/UT primary records across **1,000 tasks** (`500` Union + `419` State + `81` UT covering **all 28 States and all 8 Union Territories**, `322` unique schemes, `668` unique SHA-256-pinned documents across 11 verified domains), anchored by Task #1 `p8-union-sgb-anchor-0001` (**Sovereign Gold Bond Scheme**, Finance Bill 2016 Clause 28 Sec 47(viic) redemption capital-gains tax exemption vs. Union Budget 2026-27 / Finance Bill 2026 Clause 35 Sec 70(1)(x) original-issue-subscriber-only walk-back, followed by all 67/67 SGB tranches):
 
 ```
 uv run python scripts/build_sovereign_lies_project.py
 ```
 
-The script fetches and SHA-256 verifies all 670 unique official URLs (Union Budget Finance Bills & Memoranda on `indiabudget.gov.in`, Digital Sansad Lok Sabha & Rajya Sabha Q&A PDFs on `sansad.in` / `bucketapi.rajyasabha.digital`, NSE SGB listing circulars on `nsearchives.nseindia.com`, CAG Union & State Audit Reports on `cag.gov.in` / `d1jmc0u14z2tmp.cloudfront.net`, static PIB factsheets on `static.pib.gov.in`, State Gazettes/Finance GOs on `transport.delhi.gov.in`, `wcd.delhi.gov.in`, `apfinance.gov.in`, and PRS State Budget Analyses on `prsindia.org`), dry-runs all 1,000 tasks through `P8` (`881` leads, `119` cleared grandfathered/honored benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `sovereign-lies/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+The script fetches and SHA-256 verifies all 668 unique official URLs (Union Budget Finance Bills & Memoranda on `indiabudget.gov.in`, Digital Sansad Lok Sabha & Rajya Sabha Q&A PDFs on `sansad.in` / `bucketapi.rajyasabha.digital`, NSE SGB listing circulars on `nsearchives.nseindia.com`, CAG Union & State Audit Reports on `cag.gov.in` / `d1jmc0u14z2tmp.cloudfront.net`, static PIB factsheets on `static.pib.gov.in`, State Gazettes/Finance GOs on `transport.delhi.gov.in`, `wcd.delhi.gov.in`, `apfinance.gov.in`, and PRS State Budget Analyses on `prsindia.org`), dry-runs all 1,000 tasks through `P8` (`881` leads, `119` cleared grandfathered/honored benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `sovereign-lies/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
 ## Renaming a project
 
