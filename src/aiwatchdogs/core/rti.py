@@ -308,6 +308,11 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of the Technical and Financial Bid Evaluation Committee minutes (including reasons recorded for disqualification of any non-responsive bids) and the comparative bid statement.",
         "Certified copy of the Award of Contract (AOC) / work order register for the referenced procuring authority and category covering repeat awards disclosed under Section 4(1)(b) of the RTI Act, 2005.",
     ],
+    "P8": [
+        "Certified copies of the original Gazette notification, Government Order (GO), circular, or scheme guidelines establishing the launch terms (tax treatment, benefit/subsidy rate, eligibility, lock-in, or exit conditions) of the referenced public scheme.",
+        "Certified copies of all subsequent amending notifications, circulars, Finance Department/Cabinet notes, or discontinuance orders modifying, restricting, capping, or suspending those launch terms.",
+        "Certified copies of any published fiscal-impact assessment, grandfathering/transitional relief consideration note, or beneficiary/outlay arrears statement held on record under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
@@ -347,7 +352,7 @@ def _format_inr(amount: float) -> str:
 def _extract_reference_ids(finding: dict[str, Any]) -> str:
     refs: list[str] = []
     metrics = finding.get("anomaly_metrics") if isinstance(finding.get("anomaly_metrics"), dict) else {}
-    for mkey in ("assurance_ref", "para_number", "tender_id", "ocid"):
+    for mkey in ("assurance_ref", "para_number", "tender_id", "ocid", "promise_document_ref", "walkback_document_ref", "case_key", "scheme_slug"):
         val = metrics.get(mkey)
         cleaned = _clean_single_line(val, max_len=64) if val else ""
         if cleaned and cleaned not in refs:
@@ -416,7 +421,7 @@ def resolve_rti_jurisdiction(
             "union of india ("
         ):
             explicit_central = True
-        elif jur_lower.startswith("state:") and "&" not in jur_lower and "," not in jur_lower:
+        elif (jur_lower.startswith("state:") or jur_lower.startswith("ut:")) and "&" not in jur_lower and "," not in jur_lower:
             raw_state = raw_jurisdiction.split(":", 1)[1].strip()
             state_key = _match_state_key(raw_state) or raw_state.lower()
         else:

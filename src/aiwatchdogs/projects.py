@@ -46,6 +46,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "one-teacher-five-grades": "P5",
     "parliaments-to-do-list": "P6",
     "only-one-bid": "P7",
+    "sovereign-lies": "P8",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -96,6 +97,7 @@ VALID_QUANTITY_TYPES = {
     "electoral_bond_disclosures",
     "school_staffing_and_enrolment",
     "parliamentary_assurances",
+    "scheme_promises_and_revisions",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_FORMER_SLUGS = 10
@@ -111,6 +113,8 @@ PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG = "parliaments-to-do-list"
 PARLIAMENTS_TO_DO_LIST_METHODOLOGY = "P6"
 ONLY_ONE_BID_PROJECT_SLUG = "only-one-bid"
 ONLY_ONE_BID_METHODOLOGY = "P7"
+SOVEREIGN_LIES_PROJECT_SLUG = "sovereign-lies"
+SOVEREIGN_LIES_METHODOLOGY = "P8"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -506,6 +510,17 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                 errors.append(
                     f"{where}.id must match 'p7-(sb|rw|bo)-YYYY-NNNNN' for {ONLY_ONE_BID_METHODOLOGY} tasks."
                 )
+        if code == SOVEREIGN_LIES_METHODOLOGY:
+            if task.get("financial_quantity_type") != "scheme_promises_and_revisions":
+                errors.append(
+                    f"{where} must use the scheme_promises_and_revisions quantity type with {SOVEREIGN_LIES_METHODOLOGY}."
+                )
+            from aiwatchdogs.engines.sovereign_lies import P8_TASK_ID_RE
+
+            if isinstance(tid, str) and not P8_TASK_ID_RE.fullmatch(tid):
+                errors.append(
+                    f"{where}.id must match 'p8-(union|state|ut)-<slug>-NNNN' for {SOVEREIGN_LIES_METHODOLOGY} tasks."
+                )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
@@ -600,6 +615,18 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             from aiwatchdogs.engines.only_one_bid import validate_context as validate_p7_context
 
             errors.extend(validate_p7_context(ctx, where))
+        if code == SOVEREIGN_LIES_METHODOLOGY:
+            from aiwatchdogs.engines.sovereign_lies import P8_TASK_ID_RE, validate_context as validate_p8_context
+
+            errors.extend(validate_p8_context(ctx, where))
+            p8_spec = ctx.get("sovereign_lies") if isinstance(ctx, dict) else None
+            if isinstance(tid, str) and isinstance(p8_spec, dict):
+                id_match = P8_TASK_ID_RE.fullmatch(tid)
+                jlevel = p8_spec.get("jurisdiction_level")
+                if id_match and jlevel in {"union", "state", "ut"} and id_match.group(1) != jlevel:
+                    errors.append(
+                        f"{where}.id tier '{id_match.group(1)}' does not match payload.context.sovereign_lies.jurisdiction_level '{jlevel}'."
+                    )
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -649,6 +676,7 @@ def _validation_code_digest() -> str:
         one_teacher_five_grades,
         only_one_bid,
         parliaments_to_do_list,
+        sovereign_lies,
         union_budget,
     )
 
@@ -661,6 +689,7 @@ def _validation_code_digest() -> str:
         one_teacher_five_grades,
         parliaments_to_do_list,
         only_one_bid,
+        sovereign_lies,
     ):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():
