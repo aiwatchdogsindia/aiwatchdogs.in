@@ -549,7 +549,6 @@ export function HomePage({
       <section className="race" aria-label="Projects and their audit progress">
         <div className="race-head">
           <div className="race-head-left">
-            <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={64} height={64} />
             <h2>The projects</h2>
           </div>
           <Link to="/projects" className="race-link">

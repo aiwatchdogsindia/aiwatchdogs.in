@@ -1087,7 +1087,6 @@ export function ObservatoryMap({
       <div className="map-head">
         <div className="map-head-inner">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src="/logo-dark.svg" alt="" className="map-head-logo" width={64} height={64} />
             <span className="kicker" style={{ color: 'var(--obs-mist)' }}>
               Observatory map
             </span>

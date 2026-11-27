@@ -1,8 +1,3 @@
-/* =========================================================================
-   AI Watchdogs · India — Live Swarm Viewer, Live Agent Strip, Hero Live Feed
-   & GitHub Avatar Stylesheet (scoped strictly under .lsv-* classes)
-   Harmonizes with tokens.css (Geist Serif + Geist Mono + Tiranga palette)
-   ========================================================================= */
 
 /* -------------------------------------------------------------------------
    Shared Pulsing Dots
@@ -17,37 +12,37 @@
 }
 
 .lsv-dot--live {
-  background: #22A559;
-  box-shadow: 0 0 0 3px rgba(34, 165, 89, 0.18);
+  background: #7BB091;
+  box-shadow: 0 0 0 3px rgba(123, 176, 145, 0.18);
   animation: lsvBreathe 2.3s ease-in-out infinite;
 }
 
 .lsv-dot--amber {
-  background: var(--flag-saffron, #FF9933);
-  box-shadow: 0 0 0 3px rgba(255, 153, 51, 0.22);
+  background: var(--flag-saffron, #8E6740);
+  box-shadow: 0 0 0 3px rgba(142, 103, 64, 0.22);
   animation: lsvBreatheAmber 2s ease-in-out infinite;
 }
 
 .lsv-dot--offline {
-  background: #B8B2A7;
+  background: #575550;
   box-shadow: none;
 }
 
 @keyframes lsvBreathe {
   0%, 100% {
-    box-shadow: 0 0 0 2px rgba(34, 165, 89, 0.22);
+    box-shadow: 0 0 0 2px rgba(123, 176, 145, 0.22);
   }
   55% {
-    box-shadow: 0 0 0 6px rgba(34, 165, 89, 0);
+    box-shadow: 0 0 0 6px rgba(123, 176, 145, 0);
   }
 }
 
 @keyframes lsvBreatheAmber {
   0%, 100% {
-    box-shadow: 0 0 0 2px rgba(255, 153, 51, 0.25);
+    box-shadow: 0 0 0 2px rgba(142, 103, 64, 0.25);
   }
   55% {
-    box-shadow: 0 0 0 6px rgba(255, 153, 51, 0);
+    box-shadow: 0 0 0 6px rgba(142, 103, 64, 0);
   }
 }
 
@@ -84,7 +79,7 @@
 }
 
 .lsv-avatar--active {
-  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 3.5px #22A559;
+  box-shadow: 0 0 0 2px var(--raised), 0 0 0 3.5px #7BB091;
 }
 
 .lsv-avatar-clip {
@@ -93,8 +88,8 @@
   height: 100%;
   border-radius: 50%;
   overflow: hidden;
-  border: 1px solid rgba(27, 26, 23, 0.08);
-  background: #F4F2EC;
+  border: 1px solid rgba(236, 232, 223, 0.08);
+  background: #191B1F;
   display: block;
 }
 
@@ -127,20 +122,20 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  border: 1.5px solid #FFFFFF;
-  background: #22A559;
+  border: 1.5px solid var(--raised);
+  background: #7BB091;
 }
 
 .lsv-avatar-dot--verifying {
-  background: #138808;
+  background: #96C891;
 }
 
 .lsv-avatar-dot--recent {
-  background: var(--flag-saffron, #FF9933);
+  background: var(--flag-saffron, #8E6740);
 }
 
 .lsv-avatar-dot--idle {
-  background: #B8B2A7;
+  background: #575550;
 }
 
 /* -------------------------------------------------------------------------
@@ -168,11 +163,11 @@
   gap: 10px;
   min-height: 40px;
   padding: 4px 12px 4px 14px;
-  background: #FFFFFF;
-  border: 1px solid #E4E1DA;
+  background: var(--raised);
+  border: 1px solid #282A2D;
   border-radius: var(--r-999, 999px);
-  box-shadow: 0 1px 2px rgba(27, 26, 23, 0.04), 0 4px 14px rgba(27, 26, 23, 0.06);
-  color: #1B1A17;
+  box-shadow: 0 1px 2px rgba(236, 232, 223, 0.04), 0 4px 14px rgba(236, 232, 223, 0.06);
+  color: var(--ink);
   font-family: var(--font-serif);
   font-size: 13.5px;
   line-height: 1.2;
@@ -188,14 +183,14 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #1B1A17;
+  color: var(--ink);
   white-space: nowrap;
   text-decoration: none;
   transition: color 0.15s ease;
 }
 
 .lsv-strip-live-link:hover {
-  color: #0F7306;
+  color: #A2CF9E;
 }
 
 .lsv-strip-live-text strong {
@@ -213,21 +208,21 @@
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: #7D776D;
+  color: #898783;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .lsv-strip-info-btn:hover,
 .lsv-strip-info-btn:focus-visible {
-  color: #1B1A17;
-  background: #F2EFEA;
+  color: var(--ink);
+  background: #1B1D21;
   outline: none;
 }
 
 .lsv-strip-sep {
   width: 1px;
   height: 20px;
-  background: #E6E3DC;
+  background: var(--rule);
   flex-shrink: 0;
 }
 
@@ -238,7 +233,7 @@
   padding: 4px 4px 4px 2px;
   border: none;
   background: transparent;
-  color: #1B1A17;
+  color: var(--ink);
   font-family: var(--font-serif);
   font-size: 13.5px;
   font-weight: 500;
@@ -248,28 +243,28 @@
 }
 
 .lsv-strip-copy-btn:hover {
-  color: #0F7306;
+  color: #A2CF9E;
 }
 
 .lsv-strip-copy-btn:focus-visible {
-  outline: 2px solid #1B1A17;
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 
 .lsv-strip-copy-btn.is-copied {
-  color: #0F7306;
+  color: #A2CF9E;
 }
 
 .lsv-strip-copy-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #6B665C;
+  color: #989692;
   transition: color 0.15s ease;
 }
 
 .lsv-strip-copy-btn:hover .lsv-strip-copy-icon {
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 /* Floating Popover under Strip Pill */
@@ -278,30 +273,30 @@
   left: 0;
   top: calc(100% + 10px);
   width: min(410px, calc(100vw - 32px));
-  background: #FFFFFF;
-  border: 1px solid #D5D0C6;
+  background: var(--raised);
+  border: 1px solid #3D3B37;
   border-radius: var(--r-14, 14px);
-  box-shadow: var(--shadow-pop, 0 8px 28px rgba(27, 26, 23, 0.12));
+  box-shadow: var(--shadow-pop, 0 8px 28px rgba(236, 232, 223, 0.12));
   padding: 15px 16px;
   z-index: 50;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-strip-popover-title {
   font-size: 11.5px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #6E685D;
+  color: #979490;
 }
 
 .lsv-strip-popover-body {
   margin: 0;
   font-size: 13.5px;
   line-height: 1.5;
-  color: #3F3B34;
+  color: #BCBAB7;
 }
 
 .lsv-strip-popover-code {
@@ -309,10 +304,10 @@
   font-size: 11.5px;
   line-height: 1.5;
   padding: 9px 11px;
-  background: #FAF9F6;
-  border: 1px solid #E6E3DC;
+  background: #131518;
+  border: 1px solid var(--rule);
   border-radius: var(--r-8, 8px);
-  color: #1B1A17;
+  color: var(--ink);
   word-break: break-word;
   overflow-wrap: anywhere;
   max-width: 100%;
@@ -337,13 +332,13 @@
   border: none;
   padding: 0;
   font-size: 12.5px;
-  color: #575249;
+  color: #A9A7A3;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
 .lsv-text-btn:hover {
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 /* Scrollable @handle Joined Pills */
@@ -357,8 +352,8 @@
   scrollbar-width: none;
   padding: 2px 44px 2px 2px;
   cursor: grab;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #EBEBEB calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, #EBEBEB calc(100% - 48px), transparent);
 }
 
 .lsv-strip-joins::-webkit-scrollbar {
@@ -375,12 +370,12 @@
   gap: 7px;
   padding: 4px 12px 4px 5px;
   min-height: 34px;
-  background: #FFFFFF;
-  border: 1px solid #E6E3DC;
+  background: var(--raised);
+  border: 1px solid var(--rule);
   border-radius: var(--r-999, 999px);
   font-size: 12.5px;
   line-height: 1.2;
-  color: #1B1A17;
+  color: var(--ink);
   white-space: nowrap;
   flex-shrink: 0;
   text-decoration: none;
@@ -388,31 +383,31 @@
 }
 
 .lsv-join-chip:hover {
-  border-color: #1B1A17;
-  box-shadow: 0 2px 8px rgba(27, 26, 23, 0.06);
+  border-color: var(--ink);
+  box-shadow: 0 2px 8px rgba(236, 232, 223, 0.06);
   transform: translateY(-1px);
 }
 
 .lsv-join-chip.is-working {
-  border-color: #B9DFB4;
+  border-color: #364734;
 }
 
 .lsv-join-chip--invite {
   border-style: dashed;
-  border-color: #C9C3B5;
-  background: rgba(255, 255, 255, 0.8);
+  border-color: #4B4842;
+  background: rgba(12, 13, 15, 0.8);
   padding-left: 11px;
 }
 
 .lsv-join-handle {
   font-weight: 600;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-join-time {
   font-family: var(--font-code);
   font-size: 11.5px;
-  color: #7D776D;
+  color: #898783;
 }
 
 /* -------------------------------------------------------------------------
@@ -424,7 +419,7 @@
   gap: 14px;
   width: 100%;
   min-width: 0;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-feed-header {
@@ -448,15 +443,15 @@
   font-weight: 500;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: #6E685D;
+  color: #979490;
 }
 
 .lsv-feed-active-badge {
   font-family: var(--font-code);
   font-size: 11px;
-  color: #0F7306;
-  background: #EAF6E8;
-  border: 1px solid #C2E3BE;
+  color: #A2CF9E;
+  background: #1A1C20;
+  border: 1px solid #31363E;
   border-radius: var(--r-999, 999px);
   padding: 2px 8px;
 }
@@ -478,16 +473,16 @@
 }
 
 .lsv-feed-card--featured {
-  background: #FFFFFF;
-  border: 1px solid #E5E1D9;
+  background: var(--raised);
+  border: 1px solid var(--rule);
   border-radius: var(--r-12, 12px);
   padding: 15px 16px 40px;
-  box-shadow: 0 1px 3px rgba(27, 26, 23, 0.04);
+  box-shadow: 0 1px 3px rgba(236, 232, 223, 0.04);
 }
 
 .lsv-feed-card--featured:hover {
-  border-color: #CFC9BE;
-  box-shadow: 0 4px 14px rgba(27, 26, 23, 0.06);
+  border-color: #44413C;
+  box-shadow: 0 4px 14px rgba(236, 232, 223, 0.06);
 }
 
 .lsv-feed-card--stream {
@@ -497,8 +492,8 @@
 }
 
 .lsv-feed-card--stream:hover {
-  background: rgba(255, 255, 255, 0.72);
-  border-color: #EAE6DE;
+  background: rgba(12, 13, 15, 0.72);
+  border-color: #23262A;
 }
 
 .lsv-feed-meta {
@@ -509,7 +504,7 @@
   font-family: var(--font-code);
   font-size: 11.5px;
   line-height: 1.3;
-  color: #7D776D;
+  color: #898783;
 }
 
 .lsv-feed-route {
@@ -521,7 +516,7 @@
 }
 
 .lsv-feed-handle {
-  color: #575249;
+  color: #A9A7A3;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -531,17 +526,17 @@
 }
 
 .lsv-feed-handle:hover {
-  color: #1B1A17;
+  color: var(--ink);
   text-decoration: underline;
 }
 
 .lsv-feed-arrow {
-  color: #ACA69B;
+  color: #615F5B;
   flex-shrink: 0;
 }
 
 .lsv-feed-target {
-  color: #7D776D;
+  color: #898783;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -551,11 +546,11 @@
 .lsv-feed-time {
   flex-shrink: 0;
   white-space: nowrap;
-  color: #8A8479;
+  color: #7E7C78;
 }
 
 .lsv-feed-time.is-fresh {
-  color: #138808;
+  color: #96C891;
   font-weight: 500;
 }
 
@@ -564,7 +559,7 @@
   font-family: var(--font-serif);
   font-size: 14.5px;
   line-height: 1.5;
-  color: #1B1A17;
+  color: var(--ink);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
@@ -583,14 +578,14 @@
   gap: 5px;
   padding: 5px 11px;
   border-radius: var(--r-999, 999px);
-  background: #1B1A17;
-  color: #FFFFFF;
+  background: var(--ink);
+  color: var(--raised);
   font-family: var(--font-serif);
   font-size: 11.5px;
   font-weight: 500;
   line-height: 1.2;
   text-decoration: none;
-  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.18);
+  box-shadow: 0 2px 10px rgba(236, 232, 223, 0.18);
   transition: opacity 0.16s ease, transform 0.16s ease, background-color 0.15s ease;
 }
 
@@ -612,13 +607,13 @@
 }
 
 .lsv-feed-hub-pill:hover {
-  background: #0F7306;
-  color: #FFFFFF;
+  background: #A2CF9E;
+  color: var(--raised);
 }
 
 .lsv-feed-footer-link {
   padding-top: 12px;
-  border-top: 1px solid #E6E3DC;
+  border-top: 1px solid var(--rule);
 }
 
 .lsv-feed-viewer-link {
@@ -628,7 +623,7 @@
   font-family: var(--font-serif);
   font-size: 14.5px;
   font-weight: 500;
-  color: #1B1A17;
+  color: var(--ink);
   text-decoration: underline;
   text-decoration-thickness: 1.5px;
   text-underline-offset: 4px;
@@ -636,7 +631,7 @@
 }
 
 .lsv-feed-viewer-link:hover {
-  color: #0F7306;
+  color: #A2CF9E;
 }
 
 /* Auditing Progress Bar */
@@ -659,7 +654,7 @@
   font-family: var(--font-serif);
   font-size: 14.5px;
   font-weight: 600;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-progress-info-btn {
@@ -672,14 +667,14 @@
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: #8A8479;
+  color: #7E7C78;
   transition: color 0.15s ease, background-color 0.15s ease;
 }
 
 .lsv-progress-info-btn:hover,
 .lsv-progress-info-btn:focus-visible {
-  color: #1B1A17;
-  background: #F2EFEA;
+  color: var(--ink);
+  background: #1B1D21;
   outline: none;
 }
 
@@ -687,11 +682,11 @@
   font-size: 12px;
   line-height: 1.45;
   padding: 9px 11px;
-  background: #FFFFFF;
-  border: 1px solid #DDD8CE;
+  background: var(--raised);
+  border: 1px solid #2F3236;
   border-radius: var(--r-8, 8px);
-  color: #4A463E;
-  box-shadow: 0 3px 12px rgba(27, 26, 23, 0.08);
+  color: #B3B1AD;
+  box-shadow: 0 3px 12px rgba(236, 232, 223, 0.08);
 }
 
 .lsv-progress-bar-wrap {
@@ -704,21 +699,21 @@
   width: 100%;
   height: 12px;
   border-radius: 4px;
-  background: #E7E3DA;
+  background: #26292D;
   display: flex;
   overflow: visible;
 }
 
 .lsv-progress-fill {
   height: 100%;
-  background: #1B1A17;
+  background: var(--ink);
   border-radius: 4px 0 0 4px;
   transition: width 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .lsv-progress-active {
   height: 100%;
-  background: #FF9933;
+  background: #8E6740;
   opacity: 0.72;
   transition: width 0.45s ease;
 }
@@ -729,7 +724,7 @@
   width: 2.5px;
   height: 22px;
   border-radius: 2px;
-  background: #C2412D;
+  background: #A16E67;
   transform: translateX(-50%);
   transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -742,11 +737,11 @@
   flex-wrap: wrap;
   font-family: var(--font-serif);
   font-size: 12.5px;
-  color: #7D776D;
+  color: #898783;
 }
 
 .lsv-progress-labels strong {
-  color: #1B1A17;
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -783,7 +778,7 @@
   font-size: clamp(28px, 3vw, 40px);
   line-height: 1.06;
   letter-spacing: -0.015em;
-  color: var(--ink, #1B1A17);
+  color: var(--ink, var(--ink));
 }
 
 .lsv-freshness {
@@ -792,7 +787,7 @@
   gap: 7px;
   font-family: var(--font-code);
   font-size: 12px;
-  color: var(--ink-4, #6E685D);
+  color: var(--ink-4, #979490);
 }
 
 .lsv-freshness-text {
@@ -808,24 +803,21 @@
 .lsv-summary-stat {
   font-family: var(--font-code);
   font-size: 12.5px;
-  color: var(--ink-3, #575249);
+  color: var(--ink-3, #A9A7A3);
 }
 
-/* Radial Stage Container (always luminous warm ivory surface even inside saffron zone) */
 .lsv-stage {
   position: relative;
   width: 100%;
   min-height: 580px;
   border-radius: var(--r-20, 20px);
-  border: 1px solid #E3DFD7;
+  border: 1px solid #2A2C30;
   background:
-    radial-gradient(46% 52% at 20% 34%, rgba(242, 189, 170, 0.28) 0%, rgba(242, 189, 170, 0) 72%),
-    radial-gradient(42% 46% at 82% 68%, rgba(235, 228, 188, 0.30) 0%, rgba(235, 228, 188, 0) 74%),
-    radial-gradient(36% 42% at 50% 50%, rgba(255, 241, 224, 0.50) 0%, rgba(255, 241, 224, 0) 70%),
-    #FDFCF9;
+    radial-gradient(60% 60% at 50% 50%, rgba(236, 232, 223, 0.035) 0%, rgba(236, 232, 223, 0) 70%),
+    #0F1113;
   overflow: hidden;
-  color: #1B1A17;
-  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.03);
+  color: var(--ink);
+  box-shadow: 0 2px 10px rgba(236, 232, 223, 0.03);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -873,12 +865,12 @@
   width: 96px;
   height: 96px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(27, 26, 23, 0.14);
+  background: rgba(12, 13, 15, 0.86);
+  border: 1px solid rgba(236, 232, 223, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 18px rgba(27, 26, 23, 0.07);
+  box-shadow: 0 4px 18px rgba(236, 232, 223, 0.07);
 }
 
 .lsv-root .lsv-stage.is-two-ring .lsv-hub-rings {
@@ -891,7 +883,7 @@
   position: absolute;
   inset: 7px;
   border-radius: 50%;
-  border: 1px solid rgba(27, 26, 23, 0.10);
+  border: 1px solid rgba(236, 232, 223, 0.10);
 }
 
 .lsv-hub-rings.is-pulsing::after {
@@ -899,7 +891,7 @@
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  border: 1.5px solid rgba(34, 165, 89, 0.50);
+  border: 1.5px solid rgba(123, 176, 145, 0.50);
   animation: lsvHubPulse 2.6s ease-out infinite;
 }
 
@@ -909,14 +901,14 @@
   width: 62px;
   height: 62px;
   border-radius: 50%;
-  background: #181715;
-  color: #FFFFFF;
+  background: #D8D8D6;
+  color: var(--raised);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(12, 13, 15, 0.12);
 }
 
 .lsv-root .lsv-stage.is-two-ring .lsv-hub-disc {
@@ -930,13 +922,13 @@
   font-weight: 600;
   letter-spacing: 0.16em;
   line-height: 1.1;
-  color: #FFFFFF;
+  color: var(--raised);
 }
 
 .lsv-hub-count {
   font-family: var(--font-code);
   font-size: 8.5px;
-  color: #7EE081;
+  color: #416842;
   letter-spacing: 0.04em;
 }
 
@@ -950,14 +942,14 @@
   gap: 5px;
   padding: 4px 12px;
   border-radius: var(--r-999, 999px);
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(12, 13, 15, 0.94);
   backdrop-filter: blur(6px);
-  border: 1px solid #E3DFD7;
-  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.06);
+  border: 1px solid #2A2C30;
+  box-shadow: 0 2px 10px rgba(236, 232, 223, 0.06);
   font-family: var(--font-code);
   font-size: 11px;
   line-height: 1.3;
-  color: #575249;
+  color: #A9A7A3;
   white-space: nowrap;
   max-width: 260px;
   overflow: hidden;
@@ -977,7 +969,7 @@
 }
 
 .lsv-hub-pill.is-clickable:hover {
-  border-color: #1B1A17;
+  border-color: var(--ink);
   transform: translate(-50%, -1px);
 }
 
@@ -986,25 +978,25 @@
 }
 
 .lsv-hub-pill--emerald .lsv-hub-pill-verb {
-  color: #138808;
+  color: #96C891;
 }
 
 .lsv-hub-pill--saffron .lsv-hub-pill-verb {
-  color: #A84F00;
+  color: #C6A07F;
 }
 
 .lsv-hub-pill--neutral .lsv-hub-pill-verb {
-  color: #3F3B34;
+  color: #BCBAB7;
 }
 
 .lsv-hub-pill-target {
-  color: #1B1A17;
+  color: var(--ink);
   font-weight: 500;
 }
 
 .lsv-hub-pill-sep,
 .lsv-hub-pill-time {
-  color: #8A8479;
+  color: #7E7C78;
 }
 
 /* Orbiting Agent Cards (Desktop) */
@@ -1019,8 +1011,8 @@
   width: min(var(--lsv-card-w, 212px), var(--lsv-card-w-pct, 23.2%));
   transform: translate(-50%, -50%);
   pointer-events: auto;
-  background: #FFFFFF;
-  border: 1px solid rgba(27, 26, 23, 0.09);
+  background: var(--raised);
+  border: 1px solid rgba(236, 232, 223, 0.09);
   border-radius: var(--r-14, 14px);
   padding: 12px 14px;
   text-align: left;
@@ -1028,8 +1020,8 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  color: #1B1A17;
-  box-shadow: 0 2px 6px rgba(27, 26, 23, 0.04), 0 8px 22px rgba(27, 26, 23, 0.06);
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(236, 232, 223, 0.04), 0 8px 22px rgba(236, 232, 223, 0.06);
   transition:
     border-color 0.16s ease,
     box-shadow 0.18s ease,
@@ -1106,62 +1098,62 @@
 }
 
 .lsv-root .lsv-stage .lsv-card.is-live-ready {
-  border-color: rgba(42, 140, 85, 0.24);
-  background: linear-gradient(180deg, #FFFFFF 0%, #FBFDFB 100%);
+  border-color: rgba(136, 177, 154, 0.24);
+  background: linear-gradient(180deg, var(--raised) 0%, #101214 100%);
 }
 
 .lsv-root .lsv-stage .lsv-card:hover {
-  border-color: rgba(27, 26, 23, 0.32);
-  box-shadow: 0 4px 12px rgba(27, 26, 23, 0.08), 0 12px 28px rgba(27, 26, 23, 0.09);
+  border-color: rgba(236, 232, 223, 0.32);
+  box-shadow: 0 4px 12px rgba(236, 232, 223, 0.08), 0 12px 28px rgba(236, 232, 223, 0.09);
   transform: translate(-50%, calc(-50% - 2px));
   z-index: 9;
 }
 
 .lsv-root .lsv-stage .lsv-card:focus-visible {
-  outline: 2px solid #1B1A17;
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
   z-index: 10;
 }
 
 .lsv-root .lsv-stage .lsv-card.is-selected {
-  border-color: var(--lsv-role-color, #1B1A17);
+  border-color: var(--lsv-role-color, var(--ink));
   box-shadow:
     0 0 0 2px rgba(var(--lsv-role-rgb, 27, 26, 23), 0.18),
-    0 8px 26px rgba(27, 26, 23, 0.11);
+    0 8px 26px rgba(236, 232, 223, 0.11);
   z-index: 10;
 }
 
 .lsv-root .lsv-stage .lsv-card.is-idle {
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(12, 13, 15, 0.92);
 }
 
 .lsv-root .lsv-stage .lsv-card--invite {
-  border: 1.5px dashed #C7C0B3;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 2px 8px rgba(27, 26, 23, 0.03);
+  border: 1.5px dashed #4C4944;
+  background: rgba(12, 13, 15, 0.84);
+  box-shadow: 0 2px 8px rgba(236, 232, 223, 0.03);
 }
 
 .lsv-root .lsv-stage .lsv-card--invite:hover {
   border-style: solid;
-  border-color: #1B1A17;
-  background: #FFFFFF;
+  border-color: var(--ink);
+  background: var(--raised);
 }
 
 .lsv-root .lsv-stage .lsv-card--invite.is-copied {
   border-style: solid;
-  border-color: #138808;
-  background: #F4FBF3;
+  border-color: #96C891;
+  background: #131619;
 }
 
 .lsv-root .lsv-stage .lsv-card--standby {
-  border: 1px dashed #D9D3C7;
-  background: rgba(255, 255, 255, 0.68);
+  border: 1px dashed #34373C;
+  background: rgba(12, 13, 15, 0.68);
   box-shadow: none;
 }
 
 .lsv-root .lsv-stage .lsv-card--standby:hover {
-  background: rgba(255, 255, 255, 0.94);
-  border-color: #8A8479;
+  background: rgba(12, 13, 15, 0.94);
+  border-color: #7E7C78;
 }
 
 .lsv-card-head {
@@ -1176,7 +1168,7 @@
   height: 9px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: #9E978B;
+  background: #6F6C67;
 }
 
 .lsv-role-dot.is-pulsing {
@@ -1184,18 +1176,18 @@
 }
 
 .lsv-role-dot--invite {
-  background: var(--flag-saffron, #FF9933);
+  background: var(--flag-saffron, #8E6740);
 }
 
 .lsv-role-dot--idle {
-  background: #C4BEB3;
+  background: #4D4A46;
 }
 
 .lsv-card-handle {
   font-family: var(--font-code);
   font-size: 13px;
   font-weight: 600;
-  color: #1B1A17;
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1209,7 +1201,7 @@
   font-family: var(--font-serif);
   font-size: 12px;
   line-height: 1.3;
-  color: #6B655B;
+  color: #999692;
   min-width: 0;
 }
 
@@ -1234,13 +1226,13 @@
   font-family: var(--font-serif);
   font-size: 12.5px;
   line-height: 1.3;
-  color: #1B1A17;
+  color: var(--ink);
   min-width: 0;
   margin-top: 2px;
 }
 
 .lsv-card-activity--cta {
-  color: #0F7306;
+  color: #A2CF9E;
   font-weight: 500;
 }
 
@@ -1258,7 +1250,7 @@
   gap: 8px;
   font-family: var(--font-code);
   font-size: 11px;
-  color: #8A8479;
+  color: #7E7C78;
   margin-top: 2px;
 }
 
@@ -1266,7 +1258,7 @@
   width: 44px;
   height: 4px;
   border-radius: 999px;
-  background: #ECE8E0;
+  background: #212428;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -1289,12 +1281,12 @@
   gap: 12px;
   padding: 5px 11px;
   border-radius: var(--r-999, 999px);
-  background: rgba(255, 255, 255, 0.78);
+  background: rgba(12, 13, 15, 0.78);
   backdrop-filter: blur(4px);
-  border: 1px solid rgba(27, 26, 23, 0.08);
+  border: 1px solid rgba(236, 232, 223, 0.08);
   font-family: var(--font-code);
   font-size: 10.5px;
-  color: #6B655B;
+  color: #999692;
 }
 
 .lsv-legend-item {
@@ -1319,28 +1311,28 @@
   align-items: center;
   gap: 7px;
   padding: 7px 14px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(12, 13, 15, 0.92);
   backdrop-filter: blur(6px);
-  border: 1px dashed #B9B2A5;
+  border: 1px dashed #585550;
   border-radius: var(--r-999, 999px);
   font-family: var(--font-serif);
   font-size: 12.5px;
   font-weight: 500;
-  color: #2C2924;
-  box-shadow: 0 2px 10px rgba(27, 26, 23, 0.06);
+  color: #CAC9C6;
+  box-shadow: 0 2px 10px rgba(236, 232, 223, 0.06);
   transition: border-color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
 }
 
 .lsv-more-pill:hover,
 .lsv-more-pill.is-open {
   border-style: solid;
-  border-color: #1B1A17;
-  background: #FFFFFF;
+  border-color: var(--ink);
+  background: var(--raised);
   transform: translateY(-1px);
 }
 
 .lsv-more-dots {
-  color: #8A8479;
+  color: #7E7C78;
   letter-spacing: 0.06em;
   font-size: 11px;
 }
@@ -1351,11 +1343,11 @@
   flex-direction: column;
   gap: 10px;
   padding: 13px 16px;
-  background: #FDFCF9;
-  border: 1px solid #E3DFD7;
+  background: #101215;
+  border: 1px solid #2A2C30;
   border-radius: var(--r-16, 16px);
-  color: #1B1A17;
-  box-shadow: 0 2px 8px rgba(27, 26, 23, 0.03);
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(236, 232, 223, 0.03);
 }
 
 .lsv-live-overflow-head {
@@ -1375,13 +1367,13 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-live-overflow-note {
   font-family: var(--font-code);
   font-size: 11px;
-  color: #6B655B;
+  color: #999692;
 }
 
 .lsv-live-overflow-grid {
@@ -1395,31 +1387,31 @@
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  background: #FFFFFF;
-  border: 1px solid rgba(27, 26, 23, 0.09);
-  border-left: 3px solid var(--lsv-role-color, #2A8C55);
+  background: var(--raised);
+  border: 1px solid rgba(236, 232, 223, 0.09);
+  border-left: 3px solid var(--lsv-role-color, #88B19A);
   border-radius: var(--r-12, 12px);
   text-align: left;
-  color: #1B1A17;
+  color: var(--ink);
   min-width: 0;
-  box-shadow: 0 1px 4px rgba(27, 26, 23, 0.04);
+  box-shadow: 0 1px 4px rgba(236, 232, 223, 0.04);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.14s ease;
 }
 
 .lsv-live-overflow-card:hover {
-  border-color: rgba(27, 26, 23, 0.3);
-  border-left-color: var(--lsv-role-color, #2A8C55);
-  box-shadow: 0 3px 10px rgba(27, 26, 23, 0.07);
+  border-color: rgba(236, 232, 223, 0.3);
+  border-left-color: var(--lsv-role-color, #88B19A);
+  box-shadow: 0 3px 10px rgba(236, 232, 223, 0.07);
   transform: translateY(-1px);
 }
 
 .lsv-live-overflow-card.is-selected {
-  border-color: var(--lsv-role-color, #1B1A17);
+  border-color: var(--lsv-role-color, var(--ink));
   box-shadow: 0 0 0 2px rgba(var(--lsv-role-rgb, 27, 26, 23), 0.16);
 }
 
 .lsv-live-overflow-card.is-live-ready {
-  background: linear-gradient(180deg, #FFFFFF 0%, #FBFDFB 100%);
+  background: linear-gradient(180deg, var(--raised) 0%, #101214 100%);
 }
 
 /* Selected Agent Inspector Strip */
@@ -1430,11 +1422,11 @@
   gap: 16px;
   flex-wrap: wrap;
   padding: 15px 18px;
-  background: #FFFFFF;
-  border: 1px solid #DDD8CE;
+  background: var(--raised);
+  border: 1px solid #2F3236;
   border-radius: var(--r-14, 14px);
-  box-shadow: 0 3px 14px rgba(27, 26, 23, 0.06);
-  color: #1B1A17;
+  box-shadow: 0 3px 14px rgba(236, 232, 223, 0.06);
+  color: var(--ink);
 }
 
 .lsv-inspector-main {
@@ -1463,7 +1455,7 @@
   font-family: var(--font-code);
   font-size: 14px;
   font-weight: 600;
-  color: #1B1A17;
+  color: var(--ink);
   overflow-wrap: anywhere;
 }
 
@@ -1478,15 +1470,15 @@
 }
 
 .lsv-status-badge.is-live {
-  background: #EBF7EA;
-  border: 1px solid #BDE2B8;
-  color: #0F7306;
+  background: #191B1F;
+  border: 1px solid #334431;
+  color: #A2CF9E;
 }
 
 .lsv-status-badge.is-recent {
-  background: #F4F2ED;
-  border: 1px solid #DDD8CE;
-  color: #575249;
+  background: #191B1E;
+  border: 1px solid #2F3236;
+  color: #A9A7A3;
 }
 
 .lsv-inspector-whisper {
@@ -1494,7 +1486,7 @@
   font-family: var(--font-serif);
   font-size: 14px;
   line-height: 1.48;
-  color: #2A2620;
+  color: #CDCBC8;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -1506,7 +1498,7 @@
   flex-wrap: wrap;
   font-family: var(--font-code);
   font-size: 11.5px;
-  color: #7D776D;
+  color: #898783;
 }
 
 .lsv-inspector-actions {
@@ -1522,8 +1514,8 @@
   gap: 6px;
   padding: 7px 13px;
   border-radius: var(--r-999, 999px);
-  background: #1B1A17;
-  color: #FFFFFF;
+  background: var(--ink);
+  color: var(--raised);
   font-family: var(--font-serif);
   font-size: 13px;
   font-weight: 500;
@@ -1532,8 +1524,8 @@
 }
 
 .lsv-inspector-profile-link:hover {
-  background: #0F7306;
-  color: #FFFFFF;
+  background: #A2CF9E;
+  color: var(--raised);
 }
 
 .lsv-inspector-close {
@@ -1543,26 +1535,26 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid #E6E3DC;
+  border: 1px solid var(--rule);
   background: transparent;
-  color: #6E685D;
+  color: #979490;
 }
 
 .lsv-inspector-close:hover {
-  border-color: #1B1A17;
-  color: #1B1A17;
+  border-color: var(--ink);
+  color: var(--ink);
 }
 
 /* Expandable Live Roster Drawer */
 .lsv-roster {
-  background: #FFFFFF;
-  border: 1px solid #E3DFD7;
+  background: var(--raised);
+  border: 1px solid #2A2C30;
   border-radius: var(--r-16, 16px);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-roster-head {
@@ -1577,7 +1569,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #1B1A17;
+  color: var(--ink);
 }
 
 .lsv-roster-title-row h3 {
@@ -1592,7 +1584,7 @@
   gap: 4px;
   padding: 3px;
   border-radius: var(--r-8, 8px);
-  background: #F4F2ED;
+  background: #191B1E;
 }
 
 .lsv-roster-tab {
@@ -1602,13 +1594,13 @@
   border-radius: var(--r-6, 6px);
   font-family: var(--font-serif);
   font-size: 12.5px;
-  color: #575249;
+  color: #A9A7A3;
   transition: background-color 0.14s ease, color 0.14s ease;
 }
 
 .lsv-roster-tab.is-active {
-  background: #1B1A17;
-  color: #FFFFFF;
+  background: var(--ink);
+  color: var(--raised);
 }
 
 .lsv-roster-grid {
@@ -1622,19 +1614,19 @@
   flex-direction: column;
   gap: 5px;
   padding: 12px 14px;
-  background: #FDFCF9;
-  border: 1px solid #EAE6DE;
+  background: #101215;
+  border: 1px solid #23262A;
   border-radius: var(--r-12, 12px);
   text-decoration: none;
-  color: #1B1A17;
+  color: var(--ink);
   min-width: 0;
   overflow: hidden;
   transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
 .lsv-roster-card:hover {
-  border-color: #1B1A17;
-  background: #FFFFFF;
+  border-color: var(--ink);
+  background: var(--raised);
 }
 
 .lsv-roster-card-top {
@@ -1654,7 +1646,7 @@
 .lsv-roster-seen {
   font-family: var(--font-code);
   font-size: 10.5px;
-  color: #8A8479;
+  color: #7E7C78;
   flex-shrink: 0;
 }
 
@@ -1666,7 +1658,7 @@
   gap: 8px;
   padding: 20px;
   font-size: 13.5px;
-  color: #7D776D;
+  color: #898783;
 }
 
 /* Mobile Card Grid (hidden on desktop, active <= 860px) */
@@ -1806,8 +1798,8 @@
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  background: var(--raised, #FFFFFF);
-  border: 1px solid var(--rule, #E6E3DC);
+  background: var(--raised, var(--raised));
+  border: 1px solid var(--rule, var(--rule));
   border-radius: var(--r-10, 10px);
   min-width: 0;
   max-width: 100%;
@@ -1838,7 +1830,7 @@
   flex: 1 1 auto;
   min-width: 0;
   min-height: 44px;
-  color: var(--public, #3F3B34);
+  color: var(--public, #BCBAB7);
   font-weight: 600;
   text-decoration: none;
 }
@@ -1847,14 +1839,14 @@
   font-family: var(--font-code);
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--ink, #1B1A17);
+  color: var(--ink, var(--ink));
   overflow-wrap: anywhere;
 }
 
 .lsv-fleet-card-time {
   font-family: var(--font-code);
   font-size: 11.5px;
-  color: var(--ink-3, #575249);
+  color: var(--ink-3, #A9A7A3);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -1870,7 +1862,7 @@
 .lsv-fleet-card-region {
   font-family: var(--font-code);
   font-size: 11px;
-  color: var(--ink-4, #635E54);
+  color: var(--ink-4, #9F9D99);
 }
 
 .lsv-fleet-card-metrics {
@@ -1879,14 +1871,14 @@
   justify-content: space-between;
   gap: 12px;
   padding-top: 8px;
-  border-top: 1px solid var(--rule-soft, #EEEEEE);
+  border-top: 1px solid var(--rule-soft, var(--rule-soft));
   font-family: var(--font-code);
   font-size: 12.5px;
-  color: var(--ink-3, #575249);
+  color: var(--ink-3, #A9A7A3);
 }
 
 .lsv-fleet-card-metrics strong {
-  color: var(--ink, #1B1A17);
+  color: var(--ink, var(--ink));
   font-weight: 600;
 }
 
@@ -1896,7 +1888,7 @@
   gap: 8px;
   font-family: var(--font-code);
   font-size: 11.5px;
-  color: var(--ink-3, #575249);
+  color: var(--ink-3, #A9A7A3);
   white-space: nowrap;
 }
 
@@ -1911,9 +1903,9 @@
   font-family: var(--font-serif);
   font-size: 15px;
   line-height: 1.38;
-  color: var(--ink, #1B1A17);
+  color: var(--ink, var(--ink));
   text-decoration: underline;
-  text-decoration-color: var(--rule-strong, #D3CFC5);
+  text-decoration-color: var(--rule-strong, var(--rule-strong));
   text-underline-offset: 3px;
   overflow-wrap: anywhere;
 }
@@ -1922,7 +1914,7 @@
   font-family: var(--font-serif);
   font-size: 15px;
   line-height: 1.38;
-  color: var(--ink, #1B1A17);
+  color: var(--ink, var(--ink));
   overflow-wrap: anywhere;
 }
 
@@ -1933,7 +1925,7 @@
   gap: 8px;
   flex-wrap: wrap;
   padding-top: 8px;
-  border-top: 1px solid var(--rule-soft, #EEEEEE);
+  border-top: 1px solid var(--rule-soft, var(--rule-soft));
   min-width: 0;
 }
 
@@ -1944,19 +1936,19 @@
   font-family: var(--font-code);
   font-size: 12.5px;
   font-weight: 600;
-  color: var(--public, #3F3B34);
+  color: var(--public, #BCBAB7);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
 
 .lsv-mobile-empty {
   padding: 20px 16px;
-  background: var(--raised, #FFFFFF);
-  border: 1px dashed var(--rule-strong, #D3CFC5);
+  background: var(--raised, var(--raised));
+  border: 1px dashed var(--rule-strong, var(--rule-strong));
   border-radius: var(--r-8, 8px);
   text-align: center;
   font-size: 13.5px;
-  color: var(--ink-3, #575249);
+  color: var(--ink-3, #A9A7A3);
   overflow-wrap: anywhere;
 }
 
@@ -2132,13 +2124,13 @@
     width: 100%;
     min-height: 44px;
     overflow: hidden;
-    background: #FFFFFF;
-    border: 1px solid #E5E1D9;
-    border-left: 3px solid var(--lsv-role-color, #9E978B);
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    border-left: 3px solid var(--lsv-role-color, #6F6C67);
     border-radius: var(--r-12, 12px);
     text-align: left;
-    color: #1B1A17;
-    box-shadow: 0 2px 8px rgba(27, 26, 23, 0.04);
+    color: var(--ink);
+    box-shadow: 0 2px 8px rgba(236, 232, 223, 0.04);
   }
 
   .lsv-mob-card .lsv-card-head,
@@ -2169,14 +2161,14 @@
   }
 
   .lsv-mob-card.is-selected {
-    border-color: var(--lsv-role-color, #1B1A17);
+    border-color: var(--lsv-role-color, var(--ink));
   }
 
   .lsv-mob-card--invite {
     border-style: dashed;
     border-left-style: dashed;
-    border-color: #C7C0B3;
-    background: rgba(255, 255, 255, 0.85);
+    border-color: #4C4944;
+    background: rgba(12, 13, 15, 0.85);
   }
 
   .lsv-mob-card--invite:last-child:nth-child(odd) {
@@ -2243,9 +2235,9 @@
     min-width: 0;
     min-height: 44px;
     padding: 9px 14px;
-    border-top: 1px solid #ECE9E2;
+    border-top: 1px solid #212427;
     border-radius: 0;
-    background: #FAF9F6;
+    background: #131518;
     justify-content: flex-start;
     white-space: normal;
     text-align: left;
@@ -2292,8 +2284,8 @@
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
     padding: 2px 32px 2px 0;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    -webkit-mask-image: linear-gradient(to right, #EBEBEB calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #EBEBEB calc(100% - 28px), transparent);
   }
 
   .lsv-strip-joins.is-empty {
@@ -2393,7 +2385,7 @@
     align-items: center;
     gap: 10px;
     padding-top: 10px;
-    border-top: 1px solid #ECE9E2;
+    border-top: 1px solid #212427;
   }
 
   .lsv-inspector-profile-link {

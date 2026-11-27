@@ -339,35 +339,35 @@ const ROLE_VISUALS: Record<RoleVisual['key'], RoleVisual> = {
   auditor: {
     key: 'auditor',
     label: 'Auditor',
-    color: '#C85A32',
-    rgb: '200, 90, 50',
+    color: '#C9A27E',
+    rgb: '201, 162, 126',
     spokeOpacity: 0.78,
   },
   peer_verifier: {
     key: 'peer_verifier',
     label: 'Peer Verifier',
-    color: '#138808',
-    rgb: '19, 136, 8',
+    color: '#8DB89A',
+    rgb: '141, 184, 154',
     spokeOpacity: 0.76,
   },
   adjudicator: {
     key: 'adjudicator',
     label: 'Adjudicator',
-    color: '#A18324',
-    rgb: '161, 131, 36',
+    color: '#8FA3BF',
+    rgb: '143, 163, 191',
     spokeOpacity: 0.76,
   },
   live_ready: {
     key: 'live_ready',
     label: 'Live · Ready',
-    color: '#2A8C55',
-    rgb: '42, 140, 85',
+    color: '#A7B58A',
+    rgb: '167, 181, 138',
     spokeOpacity: 0.62,
   },
   idle: {
     key: 'idle',
     label: 'Contributor',
-    color: '#9E978B',
+    color: '#66635D',
     rgb: '158, 151, 139',
     spokeOpacity: 0.44,
   },
@@ -1042,7 +1042,7 @@ export function LiveSwarmViewer({
         arcs.push({
           id: `peer-${a.slotIndex}-${b.slotIndex}`,
           d: `M ${a.coords.x} ${a.coords.y} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${b.coords.x} ${b.coords.y}`,
-          color: a.visual?.color ?? '#C85A32',
+          color: a.visual?.color ?? '#C9A27E',
         });
         addedForRing += 1;
       }
@@ -1278,8 +1278,8 @@ export function LiveSwarmViewer({
                 selectedHandle != null &&
                 normalizeHandle(item.node!.handle).toLowerCase() === selectedHandle.toLowerCase();
               const strokeColor = isNode
-                ? item.visual?.color ?? '#9E978B'
-                : '#C9C2B6';
+                ? item.visual?.color ?? '#66635D'
+                : '#34383F';
               const strokeWidth = selected
                 ? 2.7
                 : leased
@@ -1335,7 +1335,7 @@ export function LiveSwarmViewer({
                         />
                       </circle>
                       {leased && (
-                        <circle r="2.1" fill="#1FA319" opacity="0.72">
+                        <circle r="2.1" fill="#8DB89A" opacity="0.72">
                           <animateMotion
                             dur={`${(durSec * 1.35).toFixed(2)}s`}
                             begin={`-${(item.slotIndex * 0.75 + 0.9).toFixed(2)}s`}
@@ -1359,7 +1359,7 @@ export function LiveSwarmViewer({
                 {workingNow > 0 ? (
                   <span className="lsv-hub-count tabular">{workingNow} live</span>
                 ) : (
-                  <span className="lsv-hub-count tabular" style={{ color: '#A39D92' }}>
+                  <span className="lsv-hub-count tabular" style={{ color: '#8A867D' }}>
                     standby
                   </span>
                 )}

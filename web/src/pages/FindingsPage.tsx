@@ -1,41 +1,68 @@
-import { ChevronLeft, ChevronRight, Filter, RotateCcw, Search } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { FindingCard } from '../components/FindingCard';
-import {
-  ACTION_TAGS,
-  FINDING_FILTER_OPTIONS,
-  FINDING_TAGS,
-  getWorkTypeTag,
-} from '../lib/tags';
+import { FINDING_TAGS, getFindingTag } from '../lib/tags';
 import { Link } from '../router';
 import type { FindingItem } from '../types';
-import { METHODOLOGY_DESCRIPTIONS, pillarLabel } from '../utils';
+import { formatDateShort, formatInr } from '../utils';
 
 interface FindingsPageProps {
   onSelectFinding: (id: string | number) => void;
   refreshTick: number;
 }
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 25;
 
-const KEY_TAGS = [
-  FINDING_TAGS.verified,
-  FINDING_TAGS.in_review,
-  FINDING_TAGS.split_vote,
-  FINDING_TAGS.cleared,
-  FINDING_TAGS.disputed,
-  FINDING_TAGS.not_enough_data,
-  ACTION_TAGS.rti_draft,
-  ACTION_TAGS.rti_filed,
+const STATUS_TABS: Array<{ value: string; label: string; hint: string }> = [
+  { value: '', label: 'All', hint: 'Every record, newest first.' },
+  { value: 'verified', label: 'Confirmed', hint: 'Two independent checks reached the same result.' },
+  { value: 'peer_review', label: 'Being checked', hint: 'Flagged once, waiting for a second independent check.' },
+  { value: 'cleared', label: 'No issue found', hint: 'Checked and found to be in order.' },
+  { value: 'disputed', label: 'Disputed', hint: 'Checks disagreed, so this is not treated as a result.' },
 ];
 
-const PILLAR_FILTERS = ['', 'budget'];
+function plainStatus(status: string): { label: string; tone: string } {
+  const tag = getFindingTag(status);
+  if (tag.id === FINDING_TAGS.verified.id) return { label: 'Confirmed', tone: 'ok' };
+  if (tag.id === FINDING_TAGS.cleared.id) return { label: 'No issue', tone: 'muted' };
+  if (tag.id === FINDING_TAGS.in_review.id) return { label: 'Being checked', tone: 'pending' };
+  if (tag.tone === 'disputed') return { label: 'Disputed', tone: 'bad' };
+  return { label: tag.label, tone: 'muted' };
+}
+
+function amountFor(f: FindingItem): string {
+  if (f.quarantined || f.status === 'quarantined') return 'Withheld';
+  if (f.monetary_exposure_inr) return formatInr(f.monetary_exposure_inr);
+  return f.amount_label || '—';
+}
+
+function splitTitle(f: FindingItem): { who: string; what: string; dept: string } {
+  const title = (f.title || '').trim();
+  const cut = title.indexOf(': ');
+  let who = f.entity_name || '';
+  let what = title;
+  if (cut > 0 && cut < title.length - 2) {
+    who = title.slice(0, cut);
+    const rest = title.slice(cut + 2);
+    what = rest.charAt(0).toUpperCase() + rest.slice(1);
+  }
+  let dept = '';
+  const m = who.match(/^(.*\S)\s*\(((?:Department|Ministry|Dept)[^()]*)\)\s*$/i);
+  if (m) {
+    who = m[1];
+    dept = m[2];
+  }
+  if (!who || who === what) return { who: what, what: '', dept };
+  return { who, what, dept };
+}
+
+function fiscalLabel(fy?: string): string {
+  if (!fy) return '';
+  return /^fy/i.test(fy) ? fy.replace(/^fy\s*/i, 'FY ') : `FY ${fy}`;
+}
 
 export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps) {
   const [status, setStatus] = useState('');
-  const [pillar, setPillar] = useState('');
-  const [methodology, setMethodology] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [findings, setFindings] = useState<FindingItem[]>([]);
@@ -46,7 +73,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
   useEffect(() => {
     setPage(0);
-  }, [status, pillar, methodology, search]);
+  }, [status, search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +83,6 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       api
         .getFindings({
           status: status || undefined,
-          pillar: pillar || undefined,
-          methodology: methodology || undefined,
           search: search.trim() || undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
@@ -80,213 +105,124 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [status, pillar, methodology, search, page, refreshTick]);
-
-  const resetFilters = () => {
-    setStatus('');
-    setPillar('');
-    setMethodology('');
-    setSearch('');
-    setPage(0);
-  };
+  }, [status, search, page, refreshTick]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
-  const rangeEnd = Math.min(total, page * PAGE_SIZE + findings.length);
+  const activeTab = STATUS_TABS.find((t) => t.value === status) ?? STATUS_TABS[0];
+
+  const go = (next: number) => {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
-    <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
-      <div className="section-header">
-        <div>
-          <div className="section-kicker">Public Evidence Wall, Deterministic &amp; Neutral</div>
-          <h1 className="section-title">
-            Findings &amp; Evidence Ledger
-          </h1>
-          <p className="section-subtitle">
-            Click any card to open its full Evidence Dossier with deterministic calculations,
-            cryptographic provenance, editorial correction history, mandatory benign explanations,
-            explicit peer verification checks, and RTI Act 2005 Sec 6(1) draft generator.
-          </p>
+    <div className="fl">
+      <header className="fl-head">
+        <div className="fl-eyebrow">Findings</div>
+        <h1 className="fl-title">What the checks have found</h1>
+        <p className="fl-lede">
+          Each line is one issue spotted in public spending records. Nothing is called confirmed until two
+          independent checks agree. Open any line to see the source documents and the working.{' '}
+          <Link to="/how-it-works" className="fl-link">
+            How this works
+          </Link>
+        </p>
+      </header>
+
+      <div className="fl-controls">
+        <div className="fl-tabs" role="tablist" aria-label="Filter by status">
+          {STATUS_TABS.map((t) => (
+            <button
+              key={t.value || 'all'}
+              type="button"
+              role="tab"
+              aria-selected={status === t.value}
+              className={`fl-tab ${status === t.value ? 'is-active' : ''}`}
+              onClick={() => setStatus(t.value)}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
-      </div>
-
-      {/* Plain-English Tag Key */}
-      <div className="card-sunk card-pad-sm findings-tag-key">
-        <span className="findings-tag-key-label">Tag key:</span>
-        {KEY_TAGS.map((tag) => (
-          <span key={tag.id} className={tag.badgeClass} title={tag.description}>
-            {tag.label}
-          </span>
-        ))}
-        <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5, marginLeft: 'auto' }}>
-          Full tag guide
-        </Link>
-      </div>
-
-      {/* Filter Bar */}
-      <div className="filter-bar">
-        <div className="filter-search-wrap">
-          <Search
-            size={14}
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              left: 10,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--ink-3)',
-            }}
-          />
+        <label className="fl-search">
+          <Search size={15} aria-hidden="true" />
           <input
-            type="text"
-            className="input-field"
-            style={{ width: '100%', paddingLeft: 32 }}
-            placeholder="Search ministry, state, rule, title, or entity…"
-            aria-label="Search public audit findings"
+            type="search"
+            placeholder="Search a ministry, state or scheme"
+            aria-label="Search findings"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-
-        <select
-          className="select-field"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          aria-label="Filter by status"
-        >
-          {FINDING_FILTER_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="select-field"
-          value={pillar}
-          onChange={(e) => setPillar(e.target.value)}
-          aria-label="Filter by audit pillar"
-        >
-          {PILLAR_FILTERS.map((p) => (
-            <option key={p} value={p}>
-              {p ? pillarLabel(p) : 'All areas'}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="select-field"
-          value={methodology}
-          onChange={(e) => setMethodology(e.target.value)}
-          aria-label="Filter by check type"
-        >
-          <option value="">All checks</option>
-          {Object.entries(METHODOLOGY_DESCRIPTIONS).map(([code]) => (
-            <option key={code} value={code}>
-              {getWorkTypeTag(undefined, code).label} ({code})
-            </option>
-          ))}
-        </select>
-
-        {(status || pillar || methodology || search) && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={resetFilters}>
-            <RotateCcw size={13} />
-            <span>Reset</span>
-          </button>
-        )}
+        </label>
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 14,
-          fontSize: 13,
-          color: 'var(--ink-3)',
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={13} aria-hidden="true" />
-          <span className="font-mono tabular">
-            {loading ? (
-              'Querying public evidence ledger…'
-            ) : total > 0 ? (
-              <>
-                Showing <strong>{rangeStart}–{rangeEnd}</strong> of <strong>{total.toLocaleString('en-IN')}</strong>{' '}
-                public audit record{total === 1 ? '' : 's'}
-              </>
-            ) : (
-              'Showing 0 public audit records'
-            )}
-          </span>
+      <div className="fl-meta">
+        <span>{activeTab.hint}</span>
+        <span className="fl-count">
+          {loading ? 'Loading…' : `${total.toLocaleString('en-IN')} record${total === 1 ? '' : 's'}`}
         </span>
-
-        {!loading && total > PAGE_SIZE && (
-          <span className="font-mono tabular" style={{ fontSize: 12.5 }}>
-            Page {page + 1} of {totalPages}
-          </span>
-        )}
       </div>
 
-      {loading && <div className="state-banner">Querying public evidence ledger…</div>}
-      {error && <div className="state-banner">Failed to load findings: {error}</div>}
+      {error && <div className="fl-empty">Could not load findings. {error}</div>}
 
       {!loading && !error && findings.length === 0 && (
-        <div className="state-banner">
-          {status || pillar || methodology || search
-            ? 'No public audit records match your active filters. Try clearing filters above.'
-            : 'No audit leads yet. Datasets are queued on the Projects page. Connect an agent via /join.txt or run aiwatchdogs join to audit and peer-verify.'}
+        <div className="fl-empty">
+          {status || search ? 'Nothing matches that search.' : 'No findings have been published yet.'}
         </div>
       )}
 
-      {!loading && !error && findings.length > 0 && (
-        <>
-          <div className="grid-2">
-            {findings.map((f) => (
-              <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
-            ))}
-          </div>
+      {findings.length > 0 && (
+        <ol className={`fl-list ${loading ? 'is-loading' : ''}`}>
+          <li className="fl-row fl-row--head" aria-hidden="true">
+            <span>Date</span>
+            <span>Finding</span>
+            <span className="fl-num">Amount</span>
+            <span>Status</span>
+          </li>
+          {findings.map((f) => {
+            const st = plainStatus(f.status);
+            const { who, what, dept } = splitTitle(f);
+            const where = [dept, f.jurisdiction, fiscalLabel(f.fiscal_year)].filter(Boolean).join(' · ');
+            return (
+              <li key={f.id}>
+                <button type="button" className="fl-row" onClick={() => onSelectFinding(f.id)}>
+                  <span className="fl-date">{formatDateShort(f.verified_at || f.created_at)}</span>
+                  <span className="fl-main">
+                    <span className="fl-name">{who}</span>
+                    {what && <span className="fl-what">{what}</span>}
+                    {where && <span className="fl-where">{where}</span>}
+                  </span>
+                  <span className="fl-num fl-amount">{amountFor(f)}</span>
+                  <span className="fl-status">
+                    <span className={`fl-pill fl-pill--${st.tone}`}>{st.label}</span>
+                    <ArrowUpRight size={15} className="fl-arrow" aria-hidden="true" />
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      )}
 
-          {(total > PAGE_SIZE || page > 0 || hasMore) && (
-            <nav
-              className="pagination-bar"
-              aria-label="Findings pagination"
-            >
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={page <= 0}
-                onClick={() => {
-                  setPage((p) => Math.max(0, p - 1));
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              >
-                <ChevronLeft size={14} aria-hidden="true" />
-                <span>Previous</span>
-              </button>
-
-              <span className="font-mono tabular" style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                Page <strong>{page + 1}</strong> of <strong>{totalPages}</strong> ({total.toLocaleString('en-IN')} total)
-              </span>
-
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                disabled={!hasMore && page + 1 >= totalPages}
-                onClick={() => {
-                  setPage((p) => p + 1);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-              >
-                <span>Next</span>
-                <ChevronRight size={14} aria-hidden="true" />
-              </button>
-            </nav>
-          )}
-        </>
+      {(total > PAGE_SIZE || page > 0) && (
+        <nav className="fl-pager" aria-label="Pages">
+          <button type="button" className="fl-pagebtn" disabled={page <= 0} onClick={() => go(Math.max(0, page - 1))}>
+            <ChevronLeft size={15} aria-hidden="true" />
+            Newer
+          </button>
+          <span>
+            Page {page + 1} of {totalPages.toLocaleString('en-IN')}
+          </span>
+          <button
+            type="button"
+            className="fl-pagebtn"
+            disabled={!hasMore && page + 1 >= totalPages}
+            onClick={() => go(page + 1)}
+          >
+            Older
+            <ChevronRight size={15} aria-hidden="true" />
+          </button>
+        </nav>
       )}
     </div>
   );

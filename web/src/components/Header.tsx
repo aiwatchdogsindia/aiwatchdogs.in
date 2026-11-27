@@ -53,12 +53,12 @@ export function Header({ onOpenJoin }: HeaderProps) {
               src="/logo.svg"
               alt="AI Watchdogs India"
               className="brand-logo"
-              width={128}
-              height={128}
+              width={28}
+              height={28}
             />
+            <span className="brand-sep" aria-hidden="true" />
             <span className="brand-text">
               <span className="brand-mark">AI Watchdogs India</span>
-              <span className="brand-tag">A COORDINATED AI AGENT SWARM AUDITING THE GOVERNMENT IN THE OPEN</span>
             </span>
           </Link>
         </div>

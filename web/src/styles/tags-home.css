@@ -3,19 +3,13 @@
    Imported after global.css and projects.css in web/src/main.tsx.
    ========================================================================= */
 
-/* -------------------------------------------------------------------------
-   1. UNIFIED TAG & BADGE PALETTE (plain-English Sentence case across site)
-   All tones use explicit, self-contained, opaque light-surface hex values
-   (WCAG AA >= 4.5:1) so every tag renders identically on white, saffron,
-   green, navy, cards, tables, modals, and drawers.
-   ------------------------------------------------------------------------- */
 
 /* Split vote (tie-breaker needed): solid warm amber tint + dashed border */
 .badge-split,
 .chip-split {
-  color: #7A3A00;
-  background: #FFF6E8;
-  border: 1px dashed #D98A2B;
+  color: #D2B59A;
+  background: #16191D;
+  border: 1px dashed #9B7E5A;
   font-style: normal;
   font-weight: 400;
 }
@@ -23,9 +17,9 @@
 /* Neutral / Not enough data / Unreachable: calm warm stone */
 .badge-neutral,
 .chip-neutral {
-  color: #3F3B34;
-  background: #F3F2EE;
-  border: 1px solid #CFCBC2;
+  color: #BCBAB7;
+  background: #1A1C1E;
+  border: 1px solid #413F3B;
   font-style: normal;
   font-weight: 400;
 }
@@ -33,9 +27,9 @@
 /* Open task: solid off-white with upright dashed stone border */
 .badge-open,
 .chip-open {
-  color: #2A2620;
-  background: #FAF8F4;
-  border: 1px dashed #8A8478;
+  color: #CDCBC8;
+  background: #131619;
+  border: 1px dashed #7F7D78;
   font-style: normal;
   font-weight: 400;
 }
@@ -43,9 +37,9 @@
 /* In progress task / Frontier agent: crisp civic blue */
 .badge-progress,
 .chip-progress {
-  color: #1A4580;
-  background: #EDF3FC;
-  border: 1px solid #B3CBE8;
+  color: #93A5BE;
+  background: #16181B;
+  border: 1px solid #2E3946;
   font-style: normal;
   font-weight: 400;
 }
@@ -53,9 +47,9 @@
 /* Waiting / Paused / Needs data: solid muted stone */
 .badge-waiting,
 .chip-waiting {
-  color: #4A463E;
-  background: #EFECE6;
-  border: 1px solid #C9C3B5;
+  color: #B3B1AD;
+  background: #1E2024;
+  border: 1px solid #4B4842;
   font-style: normal;
   font-weight: 400;
 }
@@ -63,9 +57,9 @@
 /* Planned task: solid light stone with muted dashed border */
 .badge-planned,
 .chip-planned {
-  color: #4A463E;
-  background: #F7F6F3;
-  border: 1px dashed #A8A296;
+  color: #B3B1AD;
+  background: #16181A;
+  border: 1px dashed #65635E;
   font-style: normal;
   font-weight: 400;
 }
@@ -73,9 +67,9 @@
 /* RTI draft: warm amber-tint ready-to-review draft */
 .badge-rti-draft,
 .chip-rti-draft {
-  color: #7A3A00;
-  background: #FFF6EB;
-  border: 1px solid #E5B97E;
+  color: #D2B59A;
+  background: #15181B;
+  border: 1px solid #67553D;
   font-style: normal;
   font-weight: 400;
 }
@@ -83,9 +77,9 @@
 /* RTI filed / Official reply: clean civic blue */
 .badge-rti,
 .chip-rti {
-  color: #1A4580;
-  background: #EDF3FC;
-  border: 1px solid #B3CBE8;
+  color: #93A5BE;
+  background: #16181B;
+  border: 1px solid #2E3946;
   font-style: normal;
   font-weight: 400;
 }
@@ -93,9 +87,9 @@
 /* Website check: Missing item (page loaded, item not found) */
 .badge-missing,
 .chip-missing {
-  color: #8F350E;
-  background: #FDF1EA;
-  border: 1px solid #E8BBA3;
+  color: #C39C8C;
+  background: #16181C;
+  border: 1px solid #503C32;
   font-style: normal;
   font-weight: 400;
 }
@@ -103,9 +97,9 @@
 /* Work / check type pill: Budget check, Website check, Unspent budget, Peer check */
 .badge-work,
 .chip-work {
-  color: #2A2620;
-  background: #F4F3F0;
-  border: 1px solid #CFCBC2;
+  color: #CDCBC8;
+  background: #191A1C;
+  border: 1px solid #413F3B;
   border-radius: var(--r-4);
   font-size: 12px;
   font-style: normal;
@@ -192,7 +186,7 @@
 .how-swarm .how-card {
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-top: 2px solid var(--ink);
+  border-top: 1px solid var(--rule-strong);
   border-radius: var(--r-6);
   padding: 22px 24px 24px;
   display: flex;
@@ -260,7 +254,7 @@
   flex-direction: column;
   gap: 4px;
   padding-bottom: 10px;
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 1px solid var(--rule-strong);
 }
 
 .how-legend-group-head h3 {
@@ -499,7 +493,7 @@
 .brief-step {
   background: var(--paper);
   border: 1px solid var(--rule);
-  border-top: 2px solid var(--ink);
+  border-top: 1px solid var(--rule-strong);
   border-radius: var(--r-6);
   padding: 22px 24px 24px;
   display: flex;
@@ -880,9 +874,9 @@
   align-items: center;
   padding: 2px 9px;
   border-radius: var(--r-4);
-  border: 1px solid #1B1A17;
-  background: #1B1A17;
-  color: #FFFFFF;
+  border: 1px solid var(--rule-strong);
+  background: var(--ink);
+  color: var(--raised);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -895,9 +889,9 @@
 }
 
 .changelog-pr-badge--milestone {
-  background: #F3F2EE;
-  border-color: #CFCBC2;
-  color: #2A2620;
+  background: #1A1C1E;
+  border-color: #413F3B;
+  color: #CDCBC8;
 }
 
 .changelog-time {
