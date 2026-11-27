@@ -270,7 +270,7 @@ def test_postgres_canonical_lock_order_agents_before_tasks_findings_missions(tmp
             recorded_sql.append(" ".join(sql.split()))
             # Strip Postgres-only row-locking clauses so SQLite executes the exact query path cleanly
             sqlite_sql = re.sub(
-                r"\bFOR\s+(?:NO\s+KEY\s+)?UPDATE(?:\s+SKIP\s+LOCKED)?",
+                r"\bFOR\s+(?:NO\s+KEY\s+)?UPDATE(?:\s+OF\s+[a-z_][a-z0-9_]*)?(?:\s+SKIP\s+LOCKED)?",
                 "",
                 sql,
                 flags=re.IGNORECASE,

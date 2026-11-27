@@ -47,11 +47,14 @@ from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, 
 from aiwatchdogs.hub.quorum import (
     CANONICAL_CHECKS,
     DEFAULT_REQUIRED_QUORUM,
+    IN_REVIEW_FINDING_STATUSES,
     LEGACY_CHECK_TO_CANONICAL as _LEGACY_CHECK_TO_CANONICAL,
+    REVIEWABLE_FINDING_STATUSES,
     VALID_CHECK_STATES,
     all_checks_passed as _all_checks_passed,
     build_attr_conflict_sql,
     check_pairwise_verifier_independence,
+    compute_project_progress,
     evaluate_pairwise_quorum,
     norm_attr,
     normalize_check_state as _quorum_normalize_check_state,
@@ -767,11 +770,24 @@ class DeskService:
         peer_checks_total: int = 0,
         peer_checks_done: int = 0,
         peer_checks_open: int = 0,
+        review_progress: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         planned = DeskService._planned_tasks(row)
         total = int(primary_total_tasks if primary_total_tasks is not None else (row["total_tasks"] or 0))
         completed = int(primary_completed_tasks if primary_completed_tasks is not None else (row["completed_tasks"] or 0))
-        progress_pct = round((completed / total) * 100.0, 1) if total > 0 else 0.0
+        rp = review_progress or {}
+        prog = compute_project_progress(
+            total_tasks=total,
+            completed_tasks=completed,
+            review_slots_required=int(rp.get("review_slots_required", 0)),
+            review_slots_done=int(rp.get("review_slots_done", 0)),
+            in_review_findings=max(int(peer_review_count or 0), int(rp.get("in_review_findings", 0))),
+            peer_checks_total=int(peer_checks_total),
+            peer_checks_done=int(peer_checks_done),
+            peer_checks_open=int(peer_checks_open),
+            required_reviews=int(rp.get("required_reviews", DEFAULT_REQUIRED_QUORUM) or DEFAULT_REQUIRED_QUORUM),
+        )
+        progress_pct = prog["progress_pct"]
         workload_inr = float(row["monetary_audited_inr"] or 0.0)
         uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
         qty_type = str(_row_get(row, "financial_quantity_type", "") or "")
@@ -813,6 +829,17 @@ class DeskService:
             "peer_checks_done": int(peer_checks_done),
             "peer_checks_open": int(peer_checks_open),
             "progress_pct": progress_pct,
+            "reviews_required": prog["reviews_required"],
+            "reviews_done": prog["reviews_done"],
+            "reviews_remaining": prog["reviews_remaining"],
+            "required_reviews": prog["required_reviews"],
+            "per_review_pct": prog["per_review_pct"],
+            "task_progress_pct": prog["task_progress_pct"],
+            "review_progress_pct": prog["review_progress_pct"],
+            "review_remaining_pct": prog["review_remaining_pct"],
+            "task_weight_pct": prog["task_weight_pct"],
+            "review_weight_pct": prog["review_weight_pct"],
+            "has_reviews_remaining": prog["has_reviews_remaining"],
             "verified_findings_count": int(row["verified_findings_count"] or 0),
             "peer_review_count": peer_review_count,
             "cleared_count": cleared_scans,
@@ -1910,8 +1937,11 @@ class DeskService:
             SELECT id FROM tasks
             WHERE status = 'needs_adjudication' AND updated_at < ?
               AND task_type IN ('anomaly_scan', 'ingest_parse', 'peer_verify')
-              AND (target_finding_id IS NULL OR target_finding_id IN (
-                  SELECT id FROM findings WHERE status = 'peer_review' AND COALESCE(quarantined, 0) = 0
+              AND (target_finding_id IS NULL OR EXISTS (
+                  SELECT 1 FROM findings f
+                  WHERE f.id = tasks.target_finding_id
+                    AND f.status = 'peer_review'
+                    AND COALESCE(f.quarantined, 0) = 0
               ))
             LIMIT 50{lock_clause}
             """,
@@ -2914,6 +2944,58 @@ class DeskService:
             result[mid] = [it[3] for it in items]
         return result
 
+    @staticmethod
+    def _fetch_mission_review_progress(
+        conn: Any, *, mission_id: str | None = None
+    ) -> dict[str, dict[str, int]]:
+        """Aggregate independent peer-review slot completion per mission from live findings."""
+        dq = int(DEFAULT_REQUIRED_QUORUM)
+        req_expr = f"(CASE WHEN COALESCE(required_quorum, {dq}) > 0 THEN COALESCE(required_quorum, {dq}) ELSE {dq} END)"
+        in_review_sql = ", ".join(f"'{s}'" for s in IN_REVIEW_FINDING_STATUSES)
+        reviewable_sql = ", ".join(f"'{s}'" for s in REVIEWABLE_FINDING_STATUSES)
+        where_parts = [
+            "COALESCE(quarantined, 0) = 0",
+            f"status IN ({reviewable_sql})",
+        ]
+        params: list[Any] = []
+        if mission_id is not None:
+            where_parts.append("mission_id = ?")
+            params.append(mission_id)
+        where_sql = " AND ".join(where_parts)
+        rows = conn.execute(
+            f"""
+            SELECT mission_id,
+                   SUM(CASE WHEN status IN ({in_review_sql}) THEN 1 ELSE 0 END) AS in_review_findings,
+                   SUM({req_expr}) AS review_slots_required,
+                   SUM(
+                       CASE
+                           WHEN status IN ({in_review_sql}) THEN
+                               CASE
+                                   WHEN COALESCE(confirm_count, 0) < 0 THEN 0
+                                   WHEN COALESCE(confirm_count, 0) >= {req_expr} THEN {req_expr} - 1
+                                   ELSE COALESCE(confirm_count, 0)
+                               END
+                           ELSE {req_expr}
+                       END
+                   ) AS review_slots_done,
+                   MAX({req_expr}) AS max_required_quorum
+            FROM findings
+            WHERE {where_sql}
+            GROUP BY mission_id
+            """,
+            params,
+        ).fetchall()
+        out: dict[str, dict[str, int]] = {}
+        for r in rows:
+            mid = str(r["mission_id"])
+            out[mid] = {
+                "in_review_findings": int(r["in_review_findings"] or 0),
+                "review_slots_required": int(r["review_slots_required"] or 0),
+                "review_slots_done": int(r["review_slots_done"] or 0),
+                "required_reviews": int(r["max_required_quorum"] or dq),
+            }
+        return out
+
     def _fetch_missions_with_coverage(
         self, conn: Any
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -2933,13 +3015,13 @@ class DeskService:
             st = str(r["status"] or "")
             if int(r["is_pv"]) == 1:
                 pv_total_map[mid] = pv_total_map.get(mid, 0) + cnt
-                if st == "completed":
+                if st in ("completed", "settled"):
                     pv_done_map[mid] = pv_done_map.get(mid, 0) + cnt
                 elif st in ("queued", "claimed"):
                     pv_open_map[mid] = pv_open_map.get(mid, 0) + cnt
             else:
                 primary_total_map[mid] = primary_total_map.get(mid, 0) + cnt
-                if st == "completed":
+                if st in ("completed", "settled"):
                     primary_done_map[mid] = primary_done_map.get(mid, 0) + cnt
                 elif st == "queued":
                     queued_map[mid] = queued_map.get(mid, 0) + cnt
@@ -2953,6 +3035,7 @@ class DeskService:
                 "GROUP BY mission_id"
             ).fetchall()
         }
+        review_progress_map = self._fetch_mission_review_progress(conn)
         cleared_findings_map = {
             r["mission_id"]: int(r["c"])
             for r in conn.execute(
@@ -2985,6 +3068,7 @@ class DeskService:
                 peer_checks_total=pv_total_map.get(r["id"], 0),
                 peer_checks_done=pv_done_map.get(r["id"], 0),
                 peer_checks_open=pv_open_map.get(r["id"], 0),
+                review_progress=review_progress_map.get(str(r["id"])),
             )
             for r in rows
         ]
@@ -3434,6 +3518,7 @@ class DeskService:
         findings: list[dict[str, Any]],
         cleared_findings_count: int,
         counts: dict[str, int],
+        review_progress: dict[str, int] | None = None,
         pending_cache_writes: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         methodology_code = str(mission_row["methodology_code"] or "").strip()
@@ -3445,9 +3530,26 @@ class DeskService:
         audits_done = completed_cnt
         checks_done = counts["checks_done"]
         checks_total = counts["checks_total"]
+        checks_open = counts.get("checks_open", int(mission.get("peer_checks_open") or 0))
         waiting_cnt = 0
         planned_cnt = len(mission.get("planned_tasks") or [])
-        pct_complete = round((completed_cnt / total_cnt) * 100.0, 2) if total_cnt > 0 else 0.0
+        rp = review_progress or {}
+        prog = compute_project_progress(
+            total_tasks=total_cnt,
+            completed_tasks=completed_cnt,
+            review_slots_required=int(rp.get("review_slots_required", mission.get("reviews_required") or 0)),
+            review_slots_done=int(rp.get("review_slots_done", mission.get("reviews_done") or 0)),
+            in_review_findings=max(int(mission.get("peer_review_count") or 0), int(rp.get("in_review_findings", 0))),
+            peer_checks_total=checks_total,
+            peer_checks_done=checks_done,
+            peer_checks_open=checks_open,
+            required_reviews=int(
+                rp.get("required_reviews")
+                or mission.get("required_reviews")
+                or DEFAULT_REQUIRED_QUORUM
+            ),
+        )
+        pct_complete = prog["pct_complete"]
 
         summary: dict[str, Any] = {
             "project_code": str(mission.get("project_code") or self.resolve_project_code(mission_row["slug"], methodology_code)),
@@ -3460,6 +3562,18 @@ class DeskService:
                 "planned": planned_cnt,
                 "total": total_cnt,
                 "pct_complete": pct_complete,
+                "task_pct_complete": prog["task_pct_complete"],
+                "task_progress_pct": prog["task_progress_pct"],
+                "review_progress_pct": prog["review_progress_pct"],
+                "review_remaining_pct": prog["review_remaining_pct"],
+                "task_weight_pct": prog["task_weight_pct"],
+                "review_weight_pct": prog["review_weight_pct"],
+                "required_reviews": prog["required_reviews"],
+                "per_review_pct": prog["per_review_pct"],
+                "reviews_required": prog["reviews_required"],
+                "reviews_done": prog["reviews_done"],
+                "reviews_remaining": prog["reviews_remaining"],
+                "has_reviews_remaining": prog["has_reviews_remaining"],
                 "audits_done": audits_done,
                 "audits_total": audits_total,
                 "checks_done": checks_done,
@@ -3737,13 +3851,13 @@ class DeskService:
                 st = str(r["status"] or "")
                 if int(r["is_pv"]) == 1:
                     pv_total += cnt
-                    if st == "completed":
+                    if st in ("completed", "settled"):
                         pv_done += cnt
                     elif st in ("queued", "claimed"):
                         pv_open += cnt
                 else:
                     primary_total += cnt
-                    if st == "completed":
+                    if st in ("completed", "settled"):
                         primary_done += cnt
                     elif st == "queued":
                         queued_cnt += cnt
@@ -3756,6 +3870,7 @@ class DeskService:
                     (mid,),
                 ).fetchone()["c"]
             )
+            review_progress = self._fetch_mission_review_progress(conn, mission_id=str(mid)).get(str(mid))
             cf_cnt = int(
                 conn.execute(
                     "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? "
@@ -3780,6 +3895,7 @@ class DeskService:
                 peer_checks_total=pv_total,
                 peer_checks_done=pv_done,
                 peer_checks_open=pv_open,
+                review_progress=review_progress,
             )
 
             source_ids = mission["source_ids"]
@@ -3858,7 +3974,9 @@ class DeskService:
                     "claimed": claimed_cnt,
                     "checks_total": pv_total,
                     "checks_done": pv_done,
+                    "checks_open": pv_open,
                 },
+                review_progress=review_progress,
                 pending_cache_writes=pending_cache_writes,
             )
 
@@ -5625,6 +5743,7 @@ class DeskService:
                 """
             ).fetchall()
             mission_unique_inr, _ = self._compute_coverage_summary(conn, mission_rows)
+            review_progress_map = self._fetch_mission_review_progress(conn)
             missions = [
                 {
                     "id": str(r["id"]),
@@ -5637,11 +5756,24 @@ class DeskService:
                     "source_ids": loads_json(r["source_ids_json"], []),
                     "status": str(r["status"]),
                     "is_demo_sample": str(r["data_mode"] or "") == "demo_sample",
-                    "progress_pct": round(
-                        (int(r["completed_tasks"] or 0) / int(r["total_tasks"] or 1)) * 100.0, 1
-                    )
-                    if int(r["total_tasks"] or 0) > 0
-                    else 0.0,
+                    "progress_pct": compute_project_progress(
+                        total_tasks=int(r["total_tasks"] or 0),
+                        completed_tasks=int(r["completed_tasks"] or 0),
+                        review_slots_required=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get("review_slots_required", 0)
+                        ),
+                        review_slots_done=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get("review_slots_done", 0)
+                        ),
+                        in_review_findings=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get("in_review_findings", 0)
+                        ),
+                        required_reviews=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get(
+                                "required_reviews", DEFAULT_REQUIRED_QUORUM
+                            )
+                        ),
+                    )["progress_pct"],
                     "verified_findings_count": int(r["verified_findings_count"] or 0),
                     "unique_coverage_inr_cr": _inr_to_cr(mission_unique_inr.get(str(r["id"]), 0.0)),
                     "financial_quantity_type": str(_row_get(r, "financial_quantity_type", "") or ""),
@@ -7389,33 +7521,126 @@ class DeskService:
                 verifier_harness_norm = norm_attr(_row_get(agent, "coding_agent", ""))
                 verifier_model_norm = norm_attr(_row_get(agent, "coding_agent_model", ""))
 
-                f_har_sql, f_har_params = build_attr_conflict_sql("f.submitted_coding_agent", verifier_harness_norm)
-                f_mod_sql, f_mod_params = build_attr_conflict_sql("f.submitted_coding_agent_model", verifier_model_norm)
-                pv_har_sql, pv_har_params = build_attr_conflict_sql("pv.coding_agent", verifier_harness_norm)
-                pv_mod_sql, pv_mod_params = build_attr_conflict_sql("pv.coding_agent_model", verifier_model_norm)
-                a2_har_sql, a2_har_params = build_attr_conflict_sql("a2.coding_agent", verifier_harness_norm)
-                a2_mod_sql, a2_mod_params = build_attr_conflict_sql("a2.coding_agent_model", verifier_model_norm)
-
-                base_clauses = [
+                common_clauses: list[str] = [
                     "t.status = 'queued'",
                     "(t.available_at IS NULL OR t.available_at <= ?)",
                     "t.excluded_handles_json NOT LIKE ? ESCAPE '\\'",
-                    # Enforce pairwise independence of (handle, coding_agent, coding_agent_model)
-                    # against the author (findings), all existing reviewers (peer_verifications),
-                    # and all active claimed leases (tasks JOIN agents), plus quarantine exclusion.
-                    f"""(t.target_finding_id IS NULL OR (
-                        NOT EXISTS (
-                            SELECT 1 FROM findings f
-                            WHERE f.id = t.target_finding_id
+                ]
+                common_params: list[Any] = [
+                    now,
+                    f'%"{escaped_handle}"%',
+                ]
+                if not website_observations:
+                    common_clauses.append("t.methodology_code != 'W1'")
+                if max_estimated_tokens is not None:
+                    common_clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
+                    common_params.append(int(max_estimated_tokens))
+
+                pv_join_sql = ""
+                pv_extra_clauses: list[str] = []
+                pv_extra_params: list[Any] = []
+                unattributed_pv_missions: set[str] | None = None
+
+                if "peer_verify" in phases:
+                    # Fast-path for blank coding_agent or blank coding_agent_model: an unattributed
+                    # verifier can only audit findings whose author also left that field blank.
+                    # One tiny query against partial index `idx_findings_unattributed_peer_review`
+                    # lets us skip entire attributed missions in <0.5ms without scanning tasks.
+                    if not verifier_harness_norm or not verifier_model_norm:
+                        blank_clauses = [
+                            "status = 'peer_review'",
+                            "quarantined = 0",
+                            "(TRIM(submitted_coding_agent) = '' OR TRIM(submitted_coding_agent_model) = '')",
+                        ]
+                        if not verifier_harness_norm:
+                            blank_clauses.append("TRIM(submitted_coding_agent) = ''")
+                        if not verifier_model_norm:
+                            blank_clauses.append("TRIM(submitted_coding_agent_model) = ''")
+                        unattributed_pv_missions = {
+                            str(r["mission_id"])
+                            for r in conn.execute(
+                                f"SELECT DISTINCT mission_id FROM findings WHERE {' AND '.join(blank_clauses)}"
+                            ).fetchall()
+                        }
+
+                    f_har_sql, f_har_params = build_attr_conflict_sql("f.submitted_coding_agent", verifier_harness_norm)
+                    f_mod_sql, f_mod_params = build_attr_conflict_sql("f.submitted_coding_agent_model", verifier_model_norm)
+                    pv_har_sql, pv_har_params = build_attr_conflict_sql("pv.coding_agent", verifier_harness_norm)
+                    pv_mod_sql, pv_mod_params = build_attr_conflict_sql("pv.coding_agent_model", verifier_model_norm)
+                    a2_har_sql, a2_har_params = build_attr_conflict_sql("a2.coding_agent", verifier_harness_norm)
+                    a2_mod_sql, a2_mod_params = build_attr_conflict_sql("a2.coding_agent_model", verifier_model_norm)
+
+                    # Pre-fetch active claimed finding conflicts ONCE over the tiny partial index
+                    # `idx_tasks_claimed_target_finding` (~0-50 active rows) instead of running a
+                    # correlated NOT EXISTS subquery on every queued candidate task.
+                    if unattributed_pv_missions is None or len(unattributed_pv_missions) > 0:
+                        claimed_conflict_rows = conn.execute(
+                            f"""
+                            SELECT DISTINCT t2.target_finding_id
+                            FROM tasks t2
+                            LEFT JOIN agents a2 ON a2.id = t2.claimed_by_agent_id
+                            WHERE t2.status = 'claimed'
+                              AND t2.target_finding_id IS NOT NULL
                               AND (
-                                  f.submitted_by = ?
-                                  OR COALESCE(f.quarantined, 0) = 1
-                                  OR f.status = 'quarantined'
-                                  OR {f_har_sql}
-                                  OR {f_mod_sql}
+                                  t2.claimed_by_handle = ?
+                                  OR {a2_har_sql}
+                                  OR {a2_mod_sql}
                               )
-                        )
-                        AND NOT EXISTS (
+                            """,
+                            [agent_handle, *a2_har_params, *a2_mod_params],
+                        ).fetchall()
+                        claimed_conflict_fids = [
+                            str(r["target_finding_id"])
+                            for r in claimed_conflict_rows
+                            if r["target_finding_id"] is not None
+                        ]
+                    else:
+                        claimed_conflict_fids = []
+
+                    # LEFT JOIN findings directly so Postgres/SQLite drive strictly from
+                    # `idx_tasks_queued_pv_order` (zero sort) and evaluate author/quarantine/attribution
+                    # via PK lookup per candidate row.
+                    pv_join_sql = "LEFT JOIN findings f ON f.id = t.target_finding_id"
+                    pv_extra_clauses = [
+                        f"""(f.id IS NULL OR (
+                            COALESCE(f.submitted_by, '') != ?
+                            AND COALESCE(f.quarantined, 0) = 0
+                            AND f.status != 'quarantined'
+                            AND NOT ({f_har_sql})
+                            AND NOT ({f_mod_sql})
+                        ))""",
+                    ]
+                    pv_extra_params = [
+                        agent_handle,
+                        *f_har_params,
+                        *f_mod_params,
+                    ]
+
+                    pv_target_checks: list[str] = []
+                    pv_target_params: list[Any] = []
+                    if claimed_conflict_fids:
+                        if len(claimed_conflict_fids) <= 2000:
+                            cph = ",".join("?" for _ in claimed_conflict_fids)
+                            pv_target_checks.append(f"t.target_finding_id NOT IN ({cph})")
+                            pv_target_params.extend(claimed_conflict_fids)
+                        else:
+                            pv_target_checks.append(
+                                f"""NOT EXISTS (
+                                    SELECT 1 FROM tasks t2
+                                    LEFT JOIN agents a2 ON a2.id = t2.claimed_by_agent_id
+                                    WHERE t2.status = 'claimed'
+                                      AND t2.target_finding_id = t.target_finding_id
+                                      AND (
+                                          t2.claimed_by_handle = ?
+                                          OR {a2_har_sql}
+                                          OR {a2_mod_sql}
+                                      )
+                                )"""
+                            )
+                            pv_target_params.extend([agent_handle, *a2_har_params, *a2_mod_params])
+
+                    pv_target_checks.append(
+                        f"""NOT EXISTS (
                             SELECT 1 FROM peer_verifications pv
                             WHERE pv.finding_id = t.target_finding_id
                               AND (
@@ -7424,47 +7649,121 @@ class DeskService:
                                   OR {pv_har_sql}
                                   OR {pv_mod_sql}
                               )
-                        )
-                        AND NOT EXISTS (
-                            SELECT 1 FROM tasks t2
-                            LEFT JOIN agents a2 ON a2.id = t2.claimed_by_agent_id
-                            WHERE t2.status = 'claimed'
-                              AND t2.target_finding_id = t.target_finding_id
-                              AND (
-                                  t2.claimed_by_handle = ?
-                                  OR {a2_har_sql}
-                                  OR {a2_mod_sql}
-                              )
-                        )
-                    ))""",
-                ]
-                base_params: list[Any] = [
-                    now,
-                    f'%"{escaped_handle}"%',
-                    agent_handle,
-                    *f_har_params,
-                    *f_mod_params,
-                    agent_handle,
-                    agent_handle,
-                    *pv_har_params,
-                    *pv_mod_params,
-                    agent_handle,
-                    *a2_har_params,
-                    *a2_mod_params,
-                ]
-                if not website_observations:
-                    base_clauses.append("t.methodology_code != 'W1'")
-                if max_estimated_tokens is not None:
-                    base_clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
-                    base_params.append(int(max_estimated_tokens))
+                        )"""
+                    )
+                    pv_target_params.extend([agent_handle, agent_handle, *pv_har_params, *pv_mod_params])
 
-                lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
+                    pv_extra_clauses.append(f"(t.target_finding_id IS NULL OR ({' AND '.join(pv_target_checks)}))")
+                    pv_extra_params.extend(pv_target_params)
+
+                scan_lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
+                # OF t is required on PostgreSQL when LEFT JOINing `findings` and guarantees we never
+                # lock `findings` before `tasks` (preserving canonical lock order: agents -> tasks -> findings).
+                pv_lock_clause = " FOR UPDATE OF t SKIP LOCKED" if self.db.is_postgres else ""
+                row_lock_clause = " FOR UPDATE SKIP LOCKED" if self.db.is_postgres else ""
+
+                def _probe_single_mission(
+                    mid: str,
+                    *,
+                    join_sql: str,
+                    where_clauses: list[str],
+                    where_params: list[Any],
+                    lock_sql: str,
+                    exclude_task_ids: list[str] | tuple[str, ...] = (),
+                ) -> Any:
+                    clauses = ["t.mission_id = ?", *where_clauses]
+                    params: list[Any] = [mid, *where_params]
+                    if exclude_task_ids:
+                        eph = ",".join("?" for _ in exclude_task_ids)
+                        clauses.append(f"t.id NOT IN ({eph})")
+                        params.extend(exclude_task_ids)
+                    return conn.execute(
+                        f"""
+                        SELECT t.id,
+                               COALESCE(t.available_at, t.created_at) AS sort_ts,
+                               t.created_at,
+                               t.mission_id
+                        FROM tasks t
+                        {join_sql}
+                        WHERE {' AND '.join(clauses)}
+                        ORDER BY
+                            COALESCE(t.available_at, t.created_at) ASC,
+                            t.created_at ASC,
+                            t.id ASC
+                        LIMIT 1{lock_sql}
+                        """,
+                        params,
+                    ).fetchone()
+
+                def _peek_bucket_peaks(
+                    mids: list[str],
+                    *,
+                    join_sql: str,
+                    where_clauses: list[str],
+                    where_params: list[Any],
+                ) -> dict[str, tuple[str, str, str]]:
+                    peaks: dict[str, tuple[str, str, str]] = {}
+                    # Combine small buckets into one UNION ALL round-trip where every branch uses
+                    # single-equality `t.mission_id = ?` + `LIMIT 1` so Postgres & SQLite stream
+                    # strictly from the partial order index with zero cross-mission sort.
+                    use_union = len(mids) <= 12 and (len(mids) * (1 + len(where_params))) <= 1000
+                    if use_union:
+                        where_sql = " AND ".join(["t.mission_id = ?", *where_clauses])
+                        branches: list[str] = []
+                        union_params: list[Any] = []
+                        for idx, mid in enumerate(mids):
+                            branches.append(
+                                f"""SELECT * FROM (
+                                    SELECT t.id,
+                                           COALESCE(t.available_at, t.created_at) AS sort_ts,
+                                           t.created_at,
+                                           t.mission_id
+                                    FROM tasks t
+                                    {join_sql}
+                                    WHERE {where_sql}
+                                    ORDER BY
+                                        COALESCE(t.available_at, t.created_at) ASC,
+                                        t.created_at ASC,
+                                        t.id ASC
+                                    LIMIT 1
+                                ) AS p{idx}"""
+                            )
+                            union_params.append(mid)
+                            union_params.extend(where_params)
+                        rows = conn.execute("\nUNION ALL\n".join(branches), union_params).fetchall()
+                    else:
+                        rows = []
+                        for mid in mids:
+                            row = _probe_single_mission(
+                                mid,
+                                join_sql=join_sql,
+                                where_clauses=where_clauses,
+                                where_params=where_params,
+                                lock_sql="",
+                            )
+                            if row is not None:
+                                rows.append(row)
+
+                    for row in rows:
+                        peaks[str(row["mission_id"])] = (
+                            str(row["sort_ts"] or ""),
+                            str(row["created_at"] or ""),
+                            str(row["id"]),
+                        )
+                    return peaks
+
                 for bucket in mission_buckets:
                     for phase in phases:
                         if phase == "peer_verify":
                             # Peer verification of existing leads may still finish on archived/paused/needs_data projects.
                             eligible_mids = [str(m["id"]) for m in bucket]
+                            if unattributed_pv_missions is not None:
+                                eligible_mids = [mid for mid in eligible_mids if mid in unattributed_pv_missions]
                             phase_clauses = ["t.task_type = 'peer_verify'"]
+                            join_sql = pv_join_sql
+                            where_clauses = [*phase_clauses, *common_clauses, *pv_extra_clauses]
+                            where_params = [*common_params, *pv_extra_params]
+                            phase_lock_sql = pv_lock_clause
                         else:
                             # New scans only for live projects; research tasks are never handed out.
                             eligible_mids = [
@@ -7481,38 +7780,103 @@ class DeskService:
                                 ]
                             else:
                                 phase_clauses = ["t.task_type NOT IN ('peer_verify', 'research')"]
+                            join_sql = ""
+                            where_clauses = [*phase_clauses, *common_clauses]
+                            where_params = [*common_params]
+                            phase_lock_sql = scan_lock_clause
 
                         if not eligible_mids:
                             continue
 
                         if len(eligible_mids) == 1:
-                            mission_clause = "t.mission_id = ?"
-                            mission_params: list[Any] = [eligible_mids[0]]
+                            cand_id_row = _probe_single_mission(
+                                eligible_mids[0],
+                                join_sql=join_sql,
+                                where_clauses=where_clauses,
+                                where_params=where_params,
+                                lock_sql=phase_lock_sql,
+                            )
+                            if cand_id_row is not None:
+                                # Fetch the single locked row (including payload_json) by primary key.
+                                cand = conn.execute(
+                                    "SELECT * FROM tasks WHERE id = ?",
+                                    (cand_id_row["id"],),
+                                ).fetchone()
+                                if cand is not None:
+                                    break
                         else:
-                            ph = ",".join("?" for _ in eligible_mids)
-                            mission_clause = f"t.mission_id IN ({ph})"
-                            mission_params = eligible_mids
+                            # Multi-mission priority bucket: never run `t.mission_id IN (...)` which
+                            # defeats the partial order index and forces a full cross-mission sort.
+                            # Peek top-1 per mission, lock only the global earliest winner, and retry
+                            # cleanly if another worker raced on that exact row.
+                            peaks = _peek_bucket_peaks(
+                                eligible_mids,
+                                join_sql=join_sql,
+                                where_clauses=where_clauses,
+                                where_params=where_params,
+                            )
+                            if not peaks:
+                                continue
 
-                        all_clauses = [mission_clause, *phase_clauses, *base_clauses]
-                        all_params = [*mission_params, *base_params]
-                        cand_id_row = conn.execute(
-                            f"""
-                            SELECT t.id FROM tasks t
-                            WHERE {' AND '.join(all_clauses)}
-                            ORDER BY
-                                COALESCE(t.available_at, t.created_at) ASC,
-                                t.created_at ASC,
-                                t.id ASC
-                            LIMIT 1{lock_clause}
-                            """,
-                            all_params,
-                        ).fetchone()
-                        if cand_id_row is not None:
-                            # Fetch the single locked row (including payload_json) by primary key.
-                            cand = conn.execute(
-                                "SELECT * FROM tasks WHERE id = ?",
-                                (cand_id_row["id"],),
-                            ).fetchone()
+                            raced_ids: list[str] = []
+                            for _ in range(8):
+                                if not peaks:
+                                    break
+                                best_mid, (_best_ts, _best_created, best_tid) = min(
+                                    peaks.items(),
+                                    key=lambda item: item[1],
+                                )
+                                locked = conn.execute(
+                                    f"""
+                                    SELECT * FROM tasks
+                                    WHERE id = ?
+                                      AND status = 'queued'
+                                      AND (available_at IS NULL OR available_at <= ?)
+                                    {row_lock_clause}
+                                    """,
+                                    (best_tid, now),
+                                ).fetchone()
+                                if locked is not None:
+                                    cand = locked
+                                    break
+                                raced_ids.append(best_tid)
+                                next_peak = _probe_single_mission(
+                                    best_mid,
+                                    join_sql=join_sql,
+                                    where_clauses=where_clauses,
+                                    where_params=where_params,
+                                    lock_sql="",
+                                    exclude_task_ids=raced_ids,
+                                )
+                                if next_peak is not None:
+                                    peaks[best_mid] = (
+                                        str(next_peak["sort_ts"] or ""),
+                                        str(next_peak["created_at"] or ""),
+                                        str(next_peak["id"]),
+                                    )
+                                else:
+                                    del peaks[best_mid]
+
+                            if cand is None and peaks:
+                                # Extreme simultaneous contention (>8 races): fall back to single-mission
+                                # locking probes ordered by earliest observed timestamp so workers always
+                                # make lock-free progress without `mission_id IN (...)`.
+                                for mid in sorted(peaks.keys(), key=lambda m: peaks[m]):
+                                    cand_id_row = _probe_single_mission(
+                                        mid,
+                                        join_sql=join_sql,
+                                        where_clauses=where_clauses,
+                                        where_params=where_params,
+                                        lock_sql=phase_lock_sql,
+                                    )
+                                    if cand_id_row is not None:
+                                        cand = conn.execute(
+                                            "SELECT * FROM tasks WHERE id = ?",
+                                            (cand_id_row["id"],),
+                                        ).fetchone()
+                                        if cand is not None:
+                                            break
+
                             if cand is not None:
                                 break
                     if cand is not None:

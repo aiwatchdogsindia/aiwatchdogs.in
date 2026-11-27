@@ -12,10 +12,13 @@ from fastapi.testclient import TestClient
 
 from aiwatchdogs.hub.app import create_app
 from aiwatchdogs.hub.database import (
+    _V15_PEER_VERIFY_CLAIM_INDEXES,
     LATEST_SCHEMA_VERSION,
     Database,
     _migrate_v14_quorum3_cross_harness_backfill,
+    _migrate_v15_peer_verify_claim_indexes,
     dumps_json,
+    translate_sql_for_postgres,
 )
 
 ALL_PASS_CHECKS: dict[str, str] = {
@@ -959,3 +962,546 @@ def test_finding_with_explicit_required_quorum_two_still_honors_stored_quorum(tm
             assert detail["reproduction_summary"]["required_quorum"] == 2
     finally:
         app.state.db.close()
+
+
+def test_claim_next_task_2000_pv_multi_mission_same_priority_benchmark_and_semantics(
+    tmp_path: Path,
+) -> None:
+    """Multi-mission priority-5 bucket with 2,100+ queued peer_verify tasks:
+    1. Eligible verifier claims globally earliest bucket task in <50ms.
+    2. Blank-model / blank-harness agent (like live `gauravarora`) skips 2,100 attributed
+       peer_verify tasks in <50ms and seamlessly gets a scan task (or None in verify mode).
+    3. Active claimed lease collisions (same harness or same model) are prevented cleanly,
+       while exact cross-mission priority and FIFO ordering are preserved.
+    """
+    from aiwatchdogs.hub.desk import DeskService
+    from aiwatchdogs.hub.sse import SSEBroker
+
+    db = Database(db_path=tmp_path / "perf_claim_2k.db")
+    try:
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 15
+        desk = DeskService(db=db, broker=SSEBroker(db=db))
+        now = "2026-11-27T10:00:00Z"
+
+        with db.transaction() as conn:
+            # 3 missions sharing priority=5 (mirrors live P2/P3/P5), plus priority=1 and priority=9
+            conn.executemany(
+                """
+                INSERT INTO missions (
+                    id, slug, title, description, pillar, methodology_code,
+                    jurisdiction, ministry_or_authority, status, priority, created_at
+                ) VALUES (?, ?, ?, 'Perf test mission', 'budget', 'P1', 'Union', 'MoF', 'active', ?, ?)
+                """,
+                [
+                    ("m-p1", "perf-p1", "Perf P1", 1, now),
+                    ("m-p2", "perf-p2", "Perf P2", 5, now),
+                    ("m-p3", "perf-p3", "Perf P3", 5, now),
+                    ("m-p5", "perf-p5", "Perf P5", 5, now),
+                    ("m-p9", "perf-p9", "Perf P9", 9, now),
+                ],
+            )
+
+        author = desk.register_agent(
+            {"handle": "perf-author", "coding_agent": "Claude Code", "coding_agent_model": "claude-opus-4-6"},
+            base_url="https://aiwatchdogs.in",
+        )
+        active_holder = desk.register_agent(
+            {"handle": "perf-holder", "coding_agent": "Codex", "coding_agent_model": "gpt-5.4"},
+            base_url="https://aiwatchdogs.in",
+        )
+        eligible_v = desk.register_agent(
+            {"handle": "perf-elig", "coding_agent": "Antigravity", "coding_agent_model": "gemini-3.1-pro"},
+            base_url="https://aiwatchdogs.in",
+        )
+        same_holder_har = desk.register_agent(
+            {"handle": "perf-same-har", "coding_agent": "Codex", "coding_agent_model": "deepseek-r1"},
+            base_url="https://aiwatchdogs.in",
+        )
+        same_holder_mod = desk.register_agent(
+            {"handle": "perf-same-mod", "coding_agent": "Cursor", "coding_agent_model": "gpt-5.4"},
+            base_url="https://aiwatchdogs.in",
+        )
+        blank_model = desk.register_agent(
+            {"handle": "gauravarora-sim", "coding_agent": "Antigravity", "coding_agent_model": ""},
+            base_url="https://aiwatchdogs.in",
+        )
+        blank_harness = desk.register_agent(
+            {"handle": "perf-no-har", "coding_agent": "", "coding_agent_model": "llama-4"},
+            base_url="https://aiwatchdogs.in",
+        )
+        prio_tester = desk.register_agent(
+            {"handle": "perf-prio", "coding_agent": "Windsurf", "coding_agent_model": "qwen3-coder"},
+            base_url="https://aiwatchdogs.in",
+        )
+
+        # Bulk-seed 700 attributed findings + 2,100 queued peer_verify tasks across m-p2, m-p3, m-p5 (priority=5)
+        mission_specs = [
+            ("m-p2", "perf-p2", 250),
+            ("m-p3", "perf-p3", 300),
+            ("m-p5", "perf-p5", 150),
+        ]
+        finding_rows: list[tuple[Any, ...]] = []
+        pv_task_rows: list[tuple[Any, ...]] = []
+        idx = 0
+        for mid, slug, count in mission_specs:
+            for j in range(count):
+                idx += 1
+                fid = f"fnd-perf-{idx:04d}"
+                ts = f"2026-11-27T08:{(idx // 60) % 60:02d}:{idx % 60:02d}Z"
+                finding_rows.append(
+                    (
+                        fid,
+                        mid,
+                        slug,
+                        f"Perf Finding {idx:04d}",
+                        author["handle"],
+                        author["agent_id"],
+                        "Claude Code",
+                        "claude-opus-4-6",
+                        ts,
+                    )
+                )
+                payload_s = dumps_json({"finding_id": fid, "methodology_code": "P1"})
+                for slot in (1, 2, 3):
+                    pv_task_rows.append(
+                        (
+                            f"tsk-pv-{fid}-{slot}",
+                            mid,
+                            slug,
+                            f"Peer Verify ({slot}/3): {fid}",
+                            payload_s,
+                            fid,
+                            '["perf-author"]',
+                            ts,
+                            ts,
+                        )
+                    )
+
+        # Put the globally earliest priority=5 finding in m-p5 (alphabetically LAST in bucket),
+        # and the 2nd earliest in m-p3, to assert exact cross-mission bucket FIFO fairness.
+        earliest_fid = "fnd-perf-earliest-p5"
+        second_fid = "fnd-perf-second-p3"
+        p9_fid = "fnd-perf-p9-low"
+        earliest_ts = "2026-11-27T01:00:00Z"
+        second_ts = "2026-11-27T02:00:00Z"
+        p9_ts = "2026-11-26T00:00:00Z"  # Older timestamp, but priority=9 must lose to priority=5!
+
+        with db.transaction() as conn:
+            conn.executemany(
+                """
+                INSERT INTO findings (
+                    id, mission_id, mission_slug, pillar, title, summary, methodology_code,
+                    entity_name, jurisdiction, fiscal_year, submitted_by, submitted_by_agent_id,
+                    submitted_coding_agent, submitted_coding_agent_model, status,
+                    quarantined, required_quorum, created_at
+                ) VALUES (?, ?, ?, 'budget', ?, 'Summary', 'P1', 'Entity', 'Union', 'FY2025-26',
+                          ?, ?, ?, ?, 'peer_review', 0, 3, ?)
+                """,
+                [
+                    *finding_rows,
+                    (earliest_fid, "m-p5", "perf-p5", "Earliest P5", author["handle"], author["agent_id"], "Claude Code", "claude-opus-4-6", earliest_ts),
+                    (second_fid, "m-p3", "perf-p3", "Second P3", author["handle"], author["agent_id"], "Claude Code", "claude-opus-4-6", second_ts),
+                    (p9_fid, "m-p9", "perf-p9", "Low Prio P9", author["handle"], author["agent_id"], "Claude Code", "claude-opus-4-6", p9_ts),
+                ],
+            )
+            conn.executemany(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type, title,
+                    instructions, payload_json, target_finding_id, excluded_handles_json,
+                    status, created_at, updated_at
+                ) VALUES (?, ?, ?, 'P1', 'peer_verify', ?, 'Verify', ?, ?, ?, 'queued', ?, ?)
+                """,
+                [
+                    *pv_task_rows,
+                    (f"tsk-pv-{earliest_fid}-1", "m-p5", "perf-p5", "Earliest P5 slot 1", dumps_json({"finding_id": earliest_fid}), earliest_fid, '["perf-author"]', earliest_ts, earliest_ts),
+                    (f"tsk-pv-{earliest_fid}-2", "m-p5", "perf-p5", "Earliest P5 slot 2", dumps_json({"finding_id": earliest_fid}), earliest_fid, '["perf-author"]', earliest_ts, earliest_ts),
+                    (f"tsk-pv-{second_fid}-1", "m-p3", "perf-p3", "Second P3 slot 1", dumps_json({"finding_id": second_fid}), second_fid, '["perf-author"]', second_ts, second_ts),
+                    (f"tsk-pv-{p9_fid}-1", "m-p9", "perf-p9", "Low Prio P9 slot 1", dumps_json({"finding_id": p9_fid}), p9_fid, '["perf-author"]', p9_ts, p9_ts),
+                ],
+            )
+            # Active lease held by perf-holder (Codex / gpt-5.4) on earliest_fid slot 1
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'claimed', claimed_by_agent_id = ?, claimed_by_handle = ?,
+                    lease_id = 'lease-holder-1', lease_started_at = ?, lease_expires_at = '2099-01-01T00:00:00Z'
+                WHERE id = ?
+                """,
+                (active_holder["agent_id"], active_holder["handle"], now, f"tsk-pv-{earliest_fid}-1"),
+            )
+            # One scan task in priority=5 (m-p3) and one scan task in priority=1 (m-p1)
+            conn.executemany(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type, title,
+                    instructions, payload_json, status, created_at, updated_at
+                ) VALUES (?, ?, ?, 'P1', 'anomaly_scan', ?, 'Scan', '{}', 'queued', ?, ?)
+                """,
+                [
+                    ("tsk-scan-p1-1", "m-p1", "perf-p1", "P1 Scan", "2026-11-27T09:00:00Z", now),
+                    ("tsk-scan-p3-1", "m-p3", "perf-p3", "P3 Scan", "2026-11-27T00:30:00Z", now),
+                ],
+            )
+            conn.execute("ANALYZE")
+
+        # 0. Priority=1 scan task is always claimed BEFORE priority=5 peer_verify tasks
+        c_p1 = desk.claim_next_task(token=prio_tester["api_token"], handle=prio_tester["handle"], mode="auto")
+        assert c_p1 is not None and c_p1["task"]["id"] == "tsk-scan-p1-1"
+
+        # 1. Eligible verifier (Antigravity / gemini-3.1-pro) claims earliest priority=5 peer_verify
+        #    task (in m-p5, slot 2 — slot 1 is claimed by Codex/gpt-5.4 which does NOT conflict) in <50ms!
+        t0 = time.perf_counter()
+        c_elig = desk.claim_next_task(token=eligible_v["api_token"], handle=eligible_v["handle"], mode="auto")
+        elig_ms = (time.perf_counter() - t0) * 1000.0
+        assert c_elig is not None
+        assert c_elig["task"]["id"] == f"tsk-pv-{earliest_fid}-2"
+        assert c_elig["task"]["mission_slug"] == "perf-p5"
+        assert elig_ms < 50.0, f"Eligible peer_verify claim took {elig_ms:.2f}ms (limit 50ms)"
+
+        # Release slot 2 so same-harness / same-model collision checks specifically test active_holder's lease on earliest_fid!
+        with db.transaction() as conn:
+            conn.execute(
+                "UPDATE tasks SET status = 'queued', claimed_by_agent_id = NULL, claimed_by_handle = NULL, lease_id = NULL WHERE id = ?",
+                (f"tsk-pv-{earliest_fid}-2",),
+            )
+
+        # 2. Agents sharing active_holder's harness (Codex) or model (gpt-5.4) MUST skip earliest_fid
+        #    (via upfront active-lease conflict fetch) and get second_fid (in m-p3) in <50ms!
+        t1 = time.perf_counter()
+        c_har = desk.claim_next_task(token=same_holder_har["api_token"], handle=same_holder_har["handle"], mode="verify")
+        har_ms = (time.perf_counter() - t1) * 1000.0
+        assert c_har is not None
+        assert c_har["task"]["id"] == f"tsk-pv-{second_fid}-1"
+        assert c_har["task"]["target_finding_id"] != earliest_fid
+        assert har_ms < 50.0, f"Lease-conflict-filtered claim took {har_ms:.2f}ms (limit 50ms)"
+
+        t2 = time.perf_counter()
+        c_mod = desk.claim_next_task(token=same_holder_mod["api_token"], handle=same_holder_mod["handle"], mode="verify")
+        mod_ms = (time.perf_counter() - t2) * 1000.0
+        assert c_mod is not None
+        assert c_mod["task"]["target_finding_id"] not in (earliest_fid, second_fid)
+        assert c_mod["task"]["mission_slug"] in ("perf-p2", "perf-p3", "perf-p5")
+        assert mod_ms < 50.0, f"Model-conflict-filtered claim took {mod_ms:.2f}ms (limit 50ms)"
+
+        # 3. Blank coding_agent_model agent (like live `gauravarora`) skips ALL 2,100+ attributed
+        #    peer_verify tasks in <50ms: returns None in verify mode and gets the scan task in auto mode!
+        t3 = time.perf_counter()
+        c_blank_verify = desk.claim_next_task(token=blank_model["api_token"], handle=blank_model["handle"], mode="verify")
+        blank_verify_ms = (time.perf_counter() - t3) * 1000.0
+        assert c_blank_verify is None
+        assert blank_verify_ms < 50.0, f"Blank-model verify skip took {blank_verify_ms:.2f}ms (limit 50ms)"
+
+        t4 = time.perf_counter()
+        c_blank_auto = desk.claim_next_task(token=blank_model["api_token"], handle=blank_model["handle"], mode="auto")
+        blank_auto_ms = (time.perf_counter() - t4) * 1000.0
+        assert c_blank_auto is not None
+        assert c_blank_auto["task"]["id"] == "tsk-scan-p3-1"
+        assert blank_auto_ms < 50.0, f"Blank-model auto fallback to scan took {blank_auto_ms:.2f}ms (limit 50ms)"
+
+        # Blank coding_agent harness also skips all 2,100+ attributed peer_verify tasks in <50ms
+        t5 = time.perf_counter()
+        c_no_har = desk.claim_next_task(token=blank_harness["api_token"], handle=blank_harness["handle"], mode="verify")
+        no_har_ms = (time.perf_counter() - t5) * 1000.0
+        assert c_no_har is None
+        assert no_har_ms < 50.0, f"Blank-harness verify skip took {no_har_ms:.2f}ms (limit 50ms)"
+
+        # 4. If a mission DOES contain a finding with blank submitted_coding_agent_model, blank_model
+        #    still claims it cleanly!
+        unattr_fid = "fnd-perf-unattr-model"
+        with db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO findings (
+                    id, mission_id, mission_slug, pillar, title, summary, methodology_code,
+                    entity_name, jurisdiction, fiscal_year, submitted_by, submitted_by_agent_id,
+                    submitted_coding_agent, submitted_coding_agent_model, status,
+                    quarantined, required_quorum, created_at
+                ) VALUES (?, 'm-p2', 'perf-p2', 'budget', 'Unattributed Model Finding', 'Summary', 'P1',
+                          'Entity', 'Union', 'FY2025-26', ?, ?, 'Claude Code', '', 'peer_review', 0, 3, '2026-11-27T00:10:00Z')
+                """,
+                (unattr_fid, author["handle"], author["agent_id"]),
+            )
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type, title,
+                    instructions, payload_json, target_finding_id, excluded_handles_json,
+                    status, created_at, updated_at
+                ) VALUES (?, 'm-p2', 'perf-p2', 'P1', 'peer_verify', 'Unattr PV', 'Verify', ?, ?, '["perf-author"]',
+                          'queued', '2026-11-27T00:10:00Z', '2026-11-27T00:10:00Z')
+                """,
+                (f"tsk-pv-{unattr_fid}-1", dumps_json({"finding_id": unattr_fid}), unattr_fid),
+            )
+        c_unattr = desk.claim_next_task(token=blank_model["api_token"], handle=blank_model["handle"], mode="verify")
+        assert c_unattr is not None
+        assert c_unattr["task"]["id"] == f"tsk-pv-{unattr_fid}-1"
+
+        # 5. Verify SQLite query plans hit every v15/v12 partial index with ZERO TEMP B-TREE sort!
+        with db.read() as conn:
+            plan_claimed = " | ".join(
+                str(r["detail"])
+                for r in conn.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT DISTINCT t2.target_finding_id
+                    FROM tasks t2
+                    LEFT JOIN agents a2 ON a2.id = t2.claimed_by_agent_id
+                    WHERE t2.status = 'claimed'
+                      AND t2.target_finding_id IS NOT NULL
+                      AND t2.claimed_by_handle = 'perf-elig'
+                    """
+                ).fetchall()
+            )
+            assert "idx_tasks_claimed_target_finding" in plan_claimed, plan_claimed
+
+            plan_unattr = " | ".join(
+                str(r["detail"])
+                for r in conn.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT DISTINCT mission_id
+                    FROM findings
+                    WHERE status = 'peer_review'
+                      AND quarantined = 0
+                      AND (TRIM(submitted_coding_agent) = '' OR TRIM(submitted_coding_agent_model) = '')
+                      AND TRIM(submitted_coding_agent_model) = ''
+                    """
+                ).fetchall()
+            )
+            assert "idx_findings_unattributed_peer_review" in plan_unattr, plan_unattr
+
+            plan_pv_union = " | ".join(
+                str(r["detail"])
+                for r in conn.execute(
+                    """
+                    EXPLAIN QUERY PLAN
+                    SELECT * FROM (
+                        SELECT t.id, COALESCE(t.available_at, t.created_at) AS sort_ts, t.created_at, t.mission_id
+                        FROM tasks t
+                        LEFT JOIN findings f ON f.id = t.target_finding_id
+                        WHERE t.mission_id = 'm-p2'
+                          AND t.task_type = 'peer_verify'
+                          AND t.status = 'queued'
+                          AND (t.available_at IS NULL OR t.available_at <= '2099-01-01T00:00:00Z')
+                        ORDER BY COALESCE(t.available_at, t.created_at) ASC, t.created_at ASC, t.id ASC
+                        LIMIT 1
+                    ) AS p0
+                    UNION ALL
+                    SELECT * FROM (
+                        SELECT t.id, COALESCE(t.available_at, t.created_at) AS sort_ts, t.created_at, t.mission_id
+                        FROM tasks t
+                        LEFT JOIN findings f ON f.id = t.target_finding_id
+                        WHERE t.mission_id = 'm-p3'
+                          AND t.task_type = 'peer_verify'
+                          AND t.status = 'queued'
+                          AND (t.available_at IS NULL OR t.available_at <= '2099-01-01T00:00:00Z')
+                        ORDER BY COALESCE(t.available_at, t.created_at) ASC, t.created_at ASC, t.id ASC
+                        LIMIT 1
+                    ) AS p1
+                    """
+                ).fetchall()
+            )
+            assert "idx_tasks_queued_pv_order" in plan_pv_union, plan_pv_union
+            assert "TEMP B-TREE" not in plan_pv_union.upper(), plan_pv_union
+    finally:
+        db.close()
+
+
+def test_migration_v15_indexes_idempotency_and_postgres_claim_sql_translation(tmp_path: Path) -> None:
+    """Verify migration v15 partial indexes, Postgres DDL translation, and claim_next_task Postgres SQL."""
+    from contextlib import contextmanager
+    import sqlite3
+
+    from aiwatchdogs.core.safety import compute_token_digest
+    from aiwatchdogs.hub.desk import DeskService
+    from aiwatchdogs.hub.sse import SSEBroker
+
+    db_path = tmp_path / "v15_idx.db"
+    db = Database(db_path=db_path)
+    try:
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 15
+        # Idempotent re-run of migration v15
+        with db.transaction() as conn:
+            _migrate_v15_peer_verify_claim_indexes(conn, is_postgres=False)
+    finally:
+        db.close()
+
+    raw = sqlite3.connect(db_path)
+    idx_names = {row[0] for row in raw.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+    raw.close()
+    for expected in (
+        "idx_tasks_claimed_target_finding",
+        "idx_findings_peer_review_mission",
+        "idx_findings_unattributed_peer_review",
+    ):
+        assert expected in idx_names, f"Missing v15 index {expected}"
+
+    # Verify Postgres DDL translation preserves all v15 partial indexes cleanly
+    for stmt in _V15_PEER_VERIFY_CLAIM_INDEXES:
+        pg_ddl = translate_sql_for_postgres(stmt, parameterized=False)
+        assert pg_ddl is not None
+        assert pg_ddl == stmt
+        assert "CREATE INDEX IF NOT EXISTS" in pg_ddl
+
+    # Smoke-test claim_next_task on Postgres branch (multi-mission race retry + blank-model fast-path)
+    raw_token = "awd_test_pg_token_12345"
+    token_hash = compute_token_digest(raw_token)
+
+    def _run_pg_claim_scenario(
+        *,
+        agent_model: str,
+        simulate_first_lock_race: bool,
+        single_mission: bool = False,
+    ) -> tuple[Any, list[tuple[str, Any]]]:
+        executed: list[tuple[str, Any]] = []
+        race_fired = {"done": False}
+
+        class _FakeCursor:
+            def __init__(self, rows: list[dict[str, Any]] | None = None, rowcount: int = 1) -> None:
+                self._rows = rows or []
+                self.rowcount = rowcount
+
+            def fetchone(self) -> dict[str, Any] | None:
+                return self._rows[0] if self._rows else None
+
+            def fetchall(self) -> list[dict[str, Any]]:
+                return list(self._rows)
+
+        class _FakePgAdapter:
+            def execute(self, sql: str, params: Any = None) -> _FakeCursor:
+                has_params = params is not None and len(params) > 0
+                translated = translate_sql_for_postgres(sql, parameterized=has_params)
+                assert translated is not None
+                if has_params:
+                    assert translated.count("%s") == len(params), (translated, params)
+                norm = " ".join(translated.split())
+                executed.append((norm, params))
+
+                if "FROM agents WHERE api_token_hash =" in norm:
+                    return _FakeCursor(
+                        [
+                            {
+                                "id": "agt-pg-1",
+                                "handle": "pg-agent",
+                                "provider": "rule-engine",
+                                "model": "v1",
+                                "mode": "verify",
+                                "coding_agent": "Antigravity",
+                                "coding_agent_model": agent_model,
+                                "api_token_hash": token_hash,
+                                "status": "active",
+                                "revoked_at": None,
+                            }
+                        ]
+                    )
+                if "SELECT COUNT(*) AS c FROM tasks WHERE status = 'claimed'" in norm:
+                    return _FakeCursor([{"c": 0}])
+                if "FROM missions" in norm:
+                    if single_mission:
+                        return _FakeCursor([{"id": "m-p2", "slug": "p2", "status": "active", "priority": 5}])
+                    return _FakeCursor(
+                        [
+                            {"id": "m-p2", "slug": "p2", "status": "active", "priority": 5},
+                            {"id": "m-p3", "slug": "p3", "status": "active", "priority": 5},
+                            {"id": "m-p5", "slug": "p5", "status": "active", "priority": 5},
+                        ]
+                    )
+                if "SELECT DISTINCT mission_id FROM findings" in norm:
+                    return _FakeCursor([])  # 0 unattributed findings
+                if "SELECT DISTINCT t2.target_finding_id FROM tasks t2" in norm:
+                    return _FakeCursor([{"target_finding_id": "fnd-busy-1"}])
+                if "UNION ALL" in norm:
+                    return _FakeCursor(
+                        [
+                            {"id": "tsk-pv-p2-1", "sort_ts": "2026-11-27T05:00:00Z", "created_at": "2026-11-27T05:00:00Z", "mission_id": "m-p2"},
+                            {"id": "tsk-pv-p5-1", "sort_ts": "2026-11-27T01:00:00Z", "created_at": "2026-11-27T01:00:00Z", "mission_id": "m-p5"},
+                        ]
+                    )
+                if "FOR UPDATE OF t SKIP LOCKED" in norm:
+                    return _FakeCursor(
+                        [{"id": "tsk-pv-p2-1", "sort_ts": "2026-11-27T05:00:00Z", "created_at": "2026-11-27T05:00:00Z", "mission_id": "m-p2"}]
+                    )
+                if norm.startswith("SELECT * FROM tasks WHERE id = %s"):
+                    tid = params[0]
+                    if "status = 'queued'" in norm and simulate_first_lock_race and tid == "tsk-pv-p5-1" and not race_fired["done"]:
+                        race_fired["done"] = True
+                        return _FakeCursor([])  # simulate another worker winning FOR UPDATE SKIP LOCKED
+                    return _FakeCursor(
+                        [
+                            {
+                                "id": tid,
+                                "mission_id": "m-p2",
+                                "mission_slug": "p2",
+                                "methodology_code": "P1",
+                                "task_type": "peer_verify",
+                                "title": "Peer Verify",
+                                "instructions": "Verify",
+                                "payload_json": '{"finding_id":"fnd-ok-1"}',
+                                "target_finding_id": "fnd-ok-1",
+                                "excluded_handles_json": "[]",
+                                "work_type": "peer_verify",
+                                "estimated_tokens": 1000,
+                                "estimate_basis": "default",
+                            }
+                        ]
+                    )
+                if "SELECT t.id, COALESCE(t.available_at, t.created_at) AS sort_ts" in norm and "t.id NOT IN" in norm:
+                    return _FakeCursor([])  # m-p5 exhausted after race -> winner shifts to m-p2!
+                if "FROM findings WHERE id = %s FOR UPDATE" in norm:
+                    return _FakeCursor(
+                        [
+                            {
+                                "submitted_by": "other-author",
+                                "status": "peer_review",
+                                "quarantined": 0,
+                                "submitted_coding_agent": "Claude Code",
+                                "submitted_coding_agent_model": "claude-opus-4-6",
+                            }
+                        ]
+                    )
+                if "UPDATE tasks SET status = 'claimed'" in norm:
+                    return _FakeCursor([], rowcount=1)
+                return _FakeCursor([])
+
+        class _FakePgDb:
+            is_postgres = True
+
+            @contextmanager
+            def transaction(self) -> Any:
+                yield _FakePgAdapter()
+
+        fake_db = _FakePgDb()
+        desk = DeskService(db=fake_db, broker=SSEBroker(db=fake_db))  # type: ignore[arg-type]
+        result = desk.claim_next_task(token=raw_token, handle="pg-agent", mode="verify")
+        return result, executed
+
+    # Scenario A: Attributed agent on 3-mission bucket with simulated race on earliest row
+    res_a, sqls_a = _run_pg_claim_scenario(agent_model="gemini-3.1-pro", simulate_first_lock_race=True)
+    assert res_a is not None
+    assert res_a["task"]["id"] == "tsk-pv-p2-1"  # raced on tsk-pv-p5-1 -> cleanly claimed m-p2!
+    all_sql_a = [s for s, _ in sqls_a]
+    assert not any("t.mission_id IN (" in s for s in all_sql_a), "Must never emit t.mission_id IN (...)"
+    assert any("SELECT DISTINCT t2.target_finding_id FROM tasks t2" in s for s in all_sql_a)
+    assert any("UNION ALL" in s and "LEFT JOIN findings f ON f.id = t.target_finding_id" in s for s in all_sql_a)
+    assert any("t.target_finding_id NOT IN (%s)" in s for s in all_sql_a)
+    assert any("SELECT * FROM tasks WHERE id = %s AND status = 'queued'" in s and "FOR UPDATE SKIP LOCKED" in s for s in all_sql_a)
+    assert any("t.id NOT IN (%s)" in s for s in all_sql_a)
+    assert any("FROM findings WHERE id = %s FOR UPDATE" in s for s in all_sql_a)
+
+    # Scenario B: Blank-model agent (`gauravarora`) hits unattributed fast-path and skips tasks scan completely!
+    res_b, sqls_b = _run_pg_claim_scenario(agent_model="", simulate_first_lock_race=False)
+    assert res_b is None
+    all_sql_b = [s for s, _ in sqls_b]
+    assert any("SELECT DISTINCT mission_id FROM findings" in s for s in all_sql_b)
+    assert not any("LEFT JOIN findings f ON f.id = t.target_finding_id" in s for s in all_sql_b)
+    assert not any("t.mission_id IN (" in s for s in all_sql_b)
+
+    # Scenario C: Single-mission bucket uses `FOR UPDATE OF t SKIP LOCKED` with LEFT JOIN findings
+    res_c, sqls_c = _run_pg_claim_scenario(
+        agent_model="gemini-3.1-pro", simulate_first_lock_race=False, single_mission=True
+    )
+    assert res_c is not None and res_c["task"]["id"] == "tsk-pv-p2-1"
+    all_sql_c = [s for s, _ in sqls_c]
+    assert any("LEFT JOIN findings f ON f.id = t.target_finding_id" in s and "FOR UPDATE OF t SKIP LOCKED" in s for s in all_sql_c)
+    assert not any("t.mission_id IN (" in s for s in all_sql_c)

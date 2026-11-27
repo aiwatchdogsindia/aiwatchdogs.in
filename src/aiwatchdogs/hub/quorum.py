@@ -10,6 +10,25 @@ from __future__ import annotations
 from typing import Any, Callable, Iterable
 
 DEFAULT_REQUIRED_QUORUM = 3
+TASK_PROGRESS_WEIGHT = 70.0
+REVIEW_PROGRESS_WEIGHT = 30.0
+
+IN_REVIEW_FINDING_STATUSES: tuple[str, ...] = (
+    "peer_review",
+    "raw_lead",
+    "needs_adjudication",
+)
+RESOLVED_REVIEW_FINDING_STATUSES: tuple[str, ...] = (
+    "verified",
+    "rti_filed",
+    "official_response_logged",
+    "disputed",
+    "retracted",
+    "retracted_false_positive",
+)
+REVIEWABLE_FINDING_STATUSES: tuple[str, ...] = (
+    IN_REVIEW_FINDING_STATUSES + RESOLVED_REVIEW_FINDING_STATUSES
+)
 
 CANONICAL_CHECKS: tuple[str, ...] = (
     "bytes_digest",
@@ -290,4 +309,134 @@ def evaluate_pairwise_quorum(
         "has_pii_or_legal_flag": has_pii_or_legal_flag,
         "all_fp": all_fp,
         "voter_handles": voter_handles,
+    }
+
+
+def compute_project_progress(
+    *,
+    total_tasks: int,
+    completed_tasks: int,
+    review_slots_required: int = 0,
+    review_slots_done: int = 0,
+    in_review_findings: int = 0,
+    peer_checks_total: int = 0,
+    peer_checks_done: int = 0,
+    peer_checks_open: int = 0,
+    required_reviews: int = DEFAULT_REQUIRED_QUORUM,
+) -> dict[str, Any]:
+    """Compute weighted project completion (70% primary tasks + 30% independent reviews).
+
+    - Completing all primary tasks accounts for 70% of progress when findings require
+      independent peer reviews, leaving 30% for the required independent reviews
+      (30 / N percent per review: e.g. 10% per review for 3 independent reviews,
+      6% per review for 5 independent reviews).
+    - Progress never reaches 100.0% while any primary task or independent review remains.
+    - When no findings require peer review and no reviews remain (e.g. website checks or
+      projects where all tasks cleared with zero findings), task completion maps cleanly
+      from 0% to 100%.
+    """
+    safe_total = max(0, int(total_tasks or 0))
+    safe_completed = max(0, min(safe_total, int(completed_tasks or 0)))
+    eff_required_reviews = max(1, int(required_reviews or DEFAULT_REQUIRED_QUORUM))
+    per_review_pct = round(REVIEW_PROGRESS_WEIGHT / eff_required_reviews, 2)
+
+    if safe_total <= 0:
+        return {
+            "progress_pct": 0.0,
+            "pct_complete": 0.0,
+            "task_pct_complete": 0.0,
+            "task_progress_pct": 0.0,
+            "review_progress_pct": 0.0,
+            "review_remaining_pct": 0.0,
+            "task_weight_pct": TASK_PROGRESS_WEIGHT,
+            "review_weight_pct": REVIEW_PROGRESS_WEIGHT,
+            "required_reviews": eff_required_reviews,
+            "per_review_pct": per_review_pct,
+            "reviews_required": 0,
+            "reviews_done": 0,
+            "reviews_remaining": 0,
+            "has_reviews_remaining": False,
+        }
+
+    task_ratio = safe_completed / safe_total
+    raw_task_only_pct = task_ratio * 100.0
+
+    eff_slots_required = max(0, int(review_slots_required or 0))
+    eff_slots_done = max(0, int(review_slots_done or 0))
+    in_review_cnt = max(0, int(in_review_findings or 0))
+    open_pv = max(0, int(peer_checks_open or 0))
+    total_pv = max(0, int(peer_checks_total or 0))
+    done_pv = max(0, int(peer_checks_done or 0))
+
+    if eff_slots_required == 0 and total_pv > 0:
+        eff_slots_required = total_pv
+        eff_slots_done = min(eff_slots_required, done_pv)
+        if open_pv > 0 and eff_slots_done >= eff_slots_required:
+            eff_slots_done = max(0, eff_slots_required - 1)
+    elif eff_slots_required == 0 and in_review_cnt > 0:
+        eff_slots_required = in_review_cnt * eff_required_reviews
+        eff_slots_done = 0
+
+    eff_slots_done = min(eff_slots_done, eff_slots_required)
+    eff_slots_remaining = max(0, eff_slots_required - eff_slots_done)
+
+    has_reviews_remaining = eff_slots_remaining > 0 or in_review_cnt > 0 or open_pv > 0
+    if has_reviews_remaining and eff_slots_remaining == 0 and eff_slots_required > 0:
+        eff_slots_done = max(0, eff_slots_required - 1)
+        eff_slots_remaining = 1
+
+    has_review_phase = eff_slots_required > 0 or has_reviews_remaining
+    if eff_slots_required > 0:
+        review_ratio = eff_slots_done / eff_slots_required
+    elif has_reviews_remaining:
+        review_ratio = 0.0
+    else:
+        review_ratio = 1.0
+
+    if has_review_phase:
+        raw_task_pct = task_ratio * TASK_PROGRESS_WEIGHT
+        raw_review_pct = task_ratio * REVIEW_PROGRESS_WEIGHT * review_ratio
+        raw_review_remaining_pct = task_ratio * REVIEW_PROGRESS_WEIGHT * (1.0 - review_ratio)
+    else:
+        raw_task_pct = raw_task_only_pct
+        raw_review_pct = 0.0
+        raw_review_remaining_pct = 0.0
+
+    raw_total_pct = raw_task_pct + raw_review_pct
+    has_incomplete_work = (safe_completed < safe_total) or has_reviews_remaining
+
+    if has_incomplete_work:
+        progress_pct = min(round(raw_total_pct, 1), 99.9)
+        pct_complete = min(round(raw_total_pct, 2), 99.9)
+        task_progress_pct = round(raw_task_pct, 2)
+        review_progress_pct = max(0.0, round(pct_complete - task_progress_pct, 2)) if has_review_phase else 0.0
+        if has_reviews_remaining and safe_completed > 0:
+            if safe_completed >= safe_total:
+                review_remaining_pct = max(0.1, round(100.0 - pct_complete, 2))
+            else:
+                review_remaining_pct = max(0.01, round(raw_review_remaining_pct, 2))
+        else:
+            review_remaining_pct = 0.0
+    else:
+        progress_pct = 100.0
+        pct_complete = 100.0
+        task_progress_pct = TASK_PROGRESS_WEIGHT if has_review_phase else 100.0
+        review_progress_pct = REVIEW_PROGRESS_WEIGHT if has_review_phase else 0.0
+        review_remaining_pct = 0.0
+
+    return {
+        "progress_pct": progress_pct,
+        "pct_complete": pct_complete,
+        "task_pct_complete": round(raw_task_only_pct, 2),
+        "task_progress_pct": task_progress_pct,
+        "review_progress_pct": review_progress_pct,
+        "review_remaining_pct": review_remaining_pct,
+        "task_weight_pct": TASK_PROGRESS_WEIGHT,
+        "review_weight_pct": REVIEW_PROGRESS_WEIGHT,
+        "required_reviews": eff_required_reviews,
+        "per_review_pct": per_review_pct,
+        "reviews_required": eff_slots_required,
+        "reviews_done": eff_slots_done,
+        "reviews_remaining": eff_slots_remaining,
+        "has_reviews_remaining": has_reviews_remaining,
     }

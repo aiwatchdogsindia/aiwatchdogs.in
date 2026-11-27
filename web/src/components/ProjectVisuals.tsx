@@ -18,6 +18,11 @@ import {
   getTaskTag,
   getWorkTypeTag,
 } from '../lib/tags';
+import {
+  computeProjectProgress,
+  formatPerReviewPct,
+  formatProgressPct,
+} from '../lib/progress';
 import type {
   FindingItem,
   MissionItem,
@@ -40,6 +45,13 @@ export interface CompactProgressBarProps {
   total: number;
   verified?: number;
   peerReview?: number;
+  reviewsRequired?: number;
+  reviewsDone?: number;
+  reviewsRemaining?: number;
+  requiredReviews?: number;
+  peerChecksTotal?: number;
+  peerChecksDone?: number;
+  peerChecksOpen?: number;
   label?: string;
 }
 
@@ -59,7 +71,8 @@ export interface ProjectResultsVisualizerProps {
   onFilterTasks?: (text: string) => void;
 }
 
-type StatusBucket = 'completed' | 'claimed' | 'queued' | 'waiting';
+type TaskStatusBucket = 'completed' | 'claimed' | 'queued' | 'waiting';
+type StatusBucket = TaskStatusBucket | 'review';
 
 const STATUS_META: Record<
   StatusBucket,
@@ -69,6 +82,11 @@ const STATUS_META: Record<
     label: TASK_TAGS.done.label,
     color: 'var(--pv-done)',
     badgeClass: TASK_TAGS.done.badgeClass,
+  },
+  review: {
+    label: FINDING_TAGS.in_review.label,
+    color: 'var(--pv-review)',
+    badgeClass: FINDING_TAGS.in_review.badgeClass,
   },
   claimed: {
     label: TASK_TAGS.in_progress.label,
@@ -156,7 +174,7 @@ function formatReasonLabel(key: string): string {
   return W1_REASON_LABELS[key] || key.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 }
 
-function classifyTaskStatus(task: MissionTask): StatusBucket {
+function classifyTaskStatus(task: MissionTask): TaskStatusBucket {
   if (task.status === 'completed' || task.status === 'settled') return 'completed';
   if (task.status === 'claimed') return 'claimed';
   if (task.status === 'queued') return 'queued';
@@ -193,9 +211,16 @@ export function CompactProgressBar({
   total,
   verified,
   peerReview,
+  reviewsRequired,
+  reviewsDone,
+  reviewsRemaining,
+  requiredReviews,
+  peerChecksTotal,
+  peerChecksDone,
+  peerChecksOpen,
   label,
 }: CompactProgressBarProps) {
-  const [hovered, setHovered] = useState<'ring' | 'completed' | 'claimed' | 'queued' | null>(null);
+  const [hovered, setHovered] = useState<'ring' | 'completed' | 'review' | 'claimed' | 'queued' | null>(null);
 
   const safeTotal = Math.max(0, total);
   const safeDone = Math.max(0, Math.min(safeTotal, completed));
@@ -207,13 +232,37 @@ export function CompactProgressBar({
   const remainder = Math.max(0, safeTotal - safeDone - safeClaimed - safeQueued);
   const openCount = safeQueued + remainder;
 
-  const donePct = calcPct(safeDone, safeTotal);
+  const progress = computeProjectProgress({
+    completed: safeDone,
+    total: safeTotal,
+    verified,
+    peerReview,
+    reviewsRequired,
+    reviewsDone,
+    reviewsRemaining,
+    requiredReviews,
+    peerChecksTotal,
+    peerChecksDone,
+    peerChecksOpen,
+  });
+
+  const donePct = progress.pctComplete;
+  const reviewRemainingPct = progress.reviewRemainingPct;
   const claimedPct = calcPct(safeClaimed, safeTotal);
   const openPct = calcPct(openCount, safeTotal);
+  const displayPct = formatProgressPct(progress.progressPct, progress.hasIncompleteWork);
+  const perReviewLabel = formatPerReviewPct(progress.perReviewPct);
 
   const ringRadius = 10;
   const ringCircumference = 2 * Math.PI * ringRadius;
-  const ringOffset = ringCircumference * (1 - donePct / 100);
+  const visualDoneRingPct =
+    progress.hasIncompleteWork && donePct > 95 ? 95 : donePct;
+  const visualCompletedPlusReviewPct = Math.min(
+    100,
+    donePct + reviewRemainingPct,
+  );
+  const ringOffset = ringCircumference * (1 - visualDoneRingPct / 100);
+  const reviewRingOffset = ringCircumference * (1 - visualCompletedPlusReviewPct / 100);
 
   if (safeTotal === 0) {
     return (
@@ -225,7 +274,13 @@ export function CompactProgressBar({
 
   const tooltipContent = (() => {
     if (hovered === 'completed') {
-      return `${safeDone.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(donePct)} ${TASK_TAGS.done.label}`;
+      if (progress.hasReviewPhase) {
+        return `Tasks ${safeDone.toLocaleString('en-IN')}/${safeTotal.toLocaleString('en-IN')} (${fmtPct(progress.taskProgressPct)} of ${progress.taskWeightPct}%) + Reviews ${progress.reviewsDone.toLocaleString('en-IN')}/${progress.reviewsRequired.toLocaleString('en-IN')} (${fmtPct(progress.reviewProgressPct)} of ${progress.reviewWeightPct}%) · ${displayPct}`;
+      }
+      return `${safeDone.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${displayPct} ${TASK_TAGS.done.label}`;
+    }
+    if (hovered === 'review') {
+      return `${progress.reviewsRemaining.toLocaleString('en-IN')} / ${progress.reviewsRequired.toLocaleString('en-IN')} independent reviews left · ${fmtPct(reviewRemainingPct)} (${perReviewLabel} × ${progress.requiredReviews} reviews)`;
     }
     if (hovered === 'claimed') {
       return `${safeClaimed.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}`;
@@ -234,15 +289,30 @@ export function CompactProgressBar({
       return `${openCount.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(openPct)} ${TASK_TAGS.open.label}`;
     }
     if (hovered === 'ring') {
-      const parts = [
-        `${safeDone.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${fmtPct(donePct)} ${TASK_TAGS.done.label}`,
-      ];
+      const parts: string[] = [];
+      if (progress.hasReviewPhase) {
+        parts.push(
+          `Tasks ${safeDone.toLocaleString('en-IN')}/${safeTotal.toLocaleString('en-IN')} (${fmtPct(progress.taskProgressPct)}/${progress.taskWeightPct}%)`,
+        );
+        parts.push(
+          `Reviews ${progress.reviewsDone.toLocaleString('en-IN')}/${progress.reviewsRequired.toLocaleString('en-IN')} (${fmtPct(progress.reviewProgressPct)}/${progress.reviewWeightPct}%, ${perReviewLabel} each)`,
+        );
+        if (progress.reviewsRemaining > 0) {
+          parts.push(`${progress.reviewsRemaining.toLocaleString('en-IN')} reviews left`);
+        }
+      } else {
+        parts.push(
+          `${safeDone.toLocaleString('en-IN')} / ${safeTotal.toLocaleString('en-IN')} · ${displayPct} ${TASK_TAGS.done.label}`,
+        );
+      }
       if (safeClaimed > 0) {
         parts.push(
           `${safeClaimed.toLocaleString('en-IN')} ${TASK_TAGS.in_progress.label} (${fmtPct(claimedPct)})`,
         );
       }
-      parts.push(`${openCount.toLocaleString('en-IN')} ${TASK_TAGS.open.label} (${fmtPct(openPct)})`);
+      if (openCount > 0) {
+        parts.push(`${openCount.toLocaleString('en-IN')} ${TASK_TAGS.open.label} (${fmtPct(openPct)})`);
+      }
       return parts.join(' · ');
     }
     return null;
@@ -251,7 +321,7 @@ export function CompactProgressBar({
   const tooltipAlign =
     hovered === 'ring' || hovered === 'completed'
       ? 'left'
-      : hovered === 'queued' && openPct > 45
+      : (hovered === 'review' && donePct > 55) || (hovered === 'queued' && openPct > 45)
         ? 'right'
         : 'center';
 
@@ -271,7 +341,11 @@ export function CompactProgressBar({
           className="pv-compact-ring-pill"
           tabIndex={0}
           role="note"
-          aria-label={`${fmtPct(donePct)} ${TASK_TAGS.done.label} (${safeDone} of ${safeTotal})`}
+          aria-label={
+            progress.hasReviewPhase
+              ? `${displayPct} ${TASK_TAGS.done.label} (${safeDone} of ${safeTotal} tasks, ${progress.reviewsDone} of ${progress.reviewsRequired} independent reviews)`
+              : `${displayPct} ${TASK_TAGS.done.label} (${safeDone} of ${safeTotal})`
+          }
           onMouseEnter={() => setHovered('ring')}
           onFocus={() => setHovered('ring')}
           onBlur={() => setHovered(null)}
@@ -291,6 +365,19 @@ export function CompactProgressBar({
               stroke="var(--rule)"
               strokeWidth="3"
             />
+            {reviewRemainingPct > 0 ? (
+              <circle
+                cx="13"
+                cy="13"
+                r={ringRadius}
+                fill="none"
+                stroke="var(--pv-review)"
+                strokeWidth="3"
+                strokeDasharray={ringCircumference}
+                strokeDashoffset={reviewRingOffset}
+                transform="rotate(-90 13 13)"
+              />
+            ) : null}
             {donePct > 0 ? (
               <circle
                 cx="13"
@@ -299,14 +386,14 @@ export function CompactProgressBar({
                 fill="none"
                 stroke="var(--pv-done)"
                 strokeWidth="3"
-                strokeLinecap="round"
+                strokeLinecap={reviewRemainingPct > 0 ? 'butt' : 'round'}
                 strokeDasharray={ringCircumference}
                 strokeDashoffset={ringOffset}
                 transform="rotate(-90 13 13)"
               />
             ) : null}
           </svg>
-          <span className="pv-compact-pct tabular">{fmtPct(donePct)}</span>
+          <span className="pv-compact-pct tabular">{displayPct}</span>
         </span>
 
         <span className="pv-compact-meta tabular">
@@ -334,24 +421,36 @@ export function CompactProgressBar({
       <div
         className="pv-compact-track"
         role="group"
-        aria-label={`Progress breakdown: ${fmtPct(donePct)} ${TASK_TAGS.done.label}, ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}, ${fmtPct(openPct)} ${TASK_TAGS.open.label}`}
+        aria-label={`Progress breakdown: ${displayPct} ${TASK_TAGS.done.label}${reviewRemainingPct > 0 ? `, ${fmtPct(reviewRemainingPct)} ${FINDING_TAGS.in_review.label}` : ''}${claimedPct > 0 ? `, ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}` : ''}${openPct > 0 ? `, ${fmtPct(openPct)} ${TASK_TAGS.open.label}` : ''}`}
       >
-        {safeDone > 0 ? (
+        {donePct > 0 ? (
           <span
             className={`pv-compact-seg pv-compact-seg--done${hovered === 'completed' ? ' is-active' : ''}`}
-            style={{ width: `${Math.max(donePct, 3)}%` }}
+            style={{ flex: `${Math.max(donePct, 1)} 1 0%`, minWidth: '5px' }}
             tabIndex={0}
             role="note"
-            aria-label={`${safeDone} of ${safeTotal}, ${fmtPct(donePct)} ${TASK_TAGS.done.label}`}
+            aria-label={`${displayPct} ${TASK_TAGS.done.label} (${safeDone} of ${safeTotal} tasks${progress.hasReviewPhase ? `, ${progress.reviewsDone} of ${progress.reviewsRequired} independent reviews` : ''})`}
             onMouseEnter={() => setHovered('completed')}
             onFocus={() => setHovered('completed')}
+            onBlur={() => setHovered(null)}
+          />
+        ) : null}
+        {reviewRemainingPct > 0 ? (
+          <span
+            className={`pv-compact-seg pv-compact-seg--review${hovered === 'review' ? ' is-active' : ''}`}
+            style={{ flex: `${Math.max(reviewRemainingPct, 0.5)} 1 0%`, minWidth: '6px' }}
+            tabIndex={0}
+            role="note"
+            aria-label={`${progress.reviewsRemaining} of ${progress.reviewsRequired} independent reviews remaining (${fmtPct(reviewRemainingPct)})`}
+            onMouseEnter={() => setHovered('review')}
+            onFocus={() => setHovered('review')}
             onBlur={() => setHovered(null)}
           />
         ) : null}
         {safeClaimed > 0 ? (
           <span
             className={`pv-compact-seg pv-compact-seg--claimed${hovered === 'claimed' ? ' is-active' : ''}`}
-            style={{ width: `${Math.max(claimedPct, 3)}%` }}
+            style={{ flex: `${Math.max(claimedPct, 1)} 1 0%`, minWidth: '5px' }}
             tabIndex={0}
             role="note"
             aria-label={`${safeClaimed} of ${safeTotal}, ${fmtPct(claimedPct)} ${TASK_TAGS.in_progress.label}`}
@@ -363,7 +462,7 @@ export function CompactProgressBar({
         {openCount > 0 ? (
           <span
             className={`pv-compact-seg pv-compact-seg--open${hovered === 'queued' ? ' is-active' : ''}`}
-            style={{ flex: '1 1 0%' }}
+            style={{ flex: `${Math.max(openPct, 1)} 1 0%`, minWidth: '5px' }}
             tabIndex={0}
             role="note"
             aria-label={`${openCount} of ${safeTotal}, ${fmtPct(openPct)} ${TASK_TAGS.open.label}`}
@@ -425,23 +524,35 @@ export function ProjectProgressWidget({
 
   const counts = useMemo(() => {
     const sc = visualSummary?.status_counts;
+    let base: {
+      completed: number;
+      claimed: number;
+      queued: number;
+      waiting: number;
+      planned: number;
+      total: number;
+      auditsDone: number;
+      auditsTotal: number;
+      checksDone: number;
+      checksTotal: number;
+      checksOpen: number;
+    };
+
     if (sc && sc.total > 0) {
-      return {
+      base = {
         completed: sc.completed,
         claimed: sc.claimed,
         queued: sc.queued,
         waiting: sc.waiting,
         planned: sc.planned,
         total: sc.total,
-        pctComplete: sc.pct_complete,
         auditsDone: sc.audits_done,
         auditsTotal: sc.audits_total,
         checksDone: sc.checks_done,
         checksTotal: sc.checks_total,
+        checksOpen: mission.peer_checks_open ?? Math.max(0, sc.checks_total - sc.checks_done),
       };
-    }
-
-    if (!truncated && mosaicTasks.length > 0) {
+    } else if (!truncated && mosaicTasks.length > 0) {
       let completedCount = 0;
       let claimedCount = 0;
       let queuedCount = 0;
@@ -460,53 +571,88 @@ export function ProjectProgressWidget({
       const peerDone = peerChecks.filter(
         (t) => t.status === 'completed' || t.status === 'settled',
       ).length;
-      return {
+      const peerOpen = peerChecks.filter(
+        (t) => t.status === 'queued' || t.status === 'claimed',
+      ).length;
+      base = {
         completed: completedCount,
         claimed: claimedCount,
         queued: queuedCount,
         waiting: waitingCount,
         planned: mission.planned_tasks?.length ?? 0,
         total: totalCount,
-        pctComplete: calcPct(completedCount, totalCount),
         auditsDone: completedCount,
         auditsTotal: totalCount,
         checksDone: peerDone,
         checksTotal: peerChecks.length,
+        checksOpen: peerOpen,
+      };
+    } else {
+      const totalCount = Math.max(0, mission.total_tasks || 0);
+      const completedCount = Math.min(totalCount, mission.completed_tasks || 0);
+      const claimedCount = Math.min(totalCount - completedCount, Math.max(0, mission.claimed_tasks ?? 0));
+      const queuedCount = Math.max(0, totalCount - completedCount - claimedCount);
+      base = {
+        completed: completedCount,
+        claimed: claimedCount,
+        queued: queuedCount,
+        waiting: 0,
+        planned: mission.planned_tasks?.length ?? 0,
+        total: totalCount,
+        auditsDone: completedCount,
+        auditsTotal: totalCount,
+        checksDone: mission.peer_checks_done ?? 0,
+        checksTotal: mission.peer_checks_total ?? 0,
+        checksOpen: mission.peer_checks_open ?? 0,
       };
     }
 
-    const totalCount = Math.max(0, mission.total_tasks || 0);
-    const completedCount = Math.min(totalCount, mission.completed_tasks || 0);
-    const claimedCount = Math.min(totalCount - completedCount, Math.max(0, mission.claimed_tasks ?? 0));
-    const queuedCount = Math.max(0, totalCount - completedCount - claimedCount);
+    const progress = computeProjectProgress({
+      completed: base.completed,
+      total: base.total,
+      verified: mission.verified_findings_count,
+      peerReview: mission.peer_review_count,
+      reviewsRequired: sc?.reviews_required ?? mission.reviews_required,
+      reviewsDone: sc?.reviews_done ?? mission.reviews_done,
+      reviewsRemaining: sc?.reviews_remaining ?? mission.reviews_remaining,
+      requiredReviews: sc?.required_reviews ?? mission.required_reviews,
+      peerChecksTotal: base.checksTotal,
+      peerChecksDone: base.checksDone,
+      peerChecksOpen: base.checksOpen,
+    });
+
     return {
-      completed: completedCount,
-      claimed: claimedCount,
-      queued: queuedCount,
-      waiting: 0,
-      planned: mission.planned_tasks?.length ?? 0,
-      total: totalCount,
-      pctComplete: calcPct(completedCount, totalCount),
-      auditsDone: completedCount,
-      auditsTotal: totalCount,
-      checksDone: 0,
-      checksTotal: 0,
+      ...base,
+      pctComplete: progress.pctComplete,
+      progress,
     };
   }, [visualSummary, truncated, mosaicTasks, tasks, mission]);
 
   const segments = useMemo(() => {
-    const order: StatusBucket[] = ['completed', 'claimed', 'queued', 'waiting'];
+    const order: StatusBucket[] = ['completed', 'review', 'claimed', 'queued', 'waiting'];
     const raw: Array<{ key: StatusBucket; count: number; pct: number }> = order.map((key) => {
+      if (key === 'completed') {
+        return { key, count: counts.completed, pct: counts.progress.pctComplete };
+      }
+      if (key === 'review') {
+        return {
+          key,
+          count: counts.progress.reviewsRemaining,
+          pct: counts.progress.reviewRemainingPct,
+        };
+      }
       const count = counts[key];
       return { key, count, pct: calcPct(count, counts.total) };
     });
 
     const radius = 74;
     const circumference = 2 * Math.PI * radius;
+    const activeTotalPct = raw.reduce((sum, s) => sum + (s.pct > 0 ? s.pct : 0), 0);
     let cumulative = 0;
 
     return raw.map((seg) => {
-      const arcLength = counts.total > 0 ? (seg.count / counts.total) * circumference : 0;
+      const normalizedShare = activeTotalPct > 0 ? seg.pct / activeTotalPct : 0;
+      const arcLength = counts.total > 0 && seg.pct > 0 ? normalizedShare * circumference : 0;
       const dashOffset = -cumulative;
       cumulative += arcLength;
       return {
@@ -522,6 +668,12 @@ export function ProjectProgressWidget({
   const activeSeg = activeBucket
     ? segments.find((s) => s.key === activeBucket) ?? null
     : null;
+  const displayOverallPct = formatProgressPct(
+    counts.progress.progressPct,
+    counts.progress.hasIncompleteWork,
+  );
+  const perReviewLabel = formatPerReviewPct(counts.progress.perReviewPct);
+  const visibleSegmentCount = segments.filter((s) => s.pct > 0).length;
 
   const mosaicPageCount = Math.max(1, Math.ceil(mosaicTasks.length / MOSAIC_PAGE_SIZE));
   const safeMosaicPage = Math.min(mosaicPage, mosaicPageCount - 1);
@@ -582,8 +734,11 @@ export function ProjectProgressWidget({
               <div className="pv-tooltip pv-tooltip--donut" role="tooltip">
                 <strong>{activeSeg.label}:</strong>{' '}
                 <span className="tabular">
-                  {activeSeg.count.toLocaleString('en-IN')} / {counts.total.toLocaleString('en-IN')} (
-                  {fmtPct(activeSeg.pct)})
+                  {activeSeg.key === 'review'
+                    ? `${counts.progress.reviewsRemaining.toLocaleString('en-IN')} / ${counts.progress.reviewsRequired.toLocaleString('en-IN')} left (${fmtPct(activeSeg.pct)} · ${perReviewLabel} per review)`
+                    : activeSeg.key === 'completed' && counts.progress.hasReviewPhase
+                      ? `${counts.completed.toLocaleString('en-IN')}/${counts.total.toLocaleString('en-IN')} tasks (${fmtPct(counts.progress.taskProgressPct)}) + ${counts.progress.reviewsDone.toLocaleString('en-IN')}/${counts.progress.reviewsRequired.toLocaleString('en-IN')} reviews (${fmtPct(counts.progress.reviewProgressPct)})`
+                      : `${activeSeg.count.toLocaleString('en-IN')} / ${counts.total.toLocaleString('en-IN')} (${fmtPct(activeSeg.pct)})`}
                 </span>
               </div>
             ) : null}
@@ -594,7 +749,7 @@ export function ProjectProgressWidget({
               width="196"
               height="196"
               role="img"
-              aria-label={`Project progress chart: ${fmtPct(counts.pctComplete)} ${TASK_TAGS.done.label} (${counts.completed} of ${counts.total} tasks)`}
+              aria-label={`Project progress chart: ${displayOverallPct} ${TASK_TAGS.done.label} (${counts.completed} of ${counts.total} tasks${counts.progress.hasReviewPhase ? `, ${counts.progress.reviewsDone} of ${counts.progress.reviewsRequired} independent reviews` : ''})`}
             >
               <circle
                 cx="98"
@@ -606,11 +761,11 @@ export function ProjectProgressWidget({
               />
               <g transform="rotate(-90 98 98)">
                 {segments.map((seg) => {
-                  if (seg.count <= 0) return null;
+                  if (seg.pct <= 0) return null;
                   const isActive = activeBucket === seg.key;
                   const isDimmed = activeBucket !== null && !isActive;
-                  const strokeGap = counts.total > seg.count ? 1.5 : 0;
-                  const visibleArc = Math.max(0.5, seg.arcLength - strokeGap);
+                  const strokeGap = visibleSegmentCount > 1 ? 1.5 : 0;
+                  const visibleArc = Math.max(1.5, seg.arcLength - strokeGap);
                   return (
                     <circle
                       key={seg.key}
@@ -629,7 +784,11 @@ export function ProjectProgressWidget({
                       className={`pv-donut-arc${isActive ? ' is-active' : ''}${isDimmed ? ' is-dimmed' : ''}`}
                       tabIndex={0}
                       role="button"
-                      aria-label={`${seg.label}: ${seg.count} of ${counts.total} (${fmtPct(seg.pct)})`}
+                      aria-label={
+                        seg.key === 'review'
+                          ? `${seg.label}: ${counts.progress.reviewsRemaining} of ${counts.progress.reviewsRequired} independent reviews remaining (${fmtPct(seg.pct)})`
+                          : `${seg.label}: ${seg.count} of ${counts.total} (${fmtPct(seg.pct)})`
+                      }
                       onPointerEnter={(e) => {
                         if (e.pointerType === 'mouse') setActiveBucket(seg.key);
                       }}
@@ -644,22 +803,38 @@ export function ProjectProgressWidget({
 
             <div className="pv-donut-center" aria-live="polite">
               <span className="pv-donut-pct tabular">
-                {activeSeg ? fmtPct(activeSeg.pct) : fmtPct(counts.pctComplete)}
+                {activeSeg
+                  ? activeSeg.key === 'completed'
+                    ? displayOverallPct
+                    : fmtPct(activeSeg.pct)
+                  : displayOverallPct}
               </span>
               <span className="pv-donut-lbl">
                 {activeSeg ? activeSeg.label : TASK_TAGS.done.label}
               </span>
               <span className="pv-donut-sub tabular">
                 {activeSeg
-                  ? `${activeSeg.count.toLocaleString('en-IN')} / ${counts.total.toLocaleString('en-IN')}`
+                  ? activeSeg.key === 'review'
+                    ? `${counts.progress.reviewsRemaining.toLocaleString('en-IN')} / ${counts.progress.reviewsRequired.toLocaleString('en-IN')} left`
+                    : `${activeSeg.count.toLocaleString('en-IN')} / ${counts.total.toLocaleString('en-IN')}`
                   : `${counts.completed.toLocaleString('en-IN')} / ${counts.total.toLocaleString('en-IN')} tasks`}
               </span>
+              {!activeSeg && counts.progress.hasReviewPhase ? (
+                <span className="pv-donut-sub pv-donut-sub--reviews tabular">
+                  {counts.progress.reviewsDone.toLocaleString('en-IN')}/
+                  {counts.progress.reviewsRequired.toLocaleString('en-IN')} reviews
+                </span>
+              ) : null}
             </div>
           </div>
 
           <div className="pv-legend-list" role="list" aria-label="Task status breakdown">
             {segments
-              .filter((s) => s.key !== 'waiting' || s.count > 0)
+              .filter(
+                (s) =>
+                  (s.key !== 'waiting' || s.count > 0) &&
+                  (s.key !== 'review' || s.pct > 0 || counts.progress.hasReviewsRemaining),
+              )
               .map((seg) => {
                 const isActive = activeBucket === seg.key;
                 return (
@@ -683,14 +858,25 @@ export function ProjectProgressWidget({
                       className={`pv-swatch pv-swatch--${seg.key}`}
                       aria-hidden="true"
                     />
-                    <span className="pv-legend-name">{seg.label}</span>
+                    <span className="pv-legend-name">
+                      {seg.key === 'review' ? 'Reviews left' : seg.label}
+                    </span>
                     <span className="pv-legend-val tabular">
-                      {seg.count.toLocaleString('en-IN')} · {fmtPct(seg.pct)}
+                      {seg.key === 'review'
+                        ? `${counts.progress.reviewsRemaining.toLocaleString('en-IN')} · ${fmtPct(seg.pct)}`
+                        : `${seg.count.toLocaleString('en-IN')} · ${seg.key === 'completed' ? displayOverallPct : fmtPct(seg.pct)}`}
                     </span>
                   </button>
                 );
               })}
           </div>
+
+          {counts.progress.hasReviewPhase ? (
+            <p className="pv-weight-note tabular">
+              {counts.progress.taskWeightPct}% tasks + {counts.progress.reviewWeightPct}% reviews (
+              {perReviewLabel} × {counts.progress.requiredReviews} independent reviews)
+            </p>
+          ) : null}
         </div>
 
         {/* RIGHT: Interactive Task Mosaic Grid */}
@@ -783,7 +969,8 @@ export function ProjectProgressWidget({
                   const isOpen = bucket === 'queued';
                   const isCopied = copiedTaskId === String(task.id);
                   const isHovered = hoveredTileIdx === globalIdx;
-                  const isBucketFiltered = activeBucket !== null && activeBucket !== bucket;
+                  const isBucketFiltered =
+                    activeBucket !== null && activeBucket !== 'review' && activeBucket !== bucket;
                   const contributor = task.claimed_by_handle || task.claimed_by;
 
                   return (

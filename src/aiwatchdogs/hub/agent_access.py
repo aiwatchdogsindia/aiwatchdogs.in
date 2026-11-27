@@ -345,7 +345,10 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
             slug = str(m.get("slug") or "")
             total = int(m.get("total_tasks") or 0)
             done = int(m.get("completed_tasks") or 0)
-            pct = f"{(done / total) * 100.0:.1f}%" if total > 0 else "0.0%"
+            pct_val = m.get("progress_pct")
+            if pct_val is None:
+                pct_val = (done / total) * 100.0 if total > 0 else 0.0
+            pct = f"{float(pct_val):.1f}%"
             out.append(
                 f"| {_md_cell(m.get('title'), max_len=60)} | `{_md_cell(m.get('methodology_code'))}` | "
                 f"{pct} | {done}/{total} | {int(m.get('queued_tasks') or 0)} | "
@@ -424,9 +427,25 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
         queued = int(m.get("queued_tasks") or 0)
         pv_total = int(m.get("peer_checks_total") or 0)
         pv_done = int(m.get("peer_checks_done") or 0)
-        pct = f"{(done / total) * 100.0:.2f}%" if total > 0 else "0.00%"
+        rev_required = int(m.get("reviews_required") or 0)
+        rev_done = int(m.get("reviews_done") or 0)
+        rev_remaining = int(m.get("reviews_remaining") or 0)
+        req_reviews = int(m.get("required_reviews") or DEFAULT_REQUIRED_QUORUM)
+        pct_val = m.get("progress_pct")
+        if pct_val is None:
+            pct_val = (done / total) * 100.0 if total > 0 else 0.0
+        pct = f"{float(pct_val):.1f}%"
         join_line = build_project_join_prompt(base_url, slug, code)
-        pv_note = f" · Peer checks: {pv_done}/{pv_total}" if pv_total > 0 else ""
+        if rev_required > 0:
+            per_rev = float(m.get("per_review_pct") or round(30.0 / max(1, req_reviews), 2))
+            pv_note = (
+                f" · Independent reviews: {rev_done}/{rev_required}"
+                f" ({rev_remaining} remaining; 70% tasks + 30% reviews, {per_rev:g}% per review)"
+            )
+        elif pv_total > 0:
+            pv_note = f" · Peer checks: {pv_done}/{pv_total}"
+        else:
+            pv_note = ""
 
         out.extend(
             [
@@ -495,7 +514,14 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
         "",
         "## Progress Breakdown",
         "",
-        f"- **Completion:** **{float(sc.get('pct_complete', 0.0)):.2f}%** ({sc.get('completed', 0)} / {sc.get('total', 0)} tasks)",
+        f"- **Completion:** **{float(sc.get('pct_complete', 0.0)):.2f}%** ({sc.get('completed', 0)} / {sc.get('total', 0)} tasks"
+        + (
+            f" · {int(sc.get('reviews_done') or 0)} / {int(sc.get('reviews_required') or 0)} independent reviews"
+            f", {float(sc.get('per_review_pct') or round(30.0 / max(1, int(sc.get('required_reviews') or DEFAULT_REQUIRED_QUORUM)), 2)):g}% each"
+            if int(sc.get("reviews_required") or 0) > 0
+            else ""
+        )
+        + ")",
         f"- **Done:** {sc.get('completed', 0)} · **In progress:** {sc.get('claimed', 0)} · "
         f"**Open (claimable now):** {sc.get('queued', 0)} · "
         f"**Planned:** {sc.get('planned', 0)}",
@@ -2101,6 +2127,12 @@ def _call_mcp_tool(
                         "queued_tasks": m.get("queued_tasks"),
                         "total_tasks": m.get("total_tasks"),
                         "progress_pct": m.get("progress_pct"),
+                        "reviews_done": m.get("reviews_done", 0),
+                        "reviews_required": m.get("reviews_required", 0),
+                        "reviews_remaining": m.get("reviews_remaining", 0),
+                        "required_reviews": m.get("required_reviews", DEFAULT_REQUIRED_QUORUM),
+                        "per_review_pct": m.get("per_review_pct"),
+                        "has_reviews_remaining": m.get("has_reviews_remaining", False),
                         "markdown_url": f"{base_url}/projects/{slug}.md",
                         "join_prompt": build_project_join_prompt(base_url, slug, code),
                     }
