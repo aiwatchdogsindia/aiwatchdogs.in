@@ -12,6 +12,7 @@ Defensive defaults for unattended execution:
 from __future__ import annotations
 
 import csv
+import gzip
 import html
 from html.parser import HTMLParser
 import io
@@ -431,6 +432,26 @@ def _flatten_ocds_release(
         else ("tender_estimate" if tender_value_inr > 0 else "unrecorded")
     )
 
+    qualified_bid_count = _to_int_opt(
+        tender.get("numberOfQualifiedTenderers") or tender.get("qualifiedTenderers")
+    )
+    if qualified_bid_count is None and bids_details:
+        valid_bids = [
+            b
+            for b in bids_details
+            if isinstance(b, dict)
+            and str(b.get("status") or "").strip().lower() in {"valid", "qualified", "responsive"}
+        ]
+        if valid_bids:
+            qualified_bid_count = len(valid_bids)
+
+    procurement_method_details = str(tender.get("procurementMethodDetails") or "").strip()
+    exemption_reason = str(
+        tender.get("procurementMethodRationale")
+        or first_award.get("rationale")
+        or ""
+    ).strip()
+
     return {
         "ocid": release.get("ocid") or "",
         "tender_id": tender.get("id") or release.get("ocid") or release.get("id") or "",
@@ -438,7 +459,10 @@ def _flatten_ocds_release(
         "buyer_name": buyer.get("name") or procuring_entity.get("name") or "",
         "buyer_id": buyer.get("id") or procuring_entity.get("id") or "",
         "procurement_method": tender.get("procurementMethod") or "open",
+        "procurement_method_details": procurement_method_details,
+        "exemption_reason": exemption_reason,
         "bid_count": bid_count,
+        "qualified_bid_count": qualified_bid_count,
         "release_date": release_date,
         "tender_published_date": tender_published_date,
         "tender_start_date": start_date,
@@ -551,8 +575,18 @@ def _normalize_ocds_flat_row(
     out["buyer_name"] = out.get("buyer_name") or buyer_name
     out["buyer_id"] = out.get("buyer_id") or buyer_id
     out["procurement_method"] = out.get("procurement_method") or str(row.get("tender/procurementMethod") or "open").strip()
+    out["procurement_method_details"] = out.get("procurement_method_details") or str(
+        row.get("tender/procurementMethodDetails") or ""
+    ).strip()
+    out["exemption_reason"] = out.get("exemption_reason") or str(
+        row.get("tender/procurementMethodRationale") or row.get("awards/0/rationale") or ""
+    ).strip()
     if "bid_count" not in out or out["bid_count"] is None:
         out["bid_count"] = bid_count
+    if "qualified_bid_count" not in out or out["qualified_bid_count"] is None:
+        out["qualified_bid_count"] = _to_int_opt(
+            row.get("tender/numberOfQualifiedTenderers") or row.get("qualified_bid_count")
+        )
     out["release_date"] = out.get("release_date") or release_date
     out["tender_published_date"] = out.get("tender_published_date") or tender_published_date
     out["tender_start_date"] = out.get("tender_start_date") or start_date
@@ -595,10 +629,14 @@ def _infer_format(source_ref: str, fmt: str | None, content_type: str = "", raw_
 
     parsed_path = urlparse(source_ref).path if _is_url(source_ref) else source_ref
     lower_path = parsed_path.lower()
+    if lower_path.endswith(".gz") or raw_bytes[:2] == b"\x1f\x8b":
+        return "gzip"
     if lower_path.endswith(".xlsx"):
         return "xlsx"
     if lower_path.endswith(".json.zip") or lower_path.endswith(".zip"):
         return "zip"
+    if lower_path.endswith((".jsonl", ".ndjson")):
+        return "jsonl"
     if lower_path.endswith(".csv"):
         return "csv"
     if lower_path.endswith(".json"):
@@ -612,8 +650,12 @@ def _infer_format(source_ref: str, fmt: str | None, content_type: str = "", raw_
 
     if "spreadsheetml" in ct:
         return "xlsx"
+    if "application/gzip" in ct or "application/x-gzip" in ct:
+        return "gzip"
     if "application/zip" in ct or raw_bytes[:4] == b"PK\x03\x04":
         return "zip"
+    if "application/x-ndjson" in ct or "application/jsonl" in ct:
+        return "jsonl"
     if "application/json" in ct or "+json" in ct:
         return "json"
     if "text/csv" in ct:
@@ -1334,6 +1376,111 @@ def _reject_non_finite_json(token: str) -> Any:
     raise ValueError(f"Non-standard JSON numeric constant '{token}' is not permitted.")
 
 
+def _looks_like_ocds_release(obj: dict[str, Any]) -> bool:
+    return bool(
+        obj.get("ocid")
+        and (
+            isinstance(obj.get("tender"), (dict, list))
+            or isinstance(obj.get("awards"), list)
+            or isinstance(obj.get("buyer"), (dict, list))
+        )
+    )
+
+
+def _decompress_gzip_bounded(
+    raw_bytes: bytes,
+    source_ref: str,
+    *,
+    max_decompressed_bytes: int = DEFAULT_MAX_DECOMPRESSED_BYTES,
+    max_compression_ratio: float = DEFAULT_MAX_COMPRESSION_RATIO,
+) -> bytes:
+    """Decompress a gzip payload with strict byte-size and compression-ratio bomb guards."""
+    compressed_size = max(1, len(raw_bytes))
+    chunks: list[bytes] = []
+    total = 0
+    with gzip.GzipFile(fileobj=io.BytesIO(raw_bytes), mode="rb") as gf:
+        while True:
+            chunk = gf.read(65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_decompressed_bytes:
+                raise ValueError(
+                    f"Gzip source {source_ref} decompressed size exceeds limit of {max_decompressed_bytes} bytes."
+                )
+            if total > 1_048_576 and (total / compressed_size) > max_compression_ratio:
+                raise ValueError(
+                    f"Gzip source {source_ref} exceeds maximum allowed compression ratio ({max_compression_ratio}x)."
+                )
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _parse_jsonl_bytes(
+    raw_bytes: bytes,
+    source_ref: str = "",
+    *,
+    max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
+) -> tuple[list[dict[str, Any]], str, str]:
+    """Parse newline-delimited JSON (.jsonl/.ndjson), flattening OCDS release/record shapes automatically."""
+    text = raw_bytes.decode("utf-8-sig", errors="replace")
+    preview = text[:8192]
+    records: list[dict[str, Any]] = []
+    detected_format = "jsonl"
+    default_meta = {
+        "jurisdiction": _infer_jurisdiction(source_ref),
+        "fiscal_year": None,
+        "source_url": source_ref if _is_url(source_ref) else None,
+    }
+
+    for line_no, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        obj = json.loads(line, parse_constant=_reject_non_finite_json)
+        if not isinstance(obj, dict):
+            continue
+
+        if isinstance(obj.get("releases"), list):
+            detected_format = "ocds_jsonl"
+            pub = obj.get("publisher")
+            pub_name = pub.get("name") if isinstance(pub, dict) else None
+            pkg_meta = {
+                "jurisdiction": obj.get("jurisdiction") or _infer_jurisdiction(source_ref, pub_name),
+                "fiscal_year": obj.get("fiscal_year"),
+                "source_url": obj.get("uri") or obj.get("source_url") or default_meta["source_url"],
+            }
+            for rel in obj["releases"]:
+                if not isinstance(rel, dict):
+                    continue
+                if len(records) >= max_parse_rows:
+                    raise ValueError(f"JSONL dataset {source_ref} exceeds maximum allowed row cap ({max_parse_rows}).")
+                records.append(_flatten_ocds_release(rel, pkg_meta, row_index=len(records) + 1))
+            continue
+
+        if len(records) >= max_parse_rows:
+            raise ValueError(f"JSONL dataset {source_ref} exceeds maximum allowed row cap ({max_parse_rows}).")
+
+        compiled = obj.get("compiledRelease")
+        if isinstance(compiled, dict):
+            detected_format = "ocds_jsonl"
+            rel_obj = dict(compiled)
+            if not rel_obj.get("ocid") and obj.get("ocid"):
+                rel_obj["ocid"] = obj["ocid"]
+            records.append(_flatten_ocds_release(rel_obj, default_meta, row_index=line_no))
+        elif _looks_like_ocds_release(obj):
+            detected_format = "ocds_jsonl"
+            records.append(_flatten_ocds_release(obj, default_meta, row_index=line_no))
+        else:
+            row = dict(obj)
+            row.setdefault("source_row_index", line_no)
+            if _is_url(source_ref):
+                row.setdefault("source_url", source_ref)
+            records.append(row)
+
+    return records, preview, detected_format
+
+
 def _parse_json_bytes(
     raw_bytes: bytes,
     source_ref: str = "",
@@ -1341,15 +1488,48 @@ def _parse_json_bytes(
     max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
 ) -> tuple[list[dict[str, Any]], str, Any, str]:
     text = raw_bytes.decode("utf-8-sig", errors="replace")
-    payload = json.loads(text, parse_constant=_reject_non_finite_json)
+    try:
+        payload = json.loads(text, parse_constant=_reject_non_finite_json)
+    except json.JSONDecodeError:
+        # Transparently fall back to JSONL when newline-delimited JSON is served with a .json suffix.
+        non_empty = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        if len(non_empty) >= 2 and all(ln.startswith("{") and ln.endswith("}") for ln in non_empty[:3]):
+            recs, preview, fmt = _parse_jsonl_bytes(raw_bytes, source_ref, max_parse_rows=max_parse_rows)
+            return recs, preview, None, fmt
+        raise
     detected_format = "json"
     preview = text[:8192]
 
     if isinstance(payload, list):
         if len(payload) > max_parse_rows:
             raise ValueError(f"JSON array exceeds maximum allowed row cap ({max_parse_rows}).")
-        records = [r for r in payload if isinstance(r, dict)]
-        return records, preview, payload, detected_format
+        dict_rows = [r for r in payload if isinstance(r, dict)]
+        if dict_rows and (
+            isinstance(dict_rows[0].get("compiledRelease"), dict) or _looks_like_ocds_release(dict_rows[0])
+        ):
+            detected_format = "ocds_json"
+            pkg_meta = {
+                "jurisdiction": _infer_jurisdiction(source_ref),
+                "fiscal_year": None,
+                "source_url": source_ref if _is_url(source_ref) else None,
+            }
+            flattened: list[dict[str, Any]] = []
+            for idx, item in enumerate(dict_rows, start=1):
+                if isinstance(item.get("compiledRelease"), dict):
+                    rel_obj = dict(item["compiledRelease"])
+                    if not rel_obj.get("ocid") and item.get("ocid"):
+                        rel_obj["ocid"] = item["ocid"]
+                    flattened.append(_flatten_ocds_release(rel_obj, pkg_meta, row_index=idx))
+                elif _looks_like_ocds_release(item):
+                    flattened.append(_flatten_ocds_release(item, pkg_meta, row_index=idx))
+                else:
+                    row = dict(item)
+                    row.setdefault("source_row_index", idx)
+                    flattened.append(row)
+            return flattened, preview, payload, detected_format
+        for idx, row in enumerate(dict_rows, start=1):
+            row.setdefault("source_row_index", idx)
+        return dict_rows, preview, payload, detected_format
 
     if isinstance(payload, dict):
         if isinstance(payload.get("releases"), list):
@@ -1371,6 +1551,32 @@ def _parse_json_bytes(
             ]
             return records, preview, payload, detected_format
 
+        if isinstance(payload.get("records"), list) and payload["records"]:
+            first_rec = payload["records"][0]
+            if isinstance(first_rec, dict) and isinstance(first_rec.get("compiledRelease"), dict):
+                detected_format = "ocds_json"
+                ocds_records = payload["records"]
+                if len(ocds_records) > max_parse_rows:
+                    raise ValueError(f"OCDS record package exceeds maximum allowed row cap ({max_parse_rows}).")
+                publisher = payload.get("publisher")
+                pub_name = publisher.get("name") if isinstance(publisher, dict) else None
+                package_meta = {
+                    "jurisdiction": payload.get("jurisdiction") or _infer_jurisdiction(source_ref, pub_name),
+                    "fiscal_year": payload.get("fiscal_year"),
+                    "source_url": payload.get("uri") or payload.get("source_url") or (source_ref if _is_url(source_ref) else None),
+                }
+                records = []
+                for idx, rec_obj in enumerate(ocds_records, start=1):
+                    if not isinstance(rec_obj, dict):
+                        continue
+                    compiled = rec_obj.get("compiledRelease")
+                    if isinstance(compiled, dict):
+                        rel_obj = dict(compiled)
+                        if not rel_obj.get("ocid") and rec_obj.get("ocid"):
+                            rel_obj["ocid"] = rec_obj["ocid"]
+                        records.append(_flatten_ocds_release(rel_obj, package_meta, row_index=idx))
+                return records, preview, payload, detected_format
+
         if payload.get("success") is True and isinstance(payload.get("result"), dict):
             result_obj = payload["result"]
             if isinstance(result_obj.get("records"), list):
@@ -1390,6 +1596,14 @@ def _parse_json_bytes(
                 if len(rows) > max_parse_rows:
                     raise ValueError(f"JSON dataset '{key}' exceeds maximum allowed row cap ({max_parse_rows}).")
                 return [r for r in rows if isinstance(r, dict)], preview, payload, detected_format
+
+        if _looks_like_ocds_release(payload):
+            pkg_meta = {
+                "jurisdiction": payload.get("jurisdiction") or _infer_jurisdiction(source_ref),
+                "fiscal_year": payload.get("fiscal_year"),
+                "source_url": payload.get("source_url") or (source_ref if _is_url(source_ref) else None),
+            }
+            return [_flatten_ocds_release(payload, pkg_meta, row_index=1)], preview, payload, "ocds_json"
 
         return [payload], preview, payload, detected_format
 
@@ -1440,6 +1654,19 @@ def _parse_zip_bytes(
                 inner, source_ref=source_ref, max_parse_rows=max_parse_rows
             )
             return recs, preview, payload, fmt, f"zip_member={json_members[0]}"
+
+        jsonl_members = [m for m in members if m.lower().endswith((".jsonl", ".ndjson"))]
+        if jsonl_members:
+            inner = _read_zip_member_bounded(
+                zf,
+                zf.getinfo(jsonl_members[0]),
+                remaining_bytes=max_decompressed_bytes,
+                max_ratio=max_compression_ratio,
+            )
+            recs, preview, fmt = _parse_jsonl_bytes(
+                inner, source_ref=source_ref, max_parse_rows=max_parse_rows
+            )
+            return recs, preview, None, fmt, f"zip_member={jsonl_members[0]}"
 
         csv_members = [m for m in members if m.lower().endswith(".csv")]
         if csv_members:
@@ -1942,6 +2169,30 @@ def _resolve_provenance(
         inferred_publisher = "Parliament of India (Digital Sansad)"
         inferred_landing = "https://sansad.in"
         inferred_mirror = None
+    elif host == "open-contracting.in" or host.endswith(".open-contracting.in"):
+        inferred_publisher = "Public Procurement Open Contracting India"
+        inferred_landing = source_ref
+        inferred_mirror = "CivicDataLab Open Contracting India"
+    elif host == "data.gov.in" or host.endswith(".data.gov.in"):
+        inferred_publisher = "Open Government Data (OGD) Platform India, NIC"
+        inferred_landing = "https://data.gov.in"
+        inferred_mirror = None
+    elif host == "gem.gov.in" or host.endswith(".gem.gov.in"):
+        inferred_publisher = "Government e-Marketplace (GeM), Ministry of Commerce & Industry"
+        inferred_landing = "https://gem.gov.in"
+        inferred_mirror = None
+    elif host in {"eprocure.gov.in", "etenders.gov.in"} or host.endswith((".eprocure.gov.in", ".etenders.gov.in")):
+        inferred_publisher = "Central Public Procurement Portal (CPPP), NIC / Ministry of Finance"
+        inferred_landing = f"https://{host}"
+        inferred_mirror = None
+    elif host == "worldbank.org" or host.endswith(".worldbank.org"):
+        inferred_publisher = "World Bank Open Procurement / Contract Awards (India)"
+        inferred_landing = "https://projects.worldbank.org"
+        inferred_mirror = None
+    elif host == "zenodo.org" or host.endswith(".zenodo.org"):
+        inferred_publisher = "Open Research Procurement Archive (Zenodo)"
+        inferred_landing = source_ref
+        inferred_mirror = "Zenodo"
     elif host in {"gov.in", "nic.in"} or host.endswith((".gov.in", ".nic.in")):
         inferred_publisher = host
         inferred_landing = source_ref
@@ -2174,9 +2425,40 @@ def load_dataset(
 
     parsed_json: Any = None
     source_locator: str | None = None
-    if resolved_fmt == "csv":
+    if resolved_fmt == "gzip":
+        decompressed = _decompress_gzip_bounded(
+            raw_bytes,
+            source_ref,
+            max_decompressed_bytes=max_decompressed_bytes,
+            max_compression_ratio=max_compression_ratio,
+        )
+        inner_ref = source_ref[:-3] if source_ref.lower().endswith(".gz") else source_ref
+        inner_fmt = _infer_format(inner_ref, None, "", decompressed)
+        if inner_fmt == "gzip":
+            head_strip = decompressed[:2048].decode("utf-8-sig", errors="replace").lstrip()
+            inner_fmt = "json" if (head_strip.startswith("{") or head_strip.startswith("[")) else "csv"
+        if inner_fmt == "csv":
+            records, raw_text = _parse_csv_bytes(decompressed, inner_ref, max_parse_rows=max_parse_rows)
+            resolved_fmt = "csv"
+            source_locator = f"rows=1-{len(records)}" if records else "rows=0"
+        elif inner_fmt == "jsonl":
+            records, raw_text, resolved_fmt = _parse_jsonl_bytes(
+                decompressed, inner_ref, max_parse_rows=max_parse_rows
+            )
+            source_locator = f"records=1-{len(records)}" if records else "records=0"
+        else:
+            records, raw_text, parsed_json, resolved_fmt = _parse_json_bytes(
+                decompressed, inner_ref, max_parse_rows=max_parse_rows
+            )
+            source_locator = f"records=1-{len(records)}" if records else "records=0"
+    elif resolved_fmt == "csv":
         records, raw_text = _parse_csv_bytes(raw_bytes, source_ref, max_parse_rows=max_parse_rows)
         source_locator = f"rows=1-{len(records)}" if records else "rows=0"
+    elif resolved_fmt == "jsonl":
+        records, raw_text, resolved_fmt = _parse_jsonl_bytes(
+            raw_bytes, source_ref, max_parse_rows=max_parse_rows
+        )
+        source_locator = f"records=1-{len(records)}" if records else "records=0"
     elif resolved_fmt == "xlsx":
         records, raw_text, resolved_fmt, source_locator = _parse_xlsx_bytes(
             raw_bytes,
@@ -2262,6 +2544,11 @@ def load_dataset(
         elif isinstance(ctx.get("parliaments_to_do_list"), dict) and sec_ds.format == "pdf":
             # P6 attaches an official Lok Sabha Question PDF or Rajya Sabha Implementation Report PDF
             # alongside the primary Digital Sansad JSON record without reusing UB1's secondary_document flag.
+            records = [{**rec, "document": "primary"} for rec in records] + [
+                {**rec, "document": "secondary", "secondary_sha256": sec_ds.sha256} for rec in sec_ds.records
+            ]
+        elif isinstance(ctx.get("only_one_bid"), dict):
+            # P7 attaches a pinned companion procurement shard for cross-year repeat-winner cohorts.
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {**rec, "document": "secondary", "secondary_sha256": sec_ds.sha256} for rec in sec_ds.records
             ]

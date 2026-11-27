@@ -835,6 +835,119 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "only_one_bid" in vs:
+        p7 = vs["only_one_bid"]
+        by_cohort = p7.get("by_cohort") or {}
+        years = p7.get("years") or []
+        authorities = p7.get("top_authorities") or []
+        winners = p7.get("top_repeat_winners") or []
+        anchor = p7.get("anchor_case")
+        yr_range = p7.get("year_range") or ["2016", "2026"]
+        sb_c = by_cohort.get("single_bidder") or {}
+        rw_c = by_cohort.get("repeat_winner") or {}
+        bo_c = by_cohort.get("both") or {}
+        out.extend(
+            [
+                "## Only One Bid (P7)",
+                "",
+                f"> {p7.get('hook') or 'Which public purchases consistently attract just one bidder — and keep going to the same winner across 10 years of Indian government tenders?'}",
+                "",
+                f"- **Coverage:** {int(p7.get('total_tasks') or 0):,} procurement tenders/awards ({yr_range[0]}–{yr_range[-1]}) across "
+                f"{int(p7.get('portals_covered') or 0):,} portal(s) and {int(p7.get('authorities_covered') or 0):,} procuring authorities "
+                f"({int(p7.get('distinct_repeat_winners') or 0):,} distinct repeat winners)",
+                f"- **Cohorts:** Single-bidder: {int(sb_c.get('tasks') or 0):,} · Repeat-winner: {int(rw_c.get('tasks') or 0):,} · "
+                f"Both single-bidder & repeat winner: {int(bo_c.get('tasks') or 0):,}",
+                f"- **Leads so far:** {int(p7.get('leads') or 0):,} ({int(p7.get('verified') or 0):,} verified) · "
+                f"{int(p7.get('cleared_tasks') or 0):,} cleared · Flagged value: {_fmt_inr_cr(p7.get('flagged_total_inr_cr'))}",
+                f"- **Source datasets indexed, with SHA-256 (CSV):** [{base_url}{p7.get('documents_url')}]({base_url}{p7.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p7.get('coverage_url')}]({base_url}{p7.get('coverage_url')})",
+                "",
+            ]
+        )
+        if isinstance(anchor, dict) and anchor.get("tender_id"):
+            out.extend(
+                [
+                    "### Anchor Case",
+                    "",
+                    f"- **Tender:** `{anchor.get('tender_id')}` ({anchor.get('jurisdiction')}, {anchor.get('fiscal_year')}) — **{anchor.get('authority')}**",
+                    f"- **Description:** {_md_cell(anchor.get('tender_title'), max_len=180)}",
+                    f"- **Winning Entity:** {_md_cell(anchor.get('winner_name'), max_len=120)} "
+                    f"({int(anchor.get('winner_total_wins') or 0)} wins, {int(anchor.get('winner_single_bid_wins') or 0)} single-bid)",
+                    f"- **Competition & Signal:** bids={anchor.get('bids_received')} · signal=`{anchor.get('signal_category')}`",
+                    "",
+                ]
+            )
+        if years:
+            out.extend(
+                [
+                    "### 10-Year Coverage",
+                    "",
+                    "| Year | Checks done / total | Single-Bid | Repeat-Winner | Both | Leads | Flagged (Cr) |",
+                    "| :--- | :---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for y in years:
+                out.append(
+                    f"| {y.get('fiscal_year') or y.get('year')} | "
+                    f"{int(y.get('done') or 0):,}/{int(y.get('tasks') or 0):,} | "
+                    f"{int(y.get('single_bidder_tasks') or 0):,} | {int(y.get('repeat_winner_tasks') or 0):,} | "
+                    f"{int(y.get('both_tasks') or 0):,} | {int(y.get('leads') or 0):,} | "
+                    f"{_fmt_inr_cr(y.get('flagged_inr_cr'))} |"
+                )
+        if authorities:
+            out.extend(
+                [
+                    "",
+                    "### Top Procuring Authorities",
+                    "",
+                    "| Authority | Jurisdiction | Tasks | Single-Bid | Repeat-Winner | Both | Leads |",
+                    "| :--- | :--- | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for a in authorities[:15]:
+                out.append(
+                    f"| {_md_cell(a.get('authority'), max_len=60)} | {_md_cell(a.get('jurisdiction'), max_len=30)} | "
+                    f"{int(a.get('tasks') or 0):,} | {int(a.get('single_bidder_tasks') or 0):,} | "
+                    f"{int(a.get('repeat_winner_tasks') or 0):,} | {int(a.get('both_tasks') or 0):,} | "
+                    f"{int(a.get('leads') or 0):,} |"
+                )
+        if winners:
+            out.extend(
+                [
+                    "",
+                    "### Repeat-Winner Concentration Clusters",
+                    "",
+                    "| Winning Entity | Procuring Authority | Wins | Single-Bid Wins | Cohort Value (Cr) |",
+                    "| :--- | :--- | ---: | ---: | ---: |",
+                ]
+            )
+            for w in winners[:15]:
+                out.append(
+                    f"| {_md_cell(w.get('winner_name'), max_len=50)} | {_md_cell(w.get('authority'), max_len=50)} | "
+                    f"{int(w.get('win_count') or 0):,} | {int(w.get('single_bid_wins') or 0):,} | "
+                    f"{_fmt_inr_cr(w.get('total_value_inr_cr'))} |"
+                )
+        top = p7.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "",
+                    "### Top Flagged Procurement Leads So Far",
+                    "",
+                    "| Tender | Authority | Winner | Bids | Wins | Signal | Value | Status |",
+                    "| :--- | :--- | :--- | :---: | ---: | :--- | ---: | :--- |",
+                ]
+            )
+            for row in top:
+                bids_txt = str(row["bids_received"]) if row.get("bids_received") is not None else "—"
+                out.append(
+                    f"| [{_md_cell(row.get('tender_id') or row.get('title'), max_len=36)}]({base_url}/findings/{row.get('finding_id')}.md) | "
+                    f"{_md_cell(row.get('entity_name'), max_len=40)} | {_md_cell(row.get('winner_name'), max_len=36)} | "
+                    f"{bids_txt} | {int(row.get('winner_total_wins') or 0):,} | `{row.get('signal_category')}` | "
+                    f"{_fmt_inr_cr(row.get('flagged_inr_cr'))} | {_status_label(row.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -1432,7 +1545,7 @@ def render_brief_md(base_url: str) -> str:
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (6 Live Projects)",
+        "## What We're Auditing Right Now (7 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
@@ -1440,6 +1553,7 @@ def render_brief_md(base_url: str) -> str:
         f"- **[One Road, Two Bills]({base_url}/projects/one-road-two-bills.md)** (`P4`) — Union Government CAG Audit Reports (past 2 years) scanned for documented duplicate billing, two-receipt claims, and irregular dual-agency overlaps while excluding legitimate cost-sharing.",
         f"- **[One Teacher, Five Grades]({base_url}/projects/one-teacher-five-grades.md)** (`P5`) — Official Ministry of Education UDISE+ national reports (2023-24 to 2025-26) audited across 100 State/UT tasks to map single-teacher schools, pupil overcrowding, and under-staffed Government Primary schools.",
         f"- **[Parliament's To-Do List]({base_url}/projects/parliaments-to-do-list.md)** (`P6`) — A minister promised Parliament an answer. Did it ever get one? Auditing 1,000 formal ministerial assurances across Union Ministries on Digital Sansad, citing each original promise, recorded status, and what the follow-up actually answered.",
+        f"- **[Only One Bid]({base_url}/projects/only-one-bid.md)** (`P7`) — Which public purchases consistently attract just one bidder — and keep going to the same winner across 10 years of Indian government tenders? Auditing 10,000 real procurement records (2016–2026) while transparently clearing documented PAC/OEM exemptions.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1687,7 +1801,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5 and P6 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6 and P7 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",
@@ -1890,7 +2004,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list', 'only-one-bid').",
                     }
                 },
                 "required": ["slug"],

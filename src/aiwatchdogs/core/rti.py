@@ -303,6 +303,11 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of all extension requests sought from and granted by the Committee on Government Assurances, along with recorded reasons for pendency or dropping.",
         "Certified copies of supporting official correspondence, DPR/progress status sheets, or follow-up replies prepared pursuant to the original ministerial assurance.",
     ],
+    "P7": [
+        "Certified copies of any Proprietary Article Certificate (PAC), single-tender justification note, or competent authority approval recording rate reasonableness for the referenced single-bidder tender (GFR 2017 Rule 166 / CVC Single-Bid Guidelines or applicable State Procurement Rules).",
+        "Certified copies of the Technical and Financial Bid Evaluation Committee minutes (including reasons recorded for disqualification of any non-responsive bids) and the comparative bid statement.",
+        "Certified copy of the Award of Contract (AOC) / work order register for the referenced procuring authority and category covering repeat awards disclosed under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
