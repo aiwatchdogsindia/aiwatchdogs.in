@@ -10,6 +10,7 @@ import os
 import random
 import re
 import secrets
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -134,12 +135,54 @@ def _http_status_error_detail(exc: httpx.HTTPStatusError) -> str:
     return str(exc)
 
 
+_WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_WIN_ERROR_ACCESS_DENIED = 5
+_WIN_STILL_ACTIVE = 259
+
+
+def _win_pid_is_alive(pid: int) -> bool:
+    """Non-destructive Windows liveness probe via OpenProcess + GetExitCodeProcess.
+
+    ``os.kill(pid, 0)`` must never be used on Windows: ``signal.CTRL_C_EVENT == 0``, so
+    CPython treats it as ``GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid)`` and delivers a
+    Ctrl+C to every process sharing the console (stopping sibling runners and the caller),
+    then fails with WinError 87 / SystemError when ``pid`` is not a process-group id.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+
+    handle = kernel32.OpenProcess(_WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        # Access denied means the process exists but belongs to another user/session.
+        return ctypes.get_last_error() == _WIN_ERROR_ACCESS_DENIED
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == _WIN_STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def _pid_is_alive(pid: int) -> bool:
     """Return True if a local OS process with ``pid`` appears to be running."""
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return False
     if pid == os.getpid():
         return True
+    if sys.platform == "win32":
+        try:
+            return _win_pid_is_alive(pid)
+        except (OSError, SystemError, AttributeError, ValueError):
+            return False
     try:
         os.kill(pid, 0)
         return True
@@ -147,7 +190,7 @@ def _pid_is_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
-    except OSError:
+    except (OSError, SystemError):
         return False
 
 # Strict allowlist of task context keys forwarded to connectors/engines.
