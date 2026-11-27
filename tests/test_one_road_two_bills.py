@@ -189,16 +189,27 @@ def test_or1_table_attribution_does_not_cross_flattened_rows() -> None:
     assert res.unevaluable_count == 1
 
 
-@pytest.mark.parametrize("continuation", ["none", "labeled", "implicit"])
+@pytest.mark.parametrize("continuation", ["none", "labeled", "implicit", "third-labeled", "third-implicit"])
 def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None:
     header = "Annexure X\nRecoveries at the instance of Audit\n(₹ in lakh)\nAudited entity Audit finding Amount recovered\n"
-    rows = (
-        "Example Power Corporation Limited\nExcess payment for work under a road contract 11.00\n"
-        "Example Steel Corporation Limited\nDouble payment made on a hospital bill 3.61\n"
-    )
-    preface = {"none": header, "labeled": "Annexure X (continued)\n", "implicit": ""}[continuation]
-    records, ctx = _or1_ctx(preface + rows)
-    if continuation != "none":
+    continued = "Annexure X (continued)\n"
+    affected_row = "Example Steel Corporation Limited\nDouble payment made on a hospital bill 3.61\n"
+    other_row = "Example Power Corporation Limited\nExcess payment for work under a road contract 11.00\n"
+    # The marked page can have a single row. The unmarked pages need the shapes of multiple rows.
+    page_rows = other_row + affected_row
+    if continuation == "none":
+        current_page = header + page_rows
+    elif continuation.endswith("labeled"):
+        current_page = continued + affected_row
+    else:
+        current_page = page_rows
+    records, ctx = _or1_ctx(current_page)
+    if continuation.startswith("third-"):
+        records[:0] = [
+            {"page": 10, "raw_text": header + "Example Oil Corporation Limited 12.72\n"},
+            {"page": 11, "raw_text": current_page},
+        ]
+    elif continuation != "none":
         records.insert(0, {"page": 11, "raw_text": header + "Example Oil Corporation Limited 12.72\n"})
 
     res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
@@ -206,6 +217,74 @@ def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None
     assert res.leads == []
     assert res.cleared_count == 0
     assert res.unevaluable_count == 1
+
+
+@pytest.mark.parametrize("boundary_page", [11, 12], ids=["prior-page", "same-page"])
+def test_or1_table_context_stops_at_next_section(boundary_page: int) -> None:
+    table = (
+        "Annexure X (continued)\n"
+        "Audited entity Audit finding Amount recovered\n"
+        "Example Oil Corporation Limited 12.72\n"
+        "Example Power Corporation Limited 11.00\n"
+    )
+    heading = "6.2 Review of grant payments\n"
+    evidence = "Eastern Power Limited paid the same invoice twice."
+    prose = f"{evidence}\n\nThe amount under the prior contract was 11.00\nThe new contract amount was 12.72"
+    records, ctx = _or1_ctx(table + heading + prose if boundary_page == 12 else prose)
+    if boundary_page == 11:
+        records.insert(0, {"page": 11, "raw_text": table + heading})
+
+    result = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = result.leads
+    assert result.unevaluable_count == 0
+    assert lead.suggested_authority == "Eastern Power Limited"
+    assert lead.citations[0]["excerpt"] == evidence
+
+
+@pytest.mark.parametrize("prefix", ["Chapter IV: Compliance Audit", "Table X"])
+def test_or1_repeated_page_heading_preserves_a_table_continuation(prefix: str) -> None:
+    row = "Double payment made on a hospital bill for Rs 3.61 lakh."
+    records, ctx = _or1_ctx(f"{prefix}\nTable X (continued)\n{row}")
+    records.insert(0, {"page": 11, "raw_text": "Table X\nAudited entity Audit finding Amount recovered\n"})
+
+    result = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    assert result.leads == []
+    assert result.unevaluable_count == 1
+
+
+@pytest.mark.parametrize("earlier, later", [
+    ("Table X", "Table Y"),
+    ("Annexure IV-A", "Annexure IV-B"),
+    ("Annexure 6.1(A)", "Annexure 6.1(B)"),
+])
+def test_or1_table_context_does_not_link_different_continuation_labels(earlier: str, later: str) -> None:
+    evidence = "Eastern Power Limited paid the same invoice twice."
+    records, ctx = _or1_ctx(f"{later} (continued)\n\n{evidence}")
+    records.insert(0, {
+        "page": 11,
+        "raw_text": f"{earlier}\nAudited entity Audit finding Amount recovered\nExample Oil Corporation Limited 12.72",
+    })
+
+    result = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = result.leads
+    assert result.unevaluable_count == 0
+    assert lead.citations[0]["excerpt"] == evidence
+
+
+def test_or1_implicit_table_continuation_requires_row_evidence_in_the_window() -> None:
+    evidence = "Eastern Power Limited paid the same invoice twice."
+    records, ctx = _or1_ctx(f"{evidence}\n\nThe observation notes an index of 11.00\nThe revised index is 12.72")
+    ctx["one_road_two_bills"]["windows"][0]["line_end"] = 1
+    records.insert(0, {"page": 11, "raw_text": "Audited entity Audit finding Amount recovered\n"})
+
+    result = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = result.leads
+    assert result.unevaluable_count == 0
+    assert lead.suggested_authority == "Eastern Power Limited"
 
 
 def test_or1_runner_releases_partial_audit_with_held_attribution(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -389,14 +468,17 @@ def test_or1_attributes_explicit_grant_exposure(
         assert "10.37" not in excerpt
 
 
-def test_or1_links_repeated_summary_and_detail_without_losing_either_citation() -> None:
+@pytest.mark.parametrize("detail_payer", [False, True], ids=["same-attribution", "payer-in-detail-opener"])
+def test_or1_links_repeated_summary_and_detail_without_losing_either_citation(detail_payer: bool) -> None:
     quote = (
         "Despite getting the required grant under DDUGJY, grant of ₹7.53 crore from REC "
         "was also claimed under SAUBHAGYA, resulting in double payment to DISCOMs."
     )
     summary = f"Report No. 17 of 2025\nxi\n{quote}\n\nRecommendation:\nMoP may reconcile connections.\n(Para 6.3.1.2)"
+    opener = "Eastern Power Limited made an irregular payment for these works.\n" if detail_payer else ""
     detail = (
         "Report No. 17 of 2025\n63\n6.3.1.2 Claiming of double benefit\n"
+        + opener
         + quote.replace("crore", "crore87\n131")
     )
     records, ctx = _cag_report_17_ctx(summary, page=14)
@@ -413,6 +495,9 @@ def test_or1_links_repeated_summary_and_detail_without_losing_either_citation() 
     assert [summary_lead.citations[0]["page"], detail_lead.citations[0]["page"]] == [14, 80]
     assert summary_lead.anomaly_metrics["exposure_reference_kind"] == "summary"
     assert detail_lead.anomaly_metrics["exposure_reference_kind"] == "detail"
+    if detail_payer:
+        assert detail_lead.entity_name.startswith("Eastern Power Limited")
+        assert not summary_lead.entity_name.startswith("Eastern Power Limited")
     assert summary_lead.anomaly_metrics["exposure_reference_key"] == detail_lead.anomaly_metrics["exposure_reference_key"]
     assert summary_lead.monetary_exposure_inr == detail_lead.monetary_exposure_inr == 75_300_000
     assert result.monetary_audited_inr == 75_300_000
@@ -456,8 +541,35 @@ def test_or1_leaves_amount_in_unrelated_leading_clause_unattributed(conjunction:
     assert "was paid twice" in lead.citations[0]["excerpt"]
 
 
-def test_or1_explicit_finding_actor_takes_precedence_over_section_opening_payer() -> None:
-    evidence = "In the sample, audit observed that Eastern Power Limited paid the same invoice twice."
+@pytest.mark.parametrize(
+    ("evidence", "payer"),
+    [
+        ("In the sample, audit observed that Eastern Power Limited paid the same invoice twice.", "Eastern Power Limited"),
+        ("The same invoice was paid twice by NTPC.", "NTPC"),
+        ("The same invoice was paid twice by Eastern Power Limited.", "Eastern Power Limited"),
+        ("The same invoice was paid twice to NTPC.", "Western Power Limited"),
+        ("The same invoice was paid twice by the regional office.", None),
+        ("The same invoice was paid twice by NEFT.", None),
+        ("The same invoice was paid twice by MARCH 2024.", None),
+        ("The same invoice was paid twice by NTPC and NHPC.", None),
+        ("The same invoice was paid twice to the contractor by NTPC.", "NTPC"),
+        ("A double payment was made by the regional office for the road works.", None),
+        ("The same invoice was paid twice by NTPC and its contractor.", None),
+        ("The same invoice was paid twice by NTPC, NHPC and REC.", None),
+        ("The same invoice was paid twice by Eastern Power Limited and Western Power Limited.", None),
+        ("Eastern Power Limited and Western Power Limited paid the same invoice twice.", None),
+        ("The same invoice was paid twice by NTPC, resulting in exposure of Rs 2 crore.", "NTPC"),
+        ("The same invoice was paid twice by Oil and Natural Gas Corporation Limited.", "Oil and Natural Gas Corporation Limited"),
+        ("The same invoice was paid twice by NTPC and the regional office.", None),
+    ],
+    ids=[
+        "active-legal-name", "passive-acronym", "passive-legal-name", "recipient", "unspecified-payer",
+        "payment-method", "deadline", "multiple-payers", "recipient-before-payer", "payment-made-by", "joint-payment",
+        "comma-separated-payers", "coordinated-passive-names", "coordinated-active-names", "payer-before-result-clause",
+        "conjunction-in-legal-name", "joint-with-regional-office",
+    ],
+)
+def test_or1_explicit_finding_actor_takes_precedence_over_section_opening_payer(evidence: str, payer: str | None) -> None:
     records, ctx = _or1_ctx(evidence)
     records.insert(0, {
         "page": 11,
@@ -470,11 +582,15 @@ def test_or1_explicit_finding_actor_takes_precedence_over_section_opening_payer(
     res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
 
     lead, = res.leads
-    assert lead.entity_name.startswith("Eastern Power Limited")
-    assert lead.suggested_authority == "Eastern Power Limited"
+    assert lead.entity_name.startswith(payer or "Union Government (Social Infrastructure)")
+    if payer:
+        assert lead.suggested_authority == payer
+    else:
+        assert lead.suggested_authority != "Western Power Limited"
     assert lead.citations[0]["para_number"] == "6.2"
-    assert "Eastern Power Limited paid" in lead.citations[0]["excerpt"]
-    assert all("Western Power Limited" not in citation["excerpt"] for citation in lead.citations)
+    assert lead.citations[0]["excerpt"] == evidence
+    has_opener_citation = any("Western Power Limited" in citation["excerpt"] for citation in lead.citations[1:])
+    assert has_opener_citation == (payer == "Western Power Limited")
 
 
 def test_or1_excludes_legitimate_cofunding_and_cost_sharing() -> None:

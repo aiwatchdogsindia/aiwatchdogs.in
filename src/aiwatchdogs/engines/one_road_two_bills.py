@@ -45,6 +45,7 @@ _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _SECTION_NUMBER_RE = re.compile(r"\d+(?:\.\d+)+")
 _ROMAN_PAGE_RE = re.compile(r"[ivxlcdm]+", re.IGNORECASE)
 _REPORT_HEADER_RE = re.compile(r"Report No\.\s*\d+ of 20\d{2}", re.IGNORECASE)
+_EXECUTIVE_SUMMARY_RE = re.compile(r"Executive Summary\s*:?", re.IGNORECASE)
 _SUMMARY_REFERENCE_RE = re.compile(r"\(Para(?:graph)?\.?\s+(\d+(?:\.\d+)+)\)", re.IGNORECASE)
 _AMOUNT_FOOTNOTE_RE = re.compile(
     r"\b(crore|cr\.?|lakhs?|thousand)(?:[0-9]{1,3}|[⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3})"
@@ -185,7 +186,12 @@ _AUDIT_TABLE_ENTITY_COLUMN_RE = re.compile(
     r"(?:company|agency|entity) name|audited entity)\b", re.IGNORECASE,
 )
 _AUDIT_TABLE_OBSERVATION_COLUMN_RE = re.compile(r"\baudit (?:observations?|findings?)\b", re.IGNORECASE)
-_CONTINUED_TABLE_RE = re.compile(r"\b(?:annexure|appendix|table)\s+[^\n]{0,45}\bcontinued\b", re.IGNORECASE)
+_CONTINUED_TABLE_RE = re.compile(r"^(?:annexure|appendix|table)[\s-]+.{0,45}\bcontinued\b", re.IGNORECASE)
+_TABLE_TITLE_RE = re.compile(
+    r"^(annexure|appendix|table)[\s-]+"
+    r"((?:\d+(?:\.\d+)*[a-z]?|[a-z]\d+|[ivxlcdm]+|[a-z])(?:[-–][a-z0-9]+|\([a-z0-9]+\))?)"
+    r"(?=$|[\s:])", re.IGNORECASE,
+)
 _ANNEXURE_BOUNDARY_RE = re.compile(r"^(?:annexure|appendix)\b", re.IGNORECASE)
 _TABLE_MONEY_CELL_RE = re.compile(r"(?:^|\s)\d[\d,]*\.\d{2}\s*$")
 _PARAGRAPH_ITEM_RE = re.compile(r"^\((?:[ivxlcdm]+|[a-z]|\d+)\)\s+", re.IGNORECASE)
@@ -194,14 +200,27 @@ _LEGAL_ENTITY_PATTERN = (
     r"\s+(?:Limited|Ltd\.?|Corporation|Authority|Board)(?!\w)"
 )
 _LEGAL_ENTITY_RE = re.compile(rf"\b{_LEGAL_ENTITY_PATTERN}")
+_PAYMENT_ACTOR_NAME_PATTERN = rf"(?:{_LEGAL_ENTITY_PATTERN}|{_AGENCY_MENTION_RE.pattern}|[A-Z][A-Z0-9&-]{{2,11}})"
 _PAYMENT_ACTOR_RE = re.compile(
     r"^(?:(?i:audit (?:observed|noticed|found) that|accordingly,|however,)\s+)?"
-    rf"(?P<actor>(?:{_LEGAL_ENTITY_PATTERN}|[A-Z][A-Z0-9&-]{{2,11}}|"
-    + _AGENCY_MENTION_RE.pattern
-    + r"))(?:\s+(?:had|has|have|also)){0,2}\s+"
+    rf"(?P<actor>{_PAYMENT_ACTOR_NAME_PATTERN})(?:\s+(?:had|has|have|also)){{0,2}}\s+"
     r"(?:paid|billed|reimbursed|made\s+(?:(?:an?|the|another|irregular|duplicate|double|additional|excess)\s+){0,4}"
     r"payments?)\b"
 )
+_PASSIVE_PAYMENT_BY_RE = re.compile(
+    r"\b(?:paid|billed|reimbursed|payments?\s+(?:was|were|had been|has been|have been)\s+made)"
+    r"(?:\s+(?:twice|again))?(?:\s+to\s+[^.!?;]{1,80}?)?\s+by\s+", re.IGNORECASE,
+)
+# A bare uppercase token after "by" could be a transfer method or a date, not a named payer.
+_PASSIVE_PAYMENT_ACTOR_RE = re.compile(
+    rf"(?:(?i:the)\s+)?(?P<actor>{_LEGAL_ENTITY_PATTERN}|{_AGENCY_MENTION_RE.pattern})(?![\w&-])"
+)
+_ADDITIONAL_PAYMENT_ACTOR_RE = re.compile(
+    rf"(?:\s*,\s*(?:(?i:and|or|as well as)\s+)?|\s+(?:(?i:and|or|as well as)|&)\s+)"
+    rf"(?:(?i:its|their|the(?:\s+[a-z]+){{0,3}}\s+(?:office|agency|department|contractor))\b|(?:(?i:the)\s+)?"
+    rf"{_PAYMENT_ACTOR_NAME_PATTERN}(?![\w&-]))"
+)
+_ACTOR_CONJUNCTION_RE = re.compile(r"\s+(?:and|or|as well as|&)\s+", re.IGNORECASE)
 _RECOVERY_RE = re.compile(r"\b(?:recovered|recovery|recoveries)\b", re.IGNORECASE)
 _MIXED_EXPOSURE_RE = re.compile(
     r"\b(?:premature payments?|without (?:ensuring )?(?:the )?completion of work|"
@@ -279,10 +298,18 @@ def _window_sentences(lines: list[str], line_start: int) -> list[tuple[int, str]
     start = line_start
     for index, raw in enumerate(lines, start=line_start):
         line = raw.strip()
-        page_header = index < 4 and (
-            _REPORT_HEADER_RE.fullmatch(line) or _ROMAN_PAGE_RE.fullmatch(line) or _PAGE_NUMBER_ONLY_RE.fullmatch(line)
+        continued_title = _CONTINUED_TABLE_RE.match(line)
+        table_heading = _TABLE_TITLE_RE.fullmatch(line) or (
+            continued_title and not line[continued_title.end():].strip(" ):.–-")
         )
-        heading = bool(page_header or _NUMBERED_HEADING_RE.match(line) or _LEGAL_ENTITY_RE.fullmatch(line))
+        page_header = index < 4 and (
+            _REPORT_HEADER_RE.fullmatch(line) or _ROMAN_PAGE_RE.fullmatch(line)
+            or _PAGE_NUMBER_ONLY_RE.fullmatch(line)
+        )
+        heading = bool(
+            page_header or table_heading or (index < 5 and _EXECUTIVE_SUMMARY_RE.fullmatch(line))
+            or _NUMBERED_HEADING_RE.match(line) or _LEGAL_ENTITY_RE.fullmatch(line)
+        )
         if not line or heading or _PARAGRAPH_ITEM_RE.match(line):
             if parts:
                 paragraphs.append((start, parts))
@@ -376,19 +403,19 @@ def _exposure_reference(
     kind = "detail"
     section = result["para_number"]
     if any(
-        _ROMAN_PAGE_RE.fullmatch(line.strip()) or line.strip().casefold() == "executive summary"
+        _ROMAN_PAGE_RE.fullmatch(line.strip()) or _EXECUTIVE_SUMMARY_RE.fullmatch(line.strip())
         for line in lines[:5]
     ):
         kind = "summary"
         section = _summary_reference(lines, window, result["evidence"])
     if not _SECTION_NUMBER_RE.fullmatch(section):
         return {}
-    # Executive summaries can repeat the same evidence verbatim. Normalize the PDF's
-    # inline footnote markers so the detailed sentence has the same identity.
+    # Match the cited observation even if the detail page supplies additional payer context.
+    # Normalize PDF footnote markers so a verbatim summary and detail have the same identity.
     evidence = " ".join(_AMOUNT_FOOTNOTE_RE.sub(r"\1", result["evidence"]).casefold().split())
     identity = (
         report_digest, section, result["signal_category"], f"{result['amount_inr']:.2f}",
-        result["actor"].casefold(), evidence,
+        evidence,
     )
     return {
         "exposure_reference_key": sha256("\n".join(identity).encode()).hexdigest(),
@@ -397,18 +424,59 @@ def _exposure_reference(
     }
 
 
-def _is_flattened_audit_table(pages: dict[int, str], page: int, window: list[str]) -> bool:
-    if _has_audit_table_headers(pages[page]):
-        return True
-    if not _has_audit_table_headers(pages.get(page - 1, "")):
+def _is_flattened_audit_table(
+    pages: dict[int, str], page: int, evidence_line: int, window_start: int, window_end: int,
+) -> bool:
+    """Find the headers for a contiguous table, stopping at a different section."""
+    table_label: tuple[str, ...] = ()
+    for table_page in range(page, 0, -1):
+        lines = pages.get(table_page, "").splitlines()
+        anchor = evidence_line if table_page == page else len(lines) - 1
+        start, end = 0, len(lines)
+        label: tuple[str, ...] = ()
+        new_section = False
+        continued = False
+        for index, raw in enumerate(lines):
+            line = raw.strip()
+            title = _TABLE_TITLE_RE.match(line)
+            continuation = bool(_CONTINUED_TABLE_RE.match(line))
+            heading = _NUMBERED_HEADING_RE.match(line)
+            if title or continuation or heading or _ANNEXURE_BOUNDARY_RE.match(line):
+                if index > anchor:
+                    end = index
+                    break
+                if index < 4 and not continuation and _is_running_table_prefix(lines, index, title, heading):
+                    continue
+                start = index + 1
+                label = tuple(part.casefold() for part in title.groups()) if title else ()
+                continued = continuation
+                new_section = new_section or not continued
+        if label and table_label and label != table_label:
+            return False
+        table_label = label or table_label
+        section = lines[start:end]
+        if _has_audit_table_headers("\n".join(section)):
+            return True
+        if new_section:
+            return False
+        # Implicit continuation requires flattened rows in the window, or in the preceding page's trailing section.
+        row_lines = lines[max(start, window_start):min(end, window_end)] if table_page == page else section
+        if not continued and sum(bool(_TABLE_MONEY_CELL_RE.search(line)) for line in row_lines) < 2:
+            return False
+    return False
+
+
+def _is_running_table_prefix(
+    lines: list[str], index: int, title: re.Match[str] | None, heading: re.Match[str] | None,
+) -> bool:
+    following = next((line.strip() for line in lines[index + 1:] if line.strip()), "")
+    if not _CONTINUED_TABLE_RE.match(following):
         return False
-    page_start = pages[page].splitlines()[:10]
-    if _CONTINUED_TABLE_RE.search("\n".join(page_start)):
+    if heading and heading.group(3):  # Running chapter heading immediately above the continuation.
         return True
-    if any(_NUMBERED_HEADING_RE.match(line.strip()) or _ANNEXURE_BOUNDARY_RE.match(line.strip()) for line in page_start):
-        return False
-    # Some continuation pages omit headings entirely. Their flattened amount column still has numeric cells.
-    return sum(bool(_TABLE_MONEY_CELL_RE.search(line)) for line in window) >= 2
+    continued_title = _TABLE_TITLE_RE.match(following)
+    return bool(title and continued_title and title.group().casefold() == continued_title.group().casefold())
+
 
 def _is_boilerplate_block(text: str) -> bool:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -532,12 +600,29 @@ def resolve_enclosing_heading(pages: dict[int, str], page: int, line_start: int)
 
 
 def _payment_actor(sentence: str, signal: re.Pattern[str] | None = None) -> str:
-    for clause in _CLAUSE_BREAK_RE.split(sentence):
+    boundaries = [(match.start(), match.end()) for match in _CLAUSE_BREAK_RE.finditer(sentence)]
+    boundaries.append((len(sentence), len(sentence)))
+    start = 0
+    for end, next_start in boundaries:
+        clause = sentence[start:end]
+        clause_start, start = start, next_start
         if signal is not None and not signal.search(clause):
             continue
         if match := _PAYMENT_ACTOR_RE.match(_PARAGRAPH_ITEM_RE.sub("", clause.strip())):
-            return neutral_text(match.group("actor"))
+            return _single_payment_actor(match.group("actor"))
+        if passive := _PASSIVE_PAYMENT_BY_RE.search(clause):
+            payer = _PASSIVE_PAYMENT_ACTOR_RE.match(clause, passive.end())
+            # The list of payers can cross a comma that otherwise separates independent clauses.
+            if payer and not _ADDITIONAL_PAYMENT_ACTOR_RE.match(sentence, clause_start + payer.end()):
+                return _single_payment_actor(payer.group("actor"))
     return ""
+
+
+def _single_payment_actor(actor: str) -> str:
+    for join in _ACTOR_CONJUNCTION_RE.finditer(actor):
+        if _LEGAL_ENTITY_RE.fullmatch(actor[:join.start()]) and _LEGAL_ENTITY_RE.fullmatch(actor[join.end():]):
+            return ""
+    return neutral_text(actor)
 
 
 def _actor_key(name: str) -> str:
@@ -570,6 +655,9 @@ def _section_payment_actor(
     if not actor:
         return "", ""
 
+    # An explicit but unresolved payer is insufficient evidence for borrowing the opener's actor.
+    if _PASSIVE_PAYMENT_BY_RE.search(evidence):
+        return "", ""
     key = _actor_key(actor)
     if any(_actor_key(name.group()) != key for name in _LEGAL_ENTITY_RE.finditer(evidence)):
         return "", ""
@@ -701,10 +789,10 @@ def _evaluate_window(
         return {"key": key, "status": "cleared", "excluded_cofunding": False, "reason": "no_duplicate_billing_signal"}
 
     # Flattened table text supplies neither trustworthy row boundaries nor column units.
-    if _is_flattened_audit_table(pages, page, core_lines):
+    evidence_line, evidence = matching_sents[0]
+    if _is_flattened_audit_table(pages, page, evidence_line, line_start, line_end):
         return {"key": key, "status": "unevaluable", "reason": "ambiguous_audit_table_attribution"}
 
-    evidence_line, evidence = matching_sents[0]
     amount = _exposure_amount(evidence, signal_pattern)
     if amount is None:
         next_index = substantive_sentences.index((evidence_line, evidence)) + 1

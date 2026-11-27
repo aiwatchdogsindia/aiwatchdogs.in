@@ -96,7 +96,8 @@ def test_dry_run_rejects_invalid_windows_even_with_a_hold(project_input, changes
         builder.dry_run_all(tasks[:1], docs)
 
 
-def test_dry_run_counts_linked_report_exposure_once(project_input):
+@pytest.mark.parametrize("summary_header", ["Report No. 17 of 2025\nxi", "Executive Summary"])
+def test_dry_run_counts_linked_report_exposure_once(project_input, summary_header):
     _, docs = project_input
     observation = "The contractor was paid twice for the same road work, resulting in payment of Rs. 7.53 crore."
     report = replace(
@@ -106,8 +107,12 @@ def test_dry_run_counts_linked_report_exposure_once(project_input):
         report_no="Report No. 17 of 2025",
         pages={
             3: "The department was paid twice for the same bridge work, resulting in payment of Rs. 7.53 crore.",
-            14: f"Report No. 17 of 2025\nxi\n{observation}\n(Para 6.3.1.2)",
-            80: f"6.3.1.2 Duplicate payment for road works\n{observation}",
+            14: f"{summary_header}\n{observation}\n(Para 6.3.1.2)",
+            80: (
+                "6.3.1.2 Duplicate payment for road works\n"
+                "Eastern Power Limited made an irregular payment for road works.\n"
+                f"{observation}"
+            ),
         },
     )
     tasks = builder.pack_tasks(builder.extract_all_blocks([report]), target_tasks=10)
