@@ -51,6 +51,8 @@ from aiwatchdogs.projects import (
     CANONICAL_PROJECT_CODES,
     ONE_ROAD_TWO_BILLS_METHODOLOGY,
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
+    ONE_TEACHER_FIVE_GRADES_METHODOLOGY,
+    ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
     UNION_BUDGET_METHODOLOGY,
     UNION_BUDGET_PROJECT_SLUG,
 )
@@ -132,6 +134,7 @@ OPEN_CHOICE_PROJECTS = frozenset(
         "gov-in-public-information",
         UNION_BUDGET_PROJECT_SLUG,
         ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
+        ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
     }
 )
 
@@ -3368,6 +3371,10 @@ class DeskService:
             summary["one_road_two_bills"] = self._one_road_two_bills_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == ONE_TEACHER_FIVE_GRADES_METHODOLOGY:
+            summary["one_teacher_five_grades"] = self._one_teacher_five_grades_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -3996,6 +4003,141 @@ class DeskService:
             "by_signal": by_signal,
             "years": [years[y] for y in sorted(years)],
             "top_leads": top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def _one_teacher_five_grades_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Academic-year progress and ranked State/UT single-teacher concentrations for P5 (OT1)."""
+        mid = str(mission_row["id"])
+        slug = str(mission_row["slug"])
+        coverage = _project_coverage(slug)
+        by_year = coverage.get("by_year") if isinstance(coverage.get("by_year"), dict) else {}
+        academic_years = [y for y in coverage.get("academic_years") or [] if isinstance(y, str)]
+        years: dict[str, dict[str, Any]] = {}
+
+        def year_row(yr: str) -> dict[str, Any]:
+            planned = by_year.get(yr) if isinstance(by_year.get(yr), dict) else {}
+            all_india = planned.get("all_india") if isinstance(planned.get("all_india"), dict) else {}
+            return years.setdefault(
+                yr,
+                {
+                    "year": yr,
+                    "tasks": 0,
+                    "done": 0,
+                    "claimed": 0,
+                    "open": 0,
+                    "pct": 0.0,
+                    "leads": 0,
+                    "all_india_single_teacher_schools": int(all_india.get("single_teacher_schools") or 0),
+                    "all_india_single_teacher_enrolments": int(all_india.get("single_teacher_enrolments") or 0),
+                },
+            )
+
+        for yr in academic_years:
+            year_row(yr)
+
+        # Task IDs use the form 'prj-ot1-2025-26-<state-key>' -> academic year sits at chars 9..15.
+        for r in conn.execute(
+            "SELECT SUBSTR(id, 9, 7) AS yr, status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired' AND id LIKE 'prj-ot1-%' GROUP BY yr, status",
+            (mid,),
+        ).fetchall():
+            yr = str(r["yr"] or "").strip()
+            if not yr:
+                continue
+            entry = year_row(yr)
+            n = int(r["c"])
+            entry["tasks"] += n
+            st = str(r["status"] or "")
+            if st == "completed":
+                entry["done"] += n
+            elif st == "claimed":
+                entry["claimed"] += n
+            elif st == "queued":
+                entry["open"] += n
+
+        live = (
+            "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+            "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+        )
+        leads = verified = peer_review = 0
+        flagged_students_total = 0
+        by_signal: dict[str, int] = {
+            "severe_concentration_and_overcrowding": 0,
+            "high_single_teacher_concentration": 0,
+            "severe_single_teacher_overcrowding": 0,
+            "gov_primary_understaffed": 0,
+        }
+        top_states: list[dict[str, Any]] = []
+
+        for r in conn.execute(
+            f"SELECT id, title, entity_name, jurisdiction, fiscal_year, status, anomaly_metrics_json "
+            f"FROM findings WHERE {live} ORDER BY id ASC",
+            (mid,),
+        ).fetchall():
+            n = 1
+            leads += n
+            st = str(r["status"] or "")
+            if st == "verified":
+                verified += n
+            elif st in ("peer_review", "raw_lead"):
+                peer_review += n
+            yr = str(r["fiscal_year"] or "").strip()
+            if yr in years:
+                years[yr]["leads"] += n
+            metrics = loads_json(r["anomaly_metrics_json"], {})
+            metrics = metrics if isinstance(metrics, dict) else {}
+            sig = str(metrics.get("signal_category") or "")
+            if sig in by_signal:
+                by_signal[sig] += 1
+            st_enrol = int(metrics.get("single_teacher_enrolments") or 0)
+            flagged_students_total += st_enrol
+            gov_avg_raw = metrics.get("gov_primary_teachers_per_school")
+            top_states.append(
+                {
+                    "finding_id": str(r["id"]),
+                    "state_name": str(metrics.get("state_name") or r["jurisdiction"] or r["entity_name"] or ""),
+                    "academic_year": str(metrics.get("academic_year") or yr),
+                    "status": st,
+                    "signal_category": sig,
+                    "single_teacher_schools": int(metrics.get("single_teacher_schools") or 0),
+                    "total_schools": int(metrics.get("total_schools") or 0),
+                    "single_teacher_share_pct": float(metrics.get("single_teacher_share_pct") or 0.0),
+                    "single_teacher_enrolments": st_enrol,
+                    "students_per_single_teacher": float(metrics.get("students_per_single_teacher") or 0.0),
+                    "gov_primary_schools": int(metrics.get("gov_primary_1_5_schools") or 0),
+                    "gov_primary_teachers_per_school": (
+                        float(gov_avg_raw) if isinstance(gov_avg_raw, (int, float)) else None
+                    ),
+                }
+            )
+
+        for entry in years.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        top_states.sort(
+            key=lambda x: (
+                -float(x["single_teacher_share_pct"]),
+                -int(x["single_teacher_schools"]),
+                str(x["finding_id"]),
+            )
+        )
+
+        return {
+            "academic_years": academic_years,
+            "states_covered": int(coverage.get("states_covered_2025_26") or 36),
+            "total_tasks": int(coverage.get("total_tasks") or mission_row["total_tasks"] or 0),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "national_baseline": coverage.get("national_baseline_2025_26") or {},
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0),
+            "flagged_students_total": flagged_students_total,
+            "by_signal": by_signal,
+            "years": [years[y] for y in sorted(years)],
+            "top_states": top_states[:15],
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }

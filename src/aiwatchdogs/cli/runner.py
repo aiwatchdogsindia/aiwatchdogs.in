@@ -146,6 +146,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "new_entity_days",
         "official_publisher",
         "one_road_two_bills",
+        "one_teacher_five_grades",
         "pac_note_threshold_inr",
         "q4_ceiling_pct",
         "retrieval_url",
@@ -193,6 +194,7 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
 RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "line_key",
     "window_key",
+    "state_key",
     "source_locator",
     "ocid",
     "tender_id",

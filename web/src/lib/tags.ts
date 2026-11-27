@@ -234,6 +234,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Checks official CAG Union Audit Reports for projects billed twice or claimed across two agencies while excluding legitimate cost-sharing.',
   ),
+  school_staffing: makeTag(
+    'school_staffing',
+    'School staffing check',
+    'work',
+    'project',
+    'Cross-checks official Ministry of Education UDISE+ tables to map single-teacher school concentration and Government Primary staffing.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
@@ -465,6 +472,7 @@ export function getWorkTypeTag(
     if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
     if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
     if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
+    if (m === 'OT1') return WORK_TYPE_TAGS.school_staffing;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -472,6 +480,7 @@ export function getWorkTypeTag(
   if (m === 'W1') return WORK_TYPE_TAGS.website_check;
   if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
   if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
+  if (m === 'OT1') return WORK_TYPE_TAGS.school_staffing;
 
   return WORK_TYPE_TAGS.audit;
 }

@@ -380,6 +380,59 @@ export interface VisualOneRoadTwoBills {
   coverage_url: string;
 }
 
+export interface VisualOneTeacherFiveGradesYear {
+  year: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  all_india_single_teacher_schools: number;
+  all_india_single_teacher_enrolments: number;
+}
+
+export interface VisualOneTeacherFiveGradesState {
+  finding_id: string;
+  state_name: string;
+  academic_year: string;
+  status: string;
+  signal_category: string;
+  single_teacher_schools: number;
+  total_schools: number;
+  single_teacher_share_pct: number;
+  single_teacher_enrolments: number;
+  students_per_single_teacher: number;
+  gov_primary_schools: number;
+  gov_primary_teachers_per_school: number | null;
+}
+
+export interface VisualOneTeacherFiveGrades {
+  academic_years: string[];
+  states_covered: number;
+  total_tasks: number;
+  generated_on: string;
+  national_baseline: {
+    total_schools?: number;
+    single_teacher_schools?: number;
+    single_teacher_enrolments?: number;
+    single_teacher_share_pct?: number;
+    students_per_single_teacher?: number;
+    gov_primary_1_5_schools?: number;
+    gov_primary_teachers_per_school?: number;
+  };
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_students_total: number;
+  by_signal: Record<string, number>;
+  years: VisualOneTeacherFiveGradesYear[];
+  top_states: VisualOneTeacherFiveGradesState[];
+  documents_url: string;
+  coverage_url: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -387,6 +440,7 @@ export interface ProjectVisualSummary {
   website_audit?: VisualWebsiteAudit;
   union_budget?: VisualUnionBudget;
   one_road_two_bills?: VisualOneRoadTwoBills;
+  one_teacher_five_grades?: VisualOneTeacherFiveGrades;
 }
 
 export interface MissionItem {

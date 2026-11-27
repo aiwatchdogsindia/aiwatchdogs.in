@@ -681,6 +681,59 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "one_teacher_five_grades" in vs:
+        ot1 = vs["one_teacher_five_grades"]
+        years = ot1.get("years") or []
+        base = ot1.get("national_baseline") or {}
+        out.extend(
+            [
+                "## One Teacher, Five Grades (OT1)",
+                "",
+                f"- **Coverage:** {int(ot1.get('states_covered') or 36)} States & UTs across {len(years) or 3} UDISE+ cycles",
+                f"- **2025-26 All-India baseline:** {int(base.get('single_teacher_schools') or 0):,} single-teacher schools "
+                f"enrolling {int(base.get('single_teacher_enrolments') or 0):,} students "
+                f"({float(base.get('single_teacher_share_pct') or 0.0):.2f}% of schools); "
+                f"{int(base.get('gov_primary_1_5_schools') or 0):,} Government Primary I–V schools",
+                f"- **Leads so far:** {int(ot1.get('leads') or 0):,} ({int(ot1.get('verified') or 0):,} verified) · "
+                f"{int(ot1.get('cleared_tasks') or 0):,} cleared",
+                f"- **Booklets indexed, with SHA-256 (CSV):** [{base_url}{ot1.get('documents_url')}]({base_url}{ot1.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{ot1.get('coverage_url')}]({base_url}{ot1.get('coverage_url')})",
+                "",
+                "### Academic-Year Progress",
+                "",
+                "| Academic year | Checks done / total | Leads | All-India single-teacher schools | Enrolled students |",
+                "| :--- | :---: | ---: | ---: | ---: |",
+            ]
+        )
+        for y in years:
+            out.append(
+                f"| {y.get('year')} | {int(y.get('done') or 0):,}/{int(y.get('tasks') or 0):,} | "
+                f"{int(y.get('leads') or 0):,} | {int(y.get('all_india_single_teacher_schools') or 0):,} | "
+                f"{int(y.get('all_india_single_teacher_enrolments') or 0):,} |"
+            )
+        top = ot1.get("top_states") or []
+        if top:
+            out.extend(
+                [
+                    "",
+                    "### Highest-Concentration States/UTs Flagged So Far",
+                    "",
+                    "| State / UT | Year | Single-Teacher Schools | Share | Students / School | Gov Primary Avg Teachers | Status |",
+                    "| :--- | :--- | ---: | ---: | ---: | ---: | :--- |",
+                ]
+            )
+            for st_row in top:
+                gavg = st_row.get("gov_primary_teachers_per_school")
+                gavg_txt = f"{float(gavg):.2f}" if gavg is not None else "—"
+                out.append(
+                    f"| [{_md_cell(st_row.get('state_name'), max_len=60)}]({base_url}/findings/{st_row.get('finding_id')}.md) | "
+                    f"{st_row.get('academic_year')} | {int(st_row.get('single_teacher_schools') or 0):,} | "
+                    f"{float(st_row.get('single_teacher_share_pct') or 0.0):.2f}% | "
+                    f"{float(st_row.get('students_per_single_teacher') or 0.0):.1f} | {gavg_txt} | "
+                    f"{_status_label(st_row.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -1262,12 +1315,13 @@ def render_brief_md(base_url: str) -> str:
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (4 Live Projects)",
+        "## What We're Auditing Right Now (5 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
         f"- **[Union Budget: budgeted but not spent]({base_url}/projects/union-budget-unspent-funds.md)** (`P3`) — Every line of every Demand for Grants since 2014-15, read from the official budget papers: budget estimate, revised estimate and actual expenditure, and what was not spent (10,000 tasks).",
         f"- **[One Road, Two Bills]({base_url}/projects/one-road-two-bills.md)** (`P4`) — Union Government CAG Audit Reports (past 2 years) scanned for documented duplicate billing, two-receipt claims, and irregular dual-agency overlaps while excluding legitimate cost-sharing.",
+        f"- **[One Teacher, Five Grades]({base_url}/projects/one-teacher-five-grades.md)** (`P5`) — Official Ministry of Education UDISE+ national reports (2023-24 to 2025-26) audited across 100 State/UT tasks to map single-teacher schools, pupil overcrowding, and under-staffed Government Primary schools.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1515,7 +1569,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1 and OR1 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1 and OT1 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
         f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): Reviewable POSIX shell entrypoint launching `aiwatchdogs join` (interactive in a terminal; non-interactive without a TTY or with `--yes`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
@@ -1719,7 +1773,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades').",
                     }
                 },
                 "required": ["slug"],

@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, OT1)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,16 @@ from aiwatchdogs.connectors import loader as connector_loader
 from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
-from aiwatchdogs.engines import fiscal, one_road_two_bills, police, procurement, proximity, schemes, union_budget
+from aiwatchdogs.engines import (
+    fiscal,
+    one_road_two_bills,
+    one_teacher_five_grades,
+    police,
+    procurement,
+    proximity,
+    schemes,
+    union_budget,
+)
 
 ENGINE_VERSION = "2.0.0"
 
@@ -29,6 +38,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "P1": "P1-2026.11-v1",
     "UB1": "UB1-2026.11-v1",
     "OR1": "OR1-2026.11-v2",
+    "OT1": "OT1-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -221,6 +231,26 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2026/5of2026UGEnglish-069ce38b4a151b0.15050638.pdf",
         "module": "aiwatchdogs.engines.one_road_two_bills",
     },
+    "OT1": {
+        "code": "OT1",
+        "name": "One Teacher, Five Grades: Single-Teacher & Primary School Concentration",
+        "pillar": "scheme",
+        "ruleset_version": RULESET_VERSIONS["OT1"],
+        "statutory_anchors": [
+            "Constitution-Art-21A",
+            "RTE-Act-2009-Sec19-Schedule",
+            "UDISE-Plus-MoE",
+            "Samagra-Shiksha-Framework",
+        ],
+        "description": (
+            "Reads checksummed official Ministry of Education UDISE+ national booklets across Tables 2.2, "
+            "3.3, 4.3, and 5.2 to measure single-teacher school concentration, students per single-teacher "
+            "school vs RTE 30:1 norms, and Government Primary (Classes I-V) average teachers per school vs RTE "
+            "2-teacher minimum."
+        ),
+        "reference_dataset_url": "https://dashboard.udiseplus.gov.in/report2026/static/media/UDISE+2025_26_Booklet_existing.edd7cd16d934a10377ba.pdf",
+        "module": "aiwatchdogs.engines.one_teacher_five_grades",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -235,6 +265,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "P1": (police.run_p1_police_budget_heads, police),
     "UB1": (union_budget.run_ub1_union_budget_lines, union_budget),
     "OR1": (one_road_two_bills.run_or1_duplicate_billing, one_road_two_bills),
+    "OT1": (one_teacher_five_grades.run_ot1_single_teacher_schools, one_teacher_five_grades),
 }
 
 

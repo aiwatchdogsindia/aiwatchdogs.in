@@ -55,6 +55,7 @@ FINANCIAL_QUANTITY_LABELS: dict[str, str] = {
     "cag_report_monetary_figures": "CAG audit report monetary amounts (mixed financial items)",
     "scheme_outlay_and_expenditure": "Welfare scheme sanctioned outlay & reported expenditure",
     "electoral_bond_disclosures": "Disclosed SBI/ECI electoral bond face value",
+    "school_staffing_and_enrolment": "School staffing & enrolment counts (UDISE+)",
 }
 
 

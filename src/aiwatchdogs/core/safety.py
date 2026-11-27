@@ -84,6 +84,35 @@ _PHONE_BARE_RE = re.compile(r"(?<![\w₹.])([6-9]\d{9})(?![\w])")
 _PHONE_BARE_SPLIT_RE = re.compile(
     rf"(?<![\w])([6-9]\d{{4}}{_SEP}\d{{5}}|[6-9]\d{{2}}{_SEP}\d{{3}}{_SEP}\d{{4}})(?![\w])"
 )
+_PHONE_CONTEXT_CUE_RE = re.compile(
+    r"\b(?:phone|mobile|mob|tel|telephone|contact|call|helpline|whatsapp)\b",
+    re.IGNORECASE,
+)
+_AADHAAR_CONTEXT_CUE_RE = re.compile(r"\b(?:aadhaar|aadhar|uidai)\b|आधार", re.IGNORECASE)
+
+
+def _is_statistical_table_digits(
+    text: str,
+    start: int,
+    end: int,
+    matched: str,
+    cue_re: re.Pattern[str],
+) -> bool:
+    """Return True only when whitespace-separated numbers sit inside an unlabelled >=5-column numeric table row."""
+    if not any(ch.isspace() for ch in matched) or any(
+        ch in "-\u2010\u2011\u2012\u2013\u2014\u2015" for ch in matched
+    ):
+        return False
+    line_start = text.rfind("\n", 0, start) + 1
+    line_end = text.find("\n", end)
+    end_idx = len(text) if line_end == -1 else line_end
+    line = text[line_start:end_idx]
+    if cue_re.search(line):
+        return False
+    before_on_line = text[line_start:start]
+    after_on_line = text[end:end_idx]
+    adjacent_col = bool(re.search(r"\b\d+\s+$", before_on_line) or re.match(r"^\s+\d+\b", after_on_line))
+    return adjacent_col and len(re.findall(r"\b\d+\b", line)) >= 5
 
 # Email addresses — linear-time anchored pattern (prevents O(N^2) backtracking ReDoS).
 _EMAIL_RE = re.compile(
@@ -422,6 +451,8 @@ def scrub_pii(text: str) -> tuple[str, list[str]]:
         if any(h_start <= start and end <= h_end for h_start, h_end in hex_digest_spans):
             return match.group(0)
         raw = match.group(1)
+        if _is_statistical_table_digits(cleaned, start, end, raw, _AADHAAR_CONTEXT_CUE_RE):
+            return match.group(0)
         if _is_valid_aadhaar(raw):
             _record_redaction(redactions, "aadhaar")
             return "[REDACTED_AADHAAR]"
@@ -470,8 +501,15 @@ def scrub_pii(text: str) -> tuple[str, list[str]]:
         _record_redaction(redactions, "phone")
         return "[REDACTED_PHONE]"
 
+    def _replace_bare_split_phone(match: re.Match[str]) -> str:
+        matched = match.group(0)
+        if _is_statistical_table_digits(cleaned, match.start(), match.end(), matched, _PHONE_CONTEXT_CUE_RE):
+            return matched
+        _record_redaction(redactions, "phone")
+        return "[REDACTED_PHONE]"
+
     cleaned = _PHONE_PREFIXED_RE.sub(_replace_prefixed_phone, cleaned)
-    cleaned = _PHONE_BARE_SPLIT_RE.sub(_replace_prefixed_phone, cleaned)
+    cleaned = _PHONE_BARE_SPLIT_RE.sub(_replace_bare_split_phone, cleaned)
 
     def _replace_bare_phone(match: re.Match[str]) -> str:
         digits = match.group(1)

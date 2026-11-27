@@ -102,6 +102,16 @@ them into 10,000 tasks, dry-runs every task through the `OR1` engine, and refuse
 project if any window is unevaluable or fails neutrality/schema checks. It also writes
 `one-road-two-bills/documents.csv` and `coverage.json`, which the P4 project page reads.
 
+### One Teacher, Five Grades (`OT1`)
+
+`projects/one-teacher-five-grades.json` is generated from official Ministry of Education UDISE+ booklets (`2023-24`, `2024-25`, `2025-26`) across 100 State/UT tasks:
+
+```
+uv run python scripts/build_one_teacher_five_grades_project.py
+```
+
+The script verifies every booklet's SHA-256, parses Tables 2.2, 3.3, 4.3, and 5.2, dry-runs all 100 tasks through `OT1`, checks All-India totals, validates schema/neutrality, and writes `one-teacher-five-grades/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
 ## Renaming a project
 
 Change the `slug` (and the file name), and list the old slug under `formerly`:
