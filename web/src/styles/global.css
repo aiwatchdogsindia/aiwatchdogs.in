@@ -3497,7 +3497,7 @@ code.font-mono {
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(236, 232, 223, 0.56);
+  background: rgba(0, 0, 0, 0.62);
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
@@ -8555,4 +8555,19 @@ a {
 .fl-row.is-unconfirmed .fl-what {
   font-style: italic;
   color: var(--ink-2);
+}
+
+.drawer-metrics-table .ledger-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.drawer-metrics-table .ledger-table th:first-child,
+.drawer-metrics-table .ledger-table td:first-child {
+  width: 38%;
+}
+
+.drawer-metrics-table .ledger-table td.num {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

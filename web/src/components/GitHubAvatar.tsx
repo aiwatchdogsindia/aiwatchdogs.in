@@ -25,14 +25,14 @@ const FAILED_GITHUB_HANDLES = new Set<string>();
 
 /** Editorial & Tiranga-harmonized palette for deterministic geometric identicons. */
 const IDENTICON_PALETTE: ReadonlyArray<{ fg: string; bg: string }> = [
-  { fg: '#C85A32', bg: '#FBF1EC' }, // terracotta / saffron-rust
-  { fg: '#138808', bg: '#EBF6EA' }, // India green
-  { fg: '#A84F00', bg: '#FDF3E7' }, // deep saffron amber
-  { fg: '#2D5A88', bg: '#EDF3FA' }, // civic slate blue
-  { fg: '#8B6D1F', bg: '#FAF5E4' }, // warm brass / gold
-  { fg: '#7A3B5E', bg: '#F7EEF3' }, // muted plum
-  { fg: '#2C6B5C', bg: '#EAF5F2' }, // deep teal
-  { fg: '#4A463E', bg: '#F2F0EB' }, // warm charcoal stone
+  { fg: '#D9B39A', bg: '#2A211C' }, // terracotta
+  { fg: '#9CC4A8', bg: '#18231C' }, // green
+  { fg: '#D2B37E', bg: '#29231A' }, // amber
+  { fg: '#9FB2CC', bg: '#1A2029' }, // civic slate blue
+  { fg: '#CDBB8A', bg: '#26231A' }, // warm brass / gold
+  { fg: '#C9A3B8', bg: '#261C22' }, // muted plum
+  { fg: '#9CC2B8', bg: '#172320' }, // deep teal
+  { fg: '#BDB8AE', bg: '#1E2024' }, // warm charcoal stone
 ];
 
 export function normalizeHandle(raw: string): string {
