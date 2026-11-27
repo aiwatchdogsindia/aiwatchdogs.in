@@ -219,6 +219,14 @@ class UnevaluableSourceFailure(ValueError):
     """Raised when the check could not read any of the figures it was asked to compare."""
 
 
+class UnsupportedMethodology(ValueError):
+    """Raised when this CLI build has no engine for the task's methodology (e.g. an older build).
+
+    The task is released back to the queue instead of being judged: a build that cannot run a check
+    must not submit a verdict on it.
+    """
+
+
 def role_of(lease: dict[str, Any]) -> str:
     """The role the Hub assigned with this lease (older Hubs send none; derive it from the task)."""
     role = lease.get("role") if isinstance(lease, dict) else None
@@ -2260,6 +2268,13 @@ class AgentRunner:
             finding.get("methodology_code") or task.get("methodology_code") or ""
         ).upper().strip()
 
+        # A build without this engine cannot reproduce the finding, so it must not vote on it.
+        if methodology_code not in METHODOLOGY_CATALOG:
+            raise UnsupportedMethodology(
+                f"This CLI build has no engine for methodology {methodology_code!r}; "
+                "update the CLI (uvx --refresh ...) to verify it."
+            )
+
         # Check 4: Neutrality & recursive PII safety across ALL finding fields (including nested metrics/citations/editorial)
         title = str(finding.get("title", ""))
         summary = str(finding.get("summary", ""))
@@ -2417,10 +2432,6 @@ class AgentRunner:
                 "records_scanned": records_count,
                 "aborted_due_to_digest_mismatch": True,
             }
-        elif methodology_code not in METHODOLOGY_CATALOG:
-            reproduction_state = CHECK_FAIL
-            metric_tolerance_state = CHECK_FAIL
-            notes_parts.append(f"Unknown methodology_code {methodology_code!r}.")
         elif dataset is not None:
             repro = self._invoke_engine(
                 methodology_code,
@@ -2588,6 +2599,9 @@ class AgentRunner:
             elif isinstance(exc, UnevaluableSourceFailure):
                 release_reason = "unevaluable_source"
                 safe_release_note = "The check could not read the figures it was asked to compare."
+            elif isinstance(exc, UnsupportedMethodology):
+                release_reason = "unsupported_methodology"
+                safe_release_note = "This CLI build has no engine for the task's methodology; update the CLI."
             elif isinstance(exc, PermissionError):
                 exc_msg = str(exc)
                 if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:

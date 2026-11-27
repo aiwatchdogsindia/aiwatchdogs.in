@@ -1016,6 +1016,56 @@ def test_runner_peer_verify_negative_verdicts(tmp_path: Path) -> None:
     assert len(submitted) == 3
 
 
+def test_runner_peer_verify_unknown_methodology_releases_instead_of_voting(tmp_path: Path) -> None:
+    """A build without the finding's engine hands the task back; it never submits a verdict on it."""
+    clean_csv = tmp_path / "clean.csv"
+    clean_csv.write_text("a,b\n1,2\n", encoding="utf-8")
+    submitted: list[dict[str, Any]] = []
+    released: list[dict[str, Any]] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/desk/beat":
+            return httpx.Response(200, json={"status": "active"})
+        if request.url.path == "/api/desk/submit":
+            submitted.append(json.loads(request.content))
+            return httpx.Response(200, json={"status": "accepted"})
+        if request.url.path == "/api/desk/release":
+            released.append(json.loads(request.content))
+            return httpx.Response(200, json={"status": "released"})
+        return httpx.Response(404)
+
+    cfg = AgentConfig(handle="old-build", hub_url="http://mockhub", api_token="awd_tok")
+    with httpx.Client(transport=httpx.MockTransport(_handler), base_url="http://mockhub") as client:
+        runner = AgentRunner(cfg, http_client=client, allow_local_files=True)
+        res = runner.execute_task(
+            {
+                "lease_id": "l-unknown",
+                "task": {
+                    "id": "t-unknown",
+                    "task_type": "peer_verify",
+                    "methodology_code": "ZZ9",
+                    "payload": {
+                        "finding_id": "f-unknown",
+                        "dataset_path": str(clean_csv),
+                        "artifact_sha256": compute_sha256(clean_csv.read_bytes()),
+                        "methodology_code": "ZZ9",
+                        "title": "Public Record Anomaly: assurance pending",
+                        "summary": "Neutral summary.",
+                        "entity_name": "Ministry A",
+                        "rule_triggered": "ZZ9",
+                        "benign_explanations": ["Implementation may be in progress."],
+                    },
+                },
+            }
+        )
+
+    assert submitted == []
+    assert res["outcome"] == "released"
+    assert res["reason"] == "unsupported_methodology"
+    assert [r["reason"] for r in released] == ["unsupported_methodology"]
+    assert released[0]["lease_id"] == "l-unknown"
+
+
 # ---------------------------------------------------------------------------
 # 7. Typer CLI `join --yes`, `run`, `status`, and `missions` Against Live Hub
 # ---------------------------------------------------------------------------
