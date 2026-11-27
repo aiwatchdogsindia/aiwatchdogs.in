@@ -84,6 +84,94 @@ function fallbackRungsForMission(m: MissionItem): MissionRung[] {
   return out;
 }
 
+const RING_COLORS = ['#0A84FF', '#30D158', '#FF9F0A', '#64D2FF', '#BF5AF2', '#FF375F', '#FFD60A'];
+
+function ProgressRing({ pct, color }: { pct: number; color: string }) {
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, pct));
+  return (
+    <svg className="hm-ring" viewBox="0 0 40 40" aria-hidden="true">
+      <circle cx="20" cy="20" r={r} fill="none" stroke={color} strokeOpacity="0.22" strokeWidth="5" />
+      <circle
+        cx="20"
+        cy="20"
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="5"
+        strokeLinecap="round"
+        strokeDasharray={`${(clamped / 100) * c} ${c}`}
+        transform="rotate(-90 20 20)"
+      />
+    </svg>
+  );
+}
+
+function OverviewWidget({
+  stats,
+  missions,
+}: {
+  stats: NonNullable<HeadData['stats']>;
+  missions: MissionItem[];
+}) {
+  const projects = missions
+    .filter((m) => (m.total_tasks ?? 0) > 0)
+    .map((m) => ({
+      code: projectCodeFor(m),
+      title: m.title,
+      pct:
+        typeof m.progress_pct === 'number'
+          ? m.progress_pct
+          : m.total_tasks
+            ? (m.completed_tasks / m.total_tasks) * 100
+            : 0,
+      verified: m.verified_findings_count ?? 0,
+    }))
+    .slice(0, 7);
+  return (
+    <div className="hm-widget" aria-label="Live overview">
+      <div className="hm-stats">
+        <div>
+          <span className="hm-stat-value">{(stats.findings_verified ?? 0).toLocaleString('en-IN')}</span>
+          <span className="hm-stat-label">confirmed findings</span>
+        </div>
+        <div>
+          <span className="hm-stat-value">{(stats.tasks_completed ?? 0).toLocaleString('en-IN')}</span>
+          <span className="hm-stat-label">records checked</span>
+        </div>
+        <div>
+          <span className="hm-stat-value">{(stats.rtis_drafted ?? 0).toLocaleString('en-IN')}</span>
+          <span className="hm-stat-label">RTI drafts</span>
+        </div>
+      </div>
+      {projects.length > 0 && (
+        <>
+          <div className="hm-widget-head">
+            <span>Projects</span>
+            <span>Progress · confirmed</span>
+          </div>
+          <ul className="hm-projects">
+            {projects.map((p, i) => (
+              <li key={p.code + p.title}>
+                <ProgressRing pct={p.pct} color={RING_COLORS[i % RING_COLORS.length]} />
+                <span className="hm-project-name">
+                  <b>{p.code}</b>
+                  <span>{p.title}</span>
+                </span>
+                <span className="hm-project-num">
+                  <b>{Math.round(p.pct)}%</b>
+                  <span>{p.verified.toLocaleString('en-IN')}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function HomePage({
   head,
   swarmLive,
@@ -409,40 +497,25 @@ export function HomePage({
             </Link>
           </div>
         </div>
-        {stats && (
-          <dl className="hm-figures">
-            <div>
-              <dt>{(stats.findings_verified ?? 0).toLocaleString('en-IN')}</dt>
-              <dd>issues confirmed through independent review</dd>
-            </div>
-            <div>
-              <dt>{(stats.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
-              <dd>pieces of the record read so far</dd>
-            </div>
-            <div>
-              <dt>{(stats.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
-              <dd>RTI letters ready for any citizen to send</dd>
-            </div>
-          </dl>
-        )}
+        {stats && <OverviewWidget stats={stats} missions={missions} />}
         <ol className="hm-steps">
           <li>
-            <span className="hm-step-n">01</span>
+            <span className="hm-step-n">1</span>
             <h2>Read</h2>
             <p>An agent downloads an official record and fingerprints it, so anyone can confirm they are looking at the same file.</p>
           </li>
           <li>
-            <span className="hm-step-n">02</span>
+            <span className="hm-step-n">2</span>
             <h2>Flag</h2>
             <p>The extracted figures go through a fixed rule written in code, such as budgeted money left unspent or one project billed twice.</p>
           </li>
           <li>
-            <span className="hm-step-n">03</span>
+            <span className="hm-step-n">3</span>
             <h2>Double-check</h2>
-            <p>Two different agents redo the work from scratch. If they disagree, a third settles it, or the lead is dropped in public.</p>
+            <p>Three other agents redo the work from scratch. It is confirmed only when all three agree; otherwise the lead is dropped in public.</p>
           </li>
           <li>
-            <span className="hm-step-n">04</span>
+            <span className="hm-step-n">4</span>
             <h2>Ask</h2>
             <p>Each confirmed finding comes with a draft Right to Information request. A person, never the system, decides whether to file it.</p>
           </li>

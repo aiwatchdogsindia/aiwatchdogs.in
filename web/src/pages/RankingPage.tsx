@@ -2,7 +2,8 @@ import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { Link } from '../router';
-import type { FindingItem } from '../types';
+import type { FindingItem, FindingPatterns } from '../types';
+import { getWorkTypeTag } from '../lib/tags';
 
 export type Lang = 'en' | 'hi' | 'bn' | 'ta' | 'te' | 'mr';
 
@@ -30,6 +31,9 @@ interface Strings {
   belowBE: string;
   revisedBelow: string;
   singleTeacher: string;
+  tileTotal: string;
+  tileCount: string;
+  tilePlaces: string;
 }
 
 const STRINGS: Record<Lang, Strings> = {
@@ -58,6 +62,9 @@ const STRINGS: Record<Lang, Strings> = {
     belowBE: 'Actual spending in {year} was {pct}% below the budget estimate',
     revisedBelow: 'The revised estimate for {year} was {pct}% below the budget estimate',
     singleTeacher: '{n} schools run by a single teacher ({pct}% of schools)',
+    tileTotal: 'Total amount involved',
+    tileCount: 'Confirmed discrepancies',
+    tilePlaces: 'Governments covered (Union and states)',
   },
   hi: {
     name: 'हिन्दी',
@@ -84,6 +91,9 @@ const STRINGS: Record<Lang, Strings> = {
     belowBE: '{year} में वास्तविक खर्च बजट अनुमान से {pct}% कम रहा',
     revisedBelow: '{year} का संशोधित अनुमान बजट अनुमान से {pct}% कम रहा',
     singleTeacher: 'एक ही शिक्षक वाले {n} स्कूल ({pct}% स्कूल)',
+    tileTotal: 'कुल शामिल राशि',
+    tileCount: 'पुष्ट विसंगतियाँ',
+    tilePlaces: 'शामिल सरकारें (केंद्र और राज्य)',
   },
   bn: {
     name: 'বাংলা',
@@ -110,6 +120,9 @@ const STRINGS: Record<Lang, Strings> = {
     belowBE: '{year} সালে প্রকৃত ব্যয় বাজেট অনুমানের চেয়ে {pct}% কম ছিল',
     revisedBelow: '{year} সালের সংশোধিত অনুমান বাজেট অনুমানের চেয়ে {pct}% কম ছিল',
     singleTeacher: 'মাত্র একজন শিক্ষকের {n}টি বিদ্যালয় ({pct}% বিদ্যালয়)',
+    tileTotal: 'মোট সংশ্লিষ্ট অর্থ',
+    tileCount: 'নিশ্চিত অসঙ্গতি',
+    tilePlaces: 'অন্তর্ভুক্ত সরকার (কেন্দ্র ও রাজ্য)',
   },
   ta: {
     name: 'தமிழ்',
@@ -136,6 +149,9 @@ const STRINGS: Record<Lang, Strings> = {
     belowBE: '{year} இல் உண்மையான செலவு பட்ஜெட் மதிப்பீட்டை விட {pct}% குறைவு',
     revisedBelow: '{year} க்கான திருத்திய மதிப்பீடு பட்ஜெட் மதிப்பீட்டை விட {pct}% குறைவு',
     singleTeacher: 'ஒரே ஆசிரியர் உள்ள {n} பள்ளிகள் (பள்ளிகளில் {pct}%)',
+    tileTotal: 'மொத்த தொடர்புடைய தொகை',
+    tileCount: 'உறுதிசெய்யப்பட்ட முரண்பாடுகள்',
+    tilePlaces: 'உள்ளடங்கிய அரசுகள் (ஒன்றியம் மற்றும் மாநிலங்கள்)',
   },
   te: {
     name: 'తెలుగు',
@@ -162,6 +178,9 @@ const STRINGS: Record<Lang, Strings> = {
     belowBE: '{year}లో వాస్తవ వ్యయం బడ్జెట్ అంచనా కంటే {pct}% తక్కువ',
     revisedBelow: '{year} సవరించిన అంచనా బడ్జెట్ అంచనా కంటే {pct}% తక్కువ',
     singleTeacher: 'ఒకే ఉపాధ్యాయుడు ఉన్న {n} పాఠశాలలు ({pct}% పాఠశాలలు)',
+    tileTotal: 'మొత్తం సొమ్ము',
+    tileCount: 'నిర్ధారించిన వ్యత్యాసాలు',
+    tilePlaces: 'చేర్చిన ప్రభుత్వాలు (కేంద్రం, రాష్ట్రాలు)',
   },
   mr: {
     name: 'मराठी',
@@ -188,10 +207,14 @@ const STRINGS: Record<Lang, Strings> = {
     belowBE: '{year} मध्ये प्रत्यक्ष खर्च अर्थसंकल्पीय अंदाजापेक्षा {pct}% कमी होता',
     revisedBelow: '{year} चा सुधारित अंदाज अर्थसंकल्पीय अंदाजापेक्षा {pct}% कमी होता',
     singleTeacher: 'एकच शिक्षक असलेल्या {n} शाळा ({pct}% शाळा)',
+    tileTotal: 'एकूण संबंधित रक्कम',
+    tileCount: 'निश्चित विसंगती',
+    tilePlaces: 'समाविष्ट सरकारे (केंद्र व राज्ये)',
   },
 };
 
 const LANGS = Object.keys(STRINGS) as Lang[];
+const MIX_COLORS = ['#0A84FF', '#64D2FF', '#30D158', '#FF9F0A', '#BF5AF2'];
 const LANG_KEY = 'aw.lang';
 const PAGE = 25;
 
@@ -257,13 +280,16 @@ function RankRow({
   f,
   rank,
   t,
+  max,
   onSelect,
 }: {
   f: FindingItem;
   rank: number;
   t: Strings;
+  max: number;
   onSelect: (id: string | number) => void;
 }) {
+  const share = max > 0 && f.monetary_exposure_inr ? Math.max(2, (f.monetary_exposure_inr / max) * 100) : 0;
   const { who, what, dept } = describe(f, t);
   const meta = [dept, f.jurisdiction, fiscal(f.fiscal_year)].filter(Boolean).join(' · ');
   return (
@@ -276,6 +302,11 @@ function RankRow({
           </span>
           {what && <span className="rk-what">{what}</span>}
           {meta && <span className="rk-meta">{meta}</span>}
+          {share > 0 && (
+            <span className="rk-bar" aria-hidden="true">
+              <i style={{ width: `${share}%` }} />
+            </span>
+          )}
         </span>
         <span className="rk-side">
           <span className="rk-amount">{money(f.monetary_exposure_inr, t)}</span>
@@ -327,6 +358,7 @@ export function TopDiscrepancies({ onSelectFinding }: { onSelectFinding: (id: st
   }, []);
 
   if (items.length === 0) return null;
+  const topAmount = Math.max(0, ...items.map((f) => f.monetary_exposure_inr || 0));
 
   return (
     <section className="rk-home" lang={lang} aria-labelledby="rk-home-title">
@@ -347,7 +379,7 @@ export function TopDiscrepancies({ onSelectFinding }: { onSelectFinding: (id: st
       </div>
       <ol className="rk-list">
         {items.map((f, i) => (
-          <RankRow key={f.id} f={f} rank={i + 1} t={t} onSelect={onSelectFinding} />
+          <RankRow key={f.id} f={f} rank={i + 1} t={t} max={topAmount} onSelect={onSelectFinding} />
         ))}
       </ol>
       <div className="rk-home-foot">
@@ -370,6 +402,7 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
   const [sort, setSort] = useState<'amount' | 'recent'>('amount');
   const [state, setState] = useState('');
   const [states, setStates] = useState<string[]>([]);
+  const [summary, setSummary] = useState<FindingPatterns | null>(null);
   const [items, setItems] = useState<FindingItem[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
@@ -390,7 +423,9 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
     api
       .getFindingPatterns()
       .then((res) => {
-        if (!cancelled && res.by_jurisdiction) setStates(Object.keys(res.by_jurisdiction));
+        if (cancelled) return;
+        setSummary(res);
+        if (res.by_jurisdiction) setStates(Object.keys(res.by_jurisdiction));
       })
       .catch(() => {});
     return () => {
@@ -430,6 +465,8 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
     void load(0, selection.current);
   }, [sort, state, refreshTick]);
 
+  const topAmount = Math.max(0, ...items.map((f) => f.monetary_exposure_inr || 0));
+
   return (
     <div className="rk" lang={lang}>
       <header className="rk-head">
@@ -439,6 +476,38 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
         <p className="rk-lede">{t.lede}</p>
         <p className="rk-caution">{t.notAccusation}</p>
       </header>
+
+      {summary && summary.finding_count > 0 && (
+        <div className="rk-tiles">
+          <div className="rk-tile">
+            <span className="rk-tile-value">{money(summary.total_inr, t)}</span>
+            <span className="rk-tile-label">{t.tileTotal}</span>
+          </div>
+          <div className="rk-tile">
+            <span className="rk-tile-value">{summary.finding_count.toLocaleString(t.locale)}</span>
+            <span className="rk-tile-label">{t.tileCount}</span>
+            {summary.by_methodology && (
+              <span className="rk-tile-mix" aria-hidden="true">
+                {Object.entries(summary.by_methodology)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([code, n], i) => (
+                    <span
+                      key={code}
+                      title={`${getWorkTypeTag(undefined, code).label}: ${n}`}
+                      style={{ flexGrow: n, background: MIX_COLORS[i % MIX_COLORS.length] }}
+                    />
+                  ))}
+              </span>
+            )}
+          </div>
+          <div className="rk-tile">
+            <span className="rk-tile-value">
+              {Object.keys(summary.by_jurisdiction ?? {}).length.toLocaleString(t.locale)}
+            </span>
+            <span className="rk-tile-label">{t.tilePlaces}</span>
+          </div>
+        </div>
+      )}
 
       <div className="rk-controls">
         <div className="rk-sort" role="group" aria-label={t.sortAmount}>
@@ -481,7 +550,7 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
       {items.length > 0 && (
         <ol className="rk-list">
           {items.map((f, i) => (
-            <RankRow key={f.id} f={f} rank={i + 1} t={t} onSelect={onSelectFinding} />
+            <RankRow key={f.id} f={f} rank={i + 1} t={t} max={topAmount} onSelect={onSelectFinding} />
           ))}
         </ol>
       )}

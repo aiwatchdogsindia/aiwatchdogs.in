@@ -4,22 +4,22 @@
    ============================================================================ */
 
 :root {
-  --pv-done: #9CB5A9;
-  --pv-done-strong: #96C891;
-  --pv-done-soft: #1B1E22;
-  --pv-review: #B8925C;
-  --pv-review-stripe: #C9A27E;
-  --pv-review-soft: #1F1B14;
-  --pv-review-border: #6E5C3C;
-  --pv-claimed: #7D89A2;
-  --pv-claimed-soft: #17191D;
-  --pv-open: #4A4335;
-  --pv-open-hover: #776B54;
-  --pv-open-soft: #1A1D21;
-  --pv-open-border: #5D5646;
-  --pv-waiting: #6F6C67;
-  --pv-not-obs: #956D64;
-  --pv-unassess: #585551;
+  --pv-done: #30D158;
+  --pv-done-strong: #30D158;
+  --pv-done-soft: #0F2A17;
+  --pv-review: #FF9F0A;
+  --pv-review-stripe: #FFB340;
+  --pv-review-soft: #2A1D08;
+  --pv-review-border: #B8781A;
+  --pv-claimed: #0A84FF;
+  --pv-claimed-soft: #0A2A4D;
+  --pv-open: #3A3A3C;
+  --pv-open-hover: #48484A;
+  --pv-open-soft: #1C1C1E;
+  --pv-open-border: #48484A;
+  --pv-waiting: #636366;
+  --pv-not-obs: #FF6961;
+  --pv-unassess: #48484A;
   --pv-tooltip-bg: var(--ink);
   --pv-tooltip-fg: var(--raised);
 }
