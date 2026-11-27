@@ -3929,42 +3929,71 @@ class DeskService:
             "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
         )
         leads = verified = peer_review = 0
-        exposures: list[tuple[dict[str, Any], float]] = []
-        exposures_by_year: dict[str, list[tuple[dict[str, Any], float]]] = {}
+        ordinary_exposures: dict[str, tuple[dict[str, Any], float]] = {}
+        linked_exposures: list[tuple[dict[str, Any], float]] = []
+        linked_exposures_by_year: dict[str, list[tuple[dict[str, Any], float]]] = {}
         by_signal: dict[str, int] = {
             "duplicate_payment_or_billing": 0,
             "dual_agency_or_scheme_overlap": 0,
         }
+        position = "STRPOS" if self.db.is_postgres else "INSTR"
+        positive_finite = "monetary_exposure_inr > 0 AND monetary_exposure_inr < ?"
+        # Return yearly aggregates and candidate references in one snapshot. Metrics are stored
+        # as text, so also look for Unicode escapes that can appear in the key.
         for r in conn.execute(
-            f"SELECT fiscal_year, status, rule_triggered, monetary_exposure_inr, anomaly_metrics_json "
-            f"FROM findings WHERE {live}",
-            (mid,),
-        ).fetchall():
-            metrics = loads_json(r["anomaly_metrics_json"], {})
-            exposure = (
-                metrics if isinstance(metrics, dict) else {},
-                _safe_finite_float(r["monetary_exposure_inr"], 0.0),
+            f"""
+            WITH live_exposures AS (
+                SELECT CASE WHEN SUBSTR(fiscal_year, 1, 2) = 'FY' THEN SUBSTR(fiscal_year, 3)
+                            ELSE COALESCE(fiscal_year, '') END AS year,
+                       status,
+                       CASE WHEN {position}(rule_triggered, 'DUPLICATE-BILLING') > 0 THEN 'duplicate'
+                            WHEN {position}(rule_triggered, 'DUAL-AGENCY') > 0 THEN 'dual' END AS signal,
+                       CASE WHEN {positive_finite} THEN monetary_exposure_inr ELSE 0.0 END AS inr,
+                       CASE WHEN {positive_finite} AND (
+                                anomaly_metrics_json LIKE ? ESCAPE '!'
+                                OR anomaly_metrics_json LIKE ? ESCAPE '!'
+                                OR anomaly_metrics_json LIKE ? ESCAPE '!'
+                                OR anomaly_metrics_json LIKE ? ESCAPE '!'
+                            ) THEN anomaly_metrics_json END AS linked_metrics
+                FROM findings WHERE {live}
             )
-            exposures.append(exposure)
-            leads += 1
-            st = str(r["status"] or "")
-            if st == "verified":
-                verified += 1
-            elif st in ("peer_review", "raw_lead"):
-                peer_review += 1
-            rule = str(r["rule_triggered"] or "")
-            if "DUPLICATE-BILLING" in rule:
-                by_signal["duplicate_payment_or_billing"] += 1
-            elif "DUAL-AGENCY" in rule:
-                by_signal["dual_agency_or_scheme_overlap"] += 1
-            year = str(r["fiscal_year"] or "").removeprefix("FY")
+            SELECT year, COUNT(*) AS leads,
+                   SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) AS verified,
+                   SUM(CASE WHEN status IN ('peer_review', 'raw_lead') THEN 1 ELSE 0 END) AS peer_review,
+                   SUM(CASE WHEN signal = 'duplicate' THEN 1 ELSE 0 END) AS duplicate,
+                   SUM(CASE WHEN signal = 'dual' THEN 1 ELSE 0 END) AS dual,
+                   SUM(CASE WHEN linked_metrics IS NULL THEN inr ELSE 0.0 END) AS inr,
+                   NULL AS linked_metrics
+            FROM live_exposures GROUP BY year
+            UNION ALL
+            SELECT year, 0, 0, 0, 0, 0, inr, linked_metrics
+            FROM live_exposures WHERE linked_metrics IS NOT NULL
+            """,
+            (math.inf, math.inf, '%"exposure!_reference!_key"%', r"%\u005%", r"%\u006%", r"%\u007%", mid),
+        ).fetchall():
+            year = r["year"]
+            amount = _safe_finite_float(r["inr"], 0.0)
+            if r["linked_metrics"] is not None:
+                metrics = loads_json(r["linked_metrics"], {})
+                exposure = (metrics if isinstance(metrics, dict) else {}, amount)
+                linked_exposures.append(exposure)
+                if year in years:
+                    linked_exposures_by_year.setdefault(year, []).append(exposure)
+                continue
+
+            ordinary_exposures[year] = ({}, amount)
+            leads += int(r["leads"])
+            verified += int(r["verified"])
+            peer_review += int(r["peer_review"])
+            by_signal["duplicate_payment_or_billing"] += int(r["duplicate"])
+            by_signal["dual_agency_or_scheme_overlap"] += int(r["dual"])
             if year in years:
-                exposures_by_year.setdefault(year, []).append(exposure)
-                years[year]["leads"] += 1
+                years[year]["leads"] = int(r["leads"])
 
         for year, entry in years.items():
             entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
-            entry["flagged_inr_cr"] = _inr_to_cr(aggregate_exposure_inr(exposures_by_year.get(year, [])))
+            year_exposures = [ordinary_exposures.get(year, ({}, 0.0)), *linked_exposures_by_year.get(year, [])]
+            entry["flagged_inr_cr"] = _inr_to_cr(aggregate_exposure_inr(year_exposures))
 
         top_leads: list[dict[str, Any]] = []
         for r in conn.execute(
@@ -3999,7 +4028,7 @@ class DeskService:
             "verified": verified,
             "peer_review": peer_review,
             "cleared_tasks": int(mission_row["cleared_count"] or 0),
-            "flagged_inr_cr": _inr_to_cr(aggregate_exposure_inr(exposures)),
+            "flagged_inr_cr": _inr_to_cr(aggregate_exposure_inr([*ordinary_exposures.values(), *linked_exposures])),
             "by_signal": by_signal,
             "years": [years[y] for y in sorted(years)],
             "top_leads": top_leads,

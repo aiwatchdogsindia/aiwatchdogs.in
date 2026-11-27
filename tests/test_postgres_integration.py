@@ -1,9 +1,8 @@
 """Real PostgreSQL integration, migration, and concurrency tests.
 
-Gated on the ``TEST_POSTGRES_URL`` environment variable (e.g.
-``postgresql://postgres:postgres@127.0.0.1:5432/aiwatchdogs_test``) so local offline
-pytest runs skip cleanly while CI executes these against a real ``postgres:16-alpine``
-service container.
+PostgreSQL cases are gated on ``TEST_POSTGRES_URL`` (e.g.
+``postgresql://postgres:postgres@127.0.0.1:5432/aiwatchdogs_test``). CI executes
+them against a real ``postgres:16-alpine`` service container.
 """
 
 from __future__ import annotations
@@ -14,24 +13,22 @@ import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import psycopg
 import pytest
+from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
+from aiwatchdogs.hub.app import create_app
 from aiwatchdogs.hub.database import LATEST_SCHEMA_VERSION, Database
 from aiwatchdogs.hub.desk import DeskService
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker
-from aiwatchdogs.projects import UNION_BUDGET_PROJECT_SLUG, sync_projects
+from aiwatchdogs.projects import ONE_ROAD_TWO_BILLS_PROJECT_SLUG, UNION_BUDGET_PROJECT_SLUG, sync_projects
 
 TEST_POSTGRES_URL = os.environ.get("TEST_POSTGRES_URL", "").strip()
-
-pytestmark = pytest.mark.skipif(
-    not TEST_POSTGRES_URL,
-    reason="Set TEST_POSTGRES_URL to run real PostgreSQL migration and concurrency tests.",
-)
 
 
 def _with_search_path(dsn: str, schema: str) -> str:
@@ -46,6 +43,8 @@ def _with_search_path(dsn: str, schema: str) -> str:
 @pytest.fixture()
 def pg_schema_url() -> str:
     """Create an isolated PostgreSQL schema for each test and drop it cleanly afterwards."""
+    if not TEST_POSTGRES_URL:
+        pytest.skip("Set TEST_POSTGRES_URL to run real PostgreSQL integration tests.")
     schema = f"awd_test_{secrets.token_hex(6)}"
     base_dsn = (
         "postgresql://" + TEST_POSTGRES_URL[len("postgres://") :]
@@ -121,6 +120,111 @@ def test_postgres_union_budget_task_paging_search_and_year_rollup(
         _exercise_union_budget_sql(db, union_budget_projects)
     finally:
         db.close()
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
+    backend: str, request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slug = ONE_ROAD_TWO_BILLS_PROJECT_SLUG
+    coverage_dir = tmp_path / slug
+    coverage_dir.mkdir()
+    (coverage_dir / "coverage.json").write_text(json.dumps({"report_years": ["2025", "2026", "2027"]}))
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(tmp_path))
+    db_path = request.getfixturevalue("pg_schema_url") if backend == "postgres" else tmp_path / "or1.db"
+    app = create_app(db_path=db_path, seed=False)
+
+    def linked(kind: str, key: str = "a" * 64) -> str:
+        return json.dumps({"exposure_reference_key": key, "exposure_reference_kind": kind})
+
+    detail = linked("detail")
+    summary = linked("summary")
+    escaped_summary = summary.replace("exposure_", r"\u0065xposure_")
+    legacy = json.dumps({"legacy_payload": "legacy-transfer-marker" * 100})
+    zero = json.dumps({**json.loads(summary), "unused": "zero-transfer-marker"})
+    duplicate = "OR1-DUPLICATE-BILLING"
+    dual = "OR1-DUAL-AGENCY"
+    both = f"{dual} {duplicate}"
+    # id, year, status, signal rule, exposure in crores, stored metrics, quarantine flag
+    findings = [
+        ("detail", "FY2025", "verified", duplicate, 2, detail, 0),
+        ("second-detail", "2025", "disputed", both, 2, detail, 0),
+        ("summary", "2025", "raw_lead", dual, 2, summary, 0),
+        ("escaped-summary", "FY2025", "peer_review", duplicate, 2, escaped_summary, 0),
+        ("different-amount", "2025", "peer_review", duplicate, 3, summary, 0),
+        ("next-year", "2026", "verified", dual, 2, summary, 0),
+        ("next-year-again", "FY2026", "raw_lead", dual, 2, summary, 0),
+        ("legacy-first", "2025", "verified", "duplicate-billing", 2, legacy, 0),
+        ("legacy-second", "2025", "verified", "", 2, legacy, 0),
+        ("unlisted", "2030", "raw_lead", "", 1, linked("detail", "b" * 64), 0),
+        ("unlisted-peer", "2026", "raw_lead", "", 1, linked("summary", "b" * 64), 0),
+        ("invalid-ref", "2026", "raw_lead", "", 0.5, linked("summary", "invalid"), 0),
+        ("malformed", "2026", "peer_review", "", 0.5, '{"exposure_reference_key":', 0),
+        ("zero", "2026", "peer_review", duplicate, 0, zero, 0),
+        ("zero-only", "FY2027", "raw_lead", "", 0, zero, 0),
+        ("retracted", "2025", "retracted", duplicate, 100, summary, 0),
+        ("false-positive", "2025", "retracted_false_positive", duplicate, 100, detail, 0),
+        ("held-status", "2025", "quarantined", dual, 100, legacy, 0),
+        ("held-flag", "2025", "verified", duplicate, 100, detail, 1),
+    ]
+    findings.extend((f"legacy-bulk-{i}", "2026", "disputed", "", 0.1, legacy, 0) for i in range(20))
+    # Only SQLite can store these amounts with the current schema constraints.
+    invalid_amounts = []
+    if backend == "sqlite":
+        invalid_amounts = [
+            ("negative", "2026", "raw_lead", "", -1, zero, 0),
+            ("nonfinite", "2026", "raw_lead", "", float("inf"), zero, 0),
+        ]
+        findings.extend(invalid_amounts)
+
+    with TestClient(app) as client:
+        with app.state.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO missions (id, slug, title, description, pillar, methodology_code, "
+                "jurisdiction, ministry_or_authority, created_at) "
+                "VALUES (?, ?, 'One Road, Two Bills', '', 'procurement', 'OR1', '', '', '2026-01-01')",
+                (slug, slug),
+            )
+            for finding_id, year, status, rule, amount, metrics, quarantined in findings:
+                conn.execute(
+                    "INSERT INTO findings (id, mission_id, mission_slug, pillar, title, summary, methodology_code, "
+                    "entity_name, jurisdiction, fiscal_year, status, rule_triggered, monetary_exposure_inr, "
+                    "anomaly_metrics_json, quarantined, submitted_by, created_at) "
+                    "VALUES (?, ?, ?, 'procurement', ?, '', 'OR1', '', '', ?, ?, ?, ?, ?, ?, 'fixture', '2026-01-01')",
+                    (finding_id, slug, slug, finding_id, year, status, rule, amount * 1e7, metrics, quarantined),
+                )
+
+        rollup_rows = []
+        original_summary = app.state.desk._one_road_two_bills_summary
+
+        def record_summary(conn, *, mission_row):
+            class RecordingConnection:
+                def execute(self, sql, params):
+                    cursor = conn.execute(sql, params)
+                    if "FROM findings" not in sql or "LIMIT 15" in sql:
+                        return cursor
+                    rows = cursor.fetchall()
+                    rollup_rows.extend(dict(row) for row in rows)
+                    return SimpleNamespace(fetchall=lambda: rows)
+
+            return original_summary(RecordingConnection(), mission_row=mission_row)
+
+        monkeypatch.setattr(app.state.desk, "_one_road_two_bills_summary", record_summary)
+        response = client.get(f"/api/missions/{slug}")
+
+    assert response.status_code == 200, response.text
+    rollup = response.json()["visual_summary"]["one_road_two_bills"]
+    assert rollup["leads"] == 35 + len(invalid_amounts)
+    assert rollup["verified"] == 4
+    assert rollup["peer_review"] == 10 + len(invalid_amounts)
+    assert rollup["flagged_inr_cr"] == 15.0
+    assert rollup["by_signal"] == {"duplicate_payment_or_billing": 5, "dual_agency_or_scheme_overlap": 3}
+    assert [(yr["year"], yr["leads"], yr["flagged_inr_cr"]) for yr in rollup["years"]] == [
+        ("2025", 7, 11.0), ("2026", 26 + len(invalid_amounts), 6.0), ("2027", 1, 0.0),
+    ]
+    assert len(rollup["top_leads"]) == 15
+    assert 0 < len(rollup_rows) <= 4 + 11  # One aggregate per year and at most 11 positive reference candidates.
+    assert all("transfer-marker" not in str(row) for row in rollup_rows)
 
 
 def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: str) -> None:
