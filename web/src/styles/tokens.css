@@ -1,4 +1,22 @@
-/* AI Watchdogs · India — Tiranga Tricolour Broadsheet + Navy Observatory Tokens (Vercel Geist Serif) */
+/* AI Watchdogs · India — design tokens
+   ---------------------------------------------------------------------------
+   One source of truth for colour, type, radius, elevation and motion.
+
+   Colour roles come from the Tiranga:
+     primary   · Ashoka Chakra navy  — actions, links, focus
+     secondary · saffron             — emphasis, work in progress
+     tertiary  · India green         — verified, live, success
+   Surfaces are warm cream paper. The flag colours are used at full strength
+   only in the flag and the footer; everywhere else they appear as
+   role colours with their own tints, borders and text shades.
+
+   Every role has the same five steps:
+     --x        solid fill            --on-x     text on the solid fill
+     --x-ink    text on paper (AA)    --x-bg     tint surface
+     --x-bd     border on the tint
+
+   Dark values live in the `dark` blocks at the end of this file. Components
+   must not hard-code colours: use a token so both themes stay correct. */
 
 @font-face {
   font-family: 'Geist Serif';
@@ -6,6 +24,29 @@
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+}
+
+/* Figtree (OFL): body, interface and headings */
+@font-face {
+  font-family: 'Figtree';
+  src: url('/fonts/Figtree-Latin.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308,
+    U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Latin Extended, loaded on demand; carries the rupee sign (U+20B9) */
+@font-face {
+  font-family: 'Figtree';
+  src: url('/fonts/Figtree-LatinExt.woff2') format('woff2');
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
 }
 
 @font-face {
@@ -17,109 +58,110 @@
 }
 
 :root {
-  /* ===== Tiranga (Indian Tricolour) Brand Palette =====
-     Saffron (courage) · White (truth) · India Green (growth) · Ashoka Chakra Navy (law)
-     Page order top to bottom: white, saffron, green, then a navy footer.
-     Bands are carried by whole page zones (see the "TIRANGA ZONES" block at
-     the end of global.css). Navy appears only in the footer and the emblem. */
+  color-scheme: light;
+
+  /* ===== Tiranga reference colours (flag, footer, emblem only) ===== */
   --flag-saffron: #FF9933;
   --flag-white: #FFFFFF;
   --flag-green: #138808;
   --flag-navy: #000080;
-  --flag-green-deep: #0F7306;   /* same hue as India green, deep enough for AA white text */
-  --flag-green-card: #0C6305;
-  --tricolor-band: linear-gradient(180deg,
+  --tricolor-band: linear-gradient(
+    90deg,
     var(--flag-saffron) 0 33.333%,
     var(--flag-white) 33.333% 66.666%,
-    var(--flag-green) 66.666% 100%);
+    var(--flag-green) 66.666% 100%
+  );
 
-  /* White Paper Surface Hierarchy (the white band of the flag) */
-  --paper: #FFFFFF;
-  --raised: #FFFFFF;
-  --sunk: #F4F4F4;
-  --sunk-2: #F4F4F4;
-  --plain: #F4F4F4;
-  --warm: #FFFFFF;
+  /* ===== Surfaces — off-cream paper ===== */
+  --paper: #FAF6EC;      /* page */
+  --raised: #FFFDF8;     /* cards, inputs, popovers */
+  --sunk: #F4EEE0;       /* alternate band, wells */
+  --sunk-2: #ECE4D2;     /* pressed / deeper well */
+  --plain: var(--sunk);
+  --warm: var(--raised);
+  --header-bg: #FFFFFF;  /* the white of the flag */
+  --scrim: rgba(29, 27, 22, 0.44);
 
-  /* Crisp 1px Hairline Rules */
-  --rule: #E6E3DC;
-  --rule-soft: #EEEEEE;
-  --rule-strong: #D3CFC5;
-  --rule-verify: #CFE3CC;
+  /* ===== Rules ===== */
+  --rule: #E4DBC8;
+  --rule-soft: #EEE7D8;
+  --rule-strong: #CDC2AC;
+  --rule-verify: var(--tertiary-bd);
 
-  /* Ink Hierarchy — neutral near-black (WCAG AA >= 4.5:1 on paper, warm, and sunk) */
-  --ink: #1B1A17;
-  --ink-2: #3F3B34;
-  --ink-3: #575249;
-  --ink-4: #635E54;
-  --ink-5: #9E988B;
-  --ink-6: #C9C3B5;
-  --avatar-wash: #EDEDED;
-  --avatar-ink: #3F3B34;
+  /* ===== Ink ===== */
+  --ink: #1D1B16;
+  --ink-2: #3B372F;
+  --ink-3: #575145;
+  --ink-4: #696254;
+  --ink-5: #9A917F;
+  --ink-6: #C4BBA8;
 
-  /* Epistemic & Signal Grammar ("Only Peer-Verified looks like a result") — India Green */
-  --green: #138808;
-  --green-bg: #E8F5E6;
-  --live: #1FA319;
-  --green-on-dark: #5FD35A;
+  /* Inverted pair: a filled ink surface and the text that sits on it */
+  --solid: #1D1B16;
+  --solid-hover: #35312A;
+  --on-solid: #FFFDF8;
 
-  --in-work-ink: #8A4200;
-  --in-work-ring: #FFB866;
-  --conjecture-ink: #575249;
-  --conjecture-stroke: #756F64;
+  /* ===== Primary — Chakra navy ===== */
+  --primary: #1B2A80;
+  --primary-hover: #121D62;
+  --on-primary: #FFFFFF;
+  --primary-ink: #1B2A80;
+  --primary-bg: #EAEDF9;
+  --primary-bd: #BEC6EC;
 
-  --red: #A2321F;
-  --red-bg: #F7E4E0;
-  --mid: #C2412D;
-  --red-on-dark: #E0705C;
-  --red-edge: #4A2622;
+  /* ===== Secondary — saffron ===== */
+  --secondary: #FF9933;
+  --secondary-hover: #F08A22;
+  --on-secondary: #1D1B16;
+  --secondary-ink: #974800;
+  --secondary-bg: #FFF1DE;
+  --secondary-bd: #FFCD96;
 
-  --public: #3F3B34;
-  --public-bg: #F4F4F4;
+  /* ===== Tertiary — India green ===== */
+  --tertiary: #138808;
+  --tertiary-hover: #0F7306;
+  --on-tertiary: #FFFFFF;
+  --tertiary-ink: #0E6B06;
+  --tertiary-bg: #E7F4E4;
+  --tertiary-bd: #ACD9A6;
 
-  /* Transient Ignite & Priority Hard-Link — Saffron */
-  --accent: #FF9933;
-  --accent-light: #FFB866;
-  --accent-core: #F4F4F4;
-  --accent-flash: #FFD9B3;
-  --accent-deep: #A84F00;
+  /* ===== Danger ===== */
+  --danger: #A2321F;
+  --danger-hover: #892816;
+  --on-danger: #FFFFFF;
+  --danger-ink: #962917;
+  --danger-bg: #FBE9E5;
+  --danger-bd: #E6B9B0;
 
-  /* Race band & Observatory — saffron field (middle band of the page) */
-  --race-bg: #FF9933;
-  --obs-bg: #FF9933;
-  --obs-radial: radial-gradient(75% 75% at 40% 50%, #FFAD5C 0%, #FF9933 55%, #F28A1E 100%);
-  --obs-surface: #FFFFFF;
-  --obs-surface-raised: #F4F4F4;
-  --obs-border: rgba(27, 26, 23, 0.18);
-  --obs-ink: #1B1A17;
-  --obs-mist: #3A2E1E;
-  --obs-muted: #45351F;
-  --obs-dead: #6E4A1C;
-  --obs-edge-solid: rgba(27, 26, 23, 0.42);
-  --obs-edge-open: rgba(27, 26, 23, 0.2);
-  --obs-edge-disputed: #8A1C0C;
-  --obs-cream: #FFFFFF;
-  --obs-amber: #1B1A17;
-  --obs-emerald: #0F7306;
-  --obs-cobalt: #1B1A17;
-  --obs-terracotta: #8A1C0C;
-  --obs-slate: #45351F;
-
-  /* Cluster / Pillar Hues — drawn from the tricolour */
-  --pillar-procurement: #FF9933;
-  --pillar-audit: #1B1A17;
-  --pillar-budget: #138808;
-  --pillar-infra: #8A4200;
-  --pillar-scheme: #E06A10;
-  --pillar-disclosure: #4FA83E;
-
-  /* Typography — Vercel Geist Serif across the entire website; Geist Mono strictly for raw code/terminal blocks */
-  --font-serif: 'Geist Serif', 'Times New Roman', Times, Georgia, serif;
-  --font-sans: 'Geist Serif', 'Times New Roman', Times, Georgia, serif;
-  --font-mono: 'Geist Serif', 'Times New Roman', Times, Georgia, serif;
+  /* ===== Type ===== */
+  /* Display serif: the homepage hero only */
+  --font-display: 'Geist Serif', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-code: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-heading: var(--font-sans);
+  --font-serif: var(--font-heading); /* legacy alias: headings are set in Figtree */
+  --font-mono: var(--font-sans); /* legacy alias: UI labels and tabular figures */
 
-  /* Edge-to-Edge Banding Geometry & Spacing Scale */
+  /* ===== Radius — one scale, four steps =====
+     tag 6 · control 10 · card 16 · pill. Nothing else. */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-pill: 999px;
+
+  /* ===== Elevation ===== */
+  --shadow-color: 40 30 10;
+  --shadow-float: 0 1px 2px rgb(var(--shadow-color) / 0.05), 0 6px 18px rgb(var(--shadow-color) / 0.07);
+  --shadow-pop: 0 2px 4px rgb(var(--shadow-color) / 0.06), 0 16px 40px rgb(var(--shadow-color) / 0.12);
+
+  /* ===== Motion ===== */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 140ms;
+  --dur-2: 240ms;
+  --dur-3: 520ms;
+
+  /* ===== Layout ===== */
   --page: 1240px;
   --gutter: max(24px, calc((100vw - var(--page)) / 2));
   --safe-top: env(safe-area-inset-top, 0px);
@@ -133,26 +175,93 @@
   --s40: 40px;
   --s64: 64px;
   --s96: 96px;
-  --section: 64px;
+  --section: 72px;
 
-  /* Radii Scale */
-  --r-2: 2px;
-  --r-3: 3px;
-  --r-4: 4px;
-  --r-6: 6px;
-  --r-8: 8px;
-  --r-10: 10px;
-  --r-12: 12px;
-  --r-14: 14px;
-  --r-16: 16px;
-  --r-20: 20px;
-  --r-999: 999px;
+  /* Display type scale: one size per heading level, site-wide */
+  --text-page: clamp(34px, 3.6vw, 50px);
+  --text-section: clamp(27px, 2.6vw, 38px);
+  --text-sub: clamp(21px, 1.9vw, 26px);
 
-  /* Floating pill / popover subtle elevation (the ONLY shadows on paper) */
-  --shadow-float: 0 1px 2px rgba(27, 26, 23, 0.05), 0 4px 14px rgba(27, 26, 23, 0.08);
-  --shadow-pop: 0 4px 20px rgba(27, 26, 23, 0.10), 0 1px 3px rgba(27, 26, 23, 0.06);
+  /* =========================================================================
+     Legacy aliases — existing component CSS reads these names. They resolve
+     to the roles above, so both themes follow automatically.
+     ========================================================================= */
+  --avatar-wash: var(--sunk-2);
+  --avatar-ink: var(--ink-2);
 
-  /* Backwards-compatible semantic aliases for subpages & drawers */
+  --green: var(--tertiary-ink);
+  --green-bg: var(--tertiary-bg);
+  --live: var(--tertiary);
+  --green-on-dark: var(--tertiary);
+  --flag-green-deep: var(--tertiary-hover);
+  --flag-green-card: var(--tertiary-hover);
+
+  --in-work-ink: var(--secondary-ink);
+  --in-work-ring: var(--secondary-bd);
+  --conjecture-ink: var(--ink-3);
+  --conjecture-stroke: var(--ink-4);
+
+  --red: var(--danger-ink);
+  --red-bg: var(--danger-bg);
+  --mid: var(--danger);
+  --red-on-dark: var(--danger);
+  --red-edge: var(--danger-hover);
+
+  --public: var(--ink-2);
+  --public-bg: var(--sunk);
+
+  --accent: var(--secondary);
+  --accent-light: var(--secondary-bd);
+  --accent-core: var(--sunk);
+  --accent-flash: var(--secondary-bg);
+  --accent-deep: var(--secondary-ink);
+
+  --chakra: var(--primary);
+  --on-chakra: var(--on-primary);
+  --chakra-hover: var(--primary-hover);
+
+  /* Observatory map + race band */
+  --race-bg: var(--sunk);
+  --obs-bg: var(--sunk);
+  --obs-radial: radial-gradient(75% 75% at 40% 50%, var(--paper) 0%, var(--sunk) 100%);
+  --obs-surface: var(--raised);
+  --obs-surface-raised: var(--sunk);
+  --obs-border: var(--rule-strong);
+  --obs-ink: var(--ink);
+  --obs-mist: var(--ink-3);
+  --obs-muted: var(--ink-4);
+  --obs-dead: var(--ink-5);
+  --obs-edge-solid: color-mix(in srgb, var(--ink) 42%, transparent);
+  --obs-edge-open: color-mix(in srgb, var(--ink) 20%, transparent);
+  --obs-edge-disputed: var(--danger);
+  --obs-cream: var(--raised);
+  --obs-amber: var(--secondary-ink);
+  --obs-emerald: var(--tertiary-ink);
+  --obs-cobalt: var(--primary-ink);
+  --obs-terracotta: var(--danger-ink);
+  --obs-slate: var(--ink-4);
+
+  /* Pillar hues — drawn from the three roles */
+  --pillar-procurement: var(--secondary);
+  --pillar-audit: var(--primary);
+  --pillar-budget: var(--tertiary);
+  --pillar-infra: var(--secondary-ink);
+  --pillar-scheme: var(--secondary-hover);
+  --pillar-disclosure: var(--tertiary-ink);
+
+  /* Old radius names collapse onto the four-step scale */
+  --r-2: var(--radius-xs);
+  --r-3: var(--radius-xs);
+  --r-4: var(--radius-xs);
+  --r-6: var(--radius-sm);
+  --r-8: var(--radius-sm);
+  --r-10: var(--radius-sm);
+  --r-12: var(--radius-md);
+  --r-14: var(--radius-md);
+  --r-16: var(--radius-md);
+  --r-20: var(--radius-md);
+  --r-999: var(--radius-pill);
+
   --bg-paper: var(--paper);
   --bg-surface: var(--raised);
   --bg-sunk: var(--sunk);
@@ -165,35 +274,95 @@
   --ink-muted: var(--ink-3);
   --ink-faint: var(--ink-4);
 
-  --ep-verified-fg: #0E6B06;
-  --ep-verified-bg: #E8F5E6;
-  --ep-verified-bd: #A9D8A3;
+  /* Epistemic chips: only peer-verified reads as a result */
+  --ep-verified-fg: var(--tertiary-ink);
+  --ep-verified-bg: var(--tertiary-bg);
+  --ep-verified-bd: var(--tertiary-bd);
 
-  --ep-review-fg: #3F3B34;
-  --ep-review-bg: #F7F5F0;
-  --ep-review-bd: #756F64;
+  --ep-review-fg: var(--ink-2);
+  --ep-review-bg: var(--raised);
+  --ep-review-bd: var(--ink-4);
 
-  --ep-cleared-fg: #3F3B34;
-  --ep-cleared-bg: #F3F2EE;
-  --ep-cleared-bd: #C5BFB3;
+  --ep-cleared-fg: var(--ink-2);
+  --ep-cleared-bg: var(--sunk);
+  --ep-cleared-bd: var(--rule-strong);
 
-  --ep-disputed-fg: #962917;
-  --ep-disputed-bg: #FBEAE7;
-  --ep-disputed-bd: #E2B8B0;
+  --ep-disputed-fg: var(--danger-ink);
+  --ep-disputed-bg: var(--danger-bg);
+  --ep-disputed-bd: var(--danger-bd);
 
-  --ep-rti-fg: var(--in-work-ink);
-  --ep-rti-bg: #F4F4F4;
-  --ep-rti-bd: var(--in-work-ring);
+  --ep-rti-fg: var(--secondary-ink);
+  --ep-rti-bg: var(--secondary-bg);
+  --ep-rti-bd: var(--secondary-bd);
 
-  --ep-contrib-fg: var(--public);
-  --ep-contrib-bg: var(--public-bg);
-  --ep-contrib-bd: #D3CFC5;
+  --ep-contrib-fg: var(--ink-2);
+  --ep-contrib-bg: var(--sunk);
+  --ep-contrib-bd: var(--rule-strong);
 
   --container-max: var(--page);
-  --radius-xs: var(--r-2);
-  --radius-sm: var(--r-4);
-  --radius-md: var(--r-6);
-  --radius-pill: var(--r-999);
+}
+
+/* =========================================================================
+   Dark theme — warm charcoal paper. Solid fills become light and carry dark
+   text, so every `--x` / `--on-x` pair keeps its contrast.
+   Applied when the visitor picks dark, or follows a dark system setting.
+   ========================================================================= */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --paper: #15130F;
+  --raised: #1E1C17;
+  --sunk: #0F0E0B;
+  --sunk-2: #28251E;
+  --header-bg: #0F0E0B;
+  --scrim: rgba(0, 0, 0, 0.62);
+
+  --rule: #302C24;
+  --rule-soft: #25221C;
+  --rule-strong: #484236;
+
+  --ink: #F4EFE3;
+  --ink-2: #DAD3C4;
+  --ink-3: #B8B09F;
+  --ink-4: #A0988A;
+  --ink-5: #70695B;
+  --ink-6: #4B463C;
+
+  --solid: #F4EFE3;
+  --solid-hover: #FFFFFF;
+  --on-solid: #15130F;
+
+  --primary: #AAB6FF;
+  --primary-hover: #C3CCFF;
+  --on-primary: #0E1230;
+  --primary-ink: #AAB6FF;
+  --primary-bg: #1B1F3F;
+  --primary-bd: #363E78;
+
+  --secondary: #FFA64D;
+  --secondary-hover: #FFB870;
+  --on-secondary: #1D1B16;
+  --secondary-ink: #FFB566;
+  --secondary-bg: #33210D;
+  --secondary-bd: #6E4517;
+
+  --tertiary: #4CC23F;
+  --tertiary-hover: #68D45C;
+  --on-tertiary: #081A06;
+  --tertiary-ink: #6FD863;
+  --tertiary-bg: #12290F;
+  --tertiary-bd: #245A1E;
+
+  --danger: #F0806B;
+  --danger-hover: #F69B89;
+  --on-danger: #2A0E09;
+  --danger-ink: #F59483;
+  --danger-bg: #361712;
+  --danger-bd: #702B20;
+
+  --shadow-color: 0 0 0;
+  --shadow-float: 0 1px 2px rgb(var(--shadow-color) / 0.4), 0 6px 18px rgb(var(--shadow-color) / 0.35);
+  --shadow-pop: 0 2px 4px rgb(var(--shadow-color) / 0.4), 0 16px 40px rgb(var(--shadow-color) / 0.5);
 }
 
 @media (min-width: 1920px) {
@@ -211,6 +380,6 @@
 @media (max-width: 760px) {
   :root {
     --gutter: 16px;
-    --section: 36px;
+    --section: 44px;
   }
 }

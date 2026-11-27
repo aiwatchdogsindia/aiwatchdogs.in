@@ -1,0 +1,125 @@
+/* =========================================================================
+   PAGES — treatments shared by every route below the header: the page
+   intro, kickers, and hover feedback on cards. Loaded last.
+   ========================================================================= */
+
+/* Kickers above page and section titles */
+.section-kicker,
+.how-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--secondary-ink);
+}
+
+.section-kicker::before,
+.how-eyebrow::before {
+  content: '';
+  width: 18px;
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.section-kicker svg {
+  display: none;
+}
+
+/* Page intro: kicker, title and lead rise in turn on arrival */
+@keyframes pageRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-main .section-header .section-kicker,
+.app-main .graveyard-page > .section-kicker,
+.app-main .how-intro .how-eyebrow,
+.app-main .project-dash .lb-head > *,
+.app-main .section-header .section-title,
+.app-main .graveyard-title,
+.app-main .how-intro h1,
+.app-main .section-header .section-subtitle,
+.app-main .graveyard-lead,
+.app-main .how-intro > p {
+  animation: pageRise 640ms var(--ease-out) both;
+}
+
+.app-main .section-header .section-title,
+.app-main .graveyard-title,
+.app-main .how-intro h1 {
+  animation-delay: 70ms;
+}
+
+.app-main .section-header .section-subtitle,
+.app-main .graveyard-lead,
+.app-main .how-intro > p {
+  animation-delay: 140ms;
+}
+
+/* Page titles share one size, weight and tracking */
+.section-header h1.section-title,
+.graveyard-title,
+.how-intro h1,
+.project-dash .lb-head h1 {
+  font-size: var(--text-page);
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+
+/* Cards lift slightly under the pointer */
+.finding-card,
+.how-card,
+.project-dash-list > *,
+.grave {
+  transition:
+    transform var(--dur-3) var(--ease-out),
+    box-shadow var(--dur-3) ease,
+    border-color var(--dur-2) ease;
+}
+
+.finding-card:hover,
+.how-card:hover,
+.grave:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 30px rgb(var(--shadow-color) / 0.09);
+  border-color: var(--rule-strong);
+}
+
+/* Italic marks an unconfirmed state; keep it light so it does not shout */
+.grave-title-btn,
+.event-title-btn.unverified {
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-main .section-header > *,
+  .app-main .section-header .section-kicker,
+  .app-main .section-header .section-title,
+  .app-main .section-header .section-subtitle,
+  .app-main .graveyard-page > .section-kicker,
+  .app-main .graveyard-title,
+  .app-main .graveyard-lead,
+  .app-main .how-intro > *,
+  .app-main .project-dash .lb-head > * {
+    animation: none;
+  }
+  .finding-card,
+  .how-card,
+  .grave {
+    transition: none;
+  }
+}

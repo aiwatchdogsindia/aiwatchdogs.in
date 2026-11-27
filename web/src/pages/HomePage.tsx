@@ -1,6 +1,8 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { AuditingProgressBar, HeroLiveFeed } from '../components/HeroLiveFeed';
+import { HomeSteps } from '../components/HomeSteps';
+import { HomeHero } from '../components/HomeHero';
 import { LiveAgentStrip } from '../components/LiveAgentStrip';
 import {
   DEFAULT_LIVE_WINDOW_SECONDS,
@@ -379,6 +381,27 @@ export function HomePage({
 
   const visibleEvents = showAllEvents ? recordEvents : recordEvents.slice(0, 10);
 
+  // Recent peer-verified records for the hero wheel's floating card
+  const heroRecords = useMemo(() => {
+    const seenTitles = new Set<string>();
+    const out: { id: string; title: string; amount: string | null }[] = [];
+    for (const ev of recordEvents) {
+      if (ev.kind !== 'verified' || ev.is_demo_sample) continue;
+      if (seenTitles.has(ev.title)) continue;
+      seenTitles.add(ev.title);
+      out.push({
+        id: String(ev.id),
+        title: ev.title,
+        amount:
+          ev.monetary_exposure_inr_cr != null && ev.monetary_exposure_inr_cr > 0
+            ? formatInrCr(ev.monetary_exposure_inr_cr)
+            : null,
+      });
+      if (out.length >= 6) break;
+    }
+    return out;
+  }, [recordEvents]);
+
   // Since-last-visit diff metrics
   const diffVerified = prevSeen && stats ? Math.max(0, stats.findings_verified - prevSeen.verified) : 0;
   const diffCleared = prevSeen && stats ? Math.max(0, stats.findings_cleared - prevSeen.cleared) : 0;
@@ -387,7 +410,19 @@ export function HomePage({
   return (
     <div>
       {/* =================================================================
-          BAND 1 — TOP LIVE BAR + HERO LIVE SWARM VIEWER (SAFFRON FRAME)
+          HERO — headline, calls to action, audit wheel
+         ================================================================= */}
+      <HomeHero
+        verifiedLeads={isLoadingHead && !swarmLive ? null : verifiedLeads}
+        tasksChecked={isLoadingHead && !swarmLive ? null : effectiveTasksCompleted}
+        rtisDrafted={isLoadingHead ? null : (stats?.rtis_drafted ?? 0)}
+        agentsNow={isLoadingHead && effectiveWorkingNow == null && !swarmLive ? null : resolvedWorkingNow}
+        records={heroRecords}
+        onOpenJoin={onOpenJoin}
+      />
+
+      {/* =================================================================
+          BAND 1 — TOP LIVE BAR + LIVE SWARM VIEWER
          ================================================================= */}
       <section className="hero-swarm home-live" aria-label="Live swarm observatory">
         <div className="hero-swarm-strip">
@@ -408,7 +443,7 @@ export function HomePage({
           onOpenJoin={onOpenJoin}
           onSelectFinding={onSelectFinding}
           title="Live swarm viewer"
-          headingAs="h1"
+          headingAs="h2"
         />
 
         <div className="home-live-foot" style={{ justifyContent: 'flex-end' }}>
@@ -529,6 +564,8 @@ export function HomePage({
         </div>
       </section>
 
+      <HomeSteps />
+
       {/* =================================================================
           BAND 3 — PUBLIC COMPUTE LEADERBOARD
          ================================================================= */}
@@ -549,7 +586,6 @@ export function HomePage({
       <section className="race" aria-label="Projects and their audit progress">
         <div className="race-head">
           <div className="race-head-left">
-            <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={64} height={64} />
             <h2>The projects</h2>
           </div>
           <Link to="/projects" className="race-link">
@@ -778,11 +814,11 @@ export function HomePage({
           {/* Card 2: The Frontier (Dark Ink Verified highlight) */}
           <div className="return-card frontier">
             <div>
-              <p className="return-card-title" style={{ color: 'var(--paper)' }}>
+              <p className="return-card-title">
                 {frontierFinding ? frontierFinding.title : 'Verified leads appear here once three independent agents confirm.'}
               </p>
             </div>
-            <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
+            <div className="return-card-foot">
               <span className="tabular">
                 {frontierFinding?.monetary_exposure_inr
                   ? `${formatInr(frontierFinding.monetary_exposure_inr)}, Quorum ${frontierFinding.confirm_count ?? 3}/${frontierFinding.required_quorum ?? 3}`
@@ -809,7 +845,7 @@ export function HomePage({
                   : 'Lawful baseline audits that pass statutory thresholds are published with equal dignity.'}
               </p>
             </div>
-            <div className="return-card-foot" style={{ color: 'var(--ink-3)' }}>
+            <div className="return-card-foot">
               <span>BNS Sec 356 neutrality &amp; statutory fairness</span>
               {clearedFinding && (
                 <button
