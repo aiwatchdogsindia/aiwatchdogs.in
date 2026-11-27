@@ -33,17 +33,28 @@ import type {
   VisualOnlyOneBidRepeatWinner,
   VisualParliamentHouseCounts,
   VisualParliamentMinistry,
+  VisualSovereignLiesCategory,
+  VisualSovereignLiesJurisdiction,
+  VisualSovereignLiesLead,
+  VisualSovereignLiesMechanismCounts,
+  VisualSovereignLiesScheme,
+  VisualSovereignLiesTierCounts,
   VisualWebsiteCheckpoint,
   VisualWebsiteMatrixItem,
   WebsiteVerificationMode,
 } from '../types';
 import {
   formatAssuranceStatus,
+  formatElapsedPromiseSpan,
   formatInr,
   formatInrCr,
+  formatJurisdictionLabel,
   formatProcurementAmountType,
   formatProcurementSignal,
+  formatRetroactiveImpact,
+  formatSchemeCategory,
   formatSingleBidMechanism,
+  formatWalkbackMechanism,
   safeExternalUrl,
 } from '../utils';
 
@@ -1164,6 +1175,16 @@ export function ProjectResultsVisualizer({
   if (code === 'P7') {
     return (
       <OnlyOneBidVisualiser
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P8') {
+    return (
+      <SovereignLiesVisualiser
         mission={mission}
         visualSummary={visualSummary}
         onSelectFinding={onSelectFinding}
@@ -5654,6 +5675,1591 @@ export function OnlyOneBidVisualiser({
             Procurement pattern leads appear here as contributor agents verify tasks. Every entry
             cites the official tender record, repeat-winner cohort (where applicable), and
             jurisdiction-matched statutory benchmark with SHA-256 provenance.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3H. P8 Sovereign Lies: launch promises vs. subsequent revisions across Union & State/UT schemes ---------- */
+
+const P8_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/sovereign-lies/METHODOLOGY.md';
+export const P8_DEFAULT_HOOK =
+  'The government made a promise when it launched the scheme. Did it keep it?';
+const P8_INITIAL_JURISDICTIONS = 12;
+const P8_INITIAL_SCHEMES = 12;
+
+export type P8TierKey = 'union' | 'state' | 'ut';
+
+export type P8MechanismKey =
+  | 'retroactive_tax_reversal'
+  | 'midstream_benefit_cut'
+  | 'premature_discontinuation'
+  | 'eligibility_narrowing'
+  | 'lockin_or_exit_restriction'
+  | 'arrears_or_unfunded_promise'
+  | 'grandfathered_or_honored';
+
+export interface P8NormalizedTier {
+  key: P8TierKey;
+  label: string;
+  shortLabel: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  flagged_inr_cr: number;
+}
+
+export interface P8NormalizedMechanism {
+  key: P8MechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  fillClass: string;
+  isCleared: boolean;
+  tasks: number;
+  leads: number;
+  sharePct: number;
+}
+
+export interface P8NormalizedCategory {
+  category: string;
+  label: string;
+  shortLabel: string;
+  tasks: number;
+  done: number;
+  leads: number;
+  cleared: number;
+  flagged_inr_cr: number;
+}
+
+export interface P8NormalizedImpact {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  count: number;
+  sharePct: number;
+}
+
+export function p8TierLabel(tier: string): string {
+  const k = (tier || '').trim().toLowerCase();
+  if (k === 'union' || k === 'central') return 'Union of India';
+  if (k === 'state' || k === 'states') return 'States';
+  if (k === 'ut' || k === 'uts' || k === 'union_territory') return 'Union Territories';
+  return tier || 'Jurisdiction';
+}
+
+export function p8MechanismLabel(mechanism: string): string {
+  return formatWalkbackMechanism(mechanism).label;
+}
+
+export function p8CategoryLabel(category: string): string {
+  return formatSchemeCategory(category).label;
+}
+
+export function p8ImpactLabel(impact: string): string {
+  return formatRetroactiveImpact(impact).label;
+}
+
+/** Clean search token to jump to a scheme's tasks in the project task queue. */
+export function p8SchemeFilterQuery(schemeName?: string | null): string {
+  return (schemeName || '').trim();
+}
+
+/** Exact jurisdiction prefix token matching every P8 task title (`"${jur_short} · ..."`). */
+export function p8JurisdictionFilterQuery(
+  jurisdiction?: string | null,
+  stateOrUt?: string | null,
+): string {
+  const cleanState = (stateOrUt || '').trim();
+  if (cleanState) return `${cleanState} ·`;
+  const cleanJur = (jurisdiction || '').trim();
+  if (!cleanJur) return '';
+  if (/^state:/i.test(cleanJur)) {
+    const name = cleanJur.slice(6).trim();
+    return name ? `${name} ·` : '';
+  }
+  if (/^ut:/i.test(cleanJur)) {
+    const name = cleanJur.slice(3).trim();
+    return name ? `${name} ·` : '';
+  }
+  return `${cleanJur} ·`;
+}
+
+/** Clear active jurisdiction filter if switching to a tier that excludes it. */
+export function p8ReconcileJurisdictionForTier(
+  selectedJurisdiction: string,
+  nextTier: 'all' | P8TierKey,
+  jurisdictions: VisualSovereignLiesJurisdiction[],
+): string {
+  if (!selectedJurisdiction || selectedJurisdiction === 'all' || nextTier === 'all') {
+    return selectedJurisdiction;
+  }
+  const matched = jurisdictions.find((j) => j.jurisdiction === selectedJurisdiction);
+  if (matched) {
+    return (matched.jurisdiction_level || '').trim().toLowerCase() === nextTier
+      ? selectedJurisdiction
+      : 'all';
+  }
+  const lower = selectedJurisdiction.trim().toLowerCase();
+  const inferredTier: P8TierKey = lower.startsWith('state:')
+    ? 'state'
+    : lower.startsWith('ut:')
+      ? 'ut'
+      : 'union';
+  return inferredTier === nextTier ? selectedJurisdiction : 'all';
+}
+
+export function p8NormalizeTiers(
+  byTier?: Record<string, VisualSovereignLiesTierCounts | number> | null,
+): {
+  union: P8NormalizedTier;
+  state: P8NormalizedTier;
+  ut: P8NormalizedTier;
+  totalTasks: number;
+  totalDone: number;
+  totalLeads: number;
+  totalCleared: number;
+} {
+  const readTier = (
+    key: P8TierKey,
+    shortLabel: string,
+    aliases: string[],
+  ): P8NormalizedTier => {
+    let raw: VisualSovereignLiesTierCounts | number | undefined;
+    for (const [k, v] of Object.entries(byTier || {})) {
+      const norm = k.trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (aliases.includes(norm)) {
+        raw = v;
+        break;
+      }
+    }
+    if (typeof raw === 'number') {
+      const tasks = Math.max(0, raw);
+      return {
+        key,
+        label: p8TierLabel(key),
+        shortLabel,
+        tasks,
+        done: 0,
+        claimed: 0,
+        open: tasks,
+        pct: 0,
+        leads: 0,
+        cleared: 0,
+        flagged_inr_cr: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    const tasks = Math.max(0, Number(obj?.tasks) || 0);
+    const done = Math.max(0, Number(obj?.done) || 0);
+    const claimed = Math.max(0, Number(obj?.claimed) || 0);
+    const open =
+      obj?.open != null ? Math.max(0, Number(obj.open) || 0) : Math.max(0, tasks - done - claimed);
+    const pct =
+      obj?.pct != null && Number.isFinite(Number(obj.pct))
+        ? Math.max(0, Number(obj.pct))
+        : calcPct(done, tasks);
+    return {
+      key,
+      label: p8TierLabel(key),
+      shortLabel,
+      tasks,
+      done,
+      claimed,
+      open,
+      pct,
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+      flagged_inr_cr: Math.max(0, Number(obj?.flagged_inr_cr) || 0),
+    };
+  };
+
+  const union = readTier('union', 'Union', ['union', 'central', 'union_of_india']);
+  const state = readTier('state', 'States', ['state', 'states']);
+  const ut = readTier('ut', 'UTs', ['ut', 'uts', 'union_territory', 'union_territories']);
+
+  return {
+    union,
+    state,
+    ut,
+    totalTasks: union.tasks + state.tasks + ut.tasks,
+    totalDone: union.done + state.done + ut.done,
+    totalLeads: union.leads + state.leads + ut.leads,
+    totalCleared: union.cleared + state.cleared + ut.cleared,
+  };
+}
+
+export function p8NormalizeMechanisms(
+  byMechanism?: Record<string, VisualSovereignLiesMechanismCounts | number> | null,
+  bySignal?: Record<string, number> | null,
+): {
+  items: P8NormalizedMechanism[];
+  totalTasks: number;
+  totalLeads: number;
+} {
+  const ordered: Array<{
+    key: P8MechanismKey;
+    ruleKey: string;
+    fillClass: string;
+  }> = [
+    {
+      key: 'retroactive_tax_reversal',
+      ruleKey: 'P8-RETROACTIVE-TAX-REVERSAL',
+      fillClass: 'pv-p8-mech-fill--retro-tax',
+    },
+    {
+      key: 'midstream_benefit_cut',
+      ruleKey: 'P8-MIDSTREAM-BENEFIT-CUT',
+      fillClass: 'pv-p8-mech-fill--cut',
+    },
+    {
+      key: 'premature_discontinuation',
+      ruleKey: 'P8-PREMATURE-DISCONTINUATION',
+      fillClass: 'pv-p8-mech-fill--discontinued',
+    },
+    {
+      key: 'eligibility_narrowing',
+      ruleKey: 'P8-ELIGIBILITY-NARROWING',
+      fillClass: 'pv-p8-mech-fill--eligibility',
+    },
+    {
+      key: 'lockin_or_exit_restriction',
+      ruleKey: 'P8-LOCKIN-OR-EXIT-RESTRICTION',
+      fillClass: 'pv-p8-mech-fill--lockin',
+    },
+    {
+      key: 'arrears_or_unfunded_promise',
+      ruleKey: 'P8-ARREARS-OR-UNFUNDED-PROMISE',
+      fillClass: 'pv-p8-mech-fill--arrears',
+    },
+    {
+      key: 'grandfathered_or_honored',
+      ruleKey: 'CLEARED',
+      fillClass: 'pv-p8-mech-fill--honored',
+    },
+  ];
+
+  const rows = ordered.map(({ key, ruleKey, fillClass }) => {
+    const rawMech = byMechanism?.[key];
+    let tasks = 0;
+    let leads = 0;
+    if (typeof rawMech === 'number') {
+      tasks = Math.max(0, rawMech);
+    } else if (rawMech && typeof rawMech === 'object') {
+      tasks = Math.max(0, Number(rawMech.tasks) || 0);
+      leads = Math.max(0, Number(rawMech.leads) || 0);
+    }
+    if (leads === 0 && bySignal) {
+      const sigVal = bySignal[key] ?? bySignal[ruleKey] ?? bySignal[ruleKey.toLowerCase()];
+      if (sigVal != null) {
+        leads = Math.max(0, Number(sigVal) || 0);
+      }
+    }
+    const meta = formatWalkbackMechanism(key);
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      fillClass,
+      isCleared: meta.isCleared,
+      tasks,
+      leads,
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P8NormalizedMechanism[] = rows.map((r) => ({
+    ...r,
+    sharePct: calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+  }));
+
+  return { items, totalTasks, totalLeads };
+}
+
+export function p8NormalizeCategories(
+  byCategory?: VisualSovereignLiesCategory[] | null,
+): P8NormalizedCategory[] {
+  if (!Array.isArray(byCategory)) return [];
+  return byCategory
+    .map((c) => {
+      const meta = formatSchemeCategory(c.category);
+      return {
+        category: meta.key,
+        label: c.label?.trim() || meta.label,
+        shortLabel: meta.shortLabel,
+        tasks: Math.max(0, Number(c.tasks) || 0),
+        done: Math.max(0, Number(c.done) || 0),
+        leads: Math.max(0, Number(c.leads) || 0),
+        cleared: Math.max(0, Number(c.cleared) || 0),
+        flagged_inr_cr: Math.max(0, Number(c.flagged_inr_cr) || 0),
+      };
+    })
+    .sort((a, b) => b.tasks - a.tasks || a.label.localeCompare(b.label));
+}
+
+export function p8NormalizeRetroactiveImpacts(
+  byImpact?: Record<string, number> | null,
+): {
+  items: P8NormalizedImpact[];
+  total: number;
+} {
+  const keys = [
+    'retroactive_existing_holders',
+    'mid_stream_active_scheme',
+    'prospective_discontinuation',
+    'eligibility_narrowing',
+    'unfulfilled_arrears',
+    'grandfathered_or_honored',
+  ] as const;
+
+  const counts = keys.map((k) => Math.max(0, Number(byImpact?.[k]) || 0));
+  const total = counts.reduce((acc, n) => acc + n, 0);
+
+  const items: P8NormalizedImpact[] = keys.map((k, idx) => {
+    const meta = formatRetroactiveImpact(k);
+    const count = counts[idx];
+    return {
+      key: k,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      count,
+      sharePct: calcPct(count, total),
+    };
+  });
+
+  return { items, total };
+}
+
+export function p8FilterJurisdictions(
+  jurisdictions: VisualSovereignLiesJurisdiction[],
+  query: string,
+  tierFilter: 'all' | P8TierKey = 'all',
+): VisualSovereignLiesJurisdiction[] {
+  const q = query.trim().toLowerCase();
+  return jurisdictions.filter((j) => {
+    const lvl = (j.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl !== tierFilter) return false;
+    if (!q) return true;
+    const display = formatJurisdictionLabel(j.jurisdiction, j.state_or_ut, j.jurisdiction_level);
+    return (
+      j.jurisdiction.toLowerCase().includes(q) ||
+      (j.state_or_ut || '').toLowerCase().includes(q) ||
+      display.toLowerCase().includes(q) ||
+      lvl.includes(q)
+    );
+  });
+}
+
+export function p8FilterSchemes(
+  schemes: VisualSovereignLiesScheme[],
+  query: string,
+  tierFilter: 'all' | P8TierKey = 'all',
+  categoryFilter = 'all',
+  mechanismFilter = 'all',
+  jurisdictionFilter = 'all',
+): VisualSovereignLiesScheme[] {
+  const q = query.trim().toLowerCase();
+  const cat = categoryFilter.trim().toLowerCase();
+  const mech = mechanismFilter.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+
+  return schemes.filter((s) => {
+    const lvl = (s.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl !== tierFilter) return false;
+    if (cat && cat !== 'all' && (s.scheme_category || '').trim().toLowerCase() !== cat) {
+      return false;
+    }
+    if (mech && mech !== 'all' && formatWalkbackMechanism(s.walkback_mechanism).key !== mech) {
+      return false;
+    }
+    if (jur && jur !== 'all' && (s.jurisdiction || '').trim().toLowerCase() !== jur) {
+      return false;
+    }
+    if (!q) return true;
+    const jurDisplay = formatJurisdictionLabel(s.jurisdiction, s.state_or_ut, s.jurisdiction_level);
+    return (
+      s.scheme_name.toLowerCase().includes(q) ||
+      (s.scheme_slug || '').toLowerCase().includes(q) ||
+      s.jurisdiction.toLowerCase().includes(q) ||
+      jurDisplay.toLowerCase().includes(q) ||
+      formatSchemeCategory(s.scheme_category).label.toLowerCase().includes(q) ||
+      formatWalkbackMechanism(s.walkback_mechanism).label.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p8FilterLeads(
+  leads: VisualSovereignLiesLead[],
+  tierFilter: 'all' | P8TierKey = 'all',
+  categoryFilter = 'all',
+  mechanismFilter = 'all',
+  jurisdictionFilter = 'all',
+): VisualSovereignLiesLead[] {
+  const cat = categoryFilter.trim().toLowerCase();
+  const mech = mechanismFilter.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+
+  return leads.filter((l) => {
+    const lvl = (l.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl && lvl !== tierFilter) return false;
+    if (cat && cat !== 'all' && (l.scheme_category || '').trim().toLowerCase() !== cat) {
+      return false;
+    }
+    if (
+      mech &&
+      mech !== 'all' &&
+      formatWalkbackMechanism(l.walkback_mechanism || l.signal_category).key !== mech
+    ) {
+      return false;
+    }
+    if (jur && jur !== 'all' && (l.jurisdiction || '').trim().toLowerCase() !== jur) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function p8ShortText(text?: string | null, maxLen = 140): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+export function SovereignLiesVisualiser({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p8 = visualSummary?.sovereign_lies;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [selectedTier, setSelectedTier] = useState<'all' | P8TierKey>('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedMechanism, setSelectedMechanism] = useState('all');
+  const [selectedJurisdiction, setSelectedJurisdiction] = useState('all');
+  const [jurisdictionQuery, setJurisdictionQuery] = useState('');
+  const [showAllJurisdictions, setShowAllJurisdictions] = useState(false);
+  const [schemeQuery, setSchemeQuery] = useState('');
+  const [showAllSchemes, setShowAllSchemes] = useState(false);
+
+  const hook = p8?.hook?.trim() || P8_DEFAULT_HOOK;
+  const totalTasks = p8?.total_tasks ?? mission.total_tasks ?? 0;
+  const uniqueSchemesCovered = p8?.unique_schemes_covered ?? p8?.top_schemes?.length ?? 0;
+  const jurisdictions = p8?.jurisdictions ?? [];
+  const statesAndUtsCovered =
+    p8?.states_and_uts_covered ??
+    jurisdictions.filter((j) => (j.jurisdiction_level || '').toLowerCase() !== 'union').length;
+  const sgbTasksCount = p8?.sgb_tasks_count ?? 0;
+  const clearedEmbedded = p8?.cleared_control_tasks_embedded ?? 0;
+  const leads = p8?.leads ?? 0;
+  const verified = p8?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p8?.peer_review ?? mission.peer_review_count ?? 0;
+  const clearedTasks = p8?.cleared_tasks ?? mission.cleared_tasks_count ?? 0;
+  const flaggedTotalCr = p8?.flagged_total_inr_cr ?? 0;
+
+  const topSchemes = p8?.top_schemes ?? [];
+  const topLeads = p8?.top_leads ?? [];
+  const sgbAnchor = p8?.sgb_anchor_case ?? null;
+  const documentsUrl = p8?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p8?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const tiers = useMemo(
+    () => p8NormalizeTiers(p8?.by_jurisdiction_level),
+    [p8?.by_jurisdiction_level],
+  );
+  const mechanisms = useMemo(
+    () => p8NormalizeMechanisms(p8?.by_mechanism, p8?.by_signal),
+    [p8?.by_mechanism, p8?.by_signal],
+  );
+  const categories = useMemo(
+    () => p8NormalizeCategories(p8?.by_category),
+    [p8?.by_category],
+  );
+  const impacts = useMemo(
+    () => p8NormalizeRetroactiveImpacts(p8?.by_retroactive_impact),
+    [p8?.by_retroactive_impact],
+  );
+
+  const filteredJurisdictions = useMemo(
+    () => p8FilterJurisdictions(jurisdictions, jurisdictionQuery, selectedTier),
+    [jurisdictions, jurisdictionQuery, selectedTier],
+  );
+  const visibleJurisdictions =
+    showAllJurisdictions || jurisdictionQuery.trim().length > 0 || selectedTier !== 'all'
+      ? filteredJurisdictions
+      : filteredJurisdictions.slice(0, P8_INITIAL_JURISDICTIONS);
+
+  const filteredSchemes = useMemo(
+    () =>
+      p8FilterSchemes(
+        topSchemes,
+        schemeQuery,
+        selectedTier,
+        selectedCategory,
+        selectedMechanism,
+        selectedJurisdiction,
+      ),
+    [
+      topSchemes,
+      schemeQuery,
+      selectedTier,
+      selectedCategory,
+      selectedMechanism,
+      selectedJurisdiction,
+    ],
+  );
+  const visibleSchemes =
+    showAllSchemes ||
+    schemeQuery.trim().length > 0 ||
+    selectedTier !== 'all' ||
+    selectedCategory !== 'all' ||
+    selectedMechanism !== 'all' ||
+    selectedJurisdiction !== 'all'
+      ? filteredSchemes
+      : filteredSchemes.slice(0, P8_INITIAL_SCHEMES);
+
+  const filteredLeads = useMemo(
+    () =>
+      p8FilterLeads(
+        topLeads,
+        selectedTier,
+        selectedCategory,
+        selectedMechanism,
+        selectedJurisdiction,
+      ),
+    [topLeads, selectedTier, selectedCategory, selectedMechanism, selectedJurisdiction],
+  );
+
+  const hasActiveFilters =
+    selectedTier !== 'all' ||
+    selectedCategory !== 'all' ||
+    selectedMechanism !== 'all' ||
+    selectedJurisdiction !== 'all';
+
+  const handleSelectTier = (nextTier: 'all' | P8TierKey) => {
+    setSelectedTier(nextTier);
+    setSelectedJurisdiction((prev) =>
+      p8ReconcileJurisdictionForTier(prev, nextTier, jurisdictions),
+    );
+  };
+
+  const resetAllFilters = () => {
+    setSelectedTier('all');
+    setSelectedCategory('all');
+    setSelectedMechanism('all');
+    setSelectedJurisdiction('all');
+  };
+
+  const tierDenominator = tiers.totalTasks || totalTasks;
+  const unionPct = calcPct(tiers.union.tasks, tierDenominator);
+  const statePct = calcPct(tiers.state.tasks, tierDenominator);
+  const utPct = calcPct(tiers.ut.tasks, tierDenominator);
+
+  const anchorMechanism = sgbAnchor?.walkback_mechanism
+    ? formatWalkbackMechanism(sgbAnchor.walkback_mechanism)
+    : null;
+  const anchorImpact = sgbAnchor?.retroactive_impact
+    ? formatRetroactiveImpact(sgbAnchor.retroactive_impact)
+    : null;
+  const anchorElapsed = formatElapsedPromiseSpan(sgbAnchor?.days_from_promise_to_walkback);
+  const anchorPrimaryUrl = safeExternalUrl(sgbAnchor?.source_url);
+  const anchorSecondaryUrl = safeExternalUrl(sgbAnchor?.secondary_url);
+  const anchorPortalUrl = safeExternalUrl(sgbAnchor?.portal_url);
+
+  const tierCards: Array<{
+    bucket: P8NormalizedTier;
+    pct: number;
+    btnClass: string;
+    desc: string;
+  }> = [
+    {
+      bucket: tiers.union,
+      pct: unionPct,
+      btnClass: 'pv-p8-tier-btn--union',
+      desc: 'Central acts, RBI bonds, FinMin & Union Ministries',
+    },
+    {
+      bucket: tiers.state,
+      pct: statePct,
+      btnClass: 'pv-p8-tier-btn--state',
+      desc: 'State budgets, GOs, guarantees, subsidies & CAG audits',
+    },
+    {
+      bucket: tiers.ut,
+      pct: utPct,
+      btnClass: 'pv-p8-tier-btn--ut',
+      desc: 'NCT of Delhi, J&K, Puducherry, Chandigarh & UTs',
+    },
+  ];
+
+  return (
+    <section className="card card-pad pv-results" aria-label="Sovereign Lies scheme promise audit results">
+      {/* Header + Summary Pills */}
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Sovereign Lies: Promise vs. Walk-Back Ledger</h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">
+            {fmtCount(totalTasks)} {totalTasks === 1 ? 'scheme task' : 'scheme tasks'}
+          </span>
+          {uniqueSchemesCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(uniqueSchemesCovered)} {uniqueSchemesCovered === 1 ? 'scheme' : 'schemes'}
+            </span>
+          ) : null}
+          {statesAndUtsCovered > 0 ? (
+            <span className="tag-mono">Union + {fmtCount(statesAndUtsCovered)} States &amp; UTs</span>
+          ) : null}
+          {sgbTasksCount > 0 ? (
+            <span className="p8-sgb-chip">
+              {fmtCount(sgbTasksCount)} {sgbTasksCount === 1 ? 'SGB task' : 'SGB tasks'}
+            </span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'divergence lead' : 'divergence leads'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+          {clearedTasks > 0 ? (
+            <span className={FINDING_TAGS.cleared.badgeClass}>
+              {fmtCount(clearedTasks)} {FINDING_TAGS.cleared.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Headline KPIs */}
+      <div className="pv-p8-overview">
+        <div className="pv-p8-kpi-grid">
+          <div className="pv-overview-tile pv-p8-kpi--tasks">
+            <span className="pv-overview-kicker">Tracked scheme tasks</span>
+            <span className="pv-overview-num tabular">{fmtCount(totalTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {uniqueSchemesCovered > 0 ? `${fmtCount(uniqueSchemesCovered)} schemes · ` : ''}
+              {statesAndUtsCovered > 0
+                ? `Union + ${fmtCount(statesAndUtsCovered)} States/UTs`
+                : 'Union & State/UT coverage'}
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p8-kpi--sgb">
+            <span className="pv-overview-kicker">Sovereign Gold Bond cohort</span>
+            <span className="pv-overview-num tabular">{fmtCount(sgbTasksCount)}</span>
+            <span className="pv-overview-sub">
+              Flagship anchor · Sec 47(viic) &amp; Finance Act 2026
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p8-kpi--leads">
+            <span className="pv-overview-kicker">Documented leads &amp; cleared</span>
+            <span className="pv-overview-num tabular">{fmtCount(leads)}</span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(verified)} verified · {fmtCount(inReview)} in review · {fmtCount(clearedTasks)} cleared
+              {clearedEmbedded > 0 ? ` (${fmtCount(clearedEmbedded)} honored controls)` : ''}
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p8-kpi--value">
+            <span className="pv-overview-kicker">Published scheme exposure</span>
+            <span className="pv-overview-num tabular">
+              {flaggedTotalCr > 0 ? formatInrCr(flaggedTotalCr) : 'Documentary'}
+            </span>
+            <span className="pv-overview-sub">
+              Officially published amounts only; statutory changes tracked verbatim
+            </span>
+          </div>
+        </div>
+
+        {/* Flagship Sovereign Gold Bond (SGB) Anchor Spotlight */}
+        {sgbAnchor ? (
+          <article
+            className="pv-p8-sgb-anchor"
+            aria-label="Sovereign Gold Bond flagship anchor comparison"
+          >
+            <div className="pv-p6-anchor-head">
+              <div className="pv-p6-anchor-meta">
+                <span className="p8-sgb-chip">Flagship Anchor · Sovereign Gold Bond (SGB)</span>
+                <span className="p8-tier-chip p8-tier-chip--union">
+                  {formatJurisdictionLabel(sgbAnchor.jurisdiction, null, 'union')}
+                </span>
+                {sgbAnchor.authority ? (
+                  <span className="tag-mono">{sgbAnchor.authority}</span>
+                ) : null}
+                {sgbAnchor.tranche_or_phase ? (
+                  <span className="tag-mono">{sgbAnchor.tranche_or_phase}</span>
+                ) : null}
+                {anchorImpact ? (
+                  <span className={anchorImpact.chipClass}>{anchorImpact.label}</span>
+                ) : null}
+              </div>
+              {anchorMechanism ? (
+                <span className={anchorMechanism.chipClass}>{anchorMechanism.label}</span>
+              ) : null}
+            </div>
+
+            <h3 className="pv-p6-anchor-title">{sgbAnchor.scheme_name}</h3>
+
+            {sgbAnchor.affected_group ? (
+              <p className="pv-p6-anchor-people">
+                <strong>Affected group:</strong> {sgbAnchor.affected_group}
+              </p>
+            ) : null}
+
+            {(sgbAnchor.promised_metric || sgbAnchor.revised_metric) ? (
+              <div className="pv-p8-sgb-delta tabular">
+                <span>
+                  <strong>Original terms:</strong> {sgbAnchor.promised_metric || 'Documented at launch'}
+                </span>
+                <span aria-hidden="true">→</span>
+                <span>
+                  <strong>Revised terms:</strong> {sgbAnchor.revised_metric || 'Amended subsequently'}
+                </span>
+                {anchorElapsed ? (
+                  <span className="tag-mono">{anchorElapsed}</span>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="pv-p8-sgb-grid">
+              <div className="pv-p8-sgb-col pv-p8-sgb-col--promise">
+                <div className="pv-p8-sgb-col-head">
+                  <span className="pv-p6-anchor-label" style={{ marginBottom: 0 }}>
+                    01 · Original Launch Promise
+                  </span>
+                  {sgbAnchor.promise_date ? (
+                    <span className="pv-p8-sgb-date font-mono tabular">{sgbAnchor.promise_date}</span>
+                  ) : null}
+                </div>
+                <p className="pv-p6-anchor-text">{sgbAnchor.promise_summary}</p>
+                {sgbAnchor.promise_document_ref ? (
+                  <span className="pv-p8-sgb-ref font-mono">{sgbAnchor.promise_document_ref}</span>
+                ) : null}
+              </div>
+
+              <div className="pv-p8-sgb-col pv-p8-sgb-col--walkback">
+                <div className="pv-p8-sgb-col-head">
+                  <span className="pv-p6-anchor-label" style={{ marginBottom: 0 }}>
+                    02 · Subsequent Walk-Back
+                  </span>
+                  {sgbAnchor.walkback_date ? (
+                    <span className="pv-p8-sgb-date font-mono tabular">{sgbAnchor.walkback_date}</span>
+                  ) : null}
+                </div>
+                <p className="pv-p6-anchor-text">{sgbAnchor.walkback_summary}</p>
+                {sgbAnchor.walkback_document_ref ? (
+                  <span className="pv-p8-sgb-ref font-mono">{sgbAnchor.walkback_document_ref}</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="pv-p6-anchor-actions">
+              {sgbAnchor.finding_id && onSelectFinding ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onSelectFinding(sgbAnchor.finding_id!)}
+                >
+                  Inspect SGB dossier
+                </button>
+              ) : onFilterTasks ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onFilterTasks('Sovereign Gold Bond')}
+                >
+                  Find SGB tasks in queue
+                </button>
+              ) : null}
+              {anchorPrimaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPrimaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Launch notification <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorSecondaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Finance Act / Walk-back record <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorPortalUrl &&
+              anchorPortalUrl !== anchorPrimaryUrl &&
+              anchorPortalUrl !== anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPortalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Official portal <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {sgbAnchor.source_sha256 ? (
+                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                  sha256:{sgbAnchor.source_sha256.slice(0, 10)}
+                </span>
+              ) : null}
+            </div>
+          </article>
+        ) : (
+          <div className="pv-empty-box">
+            Sovereign Gold Bond (SGB) flagship anchor comparison loads automatically from the hub summary index.
+          </div>
+        )}
+
+        {/* Interactive Jurisdiction Tier Selector (Union vs States vs UTs) */}
+        {tiers.totalTasks > 0 ? (
+          <div className="pv-p7-cohort-panel">
+            <div className="pv-p7-cohort-head">
+              <h3>Jurisdiction tier (Union vs. States &amp; UTs — select to filter explorer)</h3>
+              <div className="pv-mini-legend">
+                <span>
+                  <i className="pv-dot pv-p8-dot--union" aria-hidden="true" /> Union
+                </span>
+                <span>
+                  <i className="pv-dot pv-p8-dot--state" aria-hidden="true" /> States
+                </span>
+                <span>
+                  <i className="pv-dot pv-p8-dot--ut" aria-hidden="true" /> UTs
+                </span>
+                {selectedTier !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => handleSelectTier('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All tiers</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              className="pv-p8-tier-bar"
+              role="img"
+              aria-label={`Jurisdiction split across ${fmtCount(tiers.totalTasks)} tasks: ${fmtCount(tiers.union.tasks)} Union (${fmtPct(unionPct)}), ${fmtCount(tiers.state.tasks)} States (${fmtPct(statePct)}), ${fmtCount(tiers.ut.tasks)} Union Territories (${fmtPct(utPct)})`}
+            >
+              {unionPct > 0 ? (
+                <span
+                  className="pv-p8-seg pv-p8-seg--union"
+                  style={{ width: `${unionPct}%` }}
+                  title={`Union of India: ${fmtCount(tiers.union.tasks)} (${fmtPct(unionPct)})`}
+                />
+              ) : null}
+              {statePct > 0 ? (
+                <span
+                  className="pv-p8-seg pv-p8-seg--state"
+                  style={{ width: `${statePct}%` }}
+                  title={`States: ${fmtCount(tiers.state.tasks)} (${fmtPct(statePct)})`}
+                />
+              ) : null}
+              {utPct > 0 ? (
+                <span
+                  className="pv-p8-seg pv-p8-seg--ut"
+                  style={{ width: `${utPct}%` }}
+                  title={`Union Territories: ${fmtCount(tiers.ut.tasks)} (${fmtPct(utPct)})`}
+                />
+              ) : null}
+            </div>
+
+            <div className="pv-p8-tier-cards" role="group" aria-label="Filter by jurisdiction tier">
+              {tierCards.map(({ bucket, pct, btnClass, desc }) => {
+                const isSelected = selectedTier === bucket.key;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    className={`pv-p7-cohort-btn ${btnClass}`}
+                    onClick={() =>
+                      handleSelectTier(selectedTier === bucket.key ? 'all' : bucket.key)
+                    }
+                  >
+                    <span className="pv-p7-cohort-btn-top">
+                      <span className="pv-p7-cohort-name">{bucket.label}</span>
+                      <span className="pv-p7-cohort-share tabular">{fmtPct(pct)}</span>
+                    </span>
+                    <span className="pv-p7-cohort-num tabular">
+                      {fmtCount(bucket.tasks)} {bucket.tasks === 1 ? 'task' : 'tasks'}
+                    </span>
+                    <span className="pv-p7-cohort-sub tabular">
+                      {fmtCount(bucket.done)}/{fmtCount(bucket.tasks)} checked ({fmtPct(bucket.pct)})
+                      {bucket.leads > 0
+                        ? ` · ${fmtCount(bucket.leads)} ${bucket.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
+                      {bucket.cleared > 0 ? ` · ${fmtCount(bucket.cleared)} cleared` : ''}
+                    </span>
+                    <span className="pv-p7-cohort-sub">{desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Interactive Walk-Back Mechanism & Scheme Category Explorer */}
+        <div className="pv-p7-cohort-panel">
+          <div className="pv-p7-cohort-head">
+            <h3>Walk-back mechanisms (7 deterministic categories — select to filter)</h3>
+            <span className="pv-chart-note tabular">
+              {mechanisms.totalTasks > 0
+                ? `${fmtCount(mechanisms.totalTasks)} tasks across 6 walk-back mechanisms + honored controls`
+                : 'Counts populate from the hub summary index'}
+            </span>
+          </div>
+
+          <div className="pv-p8-mech-grid" role="group" aria-label="Filter by walk-back mechanism">
+            {mechanisms.items.map((m) => {
+              const isSelected = selectedMechanism === m.key;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className={`pv-p8-mech-btn${m.isCleared ? ' pv-p8-mech-btn--cleared' : ''}`}
+                  onClick={() =>
+                    setSelectedMechanism((prev) => (prev === m.key ? 'all' : m.key))
+                  }
+                >
+                  <div className="pv-p7-signal-top">
+                    <span className={m.chipClass}>{m.label}</span>
+                    <span className="pv-p7-signal-count tabular">
+                      <strong>{fmtCount(m.tasks)}</strong> {m.tasks === 1 ? 'task' : 'tasks'}
+                      {m.leads > 0
+                        ? ` · ${fmtCount(m.leads)} ${m.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
+                    </span>
+                  </div>
+                  <span className="pv-p7-signal-track" aria-hidden="true">
+                    <span
+                      className={`pv-p7-signal-fill ${m.fillClass}`}
+                      style={{ width: `${m.sharePct > 0 ? Math.max(3, m.sharePct) : 0}%` }}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Scheme Categories Filter Pills */}
+          {categories.length > 0 ? (
+            <div className="pv-p8-cat-pills" role="group" aria-label="Filter by scheme category">
+              <span className="pv-p7-jur-label">Scheme categories:</span>
+              <button
+                type="button"
+                aria-pressed={selectedCategory === 'all'}
+                className={`btn btn-xs ${selectedCategory === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setSelectedCategory('all')}
+              >
+                All ({fmtCount(categories.length)})
+              </button>
+              {categories.map((cat) => {
+                const active = selectedCategory === cat.category;
+                return (
+                  <button
+                    key={cat.category}
+                    type="button"
+                    aria-pressed={active}
+                    className={`btn btn-xs ${active ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() =>
+                      setSelectedCategory((prev) => (prev === cat.category ? 'all' : cat.category))
+                    }
+                  >
+                    {cat.shortLabel} ({fmtCount(cat.tasks)})
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {/* Retroactive Impact Distribution Strip */}
+          {impacts.total > 0 ? (
+            <div className="pv-p8-impact-strip" aria-label="Retroactive impact distribution">
+              <span className="pv-p7-jur-label">Impact scope:</span>
+              {impacts.items
+                .filter((imp) => imp.count > 0)
+                .map((imp) => (
+                  <span key={imp.key} className={imp.chipClass}>
+                    {imp.shortLabel}: <strong className="tabular">{fmtCount(imp.count)}</strong>
+                  </span>
+                ))}
+            </div>
+          ) : null}
+
+          {hasActiveFilters ? (
+            <div className="pv-p8-active-filters">
+              <span>
+                Active filters:{' '}
+                {[
+                  selectedTier !== 'all' ? p8TierLabel(selectedTier) : null,
+                  selectedJurisdiction !== 'all'
+                    ? formatJurisdictionLabel(selectedJurisdiction)
+                    : null,
+                  selectedCategory !== 'all' ? p8CategoryLabel(selectedCategory) : null,
+                  selectedMechanism !== 'all' ? p8MechanismLabel(selectedMechanism) : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={resetAllFilters}>
+                <RotateCcw size={11} aria-hidden="true" />
+                <span>Reset all filters</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Two-Column Split: Union + State/UT Breakdown + How to Read This */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Union, States &amp; UTs ({fmtCount(jurisdictions.length)})</h3>
+            <span className="pv-chart-note">
+              Click a jurisdiction to filter schemes &amp; leads below
+            </span>
+          </div>
+
+          {jurisdictions.length > 0 ? (
+            <>
+              <div className="pv-p6-ministry-controls">
+                <div className="pv-p6-search-wrap">
+                  <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                  <input
+                    type="search"
+                    className="input-field pv-p6-search"
+                    value={jurisdictionQuery}
+                    onChange={(e) => setJurisdictionQuery(e.target.value)}
+                    placeholder={`Filter ${fmtCount(jurisdictions.length)} jurisdictions (Union, States, UTs)…`}
+                    aria-label="Filter Union, State, and UT jurisdictions"
+                  />
+                </div>
+                <div className="pv-p6-filter-pills" role="group" aria-label="Filter jurisdictions by tier">
+                  {(['all', 'union', 'state', 'ut'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={selectedTier === t}
+                      className={`btn btn-xs ${selectedTier === t ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => handleSelectTier(t)}
+                    >
+                      {t === 'all' ? 'All' : t === 'union' ? 'Union' : t === 'state' ? 'States' : 'UTs'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {visibleJurisdictions.length > 0 ? (
+                <div className="pv-ub-years-wrap">
+                  <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                    <caption className="pv-ub-caption">
+                      Scheme promise-vs-walk-back coverage across Union of India, States, and Union Territories.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Jurisdiction</th>
+                        <th scope="col">Tasks &amp; progress</th>
+                        <th scope="col" className="num">
+                          Leads / Cleared
+                        </th>
+                        <th scope="col" className="num">
+                          Queue
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleJurisdictions.map((j) => {
+                        const display = formatJurisdictionLabel(
+                          j.jurisdiction,
+                          j.state_or_ut,
+                          j.jurisdiction_level,
+                        );
+                        const lvl = (j.jurisdiction_level || 'union').toLowerCase();
+                        const total = Math.max(0, j.tasks);
+                        const done = Math.max(0, j.done ?? 0);
+                        const donePct = calcPct(done, total);
+                        const isSelected = selectedJurisdiction === j.jurisdiction;
+                        const queueToken = p8JurisdictionFilterQuery(j.jurisdiction, j.state_or_ut);
+                        const tierClass =
+                          lvl === 'state'
+                            ? 'p8-tier-chip--state'
+                            : lvl === 'ut'
+                              ? 'p8-tier-chip--ut'
+                              : 'p8-tier-chip--union';
+                        const segClass =
+                          lvl === 'state'
+                            ? 'pv-p8-seg--state'
+                            : lvl === 'ut'
+                              ? 'pv-p8-seg--ut'
+                              : 'pv-p8-seg--union';
+
+                        return (
+                          <tr
+                            key={j.jurisdiction}
+                            className="pv-p6-ministry-row--interactive"
+                            style={isSelected ? { background: 'var(--sunk)' } : undefined}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement | null;
+                              if (target?.closest('a, button')) return;
+                              setSelectedJurisdiction((prev) =>
+                                prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                              );
+                            }}
+                          >
+                            <th scope="row" className="pv-ub-year pv-p8-jur-name">
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  setSelectedJurisdiction((prev) =>
+                                    prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                                  )
+                                }
+                              >
+                                {display}
+                              </button>
+                              <span className="pv-ub-sub">
+                                <span className={`p8-tier-chip ${tierClass}`} style={{ fontSize: 10.5, padding: '0 6px' }}>
+                                  {lvl === 'union' ? 'Union' : lvl === 'ut' ? 'UT' : 'State'}
+                                </span>
+                              </span>
+                            </th>
+                            <td className="pv-ub-years-checked">
+                              <span
+                                className="pv-ub-bar"
+                                role="img"
+                                aria-label={`${display}: ${fmtCount(done)} of ${fmtCount(total)} tasks checked`}
+                              >
+                                {donePct > 0 ? (
+                                  <span
+                                    className={`pv-ub-bar-seg ${segClass}`}
+                                    style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                                  />
+                                ) : null}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                {fmtCount(total)} {total === 1 ? 'task' : 'tasks'} · {fmtCount(done)} checked ({fmtPct(donePct)})
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-lines" data-label="Leads / Cleared">
+                              <span className="pv-ub-cell-val">
+                                {fmtCount(j.leads)} {j.leads === 1 ? 'lead' : 'leads'}
+                              </span>
+                              <span className="pv-ub-sub">
+                                {(j.cleared ?? 0) > 0
+                                  ? `${fmtCount(j.cleared)} cleared`
+                                  : j.flagged_inr_cr && j.flagged_inr_cr > 0
+                                    ? formatInrCr(j.flagged_inr_cr)
+                                    : 'Documentary'}
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-below" data-label="Queue">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(queueToken)}
+                                  aria-label={`Filter task queue for ${display}`}
+                                >
+                                  Tasks →
+                                </button>
+                              ) : (
+                                <span className="pv-ub-sub">{fmtCount(total)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="pv-empty-box">
+                  No jurisdictions match &ldquo;{jurisdictionQuery || p8TierLabel(selectedTier)}&rdquo;.
+                </div>
+              )}
+
+              {jurisdictionQuery.trim().length === 0 &&
+              selectedTier === 'all' &&
+              filteredJurisdictions.length > P8_INITIAL_JURISDICTIONS ? (
+                <div className="pv-list-more">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllJurisdictions((v) => !v)}
+                  >
+                    {showAllJurisdictions
+                      ? `Show top ${P8_INITIAL_JURISDICTIONS} jurisdictions`
+                      : `Show all ${fmtCount(filteredJurisdictions.length)} jurisdictions`}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="pv-empty-box">
+              Union, State, and UT scheme coverage appears here once the hub loads the Sovereign Lies index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Every task downloads and SHA-256-verifies both the <strong>original launch notification,
+            statute, or scheme guideline</strong> and the <strong>subsequent amendment, circular,
+            Finance Act, or CAG/Parliamentary record</strong>. If any official file fails hash verification
+            or lacks the required verbatim evidence tokens, the check fails closed as{' '}
+            {FINDING_TAGS.not_enough_data.label}.
+          </p>
+          <p>
+            Schemes whose launch commitments were honored or where existing subscribers were explicitly
+            grandfathered intact are published as {FINDING_TAGS.cleared.label} with equal standing
+            alongside documented walk-back leads.
+          </p>
+          <p>
+            Every record uses strictly neutral documentary framing under <strong>BNS Sec 356</strong>,
+            recording concrete lawful explanations (statutory parliamentary authority, fiscal
+            sustainability, arbitrage prevention, or budgetary reprioritisation), and requires three
+            independent peer verifications before reaching {FINDING_TAGS.verified.label}.
+          </p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Scheme sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P8_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p8?.generated_on ? (
+            <p className="pv-chart-note">
+              Sovereign Lies index built {p8.generated_on}
+              {p8.as_of_date && p8.as_of_date !== p8.generated_on ? ` · as of ${p8.as_of_date}` : ''}.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Interactive Tracked Schemes Explorer */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>
+            Tracked schemes ({fmtCount(filteredSchemes.length)}
+            {filteredSchemes.length !== topSchemes.length
+              ? ` of ${fmtCount(topSchemes.length)}`
+              : ''}
+            )
+          </h3>
+          <span className="pv-chart-note">
+            Filter by jurisdiction, category, or mechanism — click any scheme to view its tasks
+          </span>
+        </div>
+
+        {topSchemes.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={schemeQuery}
+                  onChange={(e) => setSchemeQuery(e.target.value)}
+                  placeholder={`Search ${fmtCount(topSchemes.length)} schemes (e.g. Sovereign Gold Bond, FAME-II, Ladki Bahin, OPS)…`}
+                  aria-label="Search tracked Union and State schemes"
+                />
+              </div>
+              {hasActiveFilters || schemeQuery.trim().length > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => {
+                    resetAllFilters();
+                    setSchemeQuery('');
+                  }}
+                >
+                  <RotateCcw size={11} aria-hidden="true" />
+                  <span>Reset</span>
+                </button>
+              ) : null}
+            </div>
+
+            {visibleSchemes.length > 0 ? (
+              <div className="table-wrap pv-ub-leads-wrap">
+                <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                  <caption className="pv-ub-caption">
+                    Indian Union and State/UT government schemes indexed in Project 8 with launch-promise vs. walk-back classification.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Scheme &amp; Jurisdiction</th>
+                      <th scope="col">Category</th>
+                      <th scope="col">Mechanism &amp; Impact</th>
+                      <th scope="col" className="num">
+                        Tasks / Leads
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleSchemes.map((s) => {
+                      const mech = formatWalkbackMechanism(s.walkback_mechanism);
+                      const imp = formatRetroactiveImpact(s.retroactive_impact);
+                      const cat = formatSchemeCategory(s.scheme_category);
+                      const jur = formatJurisdictionLabel(
+                        s.jurisdiction,
+                        s.state_or_ut,
+                        s.jurisdiction_level,
+                      );
+                      const filterQ = p8SchemeFilterQuery(s.scheme_name);
+
+                      return (
+                        <tr key={`${s.scheme_slug}-${s.jurisdiction}`}>
+                          <td className="pv-ub-line pv-p8-scheme-col">
+                            {onFilterTasks ? (
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                onClick={() => onFilterTasks(filterQ)}
+                              >
+                                {s.scheme_name}
+                              </button>
+                            ) : (
+                              <span>{s.scheme_name}</span>
+                            )}
+                            <span className="pv-ub-sub">
+                              {jur}
+                              {s.is_sgb_anchor ? (
+                                <>
+                                  {' · '}
+                                  <span className="p8-sgb-chip" style={{ fontSize: 10.5, padding: '0 6px' }}>
+                                    SGB Anchor
+                                  </span>
+                                </>
+                              ) : null}
+                            </span>
+                          </td>
+                          <td data-label="Category">
+                            <span className="tag-mono">{cat.label}</span>
+                          </td>
+                          <td data-label="Mechanism & impact">
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              <span className={mech.chipClass}>{mech.label}</span>
+                              <span className={imp.chipClass}>{imp.shortLabel}</span>
+                            </div>
+                          </td>
+                          <td className="num tabular" data-label="Tasks / Leads">
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(s.tasks)} {s.tasks === 1 ? 'task' : 'tasks'}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(s.leads)} {s.leads === 1 ? 'lead' : 'leads'}
+                              {(s.cleared ?? 0) > 0 ? ` · ${fmtCount(s.cleared)} cleared` : ''}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No tracked schemes match the current filter combination.
+              </div>
+            )}
+
+            {schemeQuery.trim().length === 0 &&
+            !hasActiveFilters &&
+            filteredSchemes.length > P8_INITIAL_SCHEMES ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllSchemes((v) => !v)}
+                >
+                  {showAllSchemes
+                    ? `Show top ${P8_INITIAL_SCHEMES} schemes`
+                    : `Show all ${fmtCount(filteredSchemes.length)} schemes`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Scheme-by-scheme coverage appears here once the hub loads the Sovereign Lies corpus index.
+          </div>
+        )}
+      </div>
+
+      {/* Reported Promise-vs-Walk-Back Leads Table */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>
+            Promise-vs-walk-back leads reported so far
+            {hasActiveFilters && topLeads.length > 0
+              ? ` (${fmtCount(filteredLeads.length)} matching filters)`
+              : ''}
+          </h3>
+          {filteredLeads.length > 0 ? (
+            <span className="pv-chart-note">
+              Original launch promise vs. subsequent statutory revision with SHA-256 provenance
+            </span>
+          ) : null}
+        </div>
+        {filteredLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                Verified and in-review scheme promise-vs-walk-back dossiers.
+                {onSelectFinding
+                  ? ' Open any row to read the full two-column documentary dossier, citations, and lawful benign explanations.'
+                  : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Scheme &amp; Authority</th>
+                  <th scope="col">Jurisdiction &amp; Timeline</th>
+                  <th scope="col">Mechanism &amp; Metric Delta</th>
+                  <th scope="col">Promise vs. Walk-Back</th>
+                  <th scope="col">Audit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const mech = formatWalkbackMechanism(lead.walkback_mechanism || lead.signal_category);
+                  const imp = lead.retroactive_impact
+                    ? formatRetroactiveImpact(lead.retroactive_impact)
+                    : null;
+                  const jur = formatJurisdictionLabel(
+                    lead.jurisdiction,
+                    lead.state_or_ut,
+                    lead.jurisdiction_level,
+                  );
+
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line pv-p8-lead-scheme">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.scheme_name}
+                            {lead.tranche_or_phase ? ` · ${lead.tranche_or_phase}` : ''}
+                          </button>
+                        ) : (
+                          <span>
+                            {lead.scheme_name}
+                            {lead.tranche_or_phase ? ` · ${lead.tranche_or_phase}` : ''}
+                          </span>
+                        )}
+                        <span className="pv-ub-sub">
+                          {lead.is_sgb_anchor ? (
+                            <>
+                              <span className="p8-sgb-chip" style={{ fontSize: 10.5, padding: '0 6px' }}>
+                                SGB Anchor
+                              </span>{' '}
+                            </>
+                          ) : null}
+                          {lead.entity_name || lead.title}
+                        </span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="Jurisdiction & timeline">
+                        <span>{jur}</span>
+                        <span className="pv-ub-sub">
+                          {lead.promise_date || '—'}
+                          {lead.walkback_date ? ` → ${lead.walkback_date}` : ''}
+                          {lead.days_from_promise_to_walkback != null
+                            ? ` (${fmtCount(lead.days_from_promise_to_walkback)}d)`
+                            : ''}
+                        </span>
+                      </td>
+                      <td data-label="Mechanism & delta">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <span className={mech.chipClass}>{mech.shortLabel}</span>
+                          {imp?.isRetroactive ? (
+                            <span className={imp.chipClass}>{imp.shortLabel}</span>
+                          ) : null}
+                        </div>
+                        {lead.promised_metric || lead.revised_metric ? (
+                          <span className="pv-ub-sub tabular">
+                            {lead.promised_metric || 'Launch'} → {lead.revised_metric || 'Revised'}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="pv-p8-lead-compare" data-label="Promise vs. walk-back">
+                        <div className="pv-p6-excerpt">
+                          <strong>Promise:</strong> {p8ShortText(lead.promise_summary, 110)}
+                        </div>
+                        <div className="pv-p6-excerpt pv-p6-excerpt--followup">
+                          <strong>{mech.isCleared ? 'Status:' : 'Walk-back:'}</strong>{' '}
+                          {p8ShortText(lead.walkback_summary, 110)}
+                        </div>
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            {hasActiveFilters && topLeads.length > 0
+              ? 'No reported leads match the active explorer filters. Reset filters above to view all leads.'
+              : 'Scheme promise-vs-walk-back leads appear here as contributor agents verify tasks. Every entry cites the official launch notification, subsequent amendment, SHA-256 digests, and lawful benign explanations.'}
           </div>
         )}
       </div>

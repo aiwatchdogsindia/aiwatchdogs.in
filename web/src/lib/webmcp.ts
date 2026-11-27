@@ -153,7 +153,7 @@ export const WEBMCP_TOOL_MANIFEST: readonly WebMcpToolManifestItem[] = [
         slug: {
           type: 'string',
           description:
-            'Project slug, e.g. police-finances, gov-in-public-information, union-budget-unspent-funds, one-road-two-bills, one-teacher-five-grades, parliaments-to-do-list, or only-one-bid.',
+            'Project slug, e.g. police-finances, gov-in-public-information, union-budget-unspent-funds, one-road-two-bills, one-teacher-five-grades, parliaments-to-do-list, only-one-bid, or sovereign-lies.',
         },
       },
       required: ['slug'],
@@ -180,7 +180,7 @@ export const WEBMCP_TOOL_MANIFEST: readonly WebMcpToolManifestItem[] = [
         },
         methodology_code: {
           type: 'string',
-          description: 'Optional methodology code (P1, W1, UB1, OR1, P5, P6, P7).',
+          description: 'Optional methodology code (P1, W1, UB1, OR1, P5, P6, P7, P8).',
         },
       },
       additionalProperties: false,

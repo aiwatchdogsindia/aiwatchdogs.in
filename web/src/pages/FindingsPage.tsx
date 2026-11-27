@@ -141,7 +141,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
             type="text"
             className="input-field"
             style={{ width: '100%', paddingLeft: 32 }}
-            placeholder="Search ministry, state, rule, title, or entity…"
+            placeholder="Search ministry, state, scheme, rule, title, or entity…"
             aria-label="Search public audit findings"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

@@ -27,16 +27,22 @@ import {
   downloadTextFile,
   extractAssuranceMetrics,
   extractOnlyOneBidMetrics,
+  extractSovereignLiesMetrics,
   formatAssuranceStatus,
   formatBytes,
   formatCitationRoleLabel,
   formatDateShort,
+  formatElapsedPromiseSpan,
   formatInr,
+  formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
   formatProcurementAmountType,
   formatProcurementSignal,
   formatRelativeTime,
+  formatRetroactiveImpact,
+  formatSchemeCategory,
   formatSingleBidMechanism,
+  formatWalkbackMechanism,
   isOfficialGovUrl,
   resolveCitationHref,
   resolveFindingDrawerMetric,
@@ -277,13 +283,65 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     finding && finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
       ? finding.monetary_exposure_inr
       : p7Record?.targetTenderValueInr ?? null;
+
+  const p8Record =
+    finding?.methodology_code === 'P8' && !isQuarantined
+      ? extractSovereignLiesMetrics(finding.anomaly_metrics)
+      : null;
+  const p8Mechanism =
+    p8Record && (p8Record.walkbackMechanism || p8Record.signalCategory)
+      ? formatWalkbackMechanism(p8Record.walkbackMechanism || p8Record.signalCategory)
+      : null;
+  const p8Impact = p8Record?.retroactiveImpact
+    ? formatRetroactiveImpact(p8Record.retroactiveImpact)
+    : null;
+  const p8Category = p8Record?.schemeCategory
+    ? formatSchemeCategory(p8Record.schemeCategory)
+    : null;
+  const p8Jurisdiction = p8Record
+    ? formatJurisdictionLabel(
+        p8Record.jurisdiction || finding?.jurisdiction,
+        p8Record.stateOrUt,
+        p8Record.jurisdictionLevel,
+      )
+    : null;
+  const p8ElapsedLabel = p8Record
+    ? formatElapsedPromiseSpan(p8Record.daysFromPromiseToWalkback)
+    : null;
+  const p8PublishedExposure =
+    finding && finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+      ? finding.monetary_exposure_inr
+      : p8Record?.estimatedExposureInr != null && p8Record.estimatedExposureInr > 0
+        ? p8Record.estimatedExposureInr
+        : null;
+  const p8PromiseCit = finding?.citations.find((c) => {
+    const r = (c.role || '').toLowerCase();
+    return r === 'original_promise' || r === 'promise_document';
+  });
+  const p8WalkbackCit = finding?.citations.find((c) => {
+    const r = (c.role || '').toLowerCase();
+    return r === 'subsequent_walkback' || r === 'walkback_document';
+  });
+  const p8PromiseHref = p8PromiseCit
+    ? citationHref(p8PromiseCit, finding?.artifact_sha256)
+    : safeRetrievalUrl;
+  const p8WalkbackHref = p8WalkbackCit
+    ? citationHref(p8WalkbackCit, finding?.artifact_sha256)
+    : safeExternalUrl(prov?.secondary_url) || safeRetrievalUrl;
+  const p8PromiseSha = p8PromiseCit?.sha256 || prov?.observed_sha256 || null;
+  const p8WalkbackSha = p8WalkbackCit?.sha256 || prov?.secondary_sha256 || prov?.observed_sha256 || null;
+
   const drawerMetric = finding ? resolveFindingDrawerMetric(finding) : null;
   const displayMetricEntries = finding
     ? Object.entries(finding.anomaly_metrics).filter(
         ([k]) =>
           !(
-            p6Record &&
-            (k === 'original_promise' || k === 'followup_answer')
+            (p6Record && (k === 'original_promise' || k === 'followup_answer')) ||
+            (p8Record &&
+              (k === 'promise_summary' ||
+                k === 'walkback_summary' ||
+                k === 'promise_excerpt' ||
+                k === 'walkback_excerpt'))
           ),
       )
     : [];
@@ -888,6 +946,287 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                     </section>
                   )}
 
+                  {/* P8 Structured Sovereign Scheme Dossier (Original Launch Promise vs. Subsequent Walk-Back) */}
+                  {p8Record && (
+                    <section
+                      className={`card card-pad drawer-p8-card${
+                        p8Mechanism?.isCleared ? ' drawer-p8-card--honored' : ''
+                      }`}
+                      aria-label="Sovereign scheme promise versus revision dossier"
+                    >
+                      <div className="drawer-p6-head">
+                        <div>
+                          <div className="section-kicker" style={{ marginBottom: 4 }}>
+                            Sovereign Scheme Dossier · Original Promise vs. Subsequent Revision
+                          </div>
+                          <div className="drawer-p6-meta">
+                            {p8Record.isSgbAnchor && (
+                              <span className="p8-sgb-chip">SGB Flagship Anchor</span>
+                            )}
+                            {p8Jurisdiction && (
+                              <span
+                                className={`p8-tier-chip p8-tier-chip--${
+                                  (p8Record.jurisdictionLevel || 'union').toLowerCase() === 'state'
+                                    ? 'state'
+                                    : (p8Record.jurisdictionLevel || 'union').toLowerCase() === 'ut'
+                                      ? 'ut'
+                                      : 'union'
+                                }`}
+                              >
+                                {p8Jurisdiction}
+                              </span>
+                            )}
+                            {p8Category && <span className="tag-mono">{p8Category.label}</span>}
+                            {p8Record.trancheOrPhase && (
+                              <span className="tag-mono">{p8Record.trancheOrPhase}</span>
+                            )}
+                            {p8Record.governmentEraOrLaunchYear && (
+                              <span className="tag-mono tabular">
+                                Launch: {p8Record.governmentEraOrLaunchYear}
+                              </span>
+                            )}
+                            {p8Impact && (
+                              <span className={p8Impact.chipClass}>{p8Impact.label}</span>
+                            )}
+                          </div>
+                        </div>
+                        {p8Mechanism && (
+                          <span className={p8Mechanism.chipClass}>{p8Mechanism.label}</span>
+                        )}
+                      </div>
+
+                      {p8Record.schemeName && (
+                        <h3 className="drawer-p8-title">{p8Record.schemeName}</h3>
+                      )}
+
+                      {(p8Record.authority || p8Record.affectedGroup) && (
+                        <div className="drawer-p6-people">
+                          {p8Record.authority && (
+                            <span>
+                              <strong>Issuing authority:</strong> {p8Record.authority}
+                            </span>
+                          )}
+                          {p8Record.affectedGroup && (
+                            <span>
+                              <strong>Affected group:</strong> {p8Record.affectedGroup}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Quantitative Metric Delta Strip */}
+                      {(p8Record.promisedMetric || p8Record.revisedMetric || p8PublishedExposure != null) && (
+                        <div
+                          className={`drawer-p8-delta-bar tabular${
+                            p8PublishedExposure != null ? ' drawer-p8-delta-bar--with-exposure' : ''
+                          }`}
+                        >
+                          <div className="drawer-p8-delta-box drawer-p8-delta-box--promise">
+                            <span className="drawer-p8-delta-kicker">
+                              Promised Terms{p8Record.promiseDate ? ` · ${p8Record.promiseDate}` : ''}
+                            </span>
+                            <span className="drawer-p8-delta-val">
+                              {p8Record.promisedMetric || 'Documented launch terms'}
+                            </span>
+                            {p8Record.metricUnit && (
+                              <span className="drawer-p8-delta-sub">Unit: {p8Record.metricUnit}</span>
+                            )}
+                          </div>
+
+                          <div className="drawer-p8-delta-arrow" aria-hidden="true">
+                            <span>→</span>
+                            {p8ElapsedLabel && (
+                              <span className="drawer-p8-delta-span">{p8ElapsedLabel}</span>
+                            )}
+                          </div>
+
+                          <div
+                            className={`drawer-p8-delta-box ${
+                              p8Mechanism?.isCleared
+                                ? 'drawer-p8-delta-box--honored'
+                                : 'drawer-p8-delta-box--walkback'
+                            }`}
+                          >
+                            <span className="drawer-p8-delta-kicker">
+                              {p8Mechanism?.isCleared ? 'Current / Honored Terms' : 'Revised / Walk-Back Terms'}
+                              {p8Record.walkbackDate ? ` · ${p8Record.walkbackDate}` : ''}
+                            </span>
+                            <span className="drawer-p8-delta-val">
+                              {p8Record.revisedMetric || 'Documented subsequent revision'}
+                            </span>
+                            {p8ElapsedLabel && (
+                              <span className="drawer-p8-delta-sub">Elapsed: {p8ElapsedLabel}</span>
+                            )}
+                          </div>
+
+                          {p8PublishedExposure != null && (
+                            <div className="drawer-p8-delta-box drawer-p8-delta-box--exposure">
+                              <span className="drawer-p8-delta-kicker">Published Exposure</span>
+                              <span className="drawer-p8-delta-val">
+                                {formatInr(p8PublishedExposure)}
+                              </span>
+                              {p8Record.exposureBasis && (
+                                <span className="drawer-p8-delta-sub">{p8Record.exposureBasis}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Two-Column Documentary Comparison: Original Promise vs Subsequent Walk-Back */}
+                      <div className="drawer-p8-compare-grid">
+                        <div className="drawer-p8-doc-col drawer-p8-doc-col--promise">
+                          <div className="drawer-p8-doc-head">
+                            <div className="drawer-p6-step-kicker" style={{ marginBottom: 0 }}>
+                              01 · Original Launch Promise
+                            </div>
+                            {p8Record.promiseDate && (
+                              <span className="tag-mono tabular">{p8Record.promiseDate}</span>
+                            )}
+                          </div>
+                          {p8Record.promiseDocumentRef && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              {p8Record.promiseDocumentRef}
+                            </div>
+                          )}
+                          <p className="drawer-p6-step-body">
+                            {p8Record.promiseSummary ||
+                              'Original launch commitment verified in pinned official record.'}
+                          </p>
+                          {(p8Record.promiseExcerpt || p8PromiseCit?.excerpt) && (
+                            <blockquote className="drawer-p8-excerpt">
+                              &ldquo;{p8Record.promiseExcerpt || p8PromiseCit?.excerpt}&rdquo;
+                            </blockquote>
+                          )}
+                          {p8Record.promiseLocator && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              Locator: {p8Record.promiseLocator}
+                            </div>
+                          )}
+                          {p8Record.promiseTokensMatched.length > 0 && (
+                            <div className="drawer-p8-tokens" aria-label="Verified launch evidence tokens">
+                              {p8Record.promiseTokensMatched.slice(0, 6).map((tok) => (
+                                <span key={tok} className="tag-mono font-mono">
+                                  ✓ {tok}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(p8PromiseHref || p8PromiseSha) && (
+                            <div className="drawer-p8-source-bar">
+                              {p8PromiseHref && (
+                                <a
+                                  href={p8PromiseHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={11} aria-hidden="true" />
+                                  <span>Primary official source</span>
+                                </a>
+                              )}
+                              {p8PromiseSha && (
+                                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                  sha256:{p8PromiseSha.slice(0, 12)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className={`drawer-p8-doc-col ${
+                            p8Mechanism?.isCleared
+                              ? 'drawer-p8-doc-col--honored'
+                              : 'drawer-p8-doc-col--walkback'
+                          }`}
+                        >
+                          <div className="drawer-p8-doc-head">
+                            <div className="drawer-p6-step-kicker" style={{ marginBottom: 0 }}>
+                              {p8Mechanism?.isCleared
+                                ? '02 · Honored / Grandfathered Record'
+                                : '02 · Subsequent Walk-Back / Amendment'}
+                            </div>
+                            {p8Record.walkbackDate && (
+                              <span className="tag-mono tabular">{p8Record.walkbackDate}</span>
+                            )}
+                          </div>
+                          {p8Record.walkbackDocumentRef && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              {p8Record.walkbackDocumentRef}
+                            </div>
+                          )}
+                          <p className="drawer-p6-step-body">
+                            {p8Record.walkbackSummary ||
+                              'Subsequent revision verified in pinned official record.'}
+                          </p>
+                          {(p8Record.walkbackExcerpt || p8WalkbackCit?.excerpt) && (
+                            <blockquote className="drawer-p8-excerpt">
+                              &ldquo;{p8Record.walkbackExcerpt || p8WalkbackCit?.excerpt}&rdquo;
+                            </blockquote>
+                          )}
+                          {p8Record.walkbackLocator && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              Locator: {p8Record.walkbackLocator}
+                            </div>
+                          )}
+                          {p8Record.walkbackTokensMatched.length > 0 && (
+                            <div className="drawer-p8-tokens" aria-label="Verified revision evidence tokens">
+                              {p8Record.walkbackTokensMatched.slice(0, 6).map((tok) => (
+                                <span key={tok} className="tag-mono font-mono">
+                                  ✓ {tok}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(p8WalkbackHref || p8WalkbackSha) && (
+                            <div className="drawer-p8-source-bar">
+                              {p8WalkbackHref && (
+                                <a
+                                  href={p8WalkbackHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={11} aria-hidden="true" />
+                                  <span>
+                                    {p8Mechanism?.isCleared
+                                      ? 'Verification source'
+                                      : 'Amendment / walk-back source'}
+                                  </span>
+                                </a>
+                              )}
+                              {p8WalkbackSha && (
+                                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                  sha256:{p8WalkbackSha.slice(0, 12)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {(p8Record.statutoryAnchor || p8Record.triggeredRules.length > 0) && (
+                        <div style={{ marginTop: 10 }}>
+                          {p8Record.statutoryAnchor && (
+                            <p className="drawer-p6-step-sub" style={{ marginTop: 0 }}>
+                              <strong>Statutory / notification anchor:</strong> {p8Record.statutoryAnchor}
+                            </p>
+                          )}
+                          {p8Record.triggeredRules.length > 0 && (
+                            <div className="drawer-p7-chips">
+                              {p8Record.triggeredRules.map((rule) => (
+                                <span key={rule} className="tag-mono font-mono">
+                                  {rule}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
                   {/* Deterministic Metrics Table */}
                   {displayMetricEntries.length > 0 && (
                     <div>
@@ -930,7 +1269,9 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                         ? formatInr(v)
                                         : k.endsWith('_pct')
                                           ? `${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`
-                                          : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
+                                          : k === 'year' || k.endsWith('_year')
+                                            ? String(v)
+                                            : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
                                       : typeof v === 'boolean'
                                         ? v
                                           ? 'Yes'
@@ -1077,13 +1418,58 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         </dd>
                       </div>
 
+                      {prov?.secondary_url && (() => {
+                        const safeSecUrl = safeExternalUrl(prov.secondary_url);
+                        const secOfficial = isOfficialGovUrl(safeSecUrl);
+                        return (
+                          <div className="provenance-row">
+                            <dt>
+                              {secOfficial
+                                ? 'Secondary Official Retrieval URL'
+                                : 'Secondary Retrieval URL'}
+                            </dt>
+                            <dd>
+                              {safeSecUrl ? (
+                                <a
+                                  href={safeSecUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={12} aria-hidden="true" />
+                                  <span>{safeSecUrl}</span>
+                                </a>
+                              ) : (
+                                <span>{prov.secondary_url}</span>
+                              )}
+                            </dd>
+                          </div>
+                        );
+                      })()}
+
                       {prov?.secondary_sha256 && (
                         <div className="provenance-row">
                           <dt>Secondary Input SHA-256</dt>
                           <dd>
-                            <code className="font-mono" style={{ fontSize: 11.5, wordBreak: 'break-all' }}>
-                              {prov.secondary_sha256}
-                            </code>
+                            <div className="provenance-hash-box">
+                              <code className="font-mono" style={{ fontSize: 11.5, wordBreak: 'break-all' }}>
+                                {prov.secondary_sha256}
+                              </code>
+                              <button
+                                type="button"
+                                className="btn btn-ghost btn-xs"
+                                onClick={() =>
+                                  handleCopy(
+                                    'sec-sha',
+                                    prov.secondary_sha256 || '',
+                                    'Copied secondary SHA-256 digest',
+                                  )
+                                }
+                              >
+                                {copiedKey === 'sec-sha' ? <Check size={12} /> : <Copy size={12} />}
+                                <span>{copiedKey === 'sec-sha' ? 'Copied' : 'Copy'}</span>
+                              </button>
+                            </div>
                           </dd>
                         </div>
                       )}

@@ -165,6 +165,7 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'one-teacher-five-grades': 'P5',
   'parliaments-to-do-list': 'P6',
   'only-one-bid': 'P7',
+  'sovereign-lies': 'P8',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -175,6 +176,7 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   P5: 'P5',
   P6: 'P6',
   P7: 'P7',
+  P8: 'P8',
 };
 
 /**
@@ -251,6 +253,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P7: {
     name: 'Only One Bid: single-bidder tenders & repeat-winner patterns (2016–2026)',
     rule: 'Audits official Indian public procurement records (2016–2026) for non-exempt single-bidder awards, repeat-winner concentration, and compressed bid windows against GFR 2017 Rules 166/173(xx), CVC guidelines, and State procurement rules, separating target tender value from cohort totals.',
+  },
+  P8: {
+    name: 'Sovereign Lies: launch promises vs. subsequent revisions across Union & State/UT schemes',
+    rule: 'Cross-checks SHA-256-pinned official launch notifications against subsequent statutory amendments, circulars, and budget records across Indian Union and State/UT schemes — comparing original tax, payout, exit, subsidy, and eligibility commitments against walk-backs while publishing honored or grandfathered schemes as Cleared.',
   },
 };
 
@@ -362,7 +368,13 @@ export function isOfficialGovUrl(url?: string | null): boolean {
       host === 'cag.org.in' ||
       host.endsWith('.cag.org.in') ||
       host === 'sansad.in' ||
-      host.endsWith('.sansad.in')
+      host.endsWith('.sansad.in') ||
+      host === 'rajyasabha.digital' ||
+      host.endsWith('.rajyasabha.digital') ||
+      host === 'rbi.org.in' ||
+      host.endsWith('.rbi.org.in') ||
+      host === 'pfrda.org.in' ||
+      host.endsWith('.pfrda.org.in')
     );
   } catch {
     return false;
@@ -707,6 +719,10 @@ export function formatCitationRoleLabel(role?: string | null): string | null {
     repeat_winner_cohort: 'Repeat-Winner Cohort',
     statutory_benchmark: 'Statutory Benchmark',
     original_promise: 'Original Promise',
+    subsequent_walkback: 'Subsequent Walk-Back',
+    promise_document: 'Original Promise Record',
+    walkback_document: 'Subsequent Revision Record',
+    corroborating_record: 'Corroborating Record',
     recorded_status: 'Recorded Status',
     followup_answer: 'Follow-Up Answer',
   };
@@ -896,6 +912,414 @@ function formatOnlyOneBidSignalSummary(rec: ParsedOnlyOneBidMetrics): string | n
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+export type WalkbackMechanismKey =
+  | 'retroactive_tax_reversal'
+  | 'midstream_benefit_cut'
+  | 'premature_discontinuation'
+  | 'eligibility_narrowing'
+  | 'lockin_or_exit_restriction'
+  | 'arrears_or_unfunded_promise'
+  | 'grandfathered_or_honored'
+  | 'other';
+
+export interface WalkbackMechanismMeta {
+  key: WalkbackMechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  isCleared: boolean;
+}
+
+export function formatWalkbackMechanism(raw?: string | null): WalkbackMechanismMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'retroactive_tax_reversal' || s === 'p8_retroactive_tax_reversal') {
+    return {
+      key: 'retroactive_tax_reversal',
+      label: 'Retrospective Tax Reversal',
+      shortLabel: 'Tax reversal',
+      chipClass: 'p8-mech p8-mech--retro-tax',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'midstream_benefit_cut' ||
+    s === 'mid_stream_benefit_cut' ||
+    s === 'p8_midstream_benefit_cut'
+  ) {
+    return {
+      key: 'midstream_benefit_cut',
+      label: 'Mid-Stream Benefit Cut',
+      shortLabel: 'Benefit cut',
+      chipClass: 'p8-mech p8-mech--cut',
+      isCleared: false,
+    };
+  }
+  if (s === 'premature_discontinuation' || s === 'p8_premature_discontinuation') {
+    return {
+      key: 'premature_discontinuation',
+      label: 'Premature Discontinuation',
+      shortLabel: 'Discontinued',
+      chipClass: 'p8-mech p8-mech--discontinued',
+      isCleared: false,
+    };
+  }
+  if (s === 'eligibility_narrowing' || s === 'p8_eligibility_narrowing') {
+    return {
+      key: 'eligibility_narrowing',
+      label: 'Eligibility Narrowing',
+      shortLabel: 'Eligibility narrowed',
+      chipClass: 'p8-mech p8-mech--eligibility',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'lockin_or_exit_restriction' ||
+    s === 'lock_in_or_exit_restriction' ||
+    s === 'p8_lockin_or_exit_restriction'
+  ) {
+    return {
+      key: 'lockin_or_exit_restriction',
+      label: 'Lock-In / Exit Restriction',
+      shortLabel: 'Exit restriction',
+      chipClass: 'p8-mech p8-mech--lockin',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'arrears_or_unfunded_promise' ||
+    s === 'unfunded_arrears' ||
+    s === 'p8_arrears_or_unfunded_promise'
+  ) {
+    return {
+      key: 'arrears_or_unfunded_promise',
+      label: 'Unfunded Arrears',
+      shortLabel: 'Unfunded arrears',
+      chipClass: 'p8-mech p8-mech--arrears',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'grandfathered_or_honored' ||
+    s === 'grandfathered_or_honoured' ||
+    s === 'honored' ||
+    s === 'cleared'
+  ) {
+    return {
+      key: 'grandfathered_or_honored',
+      label: 'Grandfathered / Honored',
+      shortLabel: 'Honored (Cleared)',
+      chipClass: 'p8-mech p8-mech--honored',
+      isCleared: true,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Scheme Terms Revision',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Scheme revision',
+    chipClass: 'p8-mech p8-mech--other',
+    isCleared: false,
+  };
+}
+
+export interface SchemeCategoryMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+}
+
+const SCHEME_CATEGORY_MAP: Record<string, { label: string; shortLabel: string }> = {
+  sovereign_bonds_small_savings: {
+    label: 'Sovereign Bonds & Small Savings',
+    shortLabel: 'Bonds & Savings',
+  },
+  pensions_retirement: {
+    label: 'Pensions & Retirement',
+    shortLabel: 'Pensions',
+  },
+  tax_exempt_instruments: {
+    label: 'Tax-Exempt Instruments',
+    shortLabel: 'Tax Instruments',
+  },
+  cash_transfers_guarantees: {
+    label: 'Cash Transfers & Guarantees',
+    shortLabel: 'Cash & Guarantees',
+  },
+  ev_housing_farm_subsidies: {
+    label: 'EV, Housing & Farm Subsidies',
+    shortLabel: 'EV / Housing / Farm',
+  },
+  scholarships_education: {
+    label: 'Scholarships & Education',
+    shortLabel: 'Scholarships',
+  },
+  industrial_export_incentives: {
+    label: 'Industrial & Export Incentives',
+    shortLabel: 'Industrial & Export',
+  },
+  welfare_health_public_services: {
+    label: 'Welfare, Health & Public Services',
+    shortLabel: 'Welfare & Health',
+  },
+};
+
+export function formatSchemeCategory(raw?: string | null): SchemeCategoryMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (SCHEME_CATEGORY_MAP[s]) {
+    return { key: s, ...SCHEME_CATEGORY_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Public Scheme';
+  return {
+    key: s || 'other',
+    label: readable,
+    shortLabel: readable,
+  };
+}
+
+export interface RetroactiveImpactMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  isRetroactive: boolean;
+}
+
+export function formatRetroactiveImpact(raw?: string | null): RetroactiveImpactMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'retroactive_existing_holders') {
+    return {
+      key: 'retroactive_existing_holders',
+      label: 'Retroactive on existing holders',
+      shortLabel: 'Retroactive',
+      chipClass: 'p8-impact p8-impact--retro',
+      isRetroactive: true,
+    };
+  }
+  if (s === 'mid_stream_active_scheme' || s === 'midstream_active_scheme') {
+    return {
+      key: 'mid_stream_active_scheme',
+      label: 'Mid-stream on active scheme',
+      shortLabel: 'Mid-stream',
+      chipClass: 'p8-impact p8-impact--midstream',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'prospective_discontinuation') {
+    return {
+      key: 'prospective_discontinuation',
+      label: 'Prospective discontinuation',
+      shortLabel: 'Prospective',
+      chipClass: 'p8-impact p8-impact--prospective',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'eligibility_narrowing') {
+    return {
+      key: 'eligibility_narrowing',
+      label: 'Eligibility narrowed',
+      shortLabel: 'Eligibility narrowed',
+      chipClass: 'p8-impact p8-impact--eligibility',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'unfulfilled_arrears') {
+    return {
+      key: 'unfulfilled_arrears',
+      label: 'Unfulfilled arrears',
+      shortLabel: 'Unfulfilled arrears',
+      chipClass: 'p8-impact p8-impact--arrears',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'grandfathered_or_honored' || s === 'grandfathered_or_honoured') {
+    return {
+      key: 'grandfathered_or_honored',
+      label: 'Grandfathered / Honored',
+      shortLabel: 'Grandfathered',
+      chipClass: 'p8-impact p8-impact--honored',
+      isRetroactive: false,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: s || 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Documented revision',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Revision',
+    chipClass: 'p8-impact p8-impact--other',
+    isRetroactive: false,
+  };
+}
+
+export function formatJurisdictionLabel(
+  jurisdiction?: string | null,
+  stateOrUt?: string | null,
+  level?: string | null,
+): string {
+  const lvl = (level || '').trim().toLowerCase();
+  const s = (stateOrUt || '').trim();
+  const j = (jurisdiction || '').trim();
+  if (s) {
+    if (lvl === 'ut' && !/\(ut\)$/i.test(s)) return `${s} (UT)`;
+    return s;
+  }
+  if (/^state:/i.test(j)) return j.slice(6).trim();
+  if (/^ut:/i.test(j)) {
+    const utName = j.slice(3).trim();
+    return /\(ut\)$/i.test(utName) ? utName : `${utName} (UT)`;
+  }
+  return j || 'Union of India';
+}
+
+export function formatElapsedPromiseSpan(days?: number | null): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  const rounded = Math.round(days);
+  if (rounded >= 365) {
+    const yrs = (rounded / 365.25).toFixed(1);
+    return `${rounded.toLocaleString('en-IN')} days (~${yrs} yrs)`;
+  }
+  return `${rounded.toLocaleString('en-IN')} ${rounded === 1 ? 'day' : 'days'}`;
+}
+
+export interface ParsedSovereignLiesMetrics {
+  caseKey: string | null;
+  schemeName: string | null;
+  schemeSlug: string | null;
+  trancheOrPhase: string | null;
+  jurisdiction: string | null;
+  jurisdictionLevel: string | null;
+  stateOrUt: string | null;
+  authority: string | null;
+  authorityKey: string | null;
+  schemeCategory: string | null;
+  governmentEraOrLaunchYear: string | null;
+  launchYear: string | null;
+  walkbackYear: string | null;
+  promiseDate: string | null;
+  promiseSummary: string | null;
+  promiseDocumentRef: string | null;
+  promiseExcerpt: string | null;
+  promiseLocator: string | null;
+  promiseTokensMatched: string[];
+  walkbackDate: string | null;
+  walkbackSummary: string | null;
+  walkbackDocumentRef: string | null;
+  walkbackExcerpt: string | null;
+  walkbackLocator: string | null;
+  walkbackTokensMatched: string[];
+  daysFromPromiseToWalkback: number | null;
+  walkbackMechanism: string | null;
+  retroactiveImpact: string | null;
+  signalCategory: string | null;
+  verdict: string | null;
+  triggeredRules: string[];
+  promisedMetric: string | null;
+  revisedMetric: string | null;
+  metricUnit: string | null;
+  affectedGroup: string | null;
+  estimatedExposureInr: number | null;
+  exposureBasis: string | null;
+  statutoryAnchor: string | null;
+  secondaryRole: string | null;
+  isSgbAnchor: boolean;
+  isAnchorCase: boolean;
+  asOfDate: string | null;
+  sourceLocator: string | null;
+}
+
+const P8_MECHANISM_SET = new Set([
+  'retroactive_tax_reversal',
+  'midstream_benefit_cut',
+  'premature_discontinuation',
+  'eligibility_narrowing',
+  'lockin_or_exit_restriction',
+  'arrears_or_unfunded_promise',
+  'grandfathered_or_honored',
+  'p8_retroactive_tax_reversal',
+  'p8_midstream_benefit_cut',
+  'p8_premature_discontinuation',
+  'p8_eligibility_narrowing',
+  'p8_lockin_or_exit_restriction',
+  'p8_arrears_or_unfunded_promise',
+]);
+
+export function extractSovereignLiesMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedSovereignLiesMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const schemeName = metricStr(metrics, 'scheme_name');
+  const walkbackMechanism = metricStr(metrics, 'walkback_mechanism');
+  const promiseSummary = metricStr(metrics, 'promise_summary');
+  const walkbackSummary = metricStr(metrics, 'walkback_summary');
+  const promisedMetric = metricStr(metrics, 'promised_metric');
+  const revisedMetric = metricStr(metrics, 'revised_metric');
+  const retroactiveImpact = metricStr(metrics, 'retroactive_impact');
+  const signalCategory = metricStr(metrics, 'signal_category');
+
+  const normSignal = (signalCategory || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasP8Signal = Boolean(normSignal && P8_MECHANISM_SET.has(normSignal));
+
+  if (
+    !schemeName &&
+    !walkbackMechanism &&
+    !promiseSummary &&
+    !walkbackSummary &&
+    !promisedMetric &&
+    !revisedMetric &&
+    !retroactiveImpact &&
+    !hasP8Signal
+  ) {
+    return null;
+  }
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    schemeName,
+    schemeSlug: metricStr(metrics, 'scheme_slug'),
+    trancheOrPhase: metricStr(metrics, 'tranche_or_phase'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    jurisdictionLevel: metricStr(metrics, 'jurisdiction_level'),
+    stateOrUt: metricStr(metrics, 'state_or_ut'),
+    authority: metricStr(metrics, 'authority'),
+    authorityKey: metricStr(metrics, 'authority_key'),
+    schemeCategory: metricStr(metrics, 'scheme_category'),
+    governmentEraOrLaunchYear: metricStr(metrics, 'government_era_or_launch_year'),
+    launchYear: metricStr(metrics, 'launch_year'),
+    walkbackYear: metricStr(metrics, 'walkback_year'),
+    promiseDate: metricStr(metrics, 'promise_date'),
+    promiseSummary,
+    promiseDocumentRef: metricStr(metrics, 'promise_document_ref'),
+    promiseExcerpt: metricStr(metrics, 'promise_excerpt'),
+    promiseLocator: metricStr(metrics, 'promise_locator'),
+    promiseTokensMatched: metricStrList(metrics, 'promise_tokens_matched'),
+    walkbackDate: metricStr(metrics, 'walkback_date'),
+    walkbackSummary,
+    walkbackDocumentRef: metricStr(metrics, 'walkback_document_ref'),
+    walkbackExcerpt: metricStr(metrics, 'walkback_excerpt'),
+    walkbackLocator: metricStr(metrics, 'walkback_locator'),
+    walkbackTokensMatched: metricStrList(metrics, 'walkback_tokens_matched'),
+    daysFromPromiseToWalkback: metricNum(metrics, 'days_from_promise_to_walkback'),
+    walkbackMechanism,
+    retroactiveImpact,
+    signalCategory,
+    verdict: metricStr(metrics, 'verdict'),
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    promisedMetric,
+    revisedMetric,
+    metricUnit: metricStr(metrics, 'metric_unit'),
+    affectedGroup: metricStr(metrics, 'affected_group'),
+    estimatedExposureInr: metricNum(metrics, 'estimated_exposure_inr'),
+    exposureBasis: metricStr(metrics, 'exposure_basis'),
+    statutoryAnchor: metricStr(metrics, 'statutory_anchor'),
+    secondaryRole: metricStr(metrics, 'secondary_role'),
+    isSgbAnchor: metricBool(metrics, 'is_sgb_anchor'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+    asOfDate: metricStr(metrics, 'as_of_date'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+  };
+}
+
 export interface FindingDrawerMetric {
   label: string;
   value: string;
@@ -922,7 +1346,9 @@ type FindingMetricSource = {
  * For P7 findings, target tender value (never the repeat-winner cohort total) is labeled
  * with its exact amount type (`Awarded contract value` / `Tender estimate`), or falls back
  * to a factual competition readout when value is unrecorded.
- * Non-P6/P7 findings retain their exact existing behavior.
+ * For P8 findings, officially published scheme exposure takes precedence when > 0, else shows
+ * the walk-back mechanism and elapsed days (never a misleading ₹0 for non-monetary rule changes).
+ * Non-P6/P7/P8 findings retain their exact existing behavior.
  */
 export function resolveFindingDrawerMetric(
   finding: FindingMetricSource,
@@ -966,6 +1392,38 @@ export function resolveFindingDrawerMetric(
     };
   }
 
+  if (finding.methodology_code === 'P8' && !isQuarantined) {
+    const p8Record = extractSovereignLiesMetrics(finding.anomaly_metrics);
+    const publishedVal =
+      finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : p8Record?.estimatedExposureInr != null && p8Record.estimatedExposureInr > 0
+          ? p8Record.estimatedExposureInr
+          : null;
+    if (publishedVal != null && publishedVal > 0) {
+      return {
+        label: 'Published Scheme Exposure',
+        value: formatInr(publishedVal),
+      };
+    }
+    const mechKey = p8Record?.walkbackMechanism || p8Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatWalkbackMechanism(mechKey);
+      return {
+        label: mech.isCleared ? 'Scheme Status' : 'Walk-Back Mechanism',
+        value: `${mech.shortLabel}${
+          p8Record?.daysFromPromiseToWalkback != null
+            ? ` · ${p8Record.daysFromPromiseToWalkback.toLocaleString('en-IN')}d`
+            : ''
+        }`,
+      };
+    }
+    return {
+      label: 'Scheme Terms Check',
+      value: 'Documented',
+    };
+  }
+
   return {
     label: finding.amount_label
       ? finding.amount_label.replace(/_/g, ' ')
@@ -982,7 +1440,9 @@ export function resolveFindingDrawerMetric(
  * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`.
  * For P7 findings, target tender value (never cohort total) takes precedence when > 0,
  * falling back to a crisp competition readout (e.g. "1 bid · 6 wins") when unrecorded.
- * Non-P6/P7 findings remain completely unchanged.
+ * For P8 findings, officially published exposure takes precedence when > 0, else shows a
+ * compact metric delta or walk-back mechanism + elapsed days.
+ * Non-P6/P7/P8 findings remain completely unchanged.
  */
 export function resolveFindingCardMetric(
   finding: FindingMetricSource,
@@ -1023,6 +1483,38 @@ export function resolveFindingCardMetric(
       return { value: signalSummary, prominent: true };
     }
     return { value: 'Procurement lead', prominent: false };
+  }
+
+  if (finding.methodology_code === 'P8') {
+    const p8Record = extractSovereignLiesMetrics(finding.anomaly_metrics);
+    const publishedVal =
+      finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : p8Record?.estimatedExposureInr != null && p8Record.estimatedExposureInr > 0
+          ? p8Record.estimatedExposureInr
+          : null;
+    if (publishedVal != null && publishedVal > 0) {
+      return { value: formatInr(publishedVal), prominent: true };
+    }
+    if (p8Record?.promisedMetric && p8Record?.revisedMetric) {
+      const compactDelta = `${p8Record.promisedMetric} → ${p8Record.revisedMetric}`;
+      if (compactDelta.length <= 36) {
+        return { value: compactDelta, prominent: true };
+      }
+    }
+    const mechKey = p8Record?.walkbackMechanism || p8Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatWalkbackMechanism(mechKey);
+      return {
+        value: `${mech.shortLabel}${
+          p8Record?.daysFromPromiseToWalkback != null
+            ? ` · ${p8Record.daysFromPromiseToWalkback.toLocaleString('en-IN')}d`
+            : ''
+        }`,
+        prominent: true,
+      };
+    }
+    return { value: 'Scheme audit lead', prominent: false };
   }
 
   if (finding.monetary_exposure_inr) {
