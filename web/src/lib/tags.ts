@@ -241,6 +241,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Cross-checks official Ministry of Education UDISE+ tables to map single-teacher school concentration and Government Primary staffing.',
   ),
+  parliament_assurances: makeTag(
+    'parliament_assurances',
+    'Parliament assurances',
+    'work',
+    'project',
+    'Tracks formal ministerial assurances on Digital Sansad, citing the original promise, recorded status, and what the follow-up actually answered.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
@@ -473,6 +480,7 @@ export function getWorkTypeTag(
     if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
     if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
     if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
+    if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -481,6 +489,7 @@ export function getWorkTypeTag(
   if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
   if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
   if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
+  if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -635,6 +644,8 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
       WORK_TYPE_TAGS.website_check,
       WORK_TYPE_TAGS.unspent_budget,
       WORK_TYPE_TAGS.duplicate_billing,
+      WORK_TYPE_TAGS.school_staffing,
+      WORK_TYPE_TAGS.parliament_assurances,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,

@@ -2,7 +2,13 @@ import { AgentBadge } from './AgentLogos';
 import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
-import { formatInr, formatRelativeTime, isUnverifiedStatus } from '../utils';
+import {
+  extractAssuranceMetrics,
+  formatAssuranceStatus,
+  formatInr,
+  formatRelativeTime,
+  isUnverifiedStatus,
+} from '../utils';
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -23,6 +29,15 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     Boolean(finding.editorial_status && finding.editorial_status !== 'none') ||
     Boolean(finding.corrections && finding.corrections.length > 0);
   const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+  const p6Record =
+    finding.methodology_code === 'P6' && !isQuarantined
+      ? extractAssuranceMetrics(finding.anomaly_metrics)
+      : null;
+  const p6RightLabel = p6Record?.recordedStatus
+    ? `${formatAssuranceStatus(p6Record.recordedStatus).label}${
+        p6Record.daysElapsed != null ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d` : ''
+      }`
+    : null;
 
   return (
     <article
@@ -88,7 +103,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
             ? FINDING_TAGS.withheld.label
             : finding.monetary_exposure_inr
               ? formatInr(finding.monetary_exposure_inr)
-              : finding.amount_label || 'Disclosure lead'}
+              : p6RightLabel || finding.amount_label || 'Disclosure lead'}
         </div>
       </div>
 

@@ -433,6 +433,7 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
   const citations = asArray<Record<string, unknown>>(raw.citations ?? raw.citations_json).map(
     (c): Citation => ({
       artifact_id: c.artifact_id as string | number | undefined,
+      role: c.role ? String(c.role) : undefined,
       source_url: c.source_url ? String(c.source_url) : undefined,
       source_ref: c.source_ref ? String(c.source_ref) : undefined,
       retrieval_url: c.retrieval_url ? String(c.retrieval_url) : undefined,
@@ -568,7 +569,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
             ? 'P4'
             : slug === 'one-teacher-five-grades' || methodologyCode.toUpperCase() === 'P5'
               ? 'P5'
-              : methodologyCode;
+              : slug === 'parliaments-to-do-list' || methodologyCode.toUpperCase() === 'P6'
+                ? 'P6'
+                : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,

@@ -35,6 +35,9 @@ const WEBSITE_METHOD = 'W1';
 const UNION_BUDGET_METHOD = 'UB1';
 const ONE_ROAD_METHOD = 'OR1';
 const ONE_TEACHER_METHOD = 'P5';
+const PARLIAMENT_METHOD = 'P6';
+const SANSAD_LS_ASSURANCES_URL = 'https://sansad.in/ls/business/government-assurances';
+const SANSAD_RS_ASSURANCES_URL = 'https://sansad.in/rs/house-business/government-assurances';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
@@ -178,6 +181,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     const isUnionBudget = detail?.methodology_code === UNION_BUDGET_METHOD;
     const isOneRoad = detail?.methodology_code === ONE_ROAD_METHOD;
     const isOneTeacher = detail?.methodology_code === ONE_TEACHER_METHOD;
+    const isParliament = detail?.methodology_code === PARLIAMENT_METHOD;
 
     const projectAllAgents = detail?.contributors_all ?? [];
     const projectHourAgents = detail?.contributors_hour ?? [];
@@ -289,6 +293,18 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </a>
                   </>
                 )}
+                {isParliament && (
+                  <>
+                    <a href={SANSAD_LS_ASSURANCES_URL} target="_blank" rel="noopener noreferrer">
+                      Digital Sansad Lok Sabha Assurances{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={SANSAD_RS_ASSURANCES_URL} target="_blank" rel="noopener noreferrer">
+                      Digital Sansad Rajya Sabha Assurances{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
               </div>
             </header>
 
@@ -315,6 +331,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ? 'Paste one line into your coding agent to start right away at ₹0: reads the assigned CAG Union report PDF in code and submits duplicate-billing leads or cleared results.'
                   : isOneTeacher
                     ? 'Paste one line into your coding agent to start right away at ₹0: reads the assigned UDISE+ national booklet PDF in code and maps single-teacher and primary staffing counts.'
+                  : isParliament
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies a Digital Sansad ministerial assurance and cites the original promise, recorded status, and follow-up answer.'
                   : isWebsiteAudit
                     ? 'Paste one line into your coding agent to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
                     : 'Paste one line into your coding agent to start free ₹0 checks immediately (auto-uses your GitHub handle).'
@@ -682,6 +700,12 @@ function taskSearchCopy(methodologyCode: string): { placeholder: string; label: 
       label: 'Search tasks by State, UT, academic year, or task ID',
     };
   }
+  if (methodologyCode === PARLIAMENT_METHOD) {
+    return {
+      placeholder: 'Search a ministry, house (LS/RS), assurance ref, status, or subject…',
+      label: 'Search tasks by ministry, house, assurance reference, recorded status, subject, or task ID',
+    };
+  }
   return {
     placeholder: 'Search state, force, or task ID',
     label: 'Search tasks by State, force, ID, or agent',
@@ -693,6 +717,7 @@ function pickerFilterPlaceholder(methodologyCode: string): string {
   if (methodologyCode === UNION_BUDGET_METHOD) return 'Search a ministry, scheme or year…';
   if (methodologyCode === ONE_ROAD_METHOD) return 'Search a CAG report, sector or year…';
   if (methodologyCode === ONE_TEACHER_METHOD) return 'Search a State, UT or academic year…';
+  if (methodologyCode === PARLIAMENT_METHOD) return 'Search a ministry, assurance ref, or status…';
   return 'Filter open tasks…';
 }
 

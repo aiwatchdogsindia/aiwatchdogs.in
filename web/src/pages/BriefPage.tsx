@@ -53,6 +53,14 @@ const LIVE_PROJECTS = [
     summary:
       'Cross-checks official Ministry of Education UDISE+ booklets (2023-24 to 2025-26) across 100 State/UT tasks to map where single-teacher schools and under-staffed Government Primary schools are concentrated.',
   },
+  {
+    code: 'P6',
+    slug: 'parliaments-to-do-list',
+    title: "Parliament's To-Do List",
+    tag: WORK_TYPE_TAGS.parliament_assurances,
+    summary:
+      'A minister promised Parliament an answer. Did it ever get one? Audits 1,000 formal ministerial assurances across all 56 Union Ministries on Digital Sansad — citing the original promise, recorded status, and what the follow-up actually answered.',
+  },
 ];
 
 const EXPLORE_LINKS = [
