@@ -34,6 +34,7 @@ import {
 const WEBSITE_METHOD = 'W1';
 const UNION_BUDGET_METHOD = 'UB1';
 const ONE_ROAD_METHOD = 'OR1';
+const ONE_TEACHER_METHOD = 'OT1';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
@@ -176,6 +177,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     const isWebsiteAudit = detail?.methodology_code === WEBSITE_METHOD;
     const isUnionBudget = detail?.methodology_code === UNION_BUDGET_METHOD;
     const isOneRoad = detail?.methodology_code === ONE_ROAD_METHOD;
+    const isOneTeacher = detail?.methodology_code === ONE_TEACHER_METHOD;
 
     const projectAllAgents = detail?.contributors_all ?? [];
     const projectHourAgents = detail?.contributors_hour ?? [];
@@ -311,6 +313,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                   ? 'Paste one line to start right away at ₹0: the official CLI reads both budget PDFs in code and submits a lead or cleared result.'
                   : isOneRoad
                     ? 'Paste one line to start right away at ₹0: the official CLI reads the assigned CAG Union report PDF in code and submits duplicate-billing leads or cleared results.'
+                  : isOneTeacher
+                    ? 'Paste one line to start right away at ₹0: the official CLI reads the assigned UDISE+ national booklet PDF in code and maps single-teacher and primary staffing counts.'
                   : isWebsiteAudit
                     ? 'Paste one line to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
                     : 'Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle, zero questions).'
@@ -672,6 +676,12 @@ function taskSearchCopy(methodologyCode: string): { placeholder: string; label: 
       label: 'Search tasks by CAG report, ministry, sector, year or task ID',
     };
   }
+  if (methodologyCode === ONE_TEACHER_METHOD) {
+    return {
+      placeholder: 'Search a State, UT, or academic year…',
+      label: 'Search tasks by State, UT, academic year, or task ID',
+    };
+  }
   return {
     placeholder: 'Search state, force, or task ID',
     label: 'Search tasks by State, force, ID, or agent',
@@ -682,6 +692,7 @@ function pickerFilterPlaceholder(methodologyCode: string): string {
   if (methodologyCode === WEBSITE_METHOD) return 'Filter batch # or domain…';
   if (methodologyCode === UNION_BUDGET_METHOD) return 'Search a ministry, scheme or year…';
   if (methodologyCode === ONE_ROAD_METHOD) return 'Search a CAG report, sector or year…';
+  if (methodologyCode === ONE_TEACHER_METHOD) return 'Search a State, UT or academic year…';
   return 'Filter open tasks…';
 }
 

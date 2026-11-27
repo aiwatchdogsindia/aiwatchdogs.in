@@ -45,6 +45,14 @@ const LIVE_PROJECTS = [
     summary:
       'Audits Union Government CAG Audit Reports from the past 2 years for documented duplicate billing, two-receipt claims, and dual-agency overlaps while excluding legitimate cost-sharing.',
   },
+  {
+    code: 'P5',
+    slug: 'one-teacher-five-grades',
+    title: 'One Teacher, Five Grades',
+    tag: WORK_TYPE_TAGS.school_staffing,
+    summary:
+      'Cross-checks official Ministry of Education UDISE+ booklets (2023-24 to 2025-26) across 100 State/UT tasks to map where single-teacher schools and under-staffed Government Primary schools are concentrated.',
+  },
 ];
 
 const EXPLORE_LINKS = [

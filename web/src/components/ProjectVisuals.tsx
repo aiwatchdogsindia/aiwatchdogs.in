@@ -941,6 +941,16 @@ export function ProjectResultsVisualizer({
       />
     );
   }
+  if (code === 'OT1') {
+    return (
+      <OneTeacherFiveGradesVisualizer
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
   return (
     <BudgetAuditVisualizer
       mission={mission}
@@ -2915,6 +2925,313 @@ function OneRoadTwoBillsVisualizer({
           <div className="pv-empty-box">
             Leads appear here as agents finish checks. Each one cites the exact CAG Union report, page,
             paragraph, and SHA-256 checksum.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3E. OT1 One Teacher, Five Grades: single-teacher & primary staffing concentration ---------- */
+
+const OT1_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/one-teacher-five-grades/METHODOLOGY.md';
+
+function ot1SignalLabel(signal: string): string {
+  if (signal === 'severe_concentration_and_overcrowding') return 'Concentration + overcrowding / under-staffing';
+  if (signal === 'high_single_teacher_concentration') return 'High single-teacher share (>=10%)';
+  if (signal === 'severe_single_teacher_overcrowding') return 'Overcrowded (>30 pupils/teacher)';
+  if (signal === 'gov_primary_understaffed') return 'Gov primary avg <2 teachers';
+  return signal || 'Staffing signal';
+}
+
+function OneTeacherFiveGradesVisualizer({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const ot1 = visualSummary?.one_teacher_five_grades;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const years = ot1?.years ?? [];
+  const topStates = ot1?.top_states ?? [];
+  const base = ot1?.national_baseline;
+  const leads = ot1?.leads ?? 0;
+  const verified = ot1?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = ot1?.peer_review ?? mission.peer_review_count ?? 0;
+  const documentsUrl = ot1?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = ot1?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+  const maxShare = Math.max(10, ...topStates.map((s) => s.single_teacher_share_pct || 0));
+
+  return (
+    <section className="card card-pad pv-results" aria-label="One Teacher Five Grades results">
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Single-teacher &amp; primary staffing concentration</h2>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">{fmtCount(ot1?.states_covered ?? 36)} States &amp; UTs</span>
+          {base?.single_teacher_schools ? (
+            <span className="tag-mono">
+              {fmtCount(base.single_teacher_schools)} single-teacher schools (2025-26 All-India)
+            </span>
+          ) : null}
+          {base?.single_teacher_enrolments ? (
+            <span className="tag-mono">{fmtCount(base.single_teacher_enrolments)} pupils</span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'state lead' : 'state leads'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Academic cycle by cycle</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-dot--verified" aria-hidden="true" /> {TASK_TAGS.done.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--claimed" aria-hidden="true" /> {TASK_TAGS.in_progress.label}
+              </span>
+              <span>
+                <i className="pv-dot pv-dot--open" aria-hidden="true" /> {TASK_TAGS.open.label}
+              </span>
+            </div>
+          </div>
+
+          {years.length > 0 ? (
+            <div className="pv-ub-years-wrap">
+              <table className="pv-ub-table pv-ub-years">
+                <caption className="pv-ub-caption">
+                  UDISE+ State/UT verification progress and All-India baseline per academic year.
+                  {onFilterTasks ? ' Choose a year to filter tasks.' : ''}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Year</th>
+                    <th scope="col">Checked</th>
+                    <th scope="col" className="num">
+                      All-India single-teacher
+                    </th>
+                    <th scope="col" className="num">
+                      Flagged States/UTs
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {years.map((y) => {
+                    const total = Math.max(0, y.tasks);
+                    const donePct = calcPct(y.done, total);
+                    const claimedPct = calcPct(y.claimed, total);
+                    return (
+                      <tr key={y.year}>
+                        <th scope="row" className="pv-ub-year">
+                          {onFilterTasks ? (
+                            <button
+                              type="button"
+                              className="pv-ub-link"
+                              onClick={() => onFilterTasks(y.year)}
+                              aria-label={`Show tasks for ${y.year}`}
+                            >
+                              {y.year}
+                            </button>
+                          ) : (
+                            <span>{y.year}</span>
+                          )}
+                        </th>
+                        <td className="pv-ub-years-checked">
+                          <span
+                            className="pv-ub-bar"
+                            role="img"
+                            aria-label={`${fmtCount(y.done)} of ${fmtCount(total)} checks ${TASK_TAGS.done.label}, ${fmtCount(y.claimed)} ${TASK_TAGS.in_progress.label}`}
+                          >
+                            {donePct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-ub-bar-seg--done"
+                                style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                              />
+                            ) : null}
+                            {claimedPct > 0 ? (
+                              <span
+                                className="pv-ub-bar-seg pv-ub-bar-seg--claimed"
+                                style={{ width: `${Math.max(claimedPct, 1.5)}%` }}
+                              />
+                            ) : null}
+                          </span>
+                          <span className="pv-ub-sub tabular">
+                            {fmtCount(y.done)}/{fmtCount(total)} · {fmtPct(donePct)}
+                            {y.claimed > 0 ? ` · ${fmtCount(y.claimed)} running` : ''}
+                          </span>
+                        </td>
+                        <td className="num pv-ub-years-lines" data-label="All-India single-teacher">
+                          <span className="pv-ub-cell-val">
+                            {fmtCount(y.all_india_single_teacher_schools)} schools
+                          </span>
+                          <span className="pv-ub-sub">
+                            {fmtCount(y.all_india_single_teacher_enrolments)} students
+                          </span>
+                        </td>
+                        <td className="num pv-ub-years-below" data-label="Flagged States/UTs">
+                          <span className="pv-ub-cell-val">{fmtCount(y.leads)} flagged</span>
+                          <span className="pv-ub-sub">{fmtCount(total)} checks</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              Academic-year progress appears here once the hub loads the UDISE+ booklet index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Each task downloads the checksummed Ministry of Education UDISE+ national booklet PDF and
+            cross-checks Table 2.2 (single-teacher schools &amp; pupils across all managements) against
+            Government-only Tables 3.3, 4.3, and 5.2 (Primary Classes I–V).
+          </p>
+          <p>
+            States/UTs are surfaced where single-teacher share is &ge;10%, pupils per single-teacher school
+            exceed 30:1 (RTE Schedule norm), or Government Primary schools average below 2.0 teachers.
+          </p>
+          <p>Two independent agents verify every state observation before it is marked {FINDING_TAGS.verified.label}.</p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              UDISE+ booklets (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={OT1_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {ot1?.generated_on ? (
+            <p className="pv-chart-note">UDISE+ index built {ot1.generated_on}.</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>Highest single-teacher school concentrations flagged so far</h3>
+          {topStates.length > 0 ? (
+            <span className="pv-chart-note">Ranked by single-teacher share (%) &amp; count</span>
+          ) : null}
+        </div>
+        {topStates.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                States and UTs flagged from official UDISE+ Tables 2.2, 3.3, 4.3, and 5.2.
+                {onSelectFinding ? ' Open a row to inspect full school, teacher, and enrolment counts.' : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">State / UT</th>
+                  <th scope="col">Year</th>
+                  <th scope="col" className="num">
+                    Single-teacher
+                  </th>
+                  <th scope="col" className="num">
+                    Share (%)
+                  </th>
+                  <th scope="col" className="num">
+                    Students / school
+                  </th>
+                  <th scope="col" className="num">
+                    Gov Primary avg teachers
+                  </th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topStates.map((st) => {
+                  const tag = getFindingTag(st.status);
+                  const barPct = Math.max(4, (st.single_teacher_share_pct / maxShare) * 100);
+                  return (
+                    <tr key={st.finding_id}>
+                      <td className="pv-ub-line">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(st.finding_id)}
+                          >
+                            {st.state_name}
+                          </button>
+                        ) : (
+                          <span>{st.state_name}</span>
+                        )}
+                        <span className="pv-ub-sub">{ot1SignalLabel(st.signal_category)}</span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="Year">
+                        {st.academic_year}
+                      </td>
+                      <td className="num tabular" data-label="Single-teacher">
+                        <strong>{fmtCount(st.single_teacher_schools)}</strong>
+                        <span className="pv-ub-sub">{fmtCount(st.single_teacher_enrolments)} pupils</span>
+                      </td>
+                      <td className="num pv-ub-lead-below" data-label="Share (%)">
+                        <strong>{st.single_teacher_share_pct.toFixed(1)}%</strong>
+                        <span className="pv-ub-mini-track" aria-hidden="true">
+                          <span className="pv-ub-mini-fill" style={{ width: `${barPct}%` }} />
+                        </span>
+                      </td>
+                      <td className="num tabular" data-label="Students / school">
+                        {st.students_per_single_teacher.toFixed(1)}
+                      </td>
+                      <td className="num tabular" data-label="Gov Primary avg teachers">
+                        {st.gov_primary_teachers_per_school != null
+                          ? `${st.gov_primary_teachers_per_school.toFixed(2)}`
+                          : '—'}
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            Concentrations appear here as agents verify States &amp; UTs across 2023-24 to 2025-26 UDISE+ reports.
           </div>
         )}
       </div>

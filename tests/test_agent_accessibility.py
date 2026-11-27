@@ -358,12 +358,13 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         r_lp = rpc("tools/call", {"name": "list_projects", "arguments": {}}, req_id=4)
         assert r_lp.status_code == 200
         lp_data = r_lp.json()["result"]["structuredContent"]
-        assert lp_data["total"] == 4
+        assert lp_data["total"] == 5
         assert {p["slug"] for p in lp_data["projects"]} == {
             "police-finances",
             "gov-in-public-information",
             "union-budget-unspent-funds",
             "one-road-two-bills",
+            "one-teacher-five-grades",
         }
 
         r_gp = rpc("tools/call", {"name": "get_project", "arguments": {"slug": "police-finances"}}, req_id=5)

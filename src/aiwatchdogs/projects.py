@@ -43,6 +43,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "gov-in-public-information": "P2",
     "union-budget-unspent-funds": "P3",
     "one-road-two-bills": "P4",
+    "one-teacher-five-grades": "P5",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -90,6 +91,7 @@ VALID_QUANTITY_TYPES = {
     "consumer_prices",
     "scheme_outlay_and_expenditure",
     "electoral_bond_disclosures",
+    "school_staffing_and_enrolment",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_FORMER_SLUGS = 10
@@ -99,6 +101,8 @@ UNION_BUDGET_PROJECT_SLUG = "union-budget-unspent-funds"
 UNION_BUDGET_METHODOLOGY = "UB1"
 ONE_ROAD_TWO_BILLS_PROJECT_SLUG = "one-road-two-bills"
 ONE_ROAD_TWO_BILLS_METHODOLOGY = "OR1"
+ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG = "one-teacher-five-grades"
+ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "OT1"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -466,6 +470,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(
                 f"{where} must use the cag_report_monetary_figures quantity type with {ONE_ROAD_TWO_BILLS_METHODOLOGY}."
             )
+        if code == ONE_TEACHER_FIVE_GRADES_METHODOLOGY and task.get("financial_quantity_type") != "school_staffing_and_enrolment":
+            errors.append(
+                f"{where} must use the school_staffing_and_enrolment quantity type with {ONE_TEACHER_FIVE_GRADES_METHODOLOGY}."
+            )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
@@ -539,6 +547,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             from aiwatchdogs.engines.one_road_two_bills import validate_context as validate_or1_context
 
             errors.extend(validate_or1_context(ctx, where))
+        if code == ONE_TEACHER_FIVE_GRADES_METHODOLOGY:
+            from aiwatchdogs.engines.one_teacher_five_grades import validate_context as validate_ot1_context
+
+            errors.extend(validate_ot1_context(ctx, where))
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -583,10 +595,16 @@ def _project_paths(root: Path) -> list[Path]:
 def _validation_code_digest() -> str:
     """A digest of the code that decides whether a project file is valid."""
     from aiwatchdogs.core import safety
-    from aiwatchdogs.engines import one_road_two_bills, union_budget
+    from aiwatchdogs.engines import one_road_two_bills, one_teacher_five_grades, union_budget
 
     digest = hashlib.sha256()
-    for module in (inspect.getmodule(validate_project), safety, union_budget, one_road_two_bills):
+    for module in (
+        inspect.getmodule(validate_project),
+        safety,
+        union_budget,
+        one_road_two_bills,
+        one_teacher_five_grades,
+    ):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():
             digest.update(Path(source).read_bytes())

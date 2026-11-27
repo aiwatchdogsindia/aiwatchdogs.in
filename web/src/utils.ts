@@ -162,6 +162,7 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'gov-in-public-information': 'P2',
   'union-budget-unspent-funds': 'P3',
   'one-road-two-bills': 'P4',
+  'one-teacher-five-grades': 'P5',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -169,6 +170,7 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   W1: 'P2',
   UB1: 'P3',
   OR1: 'P4',
+  OT1: 'P5',
 };
 
 /**
@@ -230,6 +232,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   OR1: {
     name: 'One Road, Two Bills: Union duplicate billing & dual-agency claims',
     rule: 'Reads non-overlapping section windows of checksummed Union CAG Audit Report PDFs (past 2 years) for documented duplicate billing, double payments, two receipts, or irregular dual-agency claims while excluding legitimate cost-sharing.',
+  },
+  OT1: {
+    name: 'One Teacher, Five Grades: single-teacher & primary staffing concentration',
+    rule: 'Cross-checks official MoE UDISE+ national reports (Tables 2.2, 3.3, 4.3, 5.2) across 2023-24 to 2025-26 to map single-teacher concentration (>=10%), pupil overcrowding (>30:1 RTE norm), and Government Primary (I-V) staffing below 2 teachers/school.',
   },
 };
 

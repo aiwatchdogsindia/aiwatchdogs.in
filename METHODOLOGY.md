@@ -158,6 +158,14 @@ The check used by Project P4 (`one-road-two-bills`, `engines/one_road_two_bills.
 * **Outcomes:** Matching sections emit neutral leads quoting exact report number, page, paragraph/section anchor, SHA-256 checksum, cited rupee amount (never fabricated if unprinted), and neutralized excerpt. Non-matching or co-funded blocks record `cleared`; missing pages record `unevaluable`.
 * **Mandatory Benign Explanations Considered:** Action Taken Notes (ATNs) or PAC reviews recording subsequent recoveries or adjustments; phased/component billing across Measurement Books; and legitimate cost-sharing routed through separate executing agencies.
 
+### `OT1` — One Teacher, Five Grades: Single-Teacher & Primary School Concentration
+
+The check used by Project P5 (`one-teacher-five-grades`, `engines/one_teacher_five_grades.py`, ruleset `OT1-2026.11-v1`). It downloads checksummed Ministry of Education **UDISE+** annual national report PDFs (`2023-24`, `2024-25`, `2025-26`) and extracts verified State/UT figures across Table 2.2 (Single-Teacher Schools and Enrolments), Table 3.3 (Government Primary Classes I–V Schools), Table 4.3 (Government Primary I–V Teachers), and Table 5.2 (Government Enrolments).
+
+* **Statutory Anchors:** Constitution Article 21A; Right to Education (RTE) Act 2009 Section 19 & Schedule (`30:1` Primary PTR norm, minimum 2 teachers for Primary Classes I–V); Samagra Shiksha Framework.
+* **Concentration & Staffing Rules:** Surfaces States/UTs where single-teacher schools are `>= 10.0%` of schools (`>= 100` schools), pupils per single-teacher school exceed `30.0` (`>= 500` schools), or Government Primary (I–V) schools average `< 2.0` teachers per school (`>= 100` schools). States/UTs within all bounds record `cleared` with full extracted counts.
+* **Management Scope Transparency:** Table 2.2 single-teacher totals cover all managements combined while Tables 3.3, 4.3, and 5.2 isolate Government-managed schools; `OT1` publishes both metrics explicitly without conflating them.
+
 ### `W1` — `.gov.in` GIGW 3.0, RTI Act 2005 & GoI Statutory Conformity Audit
 
 The read-only website observation engine used by `gov-in-public-information` (`engines/gov_pages.py`, `engines/gigw_matrix.py`, matrix version `gigw-3.0-rti-2005-v1`). It audits all 12,537 web `.gov.in` hostnames from Data Libertarian's pinned snapshot across **1,000 batches** (12–13 domains per task) against a unified **159-checkpoint conformity matrix**:
