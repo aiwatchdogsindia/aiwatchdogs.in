@@ -242,6 +242,7 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentRecord {
     heartbeat_age_seconds:
       raw.heartbeat_age_seconds !== undefined ? Number(raw.heartbeat_age_seconds) : undefined,
     last_heartbeat: String(raw.last_heartbeat_at || raw.last_heartbeat || raw.joined_at || ''),
+    last_check_at: optStr(raw.last_check_at) ?? undefined,
     joined_at: String(raw.joined_at || ''),
     tasks_completed: Number(raw.tasks_completed ?? 0),
     findings_submitted: Number(raw.findings_submitted ?? 0),
@@ -1016,6 +1017,8 @@ export const api = {
       model_breakdown: asArray<Record<string, unknown>>(raw.model_breakdown).map((m) => ({
         provider: String(m.provider || 'rule-engine'),
         model: String(m.model || 'default'),
+        coding_agent: optStr(m.coding_agent) ?? undefined,
+        coding_agent_model: optStr(m.coding_agent_model) ?? undefined,
         agents: Number(m.agents ?? m.agent_count ?? m.count ?? 0),
         tasks: Number(m.tasks ?? m.tasks_completed ?? 0),
         share_pct: m.share_pct !== undefined ? Number(m.share_pct) : undefined,
@@ -1084,7 +1087,7 @@ export const api = {
     return {
       generated_at: String(raw.generated_at || new Date().toISOString()),
       latest_event_id: optNum(raw.latest_event_id) ?? undefined,
-      live_window_seconds: optNum(raw.live_window_seconds) ?? 900,
+      live_window_seconds: optNum(raw.live_window_seconds) ?? 120,
       working_now: Number(raw.working_now ?? 0),
       active_leases_count: Number(raw.active_leases_count ?? 0),
       total_agents: Number(raw.total_agents ?? activeNodes.length),
@@ -1243,7 +1246,7 @@ export function deriveLiveSwarmSnapshot(
       tasks_completed: a.tasks_completed ?? 0,
       verifications_done: a.verifications_completed ?? 0,
       findings_submitted: a.findings_verified ?? 0,
-      last_seen_at: a.last_heartbeat ?? head.generated_at,
+      last_seen_at: a.last_heartbeat || undefined,
     });
   }
 
@@ -1272,7 +1275,7 @@ export function deriveLiveSwarmSnapshot(
   return {
     generated_at: head.generated_at || new Date().toISOString(),
     latest_event_id: head.latest_event_id,
-    live_window_seconds: 900,
+    live_window_seconds: 120,
     working_now: stats?.agents_active ?? activeSet.size,
     active_leases_count: activeSet.size,
     total_agents: stats?.agents_total ?? activeNodes.length,
@@ -1294,8 +1297,8 @@ export function deriveLiveSwarmSnapshot(
 }
 
 /**
- * Prepend fresher SSE whispers onto an already-loaded LiveSwarmSnapshot
- * so live agent cards react instantaneously without waiting for the next fetch.
+ * Merge live whispers onto an already-loaded LiveSwarmSnapshot in strict chronological
+ * order (newest first) without duplicating whispers or rewinding snapshot.generated_at.
  */
 export function mergeSseWhispersIntoSnapshot(
   snapshot: LiveSwarmSnapshot,
@@ -1303,29 +1306,74 @@ export function mergeSseWhispersIntoSnapshot(
 ): LiveSwarmSnapshot {
   if (liveWhispers.length === 0) return snapshot;
   const cursor = snapshot.latest_event_id ?? 0;
-  const existingIds = new Set(snapshot.live_whispers.map((w) => String(w.id)));
-  const incoming: LiveSwarmWhisper[] = [];
+  const existingIds = new Set<string>();
+  const existingFingerprints = new Set<string>();
 
+  const fingerprintOf = (handle: string, whisper: string, createdAt: string): string => {
+    const parsed = Date.parse(createdAt || '');
+    const tsKey = Number.isNaN(parsed) ? (createdAt || '').trim() : String(parsed);
+    return `${handle.trim().toLowerCase()}|${whisper.trim()}|${tsKey}`;
+  };
+
+  for (const w of snapshot.live_whispers) {
+    const id = w.id != null ? String(w.id).trim() : '';
+    if (id) existingIds.add(id);
+    existingFingerprints.add(fingerprintOf(w.handle || '', w.whisper || '', w.created_at || ''));
+  }
+
+  const incoming: LiveSwarmWhisper[] = [];
   for (const w of liveWhispers) {
     if (w.event_id != null && cursor > 0 && w.event_id <= cursor) continue;
-    const id = String(w.event_id ?? w.id ?? '');
-    if (id && existingIds.has(id)) continue;
-    if (!w.message) continue;
+    const message = (w.message || '').trim();
+    if (!message) continue;
+    const handle = w.agent_handle || 'swarm-node';
+    const createdAt = w.created_at || '';
+    const id = String(w.event_id ?? w.id ?? '').trim();
+    const fp = fingerprintOf(handle, message, createdAt);
+
+    if ((id && existingIds.has(id)) || existingFingerprints.has(fp)) continue;
+
+    if (id) existingIds.add(id);
+    existingFingerprints.add(fp);
+
     incoming.push({
-      id: id || `sse-${w.created_at}-${incoming.length}`,
+      id: id || `sse-${createdAt || 'unknown'}-${handle}-${incoming.length}`,
       event_type: w.event_type || 'whisper',
-      handle: w.agent_handle || 'swarm-node',
+      handle,
       project_slug: w.mission_slug ?? null,
       finding_id: w.finding_id != null ? String(w.finding_id) : null,
       whisper: w.message,
-      created_at: w.created_at || new Date().toISOString(),
+      created_at: createdAt || snapshot.generated_at,
     });
   }
 
   if (incoming.length === 0) return snapshot;
+
+  const combined = [...snapshot.live_whispers, ...incoming]
+    .map((item, idx) => {
+      const ts = Date.parse(item.created_at || '');
+      return { item, ts: Number.isNaN(ts) ? 0 : ts, idx };
+    })
+    .sort((a, b) => {
+      if (b.ts !== a.ts) return b.ts - a.ts;
+      return a.idx - b.idx;
+    })
+    .slice(0, 20)
+    .map((entry) => entry.item);
+
+  const snapGenMs = Date.parse(snapshot.generated_at || '');
+  const newestWhisper = combined[0];
+  const newestMs = newestWhisper ? Date.parse(newestWhisper.created_at || '') : Number.NaN;
+  const nextGeneratedAt =
+    newestWhisper &&
+    !Number.isNaN(newestMs) &&
+    (Number.isNaN(snapGenMs) || newestMs > snapGenMs)
+      ? newestWhisper.created_at
+      : snapshot.generated_at;
+
   return {
     ...snapshot,
-    generated_at: incoming[0]?.created_at || snapshot.generated_at,
-    live_whispers: [...incoming, ...snapshot.live_whispers].slice(0, 20),
+    generated_at: nextGeneratedAt,
+    live_whispers: combined,
   };
 }

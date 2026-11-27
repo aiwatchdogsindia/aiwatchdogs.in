@@ -33,7 +33,7 @@ export function LiveSwarmPage({
   sseStatus,
   onOpenJoin,
   onSelectFinding,
-  refreshTick: _refreshTick,
+  refreshTick,
 }: LiveSwarmPageProps) {
   const [live, setLive] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,28 +58,62 @@ export function LiveSwarmPage({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    api
-      .getLive()
-      .then((d) => {
-        if (!cancelled) {
-          setLive(d);
-          setError(null);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load live fleet');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const load = (initial: boolean) => {
+      if (initial) {
+        setLoading(true);
+      }
+      api
+        .getLive()
+        .then((d) => {
+          if (!cancelled) {
+            setLive(d);
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled && initial) {
+            setError(err instanceof Error ? err.message : 'Failed to load live fleet');
+          }
+        })
+        .finally(() => {
+          if (!cancelled && initial) setLoading(false);
+        });
+    };
+
+    load(true);
+    const pollId = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      load(false);
+    }, 45_000);
+
     return () => {
       cancelled = true;
+      window.clearInterval(pollId);
     };
-  }, []);
+  }, [refreshTick]);
 
   const agents = live?.agents ?? [];
-  const whispers = liveWhispers.length > 0 ? liveWhispers : live?.whispers ?? [];
+  const whispers = useMemo(() => {
+    const byKey = new Map<string, WhisperItem>();
+    const add = (list: WhisperItem[]) => {
+      for (const w of list) {
+        if (!w.message) continue;
+        const parsed = Date.parse(w.created_at || '');
+        const tsKey = Number.isNaN(parsed) ? (w.created_at || '').trim() : String(parsed);
+        const key =
+          w.event_id != null
+            ? `eid:${w.event_id}`
+            : `${(w.agent_handle || '').trim().toLowerCase()}|${w.message.trim()}|${tsKey}`;
+        if (!byKey.has(key)) byKey.set(key, w);
+      }
+    };
+    // Prefer fresher /api/live whispers first, then fill with app-level whispers
+    add(live?.whispers ?? []);
+    add(liveWhispers);
+    return Array.from(byKey.values())
+      .sort((a, b) => (Date.parse(b.created_at || '') || 0) - (Date.parse(a.created_at || '') || 0))
+      .slice(0, 40);
+  }, [live?.whispers, liveWhispers]);
   const verifications = live?.recent_verifications ?? [];
   const breakdown = live?.model_breakdown ?? [];
   const totalTasksAcrossModels = Math.max(
@@ -103,7 +137,7 @@ export function LiveSwarmPage({
     const activeNodes = agents.map((a) => {
       const w = latestByHandle.get(a.handle);
       const isFresh = isTimestampFreshlyLive(a.last_heartbeat, checkNowMs, DEFAULT_LIVE_WINDOW_SECONDS);
-      const isWorking = a.is_active !== false && isFresh;
+      const isWorking = a.status !== 'revoked' && isFresh;
       return {
         handle: a.handle,
         display_name: a.display_name || a.handle,
@@ -170,10 +204,30 @@ export function LiveSwarmPage({
     ? computeEffectiveWorkingNow(effectiveSnapshot, nowMs)
     : agents.filter(
         (a) =>
-          a.is_active !== false &&
+          a.status !== 'revoked' &&
           isTimestampFreshlyLive(a.last_heartbeat, nowMs, liveWindowSeconds),
       ).length;
   const totalCount = effectiveSnapshot?.total_agents ?? agents.length;
+
+  const fresherLastSeenByHandle = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const n of effectiveSnapshot?.active_nodes ?? []) {
+      const key = (n.handle || '').trim().toLowerCase();
+      if (key && n.last_seen_at) map.set(key, n.last_seen_at);
+    }
+    return map;
+  }, [effectiveSnapshot?.active_nodes]);
+
+  const resolveAgentHeartbeat = (handle: string, fallbackHb?: string): string | undefined => {
+    const snapHb = fresherLastSeenByHandle.get(handle.trim().toLowerCase());
+    if (!snapHb) return fallbackHb;
+    if (!fallbackHb) return snapHb;
+    const snapMs = Date.parse(snapHb);
+    const fbMs = Date.parse(fallbackHb);
+    if (Number.isNaN(snapMs)) return fallbackHb;
+    if (Number.isNaN(fbMs)) return snapHb;
+    return snapMs > fbMs ? snapHb : fallbackHb;
+  };
 
   return (
     <div className="container lsv-page">
@@ -285,9 +339,18 @@ export function LiveSwarmPage({
                   ? Math.round(item.share_pct)
                   : Math.round((weight / totalTasksAcrossModels) * 100);
               return (
-                <div key={`${item.provider}-${item.model}-${idx}`} style={{ minWidth: 0 }}>
+                <div
+                  key={`${item.coding_agent ?? ''}-${item.coding_agent_model ?? ''}-${item.provider}-${item.model}-${idx}`}
+                  style={{ minWidth: 0 }}
+                >
                   <div className="lsv-compute-row">
-                    <ProviderModelBadge provider={item.provider} model={item.model} size={17} />
+                    <ProviderModelBadge
+                      provider={item.provider}
+                      model={item.model}
+                      codingAgent={item.coding_agent}
+                      codingAgentModel={item.coding_agent_model}
+                      size={17}
+                    />
                     <span className="font-mono tabular lsv-compute-stat">
                       {item.agents} node{item.agents === 1 ? '' : 's'}, {item.tasks} tasks ({pct}%)
                     </span>
@@ -310,10 +373,10 @@ export function LiveSwarmPage({
         </div>
       </div>
 
-      {/* Active Fleet Table (Desktop) + Responsive Cards (Mobile) */}
+      {/* Swarm Fleet Table (Desktop) + Responsive Cards (Mobile) */}
       <div className="lsv-page-section">
         <div className="section-kicker" style={{ marginBottom: 8 }}>
-          Active Fleet Viewer ({agents.length} Nodes)
+          Swarm Fleet ({activeCount.toLocaleString('en-IN')} live · {agents.length.toLocaleString('en-IN')} total nodes)
         </div>
         <div className="table-wrap lsv-desktop-table">
           <table className="ledger-table">
@@ -329,9 +392,10 @@ export function LiveSwarmPage({
             </thead>
             <tbody>
               {agents.map((a) => {
+                const effectiveHb = resolveAgentHeartbeat(a.handle, a.last_heartbeat);
                 const isFreshlyActive =
-                  a.is_active !== false &&
-                  isTimestampFreshlyLive(a.last_heartbeat, nowMs, liveWindowSeconds);
+                  a.status !== 'revoked' &&
+                  isTimestampFreshlyLive(effectiveHb, nowMs, liveWindowSeconds);
                 return (
                 <tr key={a.handle}>
                   <td>
@@ -371,7 +435,7 @@ export function LiveSwarmPage({
                     {a.score.toLocaleString('en-IN')}
                   </td>
                   <td className="font-mono" style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-                    {formatRelativeTime(a.last_heartbeat)}
+                    {formatRelativeTime(effectiveHb)}
                   </td>
                 </tr>
                 );
@@ -387,11 +451,12 @@ export function LiveSwarmPage({
           </table>
         </div>
 
-        <div className="lsv-mobile-list" aria-label="Active fleet nodes">
+        <div className="lsv-mobile-list" aria-label="Swarm fleet nodes">
           {agents.map((a) => {
+            const effectiveHb = resolveAgentHeartbeat(a.handle, a.last_heartbeat);
             const isFreshlyActive =
-              a.is_active !== false &&
-              isTimestampFreshlyLive(a.last_heartbeat, nowMs, liveWindowSeconds);
+              a.status !== 'revoked' &&
+              isTimestampFreshlyLive(effectiveHb, nowMs, liveWindowSeconds);
             return (
             <article key={`mob-fleet-${a.handle}`} className="lsv-fleet-card">
               <div className="lsv-fleet-card-top">
@@ -407,7 +472,7 @@ export function LiveSwarmPage({
                   <span className="lsv-fleet-card-handle">@{a.handle}</span>
                 </Link>
                 <span className="lsv-fleet-card-time tabular">
-                  {formatRelativeTime(a.last_heartbeat)}
+                  {formatRelativeTime(effectiveHb)}
                 </span>
               </div>
 

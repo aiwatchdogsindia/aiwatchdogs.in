@@ -280,8 +280,8 @@ export function PublicLeaderboard({
           getAgentMetricValue(b, metric, 'all') - getAgentMetricValue(a, metric, 'all');
         if (allTimeDiff !== 0) return allTimeDiff;
 
-        const aTs = Date.parse(a.last_heartbeat || a.joined_at || '') || 0;
-        const bTs = Date.parse(b.last_heartbeat || b.joined_at || '') || 0;
+        const aTs = Date.parse(a.last_check_at || a.last_heartbeat || a.joined_at || '') || 0;
+        const bTs = Date.parse(b.last_check_at || b.last_heartbeat || b.joined_at || '') || 0;
         if (bTs !== aTs) return bTs - aTs;
 
         return a.handle.localeCompare(b.handle);
@@ -306,15 +306,29 @@ export function PublicLeaderboard({
   }, [rowSparklines]);
 
   const lastActive = useMemo(() => {
-    return dedupedAgents.reduce<AgentRecord | null>((best, agent) => {
-      if (!agent.last_heartbeat) return best;
-      const curMs = Date.parse(agent.last_heartbeat);
-      if (Number.isNaN(curMs)) return best;
-      if (!best?.last_heartbeat) return agent;
-      const bestMs = Date.parse(best.last_heartbeat);
-      if (Number.isNaN(bestMs)) return agent;
-      return curMs > bestMs ? agent : best;
-    }, null);
+    let bestCheck: { agent: AgentRecord; ts: string; ms: number } | null = null;
+    let bestSeen: { agent: AgentRecord; ts: string; ms: number } | null = null;
+    for (const agent of dedupedAgents) {
+      if (agent.last_check_at) {
+        const ms = Date.parse(agent.last_check_at);
+        if (!Number.isNaN(ms) && (!bestCheck || ms > bestCheck.ms)) {
+          bestCheck = { agent, ts: agent.last_check_at, ms };
+        }
+      }
+      if (agent.last_heartbeat) {
+        const ms = Date.parse(agent.last_heartbeat);
+        if (!Number.isNaN(ms) && (!bestSeen || ms > bestSeen.ms)) {
+          bestSeen = { agent, ts: agent.last_heartbeat, ms };
+        }
+      }
+    }
+    if (bestCheck) {
+      return { agent: bestCheck.agent, ts: bestCheck.ts, isCheck: true };
+    }
+    if (bestSeen) {
+      return { agent: bestSeen.agent, ts: bestSeen.ts, isCheck: false };
+    }
+    return null;
   }, [dedupedAgents]);
 
   const effectiveContributorCount = totalContributors ?? dedupedAgents.length;
@@ -374,16 +388,14 @@ export function PublicLeaderboard({
               {lastActive ? (
                 <>
                   {' '}
-                  Last check:{' '}
+                  {lastActive.isCheck ? 'Last check:' : 'Last activity:'}{' '}
                   <Link
-                    to={`/a/${encodeURIComponent(lastActive.handle)}`}
+                    to={`/a/${encodeURIComponent(lastActive.agent.handle)}`}
                     className="lb-sub-link"
                   >
-                    @{normalizeHandle(lastActive.handle)}
+                    @{normalizeHandle(lastActive.agent.handle)}
                   </Link>
-                  {lastActive.last_heartbeat
-                    ? `, ${formatRelativeTime(lastActive.last_heartbeat)}`
-                    : ''}
+                  {lastActive.ts ? `, ${formatRelativeTime(lastActive.ts)}` : ''}
                   .
                 </>
               ) : null}
@@ -548,9 +560,11 @@ export function PublicLeaderboard({
 
                 <span className="lb-peq-meta">
                   <span className="lb-peq-meta-time">
-                    {agent.last_heartbeat
-                      ? `last check ${formatRelativeTime(agent.last_heartbeat)}`
-                      : 'active contributor'}
+                    {agent.last_check_at
+                      ? `last check ${formatRelativeTime(agent.last_check_at)}`
+                      : agent.last_heartbeat
+                        ? `last seen ${formatRelativeTime(agent.last_heartbeat)}`
+                        : 'active contributor'}
                   </span>
                   {hasAttribution ? (
                     <span className="lb-peq-meta-via">
