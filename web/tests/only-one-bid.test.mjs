@@ -159,6 +159,48 @@ test('formatProcurementSignal, formatSingleBidMechanism, formatCitationRoleLabel
     '1 qualified after technical screening',
   );
   assert.equal(utilsMod.formatSingleBidMechanism('not_applicable'), null);
+  assert.equal(utilsMod.formatSingleBidMechanism('multi_bid'), null);
+  assert.equal(utilsMod.formatSingleBidMechanism('unrecorded'), null);
+
+  // resolveCitationHref prefers official landing/source URL for statutory_benchmark even when sha256 matches
+  const primarySha = 'a'.repeat(64);
+  assert.equal(
+    utilsMod.resolveCitationHref(
+      {
+        role: 'statutory_benchmark',
+        source_ref: 'https://raw.githubusercontent.com/org/repo/sha/all_tenders.csv',
+        source_url: 'https://doe.gov.in/manuals',
+        source_landing_page: 'https://doe.gov.in/general-financial-rules',
+        sha256: primarySha,
+      },
+      primarySha,
+    ),
+    'https://doe.gov.in/general-financial-rules',
+  );
+  assert.equal(
+    utilsMod.resolveCitationHref(
+      {
+        role: 'statutory_benchmark',
+        source_ref: 'https://raw.githubusercontent.com/org/repo/sha/all_tenders.csv',
+        source_url: 'https://doe.gov.in/manuals',
+        sha256: primarySha,
+      },
+      primarySha,
+    ),
+    'https://doe.gov.in/manuals',
+  );
+  assert.equal(
+    utilsMod.resolveCitationHref(
+      {
+        role: 'primary_tender',
+        source_ref: 'https://data.open-contracting.org/en/publication/77/download?name=full.jsonl.gz',
+        source_url: 'https://hptenders.gov.in/',
+        sha256: primarySha,
+      },
+      primarySha,
+    ),
+    'https://data.open-contracting.org/en/publication/77/download?name=full.jsonl.gz',
+  );
 
   assert.equal(utilsMod.formatCitationRoleLabel('primary_tender'), 'Primary Tender Record');
   assert.equal(utilsMod.formatCitationRoleLabel('repeat_winner_cohort'), 'Repeat-Winner Cohort');
@@ -361,6 +403,43 @@ test('OnlyOneBidVisualiser helpers normalize cohorts, 4 signals, year queries, r
     'Public Works Department ·',
   );
   assert.equal(visualsMod.p7AuthorityFilterQuery('  '), '');
+  assert.equal(visualsMod.p7AuthorityFilterQuery(null), '');
+  assert.equal(visualsMod.p7AuthorityFilterQuery(undefined), '');
+
+  // p7FormatLeadBids handles qualified-only, differing rec->qual, effective, and unrecorded cleanly
+  assert.equal(
+    visualsMod.p7FormatLeadBids({ bids_received: 3, technically_qualified_bids: 1 }),
+    '3 rec → 1 qual',
+  );
+  assert.equal(
+    visualsMod.p7FormatLeadBids({ bids_received: null, technically_qualified_bids: 1 }),
+    '1 qualified bid',
+  );
+  assert.equal(
+    visualsMod.p7FormatLeadBids({ bids_received: null, technically_qualified_bids: 2 }),
+    '2 qualified bids',
+  );
+  assert.equal(
+    visualsMod.p7FormatLeadBids({ bids_received: null, technically_qualified_bids: null, effective_bids: null }),
+    'Bids unrecorded',
+  );
+
+  // p7FormatRepeatWinnerShare never fabricates "0.0% single-bid" when share % is absent and single_bid_wins === 0
+  assert.deepEqual(
+    visualsMod.p7FormatRepeatWinnerShare({ win_count: 12, single_bid_wins: 0, tasks: 12 }),
+    { primary: '—', secondary: '12 tasks', barPct: null },
+  );
+  assert.deepEqual(
+    visualsMod.p7FormatRepeatWinnerShare({ win_count: 8, single_bid_wins: 3, tasks: 8 }),
+    { primary: '3/8 single-bid', secondary: '8 tasks', barPct: 37.5 },
+  );
+  assert.deepEqual(
+    visualsMod.p7FormatRepeatWinnerShare({
+      winner_share_by_count_pct: 38.9,
+      winner_share_by_value_pct: 44.2,
+    }),
+    { primary: '38.9% count', secondary: '44.2% value', barPct: 38.9 },
+  );
 
   const sampleTasks = [
     { id: 'prj-p7-sb-2021-00001', title: 'Public Works Department · FY2021-22 · Road widening' },

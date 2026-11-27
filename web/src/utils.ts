@@ -644,7 +644,16 @@ export function formatProcurementSignal(raw?: string | null): ProcurementSignalM
 
 export function formatSingleBidMechanism(raw?: string | null): string | null {
   const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (!s || s === 'none' || s === 'not_applicable' || s === 'multiple_bids' || s === 'n_a') {
+  if (
+    !s ||
+    s === 'none' ||
+    s === 'not_applicable' ||
+    s === 'multiple_bids' ||
+    s === 'multi_bid' ||
+    s === 'unrecorded' ||
+    s === 'unknown' ||
+    s === 'n_a'
+  ) {
     return null;
   }
   if (s === 'single_bid_received') return 'Only 1 bid received';
@@ -656,6 +665,27 @@ export function formatSingleBidMechanism(raw?: string | null): string | null {
   }
   if (s === 'single_tender_enquiry') return 'Single tender enquiry';
   return (raw || '').trim().replace(/_/g, ' ');
+}
+
+export function resolveCitationHref(
+  cit: {
+    role?: string | null;
+    source_url?: string | null;
+    source_ref?: string | null;
+    source_landing_page?: string | null;
+    sha256?: string | null;
+  },
+  artifactSha?: string,
+): string | null {
+  const role = (cit.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (role === 'statutory_benchmark') {
+    return safeExternalUrl(cit.source_landing_page || cit.source_url || cit.source_ref);
+  }
+  const ownDocument =
+    cit.source_url && cit.sha256 && artifactSha && cit.sha256 !== artifactSha
+      ? cit.source_url
+      : null;
+  return safeExternalUrl(ownDocument || cit.source_ref || cit.source_url);
 }
 
 export function formatProcurementAmountType(raw?: string | null): string {

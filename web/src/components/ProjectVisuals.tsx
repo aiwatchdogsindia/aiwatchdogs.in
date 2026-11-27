@@ -4223,9 +4223,83 @@ export function p7SignalLabel(signal: string): string {
 }
 
 /** Exact procuring-authority prefix token matching every P7 task title (`"${authority} · FY..."`). */
-export function p7AuthorityFilterQuery(authority: string): string {
-  const clean = authority.trim();
+export function p7AuthorityFilterQuery(authority?: string | null): string {
+  const clean = (authority || '').trim();
   return clean ? `${clean} ·` : '';
+}
+
+/** Concise bid-count readout for a P7 top-lead row, preserving qualified-only and 0 vs null hygiene. */
+export function p7FormatLeadBids(lead: {
+  bids_received?: number | null;
+  technically_qualified_bids?: number | null;
+  effective_bids?: number | null;
+}): string {
+  if (
+    lead.bids_received != null &&
+    lead.technically_qualified_bids != null &&
+    lead.bids_received !== lead.technically_qualified_bids
+  ) {
+    return `${fmtCount(lead.bids_received)} rec → ${fmtCount(lead.technically_qualified_bids)} qual`;
+  }
+  if (lead.effective_bids != null) {
+    return `${fmtCount(lead.effective_bids)} ${lead.effective_bids === 1 ? 'bid' : 'bids'}`;
+  }
+  if (lead.bids_received != null) {
+    return `${fmtCount(lead.bids_received)} ${lead.bids_received === 1 ? 'bid' : 'bids'}`;
+  }
+  if (lead.technically_qualified_bids != null) {
+    return `${fmtCount(lead.technically_qualified_bids)} qualified ${
+      lead.technically_qualified_bids === 1 ? 'bid' : 'bids'
+    }`;
+  }
+  return 'Bids unrecorded';
+}
+
+/** Honest display helper for Repeat-Winner Authority Share cell (never fabricates "0.0% single-bid"). */
+export function p7FormatRepeatWinnerShare(w: {
+  winner_share_by_count_pct?: number | null;
+  share_by_count_pct?: number | null;
+  winner_share_by_value_pct?: number | null;
+  share_by_value_pct?: number | null;
+  winner_total_wins?: number | null;
+  total_wins?: number | null;
+  win_count?: number | null;
+  winner_single_bid_wins?: number | null;
+  single_bid_wins?: number | null;
+  tasks?: number | null;
+}): { primary: string; secondary: string | null; barPct: number | null } {
+  const shareCount = w.winner_share_by_count_pct ?? w.share_by_count_pct ?? null;
+  const shareVal = w.winner_share_by_value_pct ?? w.share_by_value_pct ?? null;
+  const wins = w.winner_total_wins ?? w.total_wins ?? w.win_count ?? 0;
+  const singleWins = w.winner_single_bid_wins ?? w.single_bid_wins ?? 0;
+  const tasksLabel = w.tasks != null && w.tasks > 0 ? `${fmtCount(w.tasks)} tasks` : null;
+
+  if (shareCount != null) {
+    return {
+      primary: `${shareCount.toFixed(1)}% count`,
+      secondary: shareVal != null ? `${shareVal.toFixed(1)}% value` : tasksLabel,
+      barPct: Math.min(100, Math.max(4, shareCount)),
+    };
+  }
+  if (shareVal != null) {
+    return {
+      primary: `${shareVal.toFixed(1)}% value`,
+      secondary: tasksLabel,
+      barPct: Math.min(100, Math.max(4, shareVal)),
+    };
+  }
+  if (singleWins > 0 && wins > 0) {
+    return {
+      primary: `${fmtCount(singleWins)}/${fmtCount(wins)} single-bid`,
+      secondary: tasksLabel,
+      barPct: Math.min(100, Math.max(4, calcPct(singleWins, wins))),
+    };
+  }
+  return {
+    primary: '—',
+    secondary: tasksLabel,
+    barPct: null,
+  };
 }
 
 /** Filter token for a 10-year row in P7 (`FY2021-22` when provided, else the year token). */
@@ -5338,9 +5412,7 @@ export function OnlyOneBidVisualiser({
                     {visibleWinners.map((w, idx) => {
                       const wins = w.winner_total_wins ?? w.total_wins ?? w.win_count ?? 0;
                       const singleWins = w.winner_single_bid_wins ?? w.single_bid_wins ?? 0;
-                      const shareCount = w.winner_share_by_count_pct ?? w.share_by_count_pct ?? null;
-                      const shareVal = w.winner_share_by_value_pct ?? w.share_by_value_pct ?? null;
-                      const singleBidShare = wins > 0 ? calcPct(singleWins, wins) : null;
+                      const shareInfo = p7FormatRepeatWinnerShare(w);
                       const cohortCr = w.cohort_total_inr_cr ?? w.total_value_inr_cr ?? null;
                       const cohortInr =
                         w.winner_cohort_total_inr != null && w.winner_cohort_total_inr > 0
@@ -5352,10 +5424,6 @@ export function OnlyOneBidVisualiser({
                               : null;
                       const sampleIds = w.related_tender_ids ?? w.sample_tender_ids ?? [];
                       const authFilter = p7AuthorityFilterQuery(w.authority);
-                      const barPct = Math.min(
-                        100,
-                        Math.max(4, shareCount ?? shareVal ?? singleBidShare ?? 0),
-                      );
 
                       return (
                         <tr key={`${w.normalized_winner_key || w.winner_name}-${w.authority_key || w.authority}-${idx}`}>
@@ -5397,23 +5465,15 @@ export function OnlyOneBidVisualiser({
                             </span>
                           </td>
                           <td className="num tabular pv-ub-lead-below" data-label="Authority share">
-                            <span className="pv-ub-cell-val">
-                              {shareCount != null
-                                ? `${shareCount.toFixed(1)}% count`
-                                : singleBidShare != null
-                                  ? `${fmtPct(singleBidShare)} single-bid`
-                                  : '—'}
-                            </span>
-                            {shareVal != null ? (
-                              <span className="pv-ub-sub">{shareVal.toFixed(1)}% value</span>
-                            ) : w.tasks != null && w.tasks > 0 ? (
-                              <span className="pv-ub-sub">{fmtCount(w.tasks)} tasks</span>
+                            <span className="pv-ub-cell-val">{shareInfo.primary}</span>
+                            {shareInfo.secondary ? (
+                              <span className="pv-ub-sub">{shareInfo.secondary}</span>
                             ) : null}
-                            {shareCount != null || shareVal != null || singleBidShare != null ? (
+                            {shareInfo.barPct != null ? (
                               <span className="pv-ub-mini-track" aria-hidden="true">
                                 <span
                                   className="pv-ub-mini-fill"
-                                  style={{ width: `${barPct}%` }}
+                                  style={{ width: `${shareInfo.barPct}%` }}
                                 />
                               </span>
                             ) : null}
@@ -5444,7 +5504,11 @@ export function OnlyOneBidVisualiser({
               </div>
             ) : (
               <div className="pv-empty-box">
-                No repeat-winner clusters match &ldquo;{winnerQuery}&rdquo;.
+                {winnerQuery.trim().length > 0 ? (
+                  <>No repeat-winner clusters match &ldquo;{winnerQuery.trim()}&rdquo;.</>
+                ) : (
+                  'No repeat-winner clusters match the selected jurisdiction filter.'
+                )}
               </div>
             )}
 
@@ -5546,15 +5610,7 @@ export function OnlyOneBidVisualiser({
                       <td className="tabular pv-ub-lead-year pv-p7-lead-bids" data-label="Period & bids">
                         <span>{lead.fiscal_year ? plainFiscalYear(lead.fiscal_year) : '—'}</span>
                         <span className="pv-ub-sub">
-                          {lead.bids_received != null &&
-                          lead.technically_qualified_bids != null &&
-                          lead.bids_received !== lead.technically_qualified_bids
-                            ? `${fmtCount(lead.bids_received)} rec → ${fmtCount(lead.technically_qualified_bids)} qual`
-                            : lead.effective_bids != null
-                              ? `${fmtCount(lead.effective_bids)} ${lead.effective_bids === 1 ? 'bid' : 'bids'}`
-                              : lead.bids_received != null
-                                ? `${fmtCount(lead.bids_received)} ${lead.bids_received === 1 ? 'bid' : 'bids'}`
-                                : 'Bids unrecorded'}
+                          {p7FormatLeadBids(lead)}
                           {mech ? ` · ${mech}` : ''}
                           {lead.bid_window_days != null ? ` · ${fmtCount(lead.bid_window_days)}d window` : ''}
                         </span>

@@ -38,6 +38,7 @@ import {
   formatRelativeTime,
   formatSingleBidMechanism,
   isOfficialGovUrl,
+  resolveCitationHref,
   resolveFindingDrawerMetric,
   safeExternalUrl,
 } from '../utils';
@@ -91,14 +92,12 @@ function formatReviewKindLabel(kind?: string): { label: string; isEditorial: boo
 }
 
 /**
- * The document a citation's line was read from. Two-document methods (UB1 actuals, P1 reference rows)
- * cite a second PDF: its own source_url and a sha256 different from the finding's artifact. Otherwise
- * prefer the finding's dataset (source_ref) over a portal-homepage fallback in source_url.
+ * The document a citation's line was read from. Statutory benchmarks prefer their official
+ * landing/source link over a raw dataset file in `source_ref`; two-document methods cite their
+ * own `source_url` when `sha256` differs from the finding's artifact.
  */
 function citationHref(cit: Citation, artifactSha?: string): string | null {
-  const ownDocument =
-    cit.source_url && cit.sha256 && artifactSha && cit.sha256 !== artifactSha ? cit.source_url : null;
-  return safeExternalUrl(ownDocument || cit.source_ref || cit.source_url);
+  return resolveCitationHref(cit, artifactSha);
 }
 
 export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawerProps) {
