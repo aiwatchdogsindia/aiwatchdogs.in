@@ -28,7 +28,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "M8": "M8-2026.11-v2",
     "P1": "P1-2026.11-v1",
     "UB1": "UB1-2026.11-v1",
-    "OR1": "OR1-2026.11-v1",
+    "OR1": "OR1-2026.11-v2",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash

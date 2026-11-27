@@ -2021,12 +2021,13 @@ class AgentRunner:
             "pii_redactions_count": len(dataset.pii_redactions),
         }
 
-        if not engine_res.leads and unevaluable_count > 0 and int(engine_res.cleared_count or 0) == 0:
-            # Nothing was read, so nothing was checked. Reporting that as "cleared" would put a false
-            # clean result on the public record; hand the task back instead.
+        if not engine_res.leads and unevaluable_count > 0 and (
+            methodology_code == "OR1" or int(engine_res.cleared_count or 0) == 0
+        ):
+            # OR1 can hold a suspected anomaly when flattened text cannot support attribution.
+            # Cleared windows elsewhere in that task do not resolve the held window.
             raise UnevaluableSourceFailure(
-                f"{methodology_code} could not read any of the {unevaluable_count} figure set(s) it was asked "
-                "to compare in this file (the printed lines were not found as specified)."
+                f"{methodology_code} could not evaluate {unevaluable_count} required source window(s)."
             )
 
         if not engine_res.leads:
@@ -2580,7 +2581,7 @@ class AgentRunner:
                 safe_release_note = "Artifact SHA-256 digest mismatch."
             elif isinstance(exc, UnevaluableSourceFailure):
                 release_reason = "unevaluable_source"
-                safe_release_note = "The check could not read the figures it was asked to compare."
+                safe_release_note = "The check could not evaluate all the required source evidence."
             elif isinstance(exc, PermissionError):
                 exc_msg = str(exc)
                 if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:

@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any
 
 from aiwatchdogs.core.models import AuditLeadCandidate
@@ -39,6 +41,15 @@ SIGNAL_CATEGORIES: tuple[str, ...] = (
 
 _YEAR_RE = re.compile(r"^20\d{2}$")
 _KEY_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
+_SECTION_NUMBER_RE = re.compile(r"\d+(?:\.\d+)+")
+_ROMAN_PAGE_RE = re.compile(r"[ivxlcdm]+", re.IGNORECASE)
+_REPORT_HEADER_RE = re.compile(r"Report No\.\s*\d+ of 20\d{2}", re.IGNORECASE)
+_SUMMARY_REFERENCE_RE = re.compile(r"\(Para(?:graph)?\.?\s+(\d+(?:\.\d+)+)\)", re.IGNORECASE)
+_AMOUNT_FOOTNOTE_RE = re.compile(
+    r"\b(crore|cr\.?|lakhs?|thousand)(?:[0-9]{1,3}|[⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3})"
+    r"(?:\s+[0-9]{1,3}(?=\s))?(?!\w)", re.IGNORECASE,
+)
 _NUMBERED_HEADING_RE = re.compile(
     r"^\s*(?:(?:Para(?:graph)?\.?\s*)?(\d+(?:\.\d+)+)\s+([A-Z][^\n]{5,140})|"
     r"((?:Chapter|CHAPTER)\s+[IVXLC\d]+)\s*[:\-–]?\s*([^\n]{0,120}))$"
@@ -63,7 +74,8 @@ _ABBREV_DOT_RE = re.compile(
 )
 
 _RUPEE_AMOUNT_RE = re.compile(
-    r"(?i)(?:₹|INR|Rs\.?)\s*([\d,]+(?:\.\d+)?)\s*(crore|cr\.?|lakh|lakhs|thousand)\b"
+    r"(?i)(?:₹|INR|Rs\.?)\s*([\d,]+(?:\.\d+)?)\s*(crore|cr\.?|lakhs?|thousand)"
+    r"(?:[0-9]{1,3}|[⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3})?(?!\w)"
 )
 
 # Audit-methodology / criteria / recommendation / boilerplate sentences to exclude.
@@ -168,6 +180,45 @@ _AGENCY_MENTION_RE = re.compile(
     r"AAI|NBCC|HUDCO|NPCC|WAPCOS|PFC|REC|PGCIL|ESIC|EPFO)\b"
 )
 
+_AUDIT_TABLE_ENTITY_COLUMN_RE = re.compile(
+    r"\b(?:name of (?:the )?(?:ministry|department|cpse|psu|agency|entity|company)|"
+    r"(?:company|agency|entity) name|audited entity)\b", re.IGNORECASE,
+)
+_AUDIT_TABLE_OBSERVATION_COLUMN_RE = re.compile(r"\baudit (?:observations?|findings?)\b", re.IGNORECASE)
+_CONTINUED_TABLE_RE = re.compile(r"\b(?:annexure|appendix|table)\s+[^\n]{0,45}\bcontinued\b", re.IGNORECASE)
+_ANNEXURE_BOUNDARY_RE = re.compile(r"^(?:annexure|appendix)\b", re.IGNORECASE)
+_TABLE_MONEY_CELL_RE = re.compile(r"(?:^|\s)\d[\d,]*\.\d{2}\s*$")
+_PARAGRAPH_ITEM_RE = re.compile(r"^\((?:[ivxlcdm]+|[a-z]|\d+)\)\s+", re.IGNORECASE)
+_LEGAL_ENTITY_PATTERN = (
+    r"[A-Z][\w&.’'/-]*(?:\s+(?:[A-Z][\w&.’'/-]*|of|and|for|the)){0,7}"
+    r"\s+(?:Limited|Ltd\.?|Corporation|Authority|Board)(?!\w)"
+)
+_LEGAL_ENTITY_RE = re.compile(rf"\b{_LEGAL_ENTITY_PATTERN}")
+_PAYMENT_ACTOR_RE = re.compile(
+    r"^(?:(?i:audit (?:observed|noticed|found) that|accordingly,|however,)\s+)?"
+    rf"(?P<actor>(?:{_LEGAL_ENTITY_PATTERN}|[A-Z][A-Z0-9&-]{{2,11}}|"
+    + _AGENCY_MENTION_RE.pattern
+    + r"))(?:\s+(?:had|has|have|also)){0,2}\s+"
+    r"(?:paid|billed|reimbursed|made\s+(?:(?:an?|the|another|irregular|duplicate|double|additional|excess)\s+){0,4}"
+    r"payments?)\b"
+)
+_RECOVERY_RE = re.compile(r"\b(?:recovered|recovery|recoveries)\b", re.IGNORECASE)
+_MIXED_EXPOSURE_RE = re.compile(
+    r"\b(?:premature payments?|without (?:ensuring )?(?:the )?completion of work|"
+    r"(?:before|prior to) (?:the )?completion of work)\b", re.IGNORECASE,
+)
+# Result and quantification clauses can describe the same event, unlike adjacent independent clauses.
+_CLAUSE_BREAK_RE = re.compile(
+    r"[;—]\s*|,\s+(?!(?:resulting in|leading to|causing|thereby|amounting|which resulted in)\b)",
+    re.IGNORECASE,
+)
+_FOLLOWUP_RE = re.compile(
+    r"^(?:(?:this|that|these)\s+(?:resulted in|led to|accounted for|amounted to)|"
+    r"thus|hence|therefore|consequently)\b", re.IGNORECASE,
+)
+_FOLLOWUP_CONTEXT_RE = re.compile(r"\b(?:also|resulting in|led to|same)\b", re.IGNORECASE)
+_SCHEME_CODE_RE = re.compile(r"\b[A-Z][A-Z0-9-]{3,}\b")
+
 _BENIGN_EXPLANATIONS: tuple[str, ...] = (
     "Action Taken Notes (ATNs), departmental reconciliations, or Public Accounts Committee (PAC) "
     "reviews tabled after the audit report may record recoveries, adjustments, or final settlement.",
@@ -190,6 +241,26 @@ class PageBlock:
     text: str
 
 
+def aggregate_exposure_inr(entries: Iterable[tuple[dict[str, Any], float]]) -> float:
+    """Count a linked executive summary as evidence for the same exposure as its detailed finding."""
+    amounts: list[float] = []
+    detailed: set[tuple[str, float]] = set()
+    summaries: set[tuple[str, float]] = set()
+    for metrics, amount in entries:
+        if not math.isfinite(amount) or amount <= 0:
+            continue
+        key = metrics.get("exposure_reference_key")
+        kind = metrics.get("exposure_reference_kind")
+        if isinstance(key, str) and _SHA256_RE.fullmatch(key):
+            if kind == "summary":
+                summaries.add((key, amount))
+                continue
+            if kind == "detail":
+                detailed.add((key, amount))
+        amounts.append(amount)
+    return math.fsum([*amounts, *(amount for _, amount in summaries - detailed)])
+
+
 def neutral_text(text: str) -> str:
     """Replace BNS Sec 356 prohibited words in quoted source excerpts or headings."""
     cleaned = _ACB_RE.sub("Vigilance", text or "")
@@ -199,6 +270,30 @@ def neutral_text(text: str) -> str:
 def _split_sentences(text: str) -> list[str]:
     protected = _ABBREV_DOT_RE.sub(lambda m: f"{m.group(1)}.__ABBREV_SP__", text)
     return [s.replace("__ABBREV_SP__", " ").strip() for s in re.split(r"(?<=[.!?])\s+", protected) if s.strip()]
+
+
+def _window_sentences(lines: list[str], line_start: int) -> list[tuple[int, str]]:
+    """Join wrapped PDF lines without joining separate paragraphs or numbered sections."""
+    paragraphs: list[tuple[int, list[str]]] = []
+    parts: list[str] = []
+    start = line_start
+    for index, raw in enumerate(lines, start=line_start):
+        line = raw.strip()
+        page_header = index < 4 and (
+            _REPORT_HEADER_RE.fullmatch(line) or _ROMAN_PAGE_RE.fullmatch(line) or _PAGE_NUMBER_ONLY_RE.fullmatch(line)
+        )
+        heading = bool(page_header or _NUMBERED_HEADING_RE.match(line) or _LEGAL_ENTITY_RE.fullmatch(line))
+        if not line or heading or _PARAGRAPH_ITEM_RE.match(line):
+            if parts:
+                paragraphs.append((start, parts))
+                parts = []
+        if line and not heading:
+            if not parts:
+                start = index
+            parts.append(line)
+    if parts:
+        paragraphs.append((start, parts))
+    return [(start, sentence) for start, parts in paragraphs for sentence in _split_sentences(" ".join(parts))]
 
 
 def _extract_amounts_inr(text: str) -> list[float]:
@@ -220,6 +315,100 @@ def _extract_amounts_inr(text: str) -> list[float]:
         amounts.append(round(num * mult, 2))
     return amounts
 
+
+def _exposure_amount(sentence: str, signal: re.Pattern[str]) -> float | None:
+    if _RECOVERY_RE.search(sentence) or _MIXED_EXPOSURE_RE.search(sentence):
+        return None
+    amounts = {
+        amount
+        for clause in _CLAUSE_BREAK_RE.split(sentence)
+        if signal.search(clause)
+        for amount in _extract_amounts_inr(clause)
+    }
+    return next(iter(amounts)) if len(amounts) == 1 else None
+
+
+def _continues_observation(first: str, second: str) -> bool:
+    if _FOLLOWUP_RE.match(second):
+        return True
+    return bool(
+        _FOLLOWUP_CONTEXT_RE.search(second)
+        and set(_SCHEME_CODE_RE.findall(first)).intersection(_SCHEME_CODE_RE.findall(second))
+    )
+
+
+def _has_audit_table_headers(text: str) -> bool:
+    normalized = " ".join(text.split())
+    return bool(
+        _AUDIT_TABLE_ENTITY_COLUMN_RE.search(normalized) and _AUDIT_TABLE_OBSERVATION_COLUMN_RE.search(normalized)
+    )
+
+
+def _summary_reference(lines: list[str], window: dict[str, Any], evidence: str) -> str:
+    """Read the explicit section reference attached to an executive-summary observation."""
+    start = int(window["line_start"])
+    end = int(window["line_end"])
+    nearby = "\n".join(lines[start:end + 10])
+    pattern = re.compile(r"\s+".join(re.escape(word) for word in evidence.split()))
+    match = pattern.search(nearby)
+    if not match:
+        return ""
+    recommendation = False
+    for raw_line in nearby[match.end():].splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if reference := _SUMMARY_REFERENCE_RE.fullmatch(line):
+            return reference.group(1)
+        if line.casefold().startswith("recommendation"):
+            recommendation = True
+        elif not recommendation or _NUMBERED_HEADING_RE.match(line):
+            break
+    return ""
+
+
+def _exposure_reference(
+    pages: dict[int, str], window: dict[str, Any], result: dict[str, Any], report_digest: str,
+) -> dict[str, str]:
+    if not result["amount_disclosed"] or not _SHA256_RE.fullmatch(report_digest):
+        return {}
+    lines = pages[result["page"]].splitlines()
+    kind = "detail"
+    section = result["para_number"]
+    if any(
+        _ROMAN_PAGE_RE.fullmatch(line.strip()) or line.strip().casefold() == "executive summary"
+        for line in lines[:5]
+    ):
+        kind = "summary"
+        section = _summary_reference(lines, window, result["evidence"])
+    if not _SECTION_NUMBER_RE.fullmatch(section):
+        return {}
+    # Executive summaries can repeat the same evidence verbatim. Normalize the PDF's
+    # inline footnote markers so the detailed sentence has the same identity.
+    evidence = " ".join(_AMOUNT_FOOTNOTE_RE.sub(r"\1", result["evidence"]).casefold().split())
+    identity = (
+        report_digest, section, result["signal_category"], f"{result['amount_inr']:.2f}",
+        result["actor"].casefold(), evidence,
+    )
+    return {
+        "exposure_reference_key": sha256("\n".join(identity).encode()).hexdigest(),
+        "exposure_reference_kind": kind,
+        "exposure_reference_section": section,
+    }
+
+
+def _is_flattened_audit_table(pages: dict[int, str], page: int, window: list[str]) -> bool:
+    if _has_audit_table_headers(pages[page]):
+        return True
+    if not _has_audit_table_headers(pages.get(page - 1, "")):
+        return False
+    page_start = pages[page].splitlines()[:10]
+    if _CONTINUED_TABLE_RE.search("\n".join(page_start)):
+        return True
+    if any(_NUMBERED_HEADING_RE.match(line.strip()) or _ANNEXURE_BOUNDARY_RE.match(line.strip()) for line in page_start):
+        return False
+    # Some continuation pages omit headings entirely. Their flattened amount column still has numeric cells.
+    return sum(bool(_TABLE_MONEY_CELL_RE.search(line)) for line in window) >= 2
 
 def _is_boilerplate_block(text: str) -> bool:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -319,25 +508,78 @@ def extract_page_blocks(page_text: str) -> list[PageBlock]:
     return blocks
 
 
-def resolve_enclosing_heading(pages: dict[int, str], page: int, line_start: int) -> tuple[str, str]:
-    """Find the closest preceding numbered audit section heading on ``page`` or ``page - 1``."""
-    lines_here = (pages.get(page) or "").splitlines()
-    upper = min(max(line_start + 1, 0), len(lines_here))
-    for i in range(upper - 1, -1, -1):
-        m = _NUMBERED_HEADING_RE.match(lines_here[i].strip())
-        if m:
-            para = (m.group(1) or m.group(3) or "").strip()
-            h_body = (m.group(2) or m.group(4) or "").strip()
-            return para, (f"{para} {h_body}".strip() if h_body else para)
+def _find_enclosing_section(
+    pages: dict[int, str], page: int, line_start: int,
+) -> tuple[str, str, int, int] | None:
+    for section_page in (page, page - 1):
+        lines = pages.get(section_page, "").splitlines()
+        upper = min(line_start + 1, len(lines)) if section_page == page else len(lines)
+        for index in range(upper - 1, -1, -1):
+            line = lines[index].strip()
+            if match := _NUMBERED_HEADING_RE.match(line):
+                para = (match.group(1) or match.group(3) or "").strip()
+                body = (match.group(2) or match.group(4) or "").strip()
+                return para, f"{para} {body}".strip(), section_page, index
+            if _LEGAL_ENTITY_RE.fullmatch(line):
+                return None
+    return None
 
-    prev_lines = (pages.get(page - 1) or "").splitlines()
-    for i in range(len(prev_lines) - 1, -1, -1):
-        m = _NUMBERED_HEADING_RE.match(prev_lines[i].strip())
-        if m:
-            para = (m.group(1) or m.group(3) or "").strip()
-            h_body = (m.group(2) or m.group(4) or "").strip()
-            return para, (f"{para} {h_body}".strip() if h_body else para)
-    return "", ""
+
+def resolve_enclosing_heading(pages: dict[int, str], page: int, line_start: int) -> tuple[str, str]:
+    """Find the closest preceding numbered audit section heading on this or the previous page."""
+    section = _find_enclosing_section(pages, page, line_start)
+    return (section[0], section[1]) if section else ("", "")
+
+
+def _payment_actor(sentence: str, signal: re.Pattern[str] | None = None) -> str:
+    for clause in _CLAUSE_BREAK_RE.split(sentence):
+        if signal is not None and not signal.search(clause):
+            continue
+        if match := _PAYMENT_ACTOR_RE.match(_PARAGRAPH_ITEM_RE.sub("", clause.strip())):
+            return neutral_text(match.group("actor"))
+    return ""
+
+
+def _actor_key(name: str) -> str:
+    return re.sub(r"\s+(?:limited|ltd\.?)$", "", name.casefold())
+
+
+def _section_payment_actor(
+    pages: dict[int, str], section_page: int, heading_line: int, page: int, evidence_line: int, evidence: str,
+) -> tuple[str, str]:
+    """Use an explicit payment statement at the start of the enclosing section."""
+    lines = pages[section_page].splitlines()
+    end = min(len(lines), heading_line + 5)
+    if section_page == page:
+        end = min(end, evidence_line + 1)
+    for index in range(heading_line + 1, end):
+        line = lines[index].strip()
+        if _NUMBERED_HEADING_RE.match(line):
+            return "", ""
+        if not line or not line[0].isupper():
+            continue
+        # Include one wrapped line so a company name and its predicate can straddle a line break.
+        continuation = lines[index + 1].strip() if index + 1 < end else ""
+        if _NUMBERED_HEADING_RE.match(continuation):
+            continuation = ""
+        excerpt = f"{line} {continuation}".strip()
+        actor = _payment_actor(excerpt)
+        break
+    else:
+        return "", ""
+    if not actor:
+        return "", ""
+
+    key = _actor_key(actor)
+    if any(_actor_key(name.group()) != key for name in _LEGAL_ENTITY_RE.finditer(evidence)):
+        return "", ""
+    between = lines[index:evidence_line + 1] if section_page == page else [
+        *lines[index:], "", *pages[page].splitlines()[:evidence_line + 1],
+    ]
+    for _, sentence in _window_sentences(between, index):
+        if (other := _payment_actor(sentence)) and _actor_key(other) != key:
+            return "", ""
+    return actor, neutral_text(excerpt)
 
 
 def _pages_from_records(records: list[dict[str, Any]]) -> dict[int, str]:
@@ -412,76 +654,98 @@ def _evaluate_window(
     ctx_after = page_lines[line_end : min(len(page_lines), line_end + 2)]
     scan_text = "\n".join([*ctx_before, *core_lines, *ctx_after]).strip()
 
-    para_number, heading = resolve_enclosing_heading(pages, page, line_start)
-    sentences = _split_sentences(" ".join(ln.strip() for ln in core_text.splitlines() if ln.strip()))
-    if not sentences:
-        sentences = [core_text]
-
     # Filter out methodology/recommendation/figure sentences before checking signals.
     substantive_sentences = [
-        s
-        for s in sentences
-        if not _METHODOLOGY_BOILERPLATE_RE.search(s)
-        and not _FIGURE_CHART_RE.match(s)
-        and not _TOC_LINE_RE.search(s)
+        (index, sentence)
+        for index, sentence in _window_sentences(core_lines, line_start)
+        if not _METHODOLOGY_BOILERPLATE_RE.search(sentence)
+        and not _FIGURE_CHART_RE.match(sentence)
+        and not _TOC_LINE_RE.search(sentence)
     ]
     if not substantive_sentences:
         return {"key": key, "status": "cleared", "excluded_cofunding": False, "reason": "methodology_or_toc"}
 
-    substantive_text = " ".join(substantive_sentences)
+    substantive_text = " ".join(sentence for _, sentence in substantive_sentences)
     has_cofunding = bool(_LEGITIMATE_COFUNDING_RE.search(substantive_text))
-    strong_hits = [m.group(0) for m in _STRONG_DUPLICATE_BILLING_RE.finditer(substantive_text)]
-    dual_hits = [m.group(0) for m in _DUAL_AGENCY_OVERLAP_RE.finditer(substantive_text)]
+    strong_matches = [
+        (index, sentence) for index, sentence in substantive_sentences
+        if _STRONG_DUPLICATE_BILLING_RE.search(sentence)
+    ]
 
     # Exclude legitimate co-funding / cost-sharing unless explicit double-billing is documented.
-    if has_cofunding and not strong_hits:
+    if has_cofunding and not strong_matches:
         return {"key": key, "status": "cleared", "excluded_cofunding": True, "reason": "legitimate_cofunding"}
 
     if not _PROJECT_SPENDING_CONTEXT_RE.search(scan_text):
         return {"key": key, "status": "cleared", "excluded_cofunding": False, "reason": "no_project_context"}
 
-    signal_category: str | None = None
-    matched_signals: list[str] = []
-    if strong_hits:
+    if strong_matches:
         # Exclude private taxpayer E-Way Bill (EWB) invoice reuse unless government disbursement is present.
         if _TAX_EWB_ONLY_RE.search(substantive_text) and not _GOV_DISBURSEMENT_RE.search(substantive_text):
             return {"key": key, "status": "cleared", "excluded_cofunding": False, "reason": "taxpayer_ewb_only"}
-        # Even for strong hits, require at least one sentence without pure methodology framing.
-        matching_sents = [s for s in substantive_sentences if _STRONG_DUPLICATE_BILLING_RE.search(s)]
-        if matching_sents:
-            signal_category = "duplicate_payment_or_billing"
-            matched_signals = list(dict.fromkeys(" ".join(h.lower().split()) for h in strong_hits))
-    elif dual_hits and _IRREGULARITY_INDICATOR_RE.search(substantive_text):
+        signal_category = "duplicate_payment_or_billing"
+        signal_pattern = _STRONG_DUPLICATE_BILLING_RE
+        matching_sents = strong_matches
+    elif _IRREGULARITY_INDICATOR_RE.search(substantive_text):
+        signal_category = "dual_agency_or_scheme_overlap"
+        signal_pattern = _DUAL_AGENCY_OVERLAP_RE
         matching_sents = [
-            s
-            for s in substantive_sentences
-            if _DUAL_AGENCY_OVERLAP_RE.search(s) and _PROJECT_SPENDING_CONTEXT_RE.search(s)
+            (index, sentence)
+            for index, sentence in substantive_sentences
+            if signal_pattern.search(sentence) and _PROJECT_SPENDING_CONTEXT_RE.search(sentence)
         ]
-        if matching_sents:
-            signal_category = "dual_agency_or_scheme_overlap"
-            matched_signals = list(dict.fromkeys(" ".join(h.lower().split()) for h in dual_hits))
+    else:
+        matching_sents = []
 
-    if signal_category is None:
+    if not matching_sents:
         return {"key": key, "status": "cleared", "excluded_cofunding": False, "reason": "no_duplicate_billing_signal"}
 
-    # Prefer rupee amount in the matched sentence(s); fall back to the substantive block text.
-    matched_sent_text = " ".join(
-        s
-        for s in substantive_sentences
-        if _STRONG_DUPLICATE_BILLING_RE.search(s) or _DUAL_AGENCY_OVERLAP_RE.search(s)
-    )
-    amounts = _extract_amounts_inr(matched_sent_text) or _extract_amounts_inr(substantive_text)
-    amount_disclosed = bool(amounts)
-    amount_inr = float(max(amounts)) if amounts else 0.0
-    if min_amount_inr > 0 and amount_inr < min_amount_inr:
+    # Flattened table text supplies neither trustworthy row boundaries nor column units.
+    if _is_flattened_audit_table(pages, page, core_lines):
+        return {"key": key, "status": "unevaluable", "reason": "ambiguous_audit_table_attribution"}
+
+    evidence_line, evidence = matching_sents[0]
+    amount = _exposure_amount(evidence, signal_pattern)
+    if amount is None:
+        next_index = substantive_sentences.index((evidence_line, evidence)) + 1
+        if next_index < len(substantive_sentences):
+            next_line, following = substantive_sentences[next_index]
+            if (
+                next_line == evidence_line
+                and (next_line, following) in matching_sents
+                and _continues_observation(evidence, following)
+            ):
+                following_amount = _exposure_amount(following, signal_pattern)
+                if following_amount is not None:
+                    evidence, amount = following, following_amount
+
+    matched_signals = list(dict.fromkeys(" ".join(hit.group().lower().split()) for hit in signal_pattern.finditer(evidence)))
+    amount_disclosed = amount is not None
+    amount_inr = amount if amount is not None else 0.0
+    if min_amount_inr > 0 and not amount_disclosed:
+        return {"key": key, "status": "unevaluable", "reason": "unattributed_amount"}
+    if amount_inr < min_amount_inr:
         return {"key": key, "status": "cleared", "excluded_cofunding": has_cofunding, "reason": "below_threshold"}
 
-    excerpt_raw = matched_sent_text.strip() or substantive_text.strip()
-    excerpt = neutral_text(" ".join(excerpt_raw.split()))
-    if len(excerpt) > _MAX_EXCERPT_CHARS:
-        excerpt = excerpt[: _MAX_EXCERPT_CHARS - 1].rstrip() + "…"
+    section = _find_enclosing_section(pages, page, evidence_line)
+    para_number, heading = section[:2] if section else ("", "")
+    actor = _payment_actor(evidence, signal_pattern)
+    actor_source = None
+    if not actor and section and section[0][0].isdigit():
+        _, _, section_page, heading_line = section
+        actor, actor_excerpt = _section_payment_actor(
+            pages, section_page, heading_line, page, evidence_line, evidence,
+        )
+        if actor:
+            actor_source = (section_page, actor_excerpt)
 
-    agencies = _extract_agencies(f"{heading} {substantive_text}")
+    excerpt = neutral_text(evidence)
+    if len(excerpt) > _MAX_EXCERPT_CHARS:
+        trigger = signal_pattern.search(excerpt)
+        start = max(0, trigger.end() - _MAX_EXCERPT_CHARS // 2) if trigger else 0
+        end = start + _MAX_EXCERPT_CHARS - 2
+        excerpt = ("…" if start else "") + excerpt[start:end].strip() + ("…" if end < len(excerpt) else "")
+
     return {
         "key": key,
         "status": "lead",
@@ -491,10 +755,13 @@ def _evaluate_window(
         "heading": neutral_text(heading),
         "signal_category": signal_category,
         "matched_signals": matched_signals[:6],
-        "agencies_mentioned": agencies,
+        "agencies_mentioned": _extract_agencies(evidence),
+        "actor": actor,
+        "actor_source": actor_source,
         "amount_disclosed": amount_disclosed,
         "amount_inr": round(amount_inr, 2),
         "legitimate_cofunding_excluded": has_cofunding,
+        "evidence": evidence,
         "excerpt": excerpt,
     }
 
@@ -507,9 +774,9 @@ def _severity_for(amount_inr: float, signal_category: str) -> str:
     return "low"
 
 
-def _entity_label(agencies: list[str], report_title: str, sector: str, para_number: str) -> str:
-    if agencies:
-        base = agencies[0]
+def _entity_label(actor: str, report_title: str, sector: str, para_number: str) -> str:
+    if actor:
+        base = actor
     elif sector:
         base = f"Union Government ({sector})"
     else:
@@ -575,11 +842,10 @@ def run_or1_duplicate_billing(
     cleared = 0
     unevaluable = 0
     excluded_cofunding = 0
-    audited_inr = 0.0
 
     for win in windows:
         res = _evaluate_window(pages, win, min_amount_inr=min_amount_inr)
-        window_results.append({"key": res["key"], "status": res["status"]})
+        window_results.append({key: res[key] for key in ("key", "status", "reason") if key in res})
         if res["status"] == "unevaluable":
             unevaluable += 1
             continue
@@ -590,12 +856,12 @@ def run_or1_duplicate_billing(
             continue
 
         amount_inr = float(res["amount_inr"])
-        audited_inr += amount_inr
         signal_category = str(res["signal_category"])
         para_number = str(res["para_number"])
         page_num = int(res["page"])
         agencies = list(res["agencies_mentioned"])
-        entity = _entity_label(agencies, report_title, sector, para_number)
+        actor = res["actor"]
+        entity = _entity_label(actor, report_title, sector, para_number)
 
         signal_label = (
             "duplicate billing / double payment indicator"
@@ -618,6 +884,19 @@ def run_or1_duplicate_billing(
             f"This is a neutral extraction from an official published CAG audit report for public review, "
             f"separate from legitimate cost-sharing arrangements."
         )
+
+        citations = [{
+            "source_url": source_url,
+            "source_landing_page": landing_url,
+            "sha256": sha256,
+            "page": page_num,
+            "para_number": para_number,
+            "report_no": report_no,
+            "excerpt": res["excerpt"],
+        }]
+        if res["actor_source"]:
+            actor_page, actor_excerpt = res["actor_source"]
+            citations.append({**citations[0], "page": actor_page, "excerpt": actor_excerpt})
 
         leads.append(
             AuditLeadCandidate(
@@ -643,25 +922,16 @@ def run_or1_duplicate_billing(
                     "amount_disclosed": bool(res["amount_disclosed"]),
                     "amount_inr": amount_inr,
                     "legitimate_cofunding_excluded": bool(res["legitimate_cofunding_excluded"]),
+                    **_exposure_reference(pages, win, res, sha256),
                 },
                 rule_triggered=(
                     "OR1-DUPLICATE-BILLING"
                     if signal_category == "duplicate_payment_or_billing"
                     else "OR1-DUAL-AGENCY-OVERLAP"
                 ),
-                citations=[
-                    {
-                        "source_url": source_url,
-                        "source_landing_page": landing_url,
-                        "sha256": sha256,
-                        "page": page_num,
-                        "para_number": para_number,
-                        "report_no": report_no,
-                        "excerpt": res["excerpt"],
-                    }
-                ],
+                citations=citations,
                 benign_explanations=list(_BENIGN_EXPLANATIONS),
-                suggested_authority=agencies[0] if agencies else "Comptroller and Auditor General of India / PAC",
+                suggested_authority=actor or "Comptroller and Auditor General of India / PAC",
                 source_locator=f"p.{page_num} ({para_number})",
                 amount_type="cag_report_monetary_figures",
             )
@@ -679,6 +949,7 @@ def run_or1_duplicate_billing(
         "excluded_legitimate_cofunding": excluded_cofunding,
         "windows": window_results,
     }
+    audited_inr = aggregate_exposure_inr((lead.anomaly_metrics, lead.monetary_exposure_inr) for lead in leads)
     return leads, cleared, round(audited_inr, 2), summary, meta
 
 

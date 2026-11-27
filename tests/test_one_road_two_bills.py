@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from aiwatchdogs.cli.config import AgentConfig
 from aiwatchdogs.cli.runner import AgentRunner
+from aiwatchdogs.core.models import LoadedDataset
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality
 from aiwatchdogs.engines import one_road_two_bills as or1
 from aiwatchdogs.engines.registry import run_engine
@@ -128,6 +130,351 @@ def test_or1_flags_dual_agency_overlap_with_irregularity() -> None:
     assert lead.rule_triggered == "OR1-DUAL-AGENCY-OVERLAP"
     assert lead.anomaly_metrics["signal_category"] == "dual_agency_or_scheme_overlap"
     assert lead.monetary_exposure_inr == pytest.approx(42_000_000.0)
+
+
+def _cag_report_12_ctx(page_text: str, *, page: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    records, ctx = _or1_ctx(page_text, page=page, year="2024")
+    ctx.update(
+        retrieval_url=(
+            "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2024/"
+            "Final-Report-No.12-English(05.11.2024)-signed-067615b308aac13.57331340.pdf"
+        ),
+        expected_sha256="9e2856efa2e2272f709195da91ea0005515d7b5dd278403e6b5c6e6ec9311c8e",
+        source_landing_page="https://cag.gov.in/en/audit-report/details/121126",
+    )
+    spec = ctx["one_road_two_bills"]
+    spec["report"].update(
+        cag_id="121126",
+        report_no="Report No. 12 of 2024",
+        title="Compliance Audit Report (Commercial) for the year ended 31 March 2022 - Union Government",
+        sector="Commercial",
+    )
+    spec["windows"][0]["key"] = f"r121126-p{page:03d}-b00"
+    return records, ctx
+
+
+def test_or1_table_attribution_does_not_cross_flattened_rows() -> None:
+    # PDF p.168 (printed p.122). The window starts after the table header and earlier rows.
+    preamble = (
+        "Report No. 12 of 2024\n122\nAnnexure-X\n(Referred to in Para 9.1)\n"
+        "Recoveries at the instance of Audit\n(₹ in lakh)\n"
+        "Name of the\nMinistry/\nDepartment\n"
+        "Name of the CPSE Audit Observation in brief Amount recovered by\n"
+        "the Management in F.Y.\n2021-22\n"
+        "Department of\nFinancial Services\nThe Oriental Insurance\nCompany Limited\n"
+        "Excess payment of electricity charges to the lessor due to\n"
+        "non-adherence of the lease agreement\n1.30\n\n"
+    )
+    triggering_quote = "Double payment made to Hospital in respect of medical bill"
+    window_text = (
+        "Department of\nFinancial Services\nThe New India\nAssurance Company\nLimited\n"
+        "Excess payment of claim under\nContractors Plant and Machinery Policy\n1.75\n"
+        "Petroleum and\nNatural Gas\nOil and Natural Gas\nCorporation Limited\n"
+        "Recovery of HRA paid to non-entitled employees 11.00\n"
+        "Road Transport and\nHighways\nNational Highways\nAuthority of India\n"
+        "Non-recovery of penalty under fee collection contracts of\npublic funded Plazas\n12.72\n"
+        "Steel  Steel Authority of India\nLimited\n"
+        "Non-recovery from the agency against converter refractory 304.16\n"
+        f"Steel Steel Authority of India\nLimited\n{triggering_quote} 3.61\n"
+        "Total 382.37 lakh\nSay 3.82 crore"
+    )
+    records, ctx = _cag_report_12_ctx(preamble + window_text, page=168)
+    window = ctx["one_road_two_bills"]["windows"][0]
+    window.update(key="r121126-p168-b01", block_index=1, line_start=len(preamble.splitlines()))
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    assert res.leads == []
+    assert res.cleared_count == 0
+    assert res.unevaluable_count == 1
+
+
+@pytest.mark.parametrize("continuation", ["none", "labeled", "implicit"])
+def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None:
+    header = "Annexure X\nRecoveries at the instance of Audit\n(₹ in lakh)\nAudited entity Audit finding Amount recovered\n"
+    rows = (
+        "Example Power Corporation Limited\nExcess payment for work under a road contract 11.00\n"
+        "Example Steel Corporation Limited\nDouble payment made on a hospital bill 3.61\n"
+    )
+    preface = {"none": header, "labeled": "Annexure X (continued)\n", "implicit": ""}[continuation]
+    records, ctx = _or1_ctx(preface + rows)
+    if continuation != "none":
+        records.insert(0, {"page": 11, "raw_text": header + "Example Oil Corporation Limited 12.72\n"})
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    assert res.leads == []
+    assert res.cleared_count == 0
+    assert res.unevaluable_count == 1
+
+
+def test_or1_runner_releases_partial_audit_with_held_attribution(monkeypatch: pytest.MonkeyPatch) -> None:
+    records, context = _or1_ctx(
+        "Audited entity Audit finding Amount recovered\n"
+        "A road contract was paid once.\n"
+        "A double payment was made on a hospital bill 3.61"
+    )
+    first_window = context["one_road_two_bills"]["windows"][0]
+    context["one_road_two_bills"]["windows"] = [
+        {**first_window, "line_start": 1, "line_end": 2},
+        {**first_window, "key": "r999999-p012-b01", "block_index": 1, "line_start": 2, "line_end": 3},
+    ]
+    dataset = LoadedDataset(
+        records=records, sha256=context["expected_sha256"], byte_size=100,
+        format="pdf", source_ref=context["retrieval_url"],
+    )
+    releases = []
+    with AgentRunner(AgentConfig(handle="or1-test", hub_url="http://127.0.0.1:8000", provider="rule-engine")) as runner:
+        monkeypatch.setattr(runner, "_load_task_dataset", lambda *args, **kwargs: dataset)
+        monkeypatch.setattr(runner, "heartbeat", lambda *args, **kwargs: True)
+        monkeypatch.setattr(runner, "release", lambda lease_id, **kwargs: releases.append(kwargs["reason"]))
+        monkeypatch.setattr(runner, "submit", lambda *args, **kwargs: pytest.fail("OR1 published a partial clearance"))
+        result = runner.execute_task({"lease_id": "or1-test-lease", "task": {
+            "id": "partial-or1", "methodology_code": "OR1", "payload": {**context, "context": context},
+        }})
+
+    assert result["outcome"] == "released"
+    assert releases == ["unevaluable_source"]
+
+
+@pytest.mark.parametrize("include_auditee", [True, False], ids=["named-on-prior-page", "report-fallback"])
+def test_or1_prose_attribution_keeps_quote_without_borrowing_subject_or_amount(include_auditee: bool) -> None:
+    # PDF p.99 (printed p.65), continuing the NMDC observation from p.98.
+    triggering_quote = (
+        "Hence,\npayment of additional incentive/reward under Production Profit Index Memento\n"
+        "Scheme on the ground of higher production/dispatch and annual reward tantamount\n"
+        "to payment of incentive/reward to the Executive twice for the same reason."
+    )
+    page_text = (
+        "Report No. 12 of 2024\n65\n"
+        "Enterprises to their employees over and above the entitlement under Payment of\n"
+        "Bonus Act or the Executive Instructions issued by Department of Public Enterprises\n"
+        "in respect of ex-gratia unless the amount was authorised under a duly approved\n"
+        "incentive scheme in accordance with the prescribed procedure.\n"
+        f"{triggering_quote}\n"
+        "It was noticed that the Scheme brought in 2017 did not have approval\n"
+        "from the Ministry of Steel/Board of Directors.\n"
+        # An unrelated sentence based on the neighboring observation in section 6.3.
+        "A separate audit observation recorded expenditure of ₹27.29 crore under a farewell scheme."
+    )
+    records, ctx = _cag_report_12_ctx(page_text, page=99)
+    preceding_page = (
+        "Report No. 12 of 2024\n\n64\n"
+        "6.2 Irregular payment of incentives/rewards to Executives in deviation to guidelines\n"
+        "of Department of Public Enterprises\n"
+    )
+    if include_auditee:
+        preceding_page += (
+            "NMDC Limited made an irregular payment of ₹13.49 crore to its Executives during\n"
+            "2018-19 to 2021-22 as incentive/reward for achieving higher\n"
+            "production/productivity which was over and above the payment of Performance\n"
+            "Related Pay as well as Perks and Allowances at the prescribed ceiling."
+        )
+    records.insert(0, {"page": 98, "raw_text": preceding_page})
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    assert len(res.leads) == 1
+    assert res.cleared_count == res.unevaluable_count == 0
+    lead = res.leads[0]
+    citation = lead.citations[0]
+    assert " ".join(triggering_quote.split()) in " ".join(citation["excerpt"].split())
+    assert citation["source_url"] == ctx["retrieval_url"]
+    assert citation["source_landing_page"] == ctx["source_landing_page"]
+    assert citation["sha256"] == ctx["expected_sha256"]
+    assert citation["report_no"] == "Report No. 12 of 2024"
+    assert citation["page"] == 99
+    assert citation["para_number"] == "6.2"
+
+    subject = lead.entity_name.casefold()
+    unrelated_agencies = [
+        name for name in ("department of public enterprises", "ministry of steel") if name in subject
+    ]
+    assert (unrelated_agencies, lead.monetary_exposure_inr, lead.anomaly_metrics["amount_disclosed"]) == (
+        [], 0, False
+    )
+    if include_auditee:
+        assert "nmdc" in subject
+    else:
+        assert "nmdc" not in subject
+        assert any(label in subject for label in ("6.2", "report no. 12 of 2024", "compliance audit report"))
+
+
+@pytest.mark.parametrize(
+    ("evidence", "expected_amount"),
+    [
+        ("Example Power Corporation Limited paid the same invoice twice for ₹2.25 crore.", 22_500_000.0),
+        ("A duplicate payment on a hospital bill was reported, with ₹3.61 lakh recovered.", 0.0),
+        ("Two invoices for ₹3.61 lakh and ₹5 lakh were billed twice by the agency.", 0.0),
+    ],
+    ids=["one-exposure", "recovery-only", "competing-amounts"],
+)
+def test_or1_attribution_requires_one_exposure_amount(evidence: str, expected_amount: float) -> None:
+    records, ctx = _or1_ctx(evidence)
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = res.leads
+    assert lead.citations[0]["excerpt"] == evidence
+    assert lead.monetary_exposure_inr == expected_amount
+    assert lead.anomaly_metrics["amount_disclosed"] is bool(expected_amount)
+
+
+def _cag_report_17_ctx(page_text: str, *, page: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    records, ctx = _or1_ctx(page_text, page=page)
+    ctx.update(
+        retrieval_url=(
+            "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2025/"
+            "REPORT-NO-17--of-2025-_English-06944e9f0974b28.79742615.pdf"
+        ),
+        expected_sha256="63ddcc64f80e2f15bc3107c1a2f04fd3d0b23344bfb665314fe77bc47adb07f6",
+        source_landing_page="https://cag.gov.in/en/audit-report/details/123660",
+    )
+    spec = ctx["one_road_two_bills"]
+    spec["report"].update(
+        cag_id="123660",
+        title="Performance Audit Report on DDUGJY and SAUBHAGYA, Union Government",
+    )
+    spec["windows"][0]["key"] = f"r123660-p{page:03d}-b00"
+    return records, ctx
+
+
+@pytest.mark.parametrize(
+    ("page", "prefix", "unit", "suffix", "expected_crore"),
+    [
+        (
+            14,
+            "Connections under DDUGJY as well as in SAUBHAGYA led to duplicate claim of same work "
+            "by the contractor. ",
+            "crore",
+            "",
+            "7.53",
+        ),
+        (
+            80,
+            "6.3.1.2 Claiming of double benefit\n",
+            "crore87\n131",
+            "\n\nMoP stated (November 2024) that UP and MP both have remitted the recovery of "
+            "grant portion of ₹10.37 crore and ₹0.03 crore respectively to GoI towards the amount "
+            "claimed against duplicate connections.",
+            "7.53",
+        ),
+        (80, "", "crore9abc", "", "0"),
+    ],
+    ids=["p14-later-explicit-exposure", "p80-footnote-and-recovery", "malformed-footnote"],
+)
+def test_or1_attributes_explicit_grant_exposure(
+    page: int, prefix: str, unit: str, suffix: str, expected_crore: str,
+) -> None:
+    # Short extracts and a malformed variant from report 17/2025, tasks -0014 and -0120.
+    evidence = (
+        f"Despite getting the required grant under DDUGJY, grant of ₹7.53 {unit} from REC "
+        "was also claimed under SAUBHAGYA, resulting in double payment to DISCOMs."
+    )
+    records, ctx = _cag_report_17_ctx(prefix + evidence + suffix, page=page)
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = res.leads
+    expected_inr = Decimal(expected_crore) * 10_000_000
+    assert lead.monetary_exposure_inr == res.monetary_audited_inr == expected_inr
+    assert lead.anomaly_metrics["amount_disclosed"] is bool(expected_inr)
+    citation = lead.citations[0]
+    assert citation["page"] == page
+    assert citation["source_url"] == ctx["retrieval_url"]
+    assert citation["sha256"] == ctx["expected_sha256"]
+    if expected_inr:
+        excerpt = " ".join(citation["excerpt"].split())
+        assert "₹7.53 crore" in excerpt
+        assert "resulting in double payment to DISCOMs" in excerpt
+        assert "10.37" not in excerpt
+
+
+def test_or1_links_repeated_summary_and_detail_without_losing_either_citation() -> None:
+    quote = (
+        "Despite getting the required grant under DDUGJY, grant of ₹7.53 crore from REC "
+        "was also claimed under SAUBHAGYA, resulting in double payment to DISCOMs."
+    )
+    summary = f"Report No. 17 of 2025\nxi\n{quote}\n\nRecommendation:\nMoP may reconcile connections.\n(Para 6.3.1.2)"
+    detail = (
+        "Report No. 17 of 2025\n63\n6.3.1.2 Claiming of double benefit\n"
+        + quote.replace("crore", "crore87\n131")
+    )
+    records, ctx = _cag_report_17_ctx(summary, page=14)
+    records.append({"page": 80, "raw_text": detail})
+    windows = ctx["one_road_two_bills"]["windows"]
+    windows[0]["line_end"] = 3
+    windows.append({
+        **windows[0], "key": "r123660-p080-b00", "page": 80, "line_end": len(detail.splitlines()),
+    })
+
+    result = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    summary_lead, detail_lead = sorted(result.leads, key=lambda lead: lead.citations[0]["page"])
+    assert [summary_lead.citations[0]["page"], detail_lead.citations[0]["page"]] == [14, 80]
+    assert summary_lead.anomaly_metrics["exposure_reference_kind"] == "summary"
+    assert detail_lead.anomaly_metrics["exposure_reference_kind"] == "detail"
+    assert summary_lead.anomaly_metrics["exposure_reference_key"] == detail_lead.anomaly_metrics["exposure_reference_key"]
+    assert summary_lead.monetary_exposure_inr == detail_lead.monetary_exposure_inr == 75_300_000
+    assert result.monetary_audited_inr == 75_300_000
+
+
+@pytest.mark.parametrize(
+    ("page", "ending"),
+    [(15, "were also noticed in audit."), (81, "were also noticed (Annexure-8).")],
+    ids=["p15-executive-summary", "p81-annexure-reference"],
+)
+def test_or1_leaves_mixed_payment_total_unattributed(page: int, ending: str) -> None:
+    # Report 17/2025, tasks -0016 and -0122. Neither assigned window gives a duplicate-only subtotal.
+    evidence = (
+        "Instances of extending undue benefits to the contractors, viz., making payment without "
+        f"ensuring completion of work, and double payment for same work, amounting ₹2.24 crore {ending}"
+    )
+    records, ctx = _cag_report_17_ctx(evidence, page=page)
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = res.leads
+    assert lead.monetary_exposure_inr == res.monetary_audited_inr == 0
+    assert lead.anomaly_metrics["amount_disclosed"] is False
+    assert lead.citations[0]["page"] == page
+    assert "double payment for same work" in lead.citations[0]["excerpt"]
+
+
+@pytest.mark.parametrize("conjunction", ["Although", "While"])
+def test_or1_leaves_amount_in_unrelated_leading_clause_unattributed(conjunction: str) -> None:
+    evidence = (
+        f"{conjunction} the upgrade cost ₹4.20 crore, audit observed that the same invoice "
+        "for meter installation was paid twice."
+    )
+    records, ctx = _or1_ctx(evidence)
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = res.leads
+    assert lead.monetary_exposure_inr == res.monetary_audited_inr == 0
+    assert lead.anomaly_metrics["amount_disclosed"] is False
+    assert "was paid twice" in lead.citations[0]["excerpt"]
+
+
+def test_or1_explicit_finding_actor_takes_precedence_over_section_opening_payer() -> None:
+    evidence = "In the sample, audit observed that Eastern Power Limited paid the same invoice twice."
+    records, ctx = _or1_ctx(evidence)
+    records.insert(0, {
+        "page": 11,
+        "raw_text": (
+            "6.2 Review of grant payments\n"
+            "Western Power Limited made an irregular payment for incentive claims."
+        ),
+    })
+
+    res = run_engine(ONE_ROAD_TWO_BILLS_METHODOLOGY, records, context=ctx)
+
+    lead, = res.leads
+    assert lead.entity_name.startswith("Eastern Power Limited")
+    assert lead.suggested_authority == "Eastern Power Limited"
+    assert lead.citations[0]["para_number"] == "6.2"
+    assert "Eastern Power Limited paid" in lead.citations[0]["excerpt"]
+    assert all("Western Power Limited" not in citation["excerpt"] for citation in lead.citations)
 
 
 def test_or1_excludes_legitimate_cofunding_and_cost_sharing() -> None:

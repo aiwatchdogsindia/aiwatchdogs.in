@@ -43,6 +43,7 @@ from aiwatchdogs.engines.gigw_matrix import (
     compute_scoped_w1_counts,
     load_conformity_matrix,
 )
+from aiwatchdogs.engines.one_road_two_bills import aggregate_exposure_inr
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
@@ -3890,7 +3891,6 @@ class DeskService:
                     "open": 0,
                     "pct": 0.0,
                     "leads": 0,
-                    "flagged_inr_cr": 0.0,
                 },
             )
 
@@ -3922,38 +3922,42 @@ class DeskService:
             "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
         )
         leads = verified = peer_review = 0
-        flagged_total_cr = 0.0
+        exposures: list[tuple[dict[str, Any], float]] = []
+        exposures_by_year: dict[str, list[tuple[dict[str, Any], float]]] = {}
         by_signal: dict[str, int] = {
             "duplicate_payment_or_billing": 0,
             "dual_agency_or_scheme_overlap": 0,
         }
         for r in conn.execute(
-            f"SELECT fiscal_year, status, rule_triggered, COUNT(*) AS c, "
-            f"COALESCE(SUM(monetary_exposure_inr), 0) AS inr "
-            f"FROM findings WHERE {live} GROUP BY fiscal_year, status, rule_triggered",
+            f"SELECT fiscal_year, status, rule_triggered, monetary_exposure_inr, anomaly_metrics_json "
+            f"FROM findings WHERE {live}",
             (mid,),
         ).fetchall():
-            n = int(r["c"])
-            crore = _safe_finite_float(r["inr"], 0.0) / 1e7
-            leads += n
-            flagged_total_cr += crore
+            metrics = loads_json(r["anomaly_metrics_json"], {})
+            exposure = (
+                metrics if isinstance(metrics, dict) else {},
+                _safe_finite_float(r["monetary_exposure_inr"], 0.0),
+            )
+            exposures.append(exposure)
+            leads += 1
             st = str(r["status"] or "")
             if st == "verified":
-                verified += n
+                verified += 1
             elif st in ("peer_review", "raw_lead"):
-                peer_review += n
+                peer_review += 1
             rule = str(r["rule_triggered"] or "")
             if "DUPLICATE-BILLING" in rule:
-                by_signal["duplicate_payment_or_billing"] += n
+                by_signal["duplicate_payment_or_billing"] += 1
             elif "DUAL-AGENCY" in rule:
-                by_signal["dual_agency_or_scheme_overlap"] += n
+                by_signal["dual_agency_or_scheme_overlap"] += 1
             year = str(r["fiscal_year"] or "").removeprefix("FY")
             if year in years:
-                years[year]["leads"] += n
-                years[year]["flagged_inr_cr"] = round(years[year]["flagged_inr_cr"] + crore, 2)
+                exposures_by_year.setdefault(year, []).append(exposure)
+                years[year]["leads"] += 1
 
-        for entry in years.values():
+        for year, entry in years.items():
             entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+            entry["flagged_inr_cr"] = _inr_to_cr(aggregate_exposure_inr(exposures_by_year.get(year, [])))
 
         top_leads: list[dict[str, Any]] = []
         for r in conn.execute(
@@ -3988,7 +3992,7 @@ class DeskService:
             "verified": verified,
             "peer_review": peer_review,
             "cleared_tasks": int(mission_row["cleared_count"] or 0),
-            "flagged_inr_cr": round(flagged_total_cr, 2),
+            "flagged_inr_cr": _inr_to_cr(aggregate_exposure_inr(exposures)),
             "by_signal": by_signal,
             "years": [years[y] for y in sorted(years)],
             "top_leads": top_leads,

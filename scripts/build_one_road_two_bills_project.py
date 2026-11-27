@@ -560,40 +560,65 @@ def pack_tasks(blocks: list[BlockItem], target_tasks: int) -> list[dict[str, Any
 
 
 def dry_run_all(tasks: list[dict[str, Any]], docs_by_id: dict[str, ReportDoc]) -> dict[str, Any]:
+    """Summarize OR1 results. A task can have both leads and attribution holds."""
     records_by_id: dict[str, list[dict[str, Any]]] = {
         cid: [{"page": p, "raw_text": txt} for p, txt in sorted(doc.pages.items())]
         for cid, doc in docs_by_id.items()
     }
     tasks_with_leads = 0
     tasks_cleared = 0
+    tasks_with_attribution_holds = 0
     total_leads = 0
-    total_unevaluable = 0
     total_excluded_cofunding = 0
+    attribution_holds_by_reason: collections.Counter[str] = collections.Counter()
     by_signal: collections.Counter[str] = collections.Counter()
     sample_leads: list[dict[str, Any]] = []
-    total_inr = 0.0
+    exposures: list[tuple[dict[str, Any], float]] = []
 
     for task in tasks:
-        spec = task["payload"]["context"]["one_road_two_bills"]
+        payload = task["payload"]
+        context = payload["context"]
+        errors = or1.validate_context(context, f"Task {task['id']}")
+        if errors:
+            raise SystemExit("\n".join(errors))
+        spec = context["one_road_two_bills"]
         cid = spec["report"]["cag_id"]
         ctx = {
-            "retrieval_url": task["payload"]["retrieval_url"],
-            "expected_sha256": task["payload"]["expected_sha256"],
-            "source_landing_page": task["payload"]["source_landing_page"],
+            "retrieval_url": payload["retrieval_url"],
+            "expected_sha256": payload["expected_sha256"],
+            "source_landing_page": payload["source_landing_page"],
             "jurisdiction": "Union of India",
             "one_road_two_bills": spec,
         }
-        res = run_engine(METHODOLOGY, records_by_id[cid], context=ctx)
-        total_unevaluable += res.unevaluable_count
+        records = records_by_id[cid]
+        res = run_engine(METHODOLOGY, records, context=ctx)
+        # The registry lints leads. OR1 metadata supplies per-window reasons and co-funding counts.
+        _, _, _, _, meta = or1.run_or1_duplicate_billing(records, ctx)
         if res.unevaluable_count:
-            raise SystemExit(f"Task {task['id']} had {res.unevaluable_count} unevaluable window(s).")
+            reasons = collections.Counter(
+                window.get("reason") or "unknown reason"
+                for window in meta.get("windows", [])
+                if window.get("status") == "unevaluable"
+            )
+            allowed_reasons = {"ambiguous_audit_table_attribution"}
+            min_amount_inr = (spec.get("thresholds") or {}).get("min_amount_inr") or 0
+            if min_amount_inr > 0:
+                allowed_reasons.add("unattributed_amount")
+            if reasons.keys() - allowed_reasons or sum(reasons.values()) != res.unevaluable_count:
+                reported_reasons = ", ".join(sorted(reasons)) or "no window reasons reported"
+                raise SystemExit(
+                    f"Task {task['id']} had {res.unevaluable_count} unevaluable window(s) "
+                    f"with unexpected or incomplete reasons ({reported_reasons})."
+                )
+            tasks_with_attribution_holds += 1
+            attribution_holds_by_reason.update(reasons)
         if res.leads:
             tasks_with_leads += 1
             total_leads += len(res.leads)
             for lead in res.leads:
                 sig = str(lead.anomaly_metrics.get("signal_category") or "")
                 by_signal[sig] += 1
-                total_inr += float(lead.monetary_exposure_inr or 0.0)
+                exposures.append((lead.anomaly_metrics, float(lead.monetary_exposure_inr or 0.0)))
                 if len(sample_leads) < 20:
                     sample_leads.append(
                         {
@@ -605,20 +630,20 @@ def dry_run_all(tasks: list[dict[str, Any]], docs_by_id: dict[str, ReportDoc]) -
                             "excerpt": lead.citations[0]["excerpt"] if lead.citations else "",
                         }
                     )
-        else:
+        elif not res.unevaluable_count:
             tasks_cleared += 1
-        # Count excluded cofunding directly from engine meta via raw call if needed
-        _leads, _clr, _mon, _sum, meta = or1.run_or1_duplicate_billing(records_by_id[cid], ctx)
         total_excluded_cofunding += int(meta.get("excluded_legitimate_cofunding") or 0)
 
     return {
         "tasks_with_leads": tasks_with_leads,
         "tasks_cleared": tasks_cleared,
+        "tasks_with_attribution_holds": tasks_with_attribution_holds,
         "total_leads": total_leads,
-        "total_unevaluable": total_unevaluable,
+        "total_unevaluable": attribution_holds_by_reason.total(),
+        "attribution_holds_by_reason": dict(sorted(attribution_holds_by_reason.items())),
         "excluded_legitimate_cofunding": total_excluded_cofunding,
         "by_signal": dict(sorted(by_signal.items())),
-        "total_flagged_inr_cr": round(total_inr / 1e7, 2),
+        "total_flagged_inr_cr": round(or1.aggregate_exposure_inr(exposures) / 1e7, 2),
         "sample_leads": sample_leads,
     }
 
