@@ -180,7 +180,7 @@ export const WEBMCP_TOOL_MANIFEST: readonly WebMcpToolManifestItem[] = [
         },
         methodology_code: {
           type: 'string',
-          description: 'Optional methodology code (P1, W1, UB1, OR1, OT1).',
+          description: 'Optional methodology code (P1, W1, UB1, OR1, P5).',
         },
       },
       additionalProperties: false,

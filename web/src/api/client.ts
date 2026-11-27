@@ -563,7 +563,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
           ? 'P3'
           : slug === 'one-road-two-bills' || methodologyCode.toUpperCase() === 'OR1'
             ? 'P4'
-            : slug === 'one-teacher-five-grades' || methodologyCode.toUpperCase() === 'OT1'
+            : slug === 'one-teacher-five-grades' || methodologyCode.toUpperCase() === 'P5'
               ? 'P5'
               : methodologyCode;
   return {

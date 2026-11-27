@@ -4004,7 +4004,7 @@ class DeskService:
         }
 
     def _one_teacher_five_grades_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
-        """Academic-year progress and ranked State/UT single-teacher concentrations for P5 (OT1)."""
+        """Academic-year progress and ranked State/UT single-teacher concentrations for P5."""
         mid = str(mission_row["id"])
         slug = str(mission_row["slug"])
         coverage = _project_coverage(slug)
@@ -4033,10 +4033,10 @@ class DeskService:
         for yr in academic_years:
             year_row(yr)
 
-        # Task IDs use the form 'prj-ot1-2025-26-<state-key>' -> academic year sits at chars 9..15.
+        # Task IDs use the form 'prj-p5-2025-26-<state-key>' -> academic year sits at chars 8..14.
         for r in conn.execute(
-            "SELECT SUBSTR(id, 9, 7) AS yr, status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
-            "AND task_type != 'peer_verify' AND status != 'retired' AND id LIKE 'prj-ot1-%' GROUP BY yr, status",
+            "SELECT SUBSTR(id, 8, 7) AS yr, status, COUNT(*) AS c FROM tasks WHERE mission_id = ? "
+            "AND task_type != 'peer_verify' AND status != 'retired' AND id LIKE 'prj-p5-%' GROUP BY yr, status",
             (mid,),
         ).fetchall():
             yr = str(r["yr"] or "").strip()

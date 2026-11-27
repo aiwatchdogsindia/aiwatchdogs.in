@@ -102,7 +102,7 @@ UNION_BUDGET_METHODOLOGY = "UB1"
 ONE_ROAD_TWO_BILLS_PROJECT_SLUG = "one-road-two-bills"
 ONE_ROAD_TWO_BILLS_METHODOLOGY = "OR1"
 ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG = "one-teacher-five-grades"
-ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "OT1"
+ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "P5"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -548,9 +548,9 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
 
             errors.extend(validate_or1_context(ctx, where))
         if code == ONE_TEACHER_FIVE_GRADES_METHODOLOGY:
-            from aiwatchdogs.engines.one_teacher_five_grades import validate_context as validate_ot1_context
+            from aiwatchdogs.engines.one_teacher_five_grades import validate_context as validate_p5_context
 
-            errors.extend(validate_ot1_context(ctx, where))
+            errors.extend(validate_p5_context(ctx, where))
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [

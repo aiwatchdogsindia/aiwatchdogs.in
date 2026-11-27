@@ -941,7 +941,7 @@ export function ProjectResultsVisualizer({
       />
     );
   }
-  if (code === 'OT1') {
+  if (code === 'P5') {
     return (
       <OneTeacherFiveGradesVisualizer
         mission={mission}
@@ -2932,12 +2932,12 @@ function OneRoadTwoBillsVisualizer({
   );
 }
 
-/* ---------- 3E. OT1 One Teacher, Five Grades: single-teacher & primary staffing concentration ---------- */
+/* ---------- 3E. P5 One Teacher, Five Grades: single-teacher & primary staffing concentration ---------- */
 
-const OT1_METHOD_URL =
+const P5_METHOD_URL =
   'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/one-teacher-five-grades/METHODOLOGY.md';
 
-function ot1SignalLabel(signal: string): string {
+function p5SignalLabel(signal: string): string {
   if (signal === 'severe_concentration_and_overcrowding') return 'Concentration + overcrowding / under-staffing';
   if (signal === 'high_single_teacher_concentration') return 'High single-teacher share (>=10%)';
   if (signal === 'severe_single_teacher_overcrowding') return 'Overcrowded (>30 pupils/teacher)';
@@ -2956,18 +2956,18 @@ function OneTeacherFiveGradesVisualizer({
   onSelectFinding?: (id: string | number) => void;
   onFilterTasks?: (text: string) => void;
 }) {
-  const ot1 = visualSummary?.one_teacher_five_grades;
+  const p5 = visualSummary?.one_teacher_five_grades;
   const workTag = getWorkTypeTag(undefined, mission.methodology_code);
   const slugPath = encodeURIComponent(mission.slug);
 
-  const years = ot1?.years ?? [];
-  const topStates = ot1?.top_states ?? [];
-  const base = ot1?.national_baseline;
-  const leads = ot1?.leads ?? 0;
-  const verified = ot1?.verified ?? mission.verified_findings_count ?? 0;
-  const inReview = ot1?.peer_review ?? mission.peer_review_count ?? 0;
-  const documentsUrl = ot1?.documents_url || `/api/missions/${slugPath}/documents.csv`;
-  const coverageUrl = ot1?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+  const years = p5?.years ?? [];
+  const topStates = p5?.top_states ?? [];
+  const base = p5?.national_baseline;
+  const leads = p5?.leads ?? 0;
+  const verified = p5?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p5?.peer_review ?? mission.peer_review_count ?? 0;
+  const documentsUrl = p5?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p5?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
   const maxShare = Math.max(10, ...topStates.map((s) => s.single_teacher_share_pct || 0));
 
   return (
@@ -2982,7 +2982,7 @@ function OneTeacherFiveGradesVisualizer({
         </div>
 
         <div className="pv-summary-pills tabular">
-          <span className="tag-mono">{fmtCount(ot1?.states_covered ?? 36)} States &amp; UTs</span>
+          <span className="tag-mono">{fmtCount(p5?.states_covered ?? 36)} States &amp; UTs</span>
           {base?.single_teacher_schools ? (
             <span className="tag-mono">
               {fmtCount(base.single_teacher_schools)} single-teacher schools (2025-26 All-India)
@@ -3134,12 +3134,12 @@ function OneTeacherFiveGradesVisualizer({
             <a className="inline-link" href={coverageUrl}>
               Coverage (JSON)
             </a>
-            <a className="inline-link" href={OT1_METHOD_URL} target="_blank" rel="noopener noreferrer">
+            <a className="inline-link" href={P5_METHOD_URL} target="_blank" rel="noopener noreferrer">
               Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
             </a>
           </div>
-          {ot1?.generated_on ? (
-            <p className="pv-chart-note">UDISE+ index built {ot1.generated_on}.</p>
+          {p5?.generated_on ? (
+            <p className="pv-chart-note">UDISE+ index built {p5.generated_on}.</p>
           ) : null}
         </div>
       </div>
@@ -3195,7 +3195,7 @@ function OneTeacherFiveGradesVisualizer({
                         ) : (
                           <span>{st.state_name}</span>
                         )}
-                        <span className="pv-ub-sub">{ot1SignalLabel(st.signal_category)}</span>
+                        <span className="pv-ub-sub">{p5SignalLabel(st.signal_category)}</span>
                       </td>
                       <td className="tabular pv-ub-lead-year" data-label="Year">
                         {st.academic_year}

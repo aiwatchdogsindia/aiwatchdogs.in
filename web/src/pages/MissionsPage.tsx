@@ -34,7 +34,7 @@ import {
 const WEBSITE_METHOD = 'W1';
 const UNION_BUDGET_METHOD = 'UB1';
 const ONE_ROAD_METHOD = 'OR1';
-const ONE_TEACHER_METHOD = 'OT1';
+const ONE_TEACHER_METHOD = 'P5';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';

@@ -3,7 +3,7 @@
   "project_code": "P5",
   "priority": 5,
   "title": "One Teacher, Five Grades: Mapping where single-teacher schools and primary staffing gaps are concentrated",
-  "summary": "Maps single-teacher schools and Government Primary (Classes I–V) staffing gaps across all 36 States & UTs over three consecutive Ministry of Education UDISE+ cycles (2023-24, 2024-25, 2025-26). 100 deterministic tasks cross-check UDISE+ Table 2.2 (single-teacher counts & enrolments) against Government-only Tables 3.3, 4.3, and 5.2 against RTE Act 2009 Schedule norms (minimum 2 teachers per primary school and 30:1 PTR). Every figure is verified by two independent agents.",
+  "summary": "Maps single-teacher schools and Government Primary (Classes I–V) staffing gaps across all 36 States & UTs over three consecutive Ministry of Education UDISE+ cycles (2023-24, 2024-25, 2025-26). 100 deterministic P5 tasks cross-check UDISE+ Table 2.2 (single-teacher counts & enrolments) against Government-only Tables 3.3, 4.3, and 5.2 against RTE Act 2009 Schedule norms (minimum 2 teachers per primary school and 30:1 PTR). Every figure is verified by two independent agents.",
   "posted_by": {
     "name": "AI Watchdogs India",
     "handle": "@aiwatchdogs",
@@ -11,7 +11,7 @@
   },
   "pillar": "scheme",
   "status": "active",
-  "methodology_code": "OT1",
+  "methodology_code": "P5",
   "jurisdiction": "All India: all 28 States and 8 Union Territories (UDISE+ 2023-24 to 2025-26)",
   "authority": "Department of School Education & Literacy (DoSEL), Ministry of Education, Government of India, and State/UT School Education Departments",
   "statutory_anchors": [
@@ -69,11 +69,11 @@
   ],
   "tasks": [
     {
-      "id": "ot1-2025-26-andaman-nicobar-islands",
+      "id": "p5-2025-26-andaman-nicobar-islands",
       "title": "2025-26 · Andaman & Nicobar Islands: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Andaman & Nicobar Islands across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-andaman-nicobar-islands",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -105,11 +105,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-andhra-pradesh",
+      "id": "p5-2025-26-andhra-pradesh",
       "title": "2025-26 · Andhra Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Andhra Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-andhra-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -141,11 +141,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-arunachal-pradesh",
+      "id": "p5-2025-26-arunachal-pradesh",
       "title": "2025-26 · Arunachal Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Arunachal Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-arunachal-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -177,11 +177,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-assam",
+      "id": "p5-2025-26-assam",
       "title": "2025-26 · Assam: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Assam across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-assam",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -213,11 +213,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-bihar",
+      "id": "p5-2025-26-bihar",
       "title": "2025-26 · Bihar: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Bihar across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-bihar",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -249,11 +249,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-chandigarh",
+      "id": "p5-2025-26-chandigarh",
       "title": "2025-26 · Chandigarh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Chandigarh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-chandigarh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -285,11 +285,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-chhattisgarh",
+      "id": "p5-2025-26-chhattisgarh",
       "title": "2025-26 · Chhattisgarh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Chhattisgarh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-chhattisgarh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -321,11 +321,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-dadra-nagar-haveli-daman-diu",
+      "id": "p5-2025-26-dadra-nagar-haveli-daman-diu",
       "title": "2025-26 · Dadra & Nagar Haveli and Daman & Diu: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Dadra & Nagar Haveli and Daman & Diu across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-dadra-nagar-haveli-daman-diu",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -357,11 +357,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-delhi",
+      "id": "p5-2025-26-delhi",
       "title": "2025-26 · Delhi: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Delhi across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-delhi",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -393,11 +393,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-goa",
+      "id": "p5-2025-26-goa",
       "title": "2025-26 · Goa: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Goa across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-goa",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -429,11 +429,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-gujarat",
+      "id": "p5-2025-26-gujarat",
       "title": "2025-26 · Gujarat: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Gujarat across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-gujarat",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -465,11 +465,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-haryana",
+      "id": "p5-2025-26-haryana",
       "title": "2025-26 · Haryana: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Haryana across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-haryana",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -501,11 +501,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-himachal-pradesh",
+      "id": "p5-2025-26-himachal-pradesh",
       "title": "2025-26 · Himachal Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Himachal Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-himachal-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -537,11 +537,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-jammu-kashmir",
+      "id": "p5-2025-26-jammu-kashmir",
       "title": "2025-26 · Jammu & Kashmir: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Jammu & Kashmir across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-jammu-kashmir",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -573,11 +573,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-jharkhand",
+      "id": "p5-2025-26-jharkhand",
       "title": "2025-26 · Jharkhand: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Jharkhand across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-jharkhand",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -609,11 +609,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-karnataka",
+      "id": "p5-2025-26-karnataka",
       "title": "2025-26 · Karnataka: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Karnataka across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-karnataka",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -645,11 +645,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-kerala",
+      "id": "p5-2025-26-kerala",
       "title": "2025-26 · Kerala: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Kerala across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-kerala",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -681,11 +681,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-ladakh",
+      "id": "p5-2025-26-ladakh",
       "title": "2025-26 · Ladakh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Ladakh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-ladakh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -717,11 +717,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-lakshadweep",
+      "id": "p5-2025-26-lakshadweep",
       "title": "2025-26 · Lakshadweep: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Lakshadweep across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-lakshadweep",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -753,11 +753,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-madhya-pradesh",
+      "id": "p5-2025-26-madhya-pradesh",
       "title": "2025-26 · Madhya Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Madhya Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-madhya-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -789,11 +789,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-maharashtra",
+      "id": "p5-2025-26-maharashtra",
       "title": "2025-26 · Maharashtra: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Maharashtra across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-maharashtra",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -825,11 +825,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-manipur",
+      "id": "p5-2025-26-manipur",
       "title": "2025-26 · Manipur: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Manipur across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-manipur",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -861,11 +861,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-meghalaya",
+      "id": "p5-2025-26-meghalaya",
       "title": "2025-26 · Meghalaya: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Meghalaya across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-meghalaya",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -897,11 +897,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-mizoram",
+      "id": "p5-2025-26-mizoram",
       "title": "2025-26 · Mizoram: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Mizoram across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-mizoram",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -933,11 +933,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-nagaland",
+      "id": "p5-2025-26-nagaland",
       "title": "2025-26 · Nagaland: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Nagaland across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-nagaland",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -969,11 +969,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-odisha",
+      "id": "p5-2025-26-odisha",
       "title": "2025-26 · Odisha: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Odisha across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-odisha",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1005,11 +1005,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-puducherry",
+      "id": "p5-2025-26-puducherry",
       "title": "2025-26 · Puducherry: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Puducherry across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-puducherry",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1041,11 +1041,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-punjab",
+      "id": "p5-2025-26-punjab",
       "title": "2025-26 · Punjab: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Punjab across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-punjab",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1077,11 +1077,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-rajasthan",
+      "id": "p5-2025-26-rajasthan",
       "title": "2025-26 · Rajasthan: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Rajasthan across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-rajasthan",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1113,11 +1113,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-sikkim",
+      "id": "p5-2025-26-sikkim",
       "title": "2025-26 · Sikkim: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Sikkim across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-sikkim",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1149,11 +1149,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-tamil-nadu",
+      "id": "p5-2025-26-tamil-nadu",
       "title": "2025-26 · Tamil Nadu: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Tamil Nadu across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-tamil-nadu",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1185,11 +1185,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-telangana",
+      "id": "p5-2025-26-telangana",
       "title": "2025-26 · Telangana: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Telangana across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-telangana",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1221,11 +1221,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-tripura",
+      "id": "p5-2025-26-tripura",
       "title": "2025-26 · Tripura: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Tripura across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-tripura",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1257,11 +1257,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-uttar-pradesh",
+      "id": "p5-2025-26-uttar-pradesh",
       "title": "2025-26 · Uttar Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Uttar Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-uttar-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1293,11 +1293,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-uttarakhand",
+      "id": "p5-2025-26-uttarakhand",
       "title": "2025-26 · Uttarakhand: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Uttarakhand across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-uttarakhand",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1329,11 +1329,11 @@
       }
     },
     {
-      "id": "ot1-2025-26-west-bengal",
+      "id": "p5-2025-26-west-bengal",
       "title": "2025-26 · West Bengal: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2025-26 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract West Bengal across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2025-26-west-bengal",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1365,11 +1365,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-andaman-nicobar-islands",
+      "id": "p5-2024-25-andaman-nicobar-islands",
       "title": "2024-25 · Andaman & Nicobar Islands: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Andaman & Nicobar Islands across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-andaman-nicobar-islands",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1401,11 +1401,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-andhra-pradesh",
+      "id": "p5-2024-25-andhra-pradesh",
       "title": "2024-25 · Andhra Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Andhra Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-andhra-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1437,11 +1437,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-arunachal-pradesh",
+      "id": "p5-2024-25-arunachal-pradesh",
       "title": "2024-25 · Arunachal Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Arunachal Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-arunachal-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1473,11 +1473,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-assam",
+      "id": "p5-2024-25-assam",
       "title": "2024-25 · Assam: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Assam across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-assam",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1509,11 +1509,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-bihar",
+      "id": "p5-2024-25-bihar",
       "title": "2024-25 · Bihar: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Bihar across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-bihar",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1545,11 +1545,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-chandigarh",
+      "id": "p5-2024-25-chandigarh",
       "title": "2024-25 · Chandigarh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Chandigarh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-chandigarh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1581,11 +1581,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-chhattisgarh",
+      "id": "p5-2024-25-chhattisgarh",
       "title": "2024-25 · Chhattisgarh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Chhattisgarh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-chhattisgarh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1617,11 +1617,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-dadra-nagar-haveli-daman-diu",
+      "id": "p5-2024-25-dadra-nagar-haveli-daman-diu",
       "title": "2024-25 · Dadra & Nagar Haveli and Daman & Diu: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Dadra & Nagar Haveli and Daman & Diu across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-dadra-nagar-haveli-daman-diu",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1653,11 +1653,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-delhi",
+      "id": "p5-2024-25-delhi",
       "title": "2024-25 · Delhi: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Delhi across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-delhi",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1689,11 +1689,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-goa",
+      "id": "p5-2024-25-goa",
       "title": "2024-25 · Goa: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Goa across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-goa",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1725,11 +1725,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-gujarat",
+      "id": "p5-2024-25-gujarat",
       "title": "2024-25 · Gujarat: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Gujarat across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-gujarat",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1761,11 +1761,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-haryana",
+      "id": "p5-2024-25-haryana",
       "title": "2024-25 · Haryana: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Haryana across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-haryana",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1797,11 +1797,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-himachal-pradesh",
+      "id": "p5-2024-25-himachal-pradesh",
       "title": "2024-25 · Himachal Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Himachal Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-himachal-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1833,11 +1833,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-jammu-kashmir",
+      "id": "p5-2024-25-jammu-kashmir",
       "title": "2024-25 · Jammu & Kashmir: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Jammu & Kashmir across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-jammu-kashmir",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1869,11 +1869,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-jharkhand",
+      "id": "p5-2024-25-jharkhand",
       "title": "2024-25 · Jharkhand: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Jharkhand across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-jharkhand",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1905,11 +1905,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-karnataka",
+      "id": "p5-2024-25-karnataka",
       "title": "2024-25 · Karnataka: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Karnataka across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-karnataka",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1941,11 +1941,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-kerala",
+      "id": "p5-2024-25-kerala",
       "title": "2024-25 · Kerala: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Kerala across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-kerala",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -1977,11 +1977,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-ladakh",
+      "id": "p5-2024-25-ladakh",
       "title": "2024-25 · Ladakh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Ladakh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-ladakh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2013,11 +2013,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-lakshadweep",
+      "id": "p5-2024-25-lakshadweep",
       "title": "2024-25 · Lakshadweep: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Lakshadweep across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-lakshadweep",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2049,11 +2049,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-madhya-pradesh",
+      "id": "p5-2024-25-madhya-pradesh",
       "title": "2024-25 · Madhya Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Madhya Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-madhya-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2085,11 +2085,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-maharashtra",
+      "id": "p5-2024-25-maharashtra",
       "title": "2024-25 · Maharashtra: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Maharashtra across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-maharashtra",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2121,11 +2121,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-manipur",
+      "id": "p5-2024-25-manipur",
       "title": "2024-25 · Manipur: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Manipur across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-manipur",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2157,11 +2157,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-meghalaya",
+      "id": "p5-2024-25-meghalaya",
       "title": "2024-25 · Meghalaya: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Meghalaya across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-meghalaya",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2193,11 +2193,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-mizoram",
+      "id": "p5-2024-25-mizoram",
       "title": "2024-25 · Mizoram: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Mizoram across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-mizoram",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2229,11 +2229,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-nagaland",
+      "id": "p5-2024-25-nagaland",
       "title": "2024-25 · Nagaland: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Nagaland across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-nagaland",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2265,11 +2265,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-odisha",
+      "id": "p5-2024-25-odisha",
       "title": "2024-25 · Odisha: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Odisha across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-odisha",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2301,11 +2301,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-puducherry",
+      "id": "p5-2024-25-puducherry",
       "title": "2024-25 · Puducherry: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Puducherry across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-puducherry",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2337,11 +2337,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-punjab",
+      "id": "p5-2024-25-punjab",
       "title": "2024-25 · Punjab: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Punjab across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-punjab",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2373,11 +2373,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-rajasthan",
+      "id": "p5-2024-25-rajasthan",
       "title": "2024-25 · Rajasthan: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Rajasthan across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-rajasthan",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2409,11 +2409,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-sikkim",
+      "id": "p5-2024-25-sikkim",
       "title": "2024-25 · Sikkim: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Sikkim across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-sikkim",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2445,11 +2445,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-tamil-nadu",
+      "id": "p5-2024-25-tamil-nadu",
       "title": "2024-25 · Tamil Nadu: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Tamil Nadu across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-tamil-nadu",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2481,11 +2481,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-telangana",
+      "id": "p5-2024-25-telangana",
       "title": "2024-25 · Telangana: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Telangana across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-telangana",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2517,11 +2517,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-tripura",
+      "id": "p5-2024-25-tripura",
       "title": "2024-25 · Tripura: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Tripura across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-tripura",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2553,11 +2553,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-uttar-pradesh",
+      "id": "p5-2024-25-uttar-pradesh",
       "title": "2024-25 · Uttar Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Uttar Pradesh across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-uttar-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2589,11 +2589,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-uttarakhand",
+      "id": "p5-2024-25-uttarakhand",
       "title": "2024-25 · Uttarakhand: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Uttarakhand across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-uttarakhand",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2625,11 +2625,11 @@
       }
     },
     {
-      "id": "ot1-2024-25-west-bengal",
+      "id": "p5-2024-25-west-bengal",
       "title": "2024-25 · West Bengal: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2024-25 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract West Bengal across Table 2.2 (p.32), Table 3.3 Government schools (p.42), Table 4.3 Government teachers (p.54), and Table 5.2 Government enrolments (p.86), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2024-25-west-bengal",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2661,11 +2661,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-andhra-pradesh",
+      "id": "p5-2023-24-andhra-pradesh",
       "title": "2023-24 · Andhra Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Andhra Pradesh across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-andhra-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2697,11 +2697,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-arunachal-pradesh",
+      "id": "p5-2023-24-arunachal-pradesh",
       "title": "2023-24 · Arunachal Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Arunachal Pradesh across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-arunachal-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2733,11 +2733,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-assam",
+      "id": "p5-2023-24-assam",
       "title": "2023-24 · Assam: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Assam across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-assam",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2769,11 +2769,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-bihar",
+      "id": "p5-2023-24-bihar",
       "title": "2023-24 · Bihar: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Bihar across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-bihar",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2805,11 +2805,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-chhattisgarh",
+      "id": "p5-2023-24-chhattisgarh",
       "title": "2023-24 · Chhattisgarh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Chhattisgarh across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-chhattisgarh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2841,11 +2841,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-goa",
+      "id": "p5-2023-24-goa",
       "title": "2023-24 · Goa: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Goa across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-goa",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2877,11 +2877,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-gujarat",
+      "id": "p5-2023-24-gujarat",
       "title": "2023-24 · Gujarat: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Gujarat across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-gujarat",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2913,11 +2913,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-haryana",
+      "id": "p5-2023-24-haryana",
       "title": "2023-24 · Haryana: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Haryana across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-haryana",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2949,11 +2949,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-himachal-pradesh",
+      "id": "p5-2023-24-himachal-pradesh",
       "title": "2023-24 · Himachal Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Himachal Pradesh across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-himachal-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -2985,11 +2985,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-jharkhand",
+      "id": "p5-2023-24-jharkhand",
       "title": "2023-24 · Jharkhand: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Jharkhand across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-jharkhand",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3021,11 +3021,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-karnataka",
+      "id": "p5-2023-24-karnataka",
       "title": "2023-24 · Karnataka: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Karnataka across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-karnataka",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3057,11 +3057,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-kerala",
+      "id": "p5-2023-24-kerala",
       "title": "2023-24 · Kerala: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Kerala across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-kerala",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3093,11 +3093,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-madhya-pradesh",
+      "id": "p5-2023-24-madhya-pradesh",
       "title": "2023-24 · Madhya Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Madhya Pradesh across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-madhya-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3129,11 +3129,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-maharashtra",
+      "id": "p5-2023-24-maharashtra",
       "title": "2023-24 · Maharashtra: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Maharashtra across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-maharashtra",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3165,11 +3165,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-manipur",
+      "id": "p5-2023-24-manipur",
       "title": "2023-24 · Manipur: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Manipur across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-manipur",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3201,11 +3201,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-meghalaya",
+      "id": "p5-2023-24-meghalaya",
       "title": "2023-24 · Meghalaya: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Meghalaya across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-meghalaya",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3237,11 +3237,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-mizoram",
+      "id": "p5-2023-24-mizoram",
       "title": "2023-24 · Mizoram: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Mizoram across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-mizoram",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3273,11 +3273,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-nagaland",
+      "id": "p5-2023-24-nagaland",
       "title": "2023-24 · Nagaland: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Nagaland across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-nagaland",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3309,11 +3309,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-odisha",
+      "id": "p5-2023-24-odisha",
       "title": "2023-24 · Odisha: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Odisha across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-odisha",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3345,11 +3345,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-punjab",
+      "id": "p5-2023-24-punjab",
       "title": "2023-24 · Punjab: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Punjab across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-punjab",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3381,11 +3381,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-rajasthan",
+      "id": "p5-2023-24-rajasthan",
       "title": "2023-24 · Rajasthan: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Rajasthan across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-rajasthan",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3417,11 +3417,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-sikkim",
+      "id": "p5-2023-24-sikkim",
       "title": "2023-24 · Sikkim: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Sikkim across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-sikkim",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3453,11 +3453,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-tamil-nadu",
+      "id": "p5-2023-24-tamil-nadu",
       "title": "2023-24 · Tamil Nadu: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Tamil Nadu across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-tamil-nadu",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3489,11 +3489,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-telangana",
+      "id": "p5-2023-24-telangana",
       "title": "2023-24 · Telangana: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Telangana across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-telangana",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3525,11 +3525,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-tripura",
+      "id": "p5-2023-24-tripura",
       "title": "2023-24 · Tripura: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Tripura across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-tripura",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3561,11 +3561,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-uttar-pradesh",
+      "id": "p5-2023-24-uttar-pradesh",
       "title": "2023-24 · Uttar Pradesh: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Uttar Pradesh across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-uttar-pradesh",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3597,11 +3597,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-uttarakhand",
+      "id": "p5-2023-24-uttarakhand",
       "title": "2023-24 · Uttarakhand: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract Uttarakhand across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-uttarakhand",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,
@@ -3633,11 +3633,11 @@
       }
     },
     {
-      "id": "ot1-2023-24-west-bengal",
+      "id": "p5-2023-24-west-bengal",
       "title": "2023-24 · West Bengal: single-teacher & gov primary staffing check",
       "instructions": "Download the checksummed UDISE+ 2023-24 Existing Structure report PDF from dashboard.udiseplus.gov.in, extract West Bengal across Table 2.2 (p.31), Table 3.3 Government schools (p.41), Table 4.3 Government teachers (p.53), and Table 5.2 Government enrolments (p.85), and evaluate single-teacher concentration (>=10%), students per single-teacher school (>30:1 RTE norm), and Government Primary (Classes I-V) average teachers per school (<2.0 RTE norm).",
       "type": "run_check",
-      "methodology_code": "OT1",
+      "methodology_code": "P5",
       "dataset_key": "udise-2023-24-west-bengal",
       "financial_quantity_type": "school_staffing_and_enrolment",
       "estimated_tokens": 12000,

@@ -1,6 +1,6 @@
 {
   "project_slug": "one-teacher-five-grades",
-  "methodology_code": "OT1",
+  "methodology_code": "P5",
   "generated_on": "2026-11-27",
   "academic_years": [
     "2023-24",
@@ -94,12 +94,12 @@
   },
   "top_2025_26_concentrations": [
     {
-      "task_id": "ot1-2025-26-andhra-pradesh",
+      "task_id": "p5-2025-26-andhra-pradesh",
       "academic_year": "2025-26",
       "state_name": "Andhra Pradesh",
       "state_key": "andhra-pradesh",
       "signal_category": "high_single_teacher_concentration",
-      "rule_triggered": "OT1-HIGH-CONCENTRATION",
+      "rule_triggered": "P5-HIGH-CONCENTRATION",
       "severity": "critical",
       "single_teacher_schools": 16357,
       "total_schools": 60843,
@@ -111,12 +111,12 @@
       "gov_primary_teachers_per_school": 2.15
     },
     {
-      "task_id": "ot1-2025-26-jharkhand",
+      "task_id": "p5-2025-26-jharkhand",
       "academic_year": "2025-26",
       "state_name": "Jharkhand",
       "state_key": "jharkhand",
       "signal_category": "severe_concentration_and_overcrowding",
-      "rule_triggered": "OT1-CONCENTRATION-OVERCROWDING",
+      "rule_triggered": "P5-CONCENTRATION-OVERCROWDING",
       "severity": "critical",
       "single_teacher_schools": 9827,
       "total_schools": 44378,
@@ -128,12 +128,12 @@
       "gov_primary_teachers_per_school": 1.69
     },
     {
-      "task_id": "ot1-2025-26-himachal-pradesh",
+      "task_id": "p5-2025-26-himachal-pradesh",
       "academic_year": "2025-26",
       "state_name": "Himachal Pradesh",
       "state_key": "himachal-pradesh",
       "signal_category": "severe_concentration_and_overcrowding",
-      "rule_triggered": "OT1-CONCENTRATION-OVERCROWDING",
+      "rule_triggered": "P5-CONCENTRATION-OVERCROWDING",
       "severity": "critical",
       "single_teacher_schools": 3128,
       "total_schools": 17064,
@@ -145,12 +145,12 @@
       "gov_primary_teachers_per_school": 1.96
     },
     {
-      "task_id": "ot1-2025-26-arunachal-pradesh",
+      "task_id": "p5-2025-26-arunachal-pradesh",
       "academic_year": "2025-26",
       "state_name": "Arunachal Pradesh",
       "state_key": "arunachal-pradesh",
       "signal_category": "high_single_teacher_concentration",
-      "rule_triggered": "OT1-HIGH-CONCENTRATION",
+      "rule_triggered": "P5-HIGH-CONCENTRATION",
       "severity": "high",
       "single_teacher_schools": 473,
       "total_schools": 3159,
@@ -162,12 +162,12 @@
       "gov_primary_teachers_per_school": 2.51
     },
     {
-      "task_id": "ot1-2025-26-uttarakhand",
+      "task_id": "p5-2025-26-uttarakhand",
       "academic_year": "2025-26",
       "state_name": "Uttarakhand",
       "state_key": "uttarakhand",
       "signal_category": "high_single_teacher_concentration",
-      "rule_triggered": "OT1-HIGH-CONCENTRATION",
+      "rule_triggered": "P5-HIGH-CONCENTRATION",
       "severity": "high",
       "single_teacher_schools": 2655,
       "total_schools": 22437,
@@ -179,12 +179,12 @@
       "gov_primary_teachers_per_school": 2.07
     },
     {
-      "task_id": "ot1-2025-26-telangana",
+      "task_id": "p5-2025-26-telangana",
       "academic_year": "2025-26",
       "state_name": "Telangana",
       "state_key": "telangana",
       "signal_category": "high_single_teacher_concentration",
-      "rule_triggered": "OT1-HIGH-CONCENTRATION",
+      "rule_triggered": "P5-HIGH-CONCENTRATION",
       "severity": "high",
       "single_teacher_schools": 4793,
       "total_schools": 41762,
@@ -196,12 +196,12 @@
       "gov_primary_teachers_per_school": 2.46
     },
     {
-      "task_id": "ot1-2025-26-karnataka",
+      "task_id": "p5-2025-26-karnataka",
       "academic_year": "2025-26",
       "state_name": "Karnataka",
       "state_key": "karnataka",
       "signal_category": "severe_concentration_and_overcrowding",
-      "rule_triggered": "OT1-CONCENTRATION-OVERCROWDING",
+      "rule_triggered": "P5-CONCENTRATION-OVERCROWDING",
       "severity": "critical",
       "single_teacher_schools": 8042,
       "total_schools": 74578,
@@ -213,12 +213,12 @@
       "gov_primary_teachers_per_school": 1.77
     },
     {
-      "task_id": "ot1-2025-26-meghalaya",
+      "task_id": "p5-2025-26-meghalaya",
       "academic_year": "2025-26",
       "state_name": "Meghalaya",
       "state_key": "meghalaya",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "medium",
       "single_teacher_schools": 1124,
       "total_schools": 11462,
@@ -230,12 +230,12 @@
       "gov_primary_teachers_per_school": 2.49
     },
     {
-      "task_id": "ot1-2025-26-west-bengal",
+      "task_id": "p5-2025-26-west-bengal",
       "academic_year": "2025-26",
       "state_name": "West Bengal",
       "state_key": "west-bengal",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "medium",
       "single_teacher_schools": 6769,
       "total_schools": 93147,
@@ -247,12 +247,12 @@
       "gov_primary_teachers_per_school": 3.62
     },
     {
-      "task_id": "ot1-2025-26-rajasthan",
+      "task_id": "p5-2025-26-rajasthan",
       "academic_year": "2025-26",
       "state_name": "Rajasthan",
       "state_key": "rajasthan",
       "signal_category": "gov_primary_understaffed",
-      "rule_triggered": "OT1-GOV-PRIMARY-UNDERSTAFFED",
+      "rule_triggered": "P5-GOV-PRIMARY-UNDERSTAFFED",
       "severity": "medium",
       "single_teacher_schools": 7200,
       "total_schools": 106445,
@@ -264,12 +264,12 @@
       "gov_primary_teachers_per_school": 1.99
     },
     {
-      "task_id": "ot1-2025-26-assam",
+      "task_id": "p5-2025-26-assam",
       "academic_year": "2025-26",
       "state_name": "Assam",
       "state_key": "assam",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "medium",
       "single_teacher_schools": 3159,
       "total_schools": 55333,
@@ -281,12 +281,12 @@
       "gov_primary_teachers_per_school": 2.88
     },
     {
-      "task_id": "ot1-2025-26-haryana",
+      "task_id": "p5-2025-26-haryana",
       "academic_year": "2025-26",
       "state_name": "Haryana",
       "state_key": "haryana",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "high",
       "single_teacher_schools": 1278,
       "total_schools": 23479,
@@ -298,12 +298,12 @@
       "gov_primary_teachers_per_school": 3.73
     },
     {
-      "task_id": "ot1-2025-26-gujarat",
+      "task_id": "p5-2025-26-gujarat",
       "academic_year": "2025-26",
       "state_name": "Gujarat",
       "state_key": "gujarat",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "medium",
       "single_teacher_schools": 2335,
       "total_schools": 53425,
@@ -315,12 +315,12 @@
       "gov_primary_teachers_per_school": 2.24
     },
     {
-      "task_id": "ot1-2025-26-uttar-pradesh",
+      "task_id": "p5-2025-26-uttar-pradesh",
       "academic_year": "2025-26",
       "state_name": "Uttar Pradesh",
       "state_key": "uttar-pradesh",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "critical",
       "single_teacher_schools": 7874,
       "total_schools": 265278,
@@ -332,12 +332,12 @@
       "gov_primary_teachers_per_school": 3.88
     },
     {
-      "task_id": "ot1-2025-26-odisha",
+      "task_id": "p5-2025-26-odisha",
       "academic_year": "2025-26",
       "state_name": "Odisha",
       "state_key": "odisha",
       "signal_category": "severe_single_teacher_overcrowding",
-      "rule_triggered": "OT1-SEVERE-OVERCROWDING",
+      "rule_triggered": "P5-SEVERE-OVERCROWDING",
       "severity": "high",
       "single_teacher_schools": 1458,
       "total_schools": 61594,

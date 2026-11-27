@@ -682,22 +682,22 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
         out.append("")
 
     elif "one_teacher_five_grades" in vs:
-        ot1 = vs["one_teacher_five_grades"]
-        years = ot1.get("years") or []
-        base = ot1.get("national_baseline") or {}
+        p5 = vs["one_teacher_five_grades"]
+        years = p5.get("years") or []
+        base = p5.get("national_baseline") or {}
         out.extend(
             [
-                "## One Teacher, Five Grades (OT1)",
+                "## One Teacher, Five Grades (P5)",
                 "",
-                f"- **Coverage:** {int(ot1.get('states_covered') or 36)} States & UTs across {len(years) or 3} UDISE+ cycles",
+                f"- **Coverage:** {int(p5.get('states_covered') or 36)} States & UTs across {len(years) or 3} UDISE+ cycles",
                 f"- **2025-26 All-India baseline:** {int(base.get('single_teacher_schools') or 0):,} single-teacher schools "
                 f"enrolling {int(base.get('single_teacher_enrolments') or 0):,} students "
                 f"({float(base.get('single_teacher_share_pct') or 0.0):.2f}% of schools); "
                 f"{int(base.get('gov_primary_1_5_schools') or 0):,} Government Primary I–V schools",
-                f"- **Leads so far:** {int(ot1.get('leads') or 0):,} ({int(ot1.get('verified') or 0):,} verified) · "
-                f"{int(ot1.get('cleared_tasks') or 0):,} cleared",
-                f"- **Booklets indexed, with SHA-256 (CSV):** [{base_url}{ot1.get('documents_url')}]({base_url}{ot1.get('documents_url')})",
-                f"- **Coverage (JSON):** [{base_url}{ot1.get('coverage_url')}]({base_url}{ot1.get('coverage_url')})",
+                f"- **Leads so far:** {int(p5.get('leads') or 0):,} ({int(p5.get('verified') or 0):,} verified) · "
+                f"{int(p5.get('cleared_tasks') or 0):,} cleared",
+                f"- **Booklets indexed, with SHA-256 (CSV):** [{base_url}{p5.get('documents_url')}]({base_url}{p5.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p5.get('coverage_url')}]({base_url}{p5.get('coverage_url')})",
                 "",
                 "### Academic-Year Progress",
                 "",
@@ -711,7 +711,7 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 f"{int(y.get('leads') or 0):,} | {int(y.get('all_india_single_teacher_schools') or 0):,} | "
                 f"{int(y.get('all_india_single_teacher_enrolments') or 0):,} |"
             )
-        top = ot1.get("top_states") or []
+        top = p5.get("top_states") or []
         if top:
             out.extend(
                 [
@@ -1569,7 +1569,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1 and OT1 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1 and P5 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
         f"- [POSIX Quickstart Installer (/join.sh)]({base_url}/join.sh): Reviewable POSIX shell entrypoint launching `aiwatchdogs join` (interactive in a terminal; non-interactive without a TTY or with `--yes`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",

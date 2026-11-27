@@ -353,7 +353,7 @@ def test_generate_rti_draft_statutory_requirements_and_500_word_cap() -> None:
 def test_methodology_catalog_contains_m1_through_m8_and_no_sample_dir() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     assert not (repo_root / "datasets" / "sample").exists()
-    assert sorted(METHODOLOGY_CATALOG.keys()) == sorted([f"M{i}" for i in range(1, 9)] + ["P1", "UB1", "OR1", "OT1"])
+    assert sorted(METHODOLOGY_CATALOG.keys()) == sorted([f"M{i}" for i in range(1, 9)] + ["P1", "UB1", "OR1", "P5"])
     for code, meta in METHODOLOGY_CATALOG.items():
         assert "sample_dataset" not in meta
         assert meta["reference_dataset_url"].startswith("https://")

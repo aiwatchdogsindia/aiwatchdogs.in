@@ -1,4 +1,4 @@
-"""OT1: One Teacher, Five Grades — single-teacher & primary-staffing concentration audit on UDISE+ reports.
+"""P5: One Teacher, Five Grades — single-teacher & primary-staffing concentration audit on UDISE+ reports.
 
 Reads pinned official Ministry of Education (Department of School Education & Literacy)
 UDISE+ annual report PDFs page by page, extracts a State/UT's exact verified figures across:
@@ -25,7 +25,7 @@ from aiwatchdogs.core.models import AuditLeadCandidate
 from aiwatchdogs.core.safety import validate_safe_http_url
 
 ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG = "one-teacher-five-grades"
-ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "OT1"
+ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "P5"
 
 # RTE Act 2009 Schedule & UDISE+ staffing thresholds
 HIGH_CONCENTRATION_SHARE_PCT = 10.0
@@ -312,7 +312,7 @@ def extract_state_metrics_from_pages(
 
 
 def evaluate_state_metrics(m: UdiseStateMetrics) -> tuple[bool, list[str], str, str, str]:
-    """Evaluate OT1 concentration and staffing thresholds for one State/UT."""
+    """Evaluate P5 concentration and staffing thresholds for one State/UT."""
     high_share = (
         m.single_teacher_schools >= MIN_SINGLE_TEACHER_SCHOOLS_FOR_SHARE
         and m.single_teacher_share_pct >= HIGH_CONCENTRATION_SHARE_PCT
@@ -341,16 +341,16 @@ def evaluate_state_metrics(m: UdiseStateMetrics) -> tuple[bool, list[str], str, 
 
     if high_share and (severe_overcrowding or gov_primary_understaffed):
         signal_category = "severe_concentration_and_overcrowding"
-        rule_triggered = "OT1-CONCENTRATION-OVERCROWDING"
+        rule_triggered = "P5-CONCENTRATION-OVERCROWDING"
     elif high_share:
         signal_category = "high_single_teacher_concentration"
-        rule_triggered = "OT1-HIGH-CONCENTRATION"
+        rule_triggered = "P5-HIGH-CONCENTRATION"
     elif severe_overcrowding:
         signal_category = "severe_single_teacher_overcrowding"
-        rule_triggered = "OT1-SEVERE-OVERCROWDING"
+        rule_triggered = "P5-SEVERE-OVERCROWDING"
     else:
         signal_category = "gov_primary_understaffed"
-        rule_triggered = "OT1-GOV-PRIMARY-UNDERSTAFFED"
+        rule_triggered = "P5-GOV-PRIMARY-UNDERSTAFFED"
 
     if (
         m.single_teacher_share_pct >= 15.0
@@ -366,11 +366,11 @@ def evaluate_state_metrics(m: UdiseStateMetrics) -> tuple[bool, list[str], str, 
     return True, triggered, signal_category, rule_triggered, severity
 
 
-def run_ot1_single_teacher_schools(
+def run_p5_single_teacher_schools(
     records: list[dict[str, Any]],
     context: dict[str, Any] | None = None,
 ) -> tuple[list[AuditLeadCandidate], int, float, str, dict[str, Any]]:
-    """Run deterministic OT1 single-teacher & primary-staffing concentration check on UDISE+ pages."""
+    """Run deterministic P5 single-teacher & primary-staffing concentration check on UDISE+ pages."""
     ctx = context or {}
     spec = ctx.get("one_teacher_five_grades") if isinstance(ctx.get("one_teacher_five_grades"), dict) else {}
     academic_year = str(spec.get("academic_year") or "").strip()
@@ -396,7 +396,7 @@ def run_ot1_single_teacher_schools(
     pages = _pages_map(records)
     if not pages or not academic_year or not state_name:
         meta["unevaluable_count"] = 1
-        return [], 0, 0.0, "OT1 read 0 UDISE+ rows: missing PDF pages, academic year, or state specification.", meta
+        return [], 0, 0.0, "P5 read 0 UDISE+ rows: missing PDF pages, academic year, or state specification.", meta
 
     metrics = extract_state_metrics_from_pages(
         pages,
@@ -411,7 +411,7 @@ def run_ot1_single_teacher_schools(
             [],
             0,
             0.0,
-            f"OT1 could not parse Tables 2.2, 3.3, 4.3, and 5.2 for {state_name} in UDISE+ {academic_year}.",
+            f"P5 could not parse Tables 2.2, 3.3, 4.3, and 5.2 for {state_name} in UDISE+ {academic_year}.",
             meta,
         )
 
@@ -433,7 +433,7 @@ def run_ot1_single_teacher_schools(
             [],
             1,
             0.0,
-            f"OT1 cleared {state_name} ({academic_year}): {metrics.single_teacher_schools:,} single-teacher schools "
+            f"P5 cleared {state_name} ({academic_year}): {metrics.single_teacher_schools:,} single-teacher schools "
             f"({metrics.single_teacher_share_pct:.2f}% of {metrics.total_schools:,} schools; "
             f"{metrics.single_teacher_enrolments:,} enrolled, {metrics.students_per_single_teacher:.1f} students/school; "
             f"Government Primary I-V avg {gov_avg_str} teachers/school across {metrics.gov_primary_1_5_schools:,} schools). "
@@ -564,14 +564,14 @@ def run_ot1_single_teacher_schools(
         evidence_text=summary[:1000],
     )
 
-    return [lead], 0, 0.0, f"OT1 flagged {state_name} ({academic_year}): {signal_category} ({metrics.single_teacher_schools:,} single-teacher schools).", meta
+    return [lead], 0, 0.0, f"P5 flagged {state_name} ({academic_year}): {signal_category} ({metrics.single_teacher_schools:,} single-teacher schools).", meta
 
 
 def validate_context(ctx: Any, where: str) -> list[str]:
-    """Validate ``payload.context.one_teacher_five_grades`` for an OT1 task."""
+    """Validate ``payload.context.one_teacher_five_grades`` for a P5 task."""
     errors: list[str] = []
     if not isinstance(ctx, dict):
-        return [f"{where}.payload.context.one_teacher_five_grades is required for OT1 tasks."]
+        return [f"{where}.payload.context.one_teacher_five_grades is required for P5 tasks."]
     spec = ctx.get("one_teacher_five_grades")
     if not isinstance(spec, dict):
         return [f"{where}.payload.context.one_teacher_five_grades must be an object."]
