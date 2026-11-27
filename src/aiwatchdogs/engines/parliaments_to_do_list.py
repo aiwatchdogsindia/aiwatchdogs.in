@@ -100,6 +100,29 @@ _IR_SECTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Rajya Sabha / GoI eOffice header & footer stamp patterns stamped onto scanned image-only IR PDFs
+_EOFFICE_FULL_STAMP_RE = re.compile(
+    r"(?:\b\d{4,10}/20\d{2}/[^\n]{2,80}?\s+\d{1,4}\s+)?"
+    r"File\s+No\.?\s+[A-Z0-9][A-Za-z0-9./\-()\s]{3,140}?\(Computer\s+No\.?\s*\d+\)\s*"
+    r"Generated\s+from\s+eOffice\s+by\s+.{2,240}?\bon\s+\d{1,2}[./-]\d{1,2}[./-]20\d{2}"
+    r"(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM))?",
+    re.IGNORECASE,
+)
+_EOFFICE_GENERATED_RE = re.compile(
+    r"\bGenerated\s+from\s+eOffice\s+by\s+.{2,240}?\bon\s+\d{1,2}[./-]\d{1,2}[./-]20\d{2}"
+    r"(?:\s+\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM))?",
+    re.IGNORECASE,
+)
+_EOFFICE_FILE_NO_RE = re.compile(
+    r"\bFile\s+No\.?\s+[A-Z0-9][A-Za-z0-9./\-()\s]{3,140}?\(Computer\s+No\.?\s*\d+\)",
+    re.IGNORECASE,
+)
+_EOFFICE_RECEIPT_LINE_RE = re.compile(
+    r"^\s*\d{4,10}/20\d{2}/[^\n]{2,80}\s*$",
+    re.IGNORECASE,
+)
+_BARE_PAGE_NUM_LINE_RE = re.compile(r"^\s*\d{1,4}\s*$")
+
 _DEPT_WITHOUT_MINISTRY_PREFIX: frozenset[str] = frozenset(
     {
         "atomic energy",
@@ -335,6 +358,45 @@ def extract_question_pdf_excerpt(
     return best_page, clean_parliament_text(best_text, max_len=360), total_chars
 
 
+def strip_eoffice_stamps(page_text: str) -> str:
+    """Remove Rajya Sabha / GoI eOffice receipt, file-number, and generation footer watermarks.
+
+    Many scanned image-only Rajya Sabha Implementation Report PDFs have zero OCR text of the
+    actual ministry reply, yet carry a machine-generated eOffice header/footer stamp on every
+    page. Stripping those stamps before measuring text length ensures image-only scans are
+    classified as ``scanned_ir_pdf_no_text_layer`` and clerk metadata is never quoted as the
+    follow-up answer.
+    """
+    raw = str(page_text or "")
+    if not raw.strip():
+        return ""
+    stripped_lines: list[str] = []
+    had_eoffice = False
+    for line in raw.splitlines():
+        if _EOFFICE_RECEIPT_LINE_RE.match(line):
+            had_eoffice = True
+            continue
+        cleaned_line = _EOFFICE_FULL_STAMP_RE.sub(" ", line)
+        cleaned_line = _EOFFICE_GENERATED_RE.sub(" ", cleaned_line)
+        cleaned_line = _EOFFICE_FILE_NO_RE.sub(" ", cleaned_line)
+        if cleaned_line != line:
+            had_eoffice = True
+        stripped_lines.append(cleaned_line)
+    if had_eoffice:
+        stripped_lines = [ln for ln in stripped_lines if not _BARE_PAGE_NUM_LINE_RE.match(ln)]
+    joined = _MULTI_SPACE_RE.sub(" ", " ".join(stripped_lines)).strip()
+    # Second pass on whitespace-collapsed text in case an eOffice stamp wrapped across lines.
+    collapsed = _EOFFICE_FULL_STAMP_RE.sub(" ", joined)
+    collapsed = _EOFFICE_GENERATED_RE.sub(" ", collapsed)
+    collapsed = _EOFFICE_FILE_NO_RE.sub(" ", collapsed)
+    if collapsed != joined:
+        had_eoffice = True
+    collapsed = _MULTI_SPACE_RE.sub(" ", collapsed).strip()
+    if had_eoffice and _BARE_PAGE_NUM_LINE_RE.match(collapsed):
+        return ""
+    return collapsed
+
+
 def extract_ir_pdf_summary(pdf_pages: list[dict[str, Any]]) -> tuple[str, int, int, str, date | None]:
     """Inspect a Rajya Sabha Implementation Report PDF for machine-readable follow-up text.
 
@@ -347,7 +409,7 @@ def extract_ir_pdf_summary(pdf_pages: list[dict[str, Any]]) -> tuple[str, int, i
     cleaned_pages: list[str] = []
     total_chars = 0
     for rec in pdf_pages:
-        compact = _MULTI_SPACE_RE.sub(" ", str(rec.get("raw_text") or rec.get("text") or "")).strip()
+        compact = strip_eoffice_stamps(str(rec.get("raw_text") or rec.get("text") or ""))
         total_chars += len(compact)
         if compact:
             cleaned_pages.append(compact)

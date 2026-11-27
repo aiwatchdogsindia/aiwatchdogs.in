@@ -608,6 +608,107 @@ def test_p6_rajya_sabha_pending_extensions_and_readable_vs_scanned_ir_pdf() -> N
     assert "1,120 posts have been filled" in rs_readable.summary
 
 
+def test_p6_strips_eoffice_watermarks_from_scanned_and_digital_ir_pdfs() -> None:
+    """Regression: eOffice footer stamps on scanned RS IR PDFs must not fool readability detection."""
+    rs_fimp_row = {
+        "session": "260",
+        "date": "2023-08-03",
+        "ministry": "HEALTH AND FAMILY WELFARE",
+        "member": "Dr. Test MP",
+        "subject": "Medical colleges progress",
+        "questionType": "Unstarred",
+        "status": "FIMP",
+        "extent": "State-wise construction status is being collected.",
+        "extNo": 0,
+        "irUrl": RS_FIMP_IR_URL,
+        "qno": "28",
+        "oassuNo": "260/28",
+    }
+    ir_sha = "e" * 64
+    ctx = _p6_ctx(
+        retrieval_url=RS_FIMP_RETRIEVAL_URL,
+        expected_sha256="d" * 64,
+        secondary_url=RS_FIMP_IR_URL,
+        secondary_expected_sha256=ir_sha,
+        spec_overrides={
+            "assurance_key": "rs-260-28",
+            "house": "Rajya Sabha",
+            "house_code": "RS",
+            "loksabha": None,
+            "session": "260",
+            "assurance_ref": "RS-260/28",
+            "oassu_no": "260/28",
+            "question_type": "Unstarred",
+            "question_no": "28",
+            "promise_date": "2023-08-03",
+            "ministry": "Health and Family Welfare",
+            "ministry_key": "health-and-family-welfare",
+            "recorded_status": "fully_implemented",
+            "raw_status": "FIMP",
+            "secondary_role": "implementation_report_pdf",
+            "portal_url": "https://sansad.in/rs/house-business/government-assurances",
+            "is_anchor_case": False,
+        },
+        as_of_date="2026-11-27",
+    )
+
+    # 1. Multi-page scanned image-only PDF with ONLY eOffice header/footer watermarks (AM & pm variants)
+    watermark_only_recs = [
+        {**rs_fimp_row, "document": "primary"},
+        {
+            "page": 1,
+            "raw_text": (
+                "166937/2024/Comm Sec(Gov Asr)\n1\n"
+                "File No. LAFEAS-CG11014/202/2023-Comm Sec(Gov Asr)-RSS (Computer No. 31599)\n"
+                "Generated from eOffice by Clerk Name, ASO(PS)-Comm Sec(Gov Ass), ASO(S), RSS on 13/11/2026 03:04 PM"
+            ),
+            "document": "secondary",
+            "secondary_sha256": ir_sha,
+        },
+        {
+            "page": 2,
+            "raw_text": (
+                "265541/2025/Comm Sec(Gov Asr)\n2\n"
+                "File No. LAFEAS-CG11011/87/2025-Comm Sec(Gov Asr)-RSS (Computer No. 43056)\n"
+                "Generated from eOffice by Clerk Two, SSA(TA) - Gov Asr, SSA(Gov Asr), RSS on 09/10/2025 09:40 am"
+            ),
+            "document": "secondary",
+            "secondary_sha256": ir_sha,
+        },
+    ]
+    res_scan = run_engine(PARLIAMENTS_TO_DO_LIST_METHODOLOGY, watermark_only_recs, context=ctx)
+    assert len(res_scan.leads) == 1
+    lead = res_scan.leads[0]
+    assert lead.rule_triggered == "P6-FOLLOWUP-GAP"
+    assert lead.anomaly_metrics["followup_text_status"] == "scanned_ir_pdf_no_text_layer"
+    assert lead.anomaly_metrics["secondary_pdf_chars"] == 0
+    assert "Generated from eOffice" not in lead.anomaly_metrics["followup_answer"]
+    assert "LAFEAS" not in lead.summary
+
+    # 2. Digital IR PDF that ALSO carries an eOffice stamp -> stamp stripped, real reply preserved
+    mixed_recs = [
+        {**rs_fimp_row, "document": "primary"},
+        {
+            "page": 1,
+            "raw_text": (
+                "336767/2026/Comm Sec(Gov Asr)\n1\n"
+                "IMPLEMENTATION REPORT LAID ON 10.10.2023\n"
+                "Action Taken: Civil construction of 42 new district medical colleges has reached completion.\n"
+                "File No. LAFEAS-CG11/78/2026-Comm Sec(Gov Asr)-RSS (Computer No. 50684)\n"
+                "Generated from eOffice by Clerk Three, SA(NK)-Gov Asr, SA, RSS on 17/09/2026 05:37 pm"
+            ),
+            "document": "secondary",
+            "secondary_sha256": ir_sha,
+        },
+    ]
+    res_mixed = run_engine(PARLIAMENTS_TO_DO_LIST_METHODOLOGY, mixed_recs, context=ctx)
+    assert res_mixed.leads == []
+    assert res_mixed.cleared_count == 1
+    assert "42 new district medical colleges" in res_mixed.summary
+    assert "Generated from eOffice" not in res_mixed.summary
+    assert "LAFEAS" not in res_mixed.summary
+
+
 def test_p6_neutralizes_verbatim_parliament_text_and_handles_missing_record() -> None:
     # Verbatim text containing BNS Sec 356 forbidden words + phone number must neutralize & scrub cleanly
     spicy_row = {
