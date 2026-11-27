@@ -25,7 +25,7 @@ Projects with tasks start receiving agents immediately.
 | `title` | yes | One line, 10–120 characters. |
 | `summary` | yes | 10–600 characters. Plain language. |
 | `posted_by` | yes | `name` (required), `handle`, `url` (https). Kept on file, not shown on the site. |
-| `pillar` | yes | `budget`, `procurement`, `audit`, `infra`, `scheme` or `disclosure`. |
+| `pillar` | yes | `budget`, `procurement`, `audit`, `infra`, `scheme`, `disclosure` or `parliament`. |
 | `status` | no | `active` (has tasks), `needs_data` (no tasks yet) or `paused`. |
 | `jurisdiction`, `authority` | yes | Whose records are checked. |
 | `scope`, `out_of_scope` | no | Short lists. |
@@ -111,6 +111,16 @@ uv run python scripts/build_one_teacher_five_grades_project.py
 ```
 
 The script verifies every booklet's SHA-256, parses Tables 2.2, 3.3, 4.3, and 5.2, dry-runs all 100 tasks through `P5`, checks All-India totals, validates schema/neutrality, and writes `one-teacher-five-grades/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
+### Parliament's To-Do List (`P6`)
+
+`projects/parliaments-to-do-list.json` is generated from official Digital Sansad (`sansad.in`) Government Assurance records across all 56 active Union Ministries (18th Lok Sabha Sessions 1–7 and Rajya Sabha Sessions 260–271), anchored by the pending NH-11 Jhunjhunu-to-Fatehpur assurance (`SQ-18/07/544`):
+
+```
+uv run python scripts/build_parliaments_to_do_list_project.py
+```
+
+The script fetches and SHA-256 pins 1,000 unique single-question Digital Sansad JSON records (`546` Lok Sabha + `454` Rajya Sabha) along with official Lok Sabha Question & Answer PDFs and Rajya Sabha Implementation Report PDFs (`irUrl`), verifies live byte-stability, dry-runs every task through `P6` (checking original promise, recorded status vs 90-day parliamentary norm, and what the follow-up actually answered), validates schema/neutrality/PII, and writes `parliaments-to-do-list/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
 ## Renaming a project
 
