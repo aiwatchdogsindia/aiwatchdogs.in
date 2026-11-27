@@ -6326,15 +6326,21 @@ export function SovereignLiesVisualiser({
         </div>
 
         <div className="pv-summary-pills tabular">
-          <span className="tag-mono">{fmtCount(totalTasks)} scheme tasks</span>
+          <span className="tag-mono">
+            {fmtCount(totalTasks)} {totalTasks === 1 ? 'scheme task' : 'scheme tasks'}
+          </span>
           {uniqueSchemesCovered > 0 ? (
-            <span className="tag-mono">{fmtCount(uniqueSchemesCovered)} schemes</span>
+            <span className="tag-mono">
+              {fmtCount(uniqueSchemesCovered)} {uniqueSchemesCovered === 1 ? 'scheme' : 'schemes'}
+            </span>
           ) : null}
           {statesAndUtsCovered > 0 ? (
             <span className="tag-mono">Union + {fmtCount(statesAndUtsCovered)} States &amp; UTs</span>
           ) : null}
           {sgbTasksCount > 0 ? (
-            <span className="p8-sgb-chip">{fmtCount(sgbTasksCount)} SGB tasks</span>
+            <span className="p8-sgb-chip">
+              {fmtCount(sgbTasksCount)} {sgbTasksCount === 1 ? 'SGB task' : 'SGB tasks'}
+            </span>
           ) : null}
           <span className="tag-mono">
             {fmtCount(leads)} {leads === 1 ? 'divergence lead' : 'divergence leads'}
@@ -6614,10 +6620,14 @@ export function SovereignLiesVisualiser({
                       <span className="pv-p7-cohort-name">{bucket.label}</span>
                       <span className="pv-p7-cohort-share tabular">{fmtPct(pct)}</span>
                     </span>
-                    <span className="pv-p7-cohort-num tabular">{fmtCount(bucket.tasks)} tasks</span>
+                    <span className="pv-p7-cohort-num tabular">
+                      {fmtCount(bucket.tasks)} {bucket.tasks === 1 ? 'task' : 'tasks'}
+                    </span>
                     <span className="pv-p7-cohort-sub tabular">
                       {fmtCount(bucket.done)}/{fmtCount(bucket.tasks)} checked ({fmtPct(bucket.pct)})
-                      {bucket.leads > 0 ? ` · ${fmtCount(bucket.leads)} leads` : ''}
+                      {bucket.leads > 0
+                        ? ` · ${fmtCount(bucket.leads)} ${bucket.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
                       {bucket.cleared > 0 ? ` · ${fmtCount(bucket.cleared)} cleared` : ''}
                     </span>
                     <span className="pv-p7-cohort-sub">{desc}</span>
@@ -6655,8 +6665,10 @@ export function SovereignLiesVisualiser({
                   <div className="pv-p7-signal-top">
                     <span className={m.chipClass}>{m.label}</span>
                     <span className="pv-p7-signal-count tabular">
-                      <strong>{fmtCount(m.tasks)}</strong> tasks
-                      {m.leads > 0 ? ` · ${fmtCount(m.leads)} leads` : ''}
+                      <strong>{fmtCount(m.tasks)}</strong> {m.tasks === 1 ? 'task' : 'tasks'}
+                      {m.leads > 0
+                        ? ` · ${fmtCount(m.leads)} ${m.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
                     </span>
                   </div>
                   <span className="pv-p7-signal-track" aria-hidden="true">
@@ -6868,7 +6880,7 @@ export function SovereignLiesVisualiser({
                                 ) : null}
                               </span>
                               <span className="pv-ub-sub tabular">
-                                {fmtCount(total)} tasks · {fmtCount(done)} checked ({fmtPct(donePct)})
+                                {fmtCount(total)} {total === 1 ? 'task' : 'tasks'} · {fmtCount(done)} checked ({fmtPct(donePct)})
                               </span>
                             </td>
                             <td className="num pv-ub-years-lines" data-label="Leads / Cleared">
@@ -7082,7 +7094,9 @@ export function SovereignLiesVisualiser({
                             </div>
                           </td>
                           <td className="num tabular" data-label="Tasks / Leads">
-                            <span className="pv-ub-cell-val">{fmtCount(s.tasks)} tasks</span>
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(s.tasks)} {s.tasks === 1 ? 'task' : 'tasks'}
+                            </span>
                             <span className="pv-ub-sub">
                               {fmtCount(s.leads)} {s.leads === 1 ? 'lead' : 'leads'}
                               {(s.cleared ?? 0) > 0 ? ` · ${fmtCount(s.cleared)} cleared` : ''}

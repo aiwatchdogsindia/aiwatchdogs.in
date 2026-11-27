@@ -369,6 +369,8 @@ export function isOfficialGovUrl(url?: string | null): boolean {
       host.endsWith('.cag.org.in') ||
       host === 'sansad.in' ||
       host.endsWith('.sansad.in') ||
+      host === 'rajyasabha.digital' ||
+      host.endsWith('.rajyasabha.digital') ||
       host === 'rbi.org.in' ||
       host.endsWith('.rbi.org.in') ||
       host === 'pfrda.org.in' ||

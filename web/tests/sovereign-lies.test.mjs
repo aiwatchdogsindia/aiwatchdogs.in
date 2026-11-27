@@ -118,6 +118,10 @@ test('P8 project metadata helpers resolve slug, code, work type, pillar, WebMCP,
   assert.equal(utilsMod.isOfficialGovUrl('https://www.indiacode.nic.in/'), true);
   assert.equal(utilsMod.isOfficialGovUrl('https://www.pfrda.org.in/'), true);
   assert.equal(utilsMod.isOfficialGovUrl('https://sansad.in/getFile/loksabhaquestions/annex/185/AU123.pdf'), true);
+  assert.equal(utilsMod.isOfficialGovUrl('https://bucketapi.rajyasabha.digital/RSQ/267/AU123.pdf'), true);
+  assert.equal(utilsMod.isOfficialGovUrl('https://rajyasabha.digital/'), true);
+  assert.equal(utilsMod.isOfficialGovUrl('https://fake-rajyasabha.digital.example.com/q.pdf'), false);
+  assert.equal(utilsMod.isOfficialGovUrl('http://bucketapi.rajyasabha.digital/insecure.pdf'), false);
   assert.equal(utilsMod.isOfficialGovUrl('https://fake-rbi.org.in.example.com/sgb'), false);
   assert.equal(utilsMod.isOfficialGovUrl('http://www.rbi.org.in/insecure'), false);
 
@@ -448,13 +452,16 @@ test('SovereignLiesVisualiser helpers normalize tiers, 7 mechanisms, categories,
   assert.equal(leadsOnlyMechs.items[0].sharePct, 75);
   assert.equal(leadsOnlyMechs.items[1].sharePct, 25);
 
-  // Regression guards for zero-done bar width, leads-only mechanism bar, numeric year formatting, and clipped card delta
+  // Regression guards for zero-done bar width, leads-only mechanism bar, singular/plural labels, numeric year formatting, and clipped card delta
   const visualsSrcCheck = fs.readFileSync(
     path.join(webDir, 'src/components/ProjectVisuals.tsx'),
     'utf8',
   );
   assert.match(visualsSrcCheck, /donePct > 0 \?/);
   assert.match(visualsSrcCheck, /m\.sharePct > 0 \? Math\.max\(3, m\.sharePct\) : 0/);
+  assert.match(visualsSrcCheck, /bucket\.leads === 1 \? 'lead' : 'leads'/);
+  assert.match(visualsSrcCheck, /m\.leads === 1 \? 'lead' : 'leads'/);
+  assert.match(visualsSrcCheck, /s\.tasks === 1 \? 'task' : 'tasks'/);
   const drawerSrcCheck = fs.readFileSync(
     path.join(webDir, 'src/components/FindingDrawer.tsx'),
     'utf8',
