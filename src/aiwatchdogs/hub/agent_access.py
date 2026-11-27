@@ -924,6 +924,22 @@ def render_findings_md(desk: DeskService, base_url: str) -> str:
     return "\n".join(out)
 
 
+def _citation_ref(cit: dict[str, Any], artifact_sha256: Any) -> str:
+    """Return the document a citation's printed line was actually read from.
+
+    The CLI stamps every citation with ``source_ref`` = the finding's primary dataset. Two-document
+    methodologies (UB1 actuals, P1 reference rows) cite lines from a second PDF, whose own
+    ``source_url`` and ``sha256`` identify it. Prefer that URL only when the fingerprint shows a
+    different file, so single-source citations keep the dataset link instead of a portal fallback.
+    """
+    ref = str(cit.get("source_ref") or "")
+    own = str(cit.get("source_url") or "")
+    cit_sha = str(cit.get("sha256") or "")
+    if own and cit_sha and artifact_sha256 and cit_sha != str(artifact_sha256):
+        return own
+    return ref or own
+
+
 def render_finding_detail_md(desk: DeskService, base_url: str, finding_id: str) -> str:
     detail = desk.get_finding_detail(finding_id)
     fid = str(detail.get("id") or finding_id)
@@ -1001,7 +1017,7 @@ def render_finding_detail_md(desk: DeskService, base_url: str, finding_id: str) 
         out.append(f"- **Artifact SHA-256:** `{detail['artifact_sha256']}`")
     for cit in detail.get("citations") or []:
         if isinstance(cit, dict):
-            ref = cit.get("source_ref") or cit.get("source_url") or ""
+            ref = _citation_ref(cit, detail.get("artifact_sha256"))
             page = f" (page {cit['page']})" if cit.get("page") is not None else ""
             excerpt = f" — {_md_cell(cit.get('printed_line') or cit.get('excerpt'), max_len=160)}" if (cit.get("printed_line") or cit.get("excerpt")) else ""
             out.append(f"- {ref}{page}{excerpt}")
