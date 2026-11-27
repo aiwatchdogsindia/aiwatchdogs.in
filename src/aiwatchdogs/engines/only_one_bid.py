@@ -101,7 +101,11 @@ _NEUTRAL_REPLACE_RE = re.compile(
 )
 
 # Entity-name canonicalization patterns
-_ENTITY_PREFIX_RE = re.compile(r"^(?:m\s*/\s*s\.?|messrs\.?|ms\.?|shri\.?|smt\.?|sri\.?|dr\.?|er\.?)\s+", re.IGNORECASE)
+_ENTITY_PREFIX_RE = re.compile(
+    r"^(?:m\s*/\s*s\.\s*|m\s*/\s*s\s+|messrs\.\s*|messrs\s+|ms\.\s*|ms\s+|"
+    r"shri\.\s*|shri\s+|smt\.\s*|smt\s+|sri\.\s*|sri\s+|dr\.\s*|dr\s+|er\.\s*|er\s+)",
+    re.IGNORECASE,
+)
 _ENTITY_SUFFIX_RE = re.compile(
     r"\b(?:private\s+limited|pvt\.?\s*ltd\.?|p\.?\s*ltd\.?|public\s+limited|limited|ltd\.?|"
     r"llp|l\.l\.p\.?|opc|one\s+person\s+company|incorporated|inc\.?|corp\.?|corporation|"
@@ -851,14 +855,20 @@ def run_p7_only_one_bid(
         doc_role = str(rec.get("document") or "primary")
         doc_fmt = secondary_source_format if doc_role == "secondary" else source_format
         is_gepnic_doc = doc_fmt == "gepnic_aoc_csv"
+        has_gepnic_in_task = source_format == "gepnic_aoc_csv" or secondary_source_format == "gepnic_aoc_csv"
 
-        # Enforce cohort_filter.status_equals (e.g. "Accepted-AOC") so Rejected-* losing bidder rows are excluded.
-        effective_status_req = status_equals or ("Accepted-AOC" if is_gepnic_doc else "")
-        if effective_status_req:
-            row_status = _clean_text(_get_field(rec, "status", field_map), max_len=80)
-            if is_gepnic_doc or row_status:
+        # Scope cohort_filter.status_equals strictly to the GePNIC doc role when joining with OCDS/OCP
+        # (never drop primary OCDS rows carrying status="complete"), and fail closed on blank status.
+        if has_gepnic_in_task:
+            if is_gepnic_doc:
+                effective_status_req = status_equals or "Accepted-AOC"
+                row_status = _clean_text(_get_field(rec, "status", field_map), max_len=80)
                 if row_status.lower() != effective_status_req.lower():
                     continue
+        elif status_equals and (doc_role != "secondary" or not secondary_source_format):
+            row_status = _clean_text(_get_field(rec, "status", field_map), max_len=80)
+            if row_status.lower() != status_equals.lower():
+                continue
 
         # On GePNIC CSV documents, NEVER read bogus "No of Bids Received" cover count as bid_count.
         suppress_bids = is_gepnic_doc and (
@@ -1287,7 +1297,15 @@ def run_p7_only_one_bid(
     safe_title = _neutralize_external_text(target.title or f"Tender {target.tender_id or case_key}")[:180]
     safe_category = _neutralize_external_text(target.category or "Public Procurement")[:100]
     safe_portal = _neutralize_external_text(portal)[:100]
-    resolved_jurisdiction = target.jurisdiction or spec_jurisdiction
+    generic_jurs = {"", "union of india", "india", "unspecified"}
+    spec_is_specific = spec_jurisdiction.strip().lower() not in generic_jurs
+    row_is_specific = target.jurisdiction.strip().lower() not in generic_jurs
+    if spec_is_specific:
+        resolved_jurisdiction = spec_jurisdiction
+    elif row_is_specific:
+        resolved_jurisdiction = target.jurisdiction
+    else:
+        resolved_jurisdiction = spec_jurisdiction or target.jurisdiction or "Union of India"
     governing = _governing_instrument(resolved_jurisdiction, jurisdiction_level)
 
     related_ids: list[str] = []
@@ -1379,6 +1397,7 @@ def run_p7_only_one_bid(
             "role": "primary_tender",
             "source_url": retrieval_url or landing_url,
             "landing_url": landing_url,
+            "source_landing_page": landing_url,
             "official_publisher": official_publisher,
             "source_locator": source_locator,
             "tender_id": target.tender_id,
@@ -1395,17 +1414,25 @@ def run_p7_only_one_bid(
     ]
 
     if winner_total_wins >= 2:
-        uses_secondary = any(r.doc_role == "secondary" for r in winner_rows) and bool(sec_url)
-        cohort_sha = (
-            sec_sha
-            or next((r.secondary_sha256 for r in winner_rows if r.secondary_sha256), "")
-            or expected_sha
+        uses_secondary = bool(sec_url) and any(
+            r.doc_role == "secondary" or bool(r.secondary_sha256) for r in winner_rows
         )
+        if uses_secondary:
+            cohort_url = sec_url
+            cohort_sha = (
+                sec_sha
+                or next((r.secondary_sha256 for r in winner_rows if r.secondary_sha256), "")
+                or expected_sha
+            )
+        else:
+            cohort_url = retrieval_url or landing_url
+            cohort_sha = expected_sha
         citations.append(
             {
                 "role": "repeat_winner_cohort",
-                "source_url": sec_url if uses_secondary else (retrieval_url or landing_url),
+                "source_url": cohort_url,
                 "landing_url": landing_url,
+                "source_landing_page": landing_url,
                 "official_publisher": official_publisher,
                 "source_locator": (
                     f"authority={safe_authority}; winner={target_winner_key}; "
@@ -1425,6 +1452,7 @@ def run_p7_only_one_bid(
             "role": "statutory_benchmark",
             "source_url": landing_url or retrieval_url,
             "landing_url": landing_url or retrieval_url,
+            "source_landing_page": landing_url or retrieval_url,
             "official_publisher": official_publisher,
             "source_locator": f"rule={rule_triggered}; jurisdiction={resolved_jurisdiction}",
             "sha256": expected_sha,

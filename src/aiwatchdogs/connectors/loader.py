@@ -296,14 +296,50 @@ def _infer_jurisdiction(source_ref: str, explicit: Any = None) -> str:
         or "/publication/77" in lower
     ):
         return "State:Himachal Pradesh"
-    if "odisha" in lower or "tendersodisha" in lower:
+    if "odisha" in lower or "orissa" in lower or "tendersodisha" in lower:
         return "State:Odisha"
-    if "flood-data-ecosystem-up" in lower or "all_up_tenders" in lower or "etender.up.nic.in" in lower:
+    if (
+        "uttar pradesh" in lower
+        or "flood-data-ecosystem-up" in lower
+        or "all_up_tenders" in lower
+        or "etender.up.nic.in" in lower
+    ):
         return "State:Uttar Pradesh"
     if "andhra" in lower or "ap_child" in lower:
         return "State:Andhra Pradesh"
-    if "mp-jjm" in lower or "mp_jjm" in lower or "bhopal" in lower:
+    if "madhya pradesh" in lower or "mp-jjm" in lower or "mp_jjm" in lower or "mprrda" in lower or "bhopal" in lower:
         return "State:Madhya Pradesh"
+    state_markers: tuple[tuple[str, str], ...] = (
+        ("arunachal pradesh", "State:Arunachal Pradesh"),
+        ("bihar", "State:Bihar"),
+        ("chhattisgarh", "State:Chhattisgarh"),
+        ("goa", "State:Goa"),
+        ("gujarat", "State:Gujarat"),
+        ("haryana", "State:Haryana"),
+        ("jharkhand", "State:Jharkhand"),
+        ("karnataka", "State:Karnataka"),
+        ("kerala", "State:Kerala"),
+        ("maharashtra", "State:Maharashtra"),
+        ("manipur", "State:Manipur"),
+        ("meghalaya", "State:Meghalaya"),
+        ("mizoram", "State:Mizoram"),
+        ("nagaland", "State:Nagaland"),
+        ("punjab", "State:Punjab"),
+        ("rajasthan", "State:Rajasthan"),
+        ("sikkim", "State:Sikkim"),
+        ("tamil nadu", "State:Tamil Nadu"),
+        ("telangana", "State:Telangana"),
+        ("tripura", "State:Tripura"),
+        ("uttarakhand", "State:Uttarakhand"),
+        ("west bengal", "State:West Bengal"),
+        ("jammu and kashmir", "UT:Jammu and Kashmir"),
+        ("puducherry", "UT:Puducherry"),
+        ("chandigarh", "UT:Chandigarh"),
+        ("ladakh", "UT:Ladakh"),
+    )
+    for token, label in state_markers:
+        if re.search(rf"(?<![a-z]){re.escape(token)}(?![a-z])", lower):
+            return label
     return "Union of India"
 
 
@@ -1136,7 +1172,8 @@ def _read_zip_member_bounded(
 ) -> bytes:
     """Safely read a single zip member enforcing incremental decompressed byte and ratio limits."""
     name = info.filename
-    if name.startswith(("/", "\\")) or ".." in Path(name).parts:
+    norm_name = name.replace("\\", "/")
+    if norm_name.startswith("/") or ".." in Path(norm_name).parts:
         raise ValueError(f"Refused unsafe archive member path: {name!r}")
     if info.file_size > remaining_bytes:
         raise ValueError(
@@ -1681,15 +1718,15 @@ class _WBNoticeHTMLToLines(HTMLParser):
 
 
 _WB_AWARDED_HEAD_RE = re.compile(
-    r"^(?:awarded|successful)\s+(?:bidder|bidders|bidder\(s\)|firm|firms|firm/individual|consultant|consultants|contractor|supplier)",
+    r"^(?:awarded|successful)\s+(?:bidder(?:\(s\)|s)?|firm(?:/individual|s)?|consultant(?:\(s\)|s)?|contractor(?:\(s\)|s)?|supplier(?:\(s\)|s)?)\s*[:|-]*",
     re.IGNORECASE,
 )
 _WB_EVALUATED_HEAD_RE = re.compile(
-    r"^(?:other\s+)?evaluated\s+(?:bidder|bidders|bidder\(s\)|firm|firms|consultant|consultants|contractor|supplier)",
+    r"^(?:other\s+)?evaluated\s+(?:bidder(?:\(s\)|s)?|firm(?:/individual|s)?|consultant(?:\(s\)|s)?|contractor(?:\(s\)|s)?|supplier(?:\(s\)|s)?)\s*[:|-]*",
     re.IGNORECASE,
 )
 _WB_REJECTED_HEAD_RE = re.compile(
-    r"^(?:rejected|non[\s-]*responsive|disqualified)\s+(?:bidder|bidders|bidder\(s\)|firm|firms|consultant|consultants|contractor|supplier)",
+    r"^(?:rejected|non[\s-]*responsive|disqualified)\s+(?:bidder(?:\(s\)|s)?|firm(?:/individual|s)?|consultant(?:\(s\)|s)?|contractor(?:\(s\)|s)?|supplier(?:\(s\)|s)?)\s*[:|-]*",
     re.IGNORECASE,
 )
 _WB_STOP_HEAD_RE = re.compile(
@@ -1776,8 +1813,10 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
         lines = parser.lines()
         plain_text = "\n".join(lines)
 
-        # Drop corrupt notices where bid_reference_no is absent from notice_text
-        if bid_ref and plain_text:
+        # Drop notices with empty notice_text or corrupt notices where bid_reference_no is absent from notice_text
+        if not plain_text.strip():
+            continue
+        if bid_ref:
             norm_plain = re.sub(r"\s+", " ", plain_text).lower()
             norm_ref = re.sub(r"\s+", " ", bid_ref).lower()
             if norm_ref not in norm_plain:
@@ -1789,16 +1828,28 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
         active_sec: str | None = None
 
         for ln in lines:
-            if _WB_AWARDED_HEAD_RE.match(ln):
+            m_awd = _WB_AWARDED_HEAD_RE.match(ln)
+            if m_awd:
                 active_sec = "awarded"
+                remainder = ln[m_awd.end() :].strip(" :|-")
+                if remainder:
+                    sections["awarded"].append(remainder)
                 continue
-            if _WB_EVALUATED_HEAD_RE.match(ln):
+            m_eval = _WB_EVALUATED_HEAD_RE.match(ln)
+            if m_eval:
                 active_sec = "evaluated"
                 has_evaluated_section = True
+                remainder = ln[m_eval.end() :].strip(" :|-")
+                if remainder:
+                    sections["evaluated"].append(remainder)
                 continue
-            if _WB_REJECTED_HEAD_RE.match(ln):
+            m_rej = _WB_REJECTED_HEAD_RE.match(ln)
+            if m_rej:
                 active_sec = "rejected"
                 has_rejected_section = True
+                remainder = ln[m_rej.end() :].strip(" :|-")
+                if remainder:
+                    sections["rejected"].append(remainder)
                 continue
             if _WB_STOP_HEAD_RE.match(ln):
                 active_sec = None
@@ -1813,15 +1864,22 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
         winner_name = awarded_bidders[0][0] if awarded_bidders else ""
         vendor_id = awarded_bidders[0][1] if awarded_bidders else ""
 
-        awarded_blob = "\n".join(sections["awarded"]) + "\n" + plain_text
+        # Search Awarded section first with BOTH regexes before falling back to full plain_text so
+        # a losing bidder's price can never override the awarded bidder's signed contract price.
+        awarded_text = "\n".join(sections["awarded"])
         award_value_inr: float | None = None
-        for rx in (_WB_SIGNED_INR_RE_1, _WB_SIGNED_INR_RE_2):
-            m_val = rx.search(awarded_blob)
-            if m_val:
-                parsed_v = _to_float_safe(m_val.group(1), 0.0)
-                if parsed_v > 0:
-                    award_value_inr = parsed_v
-                    break
+        for blob in (awarded_text, plain_text):
+            if not blob:
+                continue
+            for rx in (_WB_SIGNED_INR_RE_1, _WB_SIGNED_INR_RE_2):
+                m_val = rx.search(blob)
+                if m_val:
+                    parsed_v = _to_float_safe(m_val.group(1), 0.0)
+                    if parsed_v > 0:
+                        award_value_inr = parsed_v
+                        break
+            if award_value_inr is not None:
+                break
 
         award_date = ""
         m_dt = _WB_AWARD_DATE_RE.search(plain_text)
@@ -1843,15 +1901,25 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
         n_rej = len(rejected_bidders)
         if is_direct:
             proc_method = "direct"
-            bid_count: int | None = 1 + n_eval + n_rej
-            qualified_bid_count: int | None = 1 + n_eval
+            if awarded_bidders:
+                bid_count: int | None = 1 + n_eval + n_rej
+                qualified_bid_count: int | None = 1 + n_eval
+            else:
+                # Fail closed when direct-selection notice lacks a parsed awarded bidder
+                bid_count = None
+                qualified_bid_count = None
         else:
             proc_method = "open"
-            if has_evaluated_section or has_rejected_section:
+            # Fail closed to None when Evaluated Bidder(s) heading existed but parsed 0 bidders,
+            # or when headings existed with 0 total parsed non-winning bidders (prevents false single-bid).
+            if has_evaluated_section and n_eval == 0:
+                bid_count = None
+                qualified_bid_count = None
+            elif (has_evaluated_section or has_rejected_section) and (n_eval + n_rej) > 0:
                 bid_count = 1 + n_eval + n_rej
                 qualified_bid_count = 1 + n_eval
             else:
-                # Awarded-only RFB/RFQ without Evaluated or Rejected section: NEVER misclassify as 1 bid!
+                # Awarded-only RFB/RFQ without parsed Evaluated/Rejected bidders: NEVER misclassify as 1 bid!
                 bid_count = None
                 qualified_bid_count = None
 
@@ -2750,7 +2818,7 @@ def load_dataset(
             max_decompressed_bytes=max_decompressed_bytes,
             max_compression_ratio=max_compression_ratio,
         )
-        inner_ref = re.sub(r"\.gz(?=$|[&#])", "", source_ref, flags=re.IGNORECASE)
+        inner_ref = re.sub(r"\.gz(?=$|[?&#])", "", source_ref, flags=re.IGNORECASE)
         inner_fmt = _infer_format(inner_ref, None, "", decompressed)
         if inner_fmt == "gzip":
             head_strip = decompressed[:2048].decode("utf-8-sig", errors="replace").lstrip()

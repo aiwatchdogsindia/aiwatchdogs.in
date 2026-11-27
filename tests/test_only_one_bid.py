@@ -1496,6 +1496,190 @@ def test_all_four_tier1_verified_source_formats_offline(tmp_path: Path) -> None:
     assert res_wb_ao.cleared_count == 1
 
 
+def test_verifier_phase1_regressions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression coverage for every Track A finding raised in Phase 1 adversarial review (#16)."""
+    import zipfile
+
+    # 1. WB STEP HTML edge cases:
+    #    (a) unparsed Evaluated Bidder(s) fails closed (bid_count=None, never 1),
+    #    (b) inline bidder text on heading line preserved,
+    #    (c) empty notice_text on DIR dropped,
+    #    (d) Awarded section price wins over losing bidder price in plain_text.
+    wb_edge = {
+        "procnotices": [
+            {
+                "id": "OP00900001",
+                "bid_reference_no": "IN-PB-01",
+                "procurement_method_code": "RFB",
+                "agency_name": "Punjab Water Supply Department",
+                "noticedate": "2023-05-01",
+                "notice_text": (
+                    "<p>Ref IN-PB-01</p>"
+                    "<p><strong>Awarded Bidder(s):</strong> DELTA ROADS (654321)<br/>"
+                    "Signed Contract price: 12,000,000.00 INR</p>"
+                    "<p><strong>Evaluated Bidder(s):</strong></p>"
+                    "<p>Unstructured losing bidder table without Name or ID<br/>"
+                    "Contract price: INR 99,000,000.00</p>"
+                ),
+            },
+            {
+                "id": "OP00900002",
+                "bid_reference_no": "IN-PB-02",
+                "procurement_method_code": "DIR",
+                "agency_name": "Punjab Water Supply Department",
+                "noticedate": "2023-06-01",
+                "notice_text": "",
+            },
+        ]
+    }
+    wb_path = tmp_path / "wb_edge.json"
+    wb_path.write_text(json.dumps(wb_edge), encoding="utf-8")
+    ds_edge = load_dataset(str(wb_path), allow_local_files=True)
+    assert len(ds_edge.records) == 1  # Empty DIR notice_text dropped!
+    rec0 = ds_edge.records[0]
+    assert rec0["vendor_name"] == "DELTA ROADS"  # Inline bidder preserved!
+    assert rec0["vendor_id"] == "654321"
+    assert rec0["award_value_inr"] == 12_000_000.0  # Awarded INR wins over losing INR 99M!
+    assert rec0["bid_count"] is None  # Unparsed Evaluated section fails closed (never 1)!
+    assert rec0["qualified_bid_count"] is None
+    assert rec0["jurisdiction"] == "State:Punjab"
+
+    # 2. Explicit spec_jurisdiction ("State:Punjab") is NEVER overwritten by generic "Union of India"
+    res_jur = run_engine(
+        "P7",
+        [
+            _row(
+                "PB-SB-1",
+                buyer="Punjab Irrigation Circle",
+                winner="M/S.KAMALA ENTERPRISES",  # Also tests no-space dot prefix!
+                bid_count=1,
+                award_value_inr=9_000_000.0,
+                jurisdiction="Union of India",
+            )
+        ],
+        context=_p7_ctx(
+            case_key="p7-sb-2023-00001",
+            audit_mode="single_bidder",
+            match_value="PB-SB-1",
+            authority="Punjab Irrigation Circle",
+            authority_key="punjab-irrigation",
+            jurisdiction="State:Punjab",
+            jurisdiction_level="state",
+            year=2023,
+        ),
+    )
+    assert len(res_jur.leads) == 1
+    j_lead = res_jur.leads[0]
+    assert j_lead.jurisdiction == "State:Punjab"
+    assert "State:Punjab State Public Procurement" in j_lead.anomaly_metrics["governing_instrument"]
+    assert j_lead.anomaly_metrics["normalized_winner_key"] == "kamala enterprises"
+    assert normalize_entity_name("M/S.KAMALA ENTERPRISES") == normalize_entity_name("M/S KAMALA ENTERPRISES")
+    assert all(c.get("source_landing_page") for c in j_lead.citations)
+
+    # 3 & 4. Primary OCP (with status="complete") + secondary GePNIC CSV (with status_equals="Accepted-AOC")
+    #        keeps primary bid_count, filters blank/Rejected secondary rows, AND pairs cohort URL & SHA accurately!
+    sec_url = f"https://raw.githubusercontent.com/CivicDataLab/flood-data-ecosystem-Assam/{COMMIT}/Sources/TENDERS/data/all_tenders.csv"
+    sec_sha = "b" * 64
+    ctx_merge = _p7_ctx(
+        case_key="p7-bo-2022-00099",
+        audit_mode="both",
+        match_value="T-JOIN-1",
+        authority="Assam PWRD",
+        authority_key="assam-pwrd",
+        year=2022,
+    )
+    ctx_merge["secondary_url"] = sec_url
+    ctx_merge["secondary_expected_sha256"] = sec_sha
+    ctx_merge["only_one_bid"]["source_format"] = "ocp_jsonl_gz"
+    ctx_merge["only_one_bid"]["secondary_source_format"] = "gepnic_aoc_csv"
+    ctx_merge["only_one_bid"]["cohort_filter"]["status_equals"] = "Accepted-AOC"
+    merged_records = [
+        {"document": "primary", "tender_id": "T-JOIN-1", "buyer_name": "Assam PWRD", "bid_count": 1, "status": "complete", "source_row_index": 1},
+        {"document": "primary", "tender_id": "T-JOIN-2", "buyer_name": "Assam PWRD", "bid_count": 1, "status": "complete", "source_row_index": 2},
+        {"document": "secondary", "secondary_sha256": sec_sha, "Tender ID": "T-JOIN-1", "Organisation Chain": "Assam PWRD", "Name of the Bidder": "M/S.KAMALA ENTERPRISES", "Status": "Accepted-AOC", "Awarded Value": 8_000_000, "source_row_index": 1},
+        {"document": "secondary", "secondary_sha256": sec_sha, "Tender ID": "T-JOIN-2", "Organisation Chain": "Assam PWRD", "Name of the Bidder": "M/S KAMALA ENTERPRISES", "Status": "Accepted-AOC", "Awarded Value": 7_000_000, "source_row_index": 2},
+        # Blank Status on secondary GePNIC row must be excluded (fail closed!)
+        {"document": "secondary", "secondary_sha256": sec_sha, "Tender ID": "T-JOIN-3", "Organisation Chain": "Assam PWRD", "Name of the Bidder": "M/S KAMALA ENTERPRISES", "Status": "", "Awarded Value": 5_000_000, "source_row_index": 3},
+    ]
+    res_merge = run_engine("P7", merged_records, context=ctx_merge)
+    assert len(res_merge.leads) == 1
+    m_lead = res_merge.leads[0]
+    assert m_lead.rule_triggered == "P7-COMBINED-SB-RW"
+    assert m_lead.anomaly_metrics["winner_total_wins"] == 2  # Blank-status T-JOIN-3 excluded!
+    cohort_cit = next(c for c in m_lead.citations if c["role"] == "repeat_winner_cohort")
+    assert cohort_cit["source_url"] == sec_url  # URL matches secondary SHA!
+    assert cohort_cit["sha256"] == sec_sha
+    assert cohort_cit["source_landing_page"]
+
+    # 5. Backslash zip-slip guard & query-string .csv.gz?version=1 detection
+    bad_zip = tmp_path / "slip.zip"
+    with zipfile.ZipFile(bad_zip, "w") as zf:
+        zf.writestr(r"foo\..\evil.csv", "a,b\n1,2\n")
+    with pytest.raises(ValueError, match="unsafe archive member path"):
+        load_dataset(str(bad_zip), allow_local_files=True)
+
+    import re as _re
+    assert _re.sub(r"\.gz(?=$|[?&#])", "", "https://example.org/tenders.csv.gz?version=1") == "https://example.org/tenders.csv?version=1"
+
+    # 6. _only_one_bid_summary passes optional coverage fields, exact monetary_exposure_inr, and resolves anchor outside top-20
+    proj_dir = tmp_path / "projects_cov"
+    assets_dir = proj_dir / ONLY_ONE_BID_PROJECT_SLUG
+    assets_dir.mkdir(parents=True)
+    t_anchor = _sample_p7_task("p7-bo-2021-00001", authority="Assam PWRD", year=2021, audit_mode="both")
+    (proj_dir / f"{ONLY_ONE_BID_PROJECT_SLUG}.json").write_text(
+        json.dumps(_sample_p7_project([t_anchor])), encoding="utf-8"
+    )
+    (assets_dir / "coverage.json").write_text(
+        json.dumps(
+            {
+                "total_tasks": 1,
+                "top_authorities": [
+                    {
+                        "authority": "Assam PWRD",
+                        "authority_key": "assam-pwrd",
+                        "jurisdiction": "State:Assam",
+                        "portal": "assamtenders.gov.in",
+                        "single_bid_rate_pct": 42.5,
+                        "tasks": 1,
+                    }
+                ],
+                "top_repeat_winners": [
+                    {
+                        "winner_name": "Kamala Enterprises",
+                        "normalized_winner_key": "kamala enterprises",
+                        "authority": "Assam PWRD",
+                        "jurisdiction": "State:Assam",
+                        "win_count": 5,
+                        "single_bid_wins": 4,
+                        "total_value_inr_cr": 1.2345,
+                        "share_by_count_pct": 33.3,
+                        "share_by_value_pct": 41.2,
+                        "consecutive_win_streak": 3,
+                        "year_range": ["2019", "2024"],
+                        "sample_tender_ids": ["T1", "T2"],
+                        "tasks": 1,
+                    }
+                ],
+                "anchor_case": {"task_id": "p7-bo-2021-00001", "tender_id": "T-ANCHOR"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(proj_dir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+    app = create_app(db_path=tmp_path / "p7_cov.db", seed=True)
+    with TestClient(app) as client:
+        p7_vs = client.get(f"/api/missions/{ONLY_ONE_BID_PROJECT_SLUG}").json()["visual_summary"]["only_one_bid"]
+        assert p7_vs["top_authorities"][0]["portal"] == "assamtenders.gov.in"
+        assert p7_vs["top_authorities"][0]["single_bid_rate_pct"] == 42.5
+        rw0 = p7_vs["top_repeat_winners"][0]
+        assert rw0["share_by_count_pct"] == 33.3
+        assert rw0["share_by_value_pct"] == 41.2
+        assert rw0["consecutive_win_streak"] == 3
+        assert rw0["year_range"] == ["2019", "2024"]
+        assert rw0["sample_tender_ids"] == ["T1", "T2"]
+
+
 def test_real_generated_p7_dataset_when_present() -> None:
     """Validate the real generated P7 dataset (10,000 tasks + coverage + documents) when present in projects/."""
     proj_path = REPO_PROJECTS / f"{ONLY_ONE_BID_PROJECT_SLUG}.json"

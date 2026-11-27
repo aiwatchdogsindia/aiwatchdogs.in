@@ -4854,6 +4854,20 @@ class DeskService:
                 "flagged_inr_cr": 0.0,
             }
 
+        def _opt_float_p7(val: Any, digits: int = 2) -> float | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return round(float(val), digits)
+            return None
+
+        def _opt_int_p7(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            return None
+
         authorities_map: dict[str, dict[str, Any]] = {}
         for aitem in coverage.get("top_authorities") if isinstance(coverage.get("top_authorities"), list) else []:
             if not isinstance(aitem, dict):
@@ -4864,7 +4878,7 @@ class DeskService:
             akey = str(aitem.get("authority_key") or "").strip().lower() or re.sub(
                 r"[^a-z0-9]+", "-", aname.lower()
             ).strip("-")
-            authorities_map[aname] = {
+            auth_entry: dict[str, Any] = {
                 "authority": aname,
                 "authority_key": akey,
                 "jurisdiction": str(aitem.get("jurisdiction") or ""),
@@ -4875,6 +4889,12 @@ class DeskService:
                 "leads": 0,
                 "flagged_inr_cr": 0.0,
             }
+            if aitem.get("portal"):
+                auth_entry["portal"] = str(aitem.get("portal"))
+            sb_rate = _opt_float_p7(aitem.get("single_bid_rate_pct"))
+            if sb_rate is not None:
+                auth_entry["single_bid_rate_pct"] = sb_rate
+            authorities_map[aname] = auth_entry
 
         top_repeat_winners: list[dict[str, Any]] = []
         for witem in coverage.get("top_repeat_winners") if isinstance(coverage.get("top_repeat_winners"), list) else []:
@@ -4883,18 +4903,30 @@ class DeskService:
             wname = str(witem.get("winner_name") or "").strip()
             if not wname:
                 continue
-            top_repeat_winners.append(
-                {
-                    "winner_name": wname,
-                    "normalized_winner_key": str(witem.get("normalized_winner_key") or ""),
-                    "authority": str(witem.get("authority") or ""),
-                    "jurisdiction": str(witem.get("jurisdiction") or ""),
-                    "win_count": int(witem.get("win_count") or 0),
-                    "single_bid_wins": int(witem.get("single_bid_wins") or 0),
-                    "total_value_inr_cr": round(_safe_finite_float(witem.get("total_value_inr_cr"), 0.0), 2),
-                    "tasks": int(witem.get("tasks") or 0),
-                }
-            )
+            win_entry: dict[str, Any] = {
+                "winner_name": wname,
+                "normalized_winner_key": str(witem.get("normalized_winner_key") or ""),
+                "authority": str(witem.get("authority") or ""),
+                "jurisdiction": str(witem.get("jurisdiction") or ""),
+                "win_count": int(witem.get("win_count") or 0),
+                "single_bid_wins": int(witem.get("single_bid_wins") or 0),
+                "total_value_inr_cr": round(_safe_finite_float(witem.get("total_value_inr_cr"), 0.0), 4),
+                "tasks": int(witem.get("tasks") or 0),
+            }
+            for opt_fk in ("share_by_count_pct", "share_by_value_pct"):
+                fval = _opt_float_p7(witem.get(opt_fk))
+                if fval is not None:
+                    win_entry[opt_fk] = fval
+            streak_val = _opt_int_p7(witem.get("consecutive_win_streak"))
+            if streak_val is not None:
+                win_entry["consecutive_win_streak"] = streak_val
+            if isinstance(witem.get("year_range"), list) and len(witem["year_range"]) >= 2:
+                win_entry["year_range"] = [str(witem["year_range"][0]), str(witem["year_range"][1])]
+            elif isinstance(witem.get("year_range"), str) and witem["year_range"].strip():
+                win_entry["year_range"] = witem["year_range"].strip()
+            if isinstance(witem.get("sample_tender_ids"), list):
+                win_entry["sample_tender_ids"] = [str(x) for x in witem["sample_tender_ids"][:10] if x]
+            top_repeat_winners.append(win_entry)
 
         live = (
             "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
@@ -5001,13 +5033,6 @@ class DeskService:
             metrics = loads_json(r["anomaly_metrics_json"], {})
             metrics = metrics if isinstance(metrics, dict) else {}
 
-            def _opt_int(val: Any) -> int | None:
-                if isinstance(val, bool) or val is None:
-                    return None
-                if isinstance(val, (int, float)) and math.isfinite(float(val)):
-                    return int(val)
-                return None
-
             tid_str = str(metrics.get("tender_id") or "")
             if (
                 anchor_case is not None
@@ -5016,6 +5041,7 @@ class DeskService:
             ):
                 anchor_case["finding_id"] = str(r["id"])
 
+            exposure_inr = _safe_finite_float(r["monetary_exposure_inr"], 0.0)
             top_leads.append(
                 {
                     "finding_id": str(r["id"]),
@@ -5026,16 +5052,33 @@ class DeskService:
                     "status": str(r["status"] or ""),
                     "tender_id": tid_str,
                     "winner_name": str(metrics.get("winner_name") or ""),
-                    "bids_received": _opt_int(metrics.get("bids_received")),
-                    "technically_qualified_bids": _opt_int(metrics.get("technically_qualified_bids")),
-                    "winner_total_wins": _opt_int(metrics.get("winner_total_wins")) or 0,
-                    "winner_single_bid_wins": _opt_int(metrics.get("winner_single_bid_wins")) or 0,
-                    "bid_window_days": _opt_int(metrics.get("bid_window_days")),
+                    "bids_received": _opt_int_p7(metrics.get("bids_received")),
+                    "technically_qualified_bids": _opt_int_p7(metrics.get("technically_qualified_bids")),
+                    "effective_bids": _opt_int_p7(metrics.get("effective_bids")),
+                    "single_bid_mechanism": str(metrics.get("single_bid_mechanism") or ""),
+                    "winner_total_wins": _opt_int_p7(metrics.get("winner_total_wins")) or 0,
+                    "winner_single_bid_wins": _opt_int_p7(metrics.get("winner_single_bid_wins")) or 0,
+                    "winner_cohort_total_inr": _opt_float_p7(metrics.get("winner_cohort_total_inr")),
+                    "winner_share_by_count_pct": _opt_float_p7(metrics.get("winner_share_by_count_pct")),
+                    "consecutive_win_streak": _opt_int_p7(metrics.get("consecutive_win_streak")),
+                    "bid_window_days": _opt_int_p7(metrics.get("bid_window_days")),
                     "signal_category": str(metrics.get("signal_category") or ""),
                     "amount_type": str(metrics.get("amount_type") or "unrecorded"),
-                    "flagged_inr_cr": round(_safe_finite_float(r["monetary_exposure_inr"], 0.0) / 1e7, 2),
+                    "monetary_exposure_inr": round(exposure_inr, 2),
+                    "flagged_inr_cr": round(exposure_inr / 1e7, 4),
                 }
             )
+
+        # Fallback anchor finding_id lookup when anchor finding falls outside the top 20 by exposure
+        if anchor_case is not None and not anchor_case.get("finding_id") and anchor_case.get("task_id"):
+            raw_anchor_tid = str(anchor_case.get("task_id") or "").strip()
+            prefixed_anchor_tid = raw_anchor_tid if raw_anchor_tid.startswith("prj-") else f"prj-{raw_anchor_tid}"
+            anchor_row = conn.execute(
+                f"SELECT id FROM findings WHERE {live} AND task_id IN (?, ?) ORDER BY id ASC LIMIT 1",
+                (mid, raw_anchor_tid, prefixed_anchor_tid),
+            ).fetchone()
+            if anchor_row is not None:
+                anchor_case["finding_id"] = str(anchor_row["id"])
 
         sorted_years = [years[y] for y in sorted(years)]
         year_range_cov = coverage.get("year_range")
