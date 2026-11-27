@@ -4921,7 +4921,8 @@ class DeskService:
             if streak_val is not None:
                 win_entry["consecutive_win_streak"] = streak_val
             if isinstance(witem.get("year_range"), list) and len(witem["year_range"]) >= 2:
-                win_entry["year_range"] = [str(witem["year_range"][0]), str(witem["year_range"][1])]
+                y0, y1 = str(witem["year_range"][0]).strip(), str(witem["year_range"][-1]).strip()
+                win_entry["year_range"] = f"{y0}–{y1}" if y0 != y1 else y0
             elif isinstance(witem.get("year_range"), str) and witem["year_range"].strip():
                 win_entry["year_range"] = witem["year_range"].strip()
             if isinstance(witem.get("sample_tender_ids"), list):

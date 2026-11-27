@@ -2572,7 +2572,7 @@ def _resolve_provenance(
         inferred_landing = f"https://{host}"
         inferred_mirror = None
     elif host == "worldbank.org" or host.endswith(".worldbank.org"):
-        inferred_publisher = "World Bank Open Procurement / Contract Awards (India)"
+        inferred_publisher = "Indian Government (World Bank–assisted projects)"
         inferred_landing = "https://projects.worldbank.org"
         inferred_mirror = None
     elif host == "zenodo.org" or host.endswith(".zenodo.org"):

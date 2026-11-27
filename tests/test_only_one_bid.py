@@ -1156,7 +1156,19 @@ def test_all_four_tier1_verified_source_formats_offline(tmp_path: Path) -> None:
     assert _infer_format(ocp_url, None, "", b"\x1f\x8b") == "gzip"
     assert _infer_format("https://data.open-contracting.org/en/publication/77/download?name=full.jsonl", None, "", b"{}") == "jsonl"
     assert _resolve_provenance(ocp_url, {}, sha256=SHA, expected_sha256=SHA, digest_verified=True, byte_size=10, fetched_at="2026-11-27T00:00:00Z", source_locator=None)["mirror_name"] == "Open Contracting Partnership Data Registry"
-    assert "World Bank" in (_resolve_provenance("https://search.worldbank.org/api/v2/procnotices?format=json&id=OP00200001", {}, sha256=SHA, expected_sha256=SHA, digest_verified=True, byte_size=10, fetched_at="2026-11-27T00:00:00Z", source_locator=None)["official_publisher"] or "")
+    assert (
+        _resolve_provenance(
+            "https://search.worldbank.org/api/v2/procnotices?format=json&id=OP00200001",
+            {},
+            sha256=SHA,
+            expected_sha256=SHA,
+            digest_verified=True,
+            byte_size=10,
+            fetched_at="2026-11-27T00:00:00Z",
+            source_locator=None,
+        )["official_publisher"]
+        == "Indian Government (World Bank–assisted projects)"
+    )
 
     ocp_gz_path = tmp_path / "ocp_77_full.jsonl.gz"
     ocp_gz_path.write_bytes(gzip.compress(("\n".join(ocp_lines) + "\n").encode("utf-8")))
@@ -1676,7 +1688,7 @@ def test_verifier_phase1_regressions(tmp_path: Path, monkeypatch: pytest.MonkeyP
         assert rw0["share_by_count_pct"] == 33.3
         assert rw0["share_by_value_pct"] == 41.2
         assert rw0["consecutive_win_streak"] == 3
-        assert rw0["year_range"] == ["2019", "2024"]
+        assert rw0["year_range"] == "2019–2024"
         assert rw0["sample_tender_ids"] == ["T1", "T2"]
 
 
