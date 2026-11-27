@@ -18,6 +18,9 @@ import { isVerifiedStatus, safeDecodeURIComponent } from './utils';
 const MissionsPage = lazy(() =>
   import('./pages/MissionsPage').then((m) => ({ default: m.MissionsPage })),
 );
+const RankingPage = lazy(() =>
+  import('./pages/RankingPage').then((m) => ({ default: m.RankingPage })),
+);
 const FindingsPage = lazy(() =>
   import('./pages/FindingsPage').then((m) => ({ default: m.FindingsPage })),
 );
@@ -246,6 +249,14 @@ function AppShell() {
             onSelectFinding={setSelectedFindingId}
             refreshTick={refreshTick}
           />
+        </Suspense>
+      );
+    }
+
+    if (cleanPath === '/top') {
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <RankingPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
         </Suspense>
       );
     }

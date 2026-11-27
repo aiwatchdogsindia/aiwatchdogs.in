@@ -2369,6 +2369,7 @@ def test_finding_patterns_group_confirmed_findings_by_department(tmp_path: Path)
             assert top["total_inr"] == 14_00_00_000.0
             assert [it["label"] for it in top["items"]] == ["Scheme B", "Scheme A"]
             assert sum(body["by_methodology"].values()) == 2
+            assert sum(body["by_jurisdiction"].values()) == 2
 
             with app.state.db.transaction() as conn:
                 conn.execute("UPDATE findings SET status = 'rti_filed' WHERE id = ?", (ids[1],))
@@ -2383,6 +2384,13 @@ def test_finding_patterns_group_confirmed_findings_by_department(tmp_path: Path)
             assert [f["id"] for f in narrowed["findings"]] == [ids[1]]
             other = client.get(scoped.replace("Higher Education", "Fertilisers")).json()
             assert other["total"] == 0
+
+            ranked = client.get("/api/findings?status=confirmed&sort=amount").json()
+            assert [f["id"] for f in ranked["findings"]] == [ids[1], ids[0]]
+            place = ranked["findings"][0]["jurisdiction"]
+            assert client.get(f"/api/findings?status=confirmed&jurisdiction={place}").json()["total"] == 2
+            assert client.get("/api/findings?status=confirmed&jurisdiction=Nowhere").json()["total"] == 0
+            assert client.get("/api/findings?sort=bogus").status_code == 422
             assert client.get(f"/api/findings/{ids[0]}").status_code == 200
     finally:
         app.state.db.close()

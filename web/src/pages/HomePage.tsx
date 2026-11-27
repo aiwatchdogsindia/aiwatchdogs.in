@@ -10,6 +10,7 @@ import {
   isTimestampFreshlyLive,
 } from '../components/LiveSwarmViewer';
 import { PublicLeaderboard } from '../components/PublicLeaderboard';
+import { TopDiscrepancies } from './RankingPage';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
   FINDING_TAGS,
@@ -400,8 +401,8 @@ export function HomePage({
             agree, and it always links back to the original document.
           </p>
           <div className="hm-actions">
-            <Link to="/findings" className="btn btn-primary">
-              See what we’ve found
+            <Link to="/top" className="btn btn-primary">
+              See the largest discrepancies
             </Link>
             <Link to="/how-it-works" className="btn btn-secondary">
               How it works, in two minutes
@@ -447,6 +448,8 @@ export function HomePage({
           </li>
         </ol>
       </section>
+
+      <TopDiscrepancies onSelectFinding={onSelectFinding} />
 
       <section className="hero-swarm home-live" aria-label="Live swarm observatory">
         <div className="hero-swarm-strip">

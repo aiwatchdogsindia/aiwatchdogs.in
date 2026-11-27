@@ -10,13 +10,11 @@ interface HeaderProps {
 }
 
 const NAV_ITEMS = [
-  { to: '/how-it-works', label: 'How it works', key: 'how-it-works' },
-  { to: '/findings', label: 'Findings', key: 'findings' },
+  { to: '/top', label: 'Top discrepancies', key: 'top' },
+  { to: '/findings', label: 'All findings', key: 'findings' },
   { to: '/projects', label: 'Projects', key: 'projects' },
   { to: '/live', label: 'Live', key: 'live' },
-  { to: '/contributors', label: 'Volunteers', key: 'contributors' },
-  { to: '/graveyard', label: 'Dropped leads', key: 'graveyard' },
-  { to: '/#map', label: 'Map', key: 'map' },
+  { to: '/how-it-works', label: 'How it works', key: 'how-it-works' },
 ];
 
 export function Header({ onOpenJoin }: HeaderProps) {
@@ -37,7 +35,6 @@ export function Header({ onOpenJoin }: HeaderProps) {
   }, [mobileOpen]);
 
   const isActive = (item: (typeof NAV_ITEMS)[number]) => {
-    if (item.key === 'map') return pathname === '/' && hash === '#map';
     if (item.key === 'contributors') {
       return pathname.startsWith('/contributors') || pathname.startsWith('/a/');
     }

@@ -926,6 +926,8 @@ export const api = {
       mission?: string;
       group?: string;
       groupKind?: string;
+      jurisdiction?: string;
+      sort?: 'amount' | 'recent';
       search?: string;
       limit?: number;
       offset?: number;
@@ -938,6 +940,8 @@ export const api = {
     if (params.mission) sp.set('mission', params.mission);
     if (params.group) sp.set('group', params.group);
     if (params.groupKind) sp.set('group_kind', params.groupKind);
+    if (params.jurisdiction) sp.set('jurisdiction', params.jurisdiction);
+    if (params.sort) sp.set('sort', params.sort);
     if (params.search) sp.set('search', params.search);
     if (params.limit != null) sp.set('limit', String(params.limit));
     if (params.offset != null) sp.set('offset', String(params.offset));

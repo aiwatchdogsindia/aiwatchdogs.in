@@ -4368,9 +4368,13 @@ class DeskService:
             ).fetchall()
         groups: dict[tuple[str, str, str], dict[str, Any]] = {}
         by_methodology: dict[str, int] = {}
+        by_jurisdiction: dict[str, int] = {}
         for r in rows:
             code = str(r["methodology_code"]).upper()
             by_methodology[code] = by_methodology.get(code, 0) + 1
+            place = str(r["jurisdiction"] or "").strip()
+            if place:
+                by_jurisdiction[place] = by_jurisdiction.get(place, 0) + 1
             entity = str(r["entity_name"] or "").strip()
             jurisdiction = str(r["jurisdiction"] or "").strip()
             label, group, kind = _pattern_group(entity, jurisdiction)
@@ -4420,6 +4424,7 @@ class DeskService:
             "pattern_count": len(groups),
             "finding_count": len(rows),
             "by_methodology": by_methodology,
+            "by_jurisdiction": dict(sorted(by_jurisdiction.items())),
             "total_inr": round(sum(float(r["monetary_exposure_inr"] or 0.0) for r in rows), 2),
         }
         self._patterns_cache = (eff_limit, now, result)
@@ -4435,6 +4440,8 @@ class DeskService:
         search: str | None = None,
         group: str | None = None,
         group_kind: str | None = None,
+        jurisdiction: str | None = None,
+        sort: str | None = None,
         limit: int = 24,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -4473,6 +4480,9 @@ class DeskService:
         if mission:
             clauses.append("mission_slug = ?")
             params.append(self.resolve_slug(mission))
+        if jurisdiction and jurisdiction.strip():
+            clauses.append("TRIM(jurisdiction) = ?")
+            params.append(jurisdiction.strip()[:120])
         if group and group.strip():
             clean_group = group.strip()[:200]
             kind = "department" if group_kind == "department" else "jurisdiction"
@@ -4504,21 +4514,19 @@ class DeskService:
             params.extend([like, like, like, like, like])
 
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        if sort == "amount":
+            order_sql = "COALESCE(monetary_exposure_inr, 0) DESC, COALESCE(verified_at, created_at) DESC, id ASC"
+        else:
+            order_sql = (
+                "CASE status WHEN 'verified' THEN 0 WHEN 'peer_review' THEN 1 WHEN 'cleared' THEN 2 "
+                "WHEN 'under_review' THEN 3 ELSE 4 END, COALESCE(verified_at, created_at) DESC, id ASC"
+            )
         with self.db.read() as conn:
             total = int(conn.execute(f"SELECT COUNT(*) AS c FROM findings {where_sql}", params).fetchone()["c"])
             rows = conn.execute(
                 f"""
                 SELECT {_FINDING_SUMMARY_COLUMNS} FROM findings {where_sql}
-                ORDER BY
-                    CASE status
-                        WHEN 'verified' THEN 0
-                        WHEN 'peer_review' THEN 1
-                        WHEN 'cleared' THEN 2
-                        WHEN 'under_review' THEN 3
-                        ELSE 4
-                    END,
-                    COALESCE(verified_at, created_at) DESC,
-                    id ASC
+                ORDER BY {order_sql}
                 LIMIT ? OFFSET ?
                 """,
                 [*params, eff_limit, eff_offset],

@@ -769,6 +769,7 @@ export interface FindingPatterns {
   pattern_count: number;
   finding_count: number;
   by_methodology?: Record<string, number>;
+  by_jurisdiction?: Record<string, number>;
   total_inr: number;
 }
 
