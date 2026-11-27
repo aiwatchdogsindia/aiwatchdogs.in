@@ -1,0 +1,846 @@
+{
+  "project_slug": "sovereign-lies",
+  "project_code": "P8",
+  "methodology_code": "P8",
+  "hook": "The government made a promise when it launched the scheme. Did it keep it?",
+  "generated_on": "2026-11-27",
+  "as_of_date": "2026-11-27",
+  "total_tasks": 1000,
+  "unique_schemes_covered": 324,
+  "states_and_uts_covered": 36,
+  "sgb_tasks_count": 73,
+  "cleared_control_tasks_embedded": 119,
+  "documents_count": 670,
+  "by_jurisdiction_level": {
+    "union": {
+      "tasks": 500,
+      "cleared_controls": 81
+    },
+    "state": {
+      "tasks": 419,
+      "cleared_controls": 32
+    },
+    "ut": {
+      "tasks": 81,
+      "cleared_controls": 6
+    }
+  },
+  "by_mechanism": {
+    "retroactive_tax_reversal": {
+      "tasks": 62
+    },
+    "midstream_benefit_cut": {
+      "tasks": 143
+    },
+    "premature_discontinuation": {
+      "tasks": 113
+    },
+    "eligibility_narrowing": {
+      "tasks": 120
+    },
+    "lockin_or_exit_restriction": {
+      "tasks": 18
+    },
+    "arrears_or_unfunded_promise": {
+      "tasks": 425
+    },
+    "grandfathered_or_honored": {
+      "tasks": 119
+    }
+  },
+  "by_retroactive_impact": {
+    "eligibility_narrowing": 82,
+    "grandfathered_or_honored": 119,
+    "mid_stream_active_scheme": 193,
+    "prospective_discontinuation": 116,
+    "retroactive_existing_holders": 62,
+    "unfulfilled_arrears": 428
+  },
+  "by_category": [
+    {
+      "category": "welfare_health_public_services",
+      "label": "Welfare, Health & Public Services",
+      "tasks": 251
+    },
+    {
+      "category": "ev_housing_farm_subsidies",
+      "label": "EV, Housing & Farm Subsidies",
+      "tasks": 241
+    },
+    {
+      "category": "scholarships_education",
+      "label": "Scholarships & Education",
+      "tasks": 102
+    },
+    {
+      "category": "industrial_export_incentives",
+      "label": "Industrial & Export Incentives",
+      "tasks": 98
+    },
+    {
+      "category": "cash_transfers_guarantees",
+      "label": "Cash Transfers & Guarantees",
+      "tasks": 91
+    },
+    {
+      "category": "pensions_retirement",
+      "label": "Pensions & Retirement",
+      "tasks": 84
+    },
+    {
+      "category": "sovereign_bonds_small_savings",
+      "label": "Sovereign Bonds & Small Savings",
+      "tasks": 77
+    },
+    {
+      "category": "tax_exempt_instruments",
+      "label": "Tax-Exempt Instruments",
+      "tasks": 56
+    }
+  ],
+  "jurisdictions": [
+    {
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "state_or_ut": null,
+      "tasks": 500,
+      "cleared_controls": 81
+    },
+    {
+      "jurisdiction": "State:Andhra Pradesh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Andhra Pradesh",
+      "tasks": 17,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Assam",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Assam",
+      "tasks": 17,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Bihar",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Bihar",
+      "tasks": 17,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Chhattisgarh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Chhattisgarh",
+      "tasks": 17,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Goa",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Goa",
+      "tasks": 17,
+      "cleared_controls": 3
+    },
+    {
+      "jurisdiction": "State:Gujarat",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Gujarat",
+      "tasks": 17,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "State:Haryana",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Haryana",
+      "tasks": 17,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "State:Himachal Pradesh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Himachal Pradesh",
+      "tasks": 17,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Karnataka",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Karnataka",
+      "tasks": 17,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Kerala",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Kerala",
+      "tasks": 17,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Madhya Pradesh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Madhya Pradesh",
+      "tasks": 17,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Maharashtra",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Maharashtra",
+      "tasks": 17,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "State:Odisha",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Odisha",
+      "tasks": 17,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "State:Jharkhand",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Jharkhand",
+      "tasks": 16,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Manipur",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Manipur",
+      "tasks": 16,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Nagaland",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Nagaland",
+      "tasks": 16,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "UT:Delhi",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Delhi",
+      "tasks": 16,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:West Bengal",
+      "jurisdiction_level": "state",
+      "state_or_ut": "West Bengal",
+      "tasks": 15,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "UT:Jammu and Kashmir",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Jammu and Kashmir",
+      "tasks": 15,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Meghalaya",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Meghalaya",
+      "tasks": 14,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Rajasthan",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Rajasthan",
+      "tasks": 14,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "State:Arunachal Pradesh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Arunachal Pradesh",
+      "tasks": 13,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Mizoram",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Mizoram",
+      "tasks": 13,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "State:Uttarakhand",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Uttarakhand",
+      "tasks": 13,
+      "cleared_controls": 2
+    },
+    {
+      "jurisdiction": "State:Sikkim",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Sikkim",
+      "tasks": 12,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Tamil Nadu",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Tamil Nadu",
+      "tasks": 12,
+      "cleared_controls": 3
+    },
+    {
+      "jurisdiction": "State:Telangana",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Telangana",
+      "tasks": 12,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "UT:Puducherry",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Puducherry",
+      "tasks": 12,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Punjab",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Punjab",
+      "tasks": 11,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Uttar Pradesh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Uttar Pradesh",
+      "tasks": 11,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Andaman and Nicobar Islands",
+      "tasks": 11,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "State:Tripura",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Tripura",
+      "tasks": 10,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "UT:Chandigarh",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Chandigarh",
+      "tasks": 7,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "UT:Dadra and Nagar Haveli and Daman and Diu",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Dadra and Nagar Haveli and Daman and Diu",
+      "tasks": 7,
+      "cleared_controls": 1
+    },
+    {
+      "jurisdiction": "UT:Ladakh",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Ladakh",
+      "tasks": 7,
+      "cleared_controls": 0
+    },
+    {
+      "jurisdiction": "UT:Lakshadweep",
+      "jurisdiction_level": "ut",
+      "state_or_ut": "Lakshadweep",
+      "tasks": 6,
+      "cleared_controls": 1
+    }
+  ],
+  "top_schemes": [
+    {
+      "scheme_name": "Sovereign Gold Bond (SGB) Scheme — Capital Gains Tax Exemption on Redemption",
+      "scheme_slug": "sovereign-gold-bond",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "sovereign_bonds_small_savings",
+      "walkback_mechanism": "retroactive_tax_reversal",
+      "retroactive_impact": "retroactive_existing_holders",
+      "tasks": 73,
+      "is_sgb_anchor": true
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — National Social Assistance Programme (NSAP) Frozen Beneficiary Cap & Rate",
+      "scheme_slug": "nsap-pension-cap-rate-stagnation",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "pensions_retirement",
+      "walkback_mechanism": "eligibility_narrowing",
+      "retroactive_impact": "mid_stream_active_scheme",
+      "tasks": 35,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — Pre-Matric (Classes I–VIII) & Post-Matric Minority Scholarships",
+      "scheme_slug": "minority-scholarships-post-2021-cutoff",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "scholarships_education",
+      "walkback_mechanism": "premature_discontinuation",
+      "retroactive_impact": "prospective_discontinuation",
+      "tasks": 34,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Mahatma Gandhi National Rural Employment Guarantee Act (MGNREGA)",
+      "scheme_slug": "mgnrega-abps-arrears-freeze",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "cash_transfers_guarantees",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 30,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Pradhan Mantri Ujjwala Yojana (PMUY) & PAHAL LPG Subsidy",
+      "scheme_slug": "pmuy-ujjwala-pahal-lpg",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 30,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Pradhan Mantri Kisan Samman Nidhi (PM-KISAN)",
+      "scheme_slug": "pm-kisan-samman-nidhi",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "cash_transfers_guarantees",
+      "walkback_mechanism": "eligibility_narrowing",
+      "retroactive_impact": "eligibility_narrowing",
+      "tasks": 29,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — MGNREGA Statutory Delay Compensation Claims (Schedule II, 0.05%/Day)",
+      "scheme_slug": "mgnrega-delay-compensation-backlog",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 28,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Pradhan Mantri Fasal Bima Yojana (PMFBY)",
+      "scheme_slug": "pmfby-crop-insurance",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 28,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Pradhan Mantri Awas Yojana (PMAY-U CLSS & PMAY-G)",
+      "scheme_slug": "pmay-urban-clss-housing",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 23,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — Ayushman Arogya Mandir (AB-PMJAY) Rural CHO Staffing Shortfall",
+      "scheme_slug": "ayushman-arogya-mandir-cho-vacancies",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 21,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andhra Pradesh — GST (Compensation to States) Act 2017 Bi-Monthly Compensation Arrears",
+      "scheme_slug": "gst-compensation-statutory-arrears",
+      "jurisdiction": "State:Andhra Pradesh",
+      "jurisdiction_level": "state",
+      "scheme_category": "tax_exempt_instruments",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 20,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "FAME-II & Electric Mobility Subsidy Scheme",
+      "scheme_slug": "fame-ii-ev-subsidy",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 19,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Minority Scholarship Schemes (MANF, Pre-Matric, Padho Pardesh & Begum Hazrat Mahal)",
+      "scheme_slug": "minority-scholarships-manf-prematric",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "scholarships_education",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 19,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andhra Pradesh — PM-KUSUM Solar Agricultural Pump & Feeder Subsidy Delivery",
+      "scheme_slug": "pm-kusum-solar-delivery-gap",
+      "jurisdiction": "State:Andhra Pradesh",
+      "jurisdiction_level": "state",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 18,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Jal Jeevan Mission (Har Ghar Jal)",
+      "scheme_slug": "jal-jeevan-mission",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 18,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Pradhan Mantri Kisan Urja Suraksha evam Utthaan Mahabhiyan (PM-KUSUM)",
+      "scheme_slug": "pm-kusum-solar-pumps",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "midstream_benefit_cut",
+      "retroactive_impact": "mid_stream_active_scheme",
+      "tasks": 18,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "MPLADS, Small Savings & Direct Tax Exemptions (Parliamentary Oversight)",
+      "scheme_slug": "mplads-direct-tax-exemptions-small-savings",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "tax_exempt_instruments",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 16,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — PMFBY & RWBCIS Crop Insurance Pending Farmer Claims (2022–25)",
+      "scheme_slug": "pmfby-pending-crop-claims-2025",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 15,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Samagra Shiksha Abhiyan (SSA) & PM-SHRI Conditional Fund Releases",
+      "scheme_slug": "samagra-shiksha-pmshri-funds",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "scholarships_education",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 15,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Smart Cities Mission (SCM)",
+      "scheme_slug": "smart-cities-mission",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 14,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andhra Pradesh — PM-KISAN Direct Income Transfer Disbursement Contraction",
+      "scheme_slug": "pm-kisan-instalment-contraction",
+      "jurisdiction": "State:Andhra Pradesh",
+      "jurisdiction_level": "state",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "eligibility_narrowing",
+      "retroactive_impact": "eligibility_narrowing",
+      "tasks": 12,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Kisan Credit Card (KCC) Interest Subvention & Fertilizer Subsidy (NBS)",
+      "scheme_slug": "kcc-miss-fertilizer-agri-subsidy",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 12,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "PMGSY Rural Roads, AMRUT & Swachh Bharat Mission (SBM) Central Grants",
+      "scheme_slug": "pmgsy-amrut-sbm-infra-grants",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 12,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Skill India (PMKVY), NSAP Pensions & Electoral Bonds",
+      "scheme_slug": "pmkvy-nsap-electoral-bonds",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "premature_discontinuation",
+      "retroactive_impact": "prospective_discontinuation",
+      "tasks": 12,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "UDAN — Ude Desh ka Aam Nagrik (Regional Connectivity Scheme)",
+      "scheme_slug": "udan-regional-connectivity-scheme",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 12,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — FAME India Phase-II EV Adoption Shortfall (2019–2024)",
+      "scheme_slug": "fame2-low-ev-adoption-share",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "premature_discontinuation",
+      "retroactive_impact": "prospective_discontinuation",
+      "tasks": 10,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — MGNREGS FY 2024-25 Prior-Year Wage Liabilities 100% Cleared",
+      "scheme_slug": "mgnregs-fy2425-wages-cleared",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 10,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "National Health Mission (NHM) & PM-ABHIM Grants",
+      "scheme_slug": "nhm-jan-aushadhi-health-grants",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 10,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Senior Citizen & Category Railway Fare Concession Scheme",
+      "scheme_slug": "senior-citizen-railway-concession",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 10,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "EPF / EPS-95 Higher Pension, NPS & Unified Pension Scheme (UPS)",
+      "scheme_slug": "eps95-epfo-ops-nps-ups-expanded",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "pensions_retirement",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 9,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "EPF, EPS-95 Higher Pension, NPS & Unified Pension Scheme (UPS)",
+      "scheme_slug": "epf-eps95-nps-ups-pensions",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "pensions_retirement",
+      "walkback_mechanism": "eligibility_narrowing",
+      "retroactive_impact": "eligibility_narrowing",
+      "tasks": 9,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Higher Education Research Fellowships (UGC NET-JRF, NFSC, NFST, NFOBC & PMRF)",
+      "scheme_slug": "ugc-net-jrf-nfsc-nfst-fellowships",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "scholarships_education",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 9,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Agnipath Scheme & Legacy Armed Forces Recruitment / OROP",
+      "scheme_slug": "agnipath-defence-recruitment",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "pensions_retirement",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 8,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — National Family Benefit Scheme (NFBS) Bereavement Grant Non-Release",
+      "scheme_slug": "nsap-nfbs-zero-release",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 8,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Andaman and Nicobar Islands — Samagra Shiksha School Education Central Grant Reduction (FY 2024-25)",
+      "scheme_slug": "samagra-shiksha-central-grant-drop",
+      "jurisdiction": "UT:Andaman and Nicobar Islands",
+      "jurisdiction_level": "ut",
+      "scheme_category": "scholarships_education",
+      "walkback_mechanism": "midstream_benefit_cut",
+      "retroactive_impact": "mid_stream_active_scheme",
+      "tasks": 8,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Production Linked Incentive (PLI) Schemes Across 14 Sectors",
+      "scheme_slug": "pli-production-linked-incentive",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "industrial_export_incentives",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 8,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Ayushman Bharat — Pradhan Mantri Jan Arogya Yojana (AB-PMJAY)",
+      "scheme_slug": "ayushman-bharat-pmjay",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "welfare_health_public_services",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 7,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Export & Industrial Incentives (MEIS, RoDTEP, SEZ, NEIDS & ATUFS)",
+      "scheme_slug": "export-industrial-meis-sez-tufs",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "industrial_export_incentives",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 7,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Industrial & Export Incentive Schemes (RoDTEP, SEZ, NEIDS/UNNATI, Textiles TUFS & PLI)",
+      "scheme_slug": "export-sez-rodtep-tufs-industrial-expanded",
+      "jurisdiction": "Union of India",
+      "jurisdiction_level": "union",
+      "scheme_category": "industrial_export_incentives",
+      "walkback_mechanism": "arrears_or_unfunded_promise",
+      "retroactive_impact": "unfulfilled_arrears",
+      "tasks": 7,
+      "is_sgb_anchor": false
+    },
+    {
+      "scheme_name": "Maharashtra — PM-KUSUM Component-B Solar Pump Target Honored (97.3%)",
+      "scheme_slug": "pm-kusum-delivery-honored",
+      "jurisdiction": "State:Maharashtra",
+      "jurisdiction_level": "state",
+      "scheme_category": "ev_housing_farm_subsidies",
+      "walkback_mechanism": "grandfathered_or_honored",
+      "retroactive_impact": "grandfathered_or_honored",
+      "tasks": 7,
+      "is_sgb_anchor": false
+    }
+  ],
+  "sgb_anchor_case": {
+    "task_id": "p8-union-sgb-anchor-0001",
+    "finding_id": null,
+    "scheme_name": "Sovereign Gold Bond (SGB) Scheme — Capital Gains Tax Exemption on Redemption",
+    "tranche_or_phase": "All Active Tranches (2015-16 Series I to 2023-24 Series IV) — Sec 47(viic) / Sec 70(1)(x)",
+    "jurisdiction": "Union of India",
+    "authority": "Ministry of Finance (Department of Economic Affairs) & Reserve Bank of India",
+    "promise_date": "2016-02-29",
+    "promise_summary": "Finance Bill 2016 (Clause 28 inserting Section 47(viic) of the Income-tax Act, 1961) and subsequent Ministry of Finance parliamentary replies (LS Starred Q 295, 2021) exempted capital gains arising on redemption of Sovereign Gold Bonds by any individual, while confirming SGBs are tradable on the secondary market without restricting the redemption tax exemption to primary-issue subscribers.",
+    "promise_document_ref": "Finance Bill, 2016 (Clause 28 — Section 47(viic)) & LS Starred Q 295 (09 Aug 2021)",
+    "walkback_date": "2026-02-01",
+    "walkback_summary": "Finance Bill, 2026 (Clause 35 amending Section 70(1)(x) of the Income-tax Act, 2025, effective 1 April 2026) narrowed the capital gains tax exemption on SGB redemption exclusively to individuals who subscribed at the time of original issue and held continuously until redemption on maturity, revoking tax-free maturity redemption for existing secondary-market SGB holders across all series.",
+    "walkback_document_ref": "Finance Bill, 2026 (Clause 35 — Section 70(1)(x)) & Memorandum Explaining Provisions (p. 65)",
+    "walkback_mechanism": "retroactive_tax_reversal",
+    "retroactive_impact": "retroactive_existing_holders",
+    "promised_metric": "0% LTCG tax on maturity redemption for any individual holder (primary or secondary)",
+    "revised_metric": "0% LTCG restricted to original subscribers held continuously till maturity; secondary buyers taxed from 1 Apr 2026",
+    "affected_group": "Individual secondary-market SGB investors across 46 unmatured tranches (130 tonnes outstanding as on Mar 2025)",
+    "days_from_promise_to_walkback": 3625,
+    "source_url": "https://www.indiabudget.gov.in/budget2016-2017/ub2016-17/fb/bill.pdf",
+    "secondary_url": "https://www.indiabudget.gov.in/doc/Finance_Bill.pdf",
+    "portal_url": "https://www.rbi.org.in/commonperson/English/Scripts/FAQs.aspx?Id=1658"
+  },
+  "dry_run_summary": {
+    "tasks_tested": 1000,
+    "leads": 881,
+    "cleared": 119,
+    "unevaluable": 0,
+    "by_signal": {
+      "arrears_or_unfunded_promise": 425,
+      "eligibility_narrowing": 120,
+      "lockin_or_exit_restriction": 18,
+      "midstream_benefit_cut": 143,
+      "premature_discontinuation": 113,
+      "retroactive_tax_reversal": 62
+    },
+    "by_severity": {
+      "critical": 120,
+      "high": 586,
+      "medium": 175
+    }
+  }
+}
