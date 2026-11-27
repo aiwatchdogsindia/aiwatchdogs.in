@@ -132,38 +132,203 @@ export interface LiveSwarmViewerProps {
 }
 
 /* =========================================================================
-   Geometry & Visual Constants (920 × 580 hexagonal radial stage)
+   Dynamic Radial Layout Geometry (Zero-Overlap Single & Concentric 2-Ring)
    ========================================================================= */
 
-const STAGE_W = 920;
-const STAGE_H = 580;
-const HUB_X = STAGE_W / 2;
-const HUB_Y = STAGE_H / 2;
-const ORBIT_RX = 292;
-const ORBIT_RY = 192;
+export type RadialLayoutDensity = 'normal' | 'compact' | 'dense';
 
-interface OrbitSlotCoords {
+export interface RadialRingSpec {
+  ringIndex: 0 | 1;
+  count: number;
+  rx: number;
+  ry: number;
+  startAngle: number;
+}
+
+export interface OrbitSlotCoords {
   x: number;
   y: number;
   pctX: number;
   pctY: number;
+  ringIndex: 0 | 1;
+  angle: number;
+}
+
+export interface RadialLayoutPlan {
+  stageW: number;
+  stageH: number;
+  hubX: number;
+  hubY: number;
+  density: RadialLayoutDensity;
+  isTwoRing: boolean;
+  cardW: number;
+  cardH: number;
+  cardWidthPct: number;
+  haloRadius: number;
+  rings: RadialRingSpec[];
+  slots: OrbitSlotCoords[];
+}
+
+export const MAX_RADIAL_CANVAS_NODES = 16;
+
+function buildRingSlots(
+  rings: RadialRingSpec[],
+  stageW: number,
+  stageH: number,
+  hubX: number,
+  hubY: number,
+): OrbitSlotCoords[] {
+  const slots: OrbitSlotCoords[] = [];
+  for (const ring of rings) {
+    if (ring.count <= 0) continue;
+    for (let i = 0; i < ring.count; i++) {
+      const angle = ring.startAngle + (i * 2 * Math.PI) / ring.count;
+      const x = hubX + ring.rx * Math.cos(angle);
+      const y = hubY + ring.ry * Math.sin(angle);
+      slots.push({
+        x: Math.round(x * 10) / 10,
+        y: Math.round(y * 10) / 10,
+        pctX: (x / stageW) * 100,
+        pctY: (y / stageH) * 100,
+        ringIndex: ring.ringIndex,
+        angle,
+      });
+    }
+  }
+  return slots;
 }
 
 /**
- * Six balanced hexagonal positions matching the gallery symmetry:
- * Top, Upper-Right, Lower-Right, Bottom, Lower-Left, Upper-Left.
+ * Compute a zero-overlap radial orbital layout for 0–16 seats:
+ * - 1–6 seats:  single balanced elliptical ring on a 920 × 580 stage (`normal` density)
+ * - 7–8 seats:  single expanded elliptical ring on a 1080 × 660 stage (`compact` density)
+ * - 9–12 seats: concentric 2-ring orbit on an 1180 × 740 stage (`compact` density, staggered spokes)
+ * - 13–16 seats: concentric 2-ring orbit on a 1220 × 780–790 stage (`dense` density, staggered spokes)
  */
-const ORBIT_SLOTS: readonly OrbitSlotCoords[] = [
-  { x: 460, y: 98, pctX: (460 / STAGE_W) * 100, pctY: (98 / STAGE_H) * 100 },
-  { x: 752, y: 200, pctX: (752 / STAGE_W) * 100, pctY: (200 / STAGE_H) * 100 },
-  { x: 752, y: 384, pctX: (752 / STAGE_W) * 100, pctY: (384 / STAGE_H) * 100 },
-  { x: 460, y: 482, pctX: (460 / STAGE_W) * 100, pctY: (482 / STAGE_H) * 100 },
-  { x: 168, y: 384, pctX: (168 / STAGE_W) * 100, pctY: (384 / STAGE_H) * 100 },
-  { x: 168, y: 200, pctX: (168 / STAGE_W) * 100, pctY: (200 / STAGE_H) * 100 },
-];
+export function computeRadialLayout(rawSeatCount: number): RadialLayoutPlan {
+  const count = Math.max(0, Math.min(MAX_RADIAL_CANVAS_NODES, Math.floor(rawSeatCount)));
+  const PI = Math.PI;
+
+  if (count <= 6) {
+    const stageW = 920;
+    const stageH = 580;
+    const hubX = stageW / 2;
+    const hubY = stageH / 2;
+    const rings: RadialRingSpec[] = [
+      { ringIndex: 0, count: Math.max(1, count), rx: 320, ry: 194, startAngle: -PI / 2 },
+    ];
+    return {
+      stageW,
+      stageH,
+      hubX,
+      hubY,
+      density: 'normal',
+      isTwoRing: false,
+      cardW: 212,
+      cardH: 106,
+      cardWidthPct: 23.2,
+      haloRadius: 102,
+      rings,
+      slots: count > 0 ? buildRingSlots(rings, stageW, stageH, hubX, hubY) : [],
+    };
+  }
+
+  if (count <= 8) {
+    const stageW = 1080;
+    const stageH = 624;
+    const hubX = stageW / 2;
+    const hubY = stageH / 2;
+    const rings: RadialRingSpec[] = [
+      { ringIndex: 0, count, rx: 416, ry: 218, startAngle: -PI / 2 },
+    ];
+    return {
+      stageW,
+      stageH,
+      hubX,
+      hubY,
+      density: 'compact',
+      isTwoRing: false,
+      cardW: 194,
+      cardH: 98,
+      cardWidthPct: 18.2,
+      haloRadius: 88,
+      rings,
+      slots: buildRingSlots(rings, stageW, stageH, hubX, hubY),
+    };
+  }
+
+  if (count <= 12) {
+    const stageW = 1180;
+    const stageH = 720;
+    const hubX = stageW / 2;
+    const hubY = stageH / 2;
+    const outerCount = 6;
+    const innerCount = count - outerCount; // 3, 4, 5, or 6
+    const innerSpecByCount: Record<number, { rx: number; ry: number; startAngle: number }> = {
+      3: { rx: 252, ry: 164, startAngle: -PI / 2 },
+      4: { rx: 236, ry: 158, startAngle: -PI / 2 },
+      5: { rx: 238, ry: 166, startAngle: PI / 2 },
+      6: { rx: 256, ry: 158, startAngle: -PI / 2 },
+    };
+    const innerSpec = innerSpecByCount[innerCount] ?? { rx: 250, ry: 160, startAngle: -PI / 2 };
+    const outerRy = innerCount === 5 ? 286 : 278;
+    const outerRx = innerCount === 5 ? 480 : 478;
+    const rings: RadialRingSpec[] = [
+      { ringIndex: 0, count: innerCount, ...innerSpec },
+      { ringIndex: 1, count: outerCount, rx: outerRx, ry: outerRy, startAngle: -PI / 2 + PI / outerCount },
+    ];
+    return {
+      stageW,
+      stageH,
+      hubX,
+      hubY,
+      density: 'compact',
+      isTwoRing: true,
+      cardW: 180,
+      cardH: 88,
+      cardWidthPct: 15.4,
+      haloRadius: 72,
+      rings,
+      slots: buildRingSlots(rings, stageW, stageH, hubX, hubY),
+    };
+  }
+
+  // 13–16 seats: concentric 2-ring dense layout
+  const isTopTier = count >= 15;
+  const stageW = 1220;
+  const stageH = isTopTier ? 790 : 780;
+  const hubX = stageW / 2;
+  const hubY = stageH / 2;
+  const outerCount = isTopTier ? 10 : 8;
+  const innerCount = count - outerCount; // 5 or 6
+  const innerSpec =
+    innerCount === 5
+      ? { rx: 250, ry: isTopTier ? 168 : 170, startAngle: PI / 2 }
+      : { rx: isTopTier ? 248 : 252, ry: isTopTier ? 160 : 162, startAngle: -PI / 2 };
+  const outerRx = isTopTier ? 506 : 502;
+  const outerRy = isTopTier ? 312 : 306;
+  const rings: RadialRingSpec[] = [
+    { ringIndex: 0, count: innerCount, ...innerSpec },
+    { ringIndex: 1, count: outerCount, rx: outerRx, ry: outerRy, startAngle: -PI / 2 + PI / outerCount },
+  ];
+  return {
+    stageW,
+    stageH,
+    hubX,
+    hubY,
+    density: 'dense',
+    isTwoRing: true,
+    cardW: isTopTier ? 166 : 168,
+    cardH: isTopTier ? 82 : 84,
+    cardWidthPct: isTopTier ? 13.7 : 13.9,
+    haloRadius: 62,
+    rings,
+    slots: buildRingSlots(rings, stageW, stageH, hubX, hubY),
+  };
+}
 
 interface RoleVisual {
-  key: 'auditor' | 'peer_verifier' | 'adjudicator' | 'idle';
+  key: 'auditor' | 'peer_verifier' | 'adjudicator' | 'live_ready' | 'idle';
   label: string;
   color: string;
   rgb: string;
@@ -192,12 +357,19 @@ const ROLE_VISUALS: Record<RoleVisual['key'], RoleVisual> = {
     rgb: '161, 131, 36',
     spokeOpacity: 0.76,
   },
+  live_ready: {
+    key: 'live_ready',
+    label: 'Live · Ready',
+    color: '#2A8C55',
+    rgb: '42, 140, 85',
+    spokeOpacity: 0.62,
+  },
   idle: {
     key: 'idle',
     label: 'Contributor',
     color: '#9E978B',
     rgb: '158, 151, 139',
-    spokeOpacity: 0.48,
+    spokeOpacity: 0.44,
   },
 };
 
@@ -230,14 +402,21 @@ export function isTimestampFreshlyLive(
   return nowMs - ts <= maxAgeMs;
 }
 
-function isNodeActivelyWorking(node: LiveSwarmNode): boolean {
+function isNodeHoldingLease(node: LiveSwarmNode): boolean {
   const s = (node.status || '').toLowerCase();
   return s === 'working' || s === 'verifying' || s === 'active';
 }
 
+function isNodeActivelyWorking(node: LiveSwarmNode): boolean {
+  const s = (node.status || '').toLowerCase();
+  return s === 'working' || s === 'verifying' || s === 'active' || s === 'recent';
+}
+
 /**
- * Return true ONLY when a node is actively working/verifying AND its last heartbeat
- * is still within `live_window_seconds` (+15s clock-skew grace) of `nowMs`.
+ * Return true when a node has an active/live status (`working`, `verifying`, `active`,
+ * or heartbeating between leases as `recent`) AND its `last_seen_at` heartbeat is within
+ * `live_window_seconds` (+15s clock-skew grace) of `nowMs`.
+ * Matches backend `GET /api/swarm/live` `working_now` semantics 100%.
  */
 export function isNodeFreshlyLive(
   node: LiveSwarmNode,
@@ -250,7 +429,8 @@ export function isNodeFreshlyLive(
 
 /**
  * Downgrade any node whose heartbeat has aged past `live_window_seconds` to calm standby (`idle`),
- * hiding stale lease labels and frozen progress bars.
+ * hiding stale lease labels and frozen progress bars. Fresh `recent` nodes (between leases, `<120s`)
+ * remain `recent` so they stay visibly live on the canvas.
  */
 export function normalizeNodeLiveState(
   node: LiveSwarmNode,
@@ -276,6 +456,9 @@ export function normalizeNodeLiveState(
       ...node,
       status: 'idle',
       role: null,
+      current_task_id: null,
+      current_task_title: null,
+      current_project_slug: null,
       progress_pct: null,
     };
   }
@@ -283,8 +466,10 @@ export function normalizeNodeLiveState(
 }
 
 /**
- * Recompute effective live working agent count from freshly-heartbeating nodes so
- * stalled or cached snapshots smoothly drop to 0 without waiting for a new fetch.
+ * Recompute effective live working agent count from freshly-heartbeating nodes
+ * (including leased `working`/`verifying`/`active` workers and freshly heartbeating
+ * `recent` agents between leases) so all views agree 100% with backend `working_now`
+ * when fresh and smoothly decay to 0 once heartbeats age past `live_window_seconds`.
  */
 export function computeEffectiveWorkingNow(
   snapshot: LiveSwarmSnapshot | null | undefined,
@@ -292,8 +477,16 @@ export function computeEffectiveWorkingNow(
 ): number {
   if (!snapshot) return 0;
   const windowSec = snapshot.live_window_seconds ?? DEFAULT_LIVE_WINDOW_SECONDS;
-  const nodes = snapshot.active_nodes ?? [];
-  if (nodes.length > 0) {
+  const rawNodes = snapshot.active_nodes ?? [];
+  if (rawNodes.length > 0) {
+    const seen = new Set<string>();
+    const nodes: LiveSwarmNode[] = [];
+    for (const n of rawNodes) {
+      const key = normalizeHandle(n.handle).toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      nodes.push(n);
+    }
     const freshWorking = nodes.filter((n) => isNodeFreshlyLive(n, nowMs, windowSec)).length;
     const totalAgents = snapshot.total_agents ?? nodes.length;
     if (nodes.length >= totalAgents) {
@@ -317,8 +510,11 @@ function resolveRoleVisual(node: LiveSwarmNode): RoleVisual {
   const status = (node.status || '').toLowerCase();
   const role = (node.role || '').toLowerCase();
 
-  if (status === 'idle' || status === 'recent') {
+  if (status === 'idle' || status === 'revoked') {
     return ROLE_VISUALS.idle;
+  }
+  if (status === 'recent') {
+    return ROLE_VISUALS.live_ready;
   }
   if (role.includes('adjudic') || role.includes('tie')) {
     return ROLE_VISUALS.adjudicator;
@@ -423,19 +619,19 @@ function formatRoleSubtitle(node: LiveSwarmNode, visual: RoleVisual): {
   agentText: string;
   logoSrc: string | null;
 } {
+  const status = (node.status || '').toLowerCase();
   const rawRole = (node.role || '').toLowerCase();
-  const roleText =
-    rawRole.includes('adjudic') || rawRole.includes('tie')
+  const roleText = isNodeHoldingLease(node)
+    ? rawRole.includes('adjudic') || rawRole.includes('tie')
       ? 'Adjudicator'
-      : rawRole.includes('verif')
+      : rawRole.includes('verif') || status === 'verifying'
         ? 'Peer Verifier'
         : rawRole.includes('audit')
           ? 'Auditor'
-          : isNodeActivelyWorking(node)
-            ? visual.label
-            : node.status === 'recent'
-              ? 'Recent Auditor'
-              : 'Standby Node';
+          : visual.label
+    : status === 'recent'
+      ? 'Live · Ready'
+      : 'Standby Node';
 
   const agentStr = codingAgentLabel(node.coding_agent, node.coding_agent_model);
   const fallbackStr =
@@ -467,24 +663,29 @@ function formatLiveActionLine(node: LiveSwarmNode): string {
         ? 'verifying'
         : 'auditing';
 
-  if (node.current_task_title) {
-    return `${verb} ${node.current_task_title}`;
-  }
-  if (node.current_task_id != null && String(node.current_task_id).trim() !== '') {
-    const taskIdStr = String(node.current_task_id);
-    const prefix = node.current_project_slug
-      ? `${projectCodeFor({ slug: node.current_project_slug })}-`
-      : '';
-    const ref = /^[A-Za-z]/.test(taskIdStr) ? taskIdStr : `${prefix}${taskIdStr}`;
-    return `${verb} ${ref}`;
+  if (isNodeHoldingLease(node)) {
+    if (node.current_task_title) {
+      return `${verb} ${node.current_task_title}`;
+    }
+    if (node.current_task_id != null && String(node.current_task_id).trim() !== '') {
+      const taskIdStr = String(node.current_task_id);
+      const prefix = node.current_project_slug
+        ? `${projectCodeFor({ slug: node.current_project_slug })}-`
+        : '';
+      const ref = /^[A-Za-z]/.test(taskIdStr) ? taskIdStr : `${prefix}${taskIdStr}`;
+      return `${verb} ${ref}`;
+    }
   }
   if (node.latest_whisper) {
     return node.latest_whisper;
   }
-  if (node.current_project_slug) {
+  if (isNodeHoldingLease(node) && node.current_project_slug) {
     return `${verb} ${node.current_project_slug}`;
   }
-  return status === 'recent' ? 'recently checked records' : 'ready for next lease';
+  if (status === 'recent') {
+    return (node.tasks_completed ?? 0) > 0 ? 'Claiming next task' : 'Ready for next lease';
+  }
+  return 'Standby · awaiting lease';
 }
 
 function formatNodeMetricLine(node: LiveSwarmNode): string {
@@ -492,11 +693,13 @@ function formatNodeMetricLine(node: LiveSwarmNode): string {
   const tasks = node.tasks_completed ?? 0;
   const verified = node.verifications_done ?? 0;
   const submitted = node.findings_submitted ?? 0;
+  const leased = isNodeHoldingLease(node);
+  const status = (node.status || '').toLowerCase();
 
   if (tasks > 0) {
     parts.push(`${tasks.toLocaleString('en-IN')} task${tasks === 1 ? '' : 's'}`);
   }
-  if (node.progress_pct != null && Number.isFinite(node.progress_pct) && isNodeActivelyWorking(node)) {
+  if (node.progress_pct != null && Number.isFinite(node.progress_pct) && leased) {
     parts.push(`${Math.max(0, Math.min(100, Math.round(node.progress_pct)))}%`);
   } else if (verified > 0) {
     parts.push(`${verified.toLocaleString('en-IN')} verified`);
@@ -505,7 +708,9 @@ function formatNodeMetricLine(node: LiveSwarmNode): string {
   }
 
   if (parts.length === 0) {
-    return isNodeActivelyWorking(node) ? 'active lease' : '0 tasks yet';
+    if (leased) return 'active lease';
+    if (status === 'recent') return 'live · ready';
+    return '0 tasks yet';
   }
   return parts.join(' · ');
 }
@@ -690,84 +895,186 @@ export function LiveSwarmViewer({
     [snapshot?.active_nodes, nowMs, liveWindowSeconds],
   );
 
-  const orbitItems: OrbitSeatItem[] = useMemo(() => {
-    const realNodes = sortedNodes.slice(0, 6);
-    const items: OrbitSeatItem[] = realNodes.map((node, idx) => ({
-      slotIndex: idx,
-      coords: ORBIT_SLOTS[idx],
-      kind: 'node',
-      node,
-      visual: resolveRoleVisual(node),
-    }));
+  const { liveNodes, offlineNodes } = useMemo(() => {
+    const live: LiveSwarmNode[] = [];
+    const offline: LiveSwarmNode[] = [];
+    for (const node of sortedNodes) {
+      if (isNodeFreshlyLive(node, nowMs, liveWindowSeconds)) {
+        live.push(node);
+      } else {
+        offline.push(node);
+      }
+    }
+    return { liveNodes: live, offlineNodes: offline };
+  }, [sortedNodes, nowMs, liveWindowSeconds]);
 
-    if (realNodes.length === 0) {
-      // Never look dead or empty: render inviting "Your agent here" + 2 standby role slots
-      items.push(
-        {
-          slotIndex: 0,
-          coords: ORBIT_SLOTS[0],
-          kind: 'invite',
-        },
-        {
-          slotIndex: 2,
-          coords: ORBIT_SLOTS[2],
-          kind: 'standby',
-          standbyRole: 'Peer Verifier',
-          standbyLabel: 'Independent 2-of-2 check slot',
-        },
-        {
-          slotIndex: 4,
-          coords: ORBIT_SLOTS[4],
-          kind: 'standby',
-          standbyRole: 'Civic Auditor',
-          standbyLabel: 'Public budget & .gov.in slot',
-        },
-      );
-    } else if (realNodes.length < 6) {
-      // Add one crisp inviting dashed card in the next orbit slot
-      items.push({
-        slotIndex: realNodes.length,
-        coords: ORBIT_SLOTS[realNodes.length],
-        kind: 'invite',
-      });
+  const canvasLiveNodes = useMemo(
+    () => liveNodes.slice(0, MAX_RADIAL_CANVAS_NODES),
+    [liveNodes],
+  );
+  const extraLiveNodes = useMemo(
+    () => liveNodes.slice(MAX_RADIAL_CANVAS_NODES),
+    [liveNodes],
+  );
+
+  const { layout, orbitItems } = useMemo(() => {
+    type SeatSeed = Omit<OrbitSeatItem, 'slotIndex' | 'coords'>;
+    const seeds: SeatSeed[] = [];
+
+    if (liveNodes.length === 0) {
+      // Graceful standby mode: up to 6 most recent contributors, or invite + 2 standby slots when empty
+      if (offlineNodes.length === 0) {
+        seeds.push(
+          { kind: 'invite' },
+          {
+            kind: 'standby',
+            standbyRole: 'Peer Verifier',
+            standbyLabel: 'Independent 2-of-2 check slot',
+          },
+          {
+            kind: 'standby',
+            standbyRole: 'Civic Auditor',
+            standbyLabel: 'Public budget & .gov.in slot',
+          },
+        );
+      } else {
+        const standbySlice = offlineNodes.slice(0, 6);
+        for (const node of standbySlice) {
+          seeds.push({ kind: 'node', node, visual: resolveRoleVisual(node) });
+        }
+        if (standbySlice.length < 6) {
+          seeds.push({ kind: 'invite' });
+        }
+      }
+    } else if (liveNodes.length <= 5) {
+      // 1–5 live nodes: render all live nodes + 1 dashed "Your agent here" invite card (2–6 total seats)
+      for (const node of liveNodes) {
+        seeds.push({ kind: 'node', node, visual: resolveRoleVisual(node) });
+      }
+      seeds.push({ kind: 'invite' });
+    } else {
+      // 6–16 live nodes (or top 16 when 17+ live): showcase ALL live workers around the SWARM hub
+      for (const node of canvasLiveNodes) {
+        seeds.push({ kind: 'node', node, visual: resolveRoleVisual(node) });
+      }
     }
 
-    return items;
-  }, [sortedNodes]);
+    const plan = computeRadialLayout(seeds.length);
+    const items: OrbitSeatItem[] = seeds.map((seed, idx) => ({
+      ...seed,
+      slotIndex: idx,
+      coords: plan.slots[idx] ?? {
+        x: plan.hubX,
+        y: plan.hubY,
+        pctX: 50,
+        pctY: 50,
+        ringIndex: 0,
+        angle: -Math.PI / 2,
+      },
+    }));
 
-  // Subtle curved dotted collaboration arcs between active peers (e.g. Auditor <-> Verifier)
+    return { layout: plan, orbitItems: items };
+  }, [liveNodes, offlineNodes, canvasLiveNodes]);
+
+  // Mobile grid renders ALL live nodes (never capped at 6 or 16!), plus invite card when < 6
+  const mobileItems = useMemo(() => {
+    const items: Array<
+      | { kind: 'node'; key: string; node: LiveSwarmNode; visual: RoleVisual }
+      | { kind: 'invite'; key: string }
+    > = [];
+    if (liveNodes.length === 0) {
+      const standbySlice = offlineNodes.slice(0, 6);
+      for (const node of standbySlice) {
+        items.push({
+          kind: 'node',
+          key: `mob-${normalizeHandle(node.handle)}`,
+          node,
+          visual: resolveRoleVisual(node),
+        });
+      }
+      if (standbySlice.length < 6) {
+        items.push({ kind: 'invite', key: 'mob-invite' });
+      }
+    } else {
+      for (const node of liveNodes) {
+        items.push({
+          kind: 'node',
+          key: `mob-${normalizeHandle(node.handle)}`,
+          node,
+          visual: resolveRoleVisual(node),
+        });
+      }
+      if (liveNodes.length < 6) {
+        items.push({ kind: 'invite', key: 'mob-invite' });
+      }
+    }
+    return items;
+  }, [liveNodes, offlineNodes]);
+
+  // Subtle curved dotted collaboration arcs between adjacent active peers on the same orbital ring
   const peerArcs = useMemo(() => {
     const realSeats = orbitItems.filter((item) => item.kind === 'node' && item.node);
     if (realSeats.length < 2) return [];
     const arcs: Array<{ id: string; d: string; color: string }> = [];
+    const byRing: OrbitSeatItem[][] = [[], []];
+    for (const seat of realSeats) {
+      byRing[seat.coords.ringIndex]?.push(seat);
+    }
+    const maxPerRing = layout.isTwoRing ? 1 : 2;
 
-    for (let i = 0; i < realSeats.length && arcs.length < 2; i++) {
-      const a = realSeats[i];
-      const b = realSeats[(i + 1) % realSeats.length];
-      if (!a.node || !b.node) continue;
-      const sameProject =
-        a.node.current_project_slug &&
-        a.node.current_project_slug === b.node.current_project_slug;
-      const bothActive = isNodeActivelyWorking(a.node) && isNodeActivelyWorking(b.node);
-      if (!sameProject && !bothActive) continue;
+    for (const ringSeats of byRing) {
+      if (ringSeats.length < 2) continue;
+      let addedForRing = 0;
+      for (let i = 0; i < ringSeats.length && addedForRing < maxPerRing && arcs.length < 2; i++) {
+        const a = ringSeats[i];
+        const b = ringSeats[(i + 1) % ringSeats.length];
+        if (!a.node || !b.node) continue;
+        const sameProject =
+          a.node.current_project_slug &&
+          a.node.current_project_slug === b.node.current_project_slug;
+        const bothActive = isNodeActivelyWorking(a.node) && isNodeActivelyWorking(b.node);
+        if (!sameProject && !bothActive) continue;
 
-      const mx = (a.coords.x + b.coords.x) / 2 + (HUB_X - (a.coords.x + b.coords.x) / 2) * 0.24;
-      const my = (a.coords.y + b.coords.y) / 2 + (HUB_Y - (a.coords.y + b.coords.y) / 2) * 0.24;
-      arcs.push({
-        id: `peer-${a.slotIndex}-${b.slotIndex}`,
-        d: `M ${a.coords.x} ${a.coords.y} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${b.coords.x} ${b.coords.y}`,
-        color: a.visual?.color ?? '#C85A32',
-      });
+        const mx =
+          (a.coords.x + b.coords.x) / 2 + (layout.hubX - (a.coords.x + b.coords.x) / 2) * 0.22;
+        const my =
+          (a.coords.y + b.coords.y) / 2 + (layout.hubY - (a.coords.y + b.coords.y) / 2) * 0.22;
+        arcs.push({
+          id: `peer-${a.slotIndex}-${b.slotIndex}`,
+          d: `M ${a.coords.x} ${a.coords.y} Q ${mx.toFixed(1)} ${my.toFixed(1)} ${b.coords.x} ${b.coords.y}`,
+          color: a.visual?.color ?? '#C85A32',
+        });
+        addedForRing += 1;
+      }
     }
     return arcs;
-  }, [orbitItems]);
+  }, [orbitItems, layout.hubX, layout.hubY, layout.isTwoRing]);
 
-  const displayedRealCount = Math.min(sortedNodes.length, 6);
-  const totalKnownNodes = Math.max(sortedNodes.length, snapshot?.total_agents ?? 0);
-  const overflowCount = Math.max(0, totalKnownNodes - displayedRealCount);
   const workingNow = useMemo(
     () => computeEffectiveWorkingNow(snapshot, nowMs),
     [snapshot, nowMs],
+  );
+  const totalKnownNodes = Math.max(sortedNodes.length, snapshot?.total_agents ?? 0);
+  const effectiveLiveTotal = Math.max(liveNodes.length, workingNow);
+  const extraLiveOverflow = Math.max(0, effectiveLiveTotal - canvasLiveNodes.length);
+  const standbyOverflow =
+    liveNodes.length > 0
+      ? Math.max(0, totalKnownNodes - effectiveLiveTotal)
+      : Math.max(0, totalKnownNodes - Math.min(offlineNodes.length, 6));
+  const overflowCount = extraLiveOverflow + standbyOverflow;
+  const overflowPillLabel = useMemo(() => {
+    if (extraLiveOverflow > 0 && standbyOverflow > 0) {
+      return `+${extraLiveOverflow.toLocaleString('en-IN')} more live · +${standbyOverflow.toLocaleString('en-IN')} standby`;
+    }
+    if (extraLiveOverflow > 0) {
+      return `+${extraLiveOverflow.toLocaleString('en-IN')} more live`;
+    }
+    return `+${standbyOverflow.toLocaleString('en-IN')} standby contributor${standbyOverflow === 1 ? '' : 's'}`;
+  }, [extraLiveOverflow, standbyOverflow]);
+  const unlistedLiveCount = Math.max(0, workingNow - liveNodes.length);
+  const hasBetweenLeaseOnCanvas = useMemo(
+    () => canvasLiveNodes.some((n) => (n.status || '').toLowerCase() === 'recent'),
+    [canvasLiveNodes],
   );
   const activeLeases = workingNow > 0 ? (snapshot?.active_leases_count ?? workingNow) : 0;
   const totalTasksDone = snapshot?.tasks_completed_total ?? snapshot?.progress?.tasks_completed ?? 0;
@@ -802,7 +1109,7 @@ export function LiveSwarmViewer({
           (n.status || '').toLowerCase() === 'verifying',
       );
     }
-    return sortedNodes.filter((n) => !isNodeActivelyWorking(n));
+    return sortedNodes.filter((n) => !isNodeHoldingLease(n));
   }, [sortedNodes, rosterFilter]);
 
   const handleCopyInvite = async () => {
@@ -834,6 +1141,8 @@ export function LiveSwarmViewer({
     }
     return 'Swarm open · awaiting live agents';
   }, [loading, snapshot, workingNow, activeLeases, totalKnownNodes, totalTasksDone]);
+
+  const cardAvatarSize = layout.density === 'dense' ? 16 : layout.density === 'compact' ? 18 : 20;
 
   return (
     <section
@@ -867,347 +1176,391 @@ export function LiveSwarmViewer({
       {/* Interactive Radial Stage */}
       <div
         ref={stageRef}
-        className={`lsv-stage${animateActive ? ' is-animating' : ' is-paused'}`}
+        className={`lsv-stage is-density-${layout.density}${layout.isTwoRing ? ' is-two-ring' : ''}${
+          animateActive ? ' is-animating' : ' is-paused'
+        }`}
         data-working-count={workingNow}
+        data-live-canvas-count={canvasLiveNodes.length}
+        data-ring-count={layout.isTwoRing ? 2 : 1}
+        style={{
+          ['--lsv-stage-max-w' as string]: `${layout.stageW}px`,
+          ['--lsv-stage-ratio' as string]: `${layout.stageW} / ${layout.stageH}`,
+          ['--lsv-card-w' as string]: `${layout.cardW}px`,
+          ['--lsv-card-w-pct' as string]: `${layout.cardWidthPct}%`,
+        }}
       >
         <div className="lsv-canvas-frame">
           {/* Desktop Radial SVG Canvas */}
           <svg
             className="lsv-svg"
-            viewBox={`0 0 ${STAGE_W} ${STAGE_H}`}
+            viewBox={`0 0 ${layout.stageW} ${layout.stageH}`}
             preserveAspectRatio="xMidYMid meet"
             aria-hidden="true"
           >
-          <defs>
+            <defs>
+              {orbitItems.map((item) => {
+                if (item.kind !== 'node' || !item.visual) return null;
+                const leased = item.node ? isNodeHoldingLease(item.node) : false;
+                return (
+                  <radialGradient
+                    key={`aura-${item.slotIndex}`}
+                    id={`lsv-aura-${item.slotIndex}`}
+                    cx="50%"
+                    cy="50%"
+                    r="50%"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor={`rgba(${item.visual.rgb}, ${leased ? 0.2 : 0.14})`}
+                    />
+                    <stop offset="100%" stopColor={`rgba(${item.visual.rgb}, 0)`} />
+                  </radialGradient>
+                );
+              })}
+            </defs>
+
+            {/* Concentric dotted orbital path(s) connecting every orbiting seat */}
+            {layout.rings.map((ring) => (
+              <ellipse
+                key={`orbit-ring-${ring.ringIndex}`}
+                cx={layout.hubX}
+                cy={layout.hubY}
+                rx={ring.rx}
+                ry={ring.ry}
+                fill="none"
+                stroke={
+                  ring.ringIndex === 0
+                    ? 'rgba(198, 134, 114, 0.34)'
+                    : 'rgba(198, 134, 114, 0.27)'
+                }
+                strokeWidth={ring.ringIndex === 0 ? '1.25' : '1.15'}
+                strokeDasharray={ring.ringIndex === 0 ? '3 7' : '4 8'}
+              />
+            ))}
+
+            {/* Soft role-tinted radial auras behind active orbiting agents */}
             {orbitItems.map((item) => {
-              if (item.kind !== 'node' || !item.visual) return null;
+              if (item.kind !== 'node' || !item.node || !isNodeActivelyWorking(item.node)) {
+                return null;
+              }
               return (
-                <radialGradient
-                  key={`aura-${item.slotIndex}`}
-                  id={`lsv-aura-${item.slotIndex}`}
-                  cx="50%"
-                  cy="50%"
-                  r="50%"
-                >
-                  <stop offset="0%" stopColor={`rgba(${item.visual.rgb}, 0.22)`} />
-                  <stop offset="100%" stopColor={`rgba(${item.visual.rgb}, 0)`} />
-                </radialGradient>
+                <circle
+                  key={`halo-${item.slotIndex}`}
+                  cx={item.coords.x}
+                  cy={item.coords.y}
+                  r={layout.haloRadius}
+                  fill={`url(#lsv-aura-${item.slotIndex})`}
+                />
               );
             })}
-          </defs>
 
-          {/* Outer dotted orbital path connecting all 6 positions */}
-          <ellipse
-            cx={HUB_X}
-            cy={HUB_Y}
-            rx={ORBIT_RX}
-            ry={ORBIT_RY}
-            fill="none"
-            stroke="rgba(198, 134, 114, 0.34)"
-            strokeWidth="1.25"
-            strokeDasharray="3 7"
-          />
-
-          {/* Soft role-tinted radial auras behind active orbiting agents */}
-          {orbitItems.map((item) => {
-            if (item.kind !== 'node' || !item.node || !isNodeActivelyWorking(item.node)) {
-              return null;
-            }
-            return (
-              <circle
-                key={`halo-${item.slotIndex}`}
-                cx={item.coords.x}
-                cy={item.coords.y}
-                r="102"
-                fill={`url(#lsv-aura-${item.slotIndex})`}
+            {/* Curved dotted collaboration arcs between peer agents */}
+            {peerArcs.map((arc) => (
+              <path
+                key={arc.id}
+                d={arc.d}
+                fill="none"
+                stroke={arc.color}
+                strokeWidth="1.15"
+                strokeDasharray="3 6"
+                opacity="0.34"
               />
-            );
-          })}
+            ))}
 
-          {/* Curved dotted collaboration arcs between peer agents */}
-          {peerArcs.map((arc) => (
-            <path
-              key={arc.id}
-              d={arc.d}
-              fill="none"
-              stroke={arc.color}
-              strokeWidth="1.15"
-              strokeDasharray="3 6"
-              opacity="0.34"
-            />
-          ))}
+            {/* Radial spokes + animated packets between center hub and each orbiting card */}
+            {orbitItems.map((item) => {
+              const isNode = item.kind === 'node' && item.node != null;
+              const live = isNode && isNodeActivelyWorking(item.node!);
+              const leased = isNode && isNodeHoldingLease(item.node!);
+              const isOuter = item.coords.ringIndex === 1;
+              const selected =
+                isNode &&
+                selectedHandle != null &&
+                normalizeHandle(item.node!.handle).toLowerCase() === selectedHandle.toLowerCase();
+              const strokeColor = isNode
+                ? item.visual?.color ?? '#9E978B'
+                : '#C9C2B6';
+              const strokeWidth = selected
+                ? 2.7
+                : leased
+                  ? isOuter
+                    ? 1.8
+                    : 2.15
+                  : live
+                    ? isOuter
+                      ? 1.35
+                      : 1.65
+                    : 1.2;
+              const baseOpacity = isNode ? item.visual?.spokeOpacity ?? 0.5 : 0.45;
+              const opacity = selected ? 0.95 : isOuter ? baseOpacity * 0.85 : baseOpacity;
+              const spokeFromHub = `M ${layout.hubX} ${layout.hubY} L ${item.coords.x} ${item.coords.y}`;
+              const spokeToHub = `M ${item.coords.x} ${item.coords.y} L ${layout.hubX} ${layout.hubY}`;
+              const jewelT = isOuter ? 0.72 : 0.5;
+              const midX = layout.hubX + (item.coords.x - layout.hubX) * jewelT;
+              const midY = layout.hubY + (item.coords.y - layout.hubY) * jewelT;
+              const durSec = Math.max(2.4, (isOuter ? 4.4 : 3.9) - (item.slotIndex % 3) * 0.4);
 
-          {/* Radial spokes + animated packets between center hub and each orbiting card */}
-          {orbitItems.map((item) => {
-            const isNode = item.kind === 'node' && item.node != null;
-            const active = isNode && isNodeActivelyWorking(item.node!);
-            const selected =
-              isNode &&
-              selectedHandle != null &&
-              normalizeHandle(item.node!.handle).toLowerCase() === selectedHandle.toLowerCase();
-            const strokeColor = isNode
-              ? item.visual?.color ?? '#9E978B'
-              : '#C9C2B6';
-            const strokeWidth = selected ? 2.8 : active ? 2.15 : 1.2;
-            const opacity = selected ? 0.95 : isNode ? item.visual?.spokeOpacity ?? 0.5 : 0.45;
-            const spokeFromHub = `M ${HUB_X} ${HUB_Y} L ${item.coords.x} ${item.coords.y}`;
-            const spokeToHub = `M ${item.coords.x} ${item.coords.y} L ${HUB_X} ${HUB_Y}`;
-            const midX = (HUB_X + item.coords.x) / 2;
-            const midY = (HUB_Y + item.coords.y) / 2;
-            const durSec = Math.max(2.4, 4.1 - (item.slotIndex % 3) * 0.45);
-
-            return (
-              <g key={`spoke-${item.slotIndex}`}>
-                <path
-                  d={spokeFromHub}
-                  fill="none"
-                  stroke={strokeColor}
-                  strokeWidth={strokeWidth}
-                  strokeDasharray={isNode ? undefined : '4 6'}
-                  strokeLinecap="round"
-                  opacity={opacity}
-                />
-
-                {/* Static midpoint jewel visible when reduced-motion or idle */}
-                {isNode && (
-                  <circle
-                    cx={midX}
-                    cy={midY}
-                    r={active ? 2.6 : 2.1}
-                    fill={strokeColor}
-                    opacity={active ? 0.85 : 0.55}
-                  />
-                )}
-
-                {/* Animated packets pulsing along actively working spokes */}
-                {active && animateActive && (
-                  <>
-                    <circle r="3.4" fill={strokeColor} opacity="0.95">
-                      <animateMotion
-                        dur={`${durSec.toFixed(2)}s`}
-                        begin={`-${(item.slotIndex * 0.55 + 0.35).toFixed(2)}s`}
-                        repeatCount="indefinite"
-                        path={spokeToHub}
-                      />
-                    </circle>
-                    <circle r="2.2" fill="#1FA319" opacity="0.72">
-                      <animateMotion
-                        dur={`${(durSec * 1.35).toFixed(2)}s`}
-                        begin={`-${(item.slotIndex * 0.75 + 0.9).toFixed(2)}s`}
-                        repeatCount="indefinite"
-                        path={spokeFromHub}
-                      />
-                    </circle>
-                  </>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-
-        {/* Center SWARM Hub Disc + Floating Live Settled Event Pill */}
-        <div className="lsv-hub" role="region" aria-label="Swarm verification hub">
-          <div className={`lsv-hub-rings${workingNow > 0 && animateActive ? ' is-pulsing' : ''}`}>
-            <div className="lsv-hub-disc">
-              <span className="lsv-hub-word">SWARM</span>
-              {workingNow > 0 ? (
-                <span className="lsv-hub-count tabular">{workingNow} live</span>
-              ) : (
-                <span className="lsv-hub-count tabular" style={{ color: '#A39D92' }}>
-                  standby
-                </span>
-              )}
-            </div>
-          </div>
-
-          {hubEvent.findingId != null && onSelectFinding ? (
-            <button
-              type="button"
-              className={`lsv-hub-pill lsv-hub-pill--${hubEvent.tone} is-clickable`}
-              onClick={() => onSelectFinding(hubEvent.findingId!)}
-              title="Inspect latest verified dossier"
-            >
-              <span className="lsv-hub-pill-verb">{hubEvent.verb}</span>
-              <span className="lsv-hub-pill-target">{hubEvent.target}</span>
-              {hubEvent.rel && (
-                <>
-                  <span className="lsv-hub-pill-sep" aria-hidden="true">·</span>
-                  <span className="lsv-hub-pill-time">{hubEvent.rel}</span>
-                </>
-              )}
-            </button>
-          ) : (
-            <div className={`lsv-hub-pill lsv-hub-pill--${hubEvent.tone}`}>
-              <span className="lsv-hub-pill-verb">{hubEvent.verb}</span>
-              <span className="lsv-hub-pill-target">{hubEvent.target}</span>
-              {hubEvent.rel && (
-                <>
-                  <span className="lsv-hub-pill-sep" aria-hidden="true">·</span>
-                  <span className="lsv-hub-pill-time">{hubEvent.rel}</span>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Desktop Orbiting Agent Cards + Inviting Slot */}
-        <div className="lsv-orbit-layer">
-          {orbitItems.map((item) => {
-            if (item.kind === 'invite') {
               return (
-                <button
-                  key={`invite-${item.slotIndex}`}
-                  type="button"
-                  className={`lsv-card lsv-card--invite${copiedInvite ? ' is-copied' : ''}`}
-                  style={{ left: `${item.coords.pctX}%`, top: `${item.coords.pctY}%` }}
-                  onClick={handleCopyInvite}
-                  title={joinCommand}
-                >
-                  <div className="lsv-card-head">
-                    <span className="lsv-role-dot lsv-role-dot--invite" aria-hidden="true" />
-                    <span className="lsv-card-handle">Your agent here</span>
-                  </div>
-                  <div className="lsv-card-sub">
-                    <span>Any coding agent · ₹0 compute</span>
-                  </div>
-                  <div className="lsv-card-activity lsv-card-activity--cta">
-                    {copiedInvite ? (
-                      <>
-                        <Check size={12} color="var(--green)" />
-                        <span>Copied! Paste into your agent</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy size={12} />
-                        <span>Copy one line to join live</span>
-                      </>
-                    )}
-                  </div>
-                  <div className="lsv-card-stats">
-                    <span>Auto-uses your public GitHub handle</span>
-                  </div>
-                </button>
-              );
-            }
-
-            if (item.kind === 'standby') {
-              return (
-                <button
-                  key={`standby-${item.slotIndex}`}
-                  type="button"
-                  className="lsv-card lsv-card--standby"
-                  style={{ left: `${item.coords.pctX}%`, top: `${item.coords.pctY}%` }}
-                  onClick={onOpenJoin ?? handleCopyInvite}
-                >
-                  <div className="lsv-card-head">
-                    <span className="lsv-role-dot lsv-role-dot--idle" aria-hidden="true" />
-                    <span className="lsv-card-handle">open-slot-{item.slotIndex + 1}</span>
-                  </div>
-                  <div className="lsv-card-sub">
-                    <span>{item.standbyRole}</span>
-                  </div>
-                  <div className="lsv-card-activity">
-                    <span className="lsv-dot lsv-dot--offline" aria-hidden="true" />
-                    <span className="lsv-card-activity-text">{item.standbyLabel}</span>
-                  </div>
-                  <div className="lsv-card-stats">
-                    <span>Ready to claim</span>
-                  </div>
-                </button>
-              );
-            }
-
-            const node = item.node!;
-            const visual = item.visual!;
-            const cleanHandle = normalizeHandle(node.handle);
-            const active = isNodeActivelyWorking(node);
-            const selected =
-              selectedHandle != null &&
-              cleanHandle.toLowerCase() === selectedHandle.toLowerCase();
-            const sub = formatRoleSubtitle(node, visual);
-            const actionLine = formatLiveActionLine(node);
-            const metricLine = formatNodeMetricLine(node);
-            const pct =
-              node.progress_pct != null && Number.isFinite(node.progress_pct)
-                ? Math.max(0, Math.min(100, Math.round(node.progress_pct)))
-                : null;
-
-            return (
-              <button
-                key={`node-${cleanHandle}`}
-                type="button"
-                className={`lsv-card${active ? ' is-working' : ' is-idle'}${
-                  selected ? ' is-selected' : ''
-                }`}
-                style={{
-                  left: `${item.coords.pctX}%`,
-                  top: `${item.coords.pctY}%`,
-                  ['--lsv-role-color' as string]: visual.color,
-                  ['--lsv-role-rgb' as string]: visual.rgb,
-                }}
-                aria-pressed={selected}
-                onClick={() => handleSelectNode(node)}
-              >
-                <div className="lsv-card-head">
-                  <span
-                    className={`lsv-role-dot${active ? ' is-pulsing' : ''}`}
-                    style={{ background: visual.color }}
-                    aria-hidden="true"
+                <g key={`spoke-${item.slotIndex}`}>
+                  <path
+                    d={spokeFromHub}
+                    fill="none"
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                    strokeDasharray={!isNode ? '4 6' : !leased && live ? '5 4' : undefined}
+                    strokeLinecap="round"
+                    opacity={opacity}
                   />
-                  <GitHubAvatar handle={cleanHandle} size={20} />
-                  <span className="lsv-card-handle" title={`@${cleanHandle}`}>
-                    @{cleanHandle}
-                  </span>
-                </div>
 
-                <div className="lsv-card-sub" title={`${sub.roleText}${sub.agentText ? ` · ${sub.agentText}` : ''}`}>
-                  {sub.logoSrc && (
-                    <img
-                      src={sub.logoSrc}
-                      alt=""
-                      width={13}
-                      height={13}
-                      className="lsv-card-brand-icon"
+                  {/* Static midpoint jewel visible when reduced-motion or idle */}
+                  {isNode && (
+                    <circle
+                      cx={midX}
+                      cy={midY}
+                      r={leased ? 2.5 : live ? 2.2 : 2.0}
+                      fill={strokeColor}
+                      opacity={live ? 0.85 : 0.55}
                     />
                   )}
-                  <span className="lsv-card-sub-text">
-                    {sub.roleText}
-                    {sub.agentText ? ` · ${sub.agentText}` : ''}
-                  </span>
-                </div>
 
-                <div className="lsv-card-activity" title={actionLine}>
-                  <span
-                    className={`lsv-dot ${active ? 'lsv-dot--live' : 'lsv-dot--offline'}`}
-                    aria-hidden="true"
-                  />
-                  <span className="lsv-card-activity-text">{actionLine}</span>
-                </div>
-
-                <div className="lsv-card-stats tabular">
-                  <span>{metricLine}</span>
-                  {pct != null && active && (
-                    <span className="lsv-card-microbar" aria-hidden="true">
-                      <span
-                        className="lsv-card-microbar-fill"
-                        style={{ width: `${Math.max(8, pct)}%`, background: visual.color }}
-                      />
-                    </span>
+                  {/* Animated packets pulsing along live spokes */}
+                  {live && animateActive && (
+                    <>
+                      <circle r={leased ? '3.2' : '2.6'} fill={strokeColor} opacity="0.92">
+                        <animateMotion
+                          dur={`${durSec.toFixed(2)}s`}
+                          begin={`-${(item.slotIndex * 0.55 + 0.35).toFixed(2)}s`}
+                          repeatCount="indefinite"
+                          path={spokeToHub}
+                        />
+                      </circle>
+                      {leased && (
+                        <circle r="2.1" fill="#1FA319" opacity="0.72">
+                          <animateMotion
+                            dur={`${(durSec * 1.35).toFixed(2)}s`}
+                            begin={`-${(item.slotIndex * 0.75 + 0.9).toFixed(2)}s`}
+                            repeatCount="indefinite"
+                            path={spokeFromHub}
+                          />
+                        </circle>
+                      )}
+                    </>
                   )}
-                </div>
+                </g>
+              );
+            })}
+          </svg>
+
+          {/* Center SWARM Hub Disc + Floating Live Settled Event Pill */}
+          <div className="lsv-hub" role="region" aria-label="Swarm verification hub">
+            <div className={`lsv-hub-rings${workingNow > 0 && animateActive ? ' is-pulsing' : ''}`}>
+              <div className="lsv-hub-disc">
+                <span className="lsv-hub-word">SWARM</span>
+                {workingNow > 0 ? (
+                  <span className="lsv-hub-count tabular">{workingNow} live</span>
+                ) : (
+                  <span className="lsv-hub-count tabular" style={{ color: '#A39D92' }}>
+                    standby
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {hubEvent.findingId != null && onSelectFinding ? (
+              <button
+                type="button"
+                className={`lsv-hub-pill lsv-hub-pill--${hubEvent.tone} is-clickable`}
+                onClick={() => onSelectFinding(hubEvent.findingId!)}
+                title="Inspect latest verified dossier"
+              >
+                <span className="lsv-hub-pill-verb">{hubEvent.verb}</span>
+                <span className="lsv-hub-pill-target">{hubEvent.target}</span>
+                {hubEvent.rel && (
+                  <>
+                    <span className="lsv-hub-pill-sep" aria-hidden="true">·</span>
+                    <span className="lsv-hub-pill-time">{hubEvent.rel}</span>
+                  </>
+                )}
               </button>
-            );
-          })}
-        </div>
+            ) : (
+              <div className={`lsv-hub-pill lsv-hub-pill--${hubEvent.tone}`}>
+                <span className="lsv-hub-pill-verb">{hubEvent.verb}</span>
+                <span className="lsv-hub-pill-target">{hubEvent.target}</span>
+                {hubEvent.rel && (
+                  <>
+                    <span className="lsv-hub-pill-sep" aria-hidden="true">·</span>
+                    <span className="lsv-hub-pill-time">{hubEvent.rel}</span>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Orbiting Agent Cards + Inviting Slot */}
+          <div className="lsv-orbit-layer">
+            {orbitItems.map((item) => {
+              if (item.kind === 'invite') {
+                return (
+                  <button
+                    key={`invite-${item.slotIndex}`}
+                    type="button"
+                    className={`lsv-card lsv-card--invite${copiedInvite ? ' is-copied' : ''}`}
+                    style={{ left: `${item.coords.pctX}%`, top: `${item.coords.pctY}%` }}
+                    onClick={handleCopyInvite}
+                    title={joinCommand}
+                  >
+                    <div className="lsv-card-head">
+                      <span className="lsv-role-dot lsv-role-dot--invite" aria-hidden="true" />
+                      <span className="lsv-card-handle">Your agent here</span>
+                    </div>
+                    <div className="lsv-card-sub">
+                      <span>Any coding agent · ₹0 compute</span>
+                    </div>
+                    <div className="lsv-card-activity lsv-card-activity--cta">
+                      {copiedInvite ? (
+                        <>
+                          <Check size={12} color="var(--green)" />
+                          <span>Copied! Paste into your agent</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={12} />
+                          <span>Copy one line to join live</span>
+                        </>
+                      )}
+                    </div>
+                    <div className="lsv-card-stats">
+                      <span>Auto-uses your public GitHub handle</span>
+                    </div>
+                  </button>
+                );
+              }
+
+              if (item.kind === 'standby') {
+                return (
+                  <button
+                    key={`standby-${item.slotIndex}`}
+                    type="button"
+                    className="lsv-card lsv-card--standby"
+                    style={{ left: `${item.coords.pctX}%`, top: `${item.coords.pctY}%` }}
+                    onClick={onOpenJoin ?? handleCopyInvite}
+                  >
+                    <div className="lsv-card-head">
+                      <span className="lsv-role-dot lsv-role-dot--idle" aria-hidden="true" />
+                      <span className="lsv-card-handle">open-slot-{item.slotIndex + 1}</span>
+                    </div>
+                    <div className="lsv-card-sub">
+                      <span>{item.standbyRole}</span>
+                    </div>
+                    <div className="lsv-card-activity">
+                      <span className="lsv-dot lsv-dot--offline" aria-hidden="true" />
+                      <span className="lsv-card-activity-text">{item.standbyLabel}</span>
+                    </div>
+                    <div className="lsv-card-stats">
+                      <span>Ready to claim</span>
+                    </div>
+                  </button>
+                );
+              }
+
+              const node = item.node!;
+              const visual = item.visual!;
+              const cleanHandle = normalizeHandle(node.handle);
+              const live = isNodeActivelyWorking(node);
+              const leased = isNodeHoldingLease(node);
+              const betweenLeases = live && !leased;
+              const selected =
+                selectedHandle != null &&
+                cleanHandle.toLowerCase() === selectedHandle.toLowerCase();
+              const sub = formatRoleSubtitle(node, visual);
+              const actionLine = formatLiveActionLine(node);
+              const metricLine = formatNodeMetricLine(node);
+              const pct =
+                leased && node.progress_pct != null && Number.isFinite(node.progress_pct)
+                  ? Math.max(0, Math.min(100, Math.round(node.progress_pct)))
+                  : null;
+
+              return (
+                <button
+                  key={`node-${cleanHandle}`}
+                  type="button"
+                  className={`lsv-card${live ? ' is-working' : ' is-idle'}${
+                    betweenLeases ? ' is-live-ready' : ''
+                  }${selected ? ' is-selected' : ''}`}
+                  data-ring={item.coords.ringIndex}
+                  data-node-status={(node.status || '').toLowerCase()}
+                  style={{
+                    left: `${item.coords.pctX}%`,
+                    top: `${item.coords.pctY}%`,
+                    ['--lsv-role-color' as string]: visual.color,
+                    ['--lsv-role-rgb' as string]: visual.rgb,
+                  }}
+                  aria-pressed={selected}
+                  onClick={() => handleSelectNode(node)}
+                >
+                  <div className="lsv-card-head">
+                    <span
+                      className={`lsv-role-dot${live ? ' is-pulsing' : ''}`}
+                      style={{ background: visual.color }}
+                      aria-hidden="true"
+                    />
+                    <GitHubAvatar handle={cleanHandle} size={cardAvatarSize} />
+                    <span className="lsv-card-handle" title={`@${cleanHandle}`}>
+                      @{cleanHandle}
+                    </span>
+                  </div>
+
+                  <div
+                    className="lsv-card-sub"
+                    title={`${sub.roleText}${sub.agentText ? ` · ${sub.agentText}` : ''}`}
+                  >
+                    {sub.logoSrc && (
+                      <img
+                        src={sub.logoSrc}
+                        alt=""
+                        width={12}
+                        height={12}
+                        className="lsv-card-brand-icon"
+                      />
+                    )}
+                    <span className="lsv-card-sub-text">
+                      {sub.roleText}
+                      {sub.agentText ? ` · ${sub.agentText}` : ''}
+                    </span>
+                  </div>
+
+                  <div className="lsv-card-activity" title={actionLine}>
+                    <span
+                      className={`lsv-dot ${live ? 'lsv-dot--live' : 'lsv-dot--offline'}`}
+                      aria-hidden="true"
+                    />
+                    <span className="lsv-card-activity-text">{actionLine}</span>
+                  </div>
+
+                  <div className="lsv-card-stats tabular">
+                    <span>{metricLine}</span>
+                    {pct != null && (
+                      <span className="lsv-card-microbar" aria-hidden="true">
+                        <span
+                          className="lsv-card-microbar-fill"
+                          style={{ width: `${Math.max(8, pct)}%`, background: visual.color }}
+                        />
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Mobile / Narrow Viewport Clean Grid Layout */}
+        {/* Mobile / Narrow Viewport Clean Grid Layout (renders ALL liveNodes, never capped at 6) */}
         <div className="lsv-mobile-grid" aria-label="Live swarm agents">
-          {orbitItems.map((item) => {
+          {mobileItems.map((item) => {
             if (item.kind === 'invite') {
               return (
                 <button
-                  key={`mob-invite-${item.slotIndex}`}
+                  key={item.key}
                   type="button"
                   className={`lsv-mob-card lsv-mob-card--invite${copiedInvite ? ' is-copied' : ''}`}
                   onClick={handleCopyInvite}
@@ -1217,17 +1570,18 @@ export function LiveSwarmViewer({
                     <span className="lsv-card-handle">Your agent here</span>
                   </div>
                   <div className="lsv-card-sub">
-                    {copiedInvite ? 'Copied! Paste into your coding agent' : 'Tap to copy one line & join live'}
+                    {copiedInvite
+                      ? 'Copied! Paste into your coding agent'
+                      : 'Tap to copy one line & join live'}
                   </div>
                 </button>
               );
             }
-            if (item.kind === 'standby') return null;
 
-            const node = item.node!;
-            const visual = item.visual!;
+            const node = item.node;
+            const visual = item.visual;
             const cleanHandle = normalizeHandle(node.handle);
-            const active = isNodeActivelyWorking(node);
+            const live = isNodeActivelyWorking(node);
             const selected =
               selectedHandle != null &&
               cleanHandle.toLowerCase() === selectedHandle.toLowerCase();
@@ -1237,7 +1591,7 @@ export function LiveSwarmViewer({
 
             return (
               <button
-                key={`mob-${cleanHandle}`}
+                key={item.key}
                 type="button"
                 className={`lsv-mob-card${selected ? ' is-selected' : ''}`}
                 style={{ ['--lsv-role-color' as string]: visual.color }}
@@ -1246,7 +1600,7 @@ export function LiveSwarmViewer({
               >
                 <div className="lsv-card-head">
                   <span
-                    className={`lsv-role-dot${active ? ' is-pulsing' : ''}`}
+                    className={`lsv-role-dot${live ? ' is-pulsing' : ''}`}
                     style={{ background: visual.color }}
                     aria-hidden="true"
                   />
@@ -1269,7 +1623,7 @@ export function LiveSwarmViewer({
                   </span>
                 </div>
                 <div className="lsv-card-activity">
-                  <span className={`lsv-dot ${active ? 'lsv-dot--live' : 'lsv-dot--offline'}`} />
+                  <span className={`lsv-dot ${live ? 'lsv-dot--live' : 'lsv-dot--offline'}`} />
                   <span className="lsv-card-activity-text">{actionLine}</span>
                 </div>
                 <div className="lsv-card-stats tabular">{metricLine}</div>
@@ -1285,16 +1639,31 @@ export function LiveSwarmViewer({
             Auditor
           </span>
           <span className="lsv-legend-item">
-            <span className="lsv-legend-dot" style={{ background: ROLE_VISUALS.peer_verifier.color }} />
+            <span
+              className="lsv-legend-dot"
+              style={{ background: ROLE_VISUALS.peer_verifier.color }}
+            />
             Verifier
           </span>
           <span className="lsv-legend-item">
-            <span className="lsv-legend-dot" style={{ background: ROLE_VISUALS.adjudicator.color }} />
+            <span
+              className="lsv-legend-dot"
+              style={{ background: ROLE_VISUALS.adjudicator.color }}
+            />
             Adjudicator
           </span>
+          {hasBetweenLeaseOnCanvas && (
+            <span className="lsv-legend-item">
+              <span
+                className="lsv-legend-dot"
+                style={{ background: ROLE_VISUALS.live_ready.color }}
+              />
+              Ready
+            </span>
+          )}
         </div>
 
-        {/* Bottom-Right Overflow Pill ("... +N more agents") */}
+        {/* Bottom-Right Overflow Pill (remaining contributors not shown on radial canvas) */}
         {overflowCount > 0 && (
           <button
             type="button"
@@ -1303,13 +1672,109 @@ export function LiveSwarmViewer({
             onClick={() => setRosterOpen((v) => !v)}
           >
             <span className="lsv-more-dots" aria-hidden="true">•••</span>
-            <span>
-              +{overflowCount.toLocaleString('en-IN')} more agent{overflowCount === 1 ? '' : 's'}
-            </span>
+            <span>{overflowPillLabel}</span>
             {rosterOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
         )}
       </div>
+
+      {/* Extreme-Scale Safety: Always-visible strip for live workers #17+ so none are ever hidden */}
+      {extraLiveNodes.length > 0 && (
+        <div
+          className="lsv-live-overflow"
+          role="region"
+          aria-label={`Also working live (${extraLiveNodes.length} additional active agents)`}
+        >
+          <div className="lsv-live-overflow-head">
+            <span className="lsv-live-overflow-title">
+              <span className="lsv-dot lsv-dot--live" aria-hidden="true" />
+              <span>
+                Also working live (+{extraLiveNodes.length.toLocaleString('en-IN')})
+              </span>
+            </span>
+            {unlistedLiveCount > 0 && (
+              <span className="lsv-live-overflow-note tabular">
+                +{unlistedLiveCount.toLocaleString('en-IN')} more streaming
+              </span>
+            )}
+          </div>
+          <div className="lsv-live-overflow-grid">
+            {extraLiveNodes.map((node) => {
+              const cleanHandle = normalizeHandle(node.handle);
+              const visual = resolveRoleVisual(node);
+              const leased = isNodeHoldingLease(node);
+              const selected =
+                selectedHandle != null &&
+                cleanHandle.toLowerCase() === selectedHandle.toLowerCase();
+              const sub = formatRoleSubtitle(node, visual);
+              const actionLine = formatLiveActionLine(node);
+              const metricLine = formatNodeMetricLine(node);
+              const pct =
+                leased && node.progress_pct != null && Number.isFinite(node.progress_pct)
+                  ? Math.max(0, Math.min(100, Math.round(node.progress_pct)))
+                  : null;
+
+              return (
+                <button
+                  key={`extra-live-${cleanHandle}`}
+                  type="button"
+                  className={`lsv-live-overflow-card${!leased ? ' is-live-ready' : ''}${
+                    selected ? ' is-selected' : ''
+                  }`}
+                  style={{
+                    ['--lsv-role-color' as string]: visual.color,
+                    ['--lsv-role-rgb' as string]: visual.rgb,
+                  }}
+                  aria-pressed={selected}
+                  onClick={() => handleSelectNode(node)}
+                >
+                  <div className="lsv-card-head">
+                    <span
+                      className="lsv-role-dot is-pulsing"
+                      style={{ background: visual.color }}
+                      aria-hidden="true"
+                    />
+                    <GitHubAvatar handle={cleanHandle} size={18} />
+                    <span className="lsv-card-handle" title={`@${cleanHandle}`}>
+                      @{cleanHandle}
+                    </span>
+                  </div>
+                  <div className="lsv-card-sub">
+                    {sub.logoSrc && (
+                      <img
+                        src={sub.logoSrc}
+                        alt=""
+                        width={12}
+                        height={12}
+                        className="lsv-card-brand-icon"
+                      />
+                    )}
+                    <span className="lsv-card-sub-text">
+                      {sub.roleText}
+                      {sub.agentText ? ` · ${sub.agentText}` : ''}
+                    </span>
+                  </div>
+                  <div className="lsv-card-activity" title={actionLine}>
+                    <span className="lsv-dot lsv-dot--live" aria-hidden="true" />
+                    <span className="lsv-card-activity-text">{actionLine}</span>
+                  </div>
+                  <div className="lsv-card-stats tabular">
+                    <span>{metricLine}</span>
+                    {pct != null && (
+                      <span className="lsv-card-microbar" aria-hidden="true">
+                        <span
+                          className="lsv-card-microbar-fill"
+                          style={{ width: `${Math.max(8, pct)}%`, background: visual.color }}
+                        />
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Inline Selected Agent Inspector Strip */}
       {selectedNode && (
@@ -1324,10 +1789,10 @@ export function LiveSwarmViewer({
               size={38}
               activeRing={isNodeActivelyWorking(selectedNode)}
               statusDot={
-                isNodeActivelyWorking(selectedNode)
-                  ? (selectedNode.status as 'working' | 'verifying')
-                  : selectedNode.status === 'recent'
-                    ? 'recent'
+                selectedNode.status === 'verifying'
+                  ? 'verifying'
+                  : isNodeActivelyWorking(selectedNode)
+                    ? 'working'
                     : 'idle'
               }
             />
@@ -1365,14 +1830,14 @@ export function LiveSwarmViewer({
                   />
                   {((selectedNode.role || '').toLowerCase().includes('adjudic') ||
                     (selectedNode.role || '').toLowerCase().includes('tie')) &&
-                  isNodeActivelyWorking(selectedNode)
+                  isNodeHoldingLease(selectedNode)
                     ? 'Adjudicating'
                     : selectedNode.status === 'verifying'
                       ? 'Peer verifying'
-                      : isNodeActivelyWorking(selectedNode)
+                      : isNodeHoldingLease(selectedNode)
                         ? 'Working live'
-                        : selectedNode.status === 'recent'
-                          ? 'Recently active'
+                        : (selectedNode.status || '').toLowerCase() === 'recent'
+                          ? 'Live · ready for lease'
                           : 'Standby'}
                 </span>
                 <ProviderModelBadge
