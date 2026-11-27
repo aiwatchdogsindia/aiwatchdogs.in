@@ -5773,17 +5773,48 @@ export function p8SchemeFilterQuery(schemeName?: string | null): string {
   return (schemeName || '').trim();
 }
 
-/** Clean search token to jump to a State/UT/Union jurisdiction's tasks in the task queue. */
+/** Exact jurisdiction prefix token matching every P8 task title (`"${jur_short} · ..."`). */
 export function p8JurisdictionFilterQuery(
   jurisdiction?: string | null,
   stateOrUt?: string | null,
 ): string {
   const cleanState = (stateOrUt || '').trim();
-  if (cleanState) return cleanState;
+  if (cleanState) return `${cleanState} ·`;
   const cleanJur = (jurisdiction || '').trim();
-  if (/^state:/i.test(cleanJur)) return cleanJur.slice(6).trim();
-  if (/^ut:/i.test(cleanJur)) return cleanJur.slice(3).trim();
-  return cleanJur;
+  if (!cleanJur) return '';
+  if (/^state:/i.test(cleanJur)) {
+    const name = cleanJur.slice(6).trim();
+    return name ? `${name} ·` : '';
+  }
+  if (/^ut:/i.test(cleanJur)) {
+    const name = cleanJur.slice(3).trim();
+    return name ? `${name} ·` : '';
+  }
+  return `${cleanJur} ·`;
+}
+
+/** Clear active jurisdiction filter if switching to a tier that excludes it. */
+export function p8ReconcileJurisdictionForTier(
+  selectedJurisdiction: string,
+  nextTier: 'all' | P8TierKey,
+  jurisdictions: VisualSovereignLiesJurisdiction[],
+): string {
+  if (!selectedJurisdiction || selectedJurisdiction === 'all' || nextTier === 'all') {
+    return selectedJurisdiction;
+  }
+  const matched = jurisdictions.find((j) => j.jurisdiction === selectedJurisdiction);
+  if (matched) {
+    return (matched.jurisdiction_level || '').trim().toLowerCase() === nextTier
+      ? selectedJurisdiction
+      : 'all';
+  }
+  const lower = selectedJurisdiction.trim().toLowerCase();
+  const inferredTier: P8TierKey = lower.startsWith('state:')
+    ? 'state'
+    : lower.startsWith('ut:')
+      ? 'ut'
+      : 'union';
+  return inferredTier === nextTier ? selectedJurisdiction : 'all';
 }
 
 export function p8NormalizeTiers(
@@ -6225,6 +6256,13 @@ export function SovereignLiesVisualiser({
     selectedMechanism !== 'all' ||
     selectedJurisdiction !== 'all';
 
+  const handleSelectTier = (nextTier: 'all' | P8TierKey) => {
+    setSelectedTier(nextTier);
+    setSelectedJurisdiction((prev) =>
+      p8ReconcileJurisdictionForTier(prev, nextTier, jurisdictions),
+    );
+  };
+
   const resetAllFilters = () => {
     setSelectedTier('all');
     setSelectedCategory('all');
@@ -6522,7 +6560,7 @@ export function SovereignLiesVisualiser({
                   <button
                     type="button"
                     className="btn btn-ghost btn-xs"
-                    onClick={() => setSelectedTier('all')}
+                    onClick={() => handleSelectTier('all')}
                   >
                     <RotateCcw size={11} aria-hidden="true" />
                     <span>All tiers</span>
@@ -6569,7 +6607,7 @@ export function SovereignLiesVisualiser({
                     aria-pressed={isSelected}
                     className={`pv-p7-cohort-btn ${btnClass}`}
                     onClick={() =>
-                      setSelectedTier((prev) => (prev === bucket.key ? 'all' : bucket.key))
+                      handleSelectTier(selectedTier === bucket.key ? 'all' : bucket.key)
                     }
                   >
                     <span className="pv-p7-cohort-btn-top">
@@ -6624,7 +6662,7 @@ export function SovereignLiesVisualiser({
                   <span className="pv-p7-signal-track" aria-hidden="true">
                     <span
                       className={`pv-p7-signal-fill ${m.fillClass}`}
-                      style={{ width: `${m.tasks > 0 ? Math.max(3, m.sharePct) : 0}%` }}
+                      style={{ width: `${m.sharePct > 0 ? Math.max(3, m.sharePct) : 0}%` }}
                     />
                   </span>
                 </button>
@@ -6732,7 +6770,7 @@ export function SovereignLiesVisualiser({
                       type="button"
                       aria-pressed={selectedTier === t}
                       className={`btn btn-xs ${selectedTier === t ? 'btn-primary' : 'btn-ghost'}`}
-                      onClick={() => setSelectedTier(t)}
+                      onClick={() => handleSelectTier(t)}
                     >
                       {t === 'all' ? 'All' : t === 'union' ? 'Union' : t === 'state' ? 'States' : 'UTs'}
                     </button>
@@ -6822,10 +6860,12 @@ export function SovereignLiesVisualiser({
                                 role="img"
                                 aria-label={`${display}: ${fmtCount(done)} of ${fmtCount(total)} tasks checked`}
                               >
-                                <span
-                                  className={`pv-ub-bar-seg ${segClass}`}
-                                  style={{ width: `${total > 0 ? Math.max(donePct, 6) : 0}%` }}
-                                />
+                                {donePct > 0 ? (
+                                  <span
+                                    className={`pv-ub-bar-seg ${segClass}`}
+                                    style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                                  />
+                                ) : null}
                               </span>
                               <span className="pv-ub-sub tabular">
                                 {fmtCount(total)} tasks · {fmtCount(done)} checked ({fmtPct(donePct)})

@@ -402,8 +402,69 @@ test('SovereignLiesVisualiser helpers normalize tiers, 7 mechanisms, categories,
   ];
   assert.equal(visualsMod.p8FilterJurisdictions(jurisdictions, '', 'state').length, 1);
   assert.equal(visualsMod.p8FilterJurisdictions(jurisdictions, 'delhi', 'all').length, 1);
-  assert.equal(visualsMod.p8JurisdictionFilterQuery('State:Maharashtra', 'Maharashtra'), 'Maharashtra');
-  assert.equal(visualsMod.p8JurisdictionFilterQuery('UT:Delhi'), 'Delhi');
+
+  // Exact jurisdiction prefix token `${jur_short} ·` prevents substring collisions (e.g. Goa vs Goal)
+  assert.equal(visualsMod.p8JurisdictionFilterQuery('State:Maharashtra', 'Maharashtra'), 'Maharashtra ·');
+  assert.equal(visualsMod.p8JurisdictionFilterQuery('UT:Delhi'), 'Delhi ·');
+  assert.equal(visualsMod.p8JurisdictionFilterQuery('State:Goa', 'Goa'), 'Goa ·');
+  assert.equal(visualsMod.p8JurisdictionFilterQuery('Union of India', null), 'Union of India ·');
+  assert.equal(visualsMod.p8JurisdictionFilterQuery('   ', null), '');
+
+  const sampleP8Titles = [
+    'Goa · Dayanand Social Security Scheme: Pension Arrears',
+    'Union of India · National Solar Mission Goal 100 GW: Subsidy Revision',
+    'Union of India · Goa Shipyard Incentive Notice: Revised Terms',
+  ];
+  const goaNeedle = visualsMod.p8JurisdictionFilterQuery('State:Goa', 'Goa').toLowerCase();
+  const goaMatches = sampleP8Titles.filter((t) => t.toLowerCase().includes(goaNeedle));
+  assert.equal(goaMatches.length, 1);
+  assert.equal(goaMatches[0], sampleP8Titles[0]);
+
+  // Switching tier reconciles an incompatible active jurisdiction filter back to 'all'
+  assert.equal(
+    visualsMod.p8ReconcileJurisdictionForTier('State:Maharashtra', 'union', jurisdictions),
+    'all',
+  );
+  assert.equal(
+    visualsMod.p8ReconcileJurisdictionForTier('State:Maharashtra', 'ut', jurisdictions),
+    'all',
+  );
+  assert.equal(
+    visualsMod.p8ReconcileJurisdictionForTier('State:Maharashtra', 'state', jurisdictions),
+    'State:Maharashtra',
+  );
+  assert.equal(
+    visualsMod.p8ReconcileJurisdictionForTier('State:Maharashtra', 'all', jurisdictions),
+    'State:Maharashtra',
+  );
+
+  // Leads-only fallback in p8NormalizeMechanisms still computes non-zero sharePct
+  const leadsOnlyMechs = visualsMod.p8NormalizeMechanisms(null, {
+    retroactive_tax_reversal: 3,
+    midstream_benefit_cut: 1,
+  });
+  assert.equal(leadsOnlyMechs.totalTasks, 0);
+  assert.equal(leadsOnlyMechs.totalLeads, 4);
+  assert.equal(leadsOnlyMechs.items[0].sharePct, 75);
+  assert.equal(leadsOnlyMechs.items[1].sharePct, 25);
+
+  // Regression guards for zero-done bar width, leads-only mechanism bar, numeric year formatting, and clipped card delta
+  const visualsSrcCheck = fs.readFileSync(
+    path.join(webDir, 'src/components/ProjectVisuals.tsx'),
+    'utf8',
+  );
+  assert.match(visualsSrcCheck, /donePct > 0 \?/);
+  assert.match(visualsSrcCheck, /m\.sharePct > 0 \? Math\.max\(3, m\.sharePct\) : 0/);
+  const drawerSrcCheck = fs.readFileSync(
+    path.join(webDir, 'src/components/FindingDrawer.tsx'),
+    'utf8',
+  );
+  assert.match(drawerSrcCheck, /k === 'year' \|\| k\.endsWith\('_year'\)/);
+  const cardSrcCheck = fs.readFileSync(
+    path.join(webDir, 'src/components/FindingCard.tsx'),
+    'utf8',
+  );
+  assert.match(cardSrcCheck, /clipCardText\(p8Record\.promisedMetric/);
 
   const schemes = [
     {

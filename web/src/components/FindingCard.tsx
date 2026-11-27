@@ -267,8 +267,12 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
               </span>
             )}
             {p8Record.promisedMetric && p8Record.revisedMetric && (
-              <span className="fc-p8-delta-pill tabular">
-                {p8Record.promisedMetric} → {p8Record.revisedMetric}
+              <span
+                className="fc-p8-delta-pill tabular"
+                title={`${p8Record.promisedMetric} → ${p8Record.revisedMetric}`}
+              >
+                {clipCardText(p8Record.promisedMetric, compact ? 28 : 42)} →{' '}
+                {clipCardText(p8Record.revisedMetric, compact ? 28 : 42)}
               </span>
             )}
           </div>

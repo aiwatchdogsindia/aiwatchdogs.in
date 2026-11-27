@@ -1269,7 +1269,9 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                         ? formatInr(v)
                                         : k.endsWith('_pct')
                                           ? `${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`
-                                          : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
+                                          : k === 'year' || k.endsWith('_year')
+                                            ? String(v)
+                                            : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
                                       : typeof v === 'boolean'
                                         ? v
                                           ? 'Yes'
