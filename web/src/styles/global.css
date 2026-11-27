@@ -2697,9 +2697,6 @@ code.font-mono {
   --ink-3: #BCBAB7;
   --ink-4: #A9A7A3;
 }
-.record .return-card.frontier * {
-  --ink: var(--ink);
-}
 
 .return-card.grave {
   background: transparent;
@@ -4698,13 +4695,8 @@ code.font-mono {
 .how-cta {
   padding: 32px;
   border-radius: var(--r-8);
-  background: var(--flag-saffron);
-  --ink: var(--ink);
-  --ink-2: #CDCBC8;
-  --ink-3: #CCC6BE;
-  --paper: var(--flag-saffron);
-  --rule-strong: rgba(236, 232, 223, 0.32);
-  --sunk-2: #7A5837;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
 }
 
 .how-cta h2::after {
@@ -4904,24 +4896,6 @@ code.font-mono {
 .return-card .return-card-title,
 .record .return-card.frontier .return-card-title {
   color: var(--ink) !important;
-}
-
-/* Restore high-contrast light-on-green tokens for .frontier now that UNSLOP removed its solid white card fill */
-.record .return-card.frontier {
-  --ink: var(--raised);
-  --ink-2: #15171A;
-  --ink-3: #22262C;
-  --ink-4: #2A2F36;
-  --ink-6: #22262C;
-  --paper: var(--raised);
-  --accent: #2F343B;
-  --accent-light: #22262C;
-  --accent-deep: #2F343B;
-  --green-on-dark: #2A2F35;
-}
-
-.record .return-card.frontier * {
-  --ink: var(--raised);
 }
 
 .return-card-action {
@@ -5306,8 +5280,6 @@ code.font-mono {
 /* Keep light-surface button tokens crisp inside the floating white strip popover */
 .hero-swarm .lsv-strip-popover {
   --paper: var(--raised);
-  --raised: var(--raised);
-  --ink: var(--ink);
   --ink-2: #BCBAB7;
   --ink-3: #A9A7A3;
   --ink-4: #9F9D99;
@@ -8572,4 +8544,15 @@ a {
     min-width: 104px;
     font-size: 28px;
   }
+}
+
+.fl-pill--pending {
+  border-style: dashed;
+  font-style: italic;
+}
+
+.fl-row.is-unconfirmed .fl-name,
+.fl-row.is-unconfirmed .fl-what {
+  font-style: italic;
+  color: var(--ink-2);
 }

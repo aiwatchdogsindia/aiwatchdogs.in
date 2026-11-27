@@ -1031,6 +1031,8 @@ def create_app(
         methodology: str | None = Query(default=None, max_length=32),
         mission: str | None = Query(default=None, max_length=120),
         search: str | None = Query(default=None, max_length=120),
+        group: str | None = Query(default=None, max_length=200),
+        group_kind: str | None = Query(default=None, pattern="^(department|jurisdiction)$"),
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=50_000),
     ) -> dict[str, Any]:
@@ -1041,6 +1043,8 @@ def create_app(
             methodology=methodology,
             mission=mission,
             search=search,
+            group=group,
+            group_kind=group_kind,
             limit=limit,
             offset=offset,
         )

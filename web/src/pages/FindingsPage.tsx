@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import { Link } from '../router';
 import type { FindingItem, FindingPattern, FindingPatterns } from '../types';
-import { formatDateShort, formatInr } from '../utils';
+import { formatDateShort, formatInr, isUnverifiedStatus } from '../utils';
 
 interface FindingsPageProps {
   onSelectFinding: (id: string | number) => void;
@@ -15,7 +15,7 @@ const PAGE_SIZE = 25;
 
 const STATUS_TABS: Array<{ value: string; label: string; hint: string }> = [
   { value: '', label: 'All', hint: 'Every record, newest first.' },
-  { value: 'verified', label: 'Confirmed', hint: 'Two independent checks reached the same result.' },
+  { value: 'confirmed', label: 'Confirmed', hint: 'Two independent checks reached the same result.' },
   { value: 'peer_review', label: 'Being checked', hint: 'Flagged once, waiting for a second independent check.' },
   { value: 'cleared', label: 'No issue found', hint: 'Checked and found to be in order.' },
   { value: 'disputed', label: 'Disputed', hint: 'Checks disagreed, so this is not treated as a result.' },
@@ -26,7 +26,8 @@ function plainStatus(status: string): { label: string; tone: string } {
   if (tag.id === FINDING_TAGS.verified.id) return { label: 'Confirmed', tone: 'ok' };
   if (tag.id === FINDING_TAGS.cleared.id) return { label: 'No issue', tone: 'muted' };
   if (tag.id === FINDING_TAGS.in_review.id) return { label: 'Being checked', tone: 'pending' };
-  if (tag.tone === 'disputed') return { label: 'Disputed', tone: 'bad' };
+  if (isUnverifiedStatus(status)) return { label: tag.label, tone: 'pending' };
+  if (tag.tone === 'disputed') return { label: tag.label, tone: 'bad' };
   return { label: tag.label, tone: 'muted' };
 }
 
@@ -65,7 +66,8 @@ interface PatternScope {
   label: string;
   mission: string;
   methodology: string;
-  search: string;
+  group: string;
+  groupKind: 'department' | 'jurisdiction';
 }
 
 function yearSpan(p: FindingPattern): string {
@@ -77,9 +79,12 @@ function yearSpan(p: FindingPattern): string {
 
 function CheckMix({ data }: { data: FindingPatterns }) {
   const totals = new Map<string, number>();
-  for (const p of data.patterns) {
-    const label = getWorkTypeTag(undefined, p.methodology_code).label;
-    totals.set(label, (totals.get(label) ?? 0) + p.count);
+  const counts: Array<[string, number]> = data.by_methodology
+    ? Object.entries(data.by_methodology)
+    : data.patterns.map((p) => [p.methodology_code, p.count]);
+  for (const [code, n] of counts) {
+    const label = getWorkTypeTag(undefined, code).label;
+    totals.set(label, (totals.get(label) ?? 0) + n);
   }
   const rows = [...totals.entries()].sort((a, b) => b[1] - a[1]);
   const sum = rows.reduce((acc, [, n]) => acc + n, 0) || 1;
@@ -206,7 +211,9 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           status: status || undefined,
           mission: scope?.mission || undefined,
           methodology: scope?.methodology || undefined,
-          search: [scope?.search, search.trim()].filter(Boolean).join(' ') || undefined,
+          group: scope?.group || undefined,
+          groupKind: scope?.groupKind || undefined,
+          search: search.trim() || undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
         })
@@ -238,9 +245,10 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       label: `${p.group} · ${getWorkTypeTag(undefined, p.methodology_code).label}`,
       mission: p.mission_slug,
       methodology: p.methodology_code,
-      search: p.group,
+      group: p.group,
+      groupKind: p.group_kind,
     });
-    setStatus('verified');
+    setStatus('confirmed');
     setSearch('');
     setView('records');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -392,11 +400,16 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
               </li>
               {findings.map((f) => {
                 const st = plainStatus(f.status);
+                const unconfirmed = isUnverifiedStatus(f.status);
                 const { who, what, dept } = splitTitle(f);
                 const where = [dept, f.jurisdiction, fiscalLabel(f.fiscal_year)].filter(Boolean).join(' · ');
                 return (
                   <li key={f.id}>
-                    <button type="button" className="fl-row" onClick={() => onSelectFinding(f.id)}>
+                    <button
+                      type="button"
+                      className={`fl-row ${unconfirmed ? 'is-unconfirmed' : ''}`}
+                      onClick={() => onSelectFinding(f.id)}
+                    >
                       <span className="fl-date">{formatDateShort(f.verified_at || f.created_at)}</span>
                       <span className="fl-main">
                         <span className="fl-name">{who}</span>

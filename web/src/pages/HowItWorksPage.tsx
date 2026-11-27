@@ -80,7 +80,7 @@ const WAYS_TO_HELP = [
   {
     who: 'Any citizen',
     title: 'File an RTI',
-    body: 'Each confirmed finding has a draft request ready to adapt and submit on rtionline.gov.in.',
+    body: 'Each confirmed finding has a draft request. File it through the Central or State route the draft names; the Central portal returns State requests.',
     to: '/findings',
     label: 'Find a draft',
   },

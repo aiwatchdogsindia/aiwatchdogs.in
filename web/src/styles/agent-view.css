@@ -243,7 +243,7 @@
   min-height: 100vh;
   width: 100%;
   background: var(--raised);
-  color: #000000;
+  color: var(--ink);
 }
 
 .av-raw-md {
@@ -268,10 +268,10 @@
   right: 10px;
   z-index: 20;
   padding: 2px 7px;
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  border: 1px solid var(--rule);
   border-radius: 3px;
   background: rgba(12, 13, 15, 0.92);
-  color: #B0B0B0;
+  color: var(--ink-3);
   font-family: monospace;
   font-size: 11.5px;
   line-height: 1.35;
@@ -280,28 +280,9 @@
 
 .av-raw-exit:hover,
 .av-raw-exit:focus-visible {
-  color: #000000;
-  border-color: #000000;
+  color: var(--ink);
+  border-color: var(--ink-3);
   outline: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .av-raw-shell {
-    background: #DBDBDB;
-    color: #262626;
-  }
-
-  .av-raw-exit {
-    border-color: rgba(12, 13, 15, 0.22);
-    background: rgba(219, 219, 219, 0.9);
-    color: #484848;
-  }
-
-  .av-raw-exit:hover,
-  .av-raw-exit:focus-visible {
-    color: var(--raised);
-    border-color: var(--raised);
-  }
 }
 
 @media print {

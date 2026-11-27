@@ -924,6 +924,8 @@ export const api = {
       pillar?: string;
       methodology?: string;
       mission?: string;
+      group?: string;
+      groupKind?: string;
       search?: string;
       limit?: number;
       offset?: number;
@@ -934,6 +936,8 @@ export const api = {
     if (params.pillar) sp.set('pillar', params.pillar);
     if (params.methodology) sp.set('methodology', params.methodology);
     if (params.mission) sp.set('mission', params.mission);
+    if (params.group) sp.set('group', params.group);
+    if (params.groupKind) sp.set('group_kind', params.groupKind);
     if (params.search) sp.set('search', params.search);
     if (params.limit != null) sp.set('limit', String(params.limit));
     if (params.offset != null) sp.set('offset', String(params.offset));

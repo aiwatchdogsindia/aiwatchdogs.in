@@ -768,6 +768,7 @@ export interface FindingPatterns {
   patterns: FindingPattern[];
   pattern_count: number;
   finding_count: number;
+  by_methodology?: Record<string, number>;
   total_inr: number;
 }
 

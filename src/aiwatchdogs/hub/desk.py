@@ -207,6 +207,15 @@ _TASK_LIST_COLUMNS_PG_COMPACT = (
 # editorial_interpretation) are fetched on demand by GET /api/findings/{finding_id}.
 _PATTERN_DEPT_RE = re.compile(r"^(.*\S)\s*\(((?:Department|Ministry|Dept\.?)\b[^()]*)\)\s*$", re.IGNORECASE)
 
+def _pattern_group(entity_name: str, jurisdiction: str) -> tuple[str, str, str]:
+    entity = entity_name.strip()
+    place = jurisdiction.strip()
+    match = _PATTERN_DEPT_RE.match(entity)
+    if match:
+        return match.group(1).strip(), match.group(2).strip(), "department"
+    return entity, place or entity, "jurisdiction"
+
+
 _FINDING_SUMMARY_COLUMNS = (
     "id, mission_id, mission_slug, pillar, task_id, artifact_id, source_id, "
     "title, summary, methodology_code, entity_name, jurisdiction, fiscal_year, "
@@ -4358,14 +4367,13 @@ class DeskService:
                 "WHERE status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0"
             ).fetchall()
         groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+        by_methodology: dict[str, int] = {}
         for r in rows:
+            code = str(r["methodology_code"]).upper()
+            by_methodology[code] = by_methodology.get(code, 0) + 1
             entity = str(r["entity_name"] or "").strip()
             jurisdiction = str(r["jurisdiction"] or "").strip()
-            match = _PATTERN_DEPT_RE.match(entity)
-            if match:
-                label, group, kind = match.group(1).strip(), match.group(2).strip(), "department"
-            else:
-                label, group, kind = entity, jurisdiction or entity, "jurisdiction"
+            label, group, kind = _pattern_group(entity, jurisdiction)
             key = (str(r["mission_slug"]), str(r["methodology_code"]).upper(), group)
             g = groups.get(key)
             if g is None:
@@ -4411,6 +4419,7 @@ class DeskService:
             "patterns": patterns,
             "pattern_count": len(groups),
             "finding_count": len(rows),
+            "by_methodology": by_methodology,
             "total_inr": round(sum(float(r["monetary_exposure_inr"] or 0.0) for r in rows), 2),
         }
         self._patterns_cache = (eff_limit, now, result)
@@ -4424,6 +4433,8 @@ class DeskService:
         methodology: str | None = None,
         mission: str | None = None,
         search: str | None = None,
+        group: str | None = None,
+        group_kind: str | None = None,
         limit: int = 24,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -4441,6 +4452,8 @@ class DeskService:
                     "status = 'corrected' OR editorial_status IN ('corrected', 'retracted') "
                     "OR EXISTS (SELECT 1 FROM finding_corrections fc WHERE fc.finding_id = findings.id))"
                 )
+            elif status_filter == "confirmed":
+                clauses.append("status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0")
             elif status_filter == "retracted":
                 clauses.append(
                     "status IN ('retracted', 'retracted_false_positive') AND COALESCE(quarantined, 0) = 0"
@@ -4460,6 +4473,25 @@ class DeskService:
         if mission:
             clauses.append("mission_slug = ?")
             params.append(self.resolve_slug(mission))
+        if group and group.strip():
+            clean_group = group.strip()[:200]
+            kind = "department" if group_kind == "department" else "jurisdiction"
+            pre_where = " AND ".join(clauses) if clauses else "1 = 1"
+            with self.db.read() as conn:
+                candidates = conn.execute(
+                    f"SELECT id, entity_name, jurisdiction FROM findings WHERE {pre_where}",
+                    params,
+                ).fetchall()
+            member_ids = [
+                str(r["id"])
+                for r in candidates
+                if _pattern_group(str(r["entity_name"] or ""), str(r["jurisdiction"] or ""))[1:] == (clean_group, kind)
+            ]
+            if member_ids:
+                clauses.append(f"id IN ({','.join('?' for _ in member_ids)})")
+                params.extend(member_ids)
+            else:
+                clauses.append("1 = 0")
         if search and search.strip():
             escaped = escape_like(search.strip()[:120])
             like = f"%{escaped}%"
