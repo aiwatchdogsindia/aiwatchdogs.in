@@ -348,12 +348,14 @@ def run_p1_police_budget_heads(
 
         if flag_equal and values.get("re") is not None and values.get("be") is not None:
             if values["be"] > 0 and values["re"] == values["be"]:
+                # Not nested in the f-string below: reusing its quote character needs Python 3.12+.
+                re_years = f" for {years.get('re')}" if years.get("re") else ""
                 leads.append(
                     AuditLeadCandidate(
                         title=f"{entity}: revised estimate repeats the budget estimate exactly ({label})",
                         summary=(
                             f"The official budget document prints the same figure, {_fmt(values['be'], unit)}, as both "
-                            f"BE and RE{f' for {years.get('re')}' if years.get('re') else ''} on {label}. Worth checking "
+                            f"BE and RE{re_years} on {label}. Worth checking "
                             "whether the head was actually reviewed mid-year. Statistical observation for public review."
                         ),
                         methodology_code="P1",
