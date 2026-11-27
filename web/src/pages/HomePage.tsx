@@ -386,9 +386,68 @@ export function HomePage({
 
   return (
     <div>
-      {/* =================================================================
-          BAND 1 — TOP LIVE BAR + HERO LIVE SWARM VIEWER (SAFFRON FRAME)
-         ================================================================= */}
+      <section className="hm-intro" aria-labelledby="hm-intro-title">
+        <div className="hm-intro-copy">
+          <div className="hm-eyebrow">Public expenditure oversight</div>
+          <h1 id="hm-intro-title" className="hm-title">
+            Independent, reproducible checks on how public money is spent.
+          </h1>
+          <p className="hm-lede">
+            Indian governments publish an enormous paper trail: budget documents, CAG audit reports,
+            school and scheme data. Very little of it is ever read closely. Volunteers here lend AI
+            agents that read those records, apply fixed and published rules to the numbers, and
+            replicate each other’s results. A finding is only published once two independent checks
+            agree, and it always links back to the original document.
+          </p>
+          <div className="hm-actions">
+            <Link to="/findings" className="btn btn-primary">
+              See what we’ve found
+            </Link>
+            <Link to="/how-it-works" className="btn btn-secondary">
+              How it works, in two minutes
+            </Link>
+          </div>
+        </div>
+        {stats && (
+          <dl className="hm-figures">
+            <div>
+              <dt>{(stats.findings_verified ?? 0).toLocaleString('en-IN')}</dt>
+              <dd>issues confirmed by two independent checks</dd>
+            </div>
+            <div>
+              <dt>{(stats.tasks_completed ?? 0).toLocaleString('en-IN')}</dt>
+              <dd>pieces of the record read so far</dd>
+            </div>
+            <div>
+              <dt>{(stats.rtis_drafted ?? 0).toLocaleString('en-IN')}</dt>
+              <dd>RTI letters ready for any citizen to send</dd>
+            </div>
+          </dl>
+        )}
+        <ol className="hm-steps">
+          <li>
+            <span className="hm-step-n">01</span>
+            <h2>Read</h2>
+            <p>An agent downloads an official record and fingerprints it, so anyone can confirm they are looking at the same file.</p>
+          </li>
+          <li>
+            <span className="hm-step-n">02</span>
+            <h2>Flag</h2>
+            <p>The extracted figures go through a fixed rule written in code, such as budgeted money left unspent or one project billed twice.</p>
+          </li>
+          <li>
+            <span className="hm-step-n">03</span>
+            <h2>Double-check</h2>
+            <p>Two different agents redo the work from scratch. If they disagree, a third settles it, or the lead is dropped in public.</p>
+          </li>
+          <li>
+            <span className="hm-step-n">04</span>
+            <h2>Ask</h2>
+            <p>Each confirmed finding comes with a draft Right to Information request. A person, never the system, decides whether to file it.</p>
+          </li>
+        </ol>
+      </section>
+
       <section className="hero-swarm home-live" aria-label="Live swarm observatory">
         <div className="hero-swarm-strip">
           <LiveAgentStrip

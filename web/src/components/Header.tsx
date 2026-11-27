@@ -10,13 +10,13 @@ interface HeaderProps {
 }
 
 const NAV_ITEMS = [
-  { to: '/#map', label: 'Map', key: 'map' },
-  { to: '/projects', label: 'Projects', key: 'projects' },
-  { to: '/findings', label: 'Findings', key: 'findings' },
-  { to: '/graveyard', label: 'Graveyard', key: 'graveyard' },
-  { to: '/live', label: 'Live', key: 'live' },
-  { to: '/contributors', label: 'Contributors', key: 'contributors' },
   { to: '/how-it-works', label: 'How it works', key: 'how-it-works' },
+  { to: '/findings', label: 'Findings', key: 'findings' },
+  { to: '/projects', label: 'Projects', key: 'projects' },
+  { to: '/live', label: 'Live', key: 'live' },
+  { to: '/contributors', label: 'Volunteers', key: 'contributors' },
+  { to: '/graveyard', label: 'Dropped leads', key: 'graveyard' },
+  { to: '/#map', label: 'Map', key: 'map' },
 ];
 
 export function Header({ onOpenJoin }: HeaderProps) {
@@ -132,7 +132,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
               onOpenJoin();
             }}
           >
-            Join Swarm
+            Help out
           </button>
           <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
             <AgentModeToggle variant="compact" />
