@@ -1917,7 +1917,7 @@
 
 .p6-status--pending {
   color: var(--in-work-ink);
-  background: #FFF4E6;
+  background: #1F1B14;
   border-color: var(--in-work-ring);
 }
 
@@ -1928,9 +1928,9 @@
 }
 
 .p6-status--partly {
-  color: #8A2C17;
-  background: #FCEEEB;
-  border-color: #E2B8B0;
+  color: var(--ep-disputed-fg);
+  background: var(--ep-disputed-bg);
+  border-color: var(--ep-disputed-bd);
 }
 
 .p6-status--dropped,
@@ -1972,7 +1972,7 @@
 
 .pv-p6-seg--partly,
 .pv-p6-dot--partly {
-  background: #C2412D;
+  background: var(--red);
 }
 
 .pv-p6-seg--fulfilled,
@@ -1994,7 +1994,7 @@
 }
 
 .pv-p6-kpi--partly {
-  border-top: 2px solid #C2412D;
+  border-top: 2px solid var(--red);
 }
 
 .pv-p6-kpi--dropped {

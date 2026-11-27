@@ -1,5 +1,5 @@
 import { ArrowUpRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { Link } from '../router';
 import type { FindingItem } from '../types';
@@ -398,7 +398,9 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
     };
   }, [refreshTick]);
 
-  const load = (offset: number) => {
+  const selection = useRef(0);
+
+  const load = (offset: number, ticket: number) => {
     setLoading(true);
     setError(false);
     return api
@@ -410,16 +412,22 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
         offset,
       })
       .then((res) => {
+        if (ticket !== selection.current) return;
         setItems((prev) => (offset === 0 ? res.items : [...prev, ...res.items]));
         setTotal(res.total);
         setHasMore(res.has_more);
       })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        if (ticket === selection.current) setError(true);
+      })
+      .finally(() => {
+        if (ticket === selection.current) setLoading(false);
+      });
   };
 
   useEffect(() => {
-    void load(0);
+    selection.current += 1;
+    void load(0, selection.current);
   }, [sort, state, refreshTick]);
 
   return (
@@ -480,7 +488,7 @@ export function RankingPage({ onSelectFinding, refreshTick }: RankingPageProps) 
 
       {hasMore && (
         <div className="rk-more">
-          <button type="button" className="btn btn-secondary" disabled={loading} onClick={() => void load(items.length)}>
+          <button type="button" className="btn btn-secondary" disabled={loading} onClick={() => void load(items.length, selection.current)}>
             {loading ? t.loading : t.loadMore}
           </button>
         </div>

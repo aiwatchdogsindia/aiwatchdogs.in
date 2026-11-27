@@ -2435,6 +2435,18 @@ def test_finding_patterns_group_confirmed_findings_by_department(tmp_path: Path)
             assert client.get(f"/api/findings?status=confirmed&jurisdiction={place}").json()["total"] == 2
             assert client.get("/api/findings?status=confirmed&jurisdiction=Nowhere").json()["total"] == 0
             assert client.get("/api/findings?sort=bogus").status_code == 422
+
+            with app.state.db.transaction() as conn:
+                conn.execute(
+                    "UPDATE findings SET verified_at = '2026-01-01T00:00:00Z' WHERE id = ?", (ids[0],)
+                )
+                conn.execute(
+                    "UPDATE findings SET verified_at = '2026-06-01T00:00:00Z' WHERE id = ?", (ids[1],)
+                )
+            recent = client.get("/api/findings?status=confirmed&sort=recent").json()
+            assert [f["id"] for f in recent["findings"]] == [ids[1], ids[0]]
+            default_order = client.get("/api/findings?status=confirmed").json()
+            assert [f["id"] for f in default_order["findings"]] == [ids[0], ids[1]]
             assert client.get(f"/api/findings/{ids[0]}").status_code == 200
     finally:
         app.state.db.close()

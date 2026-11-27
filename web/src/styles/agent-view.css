@@ -65,21 +65,21 @@
 .av-toggle--footer {
   width: 32px;
   height: 30px;
-  color: rgba(12, 13, 15, 0.9);
-  border-color: rgba(12, 13, 15, 0.34);
-  background: rgba(12, 13, 15, 0.06);
+  color: var(--ink-3);
+  border-color: var(--rule-strong);
+  background: transparent;
 }
 
 .av-toggle--footer:hover,
 .av-toggle--footer:focus-visible {
-  color: var(--raised);
-  background: rgba(12, 13, 15, 0.16);
-  border-color: rgba(12, 13, 15, 0.72);
+  color: var(--ink);
+  background: var(--sunk);
+  border-color: var(--ink-3);
   outline: none;
 }
 
 .av-toggle--footer:focus-visible {
-  outline: 2px solid var(--raised);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 

@@ -4786,6 +4786,8 @@ class DeskService:
         where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         if sort == "amount":
             order_sql = "COALESCE(monetary_exposure_inr, 0) DESC, COALESCE(verified_at, created_at) DESC, id ASC"
+        elif sort == "recent":
+            order_sql = "COALESCE(verified_at, created_at) DESC, id ASC"
         else:
             order_sql = (
                 "CASE status WHEN 'verified' THEN 0 WHEN 'peer_review' THEN 1 WHEN 'cleared' THEN 2 "
