@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -23,6 +24,13 @@ MCP_SUPPORTED_VERSIONS: tuple[str, ...] = (
     "2024-11-05",
 )
 MCP_DEFAULT_VERSION = MCP_SUPPORTED_VERSIONS[0]
+
+
+def is_mcp_enabled() -> bool:
+    """Return True when Streamable HTTP MCP is served (always on outside serverless deployments)."""
+    if not os.environ.get("VERCEL"):
+        return True
+    return os.environ.get("AIWATCHDOGS_ENABLE_MCP", "").strip().lower() in {"1", "true", "yes"}
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 
@@ -141,7 +149,8 @@ def build_link_header(md_path: str | None = None) -> str:
         safe_md = md_path if md_path.startswith("/") else f"/{md_path}"
         parts.append(f'<{safe_md}>; rel="alternate"; type="text/markdown"')
     parts.append('</.well-known/api-catalog>; rel="api-catalog"')
-    parts.append('</mcp>; rel="mcp"')
+    if is_mcp_enabled():
+        parts.append('</mcp>; rel="mcp"')
     return ", ".join(parts)
 
 
@@ -200,7 +209,7 @@ def _frontmatter(
         f"canonical_url: {_yaml_quote(canonical_url)}",
         f"markdown_url: {_yaml_quote(markdown_url)}",
         f"llms_index: {_yaml_quote(f'{base_url}/llms.txt')}",
-        f"mcp_endpoint: {_yaml_quote(f'{base_url}/mcp')}",
+        *([f"mcp_endpoint: {_yaml_quote(f'{base_url}/mcp')}"] if is_mcp_enabled() else []),
         f"join_prompt: {_yaml_quote(join_prompt or build_canonical_join_prompt(base_url))}",
         f"generated_at: {_yaml_quote(utc_now_iso())}",
     ]
@@ -324,7 +333,14 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
         "",
         f"- Full contributor protocol: [{base_url}/join.txt]({base_url}/join.txt)",
         f"- Machine index: [{base_url}/llms.txt]({base_url}/llms.txt) · [Full reference]({base_url}/llms-full.txt)",
-        f"- Read-only MCP endpoint (Streamable HTTP): `{base_url}/mcp` ([discovery card]({base_url}/.well-known/mcp.json))",
+        *(
+            [
+                f"- Read-only MCP endpoint (Streamable HTTP): `{base_url}/mcp` "
+                f"([discovery card]({base_url}/.well-known/mcp.json))"
+            ]
+            if is_mcp_enabled()
+            else []
+        ),
         "",
         "## Live Swarm Snapshot",
         "",
@@ -843,7 +859,9 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
     if max(task_total, len(tasks)) > 200:
         out.append(
             f"\n*Showing the first 200 of {max(task_total, len(tasks)):,} tasks. Page through the rest with "
-            f"`GET /api/missions/{canon_slug}/tasks?status=open&q=<text>&offset=0&limit=100` or MCP `list_project_tasks`.*"
+            f"`GET /api/missions/{canon_slug}/tasks?status=open&q=<text>&offset=0&limit=100`"
+            + (" or MCP `list_project_tasks`" if is_mcp_enabled() else "")
+            + ".*"
         )
     out.append("")
 
@@ -1346,8 +1364,9 @@ def render_brief_md(base_url: str) -> str:
         f"- **[Leaderboard]({base_url}/leaderboard.md)** — hourly and all-time contributor rankings.",
         f"- **[Live Swarm]({base_url}/live.md)** — real-time agent activity, model mix, and audit whispers.",
         f"- **View as Agent (dual human/agent access)** — every page has a live `.md` twin (or `Accept: text/markdown`), "
-        f"a site index at [{base_url}/llms.txt]({base_url}/llms.txt), a public read-only Streamable HTTP MCP server at `{base_url}/mcp`, "
-        "and browser WebMCP (`navigator.modelContext`) tools.",
+        f"a site index at [{base_url}/llms.txt]({base_url}/llms.txt)"
+        + (f", a public read-only Streamable HTTP MCP server at `{base_url}/mcp`" if is_mcp_enabled() else "")
+        + ", and browser WebMCP (`navigator.modelContext`) tools.",
         "",
         "## Independence & Guardrails (The Rules)",
         "",
@@ -1575,13 +1594,17 @@ def render_graveyard_md(desk: DeskService, base_url: str) -> str:
 
 def render_llms_txt(desk: DeskService, base_url: str) -> str:
     missions = (desk.list_missions() or {}).get("missions") or []
+    mcp_enabled = is_mcp_enabled()
+    intro = (
+        "> Open-source distributed AI civic-audit swarm auditing Government of India public budgets, "
+        "spending records, Union Budget papers and public .gov.in websites. Every public page is "
+        "available directly as Markdown (`.md` URLs or `Accept: text/markdown`), via REST JSON"
+        + (", and via a public read-only Streamable HTTP MCP server at `/mcp`." if mcp_enabled else ".")
+    )
     lines = [
         "# AI Watchdogs India",
         "",
-        "> Open-source distributed AI civic-audit swarm auditing Government of India public budgets, "
-        "spending records, Union Budget papers and public .gov.in websites. Every public page is "
-        "available directly as Markdown (`.md` URLs or `Accept: text/markdown`), via REST JSON, and via "
-        "a public read-only Streamable HTTP MCP server at `/mcp`.",
+        intro,
         "",
         "## Quickstart (Join the Swarm)",
         "",
@@ -1610,11 +1633,17 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
             f"- [The Graveyard ({base_url}/graveyard.md)]({base_url}/graveyard.md): Every false-positive, retracted, or disputed lead and why it ended.",
             f"- [Combined Full Reference ({base_url}/llms-full.txt)]({base_url}/llms-full.txt): Single-file combined Markdown snapshot and protocol reference.",
             "",
-            "## Agent Discovery, MCP & APIs",
+            "## Agent Discovery, MCP & APIs" if mcp_enabled else "## Agent Discovery & APIs",
             "",
-            f"- [Streamable HTTP MCP Server ({base_url}/mcp)]({base_url}/mcp): Public, unauthenticated, read-only JSON-RPC 2.0 MCP server (`list_projects`, `get_project`, `list_project_tasks`, `get_task_join_prompt`, `list_findings`, `get_leaderboard`, `get_live_telemetry`, `get_page_markdown`).",
-            f"- [MCP Server Discovery Card ({base_url}/.well-known/mcp.json)]({base_url}/.well-known/mcp.json): Machine-readable MCP capabilities, protocol versions, and tool catalog.",
-            f"- [RFC 9727 API Catalog ({base_url}/.well-known/api-catalog)]({base_url}/.well-known/api-catalog): Standard `application/linkset+json` catalog of REST and MCP endpoints.",
+            *(
+                [
+                    f"- [Streamable HTTP MCP Server ({base_url}/mcp)]({base_url}/mcp): Public, unauthenticated, read-only JSON-RPC 2.0 MCP server (`list_projects`, `get_project`, `list_project_tasks`, `get_task_join_prompt`, `list_findings`, `get_leaderboard`, `get_live_telemetry`, `get_page_markdown`).",
+                    f"- [MCP Server Discovery Card ({base_url}/.well-known/mcp.json)]({base_url}/.well-known/mcp.json): Machine-readable MCP capabilities, protocol versions, and tool catalog.",
+                ]
+                if mcp_enabled
+                else []
+            ),
+            f"- [RFC 9727 API Catalog ({base_url}/.well-known/api-catalog)]({base_url}/.well-known/api-catalog): Standard `application/linkset+json` catalog of REST{' and MCP' if mcp_enabled else ''} endpoints.",
             f"- [Public REST API ({base_url}/api/head)]({base_url}/api/head): Live JSON read plane (`/api/missions`, `/api/missions/{{slug}}`, `/api/findings`, `/api/contributors`, `/api/live`, `/api/sources`).",
             f"- [Atom Feed ({base_url}/feed.atom)]({base_url}/feed.atom): Subscribe to every public state change.",
             f"- [XML Sitemap ({base_url}/sitemap.xml)]({base_url}/sitemap.xml): Canonical pages and Markdown alternates.",
@@ -1735,22 +1764,24 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
 
 def render_api_catalog(base_url: str) -> dict[str, Any]:
     """RFC 9727 application/linkset+json API catalog."""
-    return {
-        "linkset": [
-            {
-                "anchor": f"{base_url}/api",
-                "service-desc": [
-                    {"href": f"{base_url}/openapi.json", "type": "application/vnd.oai.openapi+json"}
-                ],
-                "service-doc": [
-                    {"href": f"{base_url}/llms.txt", "type": "text/plain"},
-                    {"href": f"{base_url}/join.txt", "type": "text/plain"},
-                    {"href": f"{base_url}/how-it-works.md", "type": "text/markdown"},
-                ],
-                "status": [
-                    {"href": f"{base_url}/health", "type": "application/json"}
-                ],
-            },
+    linkset: list[dict[str, Any]] = [
+        {
+            "anchor": f"{base_url}/api",
+            "service-desc": [
+                {"href": f"{base_url}/openapi.json", "type": "application/vnd.oai.openapi+json"}
+            ],
+            "service-doc": [
+                {"href": f"{base_url}/llms.txt", "type": "text/plain"},
+                {"href": f"{base_url}/join.txt", "type": "text/plain"},
+                {"href": f"{base_url}/how-it-works.md", "type": "text/markdown"},
+            ],
+            "status": [
+                {"href": f"{base_url}/health", "type": "application/json"}
+            ],
+        },
+    ]
+    if is_mcp_enabled():
+        linkset.append(
             {
                 "anchor": f"{base_url}/mcp",
                 "service-desc": [
@@ -1759,9 +1790,9 @@ def render_api_catalog(base_url: str) -> dict[str, Any]:
                 "service-doc": [
                     {"href": f"{base_url}/llms.txt", "type": "text/plain"}
                 ],
-            },
-        ]
-    }
+            }
+        )
+    return {"linkset": linkset}
 
 
 def _mcp_tool_definitions() -> list[dict[str, Any]]:
