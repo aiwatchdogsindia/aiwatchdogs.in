@@ -191,7 +191,7 @@ _AUDIT_TABLE_ENTITY_COLUMN_RE = re.compile(
 )
 _AUDIT_TABLE_OBSERVATION_COLUMN_RE = re.compile(r"\baudit (?:observations?|findings?)\b", re.IGNORECASE)
 _CONTINUED_TABLE_RE = re.compile(
-    r"^(?:annexure|appendix|table)[\s-]+.{0,45}\b(?:continued|contd)\b\.?", re.IGNORECASE,
+    r"^(?:annexure|appendix|table)[\s-]+.{0,45}\b(?P<marker>continued|contd)\b\.?", re.IGNORECASE,
 )
 _TABLE_TITLE_RE = re.compile(
     r"^(annexure|appendix|table)[\s-]+"
@@ -455,6 +455,12 @@ def _exposure_reference(
     }
 
 
+def _table_title(line: str, continuation: re.Match[str] | None) -> re.Match[str] | None:
+    if continuation:
+        line = line[:continuation.start("marker")].rstrip(" (-–—")
+    return _TABLE_TITLE_RE.match(line)
+
+
 def _is_flattened_audit_table(
     pages: dict[int, str], page: int, evidence_line: int, window_start: int, window_end: int,
 ) -> bool:
@@ -469,8 +475,8 @@ def _is_flattened_audit_table(
         continued = False
         for index, raw in enumerate(lines):
             line = raw.strip()
-            title = _TABLE_TITLE_RE.match(line)
-            continuation = bool(_CONTINUED_TABLE_RE.match(line))
+            continuation = _CONTINUED_TABLE_RE.match(line)
+            title = _table_title(line, continuation)
             heading = _NUMBERED_HEADING_RE.match(line)
             if title or continuation or heading or _ANNEXURE_BOUNDARY_RE.match(line):
                 if index > anchor:
@@ -482,7 +488,7 @@ def _is_flattened_audit_table(
                     continue
                 start = index + 1
                 label = tuple(part.casefold() for part in title.groups()) if title else ()
-                continued = continuation
+                continued = continuation is not None
                 new_section = new_section or not continued
         if label and table_label and label != table_label:
             return False
@@ -517,7 +523,8 @@ def _is_running_table_prefix(
             _PAGE_NUMBER_ONLY_RE.fullmatch(line) or _ROMAN_PAGE_RE.fullmatch(line) or _REPORT_HEADER_RE.fullmatch(line)
         )
     ), "")
-    continued_title = _TABLE_TITLE_RE.match(following) if _CONTINUED_TABLE_RE.match(following) else None
+    continuation = _CONTINUED_TABLE_RE.match(following)
+    continued_title = _table_title(following, continuation) if continuation else None
     return bool(continued_title and title.group().casefold() == continued_title.group().casefold())
 
 

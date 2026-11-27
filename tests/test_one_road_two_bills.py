@@ -189,7 +189,9 @@ def test_or1_table_attribution_does_not_cross_flattened_rows() -> None:
     assert res.unevaluable_count == 1
 
 
-@pytest.mark.parametrize("continuation", ["none", "labeled", "contd", "implicit", "third-labeled", "third-implicit"])
+@pytest.mark.parametrize(
+    "continuation", ["none", "labeled", "contd", "compact-contd", "dash-contd", "implicit", "third-labeled", "third-implicit"]
+)
 def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None:
     header = "Annexure X\nRecoveries at the instance of Audit\n(₹ in lakh)\nAudited entity Audit finding Amount recovered\n"
     continued = "Annexure X (continued)\n"
@@ -201,6 +203,10 @@ def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None
         current_page = header + page_rows
     elif continuation == "contd":
         current_page = "Annexure-X (Contd.)\n" + affected_row
+    elif continuation == "compact-contd":
+        current_page = "Annexure-X(Contd.)\n" + affected_row
+    elif continuation == "dash-contd":
+        current_page = "Annexure-X–Contd.\n" + affected_row
     elif continuation.endswith("labeled"):
         current_page = continued + affected_row
     else:
@@ -289,14 +295,16 @@ def test_or1_implicit_table_continuation_respects_section_boundaries(prefix: str
         assert lead.citations[0]["excerpt"] == evidence
 
 
-@pytest.mark.parametrize("earlier, later", [
-    ("Table X", "Table Y"),
-    ("Annexure IV-A", "Annexure IV-B"),
-    ("Annexure 6.1(A)", "Annexure 6.1(B)"),
+@pytest.mark.parametrize("earlier, later_title", [
+    ("Table X", "Table Y (continued)"),
+    ("Annexure IV-A", "Annexure IV-B (continued)"),
+    ("Annexure 6.1(A)", "Annexure 6.1(B) (continued)"),
+    ("Annexure X", "Annexure Y(Contd.)"),
+    ("Annexure X", "Annexure-Y–Contd."),
 ])
-def test_or1_table_context_does_not_link_different_continuation_labels(earlier: str, later: str) -> None:
+def test_or1_table_context_does_not_link_different_continuation_labels(earlier: str, later_title: str) -> None:
     evidence = "Eastern Power Limited paid the same invoice twice."
-    records, ctx = _or1_ctx(f"{later} (continued)\n\n{evidence}")
+    records, ctx = _or1_ctx(f"{later_title}\n\n{evidence}")
     records.insert(0, {
         "page": 11,
         "raw_text": f"{earlier}\nAudited entity Audit finding Amount recovered\nExample Oil Corporation Limited 12.72",
