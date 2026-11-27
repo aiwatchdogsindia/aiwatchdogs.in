@@ -629,24 +629,29 @@ def test_frontend_live_swarm_viewer_recency_sort_and_homepage_copy() -> None:
     home_src = (REPO_ROOT / "web" / "src" / "pages" / "HomePage.tsx").read_text(encoding="utf-8")
     plb_src = (REPO_ROOT / "web" / "src" / "components" / "ProjectLeaderboard.tsx").read_text(encoding="utf-8")
     contrib_src = (REPO_ROOT / "web" / "src" / "pages" / "ContributorsPage.tsx").read_text(encoding="utf-8")
+    publb_src = (REPO_ROOT / "web" / "src" / "components" / "PublicLeaderboard.tsx").read_text(encoding="utf-8")
 
     # Recency (`last_seen_at`, `created_at`) MUST come BEFORE `tasks_completed` in sortLiveSwarmNodes
     assert "export function sortLiveSwarmNodes" in lsv_src
     sort_block = lsv_src.split("export function sortLiveSwarmNodes", 1)[1].split("function formatTickingAge", 1)[0]
     assert sort_block.index("last_seen_at") < sort_block.index("created_at") < sort_block.index("tasks_completed")
 
-    # HomePage leaderboard cap expanded from 6 to 10 rows and "zero questions" removed
-    assert "HOME_LEADERBOARD_LIMIT = 10" in home_src
-    assert "zero questions" not in home_src.lower()
-    assert "zero questions" not in plb_src.lower()
+    # HomePage leaderboard shows 10 rows and "zero questions" removed. Since e4ea292 the homepage renders the
+    # shared PublicLeaderboard, so the row cap and join copy live there (default maxRows = 10, not overridden).
+    assert "<PublicLeaderboard" in home_src
+    home_lb = home_src.split("<PublicLeaderboard", 1)[1].split("/>", 1)[0]
+    assert "maxRows" not in home_lb
+    assert "maxRows = 10," in publb_src
+    for src in (home_src, plb_src, publb_src):
+        assert "zero questions" not in src.lower()
     assert "zero prompts" not in lsv_src.lower()
-    assert "auto-uses your public GitHub handle" in home_src
+    assert "auto-uses your public GitHub handle" in publb_src
     assert "auto-uses your public GitHub handle" in plb_src
 
     # GitHub username click-through links across profile, live inspector, and leaderboards (skipping civic-*)
     assert "export function githubProfileUrl" in lsv_src
     assert "https://github.com/" in lsv_src
-    for src in (lsv_src, home_src, plb_src, contrib_src):
+    for src in (lsv_src, publb_src, contrib_src):
         assert "githubProfileUrl(" in src
         assert 'rel="noopener noreferrer"' in src
     assert "<GitHubAvatar" in contrib_src
