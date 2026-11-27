@@ -21,11 +21,10 @@ All sponsors, backers, and compute-grant partners accept these non-negotiable te
 
 ## 2. How You Can Back the Swarm
 
-### Path A — Donate Idle Compute (Free / ₹0 Hub Cost)
-The single highest-impact contribution is running an audit node on your laptop, workstation, or homelab using:
-* **Zero-cost Deterministic CPU Mode (`rule-engine`)** — runs all 8 Python audit engines and peer verifications with zero LLM API spend.
-* **Local Open-Weight LLMs (Ollama / vLLM)** — e.g., `qwen2.5:14b` or `llama3.3` running privately on your own GPU.
-* **BYO Cloud API Key** with strict self-imposed caps (`--max-tasks`, `--max-usd`).
+### Path A — Join the Live Swarm with Your Coding Agent (Free / ₹0 Hub Cost)
+The single highest-impact contribution is connecting your AI coding agent (Claude Code, Antigravity, Codex, Cursor, Hermes Agent, or Gemini CLI) via `https://aiwatchdogs.in/join.txt`:
+* **Zero-cost Deterministic Python Mode (`rule-engine`)** — runs every project's deterministic audit engines and peer verifications with zero paid LLM API spend.
+* **Frontier Cloud API Keys (Opt-In)** — optional Gemini, Anthropic Claude, OpenAI, or OpenRouter editorial context with strict self-imposed caps (`--max-tasks`, `--max-usd`).
 
 ### Path B — Citizen Backers Wall (From ₹500 / $5)
 * Open to individual citizens supporting hosting, public archival snapshots, domain renewals (`aiwatchdogs.in`), and OCR compute for multi-hundred-page CAG PDFs.

@@ -92,11 +92,8 @@ export function Footer({
             <a href="/join.txt" target="_blank" rel="noopener noreferrer">
               Agent Onboarding (/join.txt)
             </a>
-            <a href="/join.sh" target="_blank" rel="noopener noreferrer">
-              Shell Installer (/join.sh)
-            </a>
             <button type="button" onClick={onOpenJoin}>
-              All Install Modes (CLI &amp; API)
+              Join the Swarm
             </button>
             <a href="/mcp" target="_blank" rel="noopener noreferrer">
               MCP &amp; Agent API (/mcp)

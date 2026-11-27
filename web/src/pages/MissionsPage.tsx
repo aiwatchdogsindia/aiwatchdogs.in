@@ -310,14 +310,14 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
               joinButtonLabel="Join the effort: copy one line"
               joinHelperText={
                 isUnionBudget
-                  ? 'Paste one line to start right away at ₹0: the official CLI reads both budget PDFs in code and submits a lead or cleared result.'
+                  ? 'Paste one line into your coding agent to start right away at ₹0: reads both budget PDFs in code and submits a lead or cleared result.'
                   : isOneRoad
-                    ? 'Paste one line to start right away at ₹0: the official CLI reads the assigned CAG Union report PDF in code and submits duplicate-billing leads or cleared results.'
+                    ? 'Paste one line into your coding agent to start right away at ₹0: reads the assigned CAG Union report PDF in code and submits duplicate-billing leads or cleared results.'
                   : isOneTeacher
-                    ? 'Paste one line to start right away at ₹0: the official CLI reads the assigned UDISE+ national booklet PDF in code and maps single-teacher and primary staffing counts.'
+                    ? 'Paste one line into your coding agent to start right away at ₹0: reads the assigned UDISE+ national booklet PDF in code and maps single-teacher and primary staffing counts.'
                   : isWebsiteAudit
-                    ? 'Paste one line to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
-                    : 'Paste one line to start free ₹0 checks immediately (auto-uses your GitHub handle, zero questions).'
+                    ? 'Paste one line into your coding agent to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
+                    : 'Paste one line into your coding agent to start free ₹0 checks immediately (auto-uses your GitHub handle).'
               }
               scoreUnit={isWebsiteAudit ? 'tasks' : 'points'}
               showSeeAllLink={true}

@@ -48,6 +48,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
 ENLISTED_PR_URL_RE = re.compile(r"^https://github\.com/aiwatchdogsindia/aiwatchdogs\.in/pull/[1-9][0-9]*$")
+_HTML_ENTITY_IN_URL_RE = re.compile(r"&(?:#\d+|#x[0-9a-fA-F]+|amp|apos|quot|lt|gt|nbsp|ndash|mdash);")
 
 # Reserved legacy seed mission slugs that community projects cannot collide with.
 RESERVED_MISSION_SLUGS = frozenset(
@@ -215,6 +216,15 @@ def _has_personal_data(value: Any) -> tuple[bool, list[str]]:
 
     walk(value, None, 0)
     return contains_pii([{key: item} for key, item in pairs] + list(bare))
+
+
+def _validate_url_clean(url: str, *, allow_fragment: bool = False) -> str | None:
+    """Reject raw HTML entities (e.g. &#039;, &amp;) or unexpected URL fragments in artifact URLs."""
+    if _HTML_ENTITY_IN_URL_RE.search(url):
+        return "contains an unescaped HTML entity (such as &#039; or &amp;); unescape the URL."
+    if not allow_fragment and "#" in url:
+        return "must not contain a '#' URL fragment."
+    return None
 
 
 def _validate_github_immutability(url: str) -> str | None:
@@ -484,6 +494,9 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         if not _is_https(url):
             errors.append(f"{where}.payload.retrieval_url must be a public https:// link to the exact file.")
         else:
+            clean_err = _validate_url_clean(url)
+            if clean_err:
+                errors.append(f"{where}.payload.retrieval_url {clean_err}")
             gh_err = _validate_github_immutability(url)
             if gh_err:
                 errors.append(f"{where}.payload.retrieval_url {gh_err}")
@@ -493,6 +506,9 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                 if not _is_https(extra_val):
                     errors.append(f"{where}.payload.{extra_url_key} must be a public https:// link.")
                 else:
+                    clean_err = _validate_url_clean(extra_val, allow_fragment=(extra_url_key == "source_url"))
+                    if clean_err:
+                        errors.append(f"{where}.payload.{extra_url_key} {clean_err}")
                     gh_err = _validate_github_immutability(extra_val)
                     if gh_err:
                         errors.append(f"{where}.payload.{extra_url_key} {gh_err}")
@@ -501,6 +517,9 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             if not _is_https(sec_url):
                 errors.append(f"{where}.payload.secondary_url must be a public https:// link.")
             else:
+                clean_err = _validate_url_clean(sec_url)
+                if clean_err:
+                    errors.append(f"{where}.payload.secondary_url {clean_err}")
                 gh_err = _validate_github_immutability(sec_url)
                 if gh_err:
                     errors.append(f"{where}.payload.secondary_url {gh_err}")
@@ -1185,7 +1204,7 @@ def _run_sync_in_tx(
                 """
                 UPDATE tasks SET title = ?, instructions = ?, payload_json = ?, methodology_code = ?, task_type = ?,
                     dataset_key = ?, financial_quantity_type = ?, work_type = ?, estimated_tokens = ?,
-                    estimate_basis = ?, updated_at = ?
+                    estimate_basis = ?, available_at = NULL, retry_count = 0, updated_at = ?
                 WHERE id = ? AND status = 'queued'
                 """,
                 to_update_queued,

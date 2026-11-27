@@ -203,6 +203,88 @@ def test_real_p4_project_file_is_valid_and_matches_artifacts() -> None:
         rows = list(csv.DictReader(fh))
     assert len([r for r in rows if r["status"] == "used"]) == coverage["reports_used"]
 
+    # Every OR1 URL and report title must be free of raw HTML entities or URL fragments.
+    for row in rows:
+        assert "&#" not in row["pdf_url"] and "&amp;" not in row["pdf_url"] and "#" not in row["pdf_url"]
+        assert "&ndash;" not in row["title"] and "&amp;" not in row["title"]
+    for task in data["tasks"]:
+        url = task["payload"]["retrieval_url"]
+        assert "&#" not in url and "&amp;" not in url and "#" not in url
+        rep_title = task["payload"]["context"]["one_road_two_bills"]["report"]["title"]
+        assert "&ndash;" not in rep_title and "&amp;" not in rep_title
+
+
+def test_validator_rejects_html_entities_in_urls_and_no_ollama_or_local_cli_remnants() -> None:
+    bad_proj = {
+        "slug": "entity-url-test",
+        "title": "Synthetic project testing HTML entity URL rejection",
+        "summary": "Ensures validate_project rejects unescaped HTML entities in artifact URLs.",
+        "posted_by": {"name": "AI Watchdogs India", "url": "https://aiwatchdogs.in"},
+        "pillar": "audit",
+        "status": "active",
+        "jurisdiction": "Union of India",
+        "authority": "CAG",
+        "sources": [{"name": "CAG", "publisher": "CAG", "url": "https://cag.gov.in"}],
+        "methodology_code": "OR1",
+        "tasks": [
+            {
+                "id": "or1-entity-0001",
+                "title": "Entity URL test task",
+                "instructions": "Verify entity URL rejection.",
+                "type": "run_check",
+                "dataset_key": "cag-entity-1",
+                "financial_quantity_type": "cag_report_monetary_figures",
+                "methodology_code": "OR1",
+                "estimated_tokens": 500,
+                "estimate_basis": "test",
+                "payload": {
+                    "retrieval_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/CAG&#039;s-Report.pdf",
+                    "expected_sha256": "a" * 64,
+                    "official_publisher": "CAG",
+                    "source_landing_page": "https://cag.gov.in/en/audit-report/details/1",
+                    "context": {
+                        "one_road_two_bills": {
+                            "report": {
+                                "cag_id": "1",
+                                "report_no": "Report No. 1 of 2025",
+                                "year": "2025",
+                                "title": "Test Report",
+                                "sector": "Civil",
+                            },
+                            "windows": [{"key": "r1-p001-b00", "page": 1, "block_index": 0, "line_start": 0, "line_end": 5}],
+                        }
+                    },
+                },
+            }
+        ],
+    }
+    errs = validate_project(bad_proj, filename_stem="entity-url-test")
+    assert any("HTML entity" in e for e in errs), errs
+
+    # Website, GitHub docs, CLI, and /join.txt must not advertise local Ollama or local CLI onboarding.
+    from aiwatchdogs.hub.templates import render_join_txt
+
+    join_txt = render_join_txt("https://aiwatchdogs.in").lower()
+    assert "ollama" not in join_txt
+    assert "join.sh" not in join_txt
+    assert "local checkout" not in join_txt
+
+    for rel in (
+        "README.md",
+        "CONTRIBUTING.md",
+        "SPONSORS.md",
+        "web/src/components/JoinModal.tsx",
+        "web/src/components/Footer.tsx",
+        "web/src/components/EyebrowBar.tsx",
+        "web/src/components/LiveAgentStrip.tsx",
+        "src/aiwatchdogs/cli/main.py",
+    ):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8").lower()
+        assert "ollama" not in text, f"Unexpected 'ollama' in {rel}"
+        assert "shell installer" not in text, f"Unexpected 'shell installer' in {rel}"
+        assert "from a local repo checkout" not in text, f"Unexpected local checkout copy in {rel}"
+        assert "cli & frontier api" not in text, f"Unexpected CLI tab in {rel}"
+
 
 def test_p4_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(PROJECTS_DIR))

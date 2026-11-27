@@ -131,8 +131,8 @@ def _render_consent_notice(hub_url: str) -> None:
         "named in each task (for the police project: Union Budget, Home Ministry and State finance department "
         "sites) directly over HTTPS, shows that host before each download, and verifies SHA-256 checksums "
         "locally (fail-closed on mismatch).\n"
-        "• [cyan]Hard Budget Guardrail:[/cyan] Deterministic CPU mode (rule-engine) and local loopback Ollama "
-        "spend $0.00 / ₹0. Paid cloud LLM APIs are STRICTLY BLOCKED unless you explicitly opt in "
+        "• [cyan]Hard Budget Guardrail:[/cyan] Deterministic Python mode (rule-engine) "
+        "spends $0.00 / ₹0. Paid cloud LLM APIs are STRICTLY BLOCKED unless you explicitly opt in "
         "(--allow-paid-provider) AND set a positive hard cap (--max-usd > 0).\n"
         "• [cyan]Public Attribution:[/cyan] Your public handle (auto-set from local GitHub config unless specified), "
         "provider/model label, deterministic audit metrics, and explicit 4-check verification votes appear publicly "
@@ -169,7 +169,7 @@ def _resolve_max_tasks_or_exit(
         if requested_max_tasks == 0 and paid_prov:
             err_console.print(
                 "[red]Refusing --max-tasks 0 (unlimited) with a paid cloud LLM provider.[/red]\n"
-                "Unlimited task-after-task runs are restricted to ₹0 free mode (--provider rule-engine / local models). "
+                "Unlimited task-after-task runs are restricted to ₹0 free mode (--provider rule-engine). "
                 f"For paid providers, pass an explicit positive cap (e.g. --max-tasks {DEFAULT_PAID_MAX_TASKS}) "
                 "alongside --max-usd."
             )
@@ -255,7 +255,7 @@ def _render_providers_table(providers: list[ProviderInfo]) -> None:
     table.add_column("Details")
     for idx, prov in enumerate(providers, start=1):
         cost_str = (
-            "[green]₹0 / $0.00 (Local/Offline)[/green]"
+            "[green]₹0 / $0.00 (Deterministic)[/green]"
             if not is_paid_provider(prov)
             else "[yellow]Paid BYO Key (explicit opt-in + --max-usd > 0 required)[/yellow]"
         )
@@ -524,7 +524,7 @@ def join(
     provider: str | None = typer.Option(
         None,
         "--provider",
-        help="Model provider: auto, rule-engine, ollama, vllm, gemini, anthropic, openai, openrouter.",
+        help="Model provider: auto, rule-engine, gemini, anthropic, openai, openrouter.",
     ),
     model: str | None = typer.Option(None, "--model", help="Optional model name override."),
     mode: str = typer.Option("auto", "--mode", help="Task mode: auto, investigate, or verify."),
@@ -538,7 +538,7 @@ def join(
         0.0,
         "--max-usd",
         min=0.0,
-        help="Hard session paid-LLM spend cap (USD). Default $0.00 strictly enforces deterministic/local zero-cost mode.",
+        help="Hard session paid-LLM spend cap (USD). Default $0.00 strictly enforces ₹0 deterministic mode.",
     ),
     daily_max_usd: float | None = typer.Option(
         None,
@@ -700,7 +700,7 @@ def join(
     chosen_daily_max_usd = daily_max_usd
 
     if not auto_accept:
-        if not Confirm.ask("Do you consent to run a local civic-audit agent under these rules?", default=True):
+        if not Confirm.ask("Do you consent to run a civic-audit agent connected to this Hub under these rules?", default=True):
             console.print("[yellow]Onboarding cancelled. No config was written.[/yellow]")
             raise typer.Exit(code=0)
 
@@ -940,7 +940,7 @@ def join(
 def run(
     handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help="Which saved agent to run (each handle has its own credential file)."),
     hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Override saved Hub URL."),
-    provider: str | None = typer.Option(None, "--provider", help="Override provider (rule-engine, ollama, gemini, etc.)."),
+    provider: str | None = typer.Option(None, "--provider", help="Override provider (rule-engine, gemini, anthropic, openai, openrouter)."),
     model: str | None = typer.Option(None, "--model", help="Override model name."),
     mode: str | None = typer.Option(None, "--mode", help="Override mode: auto, investigate, or verify."),
     max_tasks: int | None = typer.Option(
