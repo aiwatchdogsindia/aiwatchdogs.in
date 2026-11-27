@@ -6,6 +6,7 @@ import json
 import stat
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -30,12 +31,41 @@ from aiwatchdogs.cli.providers import (
     detect_providers,
     enrich_finding_summary,
 )
-from aiwatchdogs.cli.runner import AgentRunner
+from aiwatchdogs.cli.runner import AgentRunner, _compare_complete_metric_set
 from aiwatchdogs.core.models import LoadedDataset
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality
 from aiwatchdogs.hub.app import create_app
 
 cli_runner = CliRunner()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("exposure_reference_key", "b" * 64),
+        ("exposure_reference_kind", "DETAIL"),
+        ("exposure_reference_section", "6.2"),
+    ],
+)
+def test_peer_review_requires_exact_or1_exposure_reference_fields(field: str, value: str) -> None:
+    metrics = {
+        "exposure_reference_key": "a" * 64,
+        "exposure_reference_kind": "detail",
+        "exposure_reference_section": "6.1",
+    }
+    candidate = SimpleNamespace(anomaly_metrics=metrics, monetary_exposure_inr=10_000_000)
+    submitted = {"anomaly_metrics": dict(metrics), "monetary_exposure_inr": 10_000_000}
+    assert _compare_complete_metric_set(submitted, candidate)[0] == "pass"
+
+    submitted["anomaly_metrics"][field] = value
+    assert _compare_complete_metric_set(submitted, candidate)[0] == "fail"
+
+    submitted["anomaly_metrics"].pop(field)
+    assert _compare_complete_metric_set(submitted, candidate)[0] == "fail"
+
+    submitted["anomaly_metrics"][field] = metrics[field]
+    candidate.anomaly_metrics = {key: val for key, val in metrics.items() if key != field}
+    assert _compare_complete_metric_set(submitted, candidate)[0] == "fail"
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,12 @@ sys.modules[_SPEC.name] = builder
 _SPEC.loader.exec_module(builder)
 
 
+def test_generated_methodology_matches_checked_in_or1_rules():
+    project_dir = _SCRIPT.parents[1] / "projects" / builder.SLUG
+    coverage = json.loads((project_dir / "coverage.json").read_text(encoding="utf-8"))
+    assert builder.render_methodology_md(coverage) == (project_dir / "METHODOLOGY.md").read_text(encoding="utf-8")
+
+
 @pytest.fixture
 def project_input(tmp_path):
     doc = builder.ReportDoc(

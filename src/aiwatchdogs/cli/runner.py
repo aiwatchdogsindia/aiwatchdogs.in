@@ -190,6 +190,10 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
     }
 )
 
+OR1_EXPOSURE_REFERENCE_KEYS = frozenset(
+    {"exposure_reference_key", "exposure_reference_kind", "exposure_reference_section"}
+)
+
 # Record-level identifier keys that must match exactly when present on both submitted and candidate leads.
 RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "line_key",
@@ -808,6 +812,16 @@ def _compare_complete_metric_set(
         in_cand = key in cand_metrics
         sval = sub_metrics.get(key)
         cval = cand_metrics.get(key)
+
+        # These strings control the dashboard's exposure grouping and are case-sensitive.
+        if key in OR1_EXPOSURE_REFERENCE_KEYS:
+            if not in_sub:
+                details["missing_in_submitted"].append(key)
+            elif not in_cand:
+                details["missing_in_reproduced"].append(key)
+            elif not isinstance(sval, str) or sval != cval:
+                details["semantic_mismatches"].append({"key": key, "submitted": sval, "reproduced": cval})
+            continue
 
         s_is_num = _is_number(sval)
         c_is_num = _is_number(cval)
