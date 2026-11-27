@@ -44,6 +44,7 @@ class EngineRunResult(BaseModel):
     records_scanned: int = Field(ge=0)
     monetary_audited_inr: float = Field(ge=0.0, allow_inf_nan=False)
     leads: list[AuditLeadCandidate] = Field(default_factory=list)
+    omitted_leads: int = Field(default=0, ge=0)
     cleared_count: int = Field(default=0, ge=0)
     unevaluable_count: int = Field(default=0, ge=0)
     script_hash: str

@@ -44,6 +44,7 @@ both carry (the budget estimate of the year in between).
 
 from __future__ import annotations
 
+from collections import Counter
 import math
 import re
 from dataclasses import dataclass, field
@@ -65,6 +66,17 @@ MAX_NAME_LENGTH = 240
 # The hub stores a finding's entity name in at most 200 characters, and a peer verifier must
 # reproduce it exactly, so the engine never produces a longer one.
 MAX_ENTITY_LENGTH = 200
+
+# Book entries, not money to be spent: transfers into and out of reserve funds, appropriations to
+# funds, ways and means advances, suspense heads, and the servicing of a body's loans.
+BOOK_ENTRY_RE = re.compile(
+    r"^(?:tran\w*fers?\s+(?:to|of)\b|appropriation\s+to\b|amount\s+met\s+from\b|met\s+(?:from|through)\b|less\b|deduct\b"
+    r"|ways\s+and\s+means\b|inter\s+railway\s+financial\s+adjus|inter\s+account\s+transfer"
+    r"|from\s+(?:railways'?\s+resources|general\s+revenues)\b|.*\bfund\s+transfer$|.*\bsuspense$"
+    r"|repayment\s+of\b|payment\s+of\s+interest\b|interest\s+payments?\b|interest\s+on\b|interest\s+under\b.*\b(?:loans?|ebr)\b|recoveries$"
+    r"|.*\bdividend\s+reliefs?\b.*)",
+    re.IGNORECASE,
+)
 
 _VALUE_RE = re.compile(r"^-?\d[\d,]*\.\d+$")
 _TOP_NUMBER_RE = re.compile(r"^(\d{1,3})\.$")
@@ -614,7 +626,25 @@ def _read_rows(lines_by_number: dict[str, LineReading], rows: Any) -> tuple[list
         if reading in found:
             return [], f"line {number} is listed twice"
         found.append(reading)
-    return found, ""
+    spending = [row for row in found if not BOOK_ENTRY_RE.match(row.name)]
+    return (spending, "") if spending else ([], "the listed rows contain only book entries")
+
+
+def unmatched_allocations(estimates: list[LineReading], actuals: list[LineReading]) -> list[str]:
+    """Find funded components missing from a cross-year group, allowing for renumbering."""
+    if len(estimates) == len(actuals) == 1 and not (estimates[0].parents or actuals[0].parents):
+        return []  # The linked unit itself is the counterpart.
+    available = Counter(normalise_name(row.name) for row in actuals)
+    missing = []
+    for row in estimates:
+        if (row.values[COL_BUDGET_PREV] or 0.0) <= 0:
+            continue
+        name = normalise_name(row.name)
+        if available[name]:
+            available[name] -= 1
+        else:
+            missing.append(row.number)
+    return missing
 
 
 def _column(rows: list[LineReading], column: int) -> float | None:
@@ -671,7 +701,6 @@ def run_ub1_union_budget_lines(
     leads: list[AuditLeadCandidate] = []
     cleared = 0
     unevaluable = 0
-    audited_crore = 0.0
 
     def skip_all(reason: str) -> tuple[list[AuditLeadCandidate], int, float, str, dict[str, Any]]:
         meta = {
@@ -723,6 +752,16 @@ def run_ub1_union_budget_lines(
         name = name[:MAX_NAME_LENGTH]
         entity = entity_label(name, department)
         on_lines = _numbers(est_rows)
+        # When a scheme heading has funded siblings outside this comparison, name
+        # the included rows in its title too, so the percentage has a clear scope.
+        scope = est_rows[0].parents
+        title_entity = entity
+        if scope and normalise_name(name.split(" > ")[-1]) == normalise_name(scope[-1]) and any(
+            row.parents == scope and row not in est_rows and (row.values[COL_BUDGET_PREV] or 0) > 0
+            for row in estimates_lines.values()
+        ):
+            numbers = ", ".join(row.number for row in est_rows)
+            title_entity = f"{entity} (budget lines {numbers})"
         cites = _citations(estimates_url, estimates_sha, est_rows, "estimates", estimates_doc.budget)
         reading: dict[str, Any] = {
             "key": key,
@@ -732,7 +771,6 @@ def run_ub1_union_budget_lines(
             "revised_estimate": revised,
             "unit": "crore",
         }
-        audited_crore += budget_estimate
 
         act_rows: list[LineReading] = []
         if item.get("actuals") is not None:
@@ -745,6 +783,12 @@ def run_ub1_union_budget_lines(
             if not act_rows:
                 unevaluable += 1
                 reading.update(status="unevaluable", reason=f"actuals: {why}")
+                readings.append(reading)
+                continue
+            missing = unmatched_allocations(est_rows, act_rows)
+            if missing:
+                unevaluable += 1
+                reading.update(status="unevaluable", reason=f"No actuals counterpart for estimates line(s) {', '.join(missing)}")
                 readings.append(reading)
                 continue
             link = str(item.get("link") or "name+figure")
@@ -799,10 +843,10 @@ def run_ub1_union_budget_lines(
                 f"a revised estimate of {_crore(revised)}" if revised_printed is not None else "no revised estimate ('...')"
             )
             if actual_printed is not None:
-                title = f"{entity}: actual expenditure in {year} was {pct:.1f}% below the budget estimate"
+                title = f"{title_entity}: actual expenditure in {year} was {pct:.1f}% below the budget estimate"
                 actual_words = f"an actual expenditure of {_crore(actual)}"
             else:
-                title = f"{entity}: no actual expenditure is printed for {year} against a budget estimate of {_crore(budget_estimate)}"
+                title = f"{title_entity}: no actual expenditure is printed for {year} against a budget estimate of {_crore(budget_estimate)}"
                 actual_words = "no actual expenditure ('...')"
             matched = (
                 "The two statements print the same budget estimate for the year in between, which ties the rows together. "
@@ -875,10 +919,10 @@ def run_ub1_union_budget_lines(
             cleared += 1
             continue
         if revised_printed is not None:
-            title = f"{entity}: revised estimate for {year} was {pct:.1f}% below the budget estimate"
+            title = f"{title_entity}: revised estimate for {year} was {pct:.1f}% below the budget estimate"
             revised_words = f"a revised estimate of {_crore(revised)}"
         else:
-            title = f"{entity}: no revised estimate is printed for {year} against a budget estimate of {_crore(budget_estimate)}"
+            title = f"{title_entity}: no revised estimate is printed for {year} against a budget estimate of {_crore(budget_estimate)}"
             revised_words = "no revised estimate ('...')"
         leads.append(
             AuditLeadCandidate(
@@ -929,6 +973,7 @@ def run_ub1_union_budget_lines(
         "amount_type": "budget_and_treasury_expenditure",
         "readings": readings,
     }
+    audited_crore = math.fsum(r["budget_estimate"] for r in readings if r["status"] == "read")
     return leads, cleared, audited_crore * CRORE, summary, meta
 
 

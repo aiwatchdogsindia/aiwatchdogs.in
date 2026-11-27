@@ -375,17 +375,21 @@ def run_p1_police_budget_heads(
                 )
 
     leads.sort(key=lambda lead: (-float(lead.monetary_exposure_inr), lead.title))
-    max_leads = int(ctx.get("max_leads", 8))
+    total_detected = len(leads)
+    max_leads = int(ctx.get("max_leads", 0))
     if max_leads > 0:
         leads = leads[:max_leads]
     read_count = sum(1 for r in readings if r["status"] == "read")
     summary = (
-        f"P1 read {read_count} of {len(lines)} police budget heads; {len(leads)} divergences above threshold, "
+        f"P1 read {read_count} of {len(lines)} police budget heads; {total_detected} signals, "
         f"{cleared} comparisons within threshold, {unevaluable} unevaluable."
     )
     meta = {
+        "omitted_leads": total_detected - len(leads),
         "unevaluable_count": unevaluable,
         "amount_type": "budget_and_treasury_expenditure",
         "readings": readings,
     }
+    if total_detected > len(leads):
+        summary += f" The configured limit omitted {total_detected - len(leads)} signals."
     return leads, cleared, audited_inr, summary, meta

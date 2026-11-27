@@ -131,6 +131,16 @@ def test_throttled_heartbeats_never_fail_a_task() -> None:
     assert len(hub.bodies("/api/desk/submit")) == 1
 
 
+def test_p1_keeps_all_signals_and_reports_explicit_limit() -> None:
+    records = [{"page": 1, "raw_text": _PAGE}]
+    spec = _P1_CONTEXT["budget_lines"][0]
+    ctx = {**_P1_CONTEXT, "budget_lines": [{**spec, "key": f"head-{i}"} for i in range(10)]}
+    assert len(run_engine("P1", records, context=ctx).leads) == 10
+    limited = run_engine("P1", records, context={**ctx, "max_leads": 8})
+    assert len(limited.leads) == 8 and limited.omitted_leads == 2
+    assert "omitted 2" in limited.summary
+
+
 def test_a_refusal_without_retry_after_is_not_retried() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, json={"detail": "Agent already holds 2 active task leases"})

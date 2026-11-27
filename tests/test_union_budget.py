@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from aiwatchdogs.connectors.loader import load_dataset
-from aiwatchdogs.core.safety import lint_neutrality
+from aiwatchdogs.core.safety import lint_neutrality, scrub_pii
 from aiwatchdogs.engines import union_budget as ub
 from aiwatchdogs.engines.registry import run_engine
 from aiwatchdogs.projects import validate_project
@@ -130,6 +130,38 @@ def _by_key(leads: list) -> dict:
     return {lead.anomaly_metrics["line_key"]: lead for lead in leads}
 
 
+def test_police_budget_total_preserves_columns_and_contact_fields_are_scrubbed() -> None:
+    row = "Total 2055 67890 12345 23456"
+    assert scrub_pii(row) == (row, [])
+    assert "[REDACTED_PHONE]" in scrub_pii("Contact 67890 12345")[0]
+    assert "[REDACTED_PHONE]" in scrub_pii(row + " (mobile)")[0]
+
+
+def test_book_entries_in_older_tasks_do_not_reduce_gross_spending() -> None:
+    spec = _spec()
+    component = spec["lines"][2]
+    for side in ("estimates", "actuals"):
+        component[side].append(_row("3.03", f"{PMSSY} > Recoveries"))
+    recoveries = "3.03 Recoveries -5.00 ... -5.00 ... ... ... ... ... ... ... ... ..."
+    estimates = [*ESTIMATES[:17], recoveries, *ESTIMATES[17:]]
+    actuals = [*ACTUALS[:14], recoveries, *ACTUALS[14:]]
+    leads, *_ = ub.run_ub1_union_budget_lines(_records(estimates, actuals), _context(spec))
+    metrics = _by_key(leads)["3"].anomaly_metrics
+    assert (metrics["budget_estimate"], metrics["actual"]) == (40, 32)
+    assert ub.BOOK_ENTRY_RE.match("Interest under HEFA Loan")
+    assert not ub.BOOK_ENTRY_RE.match("Interest Subsidy")
+
+
+def test_component_missing_from_actuals_is_unevaluable_even_if_group_totals_match() -> None:
+    spec = _spec()
+    spec["lines"] = [spec["lines"][2]]
+    spec["lines"][0]["actuals"].pop()
+    estimates = [s.replace("5.00 ... 5.00", "... ... ...") if s.startswith("3.02 ") else s for s in ESTIMATES]
+    leads, cleared, audited, _, meta = ub.run_ub1_union_budget_lines(_records(estimates, ACTUALS), _context(spec))
+    assert not leads and cleared == audited == 0
+    assert "No actuals counterpart for estimates line(s) 3.02" in meta["readings"][0]["reason"]
+
+
 def test_rows_two_printed_lines_on_one_text_line_and_figures_in_names() -> None:
     line = (
         "1. Rate 7.5 scheme 1.00 ... 1.00 2.00 ... 2.00 3.00 ... 3.00 4.00 ... 4.00 "
@@ -185,7 +217,7 @@ def test_actual_below_estimate_rows_added_nil_actuals_and_regrouped_lines() -> N
     reasons = {r["key"]: r.get("reason", "") for r in meta["readings"] if r["status"] == "unevaluable"}
     assert "revised estimate stood" in reasons["5"]  # nil actual, but the revised estimate was 40 of 50
     assert "different budget estimates" in reasons["6"]  # 30.00 vs 31.00 for 2020-21: regrouped
-    assert audited == pytest.approx((12 + 100 + 40 + 50 + 50 + 40) * ub.CRORE)
+    assert audited == pytest.approx((12 + 100 + 40 + 50) * ub.CRORE)
 
     aids = found["2"]
     assert aids.title == (
@@ -270,7 +302,7 @@ def test_registry_run_is_reproducible_and_lint_clean() -> None:
     second = run_engine("UB1", records, ctx)
     assert first.script_hash == second.script_hash
     assert [lead.model_dump() for lead in first.leads] == [lead.model_dump() for lead in second.leads]
-    assert first.ruleset_version == "UB1-2026.11-v1" and len(first.leads) == 3
+    assert first.ruleset_version == "UB1-2026.11-v2" and len(first.leads) == 3
     assert first.unevaluable_count == 2 and first.amount_type == "budget_and_treasury_expenditure"
 
 
@@ -400,6 +432,19 @@ def test_link_year_rejects_unclosed_estimates_and_actuals_statements() -> None:
             lines=lines,
             closed=closed,
         )
+
+    # A programme with a name at the top level is a scheme. An unlabelled
+    # source of funds on a separate numbered line goes in the coverage count.
+    from dataclasses import replace
+
+    root_rows = [
+        replace(est_lines[0], name="MGNREGA-Programme Component", number="12"),
+        replace(est_lines[0], name="Gross Budgetary Support", number="13"),
+    ]
+    left_out_root: collections.Counter[str] = collections.Counter()
+    units = mod.units_of(_make_stmt("2020-21", 42, EST_URL, est_doc, root_rows, True), left_out_root)
+    assert [unit.rows[0].number for unit in units] == ["12"]
+    assert left_out_root == {"funding source without a named scheme": 1}
 
     # 1. Unclosed estimates statement must be rejected completely even when name+figure matches.
     left_out_est: collections.Counter[str] = collections.Counter()

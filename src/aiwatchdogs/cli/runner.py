@@ -2072,6 +2072,11 @@ class AgentRunner:
         )
         leads_to_submit = sorted_leads[:25]
 
+        if methodology_code == "P1":
+            metrics["omitted_leads"] = (
+                getattr(engine_res, "omitted_leads", 0) + len(sorted_leads) - len(leads_to_submit)
+            )
+
         def _build_finding_payload(lead: Any) -> dict[str, Any]:
             enriched = enrich_finding_summary(
                 lead,
