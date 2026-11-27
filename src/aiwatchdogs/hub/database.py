@@ -59,6 +59,7 @@ HUB_TABLES: frozenset[str] = frozenset(
         "sponsors",
         "treasury_ledger",
         "rate_limit_buckets",
+        "summary_cache",
     }
 )
 
@@ -69,7 +70,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 12
+LATEST_SCHEMA_VERSION = 13
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -90,6 +91,15 @@ CREATE TABLE IF NOT EXISTS research_batches (
     batch_number INTEGER NOT NULL,
     report_json TEXT NOT NULL,
     PRIMARY KEY (task_id, lease_id, batch_number)
+);
+"""
+
+SUMMARY_CACHE_SQL = """
+CREATE TABLE IF NOT EXISTS summary_cache (
+    cache_key TEXT PRIMARY KEY,
+    version_stamp TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -230,6 +240,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     dataset_key TEXT NOT NULL DEFAULT '',
     financial_quantity_type TEXT NOT NULL DEFAULT '',
     monetary_audited_inr REAL NOT NULL DEFAULT 0.0,
+    reported_tokens BIGINT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT
@@ -473,7 +484,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)
 CREATE INDEX IF NOT EXISTS idx_tasks_claimed_agent_status ON tasks(claimed_by_agent_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_mission_completed_amt ON tasks(mission_id, status, monetary_audited_inr);
 CREATE INDEX IF NOT EXISTS idx_findings_mission_status_quar ON findings(mission_id, status, quarantined);
-""" + RESEARCH_BATCHES_SQL
+""" + RESEARCH_BATCHES_SQL + SUMMARY_CACHE_SQL
 
 # Named editorial corrections for the 4 confirmed defective published dossiers from the
 # 24 November 2026 public audit. Applied idempotently during migration v4 if those IDs exist.
@@ -1919,6 +1930,26 @@ def _migrate_v12_idempotent_claims_and_claim_order_indexes(conn: Any, *, is_post
         conn.execute(stmt)
 
 
+def _migrate_v13_egress_cache_and_token_totals(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v13: durable summary_cache table and denormalized tasks.reported_tokens for low-egress reads."""
+    from aiwatchdogs.core.usage import tokens_used
+
+    conn.execute(SUMMARY_CACHE_SQL)
+    cache: dict[str, set[str]] = {}
+    _ensure_column(conn, "tasks", "reported_tokens", "BIGINT", is_postgres=is_postgres, column_cache=cache)
+    rows = conn.execute(
+        "SELECT id, usage_json FROM tasks "
+        "WHERE reported_tokens IS NULL AND usage_json IS NOT NULL AND usage_json != '' AND usage_json != '{}'"
+    ).fetchall()
+    updates: list[tuple[int, str]] = []
+    for row in rows:
+        spent = tokens_used(loads_json(row["usage_json"], {}))
+        if spent is not None:
+            updates.append((int(spent), str(row["id"])))
+    if updates:
+        conn.executemany("UPDATE tasks SET reported_tokens = ? WHERE id = ?", updates)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1932,6 +1963,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (10, "010_research_batches", _migrate_v10_research_batches),
     (11, "011_swarm_scale_indexes", _migrate_v11_swarm_scale_indexes),
     (12, "012_idempotent_claims_and_claim_order_indexes", _migrate_v12_idempotent_claims_and_claim_order_indexes),
+    (13, "013_egress_cache_and_token_totals", _migrate_v13_egress_cache_and_token_totals),
 )
 
 

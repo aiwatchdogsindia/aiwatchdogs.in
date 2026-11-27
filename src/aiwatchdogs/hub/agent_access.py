@@ -155,7 +155,7 @@ def markdown_response(content: str, *, md_path: str, status_code: int = 200) -> 
             "Vary": "Accept",
             "X-Markdown-Tokens": str(estimate_markdown_tokens(content)),
             "Link": build_link_header(md_path),
-            "Cache-Control": "public, max-age=30, s-maxage=30",
+            "Cache-Control": "public, max-age=300, s-maxage=1800, stale-while-revalidate=3600",
         },
     )
 
@@ -769,7 +769,7 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
 
 
 def render_findings_md(desk: DeskService, base_url: str) -> str:
-    data = desk.list_findings(limit=100, offset=0)
+    data = desk.list_findings(limit=24, offset=0)
     items = [f for f in (data.get("findings") or []) if not f.get("quarantined")]
     total = int(data.get("total") or len(items))
 
@@ -1556,7 +1556,7 @@ def render_robots_txt(base_url: str) -> str:
 
 
 def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
-    missions = (desk.list_missions() or {}).get("missions") or []
+    mission_slugs = desk.list_active_mission_slugs()
     canonical_pairs: list[tuple[str, str | None, str]] = [
         ("/", "/index.md", "1.0"),
         ("/projects", "/projects.md", "0.9"),
@@ -1569,10 +1569,8 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/changelog", "/changelog.md", "0.6"),
         ("/graveyard", "/graveyard.md", "0.8"),
     ]
-    for m in missions:
-        slug = str(m.get("slug") or "")
-        if slug:
-            canonical_pairs.append((f"/projects/{slug}", f"/projects/{slug}.md", "0.9"))
+    for slug in mission_slugs:
+        canonical_pairs.append((f"/projects/{slug}", f"/projects/{slug}.md", "0.9"))
 
     extra_urls: list[tuple[str, str]] = [
         ("/index.md", "0.8"),
@@ -1585,13 +1583,10 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/changelog.md", "0.5"),
         ("/graveyard.md", "0.7"),
         ("/llms.txt", "0.8"),
-        ("/llms-full.txt", "0.7"),
         ("/join.txt", "0.8"),
     ]
-    for m in missions:
-        slug = str(m.get("slug") or "")
-        if slug:
-            extra_urls.append((f"/projects/{slug}.md", "0.8"))
+    for slug in mission_slugs:
+        extra_urls.append((f"/projects/{slug}.md", "0.8"))
 
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',

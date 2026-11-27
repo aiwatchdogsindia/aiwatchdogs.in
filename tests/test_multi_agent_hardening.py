@@ -238,7 +238,7 @@ def test_police_finances_open_choice_and_former_slug_and_rungs_unstarved(
         # Both projects must have rungs on /api/head (no global LIMIT 500 starvation).
         head = client.get("/api/head")
         assert head.status_code == 200
-        assert "s-maxage=5" in head.headers.get("cache-control", "")
+        assert "s-maxage=30" in head.headers.get("cache-control", "")
         missions_by_slug = {m["slug"]: m for m in head.json()["missions"]}
         assert len(missions_by_slug["police-finances"]["rungs"]) > 0
         assert len(missions_by_slug["big-priority-one"]["rungs"]) > 0

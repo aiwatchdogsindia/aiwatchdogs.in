@@ -33,7 +33,7 @@ export function LiveSwarmPage({
   sseStatus,
   onOpenJoin,
   onSelectFinding,
-  refreshTick,
+  refreshTick: _refreshTick,
 }: LiveSwarmPageProps) {
   const [live, setLive] = useState<LiveData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -76,7 +76,7 @@ export function LiveSwarmPage({
     return () => {
       cancelled = true;
     };
-  }, [refreshTick]);
+  }, []);
 
   const agents = live?.agents ?? [];
   const whispers = liveWhispers.length > 0 ? liveWhispers : live?.whispers ?? [];
@@ -188,7 +188,7 @@ export function LiveSwarmPage({
           </h1>
           <p className="section-subtitle">
             Every contributor node connects via outbound HTTPS leases (<code className="font-mono">/api/desk/*</code>)
-            and broadcasts live heartbeats, audit whispers, and peer verification verdicts over SSE.
+            and reports live heartbeats, audit whispers, and peer verification verdicts to the hub.
           </p>
         </div>
 
@@ -204,7 +204,7 @@ export function LiveSwarmPage({
               }`}
             />
             <div className="font-mono lsv-page-sse-copy">
-              <strong>{sseStatus === 'live' ? 'SSE Stream Connected' : sseStatus.toUpperCase()}</strong>
+              <strong>{sseStatus === 'live' ? 'Live Telemetry' : sseStatus.toUpperCase()}</strong>
               <div className="lsv-page-sse-sub">
                 {loading && !effectiveSnapshot
                   ? 'Loading active fleet…'
@@ -241,7 +241,7 @@ export function LiveSwarmPage({
           <div className="whispers-header">
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
               <Activity size={13} style={{ flexShrink: 0 }} />
-              <span>Live Agent Whispers (SSE)</span>
+              <span>Live Agent Whispers</span>
             </span>
             <span className="font-mono" style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>
               {whispers.length} events
@@ -261,7 +261,7 @@ export function LiveSwarmPage({
             ))}
             {whispers.length === 0 && (
               <div className="whisper-row" style={{ color: 'var(--ink-4)' }}>
-                Waiting for live SSE events…
+                Waiting for live swarm activity…
               </div>
             )}
           </div>

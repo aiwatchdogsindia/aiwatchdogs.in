@@ -243,12 +243,11 @@ def test_agent_discovery_and_crawlability_endpoints(
         assert "/mcp" in llms.text
         assert "WebMCP" in llms.text
 
-        # /llms-full.txt
-        llms_full = client.get("/llms-full.txt")
-        assert llms_full.status_code == 200
-        assert int(llms_full.headers["x-markdown-tokens"]) > int(llms.headers["x-markdown-tokens"])
-        assert "# Audit Projects" in llms_full.text
-        assert "# Project Brief" in llms_full.text
+        # /llms-full.txt redirects to lightweight /llms.txt index to prevent crawler DB egress amplification
+        llms_full = client.get("/llms-full.txt", follow_redirects=False)
+        assert llms_full.status_code == 308
+        assert llms_full.headers["location"] == "/llms.txt"
+        assert "s-maxage=86400" in llms_full.headers.get("cache-control", "")
 
         # /robots.txt
         robots = client.get("/robots.txt")

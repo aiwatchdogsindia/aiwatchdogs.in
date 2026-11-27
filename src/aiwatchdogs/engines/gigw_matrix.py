@@ -230,6 +230,48 @@ def host_matches_applicability(
     return False
 
 
+def compute_scoped_w1_counts(
+    host_observations: list[dict[str, Any]],
+    *,
+    host_scopes: dict[str, frozenset[str]] | None = None,
+) -> dict[str, dict[str, list[int]]]:
+    """Precompute compact per-applicability-scope ``[observed, observed + not_observed]`` counts."""
+    matrix_doc = load_conformity_matrix()
+    scopes = host_scopes if host_scopes is not None else load_host_scopes()
+    scope_names = sorted(
+        {
+            str(cp.get("applicability") or "all_gov_in_websites")
+            for cp in (matrix_doc.get("checkpoints") or [])
+            if str(cp.get("verification_mode") or "") == "automated_http_html" and (cp.get("w1_check_keys") or [])
+        }
+    )
+    out: dict[str, dict[str, list[int]]] = {
+        sname: {k: [0, 0] for k in W1_CHECKS}
+        for sname in scope_names
+    }
+    for obs in host_observations:
+        dom = str(obs.get("domain") or "").strip().lower()
+        checks = obs.get("checks")
+        if not isinstance(checks, dict):
+            continue
+        matched_scopes = [
+            sname for sname in scope_names if host_matches_applicability(dom, sname, host_scopes=scopes)
+        ]
+        if not matched_scopes:
+            continue
+        for k in W1_CHECKS:
+            val = str(checks.get(k) or "").strip().lower()
+            if val == "observed":
+                for sname in matched_scopes:
+                    pair = out[sname][k]
+                    pair[0] += 1
+                    pair[1] += 1
+            elif val == "not_observed":
+                for sname in matched_scopes:
+                    out[sname][k][1] += 1
+    return out
+
+
 def build_website_audit_visual_payload(
     *,
     batches_done: int,
@@ -240,6 +282,7 @@ def build_website_audit_visual_payload(
     reasons: dict[str, int],
     host_observations: list[dict[str, Any]] | None = None,
     host_scopes: dict[str, frozenset[str]] | None = None,
+    scoped_counts: dict[str, dict[str, list[int]]] | None = None,
 ) -> dict[str, Any]:
     """Assemble the complete ``visual_summary.website_audit`` payload for ``gov-in-public-information``.
 
@@ -300,6 +343,21 @@ def build_website_audit_visual_payload(
     def _scoped_stats(scope_name: str) -> tuple[dict[str, int], dict[str, float | None]]:
         if scope_name in scoped_stats_cache:
             return scoped_stats_cache[scope_name]
+        if scoped_counts is not None:
+            raw_scope = scoped_counts.get(scope_name) or {}
+            denoms: dict[str, int] = {}
+            pcts: dict[str, float | None] = {}
+            for k in W1_CHECKS:
+                pair = raw_scope.get(k)
+                if isinstance(pair, (list, tuple)) and len(pair) >= 2:
+                    obs_n, den_n = int(pair[0]), int(pair[1])
+                else:
+                    obs_n, den_n = 0, 0
+                denoms[k] = den_n
+                pcts[k] = round((obs_n / den_n) * 100.0, 2) if den_n > 0 else None
+            res = (denoms, pcts)
+            scoped_stats_cache[scope_name] = res
+            return res
         if host_observations is None:
             # Backward-compatible fallback when a caller supplies only global cp_counts:
             # only unrestricted all_.gov.in checkpoints may reuse global counts.

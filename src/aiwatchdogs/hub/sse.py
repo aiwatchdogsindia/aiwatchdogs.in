@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 _SAFE_EVENT_TYPE_RE = re.compile(r"^[a-z0-9_.-]{1,64}$")
 DEFAULT_MAX_SUBSCRIBERS = int(os.environ.get("AIWATCHDOGS_SSE_MAX_SUBSCRIBERS", "100"))
 DEFAULT_MAX_PER_CLIENT = int(os.environ.get("AIWATCHDOGS_SSE_MAX_PER_CLIENT", "5"))
+DEFAULT_POLL_SECONDS = max(1.0, float(os.environ.get("AIWATCHDOGS_SSE_POLL_SECONDS", "8.0")))
 
 
 class SSESubscriberLimitError(Exception):
@@ -55,7 +56,7 @@ class SSEBroker:
         max_queue_size: int = 200,
         max_subscribers: int = DEFAULT_MAX_SUBSCRIBERS,
         max_per_client: int = DEFAULT_MAX_PER_CLIENT,
-        cross_instance_poll_seconds: float = 2.0,
+        cross_instance_poll_seconds: float = DEFAULT_POLL_SECONDS,
     ) -> None:
         self._db = db
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
@@ -346,7 +347,7 @@ class SSEBroker:
                 "subscribers": len(self._subscribers),
                 "last_event_id": last_sent_id,
             }
-            yield "retry: 3000\n" + self._format_sse("connected", init_payload)
+            yield "retry: 5000\n" + self._format_sse("connected", init_payload)
             sent += 1
             if max_events is not None and sent >= max_events:
                 return

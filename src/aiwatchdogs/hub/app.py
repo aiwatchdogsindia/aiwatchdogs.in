@@ -22,7 +22,7 @@ mimetypes.add_type("font/woff2", ".woff2")
 from fastapi import FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from aiwatchdogs.core.safety import compute_token_digest
@@ -778,7 +778,7 @@ def create_app(
         return Response(
             content=render_atom(entries, base_url=_public_base_url(request), path=path, title=title, page=page),
             media_type="application/atom+xml",
-            headers={"Cache-Control": "public, max-age=60, s-maxage=60"},
+            headers={"Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600"},
         )
 
     @application.get("/feed.atom")
@@ -844,8 +844,12 @@ def create_app(
     # Public Read Plane
     # ------------------------------------------------------------------
 
-    _PUBLIC_READ_CACHE = "public, max-age=0, s-maxage=5, stale-while-revalidate=15"
-    _LIVE_SWARM_CACHE = "public, max-age=0, s-maxage=1, stale-while-revalidate=2"
+    _PUBLIC_READ_CACHE = "public, max-age=10, s-maxage=30, stale-while-revalidate=120"
+    _DETAIL_READ_CACHE = "public, max-age=15, s-maxage=60, stale-while-revalidate=300"
+    _LIVE_SWARM_CACHE = "public, max-age=0, s-maxage=10, stale-while-revalidate=30"
+    _EVENTS_READ_CACHE = "public, max-age=0, s-maxage=5, stale-while-revalidate=15"
+    _OBSERVATIONS_CACHE = "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400"
+    _MATRIX_CACHE = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
 
     @application.get("/api/head")
     def api_head(response: Response) -> dict[str, Any]:
@@ -854,13 +858,15 @@ def create_app(
 
     @application.get("/api/events")
     def api_events(
+        response: Response,
         since_id: int = Query(default=0, ge=0, le=9_223_372_036_854_775_807),
         limit: int = Query(default=100, ge=1, le=500),
         event_type: str | None = Query(default=None, max_length=64),
     ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _EVENTS_READ_CACHE
         return desk.list_events(since_id=since_id, limit=limit, event_type=event_type)
 
-    @application.get("/api/stream")
+    @application.get("/api/stream", response_model=None)
     async def api_stream(
         request: Request,
         max_events: int | None = Query(default=None, ge=1, le=500),
@@ -868,8 +874,16 @@ def create_app(
         max_duration: float | None = Query(default=None, ge=0.5, le=300.0),
         since_id: int | None = Query(default=None, ge=0, le=9_223_372_036_854_775_807),
         last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
-    ) -> StreamingResponse:
+    ) -> Response:
         is_vercel = bool(os.environ.get("VERCEL"))
+        if is_vercel and os.environ.get("AIWATCHDOGS_ENABLE_SSE", "").strip().lower() not in {"1", "true", "yes"}:
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                content={
+                    "detail": "Live SSE stream is disabled on serverless deployments; poll /api/swarm/live or /api/events instead."
+                },
+                headers={"Cache-Control": "public, max-age=60, s-maxage=300"},
+            )
         client_ip = _extract_client_ip(request)
         try:
             broker.acquire_client_slot(client_ip)
@@ -880,9 +894,9 @@ def create_app(
                 headers={"Retry-After": "10"},
             ) from exc
 
-        effective_keepalive = max(5.0, keepalive) if keepalive is not None else (10.0 if is_vercel else 15.0)
-        max_allowed_dur = 25.0 if is_vercel else 300.0
-        default_dur = 25.0 if is_vercel else 120.0
+        effective_keepalive = max(5.0, keepalive) if keepalive is not None else (15.0 if is_vercel else 15.0)
+        max_allowed_dur = 45.0 if is_vercel else 300.0
+        default_dur = 45.0 if is_vercel else 120.0
         effective_max_duration = (
             min(float(max_duration), max_allowed_dur) if max_duration is not None else default_dur
         )
@@ -914,15 +928,17 @@ def create_app(
 
     @application.get("/api/missions/{slug}")
     def api_mission_detail(slug: str, response: Response) -> dict[str, Any]:
-        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.get_mission_detail(slug)
 
     @application.get("/api/missions/{slug}/observations/{task_id}")
-    def website_observations(slug: str, task_id: str) -> dict[str, Any]:
+    def website_observations(slug: str, task_id: str, response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _OBSERVATIONS_CACHE
         return desk.website_observations(slug, task_id)
 
     @application.get("/api/missions/{slug}/matrix")
-    def api_mission_matrix(slug: str) -> dict[str, Any]:
+    def api_mission_matrix(slug: str, response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _MATRIX_CACHE
         return desk.get_website_matrix(slug)
 
     @application.get("/api/missions/gov-in-public-information/batches/{filename}")
@@ -944,12 +960,14 @@ def create_app(
     @application.get("/api/missions/{slug}/tasks")
     def api_mission_tasks(
         slug: str,
+        response: Response,
         task_status: str = Query(default="all", alias="status", max_length=12),
         q: str = Query(default="", max_length=120),
         kind: str = Query(default="audit", max_length=8),
         offset: int = Query(default=0, ge=0, le=1_000_000),
         limit: int = Query(default=25, ge=1, le=MAX_TASK_PAGE),
     ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.list_mission_tasks(slug, status_filter=task_status, q=q, kind=kind, offset=offset, limit=limit)
 
     @application.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}/{{filename}}")
@@ -971,14 +989,16 @@ def create_app(
 
     @application.get("/api/findings")
     def api_findings(
+        response: Response,
         status_filter: str | None = Query(default=None, alias="status", max_length=40),
         pillar: str | None = Query(default=None, max_length=64),
         methodology: str | None = Query(default=None, max_length=32),
         mission: str | None = Query(default=None, max_length=120),
         search: str | None = Query(default=None, max_length=120),
-        limit: int = Query(default=100, ge=1, le=500),
+        limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=50_000),
     ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.list_findings(
             status_filter=status_filter,
             pillar=pillar,
@@ -990,7 +1010,8 @@ def create_app(
         )
 
     @application.get("/api/findings/{finding_id}")
-    def api_finding_detail(finding_id: str) -> dict[str, Any]:
+    def api_finding_detail(finding_id: str, response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.get_finding_detail(finding_id)
 
     @application.get("/api/graveyard")
@@ -1021,12 +1042,12 @@ def create_app(
 
     @application.get("/api/graph")
     def api_graph(response: Response) -> dict[str, Any]:
-        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
+        response.headers["Cache-Control"] = "public, max-age=60, s-maxage=300, stale-while-revalidate=900"
         return desk.get_graph()
 
     @application.get("/api/live")
     def api_live(response: Response) -> dict[str, Any]:
-        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.get_live()
 
     @application.get("/api/swarm/live")
@@ -1043,11 +1064,13 @@ def create_app(
         return desk.list_contributors(window=window)
 
     @application.get("/api/contributors/{handle}")
-    def api_contributor_profile(handle: str) -> dict[str, Any]:
+    def api_contributor_profile(handle: str, response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.get_contributor_profile(handle)
 
     @application.get("/api/sponsors")
-    def api_sponsors() -> dict[str, Any]:
+    def api_sponsors(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.list_sponsors()
 
     @application.post("/api/sponsors/pledge", status_code=status.HTTP_201_CREATED)
@@ -1062,6 +1085,7 @@ def create_app(
     @application.get("/api/ledger", response_model=None)
     @application.get("/api/treasury", response_model=None)
     def api_ledger(
+        response: Response,
         fmt: Literal["json", "csv"] = Query(default="json", alias="format"),
     ) -> Response | dict[str, Any]:
         if fmt == "csv":
@@ -1070,13 +1094,16 @@ def create_app(
                 content=csv_text,
                 media_type="text/csv; charset=utf-8",
                 headers={
-                    "Content-Disposition": 'attachment; filename="aiwatchdogs-treasury-ledger.csv"'
+                    "Content-Disposition": 'attachment; filename="aiwatchdogs-treasury-ledger.csv"',
+                    "Cache-Control": _DETAIL_READ_CACHE,
                 },
             )
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.get_ledger()
 
     @application.get("/api/sources")
-    def api_sources() -> dict[str, Any]:
+    def api_sources(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.list_sources()
 
     # ------------------------------------------------------------------
@@ -1220,22 +1247,18 @@ def create_app(
             headers={
                 "X-Markdown-Tokens": str(estimate_markdown_tokens(content)),
                 "Link": build_link_header("/index.md"),
-                "Cache-Control": "public, max-age=60, s-maxage=60",
+                "Cache-Control": "public, max-age=300, s-maxage=1800, stale-while-revalidate=3600",
             },
         )
 
-    @application.get("/llms-full.txt", response_class=PlainTextResponse)
-    @application.head("/llms-full.txt", response_class=PlainTextResponse, include_in_schema=False)
-    def llms_full_txt(request: Request) -> PlainTextResponse:
-        content = render_llms_full_txt(desk, _public_base_url(request))
-        return PlainTextResponse(
-            content=content,
-            media_type="text/plain; charset=utf-8",
-            headers={
-                "X-Markdown-Tokens": str(estimate_markdown_tokens(content)),
-                "Link": build_link_header("/index.md"),
-                "Cache-Control": "public, max-age=60, s-maxage=60",
-            },
+    @application.get("/llms-full.txt", response_model=None)
+    @application.head("/llms-full.txt", response_model=None, include_in_schema=False)
+    def llms_full_txt() -> RedirectResponse:
+        # Redirect heavy combined dump to lightweight /llms.txt index to prevent crawler DB egress amplification.
+        return RedirectResponse(
+            url="/llms.txt",
+            status_code=status.HTTP_308_PERMANENT_REDIRECT,
+            headers={"Cache-Control": "public, max-age=3600, s-maxage=86400"},
         )
 
     @application.get("/robots.txt", response_class=PlainTextResponse)
@@ -1251,7 +1274,7 @@ def create_app(
         return PlainTextResponse(
             content=robots_body,
             media_type="text/plain; charset=utf-8",
-            headers={"Cache-Control": "public, max-age=300, s-maxage=300"},
+            headers={"Cache-Control": "public, max-age=300, s-maxage=3600"},
         )
 
     @application.get("/sitemap.xml")
@@ -1260,7 +1283,7 @@ def create_app(
         return Response(
             content=render_sitemap_xml(desk, _public_base_url(request)),
             media_type="application/xml; charset=utf-8",
-            headers={"Cache-Control": "public, max-age=120, s-maxage=120"},
+            headers={"Cache-Control": "public, max-age=300, s-maxage=1800, stale-while-revalidate=3600"},
         )
 
     @application.get("/.well-known/api-catalog")
@@ -1308,6 +1331,14 @@ def create_app(
 
     @application.post("/mcp", response_model=None)
     async def mcp_post(request: Request) -> Response:
+        if os.environ.get("VERCEL") and os.environ.get("AIWATCHDOGS_ENABLE_MCP", "").strip().lower() not in {"1", "true", "yes"}:
+            return JSONResponse(
+                status_code=status.HTTP_410_GONE,
+                content={
+                    "detail": "Streamable HTTP MCP is disabled on serverless deployments; use /llms.txt or cached /api/* endpoints."
+                },
+                headers={"Cache-Control": "public, max-age=60, s-maxage=300"},
+            )
         desk.check_rate_limit(
             bucket_key=f"mcp:{_extract_client_ip(request)}",
             limit=120,

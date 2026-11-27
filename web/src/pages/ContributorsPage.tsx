@@ -87,7 +87,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
     const pollId = window.setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       load(false);
-    }, 15_000);
+    }, 45_000);
 
     return () => {
       cancelled = true;

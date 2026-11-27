@@ -40,6 +40,7 @@ from aiwatchdogs.engines.gigw_matrix import (
     W1_CHECKS,
     W1_REASON_KEYS,
     build_website_audit_visual_payload,
+    compute_scoped_w1_counts,
     load_conformity_matrix,
 )
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
@@ -113,9 +114,9 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BASE_SECONDS = 30
 DEFAULT_PARKED_REQUEUE_MINUTES = 120
 # Most tasks one project page lists (audits and the peer checks they spawn).
-MAX_PROJECT_TASKS_LISTED = 2000
+MAX_PROJECT_TASKS_LISTED = 150
 # A project with more tasks than that lists only its first open ones; the rest are paged.
-LARGE_PROJECT_TASKS_LISTED = 200
+LARGE_PROJECT_TASKS_LISTED = 50
 MAX_TASK_PAGE = 100
 # Projects an agent may ask for by name even when the hub hands work out by priority.
 OPEN_CHOICE_PROJECTS = frozenset({"police-finances", "gov-in-public-information", UNION_BUDGET_PROJECT_SLUG})
@@ -175,6 +176,30 @@ _TASK_LIST_COLUMNS = (
     "t.progress_pct, t.retry_count, t.available_at, t.target_finding_id, t.payload_json, "
     "t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis, "
     "t.usage_json, t.lease_started_at, t.attempt_count"
+)
+# On Postgres, strip the bulky payload.context object in SQL when listing tasks for UI pages
+# (_public_task only reads top-level payload metadata keys).
+_TASK_LIST_COLUMNS_PG_COMPACT = (
+    "t.id, t.task_type, t.methodology_code, t.title, t.status, t.claimed_by_handle, "
+    "t.progress_pct, t.retry_count, t.available_at, t.target_finding_id, "
+    "CASE WHEN t.payload_json LIKE '{%' THEN (t.payload_json::jsonb - 'context')::text ELSE t.payload_json END AS payload_json, "
+    "t.created_at, t.completed_at, t.work_type, t.estimated_tokens, t.estimate_basis, "
+    "t.usage_json, t.lease_started_at, t.attempt_count"
+)
+# Lightweight columns for finding list endpoints (/api/findings, /api/head, /api/missions/{slug}).
+# Heavy dossier blobs (citations_json, agent_trace_json, benign_explanations_json, source_locator_json,
+# editorial_interpretation) are fetched on demand by GET /api/findings/{finding_id}.
+_FINDING_SUMMARY_COLUMNS = (
+    "id, mission_id, mission_slug, pillar, task_id, artifact_id, source_id, "
+    "title, summary, methodology_code, entity_name, jurisdiction, fiscal_year, "
+    "fiscal_year_start, fiscal_year_end, monetary_exposure_inr, severity, "
+    "anomaly_metrics_json, rule_triggered, engine_version, ruleset_version, "
+    "as_of_date, source_url, artifact_sha256, secondary_sha256, dataset_path, "
+    "provenance_json, is_demo_sample, suggested_authority, submitted_by, "
+    "submitted_coding_agent, submitted_coding_agent_model, legal_lint_passed, "
+    "pii_scrubbed, status, editorial_status, quarantined, quarantine_reason, "
+    "verification_score, confirm_count, dispute_count, required_quorum, "
+    "created_at, verified_at"
 )
 # A peer check of a lead that is held for privacy or legal review is not listed.
 _TASK_NOT_QUARANTINED = (
@@ -921,11 +946,11 @@ class DeskService:
         raw_sec_sha = str(_row_get(row, "secondary_sha256", "") or "").strip()
         secondary_sha256: str | None = raw_sec_sha if raw_sec_sha else None
 
-        # Defensive recursive PII scrubbing on nested objects
-        anomaly_metrics, _ = _scrub_recursive(loads_json(row["anomaly_metrics_json"], {}))
-        agent_trace, _ = _scrub_recursive(loads_json(row["agent_trace_json"], {}))
-        citations, _ = _scrub_recursive(loads_json(row["citations_json"], []))
-        benign, _ = _scrub_recursive(loads_json(row["benign_explanations_json"], []))
+        # Defensive recursive PII scrubbing on nested objects (optional on summary list projections)
+        anomaly_metrics, _ = _scrub_recursive(loads_json(_row_get(row, "anomaly_metrics_json", "{}"), {}))
+        agent_trace, _ = _scrub_recursive(loads_json(_row_get(row, "agent_trace_json", "{}"), {}))
+        citations, _ = _scrub_recursive(loads_json(_row_get(row, "citations_json", "[]"), []))
+        benign, _ = _scrub_recursive(loads_json(_row_get(row, "benign_explanations_json", "[]"), []))
         source_locator, _ = _scrub_recursive(loads_json(_row_get(row, "source_locator_json", "{}"), {}))
         provenance = loads_json(_row_get(row, "provenance_json", "{}"), {})
         if not isinstance(provenance, dict):
@@ -997,9 +1022,9 @@ class DeskService:
 
     @staticmethod
     def _serialize_verification(row: Any) -> dict[str, Any]:
-        raw_checks = loads_json(row["checks_json"], {})
+        raw_checks = loads_json(_row_get(row, "checks_json", "{}"), {})
         checks = _normalize_checks(raw_checks, strict=False)
-        repro, _ = _scrub_recursive(loads_json(row["reproduced_metrics_json"], {}))
+        repro, _ = _scrub_recursive(loads_json(_row_get(row, "reproduced_metrics_json", "{}"), {}))
         manifest, _ = _scrub_recursive(loads_json(_row_get(row, "manifest_json", "{}"), {}))
         manifest_dict = manifest if isinstance(manifest, dict) else {}
         raw_conf = row["confidence"]
@@ -1361,6 +1386,111 @@ class DeskService:
                 }
                 telemetry[h] = rec
             return rec
+
+        if self.db.is_postgres:
+            if handle is not None:
+                se_agg = conn.execute(
+                    """
+                    SELECT agent_handle, age_hr,
+                           COALESCE(SUM(points), 0) AS pts,
+                           COALESCE(SUM(CASE WHEN delta <= 3600.0 THEN points ELSE 0 END), 0) AS pts_1h,
+                           COALESCE(SUM(CASE WHEN delta <= 600.0 THEN points ELSE 0 END), 0) AS pts_10m
+                    FROM (
+                        SELECT agent_handle, points,
+                               (? - EXTRACT(EPOCH FROM CAST(created_at AS TIMESTAMPTZ))) AS delta,
+                               CAST(FLOOR(GREATEST(0.0, ? - EXTRACT(EPOCH FROM CAST(created_at AS TIMESTAMPTZ))) / 3600.0) AS INTEGER) AS age_hr
+                        FROM score_events
+                        WHERE agent_handle = ? AND created_at >= ?
+                    ) sub
+                    WHERE sub.delta >= -5.0 AND sub.age_hr >= 0 AND sub.age_hr < 36
+                    GROUP BY agent_handle, age_hr
+                    """,
+                    (now_ts, now_ts, handle, cutoff_36h),
+                ).fetchall()
+                task_agg = conn.execute(
+                    """
+                    SELECT claimed_by_handle, age_hr,
+                           COUNT(*) AS chk,
+                           SUM(CASE WHEN delta <= 3600.0 THEN 1 ELSE 0 END) AS chk_1h,
+                           SUM(CASE WHEN delta <= 600.0 THEN 1 ELSE 0 END) AS chk_10m
+                    FROM (
+                        SELECT claimed_by_handle,
+                               (? - EXTRACT(EPOCH FROM CAST(COALESCE(NULLIF(completed_at, ''), updated_at) AS TIMESTAMPTZ))) AS delta,
+                               CAST(FLOOR(GREATEST(0.0, ? - EXTRACT(EPOCH FROM CAST(COALESCE(NULLIF(completed_at, ''), updated_at) AS TIMESTAMPTZ))) / 3600.0) AS INTEGER) AS age_hr
+                        FROM tasks
+                        WHERE claimed_by_handle = ? AND status IN ('completed', 'settled')
+                          AND COALESCE(NULLIF(completed_at, ''), updated_at) >= ?
+                    ) sub
+                    WHERE sub.delta >= -5.0 AND sub.age_hr >= 0 AND sub.age_hr < 36
+                    GROUP BY claimed_by_handle, age_hr
+                    """,
+                    (now_ts, now_ts, handle, cutoff_36h),
+                ).fetchall()
+            else:
+                se_agg = conn.execute(
+                    """
+                    SELECT agent_handle, age_hr,
+                           COALESCE(SUM(points), 0) AS pts,
+                           COALESCE(SUM(CASE WHEN delta <= 3600.0 THEN points ELSE 0 END), 0) AS pts_1h,
+                           COALESCE(SUM(CASE WHEN delta <= 600.0 THEN points ELSE 0 END), 0) AS pts_10m
+                    FROM (
+                        SELECT agent_handle, points,
+                               (? - EXTRACT(EPOCH FROM CAST(created_at AS TIMESTAMPTZ))) AS delta,
+                               CAST(FLOOR(GREATEST(0.0, ? - EXTRACT(EPOCH FROM CAST(created_at AS TIMESTAMPTZ))) / 3600.0) AS INTEGER) AS age_hr
+                        FROM score_events
+                        WHERE created_at >= ?
+                    ) sub
+                    WHERE sub.delta >= -5.0 AND sub.age_hr >= 0 AND sub.age_hr < 36
+                    GROUP BY agent_handle, age_hr
+                    """,
+                    (now_ts, now_ts, cutoff_36h),
+                ).fetchall()
+                task_agg = conn.execute(
+                    """
+                    SELECT claimed_by_handle, age_hr,
+                           COUNT(*) AS chk,
+                           SUM(CASE WHEN delta <= 3600.0 THEN 1 ELSE 0 END) AS chk_1h,
+                           SUM(CASE WHEN delta <= 600.0 THEN 1 ELSE 0 END) AS chk_10m
+                    FROM (
+                        SELECT claimed_by_handle,
+                               (? - EXTRACT(EPOCH FROM CAST(COALESCE(NULLIF(completed_at, ''), updated_at) AS TIMESTAMPTZ))) AS delta,
+                               CAST(FLOOR(GREATEST(0.0, ? - EXTRACT(EPOCH FROM CAST(COALESCE(NULLIF(completed_at, ''), updated_at) AS TIMESTAMPTZ))) / 3600.0) AS INTEGER) AS age_hr
+                        FROM tasks
+                        WHERE status IN ('completed', 'settled')
+                          AND claimed_by_handle IS NOT NULL
+                          AND COALESCE(NULLIF(completed_at, ''), updated_at) >= ?
+                    ) sub
+                    WHERE sub.delta >= -5.0 AND sub.age_hr >= 0 AND sub.age_hr < 36
+                    GROUP BY claimed_by_handle, age_hr
+                    """,
+                    (now_ts, now_ts, cutoff_36h),
+                ).fetchall()
+
+            for sr in se_agg:
+                h = str(sr["agent_handle"] or "").strip()
+                if not h:
+                    continue
+                idx = 35 - int(sr["age_hr"])
+                if not (0 <= idx < 36):
+                    continue
+                rec = _entry(h)
+                rec["hourly_points_36h"][idx] += int(sr["pts"] or 0)
+                rec["score_1h"] += int(sr["pts_1h"] or 0)
+                rec["score_10m"] += int(sr["pts_10m"] or 0)
+
+            for tr in task_agg:
+                h = str(tr["claimed_by_handle"] or "").strip()
+                if not h:
+                    continue
+                idx = 35 - int(tr["age_hr"])
+                if not (0 <= idx < 36):
+                    continue
+                rec = _entry(h)
+                rec["hourly_checks_36h"][idx] += int(tr["chk"] or 0)
+                rec["checks_1h"] += int(tr["chk_1h"] or 0)
+                rec["checks_10m"] += int(tr["chk_10m"] or 0)
+
+            return telemetry
 
         if handle is not None:
             se_rows = conn.execute(
@@ -2097,8 +2227,8 @@ class DeskService:
             )
 
             recent_finding_rows = conn.execute(
-                """
-                SELECT * FROM findings
+                f"""
+                SELECT {_FINDING_SUMMARY_COLUMNS} FROM findings
                 WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined'
                 ORDER BY
                     CASE status
@@ -2636,6 +2766,14 @@ class DeskService:
             "coverage_summary": coverage_summary,
         }
 
+    def list_active_mission_slugs(self) -> list[str]:
+        """Lightweight slug list for sitemap generation (avoids full coverage/rungs/token queries)."""
+        with self.db.read() as conn:
+            rows = conn.execute(
+                "SELECT slug FROM missions WHERE status != 'archived' ORDER BY priority ASC, id ASC"
+            ).fetchall()
+        return [str(r["slug"]) for r in rows if r["slug"]]
+
     def _compute_mission_contributors(
         self, conn: Any, mission_id: str
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -2647,6 +2785,18 @@ class DeskService:
             .isoformat()
             .replace("+00:00", "Z")
         )
+        cutoff_10m = (
+            (now_dt - timedelta(minutes=10))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+        cutoff_36h = (
+            (now_dt - timedelta(hours=36, seconds=2))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
         all_handles: set[str] = set()
         hour_handles: set[str] = set()
 
@@ -2654,95 +2804,141 @@ class DeskService:
         tasks_hour: dict[str, int] = {}
         tasks_10m: dict[str, int] = {}
         tasks_36h: dict[str, list[int]] = {}
-        cleared_task_ids_all: dict[str, set[str]] = {}
-        cleared_task_ids_hour: dict[str, set[str]] = {}
+        cleared_counts_all: dict[str, int] = {}
+        cleared_counts_hour: dict[str, int] = {}
 
+        # 1. Aggregate task completion counts in SQL (avoids shipping thousands of task rows over the wire).
         for tr in conn.execute(
-            "SELECT id, claimed_by_handle, task_type, completed_at, updated_at, "
-            "CASE WHEN task_type != 'peer_verify' AND methodology_code != 'W1' "
-            "AND output_json LIKE '%\"cleared\"%' THEN output_json ELSE '' END AS output_json "
-            "FROM tasks WHERE mission_id = ? AND status IN ('completed', 'settled') AND claimed_by_handle IS NOT NULL",
-            (mission_id,),
+            """
+            SELECT claimed_by_handle,
+                   COUNT(*) AS t_all,
+                   SUM(CASE WHEN COALESCE(NULLIF(completed_at, ''), updated_at) >= ? THEN 1 ELSE 0 END) AS t_hr,
+                   SUM(CASE WHEN COALESCE(NULLIF(completed_at, ''), updated_at) >= ? THEN 1 ELSE 0 END) AS t_10m
+            FROM tasks
+            WHERE mission_id = ? AND status IN ('completed', 'settled') AND claimed_by_handle IS NOT NULL
+            GROUP BY claimed_by_handle
+            """,
+            (cutoff, cutoff_10m, mission_id),
         ).fetchall():
             h = str(tr["claimed_by_handle"] or "").strip()
             if not h:
                 continue
             all_handles.add(h)
-            tasks_all[h] = tasks_all.get(h, 0) + 1
-            ts = str(tr["completed_at"] or tr["updated_at"] or "")
-            dt = _parse_iso(ts)
-            delta = (now_ts - dt.timestamp()) if dt is not None else None
-            if delta is not None and -5.0 <= delta < 0:
-                delta = 0.0
-            in_hour = bool((delta is not None and 0.0 <= delta <= 3600.0) or (ts and ts >= cutoff))
-            if in_hour:
+            tasks_all[h] = int(tr["t_all"] or 0)
+            t_hr = int(tr["t_hr"] or 0)
+            if t_hr > 0:
                 hour_handles.add(h)
-                tasks_hour[h] = tasks_hour.get(h, 0) + 1
-            if delta is not None and 0.0 <= delta <= 600.0:
-                tasks_10m[h] = tasks_10m.get(h, 0) + 1
-            if delta is not None and delta >= 0.0:
-                idx = 35 - int(delta // 3600)
-                if 0 <= idx < 36:
-                    tasks_36h.setdefault(h, [0] * 36)[idx] += 1
-            if tr["task_type"] != "peer_verify" and tr["output_json"]:
-                out = loads_json(tr["output_json"], {})
-                if isinstance(out, dict) and out.get("outcome") == "cleared":
-                    tid = str(tr["id"])
-                    cleared_task_ids_all.setdefault(h, set()).add(tid)
-                    if in_hour:
-                        cleared_task_ids_hour.setdefault(h, set()).add(tid)
+                tasks_hour[h] = t_hr
+            t_10 = int(tr["t_10m"] or 0)
+            if t_10 > 0:
+                tasks_10m[h] = t_10
 
+        # 1b. Last-36h task sparkline buckets (SQL-bucketed on Postgres; bounded 36h window on SQLite).
+        if self.db.is_postgres:
+            for tr in conn.execute(
+                """
+                SELECT claimed_by_handle, age_hr, COUNT(*) AS chk
+                FROM (
+                    SELECT claimed_by_handle,
+                           (? - EXTRACT(EPOCH FROM CAST(COALESCE(NULLIF(completed_at, ''), updated_at) AS TIMESTAMPTZ))) AS delta,
+                           CAST(FLOOR(GREATEST(0.0, ? - EXTRACT(EPOCH FROM CAST(COALESCE(NULLIF(completed_at, ''), updated_at) AS TIMESTAMPTZ))) / 3600.0) AS INTEGER) AS age_hr
+                    FROM tasks
+                    WHERE mission_id = ? AND status IN ('completed', 'settled')
+                      AND claimed_by_handle IS NOT NULL
+                      AND COALESCE(NULLIF(completed_at, ''), updated_at) >= ?
+                ) sub
+                WHERE sub.delta >= -5.0 AND sub.age_hr >= 0 AND sub.age_hr < 36
+                GROUP BY claimed_by_handle, age_hr
+                """,
+                (now_ts, now_ts, mission_id, cutoff_36h),
+            ).fetchall():
+                h = str(tr["claimed_by_handle"] or "").strip()
+                idx = 35 - int(tr["age_hr"])
+                if h and 0 <= idx < 36:
+                    tasks_36h.setdefault(h, [0] * 36)[idx] += int(tr["chk"] or 0)
+        else:
+            for tr in conn.execute(
+                "SELECT claimed_by_handle, completed_at, updated_at FROM tasks "
+                "WHERE mission_id = ? AND status IN ('completed', 'settled') AND claimed_by_handle IS NOT NULL "
+                "AND COALESCE(NULLIF(completed_at, ''), updated_at) >= ?",
+                (mission_id, cutoff_36h),
+            ).fetchall():
+                h = str(tr["claimed_by_handle"] or "").strip()
+                if not h:
+                    continue
+                dt = _parse_iso(tr["completed_at"] or tr["updated_at"])
+                if dt is None:
+                    continue
+                delta = now_ts - dt.timestamp()
+                if -5.0 <= delta < 0:
+                    delta = 0.0
+                if delta >= 0.0:
+                    idx = 35 - int(delta // 3600)
+                    if 0 <= idx < 36:
+                        tasks_36h.setdefault(h, [0] * 36)[idx] += 1
+
+        # 2. Aggregate findings counts in SQL (avoids shipping 8,000+ finding rows).
         findings_all: dict[str, int] = {}
         findings_hour: dict[str, int] = {}
         verified_all: dict[str, int] = {}
         verified_hour: dict[str, int] = {}
         for fr in conn.execute(
-            "SELECT submitted_by, status, created_at, verified_at FROM findings "
-            "WHERE mission_id = ? AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined'",
-            (mission_id,),
+            """
+            SELECT submitted_by,
+                   COUNT(*) AS f_all,
+                   SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS f_hr,
+                   SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) AS v_all,
+                   SUM(CASE WHEN status = 'verified' AND COALESCE(NULLIF(verified_at, ''), created_at) >= ? THEN 1 ELSE 0 END) AS v_hr
+            FROM findings
+            WHERE mission_id = ? AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined'
+            GROUP BY submitted_by
+            """,
+            (cutoff, cutoff, mission_id),
         ).fetchall():
             h = str(fr["submitted_by"] or "").strip()
             if not h:
                 continue
             all_handles.add(h)
-            findings_all[h] = findings_all.get(h, 0) + 1
-            if fr["created_at"] and str(fr["created_at"]) >= cutoff:
+            findings_all[h] = int(fr["f_all"] or 0)
+            f_hr = int(fr["f_hr"] or 0)
+            if f_hr > 0:
                 hour_handles.add(h)
-                findings_hour[h] = findings_hour.get(h, 0) + 1
-            if fr["status"] == "verified":
-                verified_all[h] = verified_all.get(h, 0) + 1
-                v_ts = str(fr["verified_at"] or fr["created_at"] or "")
-                if v_ts and v_ts >= cutoff:
-                    hour_handles.add(h)
-                    verified_hour[h] = verified_hour.get(h, 0) + 1
+                findings_hour[h] = f_hr
+            v_all = int(fr["v_all"] or 0)
+            if v_all > 0:
+                verified_all[h] = v_all
+            v_hr = int(fr["v_hr"] or 0)
+            if v_hr > 0:
+                hour_handles.add(h)
+                verified_hour[h] = v_hr
 
+        # 3. Aggregate peer verifications in SQL.
         verifs_all: dict[str, int] = {}
         verifs_hour: dict[str, int] = {}
         for vr in conn.execute(
-            "SELECT pv.verifier_handle, pv.created_at "
-            "FROM peer_verifications pv "
-            "JOIN findings f ON f.id = pv.finding_id "
-            "WHERE f.mission_id = ? AND COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'",
-            (mission_id,),
+            """
+            SELECT pv.verifier_handle,
+                   COUNT(*) AS v_all,
+                   SUM(CASE WHEN pv.created_at >= ? THEN 1 ELSE 0 END) AS v_hr
+            FROM peer_verifications pv
+            JOIN findings f ON f.id = pv.finding_id
+            WHERE f.mission_id = ? AND COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
+            GROUP BY pv.verifier_handle
+            """,
+            (cutoff, mission_id),
         ).fetchall():
             h = str(vr["verifier_handle"] or "").strip()
             if not h:
                 continue
             all_handles.add(h)
-            verifs_all[h] = verifs_all.get(h, 0) + 1
-            if vr["created_at"] and str(vr["created_at"]) >= cutoff:
+            verifs_all[h] = int(vr["v_all"] or 0)
+            v_hr = int(vr["v_hr"] or 0)
+            if v_hr > 0:
                 hour_handles.add(h)
-                verifs_hour[h] = verifs_hour.get(h, 0) + 1
+                verifs_hour[h] = v_hr
 
-        se_all: dict[str, int] = {}
-        se_hour: dict[str, int] = {}
-        se_10m: dict[str, int] = {}
-        se_36h: dict[str, list[int]] = {}
-        for sr in conn.execute(
-            """
-            SELECT se.agent_handle, se.event_type, se.points, se.ref_id, se.created_at
-            FROM score_events se
-            WHERE (
+        # 4. Aggregate mission score_events + cleared_scan counts in SQL.
+        se_mission_filter = """(
                 se.event_type IN ('finding_submitted', 'finding_verified_author_bonus')
                 AND EXISTS (
                     SELECT 1 FROM findings f
@@ -2763,38 +2959,119 @@ class DeskService:
                     SELECT 1 FROM tasks t
                     WHERE t.id = se.ref_id AND t.mission_id = ?
                 )
-            )
+            )"""
+        se_all: dict[str, int] = {}
+        se_hour: dict[str, int] = {}
+        se_10m: dict[str, int] = {}
+        se_36h: dict[str, list[int]] = {}
+        for sr in conn.execute(
+            f"""
+            SELECT se.agent_handle,
+                   COALESCE(SUM(se.points), 0) AS pts_all,
+                   COALESCE(SUM(CASE WHEN se.created_at >= ? THEN se.points ELSE 0 END), 0) AS pts_hr,
+                   COALESCE(SUM(CASE WHEN se.created_at >= ? THEN se.points ELSE 0 END), 0) AS pts_10m,
+                   COUNT(DISTINCT CASE WHEN se.event_type = 'cleared_scan' AND se.ref_id IS NOT NULL THEN se.ref_id END) AS clr_all,
+                   COUNT(DISTINCT CASE WHEN se.event_type = 'cleared_scan' AND se.ref_id IS NOT NULL AND se.created_at >= ? THEN se.ref_id END) AS clr_hr
+            FROM score_events se
+            WHERE {se_mission_filter}
+            GROUP BY se.agent_handle
             """,
-            (mission_id, mission_id, mission_id),
+            (cutoff, cutoff_10m, cutoff, mission_id, mission_id, mission_id),
         ).fetchall():
             h = str(sr["agent_handle"] or "").strip()
             if not h:
                 continue
-            pts = int(sr["points"] or 0)
             all_handles.add(h)
-            se_all[h] = se_all.get(h, 0) + pts
-            se_dt = _parse_iso(sr["created_at"])
-            se_delta = (now_ts - se_dt.timestamp()) if se_dt is not None else None
-            if se_delta is not None and -5.0 <= se_delta < 0:
-                se_delta = 0.0
-            in_hour = bool(
-                (se_delta is not None and 0.0 <= se_delta <= 3600.0)
-                or (sr["created_at"] and str(sr["created_at"]) >= cutoff)
-            )
-            if in_hour:
+            se_all[h] = int(sr["pts_all"] or 0)
+            p_hr = int(sr["pts_hr"] or 0)
+            if p_hr > 0:
                 hour_handles.add(h)
-                se_hour[h] = se_hour.get(h, 0) + pts
-            if se_delta is not None and 0.0 <= se_delta <= 600.0:
-                se_10m[h] = se_10m.get(h, 0) + pts
-            if se_delta is not None and se_delta >= 0.0:
-                idx = 35 - int(se_delta // 3600)
-                if 0 <= idx < 36:
-                    se_36h.setdefault(h, [0] * 36)[idx] += pts
-            if sr["event_type"] == "cleared_scan" and sr["ref_id"]:
-                ref_id = str(sr["ref_id"])
-                cleared_task_ids_all.setdefault(h, set()).add(ref_id)
-                if in_hour:
-                    cleared_task_ids_hour.setdefault(h, set()).add(ref_id)
+                se_hour[h] = p_hr
+            p_10 = int(sr["pts_10m"] or 0)
+            if p_10 > 0:
+                se_10m[h] = p_10
+            c_all = int(sr["clr_all"] or 0)
+            if c_all > 0:
+                cleared_counts_all[h] = c_all
+            c_hr = int(sr["clr_hr"] or 0)
+            if c_hr > 0:
+                hour_handles.add(h)
+                cleared_counts_hour[h] = c_hr
+
+        # 4b. Legacy cleared tasks lacking a matching cleared_scan score_event (usually 0 rows).
+        for tr in conn.execute(
+            """
+            SELECT t.claimed_by_handle, t.completed_at, t.updated_at, t.output_json
+            FROM tasks t
+            WHERE t.mission_id = ?
+              AND t.status IN ('completed', 'settled')
+              AND t.claimed_by_handle IS NOT NULL
+              AND t.task_type != 'peer_verify'
+              AND t.methodology_code != 'W1'
+              AND t.output_json LIKE '%"cleared"%'
+              AND NOT EXISTS (
+                  SELECT 1 FROM score_events se
+                  WHERE se.event_type = 'cleared_scan'
+                    AND se.ref_id = t.id
+                    AND se.agent_handle = t.claimed_by_handle
+              )
+            """,
+            (mission_id,),
+        ).fetchall():
+            h = str(tr["claimed_by_handle"] or "").strip()
+            if not h:
+                continue
+            out = loads_json(tr["output_json"], {})
+            if isinstance(out, dict) and out.get("outcome") == "cleared":
+                cleared_counts_all[h] = cleared_counts_all.get(h, 0) + 1
+                ts = str(tr["completed_at"] or tr["updated_at"] or "")
+                if ts and ts >= cutoff:
+                    hour_handles.add(h)
+                    cleared_counts_hour[h] = cleared_counts_hour.get(h, 0) + 1
+
+        # 4c. Last-36h score_events sparkline buckets.
+        if self.db.is_postgres:
+            for sr in conn.execute(
+                f"""
+                SELECT agent_handle, age_hr, COALESCE(SUM(points), 0) AS pts
+                FROM (
+                    SELECT se.agent_handle, se.points,
+                           (? - EXTRACT(EPOCH FROM CAST(se.created_at AS TIMESTAMPTZ))) AS delta,
+                           CAST(FLOOR(GREATEST(0.0, ? - EXTRACT(EPOCH FROM CAST(se.created_at AS TIMESTAMPTZ))) / 3600.0) AS INTEGER) AS age_hr
+                    FROM score_events se
+                    WHERE se.created_at >= ? AND ({se_mission_filter})
+                ) sub
+                WHERE sub.delta >= -5.0 AND sub.age_hr >= 0 AND sub.age_hr < 36
+                GROUP BY agent_handle, age_hr
+                """,
+                (now_ts, now_ts, cutoff_36h, mission_id, mission_id, mission_id),
+            ).fetchall():
+                h = str(sr["agent_handle"] or "").strip()
+                idx = 35 - int(sr["age_hr"])
+                if h and 0 <= idx < 36:
+                    se_36h.setdefault(h, [0] * 36)[idx] += int(sr["pts"] or 0)
+        else:
+            for sr in conn.execute(
+                f"""
+                SELECT se.agent_handle, se.points, se.created_at
+                FROM score_events se
+                WHERE se.created_at >= ? AND ({se_mission_filter})
+                """,
+                (cutoff_36h, mission_id, mission_id, mission_id),
+            ).fetchall():
+                h = str(sr["agent_handle"] or "").strip()
+                if not h:
+                    continue
+                se_dt = _parse_iso(sr["created_at"])
+                if se_dt is None:
+                    continue
+                se_delta = now_ts - se_dt.timestamp()
+                if -5.0 <= se_delta < 0:
+                    se_delta = 0.0
+                if se_delta >= 0.0:
+                    idx = 35 - int(se_delta // 3600)
+                    if 0 <= idx < 36:
+                        se_36h.setdefault(h, [0] * 36)[idx] += int(sr["points"] or 0)
 
         if not all_handles:
             return [], []
@@ -2813,9 +3090,9 @@ class DeskService:
             f_ver = verified_hour.get(handle, 0) if hourly else verified_all.get(handle, 0)
             v_done = verifs_hour.get(handle, 0) if hourly else verifs_all.get(handle, 0)
             c_sub = (
-                len(cleared_task_ids_hour.get(handle, ()))
+                cleared_counts_hour.get(handle, 0)
                 if hourly
-                else len(cleared_task_ids_all.get(handle, ()))
+                else cleared_counts_all.get(handle, 0)
             )
             all_pts = se_all.get(handle, 0)
             all_score = all_pts if all_pts > 0 else tasks_all.get(handle, 0)
@@ -2900,6 +3177,7 @@ class DeskService:
         findings: list[dict[str, Any]],
         cleared_findings_count: int,
         counts: dict[str, int],
+        pending_cache_writes: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         methodology_code = str(mission_row["methodology_code"] or "").strip()
         # Counted over every task of the project in SQL: the listed tasks can be a first page only.
@@ -2939,16 +3217,54 @@ class DeskService:
                 "FROM tasks WHERE mission_id = ? AND methodology_code = 'W1' AND status = 'completed'",
                 (mid,),
             ).fetchone()
+            latest_ts = str(latest_row["ts"] if latest_row else "")
             cache_key = (
                 mid,
                 completed_cnt,
                 total_cnt,
-                str(latest_row["ts"] if latest_row else ""),
+                latest_ts,
             )
             with self._w1_cache_lock:
                 cached_entry = self._w1_visual_cache.get(mid)
                 if cached_entry is not None and cached_entry[0] == cache_key:
                     summary["website_audit"] = dict(cached_entry[1])
+                    return summary
+
+            # Check durable summary_cache (~8 KB) before pulling all completed W1 output_json blobs (~25-30 MB).
+            db_cache_key = f"w1_visual:{mid}"
+            version_stamp = f"{W1_MATRIX_VERSION}:{completed_cnt}:{total_cnt}:{latest_ts}"
+            try:
+                cached_row = conn.execute(
+                    "SELECT version_stamp, payload_json FROM summary_cache WHERE cache_key = ?",
+                    (db_cache_key,),
+                ).fetchone()
+            except Exception:
+                cached_row = None
+                if self.db.is_postgres:
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+            if cached_row is not None and str(cached_row["version_stamp"]) == version_stamp:
+                compact = loads_json(cached_row["payload_json"], None)
+                if (
+                    isinstance(compact, dict)
+                    and isinstance(compact.get("cp_counts"), dict)
+                    and isinstance(compact.get("reasons"), dict)
+                    and isinstance(compact.get("scoped_counts"), dict)
+                ):
+                    w1_payload = build_website_audit_visual_payload(
+                        batches_done=completed_cnt,
+                        batches_total=total_cnt,
+                        hosts_observed=int(compact.get("hosts_observed", 0)),
+                        hosts_unassessable=int(compact.get("hosts_unassessable", 0)),
+                        cp_counts=compact["cp_counts"],
+                        reasons=compact["reasons"],
+                        scoped_counts=compact["scoped_counts"],
+                    )
+                    with self._w1_cache_lock:
+                        self._w1_visual_cache[mid] = (cache_key, w1_payload)
+                    summary["website_audit"] = dict(w1_payload)
                     return summary
 
             hosts_observed = 0
@@ -3001,6 +3317,7 @@ class DeskService:
                         if val in W1_VALID_CHECK_STATES:
                             cp_counts[key][val] += 1
 
+            scoped_counts = compute_scoped_w1_counts(host_observations)
             w1_payload = build_website_audit_visual_payload(
                 batches_done=completed_cnt,
                 batches_total=total_cnt,
@@ -3008,10 +3325,24 @@ class DeskService:
                 hosts_unassessable=hosts_unassessable,
                 cp_counts=cp_counts,
                 reasons=reasons,
-                host_observations=host_observations,
+                scoped_counts=scoped_counts,
             )
             with self._w1_cache_lock:
                 self._w1_visual_cache[mid] = (cache_key, w1_payload)
+            if pending_cache_writes is not None:
+                pending_cache_writes.append(
+                    (
+                        db_cache_key,
+                        version_stamp,
+                        {
+                            "hosts_observed": hosts_observed,
+                            "hosts_unassessable": hosts_unassessable,
+                            "cp_counts": cp_counts,
+                            "reasons": reasons,
+                            "scoped_counts": scoped_counts,
+                        },
+                    )
+                )
             summary["website_audit"] = dict(w1_payload)
             return summary
 
@@ -3192,9 +3523,9 @@ class DeskService:
                 sources = [self._serialize_source(r) for r in s_rows]
 
             f_rows = conn.execute(
-                "SELECT * FROM findings WHERE mission_id = ? "
+                f"SELECT {_FINDING_SUMMARY_COLUMNS} FROM findings WHERE mission_id = ? "
                 "AND COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
-                "ORDER BY COALESCE(verified_at, created_at) DESC LIMIT 200",
+                "ORDER BY COALESCE(verified_at, created_at) DESC LIMIT 50",
                 (mid,),
             ).fetchall()
             f_ids = [str(r["id"]) for r in f_rows]
@@ -3220,9 +3551,15 @@ class DeskService:
 
             all_tasks = primary_total + pv_total
             truncated = all_tasks > MAX_PROJECT_TASKS_LISTED
+            m_code = str(row["methodology_code"] or "").strip()
+            task_cols = (
+                _TASK_LIST_COLUMNS_PG_COMPACT
+                if (self.db.is_postgres and m_code in ("W1", UNION_BUDGET_METHODOLOGY))
+                else _TASK_LIST_COLUMNS
+            )
             t_rows = conn.execute(
                 f"""
-                SELECT {_TASK_LIST_COLUMNS}
+                SELECT {task_cols}
                 FROM tasks t WHERE t.mission_id = ?
                   AND t.status != 'retired'
                   AND {_TASK_NOT_QUARANTINED}
@@ -3237,6 +3574,7 @@ class DeskService:
             tasks = [_public_task(t, t_payload) for t, t_payload in parsed_tasks]
 
             contributors_all, contributors_hour = self._compute_mission_contributors(conn, str(mid))
+            pending_cache_writes: list[tuple[str, str, dict[str, Any]]] = []
             visual_summary = self._build_visual_summary(
                 conn,
                 mission_row=row,
@@ -3252,7 +3590,27 @@ class DeskService:
                     "checks_total": pv_total,
                     "checks_done": pv_done,
                 },
+                pending_cache_writes=pending_cache_writes,
             )
+
+        if pending_cache_writes and not self.db.read_only:
+            try:
+                now_iso = utc_now_iso()
+                with self.db.transaction() as wconn:
+                    for ckey, cstamp, cpayload in pending_cache_writes:
+                        wconn.execute(
+                            """
+                            INSERT INTO summary_cache (cache_key, version_stamp, payload_json, updated_at)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(cache_key) DO UPDATE SET
+                                version_stamp = excluded.version_stamp,
+                                payload_json = excluded.payload_json,
+                                updated_at = excluded.updated_at
+                            """,
+                            (ckey, cstamp, dumps_json(cpayload), now_iso),
+                        )
+            except Exception:
+                pass
 
         return {
             **mission,
@@ -3332,9 +3690,10 @@ class DeskService:
             if wanted[status_filter] is not None:
                 page_clauses.append("t.status = ?")
                 page_params.append(wanted[status_filter])
+            task_cols = _TASK_LIST_COLUMNS_PG_COMPACT if self.db.is_postgres else _TASK_LIST_COLUMNS
             rows = conn.execute(
                 f"""
-                SELECT {_TASK_LIST_COLUMNS}
+                SELECT {task_cols}
                 FROM tasks t WHERE {' AND '.join(page_clauses)}
                 ORDER BY CASE t.status WHEN 'queued' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, t.id ASC
                 LIMIT ? OFFSET ?
@@ -3498,10 +3857,10 @@ class DeskService:
         methodology: str | None = None,
         mission: str | None = None,
         search: str | None = None,
-        limit: int = 100,
+        limit: int = 24,
         offset: int = 0,
     ) -> dict[str, Any]:
-        eff_limit = max(1, min(int(limit), 500))
+        eff_limit = max(1, min(int(limit), 100))
         eff_offset = max(0, min(int(offset), 50_000))
         clauses: list[str] = []
         params: list[Any] = []
@@ -3550,7 +3909,7 @@ class DeskService:
             total = int(conn.execute(f"SELECT COUNT(*) AS c FROM findings {where_sql}", params).fetchone()["c"])
             rows = conn.execute(
                 f"""
-                SELECT * FROM findings {where_sql}
+                SELECT {_FINDING_SUMMARY_COLUMNS} FROM findings {where_sql}
                 ORDER BY
                     CASE status
                         WHEN 'verified' THEN 0
@@ -4368,14 +4727,56 @@ class DeskService:
                 edges.append({"source": source, "target": target, "relation": relation})
 
         with self.db.read() as conn:
-            missions = self._fetch_missions(conn)
+            mission_rows = conn.execute(
+                """
+                SELECT id, slug, title, pillar, methodology_code, jurisdiction,
+                       ministry_or_authority, source_ids_json, data_mode, status,
+                       total_tasks, completed_tasks, verified_findings_count,
+                       monetary_audited_inr, financial_quantity_type
+                FROM missions
+                WHERE status != 'archived'
+                ORDER BY priority ASC, id ASC
+                """
+            ).fetchall()
+            mission_unique_inr, _ = self._compute_coverage_summary(conn, mission_rows)
+            missions = [
+                {
+                    "id": str(r["id"]),
+                    "slug": str(r["slug"]),
+                    "title": str(r["title"]),
+                    "pillar": str(r["pillar"]),
+                    "methodology_code": str(r["methodology_code"]),
+                    "jurisdiction": str(r["jurisdiction"]),
+                    "ministry_or_authority": str(r["ministry_or_authority"]),
+                    "source_ids": loads_json(r["source_ids_json"], []),
+                    "status": str(r["status"]),
+                    "is_demo_sample": str(r["data_mode"] or "") == "demo_sample",
+                    "progress_pct": round(
+                        (int(r["completed_tasks"] or 0) / int(r["total_tasks"] or 1)) * 100.0, 1
+                    )
+                    if int(r["total_tasks"] or 0) > 0
+                    else 0.0,
+                    "verified_findings_count": int(r["verified_findings_count"] or 0),
+                    "unique_coverage_inr_cr": _inr_to_cr(mission_unique_inr.get(str(r["id"]), 0.0)),
+                    "financial_quantity_type": str(_row_get(r, "financial_quantity_type", "") or ""),
+                }
+                for r in mission_rows
+            ]
             sources_by_id = {
                 r["id"]: self._serialize_source(r)
                 for r in conn.execute("SELECT * FROM public_sources").fetchall()
             }
             finding_rows = conn.execute(
-                "SELECT * FROM findings WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined' "
-                "ORDER BY COALESCE(verified_at, created_at) DESC LIMIT 40"
+                """
+                SELECT id, mission_id, mission_slug, pillar, artifact_id, source_id,
+                       title, methodology_code, entity_name, monetary_exposure_inr,
+                       severity, submitted_by, status, editorial_status, confirm_count,
+                       is_demo_sample, provenance_json
+                FROM findings
+                WHERE COALESCE(quarantined, 0) = 0 AND status != 'quarantined'
+                ORDER BY COALESCE(verified_at, created_at) DESC
+                LIMIT 40
+                """
             ).fetchall()
             art_ids = sorted({str(r["artifact_id"]) for r in finding_rows if r["artifact_id"]})
             artifact_sources: dict[str, str | None] = {}
@@ -4456,48 +4857,51 @@ class DeskService:
 
         active_mission_ids = {m["id"] for m in missions}
         for f_row in finding_rows:
-            if _row_get(f_row, "mission_id") not in active_mission_ids:
+            if str(_row_get(f_row, "mission_id") or "") not in active_mission_ids:
                 continue  # findings of archived missions stay on the record, off the live map
-            f = self._serialize_finding(f_row)
-            f_node_id = f"finding:{f['id']}"
-            submitted_by = str(f["submitted_by"] or "").strip()
-            is_community = bool(submitted_by)
+            fid = str(f_row["id"])
+            f_node_id = f"finding:{fid}"
+            submitted_by = str(f_row["submitted_by"] or "").strip()
+            exposure_cr = _inr_to_cr(_safe_finite_float(f_row["monetary_exposure_inr"], 0.0))
+            editorial_status = str(_row_get(f_row, "editorial_status", "none") or "none")
             add_node(
                 {
                     "id": f_node_id,
                     "type": "finding",
-                    "label": f["title"],
-                    "status": f["status"],
-                    "pillar": f["pillar"],
-                    "value_inr_cr": f["monetary_exposure_inr_cr"],
+                    "label": str(f_row["title"] or ""),
+                    "status": str(f_row["status"] or ""),
+                    "pillar": str(f_row["pillar"] or ""),
+                    "value_inr_cr": exposure_cr,
                     "meta": {
-                        "finding_id": f["id"],
-                        "mission_slug": f["mission_slug"],
+                        "finding_id": fid,
+                        "mission_slug": str(f_row["mission_slug"] or ""),
                         "submitted_by": submitted_by,
-                        "is_community": is_community,
-                        "monetary_exposure_inr_cr": f["monetary_exposure_inr_cr"],
-                        "methodology_code": f["methodology_code"],
-                        "entity_name": f["entity_name"],
-                        "severity": f["severity"],
-                        "confirm_count": f["confirm_count"],
-                        "editorial_status": f["editorial_status"],
-                        "is_demo_sample": f["is_demo_sample"],
+                        "is_community": bool(submitted_by),
+                        "monetary_exposure_inr_cr": exposure_cr,
+                        "methodology_code": str(f_row["methodology_code"] or ""),
+                        "entity_name": str(f_row["entity_name"] or ""),
+                        "severity": str(f_row["severity"] or ""),
+                        "confirm_count": int(f_row["confirm_count"] or 0),
+                        "editorial_status": editorial_status,
+                        "is_demo_sample": bool(f_row["is_demo_sample"]),
                     },
                 }
             )
-            add_edge(f"mission:{f['mission_slug']}", f_node_id, "surfaced")
+            add_edge(f"mission:{f_row['mission_slug']}", f_node_id, "surfaced")
 
             # Link finding ONLY to its verified evidence source(s) — never blindly mission.source_ids[0]
             linked_source_ids: list[str] = []
-            direct_sid = f.get("source_id")
+            direct_sid = _row_get(f_row, "source_id", None)
             if direct_sid and direct_sid in sources_by_id:
                 linked_source_ids.append(str(direct_sid))
-            art_id = f.get("artifact_id")
+            art_id = _row_get(f_row, "artifact_id", None)
             if art_id:
                 art_sid = artifact_sources.get(str(art_id))
                 if art_sid and art_sid in sources_by_id and art_sid not in linked_source_ids:
                     linked_source_ids.append(str(art_sid))
-            prov = f.get("provenance") if isinstance(f.get("provenance"), dict) else {}
+            prov = loads_json(_row_get(f_row, "provenance_json", "{}"), {})
+            if not isinstance(prov, dict):
+                prov = {}
             sec_sid = prov.get("secondary_source_id")
             if sec_sid and sec_sid in sources_by_id and sec_sid not in linked_source_ids:
                 linked_source_ids.append(str(sec_sid))
@@ -4533,7 +4937,7 @@ class DeskService:
             activity_telemetry = self._fetch_activity_telemetry_maps(conn)
             total_agents = int(conn.execute("SELECT COUNT(*) AS c FROM agents").fetchone()["c"])
             agent_rows = conn.execute(
-                "SELECT * FROM agents ORDER BY last_heartbeat_at DESC, compute_score DESC LIMIT 200"
+                "SELECT * FROM agents ORDER BY last_heartbeat_at DESC, compute_score DESC LIMIT 50"
             ).fetchall()
             agents = [
                 self._serialize_agent(
@@ -4560,19 +4964,23 @@ class DeskService:
                          AND (COALESCE(f.quarantined, 0) = 1 OR f.status = 'quarantined')
                    )
                 ORDER BY w.created_at DESC
-                LIMIT 40
+                LIMIT 20
                 """
             ).fetchall()
             whispers = [self._serialize_whisper(r) for r in whisper_rows]
 
             verif_rows = conn.execute(
                 """
-                SELECT pv.*, f.title AS finding_title, f.methodology_code, f.status AS finding_status
+                SELECT pv.id, pv.finding_id, pv.verifier_node_id, pv.contributor_id,
+                       pv.verifier_handle, pv.coding_agent, pv.coding_agent_model,
+                       pv.provider, pv.model_id, pv.review_type, pv.verdict,
+                       pv.checks_json, pv.confidence, pv.notes, pv.created_at,
+                       f.title AS finding_title, f.methodology_code, f.status AS finding_status
                 FROM peer_verifications pv
                 JOIN findings f ON f.id = pv.finding_id
                 WHERE COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined'
                 ORDER BY pv.created_at DESC
-                LIMIT 20
+                LIMIT 10
                 """
             ).fetchall()
             recent_verifications = [
@@ -4638,8 +5046,9 @@ class DeskService:
                     t.id,
                     t.mission_slug,
                     t.task_type,
+                    t.methodology_code,
                     t.title,
-                    t.payload_json,
+                    CASE WHEN t.task_type = 'peer_verify' THEN t.payload_json ELSE '' END AS payload_json,
                     t.target_finding_id,
                     t.claimed_by_agent_id,
                     t.claimed_by_handle,
@@ -4673,7 +5082,12 @@ class DeskService:
                 if not isinstance(payload_obj, dict):
                     payload_obj = {}
                 t_type = str(lr["task_type"] or "").strip().lower()
-                role_name = task_role(t_type, payload_obj)["name"]
+                role_payload = (
+                    payload_obj
+                    if t_type == "peer_verify"
+                    else {"methodology_code": str(_row_get(lr, "methodology_code", "") or "")}
+                )
+                role_name = task_role(t_type, role_payload)["name"]
                 lease_info = {
                     "task_id": str(lr["id"]),
                     "task_title": "Withheld pending privacy/legal review" if is_quar else str(lr["title"] or ""),
@@ -6645,7 +7059,11 @@ class DeskService:
         if not isinstance(usage, dict):
             usage = {}
         usage[layer] = counts
-        conn.execute("UPDATE tasks SET usage_json = ? WHERE id = ?", (dumps_json(usage), task["id"]))
+        spent = tokens_used(usage)
+        conn.execute(
+            "UPDATE tasks SET usage_json = ?, reported_tokens = ? WHERE id = ?",
+            (dumps_json(usage), int(spent) if spent is not None else None, task["id"]),
+        )
 
     def report_usage(
         self, *, task_ids: list[str], usage: UsageReport, token: str | None
@@ -6680,51 +7098,84 @@ class DeskService:
     def _token_summaries(
         self, conn: Any, mission_rows: list[Any]
     ) -> dict[str, dict[str, Any]]:
-        """Aggregate project token estimates and reported usage in SQL without scanning all task rows into Python."""
+        """Aggregate project token estimates and reported usage in a single SQL query without pulling usage_json rows."""
         mission_ids = [str(r["id"]) for r in mission_rows]
         if not mission_ids:
             return {}
         ph = ",".join("?" for _ in mission_ids)
         agg_by_mid: dict[str, dict[str, int]] = {}
-        for r in conn.execute(
-            f"""
-            SELECT mission_id,
-                   SUM(CASE WHEN estimated_tokens IS NOT NULL THEN 1 ELSE 0 END) AS estimated_cnt,
-                   COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL THEN estimated_tokens ELSE 0 END), 0) AS total_est,
-                   COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL AND status != 'completed' THEN estimated_tokens ELSE 0 END), 0) AS remaining_est,
-                   SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_cnt
-            FROM tasks
-            WHERE mission_id IN ({ph}) AND status != 'retired'
-            GROUP BY mission_id
-            """,
-            mission_ids,
-        ).fetchall():
-            agg_by_mid[str(r["mission_id"])] = {
+        used_by_mid: dict[str, int] = {}
+        reported_by_mid: dict[str, int] = {}
+        try:
+            agg_rows = conn.execute(
+                f"""
+                SELECT mission_id,
+                       SUM(CASE WHEN estimated_tokens IS NOT NULL THEN 1 ELSE 0 END) AS estimated_cnt,
+                       COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL THEN estimated_tokens ELSE 0 END), 0) AS total_est,
+                       COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL AND status != 'completed' THEN estimated_tokens ELSE 0 END), 0) AS remaining_est,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_cnt,
+                       SUM(CASE WHEN status = 'completed' AND reported_tokens IS NOT NULL THEN 1 ELSE 0 END) AS reported_cnt,
+                       COALESCE(SUM(CASE WHEN status = 'completed' AND reported_tokens IS NOT NULL THEN reported_tokens ELSE 0 END), 0) AS used_total
+                FROM tasks
+                WHERE mission_id IN ({ph}) AND status != 'retired'
+                GROUP BY mission_id
+                """,
+                mission_ids,
+            ).fetchall()
+            has_reported_col = True
+        except Exception:
+            if self.db.is_postgres:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            agg_rows = conn.execute(
+                f"""
+                SELECT mission_id,
+                       SUM(CASE WHEN estimated_tokens IS NOT NULL THEN 1 ELSE 0 END) AS estimated_cnt,
+                       COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL THEN estimated_tokens ELSE 0 END), 0) AS total_est,
+                       COALESCE(SUM(CASE WHEN estimated_tokens IS NOT NULL AND status != 'completed' THEN estimated_tokens ELSE 0 END), 0) AS remaining_est,
+                       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_cnt
+                FROM tasks
+                WHERE mission_id IN ({ph}) AND status != 'retired'
+                GROUP BY mission_id
+                """,
+                mission_ids,
+            ).fetchall()
+            has_reported_col = False
+
+        for r in agg_rows:
+            mid = str(r["mission_id"])
+            agg_by_mid[mid] = {
                 "estimated": int(r["estimated_cnt"] or 0),
                 "total": int(r["total_est"] or 0),
                 "remaining": int(r["remaining_est"] or 0),
                 "done": int(r["completed_cnt"] or 0),
             }
+            if has_reported_col:
+                rep_n = int(r["reported_cnt"] or 0)
+                if rep_n > 0:
+                    reported_by_mid[mid] = rep_n
+                    used_by_mid[mid] = int(r["used_total"] or 0)
 
-        used_by_mid: dict[str, int] = {}
-        reported_by_mid: dict[str, int] = {}
-        for r in conn.execute(
-            f"""
-            SELECT mission_id, usage_json
-            FROM tasks
-            WHERE mission_id IN ({ph})
-              AND status = 'completed'
-              AND usage_json IS NOT NULL
-              AND usage_json != ''
-              AND usage_json != '{{}}'
-            """,
-            mission_ids,
-        ).fetchall():
-            spent = tokens_used(loads_json(r["usage_json"], {}))
-            if spent is not None:
-                mid = str(r["mission_id"])
-                reported_by_mid[mid] = reported_by_mid.get(mid, 0) + 1
-                used_by_mid[mid] = used_by_mid.get(mid, 0) + int(spent)
+        if not has_reported_col:
+            for r in conn.execute(
+                f"""
+                SELECT mission_id, usage_json
+                FROM tasks
+                WHERE mission_id IN ({ph})
+                  AND status = 'completed'
+                  AND usage_json IS NOT NULL
+                  AND usage_json != ''
+                  AND usage_json != '{{}}'
+                """,
+                mission_ids,
+            ).fetchall():
+                spent = tokens_used(loads_json(r["usage_json"], {}))
+                if spent is not None:
+                    mid = str(r["mission_id"])
+                    reported_by_mid[mid] = reported_by_mid.get(mid, 0) + 1
+                    used_by_mid[mid] = used_by_mid.get(mid, 0) + int(spent)
 
         out: dict[str, dict[str, Any]] = {}
         for row in mission_rows:

@@ -491,9 +491,9 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         p3_0 = client.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}").json()
         assert p3_0["project_code"] == "P3"
         assert p3_0["total_tasks"] == 10000
-        # A project this large lists only its first 200 tasks; the counts still cover all of them.
-        assert len(p3_0["tasks"]) == 200
-        assert p3_0["tasks_listed"] == 200
+        # A project this large lists only its first 50 tasks; the counts still cover all of them.
+        assert len(p3_0["tasks"]) == 50
+        assert p3_0["tasks_listed"] == 50
         assert p3_0["tasks_truncated"] is True
         assert all("depends_on" not in t for t in p3_0["tasks"])
         vs_p3 = p3_0["visual_summary"]

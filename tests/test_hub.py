@@ -772,7 +772,9 @@ def test_postgres_sql_translation_and_vercel_defaults(
         assert "https://aiwatchdogs.in" in join_sh.text
         assert "http://aiwatchdogs.in" not in join_sh.text
 
-        # 5. SSE stream closes cleanly after bounded max_duration without hanging
+        # 5. SSE stream is disabled on Vercel by default (protects DB transfer/compute) and closes cleanly when enabled
+        assert tc.get("/api/stream").status_code == 503
+        monkeypatch.setenv("AIWATCHDOGS_ENABLE_SSE", "1")
         with tc.stream("GET", "/api/stream?keepalive=0.5&max_duration=0.6") as resp:
             assert resp.status_code == 200
             assert "text/event-stream" in resp.headers["content-type"]

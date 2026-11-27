@@ -90,7 +90,6 @@ export function HomePage({
 
   const [graph, setGraph] = useState<GraphData | null>(null);
   const [graphLoading, setGraphLoading] = useState(true);
-  const [leaderboard, setLeaderboard] = useState<AgentRecord[]>([]);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [prevSeen, setPrevSeen] = useState<SeenSnapshot | null>(null);
 
@@ -141,22 +140,7 @@ export function HomePage({
     return () => {
       cancelled = true;
     };
-  }, [refreshTick]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .getContributors('all')
-      .then((list) => {
-        if (!cancelled) setLeaderboard(list);
-      })
-      .catch(() => {
-        if (!cancelled && head?.top_contributors) setLeaderboard(head.top_contributors);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [refreshTick, head?.top_contributors]);
+  }, []);
 
   const isLoadingHead = loading && !head;
   const stats = head?.stats;
@@ -190,7 +174,7 @@ export function HomePage({
     return s;
   }, [activeAgents, swarmLive?.active_nodes]);
   const topContribs = useMemo(() => {
-    const base = leaderboard.length > 0 ? leaderboard : head?.top_contributors ?? [];
+    const base = head?.top_contributors ?? [];
     const seen = new Set<string>();
     const merged: AgentRecord[] = [];
     for (const agent of base) {
@@ -222,7 +206,7 @@ export function HomePage({
       });
     }
     return merged;
-  }, [leaderboard, head?.top_contributors, swarmLive?.active_nodes]);
+  }, [head?.top_contributors, swarmLive?.active_nodes]);
   const canonicalJoinPrompt = buildCanonicalJoinPrompt();
 
   const effectiveProgress = useMemo<LiveSwarmProgress | null>(() => {

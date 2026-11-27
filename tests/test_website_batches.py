@@ -29,7 +29,10 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
     with TestClient(create_app(db_path=tmp_path / "hub.db", seed=True)) as client:
         public_url = f"/api/missions/{SLUG}"
         dashboard = client.get(public_url).json()
-        assert len({task["id"] for task in dashboard["tasks"]}) == 1000
+        assert dashboard["total_tasks"] == 1000
+        assert len({task["id"] for task in dashboard["tasks"]}) == 50
+        assert dashboard["tasks_listed"] == 50
+        assert dashboard["tasks_truncated"] is True
         assert all(task["status"] == "queued" for task in dashboard["tasks"])
 
         # Matrix endpoint returns all 159 checkpoints, 8 sections, 46 W1 checks
@@ -60,8 +63,8 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
 
         union_budget = client.get("/api/missions/union-budget-unspent-funds").json()
         assert union_budget["total_tasks"] == 10000
-        assert len({task["id"] for task in union_budget["tasks"]}) == 200
-        assert union_budget["tasks_listed"] == 200
+        assert len({task["id"] for task in union_budget["tasks"]}) == 50
+        assert union_budget["tasks_listed"] == 50
         assert union_budget["tasks_truncated"] is True
         assert union_budget["visual_summary"]["status_counts"]["total"] == 10000
         assert client.get("/api/missions/independent-india-inflation").status_code == 404
@@ -140,8 +143,13 @@ def test_website_batch_from_public_queue_to_public_report(tmp_path, monkeypatch)
             assert row["checks"]["rti_link"] == row["checks"]["pio_faa_disclosure"] == "observed"
             assert row["checks"]["postal_address"] == "not_observed"
         dashboard = client.get(public_url).json()
-        assert len(dashboard["tasks"]) == 1000
-        assert sum(task["status"] == "completed" for task in dashboard["tasks"]) == 1
+        assert dashboard["total_tasks"] == 1000
+        assert dashboard["completed_tasks"] == 1
+        assert len(dashboard["tasks"]) == 50
+        assert dashboard["tasks_truncated"] is True
+        completed_page = client.get(f"{public_url}/tasks?status=completed").json()
+        assert completed_page["total"] == 1
+        assert len(completed_page["tasks"]) == 1
 
         # W1 website observation batch awards merit points on both all-time and hourly leaderboards
         contribs_all = client.get("/api/contributors?window=all").json()
