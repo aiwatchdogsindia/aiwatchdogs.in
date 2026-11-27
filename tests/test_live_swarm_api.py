@@ -404,8 +404,8 @@ def test_swarm_live_recent_joins_ordering_idle_expired_lease_and_revoked(tmp_pat
 
         snap = client.get("/api/swarm/live").json()
 
-        # total_agents includes all rows; revoked and stale-heartbeat agents excluded from working_now
-        assert snap["total_agents"] == 5
+        # total_agents excludes revoked rows; revoked and stale-heartbeat agents excluded from working_now
+        assert snap["total_agents"] == 4
         assert snap["active_leases_count"] == 1  # only non-expired lease counts
         assert snap["working_now"] == 1  # ONLY newest-recent (45s hb); stalled mid-lease-holder excluded!
 

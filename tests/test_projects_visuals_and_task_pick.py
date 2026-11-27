@@ -666,7 +666,8 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         # ---- Assert W1 detail: aggregated checkpoints, reasons, project-scoped leaderboard ----
         w1_after = client.get("/api/missions/gov-in-public-information").json()
         assert [c["handle"] for c in w1_after["contributors_all"]] == ["w1-observer-one"]
-        assert w1_after["contributors_all"][0]["score"] == 1
+        assert w1_after["contributors_all"][0]["score"] == 10
+        assert w1_after["contributors_all"][0]["hourly_points_36h"][-1] == 10
         assert w1_after["contributors_all"][0]["tasks_completed"] == 1
         assert [c["handle"] for c in w1_after["contributors_hour"]] == ["w1-observer-one"]
 
