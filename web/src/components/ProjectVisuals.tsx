@@ -23,11 +23,13 @@ import type {
   MissionItem,
   MissionTask,
   ProjectVisualSummary,
+  VisualParliamentHouseCounts,
+  VisualParliamentMinistry,
   VisualWebsiteCheckpoint,
   VisualWebsiteMatrixItem,
   WebsiteVerificationMode,
 } from '../types';
-import { formatInrCr, safeExternalUrl } from '../utils';
+import { formatAssuranceStatus, formatInrCr, safeExternalUrl } from '../utils';
 
 export type { ProjectVisualSummary };
 
@@ -944,6 +946,16 @@ export function ProjectResultsVisualizer({
   if (code === 'P5') {
     return (
       <OneTeacherFiveGradesVisualizer
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P6') {
+    return (
+      <ParliamentsToDoListVisualizer
         mission={mission}
         visualSummary={visualSummary}
         onSelectFinding={onSelectFinding}
@@ -3232,6 +3244,696 @@ function OneTeacherFiveGradesVisualizer({
         ) : (
           <div className="pv-empty-box">
             Concentrations appear here as agents verify States &amp; UTs across 2023-24 to 2025-26 UDISE+ reports.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3F. P6 Parliament's To-Do List: ministerial assurances & follow-up answers ---------- */
+
+const P6_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/parliaments-to-do-list/METHODOLOGY.md';
+export const P6_DEFAULT_HOOK = 'A minister promised Parliament an answer. Did it ever get one?';
+const P6_INITIAL_MINISTRIES = 12;
+
+export function p6SignalLabel(signal: string): string {
+  if (signal === 'overdue_pending_assurance') return 'Pending past 90-day norm';
+  if (signal === 'partly_implemented_assurance') return 'Partly implemented';
+  if (signal === 'dropped_without_fulfillment') return 'Dropped without fulfillment';
+  if (signal === 'delayed_or_unreadable_followup') return 'Delayed or unreadable follow-up';
+  return signal ? signal.replace(/_/g, ' ') : 'Assurance lead';
+}
+
+export function p6NormalizeRecordedStatuses(byStatus?: Record<string, number> | null): {
+  pending: number;
+  fulfilled: number;
+  partly: number;
+  dropped: number;
+  other: number;
+  total: number;
+} {
+  let pending = 0;
+  let fulfilled = 0;
+  let partly = 0;
+  let dropped = 0;
+  let other = 0;
+
+  for (const [rawKey, rawVal] of Object.entries(byStatus || {})) {
+    const n = Math.max(0, Number(rawVal) || 0);
+    if (!n) continue;
+    const key = rawKey.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (key === 'pending') pending += n;
+    else if (key === 'fully_implemented' || key === 'fulfilled' || key === 'fimp' || key === 'implemented') {
+      fulfilled += n;
+    } else if (key === 'partly_implemented' || key === 'partially_implemented' || key === 'partly_fulfilled') {
+      partly += n;
+    } else if (key === 'dropped') dropped += n;
+    else other += n;
+  }
+
+  return {
+    pending,
+    fulfilled,
+    partly,
+    dropped,
+    other,
+    total: pending + fulfilled + partly + dropped + other,
+  };
+}
+
+export function p6SummarizeHouses(
+  byHouse?: Record<string, VisualParliamentHouseCounts | number> | null,
+): { lokSabha: number; rajyaSabha: number } {
+  let lokSabha = 0;
+  let rajyaSabha = 0;
+  for (const [rawKey, val] of Object.entries(byHouse || {})) {
+    const count =
+      typeof val === 'number'
+        ? Math.max(0, val)
+        : val && typeof val === 'object'
+          ? Math.max(0, Number(val.tasks) || 0)
+          : 0;
+    const k = rawKey.trim().toLowerCase().replace(/[\s_-]+/g, '');
+    if (k === 'loksabha' || k === 'ls') lokSabha += count;
+    else if (k === 'rajyasabha' || k === 'rs') rajyaSabha += count;
+  }
+  return { lokSabha, rajyaSabha };
+}
+
+export function p6FilterMinistries(
+  ministries: VisualParliamentMinistry[],
+  query: string,
+  statusFilter: 'all' | 'pending' | 'fulfilled' = 'all',
+): VisualParliamentMinistry[] {
+  const q = query.trim().toLowerCase();
+  return ministries.filter((m) => {
+    if (statusFilter === 'pending' && (m.pending_count ?? 0) <= 0) return false;
+    if (statusFilter === 'fulfilled' && (m.fulfilled_count ?? 0) <= 0) return false;
+    if (!q) return true;
+    return (
+      m.ministry.toLowerCase().includes(q) ||
+      (m.ministry_key || '').toLowerCase().includes(q)
+    );
+  });
+}
+
+function p6ShortText(text?: string | null, maxLen = 155): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+function p6HouseShort(house?: string | null): string {
+  const h = (house || '').trim().toLowerCase();
+  if (h === 'lok sabha' || h === 'ls') return 'LS';
+  if (h === 'rajya sabha' || h === 'rs') return 'RS';
+  return house || '—';
+}
+
+function ParliamentsToDoListVisualizer({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p6 = visualSummary?.parliaments_to_do_list;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [ministryQuery, setMinistryQuery] = useState('');
+  const [ministryStatusFilter, setMinistryStatusFilter] = useState<'all' | 'pending' | 'fulfilled'>('all');
+  const [showAllMinistries, setShowAllMinistries] = useState(false);
+
+  const hook = p6?.hook?.trim() || P6_DEFAULT_HOOK;
+  const ministries = p6?.ministries ?? [];
+  const topLeads = p6?.top_leads ?? [];
+  const anchor = p6?.anchor_case ?? null;
+  const leads = p6?.leads ?? 0;
+  const verified = p6?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p6?.peer_review ?? mission.peer_review_count ?? 0;
+  const totalTasks = p6?.total_tasks ?? mission.total_tasks ?? 0;
+  const ministriesCovered = p6?.ministries_covered ?? ministries.length;
+  const documentsUrl = p6?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p6?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const statusTotals = useMemo(
+    () => p6NormalizeRecordedStatuses(p6?.by_recorded_status),
+    [p6?.by_recorded_status],
+  );
+  const houseTotals = useMemo(() => p6SummarizeHouses(p6?.by_house), [p6?.by_house]);
+
+  const filteredMinistries = useMemo(
+    () => p6FilterMinistries(ministries, ministryQuery, ministryStatusFilter),
+    [ministries, ministryQuery, ministryStatusFilter],
+  );
+  const visibleMinistries =
+    showAllMinistries || ministryQuery.trim().length > 0 || ministryStatusFilter !== 'all'
+      ? filteredMinistries
+      : filteredMinistries.slice(0, P6_INITIAL_MINISTRIES);
+
+  const anchorStatus = anchor ? formatAssuranceStatus(anchor.recorded_status) : null;
+  const anchorPrimaryUrl = safeExternalUrl(anchor?.source_url);
+  const anchorSecondaryUrl = safeExternalUrl(anchor?.secondary_url);
+
+  const statusDenominator = statusTotals.total || totalTasks;
+  const pendingPct = calcPct(statusTotals.pending, statusDenominator);
+  const partlyPct = calcPct(statusTotals.partly, statusDenominator);
+  const fulfilledPct = calcPct(statusTotals.fulfilled, statusDenominator);
+  const droppedPct = calcPct(statusTotals.dropped, statusDenominator);
+
+  return (
+    <section className="card card-pad pv-results" aria-label="Parliament's To-Do List results">
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Parliament&rsquo;s To-Do List</h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">{fmtCount(totalTasks)} assurances</span>
+          {ministriesCovered > 0 ? (
+            <span className="tag-mono">{fmtCount(ministriesCovered)} ministries</span>
+          ) : null}
+          {houseTotals.lokSabha > 0 || houseTotals.rajyaSabha > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(houseTotals.lokSabha)} Lok Sabha · {fmtCount(houseTotals.rajyaSabha)} Rajya Sabha
+            </span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'assurance flagged' : 'assurances flagged'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Recorded status breakdown across the tracked assurances */}
+      {statusTotals.total > 0 ? (
+        <div className="pv-p6-overview">
+          <div className="pv-p6-status-bar-wrap">
+            <div
+              className="pv-p6-status-bar"
+              role="img"
+              aria-label={`Recorded status across ${fmtCount(statusTotals.total)} assurances: ${fmtCount(statusTotals.pending)} pending (${fmtPct(pendingPct)}), ${fmtCount(statusTotals.partly)} partly implemented (${fmtPct(partlyPct)}), ${fmtCount(statusTotals.fulfilled)} fully implemented (${fmtPct(fulfilledPct)}), ${fmtCount(statusTotals.dropped)} dropped (${fmtPct(droppedPct)})`}
+            >
+              {pendingPct > 0 ? (
+                <span
+                  className="pv-p6-seg pv-p6-seg--pending"
+                  style={{ width: `${pendingPct}%` }}
+                  title={`Pending: ${fmtCount(statusTotals.pending)} (${fmtPct(pendingPct)})`}
+                />
+              ) : null}
+              {partlyPct > 0 ? (
+                <span
+                  className="pv-p6-seg pv-p6-seg--partly"
+                  style={{ width: `${partlyPct}%` }}
+                  title={`Partly implemented: ${fmtCount(statusTotals.partly)} (${fmtPct(partlyPct)})`}
+                />
+              ) : null}
+              {fulfilledPct > 0 ? (
+                <span
+                  className="pv-p6-seg pv-p6-seg--fulfilled"
+                  style={{ width: `${fulfilledPct}%` }}
+                  title={`Fully implemented: ${fmtCount(statusTotals.fulfilled)} (${fmtPct(fulfilledPct)})`}
+                />
+              ) : null}
+              {droppedPct > 0 ? (
+                <span
+                  className="pv-p6-seg pv-p6-seg--dropped"
+                  style={{ width: `${droppedPct}%` }}
+                  title={`Dropped: ${fmtCount(statusTotals.dropped)} (${fmtPct(droppedPct)})`}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          <div className="pv-matrix-overview pv-p6-kpis">
+            <div className="pv-overview-tile pv-p6-kpi pv-p6-kpi--pending">
+              <span className="pv-overview-kicker">Pending on Digital Sansad</span>
+              <span className="pv-overview-num tabular">{fmtCount(statusTotals.pending)}</span>
+              <span className="pv-overview-sub tabular">{fmtPct(pendingPct)} of tracked assurances</span>
+            </div>
+            <div className="pv-overview-tile pv-p6-kpi pv-p6-kpi--fulfilled">
+              <span className="pv-overview-kicker">Fully implemented</span>
+              <span className="pv-overview-num tabular">{fmtCount(statusTotals.fulfilled)}</span>
+              <span className="pv-overview-sub tabular">{fmtPct(fulfilledPct)} with follow-up statement</span>
+            </div>
+            <div className="pv-overview-tile pv-p6-kpi pv-p6-kpi--partly">
+              <span className="pv-overview-kicker">Partly implemented</span>
+              <span className="pv-overview-num tabular">{fmtCount(statusTotals.partly)}</span>
+              <span className="pv-overview-sub tabular">{fmtPct(partlyPct)} still awaiting full reply</span>
+            </div>
+            <div className="pv-overview-tile pv-p6-kpi pv-p6-kpi--dropped">
+              <span className="pv-overview-kicker">Dropped</span>
+              <span className="pv-overview-num tabular">{fmtCount(statusTotals.dropped)}</span>
+              <span className="pv-overview-sub tabular">{fmtPct(droppedPct)} closed without fulfillment</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Featured Anchor Case (e.g., Jhunjhunu–Fatehpur pending assurance) */}
+      {anchor ? (
+        <article className="pv-p6-anchor" aria-label="Featured Digital Sansad assurance case">
+          <div className="pv-p6-anchor-head">
+            <div className="pv-p6-anchor-meta">
+              <span className="pv-p6-anchor-eyebrow">Featured case · Digital Sansad</span>
+              <span className="tag-mono">{anchor.house}</span>
+              {anchor.session ? <span className="tag-mono">Session {anchor.session}</span> : null}
+              <span className="tag-mono font-mono">{anchor.assurance_ref}</span>
+              <span className="tag-mono">{anchor.ministry}</span>
+              {anchor.promise_date ? (
+                <span className="tag-mono tabular">Promised {anchor.promise_date}</span>
+              ) : null}
+            </div>
+            {anchorStatus ? (
+              <span className={anchorStatus.chipClass}>
+                {anchorStatus.label}
+                {anchor.days_elapsed != null ? ` · ${fmtCount(anchor.days_elapsed)}d` : ''}
+              </span>
+            ) : null}
+          </div>
+
+          <h3 className="pv-p6-anchor-title">{anchor.subject}</h3>
+          {anchor.member || anchor.minister ? (
+            <p className="pv-p6-anchor-people">
+              {anchor.member ? (
+                <span>
+                  <strong>MP:</strong> {anchor.member}
+                </span>
+              ) : null}
+              {anchor.member && anchor.minister ? <span aria-hidden="true"> · </span> : null}
+              {anchor.minister ? (
+                <span>
+                  <strong>Minister:</strong> {anchor.minister}
+                </span>
+              ) : null}
+            </p>
+          ) : null}
+
+          <div className="pv-p6-anchor-grid">
+            <div className="pv-p6-anchor-col">
+              <div className="pv-p6-anchor-label">01 · Original promise</div>
+              <p className="pv-p6-anchor-text pv-p6-anchor-quote">
+                &ldquo;{anchor.original_promise}&rdquo;
+              </p>
+            </div>
+            <div className="pv-p6-anchor-col">
+              <div className="pv-p6-anchor-label">02 · Recorded status</div>
+              <p className="pv-p6-anchor-text">
+                <strong>{anchorStatus?.label || anchor.recorded_status}</strong>
+                {anchor.days_elapsed != null
+                  ? ` — ${fmtCount(anchor.days_elapsed)} days elapsed since ${anchor.promise_date} (90-day parliamentary norm).`
+                  : '.'}
+              </p>
+            </div>
+            <div className="pv-p6-anchor-col">
+              <div className="pv-p6-anchor-label">03 · What the follow-up answered</div>
+              <p className="pv-p6-anchor-text">{anchor.followup_answer}</p>
+            </div>
+          </div>
+
+          <div className="pv-p6-anchor-actions">
+            {anchor.finding_id && onSelectFinding ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => onSelectFinding(anchor.finding_id!)}
+              >
+                Inspect full dossier
+              </button>
+            ) : onFilterTasks ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => onFilterTasks(anchor.assurance_ref || anchor.ministry)}
+              >
+                Find task in queue
+              </button>
+            ) : null}
+            {anchorPrimaryUrl ? (
+              <a
+                className="inline-link"
+                href={anchorPrimaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Digital Sansad record <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+              </a>
+            ) : null}
+            {anchorSecondaryUrl ? (
+              <a
+                className="inline-link"
+                href={anchorSecondaryUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Question PDF <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+              </a>
+            ) : null}
+          </div>
+        </article>
+      ) : null}
+
+      {/* Ministry breakdown + Methodology guide */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Ministry by ministry ({fmtCount(ministries.length)})</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-p6-dot--pending" aria-hidden="true" /> Pending
+              </span>
+              <span>
+                <i className="pv-dot pv-p6-dot--partly" aria-hidden="true" /> Partly
+              </span>
+              <span>
+                <i className="pv-dot pv-p6-dot--fulfilled" aria-hidden="true" /> Fulfilled
+              </span>
+              <span>
+                <i className="pv-dot pv-p6-dot--dropped" aria-hidden="true" /> Dropped
+              </span>
+            </div>
+          </div>
+
+          {ministries.length > 0 ? (
+            <>
+              <div className="pv-p6-ministry-controls">
+                <div className="pv-p6-search-wrap">
+                  <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                  <input
+                    type="search"
+                    className="input-field pv-p6-search"
+                    value={ministryQuery}
+                    onChange={(e) => setMinistryQuery(e.target.value)}
+                    placeholder={`Filter ${fmtCount(ministries.length)} ministries…`}
+                    aria-label="Filter Union Ministries"
+                  />
+                </div>
+                <div className="pv-p6-filter-pills" role="group" aria-label="Filter ministries by assurance status">
+                  {(['all', 'pending', 'fulfilled'] as const).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      className={`btn btn-xs ${ministryStatusFilter === f ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => setMinistryStatusFilter(f)}
+                    >
+                      {f === 'all' ? 'All' : f === 'pending' ? 'With pending' : 'With fulfilled'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {visibleMinistries.length > 0 ? (
+                <div className="pv-ub-years-wrap">
+                  <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                    <caption className="pv-ub-caption">
+                      Formal ministerial assurances tracked across Digital Sansad, ordered by pending count.
+                      {onFilterTasks ? ' Choose a ministry to filter its tasks below.' : ''}
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Ministry</th>
+                        <th scope="col">Recorded status &amp; checked</th>
+                        <th scope="col" className="num">
+                          Pending
+                        </th>
+                        <th scope="col" className="num">
+                          Fulfilled / Flagged
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleMinistries.map((m) => {
+                        const total = Math.max(0, m.tasks);
+                        const pending = Math.max(0, m.pending_count ?? 0);
+                        const fulfilled = Math.max(0, m.fulfilled_count ?? 0);
+                        const partly = Math.max(0, m.partly_implemented_count ?? 0);
+                        const dropped = Math.max(
+                          0,
+                          m.dropped_count ?? m.other_count ?? Math.max(0, total - pending - fulfilled - partly),
+                        );
+                        const statusTotal = Math.max(total, pending + fulfilled + partly + dropped);
+                        const mPendingPct = calcPct(pending, statusTotal);
+                        const mPartlyPct = calcPct(partly, statusTotal);
+                        const mFulfilledPct = calcPct(fulfilled, statusTotal);
+                        const mDroppedPct = calcPct(dropped, statusTotal);
+                        const donePct = calcPct(m.done, total);
+                        const hasHouses =
+                          (m.lok_sabha_tasks ?? 0) > 0 || (m.rajya_sabha_tasks ?? 0) > 0;
+
+                        return (
+                          <tr key={m.ministry_key || m.ministry}>
+                            <th scope="row" className="pv-ub-year pv-p6-ministry-name">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(m.ministry)}
+                                  aria-label={`Show tasks for ${m.ministry}`}
+                                >
+                                  {m.ministry}
+                                </button>
+                              ) : (
+                                <span>{m.ministry}</span>
+                              )}
+                              {hasHouses ? (
+                                <span className="pv-ub-sub">
+                                  {fmtCount(m.lok_sabha_tasks ?? 0)} LS · {fmtCount(m.rajya_sabha_tasks ?? 0)} RS
+                                </span>
+                              ) : null}
+                            </th>
+                            <td className="pv-ub-years-checked">
+                              <span
+                                className="pv-ub-bar"
+                                role="img"
+                                aria-label={`${m.ministry}: ${fmtCount(pending)} pending, ${fmtCount(partly)} partly implemented, ${fmtCount(fulfilled)} fully implemented, ${fmtCount(dropped)} dropped; ${fmtCount(m.done)} of ${fmtCount(total)} tasks checked`}
+                              >
+                                {mPendingPct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p6-seg--pending"
+                                    style={{ width: `${Math.max(mPendingPct, 2)}%` }}
+                                  />
+                                ) : null}
+                                {mPartlyPct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p6-seg--partly"
+                                    style={{ width: `${Math.max(mPartlyPct, 2)}%` }}
+                                  />
+                                ) : null}
+                                {mFulfilledPct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p6-seg--fulfilled"
+                                    style={{ width: `${Math.max(mFulfilledPct, 2)}%` }}
+                                  />
+                                ) : null}
+                                {mDroppedPct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p6-seg--dropped"
+                                    style={{ width: `${Math.max(mDroppedPct, 2)}%` }}
+                                  />
+                                ) : null}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                {fmtCount(m.done)}/{fmtCount(total)} checked ({fmtPct(donePct)})
+                                {m.claimed > 0 ? ` · ${fmtCount(m.claimed)} running` : ''}
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-lines" data-label="Pending">
+                              <span className="pv-ub-cell-val">{fmtCount(pending)}</span>
+                              <span className="pv-ub-sub">{fmtPct(mPendingPct)} of {fmtCount(total)}</span>
+                            </td>
+                            <td className="num pv-ub-years-below" data-label="Fulfilled / Flagged">
+                              <span className="pv-ub-cell-val">{fmtCount(fulfilled)} fulfilled</span>
+                              <span className="pv-ub-sub">
+                                {m.leads > 0
+                                  ? `${fmtCount(m.leads)} ${m.leads === 1 ? 'lead' : 'leads'}`
+                                  : partly > 0
+                                    ? `${fmtCount(partly)} partly`
+                                    : `${fmtCount(total)} tracked`}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="pv-empty-box">No ministries match &ldquo;{ministryQuery}&rdquo;.</div>
+              )}
+
+              {ministryQuery.trim().length === 0 &&
+              ministryStatusFilter === 'all' &&
+              filteredMinistries.length > P6_INITIAL_MINISTRIES ? (
+                <div className="pv-list-more">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllMinistries((v) => !v)}
+                  >
+                    {showAllMinistries
+                      ? `Show top ${P6_INITIAL_MINISTRIES} ministries`
+                      : `Show all ${fmtCount(filteredMinistries.length)} ministries`}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="pv-empty-box">
+              Ministry-by-ministry coverage appears here once the hub loads the Digital Sansad assurance index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Every task verifies a formal ministerial assurance directly from Digital Sansad (18th Lok Sabha
+            and Rajya Sabha) using pinned SHA-256 JSON records and official Question or Implementation Report
+            PDFs.
+          </p>
+          <p>
+            For each assurance, the deterministic check cites three verifiable facts: <strong>(1) the original
+            promise</strong>, <strong>(2) the recorded status</strong> against Parliament&rsquo;s 90-day
+            fulfillment norm, and <strong>(3) what the follow-up actually answered</strong> (including flagging
+            scanned image-only Implementation Report PDFs lacking a machine-readable text layer).
+          </p>
+          <p>
+            Assurances still pending past 90 days, partly implemented, dropped without fulfillment, or fulfilled
+            late / with unreadable follow-ups are raised as leads; timely fulfilled or &le;90-day assurances are
+            published as {FINDING_TAGS.cleared.label}. Two independent agents verify every lead before it is
+            marked {FINDING_TAGS.verified.label}.
+          </p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Digital Sansad sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P6_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p6?.generated_on ? (
+            <p className="pv-chart-note">
+              Digital Sansad index built {p6.generated_on}
+              {p6.as_of_date && p6.as_of_date !== p6.generated_on ? ` · as of ${p6.as_of_date}` : ''}.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Reported assurance leads table */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>Assurances flagged so far</h3>
+          {topLeads.length > 0 ? (
+            <span className="pv-chart-note">Original promise, recorded status &amp; follow-up answer</span>
+          ) : null}
+        </div>
+        {topLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table pv-p6-leads-table">
+              <caption className="pv-ub-caption">
+                Ministerial assurances verified against Digital Sansad records.
+                {onSelectFinding ? ' Open any row to read the full promise, status, follow-up answer, and citations.' : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Ministry &amp; Assurance</th>
+                  <th scope="col">House</th>
+                  <th scope="col">Recorded status</th>
+                  <th scope="col">Promise &amp; follow-up answer</th>
+                  <th scope="col">Audit status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const recStatus = formatAssuranceStatus(lead.recorded_status);
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.ministry} · {lead.assurance_ref}
+                          </button>
+                        ) : (
+                          <span>
+                            {lead.ministry} · {lead.assurance_ref}
+                          </span>
+                        )}
+                        <span className="pv-ub-sub">
+                          {p6SignalLabel(lead.signal_category)}
+                          {lead.title ? ` · ${p6ShortText(lead.title, 90)}` : ''}
+                        </span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="House">
+                        <span>
+                          {p6HouseShort(lead.house)}
+                          {lead.session ? ` · S${lead.session}` : ''}
+                        </span>
+                        {lead.promise_date ? (
+                          <span className="pv-ub-sub">{lead.promise_date}</span>
+                        ) : null}
+                      </td>
+                      <td className="pv-p6-lead-rec" data-label="Recorded status">
+                        <span className={recStatus.chipClass}>{recStatus.label}</span>
+                        {lead.days_elapsed != null ? (
+                          <span className="pv-ub-sub tabular">{fmtCount(lead.days_elapsed)}d elapsed</span>
+                        ) : null}
+                      </td>
+                      <td className="pv-p6-lead-summary" data-label="Promise & follow-up">
+                        <div className="pv-p6-excerpt">
+                          <strong>Promise:</strong> {p6ShortText(lead.original_promise, 120)}
+                        </div>
+                        <div className="pv-p6-excerpt pv-p6-excerpt--followup">
+                          <strong>Follow-up:</strong> {p6ShortText(lead.followup_answer, 120)}
+                        </div>
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            Assurance leads appear here as contributor agents verify tasks. Every entry cites the
+            verbatim original promise, recorded Digital Sansad status, and what the follow-up actually
+            answered with SHA-256 provenance.
           </div>
         )}
       </div>
