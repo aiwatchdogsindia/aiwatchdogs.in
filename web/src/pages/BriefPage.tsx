@@ -69,6 +69,14 @@ const LIVE_PROJECTS = [
     summary:
       'When a public tender draws only one bid — or the same contractor keeps winning — what do the official records show? Audits 10,000 Indian government procurement records (2016–2026) for single-bidder tenders, repeat-winner concentration, and compressed bid windows under GFR 2017 and CVC guidelines.',
   },
+  {
+    code: 'P8',
+    slug: 'sovereign-lies',
+    title: 'Sovereign Lies',
+    tag: WORK_TYPE_TAGS.sovereign_promises,
+    summary:
+      'The government made a promise when it launched the scheme. Did it keep it? Audits 1,000 Union and State/UT scheme records — anchored by the Sovereign Gold Bond (SGB) walk-back — comparing launch terms against subsequent amendments, cuts, restrictions, or discontinuations.',
+  },
 ];
 
 const EXPLORE_LINKS = [

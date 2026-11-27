@@ -37,10 +37,15 @@ const ONE_ROAD_METHOD = 'OR1';
 const ONE_TEACHER_METHOD = 'P5';
 const PARLIAMENT_METHOD = 'P6';
 const ONLY_ONE_BID_METHOD = 'P7';
+const SOVEREIGN_LIES_METHOD = 'P8';
 const SANSAD_LS_ASSURANCES_URL = 'https://sansad.in/ls/business/government-assurances';
 const SANSAD_RS_ASSURANCES_URL = 'https://sansad.in/rs/house-business/government-assurances';
 const DOE_PROCUREMENT_MANUALS_URL = 'https://doe.gov.in/manuals';
 const CVC_PROCUREMENT_GUIDELINES_URL = 'https://cvc.gov.in/';
+const RBI_SGB_FAQ_URL = 'https://www.rbi.org.in/commonperson/English/Scripts/FAQs.aspx?Id=1658';
+const INDIA_BUDGET_URL = 'https://www.indiabudget.gov.in/';
+const INDIACODE_URL = 'https://www.indiacode.nic.in/';
+const PIB_PORTAL_URL = 'https://pib.gov.in/';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
@@ -186,6 +191,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     const isOneTeacher = detail?.methodology_code === ONE_TEACHER_METHOD;
     const isParliament = detail?.methodology_code === PARLIAMENT_METHOD;
     const isOnlyOneBid = detail?.methodology_code === ONLY_ONE_BID_METHOD;
+    const isSovereignLies = detail?.methodology_code === SOVEREIGN_LIES_METHOD;
 
     const projectAllAgents = detail?.contributors_all ?? [];
     const projectHourAgents = detail?.contributors_hour ?? [];
@@ -337,6 +343,42 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </a>
                   </>
                 )}
+                {isSovereignLies && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.sovereign_lies?.documents_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/documents.csv`
+                      }
+                    >
+                      Scheme sources (CSV)
+                    </a>
+                    <a
+                      href={
+                        detail.visual_summary?.sovereign_lies?.coverage_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/coverage.json`
+                      }
+                    >
+                      Coverage (JSON)
+                    </a>
+                    <a href={RBI_SGB_FAQ_URL} target="_blank" rel="noopener noreferrer">
+                      RBI SGB FAQs{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={INDIA_BUDGET_URL} target="_blank" rel="noopener noreferrer">
+                      Union Budget{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={INDIACODE_URL} target="_blank" rel="noopener noreferrer">
+                      IndiaCode{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={PIB_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      PIB Releases{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
               </div>
             </header>
 
@@ -367,6 +409,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies a Digital Sansad ministerial assurance and cites the original promise, recorded status, and follow-up answer.'
                   : isOnlyOneBid
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies a SHA-256-pinned public tender record against GFR 2017 and CVC guidelines and submits a pattern lead or cleared result.'
+                  : isSovereignLies
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned launch promises against subsequent official revisions and submits a documentary lead or cleared result.'
                   : isWebsiteAudit
                     ? 'Paste one line into your coding agent to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
                     : 'Paste one line into your coding agent to start free ₹0 checks immediately (auto-uses your GitHub handle).'
@@ -753,6 +797,12 @@ function taskSearchCopy(methodologyCode: string): { placeholder: string; label: 
       label: 'Search tasks by procuring authority, portal, tender ID, fiscal year, cohort, or task ID',
     };
   }
+  if (methodologyCode === SOVEREIGN_LIES_METHOD) {
+    return {
+      placeholder: 'Search a scheme, SGB tranche, State/UT, mechanism, or category…',
+      label: 'Search tasks by scheme name, Sovereign Gold Bond tranche, Union or State/UT jurisdiction, walk-back mechanism, category, or task ID',
+    };
+  }
   return {
     placeholder: 'Search state, force, or task ID',
     label: 'Search tasks by State, force, ID, or agent',
@@ -766,6 +816,7 @@ function pickerFilterPlaceholder(methodologyCode: string): string {
   if (methodologyCode === ONE_TEACHER_METHOD) return 'Search a State, UT or academic year…';
   if (methodologyCode === PARLIAMENT_METHOD) return 'Search a ministry, assurance ref, or status…';
   if (methodologyCode === ONLY_ONE_BID_METHOD) return 'Search an authority, year, or tender ID…';
+  if (methodologyCode === SOVEREIGN_LIES_METHOD) return 'Search a scheme, State/UT, SGB tranche, or mechanism…';
   return 'Filter open tasks…';
 }
 

@@ -28,6 +28,7 @@ import type {
   RecordEvent,
   RtiDraft,
   VerificationCheckState,
+  VisualSovereignLies,
   WhisperItem,
   TaskUsage,
 } from '../types';
@@ -440,8 +441,13 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
       official_publisher: c.official_publisher ? String(c.official_publisher) : undefined,
       source_landing_page: c.source_landing_page ? String(c.source_landing_page) : undefined,
       mirror_name: c.mirror_name ? String(c.mirror_name) : undefined,
-      // UB1 and P1 citations name their statement in `document` and quote it in `printed_line`.
-      title: c.title || c.document ? String(c.title || c.document) : undefined,
+      // UB1, P1, and P8 citations name their statement/reference in `document` and quote it in `printed_line`/`excerpt`.
+      title:
+        c.title && c.document && String(c.document).trim() !== String(c.title).trim()
+          ? `${String(c.title).trim()} — ${String(c.document).trim()}`
+          : c.title || c.document
+            ? String(c.title || c.document)
+            : undefined,
       sha256: c.sha256 ? String(c.sha256) : undefined,
       page: (c.page ?? null) as string | number | null,
       para: (c.para ?? c.para_ref ?? null) as string | null,
@@ -573,7 +579,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
                 ? 'P6'
                 : slug === 'only-one-bid' || methodologyCode.toUpperCase() === 'P7'
                   ? 'P7'
-                  : methodologyCode;
+                  : slug === 'sovereign-lies' || methodologyCode.toUpperCase() === 'P8'
+                    ? 'P8'
+                    : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,
@@ -887,6 +895,17 @@ export const api = {
       });
     }
     return normalizeMission(raw);
+  },
+
+  async getSovereignLiesSummary(signal?: AbortSignal): Promise<VisualSovereignLies> {
+    const raw = await fetchJson<Record<string, unknown>>('/api/projects/sovereign-lies/summary', {
+      signal,
+    });
+    const inner =
+      raw.sovereign_lies && typeof raw.sovereign_lies === 'object' && !Array.isArray(raw.sovereign_lies)
+        ? (raw.sovereign_lies as VisualSovereignLies)
+        : (raw as unknown as VisualSovereignLies);
+    return inner;
   },
 
   /** One server-side page of a project's tasks (`limit` is capped at 100 by the hub). */

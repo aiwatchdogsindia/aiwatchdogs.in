@@ -4,15 +4,26 @@ import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib
 import type { FindingItem } from '../types';
 import {
   extractOnlyOneBidMetrics,
+  extractSovereignLiesMetrics,
   formatInr,
+  formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
   formatProcurementAmountType,
   formatProcurementSignal,
   formatRelativeTime,
+  formatRetroactiveImpact,
+  formatSchemeCategory,
   formatSingleBidMechanism,
+  formatWalkbackMechanism,
   isUnverifiedStatus,
   resolveFindingCardMetric,
 } from '../utils';
+
+function clipCardText(text?: string | null, maxLen = 135): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -47,6 +58,23 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
       ? finding.monetary_exposure_inr
       : p7Record?.targetTenderValueInr ?? null;
+
+  const p8Record =
+    finding.methodology_code === 'P8' && !isQuarantined
+      ? extractSovereignLiesMetrics(finding.anomaly_metrics)
+      : null;
+  const p8Mechanism = p8Record?.walkbackMechanism || p8Record?.signalCategory
+    ? formatWalkbackMechanism(p8Record.walkbackMechanism || p8Record.signalCategory)
+    : null;
+  const p8Impact = p8Record?.retroactiveImpact
+    ? formatRetroactiveImpact(p8Record.retroactiveImpact)
+    : null;
+  const p8Category = p8Record?.schemeCategory
+    ? formatSchemeCategory(p8Record.schemeCategory)
+    : null;
+  const p8Jurisdiction = p8Record
+    ? formatJurisdictionLabel(p8Record.jurisdiction, p8Record.stateOrUt, p8Record.jurisdictionLevel)
+    : null;
 
   return (
     <article
@@ -89,6 +117,21 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           {p7Signal && (
             <span className={p7Signal.chipClass} title={`Procurement signal: ${p7Signal.label}`}>
               {p7Signal.shortLabel}
+            </span>
+          )}
+          {p8Mechanism && (
+            <span className={p8Mechanism.chipClass} title={`Walk-back mechanism: ${p8Mechanism.label}`}>
+              {p8Mechanism.shortLabel}
+            </span>
+          )}
+          {p8Impact?.isRetroactive && (
+            <span className={p8Impact.chipClass} title={p8Impact.label}>
+              {p8Impact.shortLabel}
+            </span>
+          )}
+          {p8Record?.isSgbAnchor && (
+            <span className="p8-sgb-chip" title="Flagship Sovereign Gold Bond anchor case">
+              SGB Anchor
             </span>
           )}
           {hasCorrections && sm.id !== 'corrected' && (
@@ -206,6 +249,60 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {p8Record && (
+        <div className="fc-p8-strip" aria-label="Original promise versus subsequent revision">
+          <div className="fc-p8-meta-row">
+            {p8Jurisdiction && <span className="tag-mono">{p8Jurisdiction}</span>}
+            {p8Category && <span className="tag-mono">{p8Category.shortLabel}</span>}
+            {p8Record.promiseDate && (
+              <span className="tag-mono tabular">
+                {p8Record.promiseDate}
+                {p8Record.walkbackDate ? ` → ${p8Record.walkbackDate}` : ''}
+                {p8Record.daysFromPromiseToWalkback != null
+                  ? ` (${p8Record.daysFromPromiseToWalkback.toLocaleString('en-IN')}d)`
+                  : ''}
+              </span>
+            )}
+            {p8Record.promisedMetric && p8Record.revisedMetric && (
+              <span className="fc-p8-delta-pill tabular">
+                {p8Record.promisedMetric} → {p8Record.revisedMetric}
+              </span>
+            )}
+          </div>
+
+          {(p8Record.promiseSummary || p8Record.walkbackSummary) && (
+            <div className="fc-p8-compare-grid">
+              <div className="fc-p8-col fc-p8-col--promise">
+                <span className="fc-p8-col-kicker">Original Promise</span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p8Record.promiseSummary, compact ? 95 : 135) ||
+                    'Launch promise documented in primary official notice.'}
+                </p>
+                {p8Record.promiseDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p8Record.promiseDocumentRef}</span>
+                )}
+              </div>
+              <div
+                className={`fc-p8-col ${
+                  p8Mechanism?.isCleared ? 'fc-p8-col--honored' : 'fc-p8-col--walkback'
+                }`}
+              >
+                <span className="fc-p8-col-kicker">
+                  {p8Mechanism?.isCleared ? 'Honored / Current Record' : 'Subsequent Walk-Back'}
+                </span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p8Record.walkbackSummary, compact ? 95 : 135) ||
+                    'Subsequent amendment documented in official revision record.'}
+                </p>
+                {p8Record.walkbackDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p8Record.walkbackDocumentRef}</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

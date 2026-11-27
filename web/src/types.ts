@@ -735,6 +735,177 @@ export interface VisualOnlyOneBid {
   coverage_url?: string;
 }
 
+export type SovereignLiesJurisdictionLevel = 'union' | 'state' | 'ut';
+
+export type SovereignLiesSchemeCategory =
+  | 'sovereign_bonds_small_savings'
+  | 'pensions_retirement'
+  | 'tax_exempt_instruments'
+  | 'cash_transfers_guarantees'
+  | 'ev_housing_farm_subsidies'
+  | 'scholarships_education'
+  | 'industrial_export_incentives'
+  | 'welfare_health_public_services';
+
+export type SovereignLiesWalkbackMechanism =
+  | 'retroactive_tax_reversal'
+  | 'midstream_benefit_cut'
+  | 'premature_discontinuation'
+  | 'eligibility_narrowing'
+  | 'lockin_or_exit_restriction'
+  | 'arrears_or_unfunded_promise'
+  | 'grandfathered_or_honored';
+
+export type SovereignLiesRetroactiveImpact =
+  | 'retroactive_existing_holders'
+  | 'mid_stream_active_scheme'
+  | 'prospective_discontinuation'
+  | 'eligibility_narrowing'
+  | 'unfulfilled_arrears'
+  | 'grandfathered_or_honored';
+
+export interface VisualSovereignLiesTierCounts {
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads?: number;
+  cleared?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualSovereignLiesMechanismCounts {
+  tasks: number;
+  leads: number;
+  done?: number;
+  cleared?: number;
+}
+
+export interface VisualSovereignLiesCategory {
+  category: SovereignLiesSchemeCategory | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualSovereignLiesJurisdiction {
+  jurisdiction: string;
+  jurisdiction_level: SovereignLiesJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  leads: number;
+  cleared?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualSovereignLiesScheme {
+  scheme_name: string;
+  scheme_slug: string;
+  jurisdiction: string;
+  jurisdiction_level: SovereignLiesJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  scheme_category: SovereignLiesSchemeCategory | string;
+  walkback_mechanism: SovereignLiesWalkbackMechanism | string;
+  retroactive_impact: SovereignLiesRetroactiveImpact | string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  is_sgb_anchor?: boolean;
+}
+
+export interface VisualSovereignLiesSgbAnchor {
+  task_id?: string;
+  finding_id?: string | null;
+  scheme_name: string;
+  tranche_or_phase?: string;
+  jurisdiction: string;
+  authority: string;
+  promise_date?: string;
+  promise_summary: string;
+  promise_document_ref?: string;
+  walkback_date?: string | null;
+  walkback_summary: string;
+  walkback_document_ref?: string;
+  walkback_mechanism?: SovereignLiesWalkbackMechanism | string;
+  retroactive_impact?: SovereignLiesRetroactiveImpact | string;
+  promised_metric?: string;
+  revised_metric?: string;
+  metric_unit?: string;
+  affected_group?: string;
+  days_from_promise_to_walkback?: number | null;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  source_sha256?: string | null;
+  secondary_sha256?: string | null;
+}
+
+export interface VisualSovereignLiesLead {
+  finding_id: string;
+  title: string;
+  scheme_name: string;
+  scheme_slug?: string;
+  tranche_or_phase?: string;
+  entity_name?: string;
+  jurisdiction: string;
+  jurisdiction_level?: SovereignLiesJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  scheme_category?: SovereignLiesSchemeCategory | string;
+  walkback_mechanism: SovereignLiesWalkbackMechanism | string;
+  retroactive_impact?: SovereignLiesRetroactiveImpact | string;
+  signal_category: string;
+  promise_date?: string;
+  walkback_date?: string | null;
+  days_from_promise_to_walkback?: number | null;
+  promised_metric?: string;
+  revised_metric?: string;
+  metric_unit?: string;
+  promise_summary?: string;
+  walkback_summary?: string;
+  affected_group?: string;
+  is_sgb_anchor?: boolean;
+  monetary_exposure_inr?: number | null;
+  flagged_inr_cr?: number | null;
+  severity?: string;
+  status: string;
+}
+
+export interface VisualSovereignLies {
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  total_tasks: number;
+  unique_schemes_covered?: number;
+  states_and_uts_covered?: number;
+  sgb_tasks_count?: number;
+  cleared_control_tasks_embedded?: number;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_total_inr_cr: number;
+  by_jurisdiction_level?: Record<string, VisualSovereignLiesTierCounts | number>;
+  by_mechanism?: Record<string, VisualSovereignLiesMechanismCounts | number>;
+  by_signal?: Record<string, number>;
+  by_retroactive_impact?: Record<string, number>;
+  by_category?: VisualSovereignLiesCategory[];
+  jurisdictions?: VisualSovereignLiesJurisdiction[];
+  top_schemes?: VisualSovereignLiesScheme[];
+  sgb_anchor_case?: VisualSovereignLiesSgbAnchor | null;
+  top_leads?: VisualSovereignLiesLead[];
+  documents_url?: string;
+  coverage_url?: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -745,6 +916,7 @@ export interface ProjectVisualSummary {
   one_teacher_five_grades?: VisualOneTeacherFiveGrades;
   parliaments_to_do_list?: VisualParliamentsToDoList;
   only_one_bid?: VisualOnlyOneBid;
+  sovereign_lies?: VisualSovereignLies;
 }
 
 export interface MissionItem {

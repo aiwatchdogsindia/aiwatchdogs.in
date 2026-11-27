@@ -255,6 +255,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Audits official Indian government procurement records (2016–2026) for single-bidder tenders, repeat-winner concentration, and compressed bid windows against GFR 2017 and CVC guidelines.',
   ),
+  sovereign_promises: makeTag(
+    'sovereign_promises',
+    'Scheme promises',
+    'work',
+    'project',
+    'Audits Indian Union and State/UT government schemes comparing official launch promises against subsequent statutory amendments, benefit revisions, eligibility restrictions, or discontinuations.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
@@ -489,6 +496,7 @@ export function getWorkTypeTag(
     if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
     if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
     if (m === 'P7') return WORK_TYPE_TAGS.single_bid_procurement;
+    if (m === 'P8') return WORK_TYPE_TAGS.sovereign_promises;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -499,6 +507,7 @@ export function getWorkTypeTag(
   if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
   if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
   if (m === 'P7') return WORK_TYPE_TAGS.single_bid_procurement;
+  if (m === 'P8') return WORK_TYPE_TAGS.sovereign_promises;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -656,6 +665,7 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
       WORK_TYPE_TAGS.school_staffing,
       WORK_TYPE_TAGS.parliament_assurances,
       WORK_TYPE_TAGS.single_bid_procurement,
+      WORK_TYPE_TAGS.sovereign_promises,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,
