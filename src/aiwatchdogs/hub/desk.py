@@ -68,6 +68,8 @@ from aiwatchdogs.projects import (
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_METHODOLOGY,
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
+    ONLY_ONE_BID_METHODOLOGY,
+    ONLY_ONE_BID_PROJECT_SLUG,
     PARLIAMENTS_TO_DO_LIST_METHODOLOGY,
     PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
     UNION_BUDGET_METHODOLOGY,
@@ -153,6 +155,7 @@ OPEN_CHOICE_PROJECTS = frozenset(
         ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
         ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
         PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
+        ONLY_ONE_BID_PROJECT_SLUG,
     }
 )
 
@@ -3722,6 +3725,10 @@ class DeskService:
             summary["parliaments_to_do_list"] = self._parliaments_to_do_list_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == ONLY_ONE_BID_METHODOLOGY:
+            summary["only_one_bid"] = self._only_one_bid_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -3928,7 +3935,16 @@ class DeskService:
             m_code = str(row["methodology_code"] or "").strip()
             task_cols = (
                 _TASK_LIST_COLUMNS_PG_COMPACT
-                if (self.db.is_postgres and m_code in ("W1", UNION_BUDGET_METHODOLOGY, ONE_ROAD_TWO_BILLS_METHODOLOGY))
+                if (
+                    self.db.is_postgres
+                    and m_code
+                    in (
+                        "W1",
+                        UNION_BUDGET_METHODOLOGY,
+                        ONE_ROAD_TWO_BILLS_METHODOLOGY,
+                        ONLY_ONE_BID_METHODOLOGY,
+                    )
+                )
                 else _TASK_LIST_COLUMNS
             )
             t_rows = conn.execute(
@@ -4723,6 +4739,393 @@ class DeskService:
             "ministries": ministries_list,
             "anchor_case": anchor_case,
             "top_leads": cleaned_top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def _only_one_bid_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fast indexed 10-year progress, cohort, authority, repeat-winner, and top-leads summary for P7."""
+        from aiwatchdogs.engines.only_one_bid import P7_DEFAULT_HOOK
+
+        mid = str(mission_row["id"])
+        slug = str(mission_row["slug"])
+        coverage = _project_coverage(slug)
+
+        cohort_code_map = {
+            "sb": "single_bidder",
+            "rw": "repeat_winner",
+            "bo": "both",
+        }
+        by_cohort: dict[str, dict[str, Any]] = {
+            name: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "pct": 0.0}
+            for name in ("single_bidder", "repeat_winner", "both")
+        }
+
+        years: dict[str, dict[str, Any]] = {}
+
+        def _ensure_year(yr: str, fy: str = "") -> dict[str, Any]:
+            clean_yr = yr.strip()
+            resolved_fy = fy.strip() or (
+                f"FY{clean_yr}-{(int(clean_yr) + 1) % 100:02d}" if clean_yr.isdigit() else clean_yr
+            )
+            return years.setdefault(
+                clean_yr,
+                {
+                    "year": clean_yr,
+                    "fiscal_year": resolved_fy,
+                    "tasks": 0,
+                    "done": 0,
+                    "claimed": 0,
+                    "open": 0,
+                    "pct": 0.0,
+                    "single_bidder_tasks": 0,
+                    "repeat_winner_tasks": 0,
+                    "both_tasks": 0,
+                    "leads": 0,
+                    "flagged_inr_cr": 0.0,
+                },
+            )
+
+        raw_years = coverage.get("years") if isinstance(coverage.get("years"), list) else []
+        for yitem in raw_years:
+            if not isinstance(yitem, dict):
+                continue
+            yr_str = str(yitem.get("year") or "").strip()
+            if yr_str:
+                _ensure_year(yr_str, str(yitem.get("fiscal_year") or ""))
+
+        # O(1) indexed SQL aggregation over 10,000 tasks via canonical ID `prj-p7-<cohort>-<YYYY>-<NNNNN>`
+        # (never scans payload_json across 10k rows).
+        for r in conn.execute(
+            "SELECT SUBSTR(id, 8, 2) AS cohort, SUBSTR(id, 11, 4) AS yr, status, COUNT(*) AS c "
+            "FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status != 'retired' "
+            "AND id LIKE 'prj-p7-%' GROUP BY cohort, yr, status",
+            (mid,),
+        ).fetchall():
+            ccode = str(r["cohort"] or "").strip().lower()
+            yr = str(r["yr"] or "").strip()
+            st = str(r["status"] or "").strip()
+            n = int(r["c"] or 0)
+            cname = cohort_code_map.get(ccode)
+            if cname is not None:
+                c_entry = by_cohort[cname]
+                c_entry["tasks"] += n
+                if st == "completed":
+                    c_entry["done"] += n
+                elif st == "claimed":
+                    c_entry["claimed"] += n
+                elif st == "queued":
+                    c_entry["open"] += n
+            if yr and yr.isdigit():
+                y_entry = _ensure_year(yr)
+                y_entry["tasks"] += n
+                if st == "completed":
+                    y_entry["done"] += n
+                elif st == "claimed":
+                    y_entry["claimed"] += n
+                elif st == "queued":
+                    y_entry["open"] += n
+                if cname == "single_bidder":
+                    y_entry["single_bidder_tasks"] += n
+                elif cname == "repeat_winner":
+                    y_entry["repeat_winner_tasks"] += n
+                elif cname == "both":
+                    y_entry["both_tasks"] += n
+
+        for c_entry in by_cohort.values():
+            c_entry["pct"] = round(c_entry["done"] / c_entry["tasks"] * 100.0, 2) if c_entry["tasks"] else 0.0
+
+        # Seed jurisdictions, authorities, and repeat winners from precomputed coverage.json
+        jurisdictions_map: dict[str, dict[str, Any]] = {}
+        for jitem in coverage.get("jurisdictions") if isinstance(coverage.get("jurisdictions"), list) else []:
+            if not isinstance(jitem, dict):
+                continue
+            jname = str(jitem.get("jurisdiction") or "").strip()
+            if not jname:
+                continue
+            jurisdictions_map[jname] = {
+                "jurisdiction": jname,
+                "portal": str(jitem.get("portal") or ""),
+                "tasks": int(jitem.get("tasks") or 0),
+                "single_bidder_tasks": int(jitem.get("single_bidder_tasks") or 0),
+                "repeat_winner_tasks": int(jitem.get("repeat_winner_tasks") or 0),
+                "both_tasks": int(jitem.get("both_tasks") or 0),
+                "leads": 0,
+                "flagged_inr_cr": 0.0,
+            }
+
+        def _opt_float_p7(val: Any, digits: int = 2) -> float | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return round(float(val), digits)
+            return None
+
+        def _opt_int_p7(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            return None
+
+        authorities_map: dict[str, dict[str, Any]] = {}
+        for aitem in coverage.get("top_authorities") if isinstance(coverage.get("top_authorities"), list) else []:
+            if not isinstance(aitem, dict):
+                continue
+            aname = str(aitem.get("authority") or "").strip()
+            if not aname:
+                continue
+            akey = str(aitem.get("authority_key") or "").strip().lower() or re.sub(
+                r"[^a-z0-9]+", "-", aname.lower()
+            ).strip("-")
+            auth_entry: dict[str, Any] = {
+                "authority": aname,
+                "authority_key": akey,
+                "jurisdiction": str(aitem.get("jurisdiction") or ""),
+                "tasks": int(aitem.get("tasks") or 0),
+                "single_bidder_tasks": int(aitem.get("single_bidder_tasks") or 0),
+                "repeat_winner_tasks": int(aitem.get("repeat_winner_tasks") or 0),
+                "both_tasks": int(aitem.get("both_tasks") or 0),
+                "leads": 0,
+                "flagged_inr_cr": 0.0,
+            }
+            if aitem.get("portal"):
+                auth_entry["portal"] = str(aitem.get("portal"))
+            sb_rate = _opt_float_p7(aitem.get("single_bid_rate_pct"))
+            if sb_rate is not None:
+                auth_entry["single_bid_rate_pct"] = sb_rate
+            authorities_map[aname] = auth_entry
+
+        top_repeat_winners: list[dict[str, Any]] = []
+        for witem in coverage.get("top_repeat_winners") if isinstance(coverage.get("top_repeat_winners"), list) else []:
+            if not isinstance(witem, dict):
+                continue
+            wname = str(witem.get("winner_name") or "").strip()
+            if not wname:
+                continue
+            win_entry: dict[str, Any] = {
+                "winner_name": wname,
+                "normalized_winner_key": str(witem.get("normalized_winner_key") or ""),
+                "authority": str(witem.get("authority") or ""),
+                "jurisdiction": str(witem.get("jurisdiction") or ""),
+                "win_count": int(witem.get("win_count") or 0),
+                "single_bid_wins": int(witem.get("single_bid_wins") or 0),
+                "total_value_inr_cr": round(_safe_finite_float(witem.get("total_value_inr_cr"), 0.0), 4),
+                "tasks": int(witem.get("tasks") or 0),
+            }
+            for opt_fk in ("share_by_count_pct", "share_by_value_pct"):
+                fval = _opt_float_p7(witem.get(opt_fk))
+                if fval is not None:
+                    win_entry[opt_fk] = fval
+            streak_val = _opt_int_p7(witem.get("consecutive_win_streak"))
+            if streak_val is not None:
+                win_entry["consecutive_win_streak"] = streak_val
+            if isinstance(witem.get("year_range"), list) and len(witem["year_range"]) >= 2:
+                y0, y1 = str(witem["year_range"][0]).strip(), str(witem["year_range"][-1]).strip()
+                win_entry["year_range"] = f"{y0}–{y1}" if y0 != y1 else y0
+            elif isinstance(witem.get("year_range"), str) and witem["year_range"].strip():
+                win_entry["year_range"] = witem["year_range"].strip()
+            if isinstance(witem.get("sample_tender_ids"), list):
+                win_entry["sample_tender_ids"] = [str(x) for x in witem["sample_tender_ids"][:10] if x]
+            top_repeat_winners.append(win_entry)
+
+        live = (
+            "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+            "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+        )
+        leads = verified = peer_review = 0
+        flagged_total_cr = 0.0
+        by_signal: dict[str, int] = {
+            "single_bidder_repeat_winner": 0,
+            "unexplained_single_bidder": 0,
+            "repeat_winner_concentration": 0,
+            "short_window_or_process_gap": 0,
+        }
+        rule_to_signal = {
+            "P7-COMBINED-SB-RW": "single_bidder_repeat_winner",
+            "P7-SINGLE-BID": "unexplained_single_bidder",
+            "P7-REPEAT-WINNER": "repeat_winner_concentration",
+            "P7-PROCESS-GAP": "short_window_or_process_gap",
+        }
+
+        for r in conn.execute(
+            f"SELECT fiscal_year, jurisdiction, entity_name, status, rule_triggered, "
+            f"COUNT(*) AS c, COALESCE(SUM(monetary_exposure_inr), 0) AS inr "
+            f"FROM findings WHERE {live} "
+            f"GROUP BY fiscal_year, jurisdiction, entity_name, status, rule_triggered",
+            (mid,),
+        ).fetchall():
+            n = int(r["c"] or 0)
+            crore = _safe_finite_float(r["inr"], 0.0) / 1e7
+            leads += n
+            flagged_total_cr += crore
+            st = str(r["status"] or "")
+            if st == "verified":
+                verified += n
+            elif st in ("peer_review", "raw_lead"):
+                peer_review += n
+
+            rule = str(r["rule_triggered"] or "").strip()
+            sig_key = rule_to_signal.get(rule)
+            if sig_key is not None:
+                by_signal[sig_key] += n
+
+            fy_raw = str(r["fiscal_year"] or "").strip()
+            yr_match = re.search(r"(20\d{2})", fy_raw)
+            if yr_match:
+                yr_str = yr_match.group(1)
+                y_entry = _ensure_year(yr_str, fy_raw)
+                y_entry["leads"] += n
+                y_entry["flagged_inr_cr"] = round(y_entry["flagged_inr_cr"] + crore, 2)
+
+            jur = str(r["jurisdiction"] or "").strip()
+            if jur:
+                j_entry = jurisdictions_map.setdefault(
+                    jur,
+                    {
+                        "jurisdiction": jur,
+                        "portal": "",
+                        "tasks": 0,
+                        "single_bidder_tasks": 0,
+                        "repeat_winner_tasks": 0,
+                        "both_tasks": 0,
+                        "leads": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                j_entry["leads"] += n
+                j_entry["flagged_inr_cr"] = round(j_entry["flagged_inr_cr"] + crore, 2)
+
+            auth = str(r["entity_name"] or "").strip()
+            if auth:
+                a_entry = authorities_map.setdefault(
+                    auth,
+                    {
+                        "authority": auth,
+                        "authority_key": re.sub(r"[^a-z0-9]+", "-", auth.lower()).strip("-"),
+                        "jurisdiction": jur,
+                        "tasks": 0,
+                        "single_bidder_tasks": 0,
+                        "repeat_winner_tasks": 0,
+                        "both_tasks": 0,
+                        "leads": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                a_entry["leads"] += n
+                a_entry["flagged_inr_cr"] = round(a_entry["flagged_inr_cr"] + crore, 2)
+
+        for y_entry in years.values():
+            y_entry["pct"] = round(y_entry["done"] / y_entry["tasks"] * 100.0, 2) if y_entry["tasks"] else 0.0
+
+        anchor_raw = coverage.get("anchor_case")
+        anchor_case: dict[str, Any] | None = dict(anchor_raw) if isinstance(anchor_raw, dict) else None
+        if anchor_case is not None:
+            anchor_case.setdefault("finding_id", None)
+        anchor_tid = str((anchor_case or {}).get("tender_id") or "").strip().lower()
+
+        top_leads: list[dict[str, Any]] = []
+        for r in conn.execute(
+            f"SELECT id, title, entity_name, jurisdiction, fiscal_year, status, monetary_exposure_inr, "
+            f"anomaly_metrics_json FROM findings WHERE {live} "
+            f"ORDER BY monetary_exposure_inr DESC, id ASC LIMIT 20",
+            (mid,),
+        ).fetchall():
+            metrics = loads_json(r["anomaly_metrics_json"], {})
+            metrics = metrics if isinstance(metrics, dict) else {}
+
+            tid_str = str(metrics.get("tender_id") or "")
+            if (
+                anchor_case is not None
+                and not anchor_case.get("finding_id")
+                and (bool(metrics.get("is_anchor_case")) or (anchor_tid and tid_str.lower() == anchor_tid))
+            ):
+                anchor_case["finding_id"] = str(r["id"])
+
+            exposure_inr = _safe_finite_float(r["monetary_exposure_inr"], 0.0)
+            top_leads.append(
+                {
+                    "finding_id": str(r["id"]),
+                    "title": str(r["title"] or ""),
+                    "entity_name": str(r["entity_name"] or ""),
+                    "jurisdiction": str(r["jurisdiction"] or ""),
+                    "fiscal_year": str(r["fiscal_year"] or ""),
+                    "status": str(r["status"] or ""),
+                    "tender_id": tid_str,
+                    "winner_name": str(metrics.get("winner_name") or ""),
+                    "bids_received": _opt_int_p7(metrics.get("bids_received")),
+                    "technically_qualified_bids": _opt_int_p7(metrics.get("technically_qualified_bids")),
+                    "effective_bids": _opt_int_p7(metrics.get("effective_bids")),
+                    "single_bid_mechanism": str(metrics.get("single_bid_mechanism") or ""),
+                    "winner_total_wins": _opt_int_p7(metrics.get("winner_total_wins")) or 0,
+                    "winner_single_bid_wins": _opt_int_p7(metrics.get("winner_single_bid_wins")) or 0,
+                    "winner_cohort_total_inr": _opt_float_p7(metrics.get("winner_cohort_total_inr")),
+                    "winner_share_by_count_pct": _opt_float_p7(metrics.get("winner_share_by_count_pct")),
+                    "consecutive_win_streak": _opt_int_p7(metrics.get("consecutive_win_streak")),
+                    "bid_window_days": _opt_int_p7(metrics.get("bid_window_days")),
+                    "signal_category": str(metrics.get("signal_category") or ""),
+                    "amount_type": str(metrics.get("amount_type") or "unrecorded"),
+                    "monetary_exposure_inr": round(exposure_inr, 2),
+                    "flagged_inr_cr": round(exposure_inr / 1e7, 4),
+                }
+            )
+
+        # Fallback anchor finding_id lookup when anchor finding falls outside the top 20 by exposure
+        if anchor_case is not None and not anchor_case.get("finding_id") and anchor_case.get("task_id"):
+            raw_anchor_tid = str(anchor_case.get("task_id") or "").strip()
+            prefixed_anchor_tid = raw_anchor_tid if raw_anchor_tid.startswith("prj-") else f"prj-{raw_anchor_tid}"
+            anchor_row = conn.execute(
+                f"SELECT id FROM findings WHERE {live} AND task_id IN (?, ?) ORDER BY id ASC LIMIT 1",
+                (mid, raw_anchor_tid, prefixed_anchor_tid),
+            ).fetchone()
+            if anchor_row is not None:
+                anchor_case["finding_id"] = str(anchor_row["id"])
+
+        sorted_years = [years[y] for y in sorted(years)]
+        year_range_cov = coverage.get("year_range")
+        if isinstance(year_range_cov, list) and len(year_range_cov) >= 2:
+            year_range = [str(year_range_cov[0]), str(year_range_cov[1])]
+        elif sorted_years:
+            year_range = [sorted_years[0]["year"], sorted_years[-1]["year"]]
+        else:
+            year_range = ["2016", "2026"]
+
+        jurisdictions_list = sorted(
+            jurisdictions_map.values(),
+            key=lambda x: (-int(x["tasks"]), -int(x["leads"]), str(x["jurisdiction"]).lower()),
+        )
+        authorities_list = sorted(
+            authorities_map.values(),
+            key=lambda x: (-int(x["tasks"]), -int(x["leads"]), str(x["authority"]).lower()),
+        )
+
+        return {
+            "hook": str(coverage.get("hook") or P7_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": str(coverage.get("as_of_date") or ""),
+            "total_tasks": int(coverage.get("total_tasks") or mission_row["total_tasks"] or 0),
+            "year_range": year_range,
+            "portals_covered": int(
+                coverage.get("portals_covered")
+                or len({j["portal"] for j in jurisdictions_list if j.get("portal")})
+            ),
+            "authorities_covered": int(coverage.get("authorities_covered") or len(authorities_list)),
+            "distinct_repeat_winners": int(
+                coverage.get("distinct_repeat_winners") or len(top_repeat_winners)
+            ),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0),
+            "flagged_total_inr_cr": round(flagged_total_cr, 2),
+            "by_cohort": by_cohort,
+            "by_signal": by_signal,
+            "years": sorted_years,
+            "jurisdictions": jurisdictions_list,
+            "top_authorities": authorities_list[:50],
+            "top_repeat_winners": top_repeat_winners[:30],
+            "anchor_case": anchor_case,
+            "top_leads": top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }
