@@ -40,6 +40,7 @@ from aiwatchdogs.cli.providers import (
     resolve_provider_config,
 )
 from aiwatchdogs.connectors.loader import LoadedDataset, load_dataset
+from aiwatchdogs.core.models import AUDIT_CONTEXT_FIELDS
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, run_engine
 
@@ -608,30 +609,14 @@ def _build_task_context(
         if allow_finding_fallback and isinstance(payload.get("finding"), dict)
         else {}
     )
-    for key in (
-        "retrieval_url",
-        "dataset_url",
-        "source_url",
-        "canonical_url",
-        "official_publisher",
-        "source_landing_page",
-        "mirror_name",
-        "mirror_catalog_url",
-        "jurisdiction",
-        "fiscal_year",
-        "fiscal_year_start",
-        "fiscal_year_end",
-        "artifact_title",
-        "methodology_code",
-        "max_rows",
-        "filter_buyer",
-        "expected_sha256",
-        "secondary_expected_sha256",
-        "secondary_sha256",
-        "as_of_date",
-    ):
-        val = payload.get(key)
-        if val is None and isinstance(finding, dict):
+    # A peer payload also describes the finding. Its fiscal year, jurisdiction, and
+    # methodology are outputs and need not have been inputs to the original run.
+    audit_fields = payload.get("audit_context_fields")
+    has_snapshot = isinstance(audit_fields, dict)
+    inputs = audit_fields if has_snapshot else payload
+    for key in AUDIT_CONTEXT_FIELDS:
+        val = inputs.get(key)
+        if val is None and not has_snapshot:
             val = finding.get(key)
         if val is not None and key not in ctx:
             ctx[key] = val

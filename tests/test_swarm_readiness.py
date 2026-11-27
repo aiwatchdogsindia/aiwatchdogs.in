@@ -352,6 +352,54 @@ def _register(client: TestClient, handle: str) -> dict[str, str]:
     return {"X-Agent-Token": client.post("/api/agents/register", json=body).json()["api_token"]}
 
 
+@pytest.mark.production_missions
+def test_multi_year_p1_audit_and_peers_reproduce_same_fingerprint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aiwatchdogs.core.safety import compute_sha256
+
+    project = json.loads((REPO_PROJECTS / "police-finances.json").read_text(encoding="utf-8"))
+    project["tasks"] = project["tasks"][:1]
+    _, db = _hub_with(tmp_path, monkeypatch, [project])
+    app = create_app(db_path=db, seed=True)
+    audit_id = "prj-" + project["tasks"][0]["id"]
+    source = tmp_path / "police-budget.json"
+    source.write_text(json.dumps([{"page": 1, "raw_text": _PAGE}]), encoding="utf-8")
+    payload = {
+        "fiscal_year": "FY2023-26", "context": _P1_CONTEXT, "retrieval_url": str(source),
+        "source_landing_page": "https://www.indiabudget.gov.in/",
+        "expected_sha256": compute_sha256(source.read_bytes()), "as_of_date": "2026-11-27",
+    }
+    with app.state.db.transaction() as conn:
+        conn.execute("UPDATE tasks SET payload_json = ? WHERE id = ?", (json.dumps(payload), audit_id))
+
+    with TestClient(app, base_url="http://testserver") as client:
+        def run(handle: str, task_id: str):
+            runner = AgentRunner(
+                AgentConfig(handle=handle, hub_url="http://testserver"), http_client=client,
+                config_path=tmp_path / f"{handle}.json", allow_local_files=True,
+            )
+            result = runner.run_loop(task_id=task_id, save_on_register=False)
+            assert result.tasks_completed == 1, result.results
+            return result.results[0]
+
+        audit = run("p1-auditor", audit_id)
+        fingerprint = audit["metrics"]["script_hash"]
+        assert audit["finding"]["fiscal_year"] == "FY2025-26"
+        peers = audit["response"]["peer_verify_task_ids"]
+        # One verification was queued by an older hub before audit inputs were snapshotted.
+        with app.state.db.transaction() as conn:
+            row = conn.execute("SELECT payload_json FROM tasks WHERE id = ?", (peers[1],)).fetchone()
+            old = json.loads(row["payload_json"])
+            assert old.pop("audit_context_fields")["fiscal_year"] == "FY2023-26"
+            assert old.pop("verifier_script_hash") == fingerprint
+            conn.execute("UPDATE tasks SET payload_json = ? WHERE id = ?", (json.dumps(old), peers[1]))
+        for slot, peer_id in enumerate(peers):
+            vote = run(f"p1-peer-{slot}", peer_id)["verification"]
+            assert vote["reproduced_metrics"]["script_hash"] == fingerprint
+            assert vote["verdict"] == "confirm"
+        detail = client.get("/api/findings/" + audit["response"]["finding_id"]).json()
+        assert detail["status"] == "verified" and detail["fiscal_year"] == "FY2025-26"
+
+
 _FINDING = {
     "title": "Test Police: revised estimate vs budget estimate is 20.0% below (Major Head 2055)",
     "summary": "The official budget document prints 160.00 crore against 200.00 crore. Statistical divergence for public review.",

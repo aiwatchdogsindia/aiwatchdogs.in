@@ -7,6 +7,31 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+# Top-level audit task fields that supplement its nested engine/loader context.
+AUDIT_CONTEXT_FIELDS = (
+    "retrieval_url",
+    "dataset_url",
+    "source_url",
+    "canonical_url",
+    "official_publisher",
+    "source_landing_page",
+    "mirror_name",
+    "mirror_catalog_url",
+    "jurisdiction",
+    "fiscal_year",
+    "fiscal_year_start",
+    "fiscal_year_end",
+    "artifact_title",
+    "methodology_code",
+    "max_rows",
+    "filter_buyer",
+    "expected_sha256",
+    "secondary_expected_sha256",
+    "secondary_sha256",
+    "as_of_date",
+)
+
+
 class LegalLintResult(BaseModel):
     """Outcome of the automated BNS Sec 356 neutrality and fairness linter."""
 

@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 
 from aiwatchdogs.core.coding_agents import normalize_coding_agent, normalize_coding_agent_model
+from aiwatchdogs.core.models import AUDIT_CONTEXT_FIELDS
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import (
     compute_sha256,
@@ -6977,8 +6978,23 @@ class DeskService:
         }
 
     @staticmethod
-    def _build_claim_response(cand: Any, *, lease_id: str, lease_expires: str) -> dict[str, Any]:
+    def _build_claim_response(conn: Any, cand: Any, *, lease_id: str, lease_expires: str) -> dict[str, Any]:
         task_payload = loads_json(cand["payload_json"], {})
+        if cand["task_type"] == "peer_verify" and "audit_context_fields" not in task_payload:
+            # Leases created before audit inputs were snapshotted (including tie-breaks).
+            source = conn.execute(
+                "SELECT t.payload_json, f.agent_trace_json FROM findings f "
+                "JOIN tasks t ON t.id = f.task_id WHERE f.id = ?",
+                (cand["target_finding_id"],),
+            ).fetchone()
+            if source is not None:
+                original = loads_json(source["payload_json"], {})
+                if isinstance(original, dict):
+                    task_payload["audit_context_fields"] = {k: original[k] for k in AUDIT_CONTEXT_FIELDS if k in original}
+                    task_payload.setdefault("context", original.get("context") or {})
+                trace = loads_json(source["agent_trace_json"], {})
+                if isinstance(trace, dict) and trace.get("verifier_script_hash"):
+                    task_payload.setdefault("verifier_script_hash", trace["verifier_script_hash"])
         return {
             "lease_id": lease_id,
             "lease_expires_at": lease_expires,
@@ -7060,7 +7076,7 @@ class DeskService:
                         (now, agent["id"]),
                     )
                     return self._build_claim_response(
-                        replay_task,
+                        conn, replay_task,
                         lease_id=str(replay_task["lease_id"]),
                         lease_expires=str(replay_task["lease_expires_at"]),
                     )
@@ -7735,7 +7751,7 @@ class DeskService:
                 event_type="task_claimed",
                 message=f"Claimed {cand['task_type']} task ({cand['methodology_code']}): {cand['title'][:110]}",
             )
-            response = self._build_claim_response(cand, lease_id=lease_id, lease_expires=lease_expires)
+            response = self._build_claim_response(conn, cand, lease_id=lease_id, lease_expires=lease_expires)
             self._emit_durable_event(
                 conn,
                 envelopes,
@@ -8856,6 +8872,7 @@ class DeskService:
         )
 
         server_ctx = task_payload.get("context")
+        audit_context_fields = {k: task_payload[k] for k in AUDIT_CONTEXT_FIELDS if k in task_payload}
         coding_agent_name = str(_row_get(agent, "coding_agent", "") or "")
         coding_agent_model = str(_row_get(agent, "coding_agent_model", "") or "")
 
@@ -9064,6 +9081,8 @@ class DeskService:
             # Auto-create 3 independent peer_verify tasks with full bound manifest
             pv_payload: dict[str, Any] = {
                 "finding_id": finding_id,
+                "audit_context_fields": audit_context_fields,
+                "verifier_script_hash": item["agent_trace"].get("verifier_script_hash"),
                 "submitted_by": agent["handle"],
                 "review_type": "computational_reproduction",
                 "methodology_code": method_code,

@@ -747,6 +747,16 @@ def test_finding4_cli_strict_verifier_matching(tmp_path: Path) -> None:
         assert res_rule["reason"] == "incompatible_engine"
         assert "verification" not in res_rule
 
+        res_hash = runner.execute_task({
+            "lease_id": "l-hash",
+            "task": {
+                "id": "t-hash", "task_type": "peer_verify", "methodology_code": "M2",
+                "payload": {**base_payload, "verifier_script_hash": "a" * 64},
+            },
+        })
+        assert res_hash["reason"] == "incompatible_engine"
+        assert "verification" not in res_hash
+
         # (d) Partial metrics (missing required numeric keys) -> dispute (NO partial-overlap pass!)
         partial_metrics = {"cluster_po_count": 4}
         res_partial = runner.execute_task(
