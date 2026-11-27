@@ -434,6 +434,7 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
   const citations = asArray<Record<string, unknown>>(raw.citations ?? raw.citations_json).map(
     (c): Citation => ({
       artifact_id: c.artifact_id as string | number | undefined,
+      role: c.role ? String(c.role) : undefined,
       source_url: c.source_url ? String(c.source_url) : undefined,
       source_ref: c.source_ref ? String(c.source_ref) : undefined,
       retrieval_url: c.retrieval_url ? String(c.retrieval_url) : undefined,
@@ -470,7 +471,7 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
       ? {
           computational_confirm_count: Number(repro.computational_confirm_count ?? 0),
           editorial_review_count: Number(repro.editorial_review_count ?? 0),
-          required_quorum: Number(repro.required_quorum ?? raw.required_quorum ?? 2),
+          required_quorum: Number(repro.required_quorum ?? raw.required_quorum ?? 3),
         }
       : null;
 
@@ -526,7 +527,7 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
     verifier_script_hash: String(raw.verifier_script_hash || trace.verifier_script_hash || trace.script_hash || ''),
     verification_score: Number(raw.verification_score ?? 0),
     confirm_count: Number(raw.confirm_count ?? verifications.filter((v) => v.verdict === 'confirm').length),
-    required_quorum: Number(raw.required_quorum ?? 2),
+    required_quorum: Number(raw.required_quorum ?? 3),
     verifications,
     has_rti_draft: Boolean(raw.has_rti_draft || rti),
     rti_draft: rti,
@@ -569,7 +570,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
             ? 'P4'
             : slug === 'one-teacher-five-grades' || methodologyCode.toUpperCase() === 'P5'
               ? 'P5'
-              : methodologyCode;
+              : slug === 'parliaments-to-do-list' || methodologyCode.toUpperCase() === 'P6'
+                ? 'P6'
+                : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,
@@ -777,7 +780,7 @@ export const api = {
       latest_event_id: optNum(raw.latest_event_id ?? raw.last_event_id) ?? undefined,
       orchestrator_brief: String(
         raw.orchestrator_brief ||
-          'Distributed deterministic audit swarm checking published Indian government budgets and spending records under strict neutrality and 2-of-2 independent verification.',
+          'Distributed deterministic audit swarm checking published Indian government budgets and spending records under strict neutrality and 3-of-3 independent verification.',
       ),
       stats: {
         public_spend_audited_inr_cr: uniqueCoverage,

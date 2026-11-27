@@ -2,7 +2,11 @@ import { AgentBadge } from './AgentLogos';
 import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
-import { formatInr, formatRelativeTime, isUnverifiedStatus } from '../utils';
+import {
+  formatRelativeTime,
+  isUnverifiedStatus,
+  resolveFindingCardMetric,
+} from '../utils';
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -16,13 +20,14 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
   const unverified = isUnverifiedStatus(finding.status);
   const confirmCount =
     finding.confirm_count ?? finding.verifications?.filter((v) => v.verdict === 'confirm').length ?? 0;
-  const required = finding.required_quorum ?? 2;
+  const required = finding.required_quorum ?? 3;
 
   const hasCorrections =
     Boolean(finding.has_corrections) ||
     Boolean(finding.editorial_status && finding.editorial_status !== 'none') ||
     Boolean(finding.corrections && finding.corrections.length > 0);
   const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+  const cardMetric = resolveFindingCardMetric(finding, FINDING_TAGS.withheld.label);
 
   return (
     <article
@@ -81,14 +86,10 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           style={{
             fontSize: 13,
             fontWeight: 500,
-            color: finding.monetary_exposure_inr && !isQuarantined ? 'var(--ink)' : 'var(--ink-4)',
+            color: cardMetric.prominent ? 'var(--ink)' : 'var(--ink-4)',
           }}
         >
-          {isQuarantined
-            ? FINDING_TAGS.withheld.label
-            : finding.monetary_exposure_inr
-              ? formatInr(finding.monetary_exposure_inr)
-              : finding.amount_label || 'Disclosure lead'}
+          {cardMetric.value}
         </div>
       </div>
 

@@ -163,6 +163,7 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'union-budget-unspent-funds': 'P3',
   'one-road-two-bills': 'P4',
   'one-teacher-five-grades': 'P5',
+  'parliaments-to-do-list': 'P6',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -171,6 +172,7 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   UB1: 'P3',
   OR1: 'P4',
   P5: 'P5',
+  P6: 'P6',
 };
 
 /**
@@ -220,6 +222,9 @@ export function pillarTint(pillar?: string): PillarTint {
   if (p.includes('corp') || p.includes('politic') || p.includes('disclos') || p.includes('gov')) {
     return { hex: '#A7B58A', rgb: '167, 181, 138', wash: 'rgba(167, 181, 138, 0.12)', label: 'Disclosures' };
   }
+  if (p.includes('parl')) {
+    return { hex: '#CB956D', rgb: '203, 149, 109', wash: 'rgba(203, 149, 109, 0.12)', label: 'Parliament & RTI' };
+  }
   return { hex: '#CFCAC0', rgb: '207, 202, 192', wash: 'rgba(207, 202, 192, 0.10)', label: pillarLabel(pillar) };
 }
 
@@ -236,6 +241,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P5: {
     name: 'One Teacher, Five Grades: single-teacher & primary staffing concentration',
     rule: 'Cross-checks official MoE UDISE+ national reports (Tables 2.2, 3.3, 4.3, 5.2) across 2023-24 to 2025-26 to map single-teacher concentration (>=10%), pupil overcrowding (>30:1 RTE norm), and Government Primary (I-V) staffing below 2 teachers/school.',
+  },
+  P6: {
+    name: "Parliament's To-Do List: ministerial assurances & follow-up answers",
+    rule: 'Verifies formal ministerial assurances across all 56 Union Ministries from Digital Sansad (18th Lok Sabha & Rajya Sabha), citing the original promise, recorded status, and what the follow-up implementation statement actually answered.',
   },
 };
 
@@ -345,7 +354,9 @@ export function isOfficialGovUrl(url?: string | null): boolean {
       host === 'nic.in' ||
       host.endsWith('.nic.in') ||
       host === 'cag.org.in' ||
-      host.endsWith('.cag.org.in')
+      host.endsWith('.cag.org.in') ||
+      host === 'sansad.in' ||
+      host.endsWith('.sansad.in')
     );
   } catch {
     return false;
@@ -418,4 +429,206 @@ export function workTypeLabel(type?: string, methodologyCode?: string): string {
 /** Plain words for a task's state on the project page. */
 export function taskStatusLabel(status: string, waiting?: boolean): string {
   return getTaskTag(status, waiting).label;
+}
+
+export type AssuranceStatusKey = 'pending' | 'fulfilled' | 'partly' | 'dropped' | 'other';
+
+export interface AssuranceStatusMeta {
+  key: AssuranceStatusKey;
+  label: string;
+  chipClass: string;
+}
+
+export function formatAssuranceStatus(raw?: string | null): AssuranceStatusMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'pending' || s === 'overdue_pending') {
+    return { key: 'pending', label: 'Pending', chipClass: 'p6-status p6-status--pending' };
+  }
+  if (s === 'fully_implemented' || s === 'fimp' || s === 'fulfilled' || s === 'implemented') {
+    return { key: 'fulfilled', label: 'Fully implemented', chipClass: 'p6-status p6-status--fulfilled' };
+  }
+  if (s === 'partly_implemented' || s === 'partially_implemented' || s === 'partly_fulfilled') {
+    return { key: 'partly', label: 'Partly implemented', chipClass: 'p6-status p6-status--partly' };
+  }
+  if (s === 'dropped') {
+    return { key: 'dropped', label: 'Dropped', chipClass: 'p6-status p6-status--dropped' };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Unrecorded',
+    chipClass: 'p6-status p6-status--other',
+  };
+}
+
+export interface ParsedAssuranceMetrics {
+  ministry: string | null;
+  house: string | null;
+  session: string | null;
+  assuranceRef: string | null;
+  promiseDate: string | null;
+  recordedStatus: string | null;
+  originalPromise: string | null;
+  followupAnswer: string | null;
+  followupDate: string | null;
+  daysElapsed: number | null;
+  fulfillmentDays: number | null;
+  extensionsCount: number | null;
+  extensionUpto: string | null;
+  impRecordNo: string | null;
+  member: string | null;
+  minister: string | null;
+  remarks: string | null;
+  signalCategory: string | null;
+}
+
+function metricStr(m: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const k of keys) {
+    const v = m[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+    if (typeof v === 'number' && Number.isFinite(v)) return String(v);
+  }
+  return null;
+}
+
+function metricNum(m: Record<string, unknown>, ...keys: string[]): number | null {
+  for (const k of keys) {
+    const v = m[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+export function extractAssuranceMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedAssuranceMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+  const originalPromise = metricStr(metrics, 'original_promise');
+  const recordedStatus = metricStr(metrics, 'recorded_status', 'raw_status');
+  const followupAnswer = metricStr(metrics, 'followup_answer');
+  if (!originalPromise && !recordedStatus && !followupAnswer) return null;
+
+  return {
+    ministry: metricStr(metrics, 'ministry'),
+    house: metricStr(metrics, 'house'),
+    session: metricStr(metrics, 'session'),
+    assuranceRef: metricStr(metrics, 'assurance_ref', 'oassu_no'),
+    promiseDate: metricStr(metrics, 'promise_date'),
+    recordedStatus,
+    originalPromise,
+    followupAnswer,
+    followupDate: metricStr(metrics, 'followup_date'),
+    daysElapsed: metricNum(metrics, 'days_elapsed'),
+    fulfillmentDays: metricNum(metrics, 'fulfillment_days'),
+    extensionsCount: metricNum(metrics, 'extensions_count', 'ext_no'),
+    extensionUpto: metricStr(metrics, 'extension_upto', 'ext_upto'),
+    impRecordNo: metricStr(metrics, 'imp_record_no', 'impRecordNo'),
+    member: metricStr(metrics, 'member'),
+    minister: metricStr(metrics, 'minister'),
+    remarks: metricStr(metrics, 'remarks'),
+    signalCategory: metricStr(metrics, 'signal_category'),
+  };
+}
+
+export interface FindingDrawerMetric {
+  label: string;
+  value: string;
+}
+
+export interface FindingCardMetric {
+  value: string;
+  prominent: boolean;
+}
+
+type FindingMetricSource = {
+  methodology_code: string;
+  monetary_exposure_inr?: number | null;
+  amount_label?: string | null;
+  anomaly_metrics?: Record<string, unknown> | null;
+  quarantined?: boolean;
+  status?: string;
+};
+
+/**
+ * Resolve the headline metric shown in FindingDrawer's metadata strip.
+ * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`
+ * (which is stored as 0 for non-monetary parliamentary assurances).
+ * Non-P6 findings retain their exact existing behavior.
+ */
+export function resolveFindingDrawerMetric(
+  finding: FindingMetricSource,
+): FindingDrawerMetric {
+  const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+  const p6Record =
+    finding.methodology_code === 'P6' && !isQuarantined
+      ? extractAssuranceMetrics(finding.anomaly_metrics)
+      : null;
+  const p6Status = p6Record?.recordedStatus
+    ? formatAssuranceStatus(p6Record.recordedStatus)
+    : null;
+
+  if (p6Status) {
+    return {
+      label: 'Recorded Status',
+      value: `${p6Status.label}${
+        p6Record?.daysElapsed != null
+          ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d`
+          : ''
+      }`,
+    };
+  }
+
+  return {
+    label: finding.amount_label
+      ? finding.amount_label.replace(/_/g, ' ')
+      : 'Reported Figure',
+    value:
+      finding.monetary_exposure_inr != null
+        ? formatInr(finding.monetary_exposure_inr)
+        : 'Disclosure Lead',
+  };
+}
+
+/**
+ * Resolve the top-right headline readout shown on FindingCard.
+ * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`.
+ * Non-P6 findings remain completely unchanged.
+ */
+export function resolveFindingCardMetric(
+  finding: FindingMetricSource,
+  withheldLabel = 'Withheld',
+): FindingCardMetric {
+  const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+  if (isQuarantined) {
+    return { value: withheldLabel, prominent: false };
+  }
+
+  const p6Record =
+    finding.methodology_code === 'P6'
+      ? extractAssuranceMetrics(finding.anomaly_metrics)
+      : null;
+  const p6RightLabel = p6Record?.recordedStatus
+    ? `${formatAssuranceStatus(p6Record.recordedStatus).label}${
+        p6Record.daysElapsed != null
+          ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d`
+          : ''
+      }`
+    : null;
+
+  if (p6RightLabel) {
+    return { value: p6RightLabel, prominent: true };
+  }
+
+  if (finding.monetary_exposure_inr) {
+    return { value: formatInr(finding.monetary_exposure_inr), prominent: true };
+  }
+
+  return {
+    value: finding.amount_label || 'Disclosure lead',
+    prominent: false,
+  };
 }

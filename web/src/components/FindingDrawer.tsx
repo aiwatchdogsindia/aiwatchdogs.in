@@ -25,11 +25,14 @@ import {
   METHODOLOGY_DESCRIPTIONS,
   copyToClipboard,
   downloadTextFile,
+  extractAssuranceMetrics,
+  formatAssuranceStatus,
   formatBytes,
   formatDateShort,
   formatInr,
   formatRelativeTime,
   isOfficialGovUrl,
+  resolveFindingDrawerMetric,
   safeExternalUrl,
 } from '../utils';
 import { useToast } from './Toast';
@@ -217,7 +220,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     finding?.verifications?.filter((v) => formatReviewKindLabel(v.review_kind).isEditorial).length ??
     0;
   const requiredQuorum =
-    finding?.reproduction_summary?.required_quorum ?? finding?.required_quorum ?? 2;
+    finding?.reproduction_summary?.required_quorum ?? finding?.required_quorum ?? 3;
   const methodMeta = finding ? METHODOLOGY_DESCRIPTIONS[finding.methodology_code] : null;
   const isQuarantined = Boolean(finding?.quarantined || finding?.status === 'quarantined');
   const hasEditorialNotice = Boolean(
@@ -248,6 +251,24 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     finding.fiscal_year_start !== finding.fiscal_year_end
       ? `${finding.fiscal_year_start} – ${finding.fiscal_year_end}`
       : finding?.fiscal_year || 'Unrecorded';
+
+  const p6Record =
+    finding?.methodology_code === 'P6' && !isQuarantined
+      ? extractAssuranceMetrics(finding.anomaly_metrics)
+      : null;
+  const p6Status = p6Record?.recordedStatus
+    ? formatAssuranceStatus(p6Record.recordedStatus)
+    : null;
+  const drawerMetric = finding ? resolveFindingDrawerMetric(finding) : null;
+  const displayMetricEntries = finding
+    ? Object.entries(finding.anomaly_metrics).filter(
+        ([k]) =>
+          !(
+            p6Record &&
+            (k === 'original_promise' || k === 'followup_answer')
+          ),
+      )
+    : [];
 
   const isStateRti =
     rtiDraft?.jurisdiction_level === 'state' ||
@@ -441,12 +462,10 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       </div>
                       <div>
                         <div className="kicker" style={{ fontSize: 10.5 }}>
-                          {finding.amount_label ? finding.amount_label.replace(/_/g, ' ') : 'Reported Figure'}
+                          {drawerMetric?.label ?? 'Reported Figure'}
                         </div>
                         <div className="font-mono tabular" style={{ fontSize: 15.5, marginTop: 3 }}>
-                          {finding.monetary_exposure_inr != null
-                            ? formatInr(finding.monetary_exposure_inr)
-                            : 'Disclosure Lead'}
+                          {drawerMetric?.value ?? 'Disclosure Lead'}
                         </div>
                       </div>
                       <div>
@@ -500,8 +519,113 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                     </div>
                   </div>
 
+                  {/* P6 Structured 3-Part Assurance Record (Original Promise -> Recorded Status -> Follow-Up Answer) */}
+                  {p6Record && (
+                    <section className="card card-pad drawer-p6-card" aria-label="Parliamentary assurance record">
+                      <div className="drawer-p6-head">
+                        <div>
+                          <div className="section-kicker" style={{ marginBottom: 4 }}>
+                            Parliamentary Assurance Record · Promise → Status → Follow-Up
+                          </div>
+                          <div className="drawer-p6-meta">
+                            {p6Record.house && <span className="tag-mono">{p6Record.house}</span>}
+                            {p6Record.session && <span className="tag-mono">Session {p6Record.session}</span>}
+                            {p6Record.assuranceRef && (
+                              <span className="tag-mono font-mono">{p6Record.assuranceRef}</span>
+                            )}
+                            {p6Record.promiseDate && (
+                              <span className="tag-mono tabular">Promised {p6Record.promiseDate}</span>
+                            )}
+                            {p6Record.daysElapsed != null && (
+                              <span className="tag-mono tabular">
+                                {p6Record.daysElapsed.toLocaleString('en-IN')} days elapsed
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {p6Status && <span className={p6Status.chipClass}>{p6Status.label}</span>}
+                      </div>
+
+                      {(p6Record.member || p6Record.minister) && (
+                        <div className="drawer-p6-people">
+                          {p6Record.member && (
+                            <span>
+                              <strong>MP:</strong> {p6Record.member}
+                            </span>
+                          )}
+                          {p6Record.minister && (
+                            <span>
+                              <strong>Minister:</strong> {p6Record.minister}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="drawer-p6-steps">
+                        <div className="drawer-p6-step">
+                          <div className="drawer-p6-step-kicker">01 · Original Promise</div>
+                          <p className="drawer-p6-step-body drawer-p6-quote">
+                            {p6Record.originalPromise
+                              ? `“${p6Record.originalPromise}”`
+                              : 'Verbatim promise text unrecorded in primary API payload.'}
+                          </p>
+                        </div>
+
+                        <div className="drawer-p6-step">
+                          <div className="drawer-p6-step-kicker">02 · Recorded Status</div>
+                          <div className="drawer-p6-status-row">
+                            {p6Status && <span className={p6Status.chipClass}>{p6Status.label}</span>}
+                            {p6Record.daysElapsed != null && (
+                              <span className="tabular drawer-p6-status-detail">
+                                {p6Record.daysElapsed.toLocaleString('en-IN')} days since assurance
+                              </span>
+                            )}
+                            {p6Record.fulfillmentDays != null && (
+                              <span className="tabular drawer-p6-status-detail">
+                                Fulfilled in {p6Record.fulfillmentDays.toLocaleString('en-IN')} days
+                              </span>
+                            )}
+                          </div>
+                          {(p6Record.extensionsCount != null && p6Record.extensionsCount > 0) ||
+                          p6Record.extensionUpto ||
+                          p6Record.remarks ? (
+                            <p className="drawer-p6-step-sub">
+                              {[
+                                p6Record.extensionsCount != null && p6Record.extensionsCount > 0
+                                  ? `${p6Record.extensionsCount} extension${p6Record.extensionsCount === 1 ? '' : 's'} sought`
+                                  : null,
+                                p6Record.extensionUpto ? `Extended up to ${p6Record.extensionUpto}` : null,
+                                p6Record.remarks ? `Remarks: ${p6Record.remarks}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="drawer-p6-step">
+                          <div className="drawer-p6-step-kicker">03 · What the Follow-Up Actually Answered</div>
+                          <p className="drawer-p6-step-body">
+                            {p6Record.followupAnswer ||
+                              'No Implementation Statement or follow-up answer is recorded on Digital Sansad.'}
+                          </p>
+                          {(p6Record.impRecordNo || p6Record.followupDate) && (
+                            <p className="drawer-p6-step-sub font-mono tabular">
+                              {[
+                                p6Record.impRecordNo ? `Implementation Ref: ${p6Record.impRecordNo}` : null,
+                                p6Record.followupDate ? `Date: ${p6Record.followupDate}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
                   {/* Deterministic Metrics Table */}
-                  {Object.keys(finding.anomaly_metrics).length > 0 && (
+                  {displayMetricEntries.length > 0 && (
                     <div>
                       <div
                         style={{
@@ -531,7 +655,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                             </tr>
                           </thead>
                           <tbody>
-                            {Object.entries(finding.anomaly_metrics).map(([k, v]) => (
+                            {displayMetricEntries.map(([k, v]) => (
                               <tr key={k}>
                                 <td style={{ textTransform: 'capitalize' }}>{k.replace(/_/g, ' ')}</td>
                                 <td className="num">
@@ -940,7 +1064,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       </div>
                     ) : (
                       <div className="state-banner" style={{ padding: 16 }}>
-                        Awaiting independent peer verification from 2 distinct contributor nodes. Run{' '}
+                        Awaiting independent peer verification from {requiredQuorum} pairwise-distinct contributor nodes (distinct harnesses and models from the author and each other). Run{' '}
                         <code className="font-mono">aiwatchdogs join --mode verify</code> to verify this lead!
                       </div>
                     )}

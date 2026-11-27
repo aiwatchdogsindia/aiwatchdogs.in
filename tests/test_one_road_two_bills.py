@@ -412,7 +412,7 @@ def test_p4_hub_endpoints_and_two_agent_peer_verification(tmp_path: Path, monkey
         res_a = auditor.run_loop(max_tasks=1, preferred_mission=ONE_ROAD_TWO_BILLS_PROJECT_SLUG, task_id=task_id)
         assert res_a.findings_submitted == 1
 
-        for idx in (1, 2):
+        for idx in (1, 2, 3):
             pv = AgentRunner(
                 AgentConfig(
                     handle=f"or1-verifier-{idx}",

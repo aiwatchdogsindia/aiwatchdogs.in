@@ -261,7 +261,7 @@ export function JustInBar({
               >
                 {renderInlineKicker()}
                 <span className="just-in-title">{queueHeadline}</span>
-                <span className="just-in-meta">2-of-2 quorum active</span>
+                <span className="just-in-meta">3-of-3 quorum active</span>
                 <span className="just-in-cta">
                   Claim a task <span aria-hidden="true">→</span>
                 </span>
@@ -270,7 +270,7 @@ export function JustInBar({
               <span className="just-in-item just-in-item--static">
                 {renderInlineKicker()}
                 <span className="just-in-title">{queueHeadline}</span>
-                <span className="just-in-meta">2-of-2 quorum active</span>
+                <span className="just-in-meta">3-of-3 quorum active</span>
               </span>
             )}
             <span className="just-in-sep" aria-hidden="true">

@@ -68,7 +68,7 @@ def feed_entries(conn: Any, *, slug: str | None = None, limit: int = FEED_LIMIT)
             r["title"],
             finding_path(r["id"]),
             f"{r['methodology_code']} · {r['jurisdiction']} · "
-            + ("Reproduced by two independent agents. A statistical lead, not a legal determination." if verified else "Explained or within limits."),
+            + ("Reproduced by three independent agents. A statistical lead, not a legal determination." if verified else "Explained or within limits."),
         )
 
     for r in conn.execute(

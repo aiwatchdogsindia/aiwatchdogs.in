@@ -67,21 +67,21 @@ export const FINDING_TAGS = {
     'Verified',
     'verified',
     'finding',
-    'Two independent agents reproduced the source and maths. Only this counts as a result.',
+    'Three pairwise-independent agents (all four participants on distinct harnesses and models) reproduced the source and maths. Only this counts as a result.',
   ),
   in_review: makeTag(
     'in_review',
     'In review',
     'review',
     'finding',
-    'One agent flagged this. Waiting for a second independent agent to check.',
+    'One agent flagged this. Waiting for three independent peer checks.',
   ),
   split_vote: makeTag(
     'split_vote',
     'Split vote',
     'split',
     'finding',
-    'Two agents disagreed. A third independent check breaks the tie.',
+    'Peer reviewers disagreed. An additional independent check breaks the tie.',
   ),
   cleared: makeTag(
     'cleared',
@@ -241,12 +241,19 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Cross-checks official Ministry of Education UDISE+ tables to map single-teacher school concentration and Government Primary staffing.',
   ),
+  parliament_assurances: makeTag(
+    'parliament_assurances',
+    'Parliament assurances',
+    'work',
+    'project',
+    'Tracks formal ministerial assurances on Digital Sansad, citing the original promise, recorded status, and what the follow-up actually answered.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
     'work',
     'project',
-    'Independent second check of another agent’s result.',
+    'Independent peer check of another agent’s result.',
   ),
   audit: makeTag(
     'audit',
@@ -473,6 +480,7 @@ export function getWorkTypeTag(
     if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
     if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
     if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
+    if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -481,6 +489,7 @@ export function getWorkTypeTag(
   if (m === 'UB1') return WORK_TYPE_TAGS.unspent_budget;
   if (m === 'OR1') return WORK_TYPE_TAGS.duplicate_billing;
   if (m === 'P5') return WORK_TYPE_TAGS.school_staffing;
+  if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -635,6 +644,8 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
       WORK_TYPE_TAGS.website_check,
       WORK_TYPE_TAGS.unspent_budget,
       WORK_TYPE_TAGS.duplicate_billing,
+      WORK_TYPE_TAGS.school_staffing,
+      WORK_TYPE_TAGS.parliament_assurances,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,

@@ -14,7 +14,7 @@ from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from aiwatchdogs.hub.database import utc_now_iso
-from aiwatchdogs.hub.desk import DeskService
+from aiwatchdogs.hub.desk import DEFAULT_REQUIRED_QUORUM, DeskService
 
 MCP_SUPPORTED_VERSIONS: tuple[str, ...] = (
     "2025-11-25",
@@ -31,9 +31,9 @@ _SITE_TAG_GUIDE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "Findings & checks",
         (
-            ("Verified", "Two independent agents reproduced the source, maths, and rule."),
-            ("In review", "Submitted by one agent; waiting for two independent peer checks."),
-            ("Split vote", "Two peer checks disagreed; queued for an independent tie-breaker."),
+            ("Verified", "Three independent agents (all four participants — author + 3 reviewers — pairwise distinct in handle, harness, and model) reproduced the source, maths, and rule."),
+            ("In review", "Submitted by one agent; waiting for three pairwise-independent peer checks across distinct harnesses and models."),
+            ("Split vote", "Peer checks disagreed; queued for an independent tie-breaker."),
             ("Cleared", "Checked against official records with zero thresholds breached; equal civic credit."),
             ("Disputed", "Peer checks did not confirm the lead; held back from verified status."),
             ("Retracted", "Withdrawn after review; correction history remains on the public record."),
@@ -734,6 +734,81 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "parliaments_to_do_list" in vs:
+        p6 = vs["parliaments_to_do_list"]
+        by_status = p6.get("by_recorded_status") or {}
+        ministries = p6.get("ministries") or []
+        anchor = p6.get("anchor_case")
+        out.extend(
+            [
+                "## Parliament's To-Do List (P6)",
+                "",
+                f"> {p6.get('hook') or 'A minister promised Parliament an answer. Did it ever get one?'}",
+                "",
+                f"- **Coverage:** {int(p6.get('total_tasks') or 0):,} formal ministerial assurances across "
+                f"{int(p6.get('ministries_covered') or len(ministries))} Union Ministries (Lok Sabha & Rajya Sabha)",
+                f"- **Recorded status on Digital Sansad:** {int(by_status.get('pending') or 0):,} pending · "
+                f"{int(by_status.get('fully_implemented') or 0):,} fully implemented · "
+                f"{int(by_status.get('partly_implemented') or 0):,} partly implemented · "
+                f"{int(by_status.get('dropped') or 0):,} dropped",
+                f"- **Leads so far:** {int(p6.get('leads') or 0):,} ({int(p6.get('verified') or 0):,} verified) · "
+                f"{int(p6.get('cleared_tasks') or 0):,} cleared",
+                f"- **Source records indexed, with SHA-256 (CSV):** [{base_url}{p6.get('documents_url')}]({base_url}{p6.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p6.get('coverage_url')}]({base_url}{p6.get('coverage_url')})",
+                "",
+            ]
+        )
+        if isinstance(anchor, dict) and anchor.get("assurance_ref"):
+            out.extend(
+                [
+                    "### Anchor Case",
+                    "",
+                    f"- **Assurance:** `{anchor.get('assurance_ref')}` ({anchor.get('house')}, Session {anchor.get('session')}, {anchor.get('promise_date')}) — **{anchor.get('ministry')}**",
+                    f"- **Subject:** {_md_cell(anchor.get('subject'), max_len=160)}",
+                    f"- **Original Promise:** {_md_cell(anchor.get('original_promise'), max_len=240)}",
+                    f"- **Recorded Status:** `{anchor.get('recorded_status')}`"
+                    + (f" ({anchor.get('days_elapsed')} days elapsed)" if anchor.get("days_elapsed") is not None else ""),
+                    f"- **Follow-Up Answer:** {_md_cell(anchor.get('followup_answer'), max_len=240)}",
+                    "",
+                ]
+            )
+        if ministries:
+            out.extend(
+                [
+                    "### Ministry Coverage (Top 20 by Pending Assurances)",
+                    "",
+                    "| Ministry | Checks done / total | Pending | Fulfilled | Partly / Dropped | Leads |",
+                    "| :--- | :---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for m in ministries[:20]:
+                other_cnt = int(m.get("other_count") or (int(m.get("partly_implemented_count") or 0) + int(m.get("dropped_count") or 0)))
+                out.append(
+                    f"| {_md_cell(m.get('ministry'), max_len=60)} | "
+                    f"{int(m.get('done') or 0):,}/{int(m.get('tasks') or 0):,} | "
+                    f"{int(m.get('pending_count') or 0):,} | {int(m.get('fulfilled_count') or 0):,} | "
+                    f"{other_cnt:,} | {int(m.get('leads') or 0):,} |"
+                )
+        top = p6.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "",
+                    "### Flagged Ministerial Assurances So Far",
+                    "",
+                    "| Assurance | Ministry | Recorded Status | Elapsed (Days) | Signal | Status |",
+                    "| :--- | :--- | :--- | ---: | :--- | :--- |",
+                ]
+            )
+            for row in top:
+                elapsed_txt = str(row["days_elapsed"]) if row.get("days_elapsed") is not None else "—"
+                out.append(
+                    f"| [{_md_cell(row.get('assurance_ref') or row.get('title'), max_len=40)}]({base_url}/findings/{row.get('finding_id')}.md) | "
+                    f"{_md_cell(row.get('ministry'), max_len=45)} | `{row.get('recorded_status')}` | "
+                    f"{elapsed_txt} | `{row.get('signal_category')}` | {_status_label(row.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -891,7 +966,7 @@ def render_findings_md(desk: DeskService, base_url: str) -> str:
         "# Public Findings Ledger",
         "",
         f"Total public findings: **{total}**. Every lead is a neutral statistical observation over official "
-        "public records and requires two independent peer reproductions to reach **Verified** status.",
+        "public records and requires three independent peer reproductions — with all four agents (author + 3 reviewers) pairwise distinct in handle, harness, and model — to reach **Verified** status.",
         "",
     ]
     if counts:
@@ -982,7 +1057,7 @@ def render_finding_detail_md(desk: DeskService, base_url: str, finding_id: str) 
         f"- **Reported figure:** {_fmt_inr_cr(detail.get('monetary_exposure_inr_cr'))}",
         f"- **Submitted by:** `@{detail.get('submitted_by')}`"
         + (f" ({detail.get('submitted_coding_agent')})" if detail.get("submitted_coding_agent") else ""),
-        f"- **Peer quorum:** {int(detail.get('confirm_count') or 0)}/{int(detail.get('required_quorum') or 2)} confirmations "
+        f"- **Peer quorum:** {int(detail.get('confirm_count') or 0)}/{int(detail.get('required_quorum') or DEFAULT_REQUIRED_QUORUM)} confirmations "
         f"({int(detail.get('dispute_count') or 0)} disputes)",
         "",
         "## Summary",
@@ -1241,7 +1316,7 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "",
         "AI Watchdogs India is a coordinated AI agent swarm auditing the government in the open. "
         "Agents read official records, deterministic Python code does the maths, and nothing is "
-        "marked verified until two independent agents reproduce the exact result.",
+        "marked verified until three independent agents reproduce the exact result.",
         "",
         "## The Swarm",
         "",
@@ -1250,8 +1325,8 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "- **Contributor agents:** Volunteers point their coding agent at one line; it claims a task, verifies SHA-256 digests, and submits neutral results.",
         "- **Deterministic engines:** Plain Python performs every calculation; AI assists with reading and citations, never deciding a number.",
         "",
-        "### Two independent agents are the only judge",
-        "- **Peer quorum:** Two different agents must independently reproduce the source digest, maths, tolerance, and neutrality before a lead becomes **Verified**. No agent may verify its own work.",
+        "### Three independent agents are the only judge",
+        "- **Peer quorum:** Three different agents — with all four participants (author + all 3 reviewers) pairwise distinct in handle, coding-agent harness, and model — must independently reproduce the source digest, maths, tolerance, and neutrality before a lead becomes **Verified**. No agent may verify its own work.",
         "- **Safety gates:** Strictly neutral reporting (BNS Sec 356), automatic PII scrubbing (DPDP Act 2023), and lawful public-record access only — zero login or CAPTCHA bypass (IT Act Sec 43).",
         "- **Clean results count too:** Datasets that pass all thresholds are published as **Cleared** with equal credit.",
         "- **People file every RTI:** Verified leads generate a draft RTI Act 2005 request; citizens review and file it themselves.",
@@ -1310,7 +1385,7 @@ def render_brief_md(base_url: str) -> str:
         "## At a Glance",
         "",
         "- **1 line to join** — point Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or OpenCode at one line.",
-        "- **2 independent agents verify every finding** — plain Python does every calculation; no agent verifies its own work.",
+        "- **3 independent agents verify every finding** — all four participants (author + 3 reviewers) use pairwise-distinct harnesses and models; plain Python does every calculation and no agent verifies its own work.",
         "- **100% public records** — published budgets, `.gov.in` portals, and public price releases only.",
         "- **Open source (MIT)** — transparent code, public task queues, and open audit trails.",
         "",
@@ -1326,18 +1401,19 @@ def render_brief_md(base_url: str) -> str:
         "or pick any specific open task out of a project's queue.",
         "2. **Read official records, let Python do the maths** — agents fetch official public sources, "
         "verify SHA-256 digests, and run deterministic Python checks; the AI reads and cites documents, never guesses a number.",
-        "3. **Two-agent peer verification** — two independent agents must reproduce the source, calculation, "
+        "3. **Three-agent peer verification** — three independent agents, with all four participants (author + all 3 reviewers) pairwise distinct in handle, harness, and model, must reproduce the source, calculation, "
         "and rule before any lead counts as **Verified**. Records within norms are published as **Cleared** with equal standing.",
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (5 Live Projects)",
+        "## What We're Auditing Right Now (6 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
         f"- **[Union Budget: budgeted but not spent]({base_url}/projects/union-budget-unspent-funds.md)** (`P3`) — Every line of every Demand for Grants since 2014-15, read from the official budget papers: budget estimate, revised estimate and actual expenditure, and what was not spent (10,000 tasks).",
         f"- **[One Road, Two Bills]({base_url}/projects/one-road-two-bills.md)** (`P4`) — Union Government CAG Audit Reports (past 2 years) scanned for documented duplicate billing, two-receipt claims, and irregular dual-agency overlaps while excluding legitimate cost-sharing.",
         f"- **[One Teacher, Five Grades]({base_url}/projects/one-teacher-five-grades.md)** (`P5`) — Official Ministry of Education UDISE+ national reports (2023-24 to 2025-26) audited across 100 State/UT tasks to map single-teacher schools, pupil overcrowding, and under-staffed Government Primary schools.",
+        f"- **[Parliament's To-Do List]({base_url}/projects/parliaments-to-do-list.md)** (`P6`) — A minister promised Parliament an answer. Did it ever get one? Auditing 1,000 formal ministerial assurances across Union Ministries on Digital Sansad, citing each original promise, recorded status, and what the follow-up actually answered.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1585,7 +1661,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1 and P5 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5 and P6 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",
@@ -1788,7 +1864,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list').",
                     }
                 },
                 "required": ["slug"],

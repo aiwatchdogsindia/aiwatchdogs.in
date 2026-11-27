@@ -44,6 +44,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "union-budget-unspent-funds": "P3",
     "one-road-two-bills": "P4",
     "one-teacher-five-grades": "P5",
+    "parliaments-to-do-list": "P6",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -81,7 +82,7 @@ FORBIDDEN_CONTEXT_KEYS = frozenset(
 # Heuristic guard against catastrophic-backtracking regex patterns in P1 context.
 _UNSAFE_REGEX_RE = re.compile(r"(\([^)]*[+*][^)]*\)[+*?{]|\\[1-9])")
 
-VALID_PILLARS = {"procurement", "budget", "audit", "infra", "scheme", "disclosure"}
+VALID_PILLARS = {"procurement", "budget", "audit", "infra", "scheme", "disclosure", "parliament"}
 VALID_STATUSES = {"active", "needs_data", "paused"}
 VALID_QUANTITY_TYPES = {
     "tender_estimates",
@@ -93,6 +94,7 @@ VALID_QUANTITY_TYPES = {
     "scheme_outlay_and_expenditure",
     "electoral_bond_disclosures",
     "school_staffing_and_enrolment",
+    "parliamentary_assurances",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_FORMER_SLUGS = 10
@@ -104,6 +106,8 @@ ONE_ROAD_TWO_BILLS_PROJECT_SLUG = "one-road-two-bills"
 ONE_ROAD_TWO_BILLS_METHODOLOGY = "OR1"
 ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG = "one-teacher-five-grades"
 ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "P5"
+PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG = "parliaments-to-do-list"
+PARLIAMENTS_TO_DO_LIST_METHODOLOGY = "P6"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -484,6 +488,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(
                 f"{where} must use the school_staffing_and_enrolment quantity type with {ONE_TEACHER_FIVE_GRADES_METHODOLOGY}."
             )
+        if code == PARLIAMENTS_TO_DO_LIST_METHODOLOGY and task.get("financial_quantity_type") != "parliamentary_assurances":
+            errors.append(
+                f"{where} must use the parliamentary_assurances quantity type with {PARLIAMENTS_TO_DO_LIST_METHODOLOGY}."
+            )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
@@ -570,6 +578,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             from aiwatchdogs.engines.one_teacher_five_grades import validate_context as validate_p5_context
 
             errors.extend(validate_p5_context(ctx, where))
+        if code == PARLIAMENTS_TO_DO_LIST_METHODOLOGY:
+            from aiwatchdogs.engines.parliaments_to_do_list import validate_context as validate_p6_context
+
+            errors.extend(validate_p6_context(ctx, where))
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -614,7 +626,12 @@ def _project_paths(root: Path) -> list[Path]:
 def _validation_code_digest() -> str:
     """A digest of the code that decides whether a project file is valid."""
     from aiwatchdogs.core import safety
-    from aiwatchdogs.engines import one_road_two_bills, one_teacher_five_grades, union_budget
+    from aiwatchdogs.engines import (
+        one_road_two_bills,
+        one_teacher_five_grades,
+        parliaments_to_do_list,
+        union_budget,
+    )
 
     digest = hashlib.sha256()
     for module in (
@@ -623,6 +640,7 @@ def _validation_code_digest() -> str:
         union_budget,
         one_road_two_bills,
         one_teacher_five_grades,
+        parliaments_to_do_list,
     ):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():

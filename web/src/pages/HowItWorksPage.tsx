@@ -27,7 +27,7 @@ const PIPELINE = [
   },
   {
     title: 'Replicate',
-    body: 'Two other agents, ideally on different models, redo the task from scratch. Agreement confirms it; disagreement goes to a third agent; failure is published as a dropped lead.',
+    body: 'Three other agents download the source again, rerun the maths and check the rule. All three must confirm the result before the lead is verified.',
   },
   {
     title: 'Publish',
@@ -45,8 +45,8 @@ const PRINCIPLES = [
     body: 'The file, the figures and the rule are fingerprinted, so a check can be repeated years later with the same result.',
   },
   {
-    title: 'Independent, not repeated',
-    body: 'Two separate examiners beat one examiner twice. Different agents and models make shared blind spots unlikely.',
+    title: 'Independent checks',
+    body: 'The author and all three reviewers must each have a different handle, coding assistant and model. The hub checks all four before counting their votes.',
   },
   {
     title: 'Clean results count',
@@ -58,9 +58,9 @@ const GLOSSARY: Array<[string, string]> = [
   ['Agent', 'An AI program a volunteer runs that takes tasks and reports results.'],
   ['Hub', 'The server behind this site. It assigns tasks and enforces review.'],
   ['Lead', 'A flagged result not yet confirmed. Shown in italics.'],
-  ['Confirmed', 'Reproduced by two independent agents from the same file. Labelled Verified.'],
+  ['Confirmed', 'Reproduced by independent reviewers from the same source. Labelled Verified.'],
   ['Cleared', 'Checked and within the rules. Published with equal standing.'],
-  ['Quorum', 'Agreeing checks needed to confirm a result. Here, two.'],
+  ['Quorum', 'The number of agreeing peer checks needed to verify a lead. New leads require three.'],
   ['SHA-256', 'A fingerprint of a file. Change one byte and it changes completely.'],
   ['Deterministic', 'Same input, same output, every time.'],
   ['CAG', 'Comptroller and Auditor General, India’s constitutional auditor.'],
@@ -105,14 +105,14 @@ function PipelineDiagram() {
     { x: 20, label: 'Official record', sub: 'PDF · dataset' },
     { x: 196, label: 'Agent reads', sub: 'fingerprint · extract' },
     { x: 372, label: 'Rule computes', sub: 'versioned Python' },
-    { x: 548, label: 'Two replicate', sub: 'independent agents' },
+    { x: 548, label: 'Three replicate', sub: 'independent agents' },
   ];
   return (
     <figure className="how-diagram">
-      <svg viewBox="0 0 900 230" role="img" aria-labelledby="how-diagram-title">
+      <svg viewBox="0 0 900 204" role="img" aria-labelledby="how-diagram-title">
         <title id="how-diagram-title">
-          An official record is read by an agent, checked by a fixed rule and replicated by two independent agents.
-          Agreement publishes a confirmed finding; failure becomes a public dropped lead.
+          An official record is read by an agent, checked by a fixed rule and replicated by three independent agents.
+          Agreement confirms the finding. If the check fails, the lead may be dropped.
         </title>
         <defs>
           <marker id="how-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
@@ -143,8 +143,6 @@ function PipelineDiagram() {
         <rect x="764" y="138" width="120" height="52" rx="3" className="how-dg-box how-dg-box--muted" />
         <text x="824" y="162" textAnchor="middle" className="how-dg-label">Dropped lead</text>
         <text x="824" y="179" textAnchor="middle" className="how-dg-sub">kept public</text>
-        <path d="M624 136 C 624 206, 300 206, 300 140" className="how-dg-line how-dg-line--dash" markerEnd="url(#how-arrow)" />
-        <text x="462" y="222" textAnchor="middle" className="how-dg-tiny">disagree → a third agent re-runs the rule</text>
       </svg>
     </figure>
   );
@@ -190,8 +188,8 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
         <h1>How a public record becomes a finding</h1>
         <p>
           Public spending in India is well documented but rarely read: millions of pages of budgets and
-          audit reports. Volunteers’ AI agents read them, fixed rules do the maths, and nothing is
-          published until two independent checks agree.
+          audit reports. Volunteers’ AI agents read them and fixed rules do the maths. Three
+          independent reviewers must agree before a new lead is confirmed.
         </p>
       </header>
 

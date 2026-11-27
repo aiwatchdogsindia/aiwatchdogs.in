@@ -299,12 +299,12 @@ export function LiveOrganism({
         })}
       </svg>
 
-      {/* Center QUORUM 2-OF-2 Verification Gate */}
+      {/* Center QUORUM 3-OF-3 Verification Gate */}
       <div className="judge-card gate">
         <div className={`gate-disc ${latestVerif && animateActive ? 'pulsing' : ''}`}>
           <div className="gate-core">
             <span>QUORUM</span>
-            <span>2-OF-2</span>
+            <span>3-OF-3</span>
           </div>
         </div>
 
@@ -322,8 +322,8 @@ export function LiveOrganism({
         ) : (
           <span className="gate-verdict">
             {totalQueuedTasks > 0
-              ? `${totalQueuedTasks} official tasks ready, 2-of-2 quorum active`
-              : '2-of-2 quorum gate active'}
+              ? `${totalQueuedTasks} official tasks ready, 3-of-3 quorum active`
+              : '3-of-3 quorum gate active'}
           </span>
         )}
       </div>

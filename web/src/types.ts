@@ -434,6 +434,100 @@ export interface VisualOneTeacherFiveGrades {
   coverage_url: string;
 }
 
+export interface VisualParliamentHouseCounts {
+  house?: string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  pending?: number;
+  pending_count?: number;
+  fully_implemented?: number;
+  fulfilled?: number;
+  fulfilled_count?: number;
+  partly_implemented?: number;
+  partly_implemented_count?: number;
+  dropped?: number;
+  dropped_count?: number;
+  leads?: number;
+}
+
+export interface VisualParliamentAnchorCase {
+  task_id: string;
+  finding_id?: string | null;
+  assurance_ref: string;
+  house: string;
+  session: string;
+  promise_date: string;
+  ministry: string;
+  member?: string | null;
+  minister?: string | null;
+  subject: string;
+  recorded_status: string;
+  days_elapsed?: number | null;
+  original_promise: string;
+  followup_answer: string;
+  source_url?: string | null;
+  secondary_url?: string | null;
+}
+
+export interface VisualParliamentMinistry {
+  ministry: string;
+  ministry_key?: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  lok_sabha_tasks?: number;
+  rajya_sabha_tasks?: number;
+  pending_count: number;
+  fulfilled_count: number;
+  partly_implemented_count?: number;
+  dropped_count?: number;
+  other_count?: number;
+  leads: number;
+  verified?: number;
+}
+
+export interface VisualParliamentLead {
+  finding_id: string;
+  title: string;
+  ministry: string;
+  house: string;
+  session: string;
+  assurance_ref: string;
+  promise_date: string;
+  recorded_status: string;
+  signal_category: string;
+  days_elapsed?: number | null;
+  original_promise: string;
+  followup_answer: string;
+  status: string;
+}
+
+export interface VisualParliamentsToDoList {
+  hook?: string;
+  total_tasks: number;
+  ministries_covered: number;
+  houses?: string[];
+  by_house?: Record<string, VisualParliamentHouseCounts | number>;
+  generated_on: string;
+  as_of_date?: string;
+  by_recorded_status: Record<string, number>;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  by_signal: Record<string, number>;
+  anchor_case?: VisualParliamentAnchorCase | null;
+  ministries: VisualParliamentMinistry[];
+  top_leads: VisualParliamentLead[];
+  documents_url: string;
+  coverage_url: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -442,6 +536,7 @@ export interface ProjectVisualSummary {
   union_budget?: VisualUnionBudget;
   one_road_two_bills?: VisualOneRoadTwoBills;
   one_teacher_five_grades?: VisualOneTeacherFiveGrades;
+  parliaments_to_do_list?: VisualParliamentsToDoList;
 }
 
 export interface MissionItem {
@@ -567,6 +662,7 @@ export interface TokenSummary {
 
 export interface Citation {
   artifact_id?: string | number;
+  role?: string;
   source_url?: string;
   /** Primary dataset of the finding; stamped on every citation by the CLI. */
   source_ref?: string;

@@ -746,7 +746,7 @@ function formatHubEventPill(
         ? progress.tasks_total - progress.tasks_completed
         : 0;
     return {
-      verb: 'quorum 2-of-2',
+      verb: 'quorum 3-of-3',
       target: open > 0 ? `${open.toLocaleString('en-IN')} tasks open` : 'ready for agents',
       rel: null,
       tone: 'neutral',
@@ -929,7 +929,7 @@ export function LiveSwarmViewer({
           {
             kind: 'standby',
             standbyRole: 'Peer Verifier',
-            standbyLabel: 'Independent 2-of-2 check slot',
+            standbyLabel: 'Independent 3-of-3 check slot',
           },
           {
             kind: 'standby',

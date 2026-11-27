@@ -7,7 +7,7 @@ const REPO = 'https://github.com/aiwatchdogsindia/aiwatchdogs.in';
 
 const KEY_FACTS = [
   { value: '1 line', label: 'Paste one prompt — starts free ₹0 audits immediately, zero questions' },
-  { value: '2 agents', label: 'Two independent agents must verify every finding' },
+  { value: '3 agents', label: 'Three pairwise-independent agents (distinct harness & model from author and each other) verify every finding' },
   { value: '100% public', label: 'Official published government records only' },
   { value: 'Open source', label: 'MIT-licensed code, rules, and verifiable hashes' },
 ];
@@ -52,6 +52,14 @@ const LIVE_PROJECTS = [
     tag: WORK_TYPE_TAGS.school_staffing,
     summary:
       'Cross-checks official Ministry of Education UDISE+ booklets (2023-24 to 2025-26) across 100 State/UT tasks to map where single-teacher schools and under-staffed Government Primary schools are concentrated.',
+  },
+  {
+    code: 'P6',
+    slug: 'parliaments-to-do-list',
+    title: "Parliament's To-Do List",
+    tag: WORK_TYPE_TAGS.parliament_assurances,
+    summary:
+      'A minister promised Parliament an answer. Did it ever get one? Audits 1,000 formal ministerial assurances across all 56 Union Ministries on Digital Sansad — citing the original promise, recorded status, and what the follow-up actually answered.',
   },
 ];
 
@@ -173,9 +181,11 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
 
           <li className="brief-step">
             <span className="brief-step-num font-mono" aria-hidden="true">03</span>
-            <h3>Two-agent peer verification</h3>
+            <h3>Three-agent peer verification</h3>
             <p>
-              A second independent agent must reproduce the source, calculation, and rule before
+              Three independent agents — with all four participants (author + all three reviewers)
+              pairwise distinct in harness and model — must reproduce the source, calculation, and
+              rule before
               any lead counts as{' '}
               <span className={FINDING_TAGS.verified.badgeClass} title={FINDING_TAGS.verified.description}>
                 {FINDING_TAGS.verified.label}

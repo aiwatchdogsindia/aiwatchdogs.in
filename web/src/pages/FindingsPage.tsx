@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import { Link } from '../router';
 import type { FindingItem, FindingPattern, FindingPatterns } from '../types';
-import { formatDateShort, formatInr, isUnverifiedStatus } from '../utils';
+import { formatDateShort, formatInr, isUnverifiedStatus, pillarLabel, resolveFindingCardMetric } from '../utils';
 
 interface FindingsPageProps {
   onSelectFinding: (id: string | number) => void;
@@ -12,11 +12,12 @@ interface FindingsPageProps {
 }
 
 const PAGE_SIZE = 25;
+const PILLAR_FILTERS = ['', 'budget', 'disclosure', 'audit', 'scheme', 'parliament'];
 
 const STATUS_TABS: Array<{ value: string; label: string; hint: string }> = [
   { value: '', label: 'All', hint: 'Every record, newest first.' },
-  { value: 'confirmed', label: 'Confirmed', hint: 'Two independent checks reached the same result.' },
-  { value: 'peer_review', label: 'Being checked', hint: 'Flagged once, waiting for a second independent check.' },
+  { value: 'confirmed', label: 'Confirmed', hint: 'Independent reviewers reproduced the result.' },
+  { value: 'peer_review', label: 'Being checked', hint: 'Flagged by an agent and awaiting independent review.' },
   { value: 'cleared', label: 'No issue found', hint: 'Checked and found to be in order.' },
   { value: 'disputed', label: 'Disputed', hint: 'Checks disagreed, so this is not treated as a result.' },
 ];
@@ -33,6 +34,7 @@ function plainStatus(status: string): { label: string; tone: string } {
 
 function amountFor(f: FindingItem): string {
   if (f.quarantined || f.status === 'quarantined') return 'Withheld';
+  if (f.methodology_code === 'P6') return resolveFindingCardMetric(f).value;
   if (f.monetary_exposure_inr) return formatInr(f.monetary_exposure_inr);
   return f.amount_label || '—';
 }
@@ -171,6 +173,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
   const [patternsError, setPatternsError] = useState(false);
   const [scope, setScope] = useState<PatternScope | null>(null);
   const [status, setStatus] = useState('');
+  const [pillar, setPillar] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [findings, setFindings] = useState<FindingItem[]>([]);
@@ -181,7 +184,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
   useEffect(() => {
     setPage(0);
-  }, [status, search, scope]);
+  }, [status, pillar, search, scope]);
 
   useEffect(() => {
     let cancelled = false;
@@ -209,6 +212,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       api
         .getFindings({
           status: status || undefined,
+          pillar: pillar || undefined,
           mission: scope?.mission || undefined,
           methodology: scope?.methodology || undefined,
           group: scope?.group || undefined,
@@ -235,7 +239,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [status, search, scope, page, refreshTick]);
+  }, [status, pillar, search, scope, page, refreshTick]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const activeTab = STATUS_TABS.find((t) => t.value === status) ?? STATUS_TABS[0];
@@ -249,6 +253,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       groupKind: p.group_kind,
     });
     setStatus('confirmed');
+    setPillar('');
     setSearch('');
     setView('records');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -265,8 +270,8 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         <div className="fl-eyebrow">Findings</div>
         <h1 className="fl-title">What the checks have found</h1>
         <p className="fl-lede">
-          Issues spotted in public spending records, each traced to an official document. Nothing is called
-          confirmed until two independent checks agree.{' '}
+          Issues spotted in public records, each traced to an official document. Three independent reviewers
+          must agree before a new finding is confirmed.{' '}
           <Link to="/how-it-works" className="fl-link">
             How this works
           </Link>
@@ -353,6 +358,18 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
                 </button>
               ))}
             </div>
+            {!scope && (
+              <select
+                className="select-field"
+                aria-label="Filter by audit pillar"
+                value={pillar}
+                onChange={(e) => setPillar(e.target.value)}
+              >
+                {PILLAR_FILTERS.map((option) => (
+                  <option key={option} value={option}>{option ? pillarLabel(option) : 'All areas'}</option>
+                ))}
+              </select>
+            )}
             <label className="fl-search">
               <Search size={15} aria-hidden="true" />
               <input

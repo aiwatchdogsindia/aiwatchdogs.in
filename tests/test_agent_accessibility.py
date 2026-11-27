@@ -238,8 +238,14 @@ def test_agent_discovery_and_crawlability_endpoints(
         assert "/projects/police-finances.md" in llms.text
         assert "/projects/gov-in-public-information.md" in llms.text
         assert "/projects/union-budget-unspent-funds.md" in llms.text
+        assert "/projects/parliaments-to-do-list.md" in llms.text
         assert "independent-inflation-join.txt" not in llms.text
         assert "/join.txt" in llms.text
+        quickstart_line = next(
+            (line for line in llms.text.splitlines() if "Contributor Protocol (/join.txt)" in line),
+            "",
+        )
+        assert "P1, W1, UB1, OR1, P5 and P6" in quickstart_line
         assert "/mcp" in llms.text
         assert "WebMCP" in llms.text
 
@@ -358,14 +364,17 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         r_lp = rpc("tools/call", {"name": "list_projects", "arguments": {}}, req_id=4)
         assert r_lp.status_code == 200
         lp_data = r_lp.json()["result"]["structuredContent"]
-        assert lp_data["total"] == 5
-        assert {p["slug"] for p in lp_data["projects"]} == {
+        expected_slugs = {
             "police-finances",
             "gov-in-public-information",
             "union-budget-unspent-funds",
             "one-road-two-bills",
             "one-teacher-five-grades",
         }
+        if (PROJECTS_DIR / "parliaments-to-do-list.json").exists():
+            expected_slugs.add("parliaments-to-do-list")
+        assert lp_data["total"] == len(expected_slugs)
+        assert {p["slug"] for p in lp_data["projects"]} == expected_slugs
 
         r_gp = rpc("tools/call", {"name": "get_project", "arguments": {"slug": "police-finances"}}, req_id=5)
         gp_data = r_gp.json()["result"]["structuredContent"]
@@ -379,8 +388,8 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         )
         t_data = r_tasks.json()["result"]["structuredContent"]
         assert t_data["count"] == 5
-        # Paged from the database: 99 queued P1 audits plus the 2 peer checks the submitted finding queued.
-        assert t_data["total"] == 101
+        # Paged from the database: 99 queued P1 audits plus the 3 peer checks the submitted finding queued.
+        assert t_data["total"] == 102
         assert t_data["offset"] == 0
         assert t_data["has_more"] is True
         assert t_data["next_offset"] == 5
@@ -408,7 +417,7 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
             req_id=602,
         )
         t_end = r_tasks_end.json()["result"]["structuredContent"]
-        assert t_end["count"] == 2
+        assert t_end["count"] == 3
         assert t_end["has_more"] is False
         assert t_end["next_offset"] is None
 

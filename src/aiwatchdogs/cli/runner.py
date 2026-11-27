@@ -148,6 +148,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "one_road_two_bills",
         "one_teacher_five_grades",
         "pac_note_threshold_inr",
+        "parliaments_to_do_list",
         "q4_ceiling_pct",
         "retrieval_url",
         "secondary_dataset_url",
@@ -187,6 +188,8 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
         "comparison_basis",
         "is_final_cost_overrun",
         "signal_category",
+        "recorded_status",
+        "followup_text_status",
     }
 )
 
@@ -195,6 +198,8 @@ RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "line_key",
     "window_key",
     "state_key",
+    "assurance_key",
+    "assurance_ref",
     "source_locator",
     "ocid",
     "tender_id",

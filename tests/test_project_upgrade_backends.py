@@ -175,7 +175,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug != 'police-finances'") == other_tasks_before
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_id = 'project-police-finances' AND mission_slug != 'police-finances'") == 0
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'police-finances' AND task_type = 'anomaly_scan'") == 100
-    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE task_type = 'peer_verify' AND status = 'queued'") == 2
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE task_type = 'peer_verify' AND status = 'queued'") == 3
     assert _one(db, "SELECT status AS s FROM tasks WHERE id = 'prj-metro-police-delhi-notes-2024-25'") == "completed"
     assert _one(db, "SELECT mission_slug AS s FROM findings WHERE id = ?", (finding_id,)) == "police-finances"
     assert _one(db, "SELECT COUNT(*) AS n FROM evidence_artifacts WHERE mission_id != 'project-police-finances'") == 0
@@ -189,16 +189,28 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
 
     # Deploying again (every cold start runs the sync) changes nothing.
     assert sync_projects(db, REPO_PROJECTS)["changed"] is False
-    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'police-finances'") == 102
+    assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'police-finances'") == 103
 
     # Old links keep working, and the page lists every task with its role.
     detail = desk.get_mission_detail("metro-police-finances")
-    assert detail["slug"] == "police-finances" and len(detail["tasks"]) == 102
+    assert detail["slug"] == "police-finances" and len(detail["tasks"]) == 103
     assert {t["role"] for t in detail["tasks"]} == {"auditor", "peer_verifier"}
     assert [f["id"] for f in detail["findings"]] == [finding_id]
 
-    # ---- the swarm arrives: twelve agents claim at the same moment
-    agents = [desk.register_agent({"handle": f"swarm-{i:02d}", "provider": "rule-engine", "model": "v1"}, base_url=BASE) for i in range(12)]
+    # ---- the swarm arrives: twelve agents (with pairwise-distinct harnesses & models) claim at the same moment
+    agents = [
+        desk.register_agent(
+            {
+                "handle": f"swarm-{i:02d}",
+                "provider": "rule-engine",
+                "model": "v1",
+                "coding_agent": f"SwarmHarness-{i:02d}",
+                "coding_agent_model": f"SwarmModel-{i:02d}",
+            },
+            base_url=BASE,
+        )
+        for i in range(12)
+    ]
     barrier = threading.Barrier(len(agents))
 
     def claim(agent: dict[str, Any]) -> tuple[str, str, str] | None:
@@ -218,16 +230,16 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
     assert len({c[0] for c in claims if c}) == 12  # twelve different tasks, no double hand-out
     # Agents that join the ordinary way are given P1 work (priority 1) first, never a lower-priority project's tasks.
     assert all(c and c[0].startswith(("prj-police-", "prj-metro-police-", "tsk-pv-")) for c in claims)
-    # Peer checks come first in auto mode: the two waiting ones are taken, by two different agents.
-    assert sorted(c[1] for c in claims if c) == ["auditor"] * 10 + ["peer_verifier"] * 2
+    # Peer checks come first in auto mode: the three waiting ones are taken, by three different agents.
+    assert sorted(c[1] for c in claims if c) == ["auditor"] * 9 + ["peer_verifier"] * 3
 
-    # The two peer verifiers confirm the lead submitted before the upgrade: it becomes verified.
+    # The three peer verifiers confirm the lead submitted before the upgrade: it becomes verified.
     sha = _one(db, "SELECT artifact_sha256 AS s FROM findings WHERE id = ?", (finding_id,))
     last: dict[str, Any] = {}
     for agent, got in zip(agents, claims, strict=True):
         if got and got[1] == "peer_verifier":
             last = desk.submit_task({"lease_id": got[2], "outcome": "verification", "verification": _confirm(finding_id, sha)}, token=agent["api_token"])
-    assert last["finding_status"] == "verified" and last["confirm_count"] == 2
+    assert last["finding_status"] == "verified" and last["confirm_count"] == 3
     assert _one(db, "SELECT COUNT(*) AS n FROM rti_drafts WHERE finding_id = ?", (finding_id,)) == 1
     # Delhi Police is run by the Union Home Ministry: its RTI goes to the central portal.
     assert _one(db, "SELECT jurisdiction_level AS j FROM rti_drafts WHERE finding_id = ?", (finding_id,)) == "central"
