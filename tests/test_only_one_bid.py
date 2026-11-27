@@ -1096,6 +1096,402 @@ def test_hub_p7_summary_substr_endpoints_and_agent_access(
         assert "only-one-bid.md" in brief_md.text
 
 
+def test_all_four_tier1_verified_source_formats_offline(tmp_path: Path) -> None:
+    """Exercise all 4 real Tier-1 source formats modeled on #7/#10 (fully offline, zero network)."""
+    import zipfile
+
+    # ------------------------------------------------------------------
+    # Format 1: ocp_jsonl_gz (OCP Data Registry #77 HP / #131 Assam with query-string URL)
+    # ------------------------------------------------------------------
+    ocp_lines = [
+        json.dumps(
+            {
+                "ocid": "ocds-hp-77-001",
+                "buyer": {"name": "Public Works Department, Himachal Pradesh"},
+                "tender": {
+                    "id": "2019_PWD_HP_001",
+                    "title": "Hill road metalling and tarring",
+                    "procurementMethod": "open",
+                    "numberOfTenderers": 1,
+                    "tenderPeriod": {"startDate": "2019-06-01", "endDate": "2019-06-11"},
+                    "value": {"amount": 8500000, "currency": "INR"},
+                },
+                "awards": [
+                    {
+                        "id": "AWD-HP-1",
+                        "date": "2019-07-10",
+                        "value": {"amount": 8400000, "currency": "INR"},
+                        "suppliers": [{"name": "RAJAT THAKUR GOVT CONTRACTOR"}],
+                    }
+                ],
+            }
+        ),
+        json.dumps(
+            {
+                "ocid": "ocds-hp-77-002",
+                "buyer": {"name": "Public Works Department, Himachal Pradesh"},
+                "tender": {
+                    "id": "2020_PWD_HP_002",
+                    "title": "Retaining wall construction",
+                    "procurementMethod": "open",
+                    "numberOfTenderers": 1,
+                    "tenderPeriod": {"startDate": "2020-02-01", "endDate": "2020-02-18"},
+                    "value": {"amount": 9200000, "currency": "INR"},
+                },
+                "awards": [
+                    {
+                        "id": "AWD-HP-2",
+                        "date": "2020-03-12",
+                        "value": {"amount": 9100000, "currency": "INR"},
+                        "suppliers": [{"name": "Rajat Thakur Govt Contractor"}],
+                    }
+                ],
+            }
+        ),
+    ]
+    # Verify query-string .jsonl.gz detection & host provenance across all 4 Tier-1 domains
+    from aiwatchdogs.connectors.loader import _infer_format, _resolve_provenance
+
+    ocp_url = "https://data.open-contracting.org/en/publication/77/download?name=full.jsonl.gz"
+    assert _infer_format(ocp_url, None, "", b"\x1f\x8b") == "gzip"
+    assert _infer_format("https://data.open-contracting.org/en/publication/77/download?name=full.jsonl", None, "", b"{}") == "jsonl"
+    assert _resolve_provenance(ocp_url, {}, sha256=SHA, expected_sha256=SHA, digest_verified=True, byte_size=10, fetched_at="2026-11-27T00:00:00Z", source_locator=None)["mirror_name"] == "Open Contracting Partnership Data Registry"
+    assert "World Bank" in (_resolve_provenance("https://search.worldbank.org/api/v2/procnotices?format=json&id=OP00200001", {}, sha256=SHA, expected_sha256=SHA, digest_verified=True, byte_size=10, fetched_at="2026-11-27T00:00:00Z", source_locator=None)["official_publisher"] or "")
+
+    ocp_gz_path = tmp_path / "ocp_77_full.jsonl.gz"
+    ocp_gz_path.write_bytes(gzip.compress(("\n".join(ocp_lines) + "\n").encode("utf-8")))
+    ds_ocp = load_dataset(str(ocp_gz_path), allow_local_files=True)
+    assert ds_ocp.format == "ocds_jsonl"
+    assert len(ds_ocp.records) == 2
+
+    ctx_ocp = _p7_ctx(
+        case_key="p7-bo-2019-00001",
+        audit_mode="both",
+        match_field="ocid",
+        match_value="ocds-hp-77-001",
+        authority="Public Works Department, Himachal Pradesh",
+        authority_key="hp-pwd",
+        jurisdiction="State:Himachal Pradesh",
+        jurisdiction_level="state",
+        year=2019,
+        fiscal_year="FY2019-20",
+    )
+    ctx_ocp["only_one_bid"]["source_format"] = "ocp_jsonl_gz"
+    assert validate_context(ctx_ocp, "tasks[0]") == []
+    res_ocp = run_engine("P7", ds_ocp.records, context=ctx_ocp)
+    assert len(res_ocp.leads) == 1
+    assert res_ocp.leads[0].rule_triggered == "P7-COMBINED-SB-RW"
+    assert res_ocp.leads[0].anomaly_metrics["winner_single_bid_wins"] == 2
+    assert res_ocp.leads[0].monetary_exposure_inr == 8_400_000.0
+    assert res_ocp.leads[0].anomaly_metrics["winner_cohort_total_inr"] == 17_500_000.0
+
+    # ------------------------------------------------------------------
+    # Format 2: ocds_v3_json_zip (CivicDataLab Assam OCDS v3 with 1-element list quirks & bids.details)
+    # ------------------------------------------------------------------
+    assam_v3_pkg = {
+        "releases": [
+            {
+                "ocid": "ocds-as-v3-sq-1",
+                "buyer": [{"name": "Public Works Roads Department, Assam"}],  # 1-element list quirk!
+                "tender": [
+                    {
+                        "id": "2021_PWRD_SQ1",
+                        "title": "Bridge approach embankment",
+                        "procurementMethod": "open",
+                        "tenderPeriod": [{"startDate": "2021-05-01", "endDate": "2021-05-12"}],
+                    }
+                ],
+                "bids": [
+                    {
+                        "details": [
+                            {"id": "b1", "status": "Accepted-AOC"},
+                            {"id": "b2", "status": "Rejected-Technical"},
+                            {"id": "b3", "status": "Not Admitted-Fee"},
+                        ]
+                    }
+                ],
+                "awards": [
+                    {
+                        "id": "A1",
+                        "date": "2021-06-15",
+                        "value": [{"amount": 22000000, "currency": "INR"}],
+                        "suppliers": [{"name": "M/s Kaziranga Works Pvt Ltd"}],
+                    }
+                ],
+            },
+            {
+                "ocid": "ocds-as-v3-multi-2",
+                "buyer": [{"name": "Public Works Roads Department, Assam"}],
+                "tender": [{"id": "2021_PWRD_M2", "title": "Culvert maintenance", "procurementMethod": "open"}],
+                "bids": [
+                    {
+                        "details": [
+                            {"id": "b1", "status": "Accepted-AOC"},
+                            {"id": "b2", "status": "Rejected-AOC"},  # Financially evaluated losing bidder!
+                            {"id": "b3", "status": "Rejected-Finance"},  # Financially evaluated losing bidder!
+                        ]
+                    }
+                ],
+                "awards": [
+                    {
+                        "id": "A2",
+                        "date": "2021-08-10",
+                        "value": [{"amount": 11000000, "currency": "INR"}],
+                        "suppliers": [{"name": "Brahma Civil Corp"}],
+                    }
+                ],
+            },
+        ]
+    }
+    v3_zip_path = tmp_path / "assam_v3.json.zip"
+    with zipfile.ZipFile(v3_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("ocds_mapped_data_v3.json", json.dumps(assam_v3_pkg))
+
+    ds_v3 = load_dataset(str(v3_zip_path), allow_local_files=True)
+    assert ds_v3.format == "ocds_json"
+    assert len(ds_v3.records) == 2
+    assert ds_v3.records[0]["bid_count"] == 3
+    assert ds_v3.records[0]["qualified_bid_count"] == 1  # Only Accepted-AOC passed tech!
+    assert ds_v3.records[1]["bid_count"] == 3
+    assert ds_v3.records[1]["qualified_bid_count"] == 3  # Rejected-AOC & Rejected-Finance passed tech!
+
+    ctx_v3_sq = _p7_ctx(case_key="p7-sb-2021-00011", audit_mode="single_bidder", match_value="2021_PWRD_SQ1")
+    ctx_v3_sq["only_one_bid"]["source_format"] = "ocds_v3_json_zip"
+    res_v3_sq = run_engine("P7", ds_v3.records, context=ctx_v3_sq)
+    assert len(res_v3_sq.leads) == 1
+    assert res_v3_sq.leads[0].anomaly_metrics["single_bid_mechanism"] == "single_qualified_after_rejection"
+    assert res_v3_sq.leads[0].anomaly_metrics["bids_received"] == 3
+    assert res_v3_sq.leads[0].anomaly_metrics["technically_qualified_bids"] == 1
+
+    # Multi-bid with Rejected-AOC / Rejected-Finance must CLEAR as cleared_competitive!
+    ctx_v3_m = _p7_ctx(case_key="p7-sb-2021-00012", audit_mode="single_bidder", match_value="2021_PWRD_M2")
+    ctx_v3_m["only_one_bid"]["source_format"] = "ocds_v3_json_zip"
+    res_v3_m = run_engine("P7", ds_v3.records, context=ctx_v3_m)
+    assert res_v3_m.leads == []
+    assert res_v3_m.cleared_count == 1
+
+    # ------------------------------------------------------------------
+    # Format 3: gepnic_aoc_csv (status_equals="Accepted-AOC", bid_count=null, + OCP #131 secondary join!)
+    # ------------------------------------------------------------------
+    gepnic_csv = tmp_path / "assam_all_tenders.csv"
+    gepnic_csv.write_text(
+        "Tender ID,Organisation Chain,Name of the Bidder,Status,No of Bids Received,Awarded Value,AOC Date,Work Description\n"
+        # Bogus No of Bids Received=1 (actually 1 cover!) + Rejected-Technical losing bidder MUST be ignored!
+        "2024_PWRD_100,Assam PWRD,Losing Contractor X,Rejected-Technical,1,5000000,2024-02-01,Road work 1\n"
+        "2024_PWRD_100,Assam PWRD,M/s Kamala Enterprises,Accepted-AOC,1,5000000,2024-02-01,Road work 1\n"
+        "2024_PWRD_101,Assam PWRD,KAMALA ENTERPRISES PVT LTD,Accepted-AOC,1,6000000,2024-03-01,Road work 2\n"
+        "2024_PWRD_102,Assam PWRD,Kamala Enterprises Ltd,Accepted-AOC,1,7000000,2024-04-01,Road work 3\n",
+        encoding="utf-8",
+    )
+    ds_gep = load_dataset(str(gepnic_csv), allow_local_files=True)
+    ctx_gep = _p7_ctx(
+        case_key="p7-rw-2024-00001",
+        audit_mode="repeat_winner",
+        match_field="Tender ID",
+        match_value="2024_PWRD_102",
+        authority="Assam PWRD",
+        authority_key="assam-pwrd",
+        year=2024,
+        fiscal_year="FY2024-25",
+    )
+    ctx_gep["only_one_bid"]["source_format"] = "gepnic_aoc_csv"
+    ctx_gep["only_one_bid"]["cohort_filter"]["status_equals"] = "Accepted-AOC"
+    ctx_gep["only_one_bid"]["field_map"] = {"bid_count": None}  # Explicitly disable bogus cover count!
+    assert validate_context(ctx_gep, "tasks[0]") == []
+
+    res_gep = run_engine("P7", ds_gep.records, context=ctx_gep)
+    assert len(res_gep.leads) == 1
+    glead = res_gep.leads[0]
+    assert glead.rule_triggered == "P7-REPEAT-WINNER"  # NEVER single-bidder from cover count!
+    assert glead.anomaly_metrics["bids_received"] is None
+    assert glead.anomaly_metrics["winner_total_wins"] == 3
+    assert glead.anomaly_metrics["authority_cohort_tenders"] == 3  # Rejected-Technical excluded!
+    assert glead.monetary_exposure_inr == 7_000_000.0
+    assert glead.anomaly_metrics["winner_cohort_total_inr"] == 18_000_000.0
+
+    # Join OCP #131 (true nb==1, NO winner) as primary + Assam GePNIC CSV (Accepted-AOC winners) as secondary!
+    ocp131_gz = tmp_path / "ocp_131_assam.jsonl.gz"
+    ocp131_lines = [
+        json.dumps(
+            {
+                "ocid": "ocds-131-100",
+                "buyer": {"name": "Assam PWRD"},
+                "tender": {"id": "2024_PWRD_100", "title": "Road work 1", "procurementMethod": "open", "numberOfTenderers": 1},
+            }
+        ),
+        json.dumps(
+            {
+                "ocid": "ocds-131-102",
+                "buyer": {"name": "Assam PWRD"},
+                "tender": {"id": "2024_PWRD_102", "title": "Road work 3", "procurementMethod": "open", "numberOfTenderers": 1},
+            }
+        ),
+    ]
+    ocp131_gz.write_bytes(gzip.compress(("\n".join(ocp131_lines) + "\n").encode("utf-8")))
+    ctx_join = _p7_ctx(
+        case_key="p7-bo-2024-00050",
+        audit_mode="both",
+        match_field="tender_id",
+        match_value="2024_PWRD_102",
+        authority="Assam PWRD",
+        authority_key="assam-pwrd",
+        year=2024,
+        fiscal_year="FY2024-25",
+    )
+    ctx_join["only_one_bid"]["source_format"] = "ocp_jsonl_gz"
+    ctx_join["only_one_bid"]["secondary_source_format"] = "gepnic_aoc_csv"
+    ctx_join["only_one_bid"]["cohort_filter"]["status_equals"] = "Accepted-AOC"
+    ctx_join["expected_sha256"] = compute_sha256(ocp131_gz.read_bytes())
+    ctx_join["secondary_expected_sha256"] = compute_sha256(gepnic_csv.read_bytes())
+    ctx_join["secondary_path"] = str(gepnic_csv)
+    ds_join = load_dataset(str(ocp131_gz), context=ctx_join, allow_local_files=True)
+    res_join = run_engine("P7", ds_join.records, context=ctx_join)
+    assert len(res_join.leads) == 1
+    jlead = res_join.leads[0]
+    assert jlead.rule_triggered == "P7-COMBINED-SB-RW"
+    assert jlead.anomaly_metrics["bids_received"] == 1
+    assert jlead.anomaly_metrics["winner_name"] == "Kamala Enterprises Ltd"
+    assert jlead.anomaly_metrics["winner_total_wins"] == 3
+    assert jlead.anomaly_metrics["winner_single_bid_wins"] == 2
+    assert jlead.monetary_exposure_inr == 7_000_000.0
+
+    # ------------------------------------------------------------------
+    # Format 4: worldbank_procnotices_json (DIR, single_qualified, awarded-only None, corrupt drop, PII scrub)
+    # ------------------------------------------------------------------
+    wb_payload = {
+        "total": "4",
+        "procnotices": [
+            # 1. Single-qualified after technical rejection (Evaluated absent, 2 Rejected present) + embedded phone PII!
+            {
+                "id": "OP00200001",
+                "project_id": "P157054",
+                "project_name": "Madhya Pradesh Rural Connectivity Project",
+                "bid_reference_no": "IN-MPRRDA-101-CW-RFB",
+                "bid_description": "Rural road package 101",
+                "procurement_method_code": "RFB",
+                "procurement_method_name": "Request for Bids",
+                "procurement_group_desc": "Works",
+                "contact_organization": "MP Rural Road Development Authority",
+                "noticedate": "2022-05-10",
+                "notice_text": (
+                    "<p>Bid Reference: IN-MPRRDA-101-CW-RFB</p>"
+                    "<p><strong>Awarded Bidder(s):</strong></p>"
+                    "<p>Name: M/S NARMADA BUILDERS PVT LTD (456789)<br/>"
+                    "Address: Bhopal Ph. 9876543210 email test.vendor@gmail.com<br/>"
+                    "Signed Contract price: INR 32,500,000.00<br/>"
+                    "Contract signature date: 2022-05-01</p>"
+                    "<p><strong>Rejected Bidder(s):</strong></p>"
+                    "<p>Name: REJECTED FIRM A (111111)<br/>Reason for rejection: Technical</p>"
+                    "<p>Name: REJECTED FIRM B (222222)<br/>Reason for rejection: Technical</p>"
+                ),
+            },
+            # 2. Direct Selection (DIR) award -> bids_received=1, qualified=1
+            {
+                "id": "OP00200002",
+                "project_id": "P157054",
+                "bid_reference_no": "IN-MPRRDA-102-CW-DIR",
+                "bid_description": "Direct road restoration",
+                "procurement_method_code": "DIR",
+                "procurement_method_name": "Direct Selection",
+                "contact_organization": "MP Rural Road Development Authority",
+                "noticedate": "2023-03-15",
+                "notice_text": (
+                    "<p>Ref IN-MPRRDA-102-CW-DIR</p>"
+                    "<p><strong>Awarded Bidder(s):</strong></p>"
+                    "<p>Name: NARMADA BUILDERS PRIVATE LIMITED (456789)<br/>"
+                    "Signed Contract price: INR 18,000,000.00</p>"
+                ),
+            },
+            # 3. Awarded-only RFB (NEITHER Evaluated NOR Rejected section!) -> MUST set bid_count=None!
+            {
+                "id": "OP00200003",
+                "project_id": "P157054",
+                "bid_reference_no": "IN-MPRRDA-103-CW-RFB",
+                "bid_description": "Awarded only notice without bid table",
+                "procurement_method_code": "RFB",
+                "procurement_method_name": "Request for Bids",
+                "contact_organization": "MP Rural Road Development Authority",
+                "noticedate": "2023-06-20",
+                "notice_text": (
+                    "<p>Ref IN-MPRRDA-103-CW-RFB</p>"
+                    "<p><strong>Awarded Bidder(s):</strong></p>"
+                    "<p>Name: SOLO RFB AWARD WINNER (777777)<br/>"
+                    "Signed Contract price: INR 9,000,000.00</p>"
+                ),
+            },
+            # 4. Corrupt upstream WB notice (bid_reference_no absent from notice_text!) -> MUST be dropped!
+            {
+                "id": "OP00200004",
+                "project_id": "P157054",
+                "bid_reference_no": "IN-MPRRDA-CORRUPT-999",
+                "bid_description": "Mismatched notice text",
+                "procurement_method_code": "RFB",
+                "contact_organization": "MP Rural Road Development Authority",
+                "noticedate": "2023-07-01",
+                "notice_text": "<p>Unrelated notice text for DIFFERENT-REF-000</p>",
+            },
+        ],
+    }
+    wb_json = tmp_path / "wb_p157054.json"
+    wb_json.write_text(json.dumps(wb_payload), encoding="utf-8")
+    ds_wb = load_dataset(str(wb_json), allow_local_files=True)
+    assert ds_wb.format == "worldbank_procnotices_json"
+    assert len(ds_wb.records) == 3  # Corrupt OP00200004 dropped!
+    by_wb_id = {r["id"]: r for r in ds_wb.records}
+    assert "OP00200004" not in by_wb_id
+    assert by_wb_id["OP00200001"]["bid_count"] == 3  # 1 awarded + 0 evaluated + 2 rejected
+    assert by_wb_id["OP00200001"]["qualified_bid_count"] == 1
+    assert by_wb_id["OP00200001"]["vendor_id"] == "456789"
+    assert by_wb_id["OP00200001"]["award_value_inr"] == 32_500_000.0
+    assert by_wb_id["OP00200002"]["bid_count"] == 1
+    assert by_wb_id["OP00200002"]["procurement_method"] == "direct"
+    assert by_wb_id["OP00200003"]["bid_count"] is None  # Awarded-only RFB NEVER misclassified as 1 bid!
+    assert by_wb_id["OP00200003"]["qualified_bid_count"] is None
+
+    ctx_wb = _p7_ctx(
+        case_key="p7-bo-2022-00077",
+        audit_mode="both",
+        match_field="id",
+        match_value="OP00200001",
+        authority="MP Rural Road Development Authority",
+        authority_key="mprrda",
+        jurisdiction="State:Madhya Pradesh",
+        jurisdiction_level="state",
+        year=2022,
+        fiscal_year="FY2022-23",
+    )
+    ctx_wb["only_one_bid"]["source_format"] = "worldbank_procnotices_json"
+    assert validate_context(ctx_wb, "tasks[0]") == []
+    res_wb = run_engine("P7", ds_wb.records, context=ctx_wb)
+    assert len(res_wb.leads) == 1
+    wlead = res_wb.leads[0]
+    assert wlead.rule_triggered == "P7-COMBINED-SB-RW"
+    assert wlead.anomaly_metrics["single_bid_mechanism"] == "single_qualified_after_rejection"
+    assert wlead.anomaly_metrics["winner_single_bid_wins"] == 2
+    assert wlead.monetary_exposure_inr == 32_500_000.0
+    assert wlead.anomaly_metrics["winner_cohort_total_inr"] == 50_500_000.0
+    assert "9876543210" not in wlead.summary
+    assert "test.vendor@gmail.com" not in wlead.summary
+
+    # Awarded-only RFB with 1 win (bid_count=None) must NOT be flagged as single-bidder!
+    ctx_wb_ao = _p7_ctx(
+        case_key="p7-rw-2023-00078",
+        audit_mode="repeat_winner",
+        match_field="id",
+        match_value="OP00200003",
+        authority="MP Rural Road Development Authority",
+        authority_key="mprrda",
+        jurisdiction="State:Madhya Pradesh",
+        jurisdiction_level="state",
+        year=2023,
+        fiscal_year="FY2023-24",
+    )
+    ctx_wb_ao["only_one_bid"]["source_format"] = "worldbank_procnotices_json"
+    res_wb_ao = run_engine("P7", ds_wb.records, context=ctx_wb_ao)
+    assert res_wb_ao.leads == []
+    assert res_wb_ao.cleared_count == 1
+
+
 def test_real_generated_p7_dataset_when_present() -> None:
     """Validate the real generated P7 dataset (10,000 tasks + coverage + documents) when present in projects/."""
     proj_path = REPO_PROJECTS / f"{ONLY_ONE_BID_PROJECT_SLUG}.json"

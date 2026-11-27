@@ -48,6 +48,14 @@ SIGNAL_CATEGORIES: tuple[str, ...] = (
 
 VALID_AUDIT_MODES: frozenset[str] = frozenset({"single_bidder", "repeat_winner", "both"})
 VALID_JURISDICTION_LEVELS: frozenset[str] = frozenset({"central", "state"})
+VALID_SOURCE_FORMATS: frozenset[str] = frozenset(
+    {
+        "ocp_jsonl_gz",
+        "ocds_v3_json_zip",
+        "gepnic_aoc_csv",
+        "worldbank_procnotices_json",
+    }
+)
 VALID_EXEMPTION_STATUSES: frozenset[str] = frozenset(
     {
         "none_recorded",
@@ -126,11 +134,25 @@ _JUSTIFICATION_MARKER_RE = re.compile(
 
 # Default logical-field -> candidate column fallbacks
 _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
-    "tender_id": ("tender_id", "tender/id", "contract_id", "award_id", "bid_no", "bid_number", "nit_no", "id"),
+    "tender_id": (
+        "tender_id",
+        "tender/id",
+        "Tender ID",
+        "Tender Reference Number",
+        "bid_reference_no",
+        "contract_id",
+        "award_id",
+        "bid_no",
+        "bid_number",
+        "nit_no",
+        "id",
+    ),
     "ocid": ("ocid", "release_id"),
     "title": (
         "tender_title",
         "tender/title",
+        "Work Description",
+        "Tender Title",
         "work_description",
         "description",
         "title",
@@ -140,6 +162,8 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     "buyer": (
         "buyer_name",
         "buyer/name",
+        "Organisation Chain",
+        "Department",
         "procuring_entity",
         "tender/procuringEntity/name",
         "authority",
@@ -152,6 +176,8 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     "winner": (
         "vendor_name",
         "supplier_name",
+        "Name of the Bidder",
+        "Bidder Name",
         "winner_name",
         "awardee",
         "contractor_name",
@@ -160,6 +186,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
         "supplier",
         "vendor",
     ),
+    # Note: NEVER include GePNIC's "No of Bids Received" (which stores envelope cover count 1/2).
     "bid_count": (
         "bid_count",
         "bids_received",
@@ -182,6 +209,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     "procurement_method": (
         "procurement_method",
         "tender/procurementMethod",
+        "Tender Type",
         "tender_type",
         "bidding_type",
         "method",
@@ -189,6 +217,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     "procurement_method_details": (
         "procurement_method_details",
         "tender/procurementMethodDetails",
+        "Tender Category",
         "tender_category",
         "method_details",
     ),
@@ -203,6 +232,8 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     "award_value_inr": (
         "award_value_inr",
         "award_amount_inr",
+        "Awarded Value",
+        "Contract Value",
         "awarded_value_inr",
         "contract_value_inr",
         "awards/0/value/amount",
@@ -213,6 +244,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     "tender_estimate_inr": (
         "tender_estimate_inr",
         "tender_value_inr",
+        "Tender Value",
         "estimated_value_inr",
         "tender/value/amount",
         "estimated_cost",
@@ -220,6 +252,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     ),
     "publish_date": (
         "tender_published_date",
+        "Published Date",
         "publish_date",
         "tender_start_date",
         "tender/datePublished",
@@ -228,6 +261,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     ),
     "close_date": (
         "tender_end_date",
+        "Bid Submission End Date",
         "close_date",
         "bid_submission_end_date",
         "tender/tenderPeriod/endDate",
@@ -235,6 +269,8 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     ),
     "award_date": (
         "award_date",
+        "AOC Date",
+        "Contract Date",
         "contract_date",
         "aoc_date",
         "awards/0/date",
@@ -248,6 +284,8 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
     ),
     "category": (
         "item_category",
+        "Product Category",
+        "Tender Category",
         "category",
         "product_category",
         "work_category",
@@ -255,6 +293,7 @@ _DEFAULT_FIELD_FALLBACKS: dict[str, tuple[str, ...]] = {
         "tenderclassification/description",
         "tender/classification/description",
     ),
+    "status": ("Status", "status", "Bid Status", "bid_status", "tender_status"),
     "record_url": (
         "record_url",
         "tender_url",
@@ -471,9 +510,12 @@ def _lookup_path(rec: dict[str, Any], key: str) -> Any:
     return None
 
 
-def _get_field(rec: dict[str, Any], logical_key: str, field_map: dict[str, str]) -> Any:
-    mapped = field_map.get(logical_key)
-    if mapped:
+def _get_field(rec: dict[str, Any], logical_key: str, field_map: dict[str, str | None]) -> Any:
+    if logical_key in field_map:
+        mapped = field_map[logical_key]
+        if mapped is None:
+            # Explicitly disabled (e.g. field_map.bid_count = null for GePNIC cover-count CSVs).
+            return None
         val = _lookup_path(rec, mapped)
         if val not in (None, ""):
             return val
@@ -487,9 +529,11 @@ def _get_field(rec: dict[str, Any], logical_key: str, field_map: dict[str, str])
 def _extract_row(
     rec: dict[str, Any],
     idx: int,
-    field_map: dict[str, str],
+    field_map: dict[str, str | None],
     default_jurisdiction: str,
     default_fy: str,
+    *,
+    suppress_bid_counts: bool = False,
 ) -> _ExtractedRow:
     doc_role = str(rec.get("document") or "primary")
     row_index = _parse_int_strict(rec.get("source_row_index")) or idx
@@ -499,12 +543,17 @@ def _extract_row(
     buyer_name = _clean_text(_get_field(rec, "buyer", field_map), max_len=200)
     winner_name = _clean_text(_get_field(rec, "winner", field_map), max_len=200)
 
-    bids_received = _parse_int_strict(_get_field(rec, "bid_count", field_map))
-    qualified_bids = _parse_int_strict(_get_field(rec, "qualified_bid_count", field_map))
-    if qualified_bids is not None and qualified_bids > 0:
-        effective_bids: int | None = qualified_bids
+    if suppress_bid_counts:
+        bids_received = None
+        qualified_bids = None
+        effective_bids = None
     else:
-        effective_bids = bids_received
+        bids_received = _parse_int_strict(_get_field(rec, "bid_count", field_map))
+        qualified_bids = _parse_int_strict(_get_field(rec, "qualified_bid_count", field_map))
+        if qualified_bids is not None and qualified_bids > 0:
+            effective_bids = qualified_bids
+        else:
+            effective_bids = bids_received
 
     proc_method = _clean_text(_get_field(rec, "procurement_method", field_map), max_len=80) or "open"
     proc_details = _clean_text(_get_field(rec, "procurement_method_details", field_map), max_len=160)
@@ -607,7 +656,7 @@ def _detect_exemption(row: _ExtractedRow) -> tuple[str, str]:
 def _locate_target_row(
     rows: list[_ExtractedRow],
     selector: dict[str, Any],
-    field_map: dict[str, str],
+    field_map: dict[str, str | None],
 ) -> _ExtractedRow | None:
     match_field = str(selector.get("match_field") or "").strip()
     match_value = str(selector.get("match_value") or "").strip()
@@ -695,6 +744,67 @@ def _format_inr_brief(amount: float | None) -> str:
     return f"INR {amount:,.0f}"
 
 
+def _merge_extracted_rows(base: _ExtractedRow, other: _ExtractedRow) -> _ExtractedRow:
+    """Enrich a primary procurement row with complementary fields from a joined secondary shard.
+
+    Supports joining e.g. OCP #131 single-bid counts with GePNIC Accepted-AOC winners by tender_id/ocid.
+    """
+    primary, secondary = (base, other) if base.doc_role != "secondary" else (other, base)
+    bids_received = primary.bids_received if primary.bids_received is not None else secondary.bids_received
+    qualified_bids = primary.qualified_bids if primary.qualified_bids is not None else secondary.qualified_bids
+    if qualified_bids is not None and qualified_bids > 0:
+        effective_bids: int | None = qualified_bids
+    else:
+        effective_bids = bids_received
+
+    award_val = primary.award_value_inr if primary.award_value_inr is not None else secondary.award_value_inr
+    est_val = primary.tender_estimate_inr if primary.tender_estimate_inr is not None else secondary.tender_estimate_inr
+    if award_val is not None:
+        value_inr: float | None = award_val
+        amount_type = "award_value"
+    elif est_val is not None:
+        value_inr = est_val
+        amount_type = "tender_estimate"
+    else:
+        value_inr = None
+        amount_type = "unrecorded"
+
+    winner_name = primary.winner_name or secondary.winner_name
+    buyer_name = primary.buyer_name or secondary.buyer_name
+    return _ExtractedRow(
+        raw=primary.raw,
+        doc_role=primary.doc_role,
+        row_index=primary.row_index,
+        tender_id=primary.tender_id or secondary.tender_id,
+        ocid=primary.ocid or secondary.ocid,
+        dedup_key=primary.dedup_key,
+        title=primary.title or secondary.title,
+        buyer_name=buyer_name,
+        normalized_buyer=primary.normalized_buyer or secondary.normalized_buyer,
+        winner_name=winner_name,
+        normalized_winner=primary.normalized_winner or secondary.normalized_winner,
+        bids_received=bids_received,
+        qualified_bids=qualified_bids,
+        effective_bids=effective_bids,
+        procurement_method=primary.procurement_method or secondary.procurement_method,
+        procurement_method_details=primary.procurement_method_details or secondary.procurement_method_details,
+        exemption_reason=primary.exemption_reason or secondary.exemption_reason,
+        award_value_inr=award_val,
+        tender_estimate_inr=est_val,
+        value_inr=value_inr,
+        amount_type=amount_type,
+        publish_date=primary.publish_date or secondary.publish_date,
+        close_date=primary.close_date or secondary.close_date,
+        award_date=primary.award_date or secondary.award_date,
+        bid_window_days=primary.bid_window_days if primary.bid_window_days is not None else secondary.bid_window_days,
+        category=primary.category if primary.category != "Public Procurement" else secondary.category,
+        fiscal_year=primary.fiscal_year if primary.fiscal_year != "Unspecified" else secondary.fiscal_year,
+        jurisdiction=primary.jurisdiction or secondary.jurisdiction,
+        record_url=primary.record_url or secondary.record_url,
+        secondary_sha256=primary.secondary_sha256 or secondary.secondary_sha256,
+    )
+
+
 def run_p7_only_one_bid(
     records: list[dict[str, Any]],
     context: dict[str, Any] | None = None,
@@ -707,6 +817,8 @@ def run_p7_only_one_bid(
 
     case_key = str(spec.get("case_key") or "").strip()
     audit_mode = str(spec.get("audit_mode") or "both").strip().lower()
+    source_format = str(spec.get("source_format") or "").strip().lower()
+    secondary_source_format = str(spec.get("secondary_source_format") or "").strip().lower()
     portal = _clean_text(spec.get("portal"), max_len=120) or "Public Procurement Portal"
     portal_key = _clean_text(spec.get("portal_key"), max_len=80)
     spec_jurisdiction = _clean_text(spec.get("jurisdiction"), max_len=120) or _clean_text(
@@ -721,20 +833,73 @@ def run_p7_only_one_bid(
     spec_fy = _normalize_fy(spec.get("fiscal_year") or ctx.get("fiscal_year") or "")
     selector = spec.get("record_selector") if isinstance(spec.get("record_selector"), dict) else {}
     cohort_filter = spec.get("cohort_filter") if isinstance(spec.get("cohort_filter"), dict) else {}
+    status_equals = str(cohort_filter.get("status_equals") or "").strip()
     raw_fmap = spec.get("field_map") if isinstance(spec.get("field_map"), dict) else {}
-    field_map: dict[str, str] = {
-        str(k).strip(): str(v).strip()
-        for k, v in raw_fmap.items()
-        if isinstance(k, str) and isinstance(v, str) and k.strip() and v.strip()
-    }
+    field_map: dict[str, str | None] = {}
+    for k, v in raw_fmap.items():
+        if not isinstance(k, str) or not k.strip():
+            continue
+        if v is None:
+            field_map[k.strip()] = None
+        elif isinstance(v, str) and v.strip():
+            field_map[k.strip()] = v.strip()
 
-    extracted: list[_ExtractedRow] = [
-        _extract_row(rec, idx, field_map, spec_jurisdiction, spec_fy)
-        for idx, rec in enumerate(records, start=1)
-        if isinstance(rec, dict)
-    ]
+    extracted: list[_ExtractedRow] = []
+    for idx, rec in enumerate(records, start=1):
+        if not isinstance(rec, dict):
+            continue
+        doc_role = str(rec.get("document") or "primary")
+        doc_fmt = secondary_source_format if doc_role == "secondary" else source_format
+        is_gepnic_doc = doc_fmt == "gepnic_aoc_csv"
 
-    target = _locate_target_row(extracted, selector, field_map)
+        # Enforce cohort_filter.status_equals (e.g. "Accepted-AOC") so Rejected-* losing bidder rows are excluded.
+        effective_status_req = status_equals or ("Accepted-AOC" if is_gepnic_doc else "")
+        if effective_status_req:
+            row_status = _clean_text(_get_field(rec, "status", field_map), max_len=80)
+            if is_gepnic_doc or row_status:
+                if row_status.lower() != effective_status_req.lower():
+                    continue
+
+        # On GePNIC CSV documents, NEVER read bogus "No of Bids Received" cover count as bid_count.
+        suppress_bids = is_gepnic_doc and (
+            "bid_count" not in field_map or field_map.get("bid_count") is None
+        )
+        extracted.append(
+            _extract_row(
+                rec,
+                idx,
+                field_map,
+                spec_jurisdiction,
+                spec_fy,
+                suppress_bid_counts=suppress_bids,
+            )
+        )
+
+    # Deduplicate and cross-enrich primary + secondary shards by tender_id / ocid (e.g. OCP #131 + Assam AOC CSV).
+    deduped_by_key: dict[str, _ExtractedRow] = {}
+    tid_to_key: dict[str, str] = {}
+    for row in extracted:
+        tid_low = row.tender_id.lower() if row.tender_id else ""
+        ocid_low = row.ocid.lower() if row.ocid else ""
+        match_key = (
+            deduped_by_key.get(row.dedup_key)
+            or (deduped_by_key.get(tid_to_key[tid_low]) if tid_low and tid_low in tid_to_key else None)
+            or (deduped_by_key.get(tid_to_key[ocid_low]) if ocid_low and ocid_low in tid_to_key else None)
+        )
+        if match_key is None:
+            deduped_by_key[row.dedup_key] = row
+            canon_key = row.dedup_key
+        else:
+            merged = _merge_extracted_rows(match_key, row)
+            canon_key = match_key.dedup_key
+            deduped_by_key[canon_key] = merged
+        if tid_low:
+            tid_to_key.setdefault(tid_low, canon_key)
+        if ocid_low:
+            tid_to_key.setdefault(ocid_low, canon_key)
+    all_unique = list(deduped_by_key.values())
+
+    target = _locate_target_row(all_unique, selector, field_map)
     if target is None:
         return (
             [],
@@ -748,15 +913,6 @@ def run_p7_only_one_bid(
                 "case_key": case_key,
             },
         )
-
-    # Deduplicate all records across primary + secondary shards (primary wins on key collision).
-    deduped_by_key: dict[str, _ExtractedRow] = {}
-    for row in extracted:
-        existing = deduped_by_key.get(row.dedup_key)
-        if existing is None or (existing.doc_role == "secondary" and row.doc_role != "secondary"):
-            deduped_by_key[row.dedup_key] = row
-    deduped_by_key[target.dedup_key] = target
-    all_unique = list(deduped_by_key.values())
 
     resolved_authority_raw = target.buyer_name or str(cohort_filter.get("buyer_value") or "").strip() or spec_authority
     safe_authority = _neutralize_external_text(resolved_authority_raw or "Unspecified Procuring Authority")[:160]
@@ -1385,6 +1541,14 @@ def validate_context(ctx: Any, where: str) -> list[str]:
             f"{where}.payload.context.only_one_bid.audit_mode must be one of {sorted(VALID_AUDIT_MODES)}."
         )
 
+    for fmt_key in ("source_format", "secondary_source_format"):
+        fmt_val = spec.get(fmt_key)
+        if fmt_val not in (None, ""):
+            if not isinstance(fmt_val, str) or fmt_val not in VALID_SOURCE_FORMATS:
+                errors.append(
+                    f"{where}.payload.context.only_one_bid.{fmt_key} must be one of {sorted(VALID_SOURCE_FORMATS)}."
+                )
+
     for field_name, max_len in (("portal", 120), ("jurisdiction", 120), ("authority", 200)):
         val = spec.get(field_name)
         if not isinstance(val, str) or not val.strip() or len(val) > max_len:
@@ -1444,6 +1608,11 @@ def validate_context(ctx: Any, where: str) -> list[str]:
         if not isinstance(cohort, dict):
             errors.append(f"{where}.payload.context.only_one_bid.cohort_filter must be an object.")
         else:
+            st_eq = cohort.get("status_equals")
+            if st_eq not in (None, "") and (not isinstance(st_eq, str) or len(st_eq) > 80):
+                errors.append(
+                    f"{where}.payload.context.only_one_bid.cohort_filter.status_equals must be a short string (<= 80 chars)."
+                )
             rel_ids = cohort.get("related_record_ids")
             if rel_ids is not None:
                 if (
@@ -1462,12 +1631,14 @@ def validate_context(ctx: Any, where: str) -> list[str]:
             not isinstance(fmap, dict)
             or len(fmap) > MAX_FIELD_MAP_KEYS
             or not all(
-                isinstance(k, str) and k.strip() and isinstance(v, str) and v.strip() and len(v) <= 120
+                isinstance(k, str)
+                and k.strip()
+                and (v is None or (isinstance(v, str) and v.strip() and len(v) <= 120))
                 for k, v in fmap.items()
             )
         ):
             errors.append(
-                f"{where}.payload.context.only_one_bid.field_map must map <= {MAX_FIELD_MAP_KEYS} non-empty string keys to source column names."
+                f"{where}.payload.context.only_one_bid.field_map must map <= {MAX_FIELD_MAP_KEYS} non-empty string keys to source column names (or null to disable)."
             )
 
     return errors

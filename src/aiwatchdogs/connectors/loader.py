@@ -283,10 +283,20 @@ def _infer_jurisdiction(source_ref: str, explicit: Any = None) -> str:
     if explicit and str(explicit).strip():
         return str(explicit).strip()
     lower = source_ref.lower()
-    if "assam" in lower:
+    if "assam" in lower or "/publication/131" in lower:
         return "State:Assam"
-    if "himachal" in lower or "hp_health" in lower or "hp%20health" in lower or "hptenders" in lower:
+    if (
+        "himachal" in lower
+        or "hp_health" in lower
+        or "hp%20health" in lower
+        or "hptenders" in lower
+        or "/publication/77" in lower
+    ):
         return "State:Himachal Pradesh"
+    if "odisha" in lower or "tendersodisha" in lower:
+        return "State:Odisha"
+    if "flood-data-ecosystem-up" in lower or "all_up_tenders" in lower or "etender.up.nic.in" in lower:
+        return "State:Uttar Pradesh"
     if "andhra" in lower or "ap_child" in lower:
         return "State:Andhra Pradesh"
     if "mp-jjm" in lower or "mp_jjm" in lower or "bhopal" in lower:
@@ -361,6 +371,9 @@ def _flatten_ocds_release(
     bids_details = bids_obj.get("details") or []
     if not isinstance(bids_details, list):
         bids_details = []
+    # Unwrap accidental nested 1-element list wrapping on bids.details
+    while len(bids_details) == 1 and isinstance(bids_details[0], list):
+        bids_details = bids_details[0]
 
     period = _unwrap_dict(tender.get("tenderPeriod"))
     tender_published_date = str(tender.get("datePublished") or "").strip()
@@ -375,7 +388,7 @@ def _flatten_ocds_release(
         bid_window_days = _to_int_opt(period.get("durationInDays"))
 
     bid_count = _to_int_opt(tender.get("numberOfTenderers"))
-    if bid_count is None and bids_details:
+    if (bid_count is None or bid_count == 0) and bids_details:
         bid_count = len(bids_details)
 
     tender_val_obj = _unwrap_dict(tender.get("value"))
@@ -436,14 +449,23 @@ def _flatten_ocds_release(
         tender.get("numberOfQualifiedTenderers") or tender.get("qualifiedTenderers")
     )
     if qualified_bid_count is None and bids_details:
-        valid_bids = [
-            b
-            for b in bids_details
-            if isinstance(b, dict)
-            and str(b.get("status") or "").strip().lower() in {"valid", "qualified", "responsive"}
-        ]
-        if valid_bids:
-            qualified_bid_count = len(valid_bids)
+        # Distinguish technical-stage rejection ("Rejected-Technical", "Not Admitted-*") from
+        # financially evaluated bids ("Accepted-*", "Rejected-AOC", "Rejected-Finance", "valid").
+        tech_eval_present = False
+        tech_passed = 0
+        for b in bids_details:
+            if not isinstance(b, dict):
+                continue
+            bstatus = str(b.get("status") or b.get("bidStatus") or b.get("tendererStatus") or "").strip().lower()
+            if not bstatus:
+                continue
+            if bstatus.startswith(("rejected-technical", "rejected_technical", "not admitted", "not-admitted", "not_admitted", "rejected-prequal", "rejected-eligib")) or bstatus in {"disqualified", "invalid", "withdrawn"}:
+                tech_eval_present = True
+            elif bstatus.startswith(("accepted", "rejected-aoc", "rejected_aoc", "rejected-finance", "rejected_finance", "rejected-financial")) or bstatus in {"valid", "qualified", "responsive"}:
+                tech_eval_present = True
+                tech_passed += 1
+        if tech_eval_present and tech_passed > 0:
+            qualified_bid_count = tech_passed
 
     procurement_method_details = str(tender.get("procurementMethodDetails") or "").strip()
     exemption_reason = str(
@@ -627,17 +649,19 @@ def _infer_format(source_ref: str, fmt: str | None, content_type: str = "", raw_
     if "application/pdf" in ct or raw_bytes[:5] == b"%PDF-":
         return "pdf"
 
-    parsed_path = urlparse(source_ref).path if _is_url(source_ref) else source_ref
+    parsed_url = urlparse(source_ref) if _is_url(source_ref) else None
+    parsed_path = parsed_url.path if parsed_url is not None else source_ref
     lower_path = parsed_path.lower()
-    if lower_path.endswith(".gz") or raw_bytes[:2] == b"\x1f\x8b":
+    lower_query = (parsed_url.query or "").lower() if parsed_url is not None else ""
+    if lower_path.endswith(".gz") or ".gz" in lower_query or raw_bytes[:2] == b"\x1f\x8b":
         return "gzip"
     if lower_path.endswith(".xlsx"):
         return "xlsx"
     if lower_path.endswith(".json.zip") or lower_path.endswith(".zip"):
         return "zip"
-    if lower_path.endswith((".jsonl", ".ndjson")):
+    if lower_path.endswith((".jsonl", ".ndjson")) or ".jsonl" in lower_query or ".ndjson" in lower_query:
         return "jsonl"
-    if lower_path.endswith(".csv"):
+    if lower_path.endswith(".csv") or ".csv" in lower_query:
         return "csv"
     if lower_path.endswith(".json"):
         return "json"
@@ -1590,6 +1614,13 @@ def _parse_json_bytes(
                     raise ValueError(f"CKAN dataset exceeds maximum allowed row cap ({max_parse_rows}).")
                 return [r for r in rows if isinstance(r, dict)], preview, payload, "ckan_json"
 
+        if isinstance(payload.get("procnotices"), list):
+            notices = payload["procnotices"]
+            if len(notices) > max_parse_rows:
+                raise ValueError(f"World Bank procnotices exceeds maximum allowed row cap ({max_parse_rows}).")
+            wb_records = _parse_worldbank_procnotices(notices, source_ref)
+            return wb_records, preview, payload, "worldbank_procnotices_json"
+
         for key in ("records", "data", "items", "paras", "tenders", "rows"):
             if isinstance(payload.get(key), list):
                 rows = payload[key]
@@ -1608,6 +1639,279 @@ def _parse_json_bytes(
         return [payload], preview, payload, detected_format
 
     return [], preview, payload, detected_format
+
+
+class _WBNoticeHTMLToLines(HTMLParser):
+    """Linear-time stdlib HTML-to-lines converter for World Bank STEP Contract Award notices."""
+
+    _BREAK_TAGS = frozenset({"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "hr"})
+    _CELL_TAGS = frozenset({"td", "th"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t in self._BREAK_TAGS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        t = tag.lower()
+        if t in self._BREAK_TAGS:
+            self._parts.append("\n")
+        elif t in self._CELL_TAGS:
+            self._parts.append(" | ")
+
+    def handle_data(self, data: str) -> None:
+        if data:
+            self._parts.append(data)
+
+    def lines(self) -> list[str]:
+        raw = "".join(self._parts).replace("\xa0", " ")
+        out: list[str] = []
+        for ln in raw.splitlines():
+            cleaned = re.sub(r"\s+", " ", ln).strip(" |")
+            if cleaned:
+                out.append(cleaned)
+        return out
+
+
+_WB_AWARDED_HEAD_RE = re.compile(
+    r"^(?:awarded|successful)\s+(?:bidder|bidders|bidder\(s\)|firm|firms|firm/individual|consultant|consultants|contractor|supplier)",
+    re.IGNORECASE,
+)
+_WB_EVALUATED_HEAD_RE = re.compile(
+    r"^(?:other\s+)?evaluated\s+(?:bidder|bidders|bidder\(s\)|firm|firms|consultant|consultants|contractor|supplier)",
+    re.IGNORECASE,
+)
+_WB_REJECTED_HEAD_RE = re.compile(
+    r"^(?:rejected|non[\s-]*responsive|disqualified)\s+(?:bidder|bidders|bidder\(s\)|firm|firms|consultant|consultants|contractor|supplier)",
+    re.IGNORECASE,
+)
+_WB_STOP_HEAD_RE = re.compile(
+    r"^(?:scope\s+of\s+contract|contract\s+signature\s+date|duration\s+of\s+contract|"
+    r"evaluation\s+currency|beneficial\s+ownership|summary\s+of\s+contract|selection\s+method|"
+    r"procurement\s+method|project\s+id|country\s*:?\s*$)",
+    re.IGNORECASE,
+)
+_WB_NAME_LINE_RE = re.compile(r"^(?:name|bidder\s*name|firm\s*name|consultant\s*name|supplier\s*name)\s*[:|]\s*(.+)$", re.IGNORECASE)
+_WB_SUPPLIER_ID_RE = re.compile(r"^(.*?)\s*\((\d{4,12})\)\s*$")
+_WB_META_PREFIX_RE = re.compile(
+    r"^(?:address|country|city|province|postal|zip|phone|tel|fax|email|read[\s-]*out|evaluated\s+price|"
+    r"signed\s+contract|contract\s+price|contract\s+signature|duration|reason\s+for\s+rejection|"
+    r"rejection\s+reason|currency|price|amount|score|rank|technical\s+score|financial\s+score|combined\s+score)\b",
+    re.IGNORECASE,
+)
+_WB_SIGNED_INR_RE_1 = re.compile(
+    r"(?:signed\s+contract\s+price|final\s+contract\s+price|contract\s+price|awarded\s+(?:price|value|amount))"
+    r"[^0-9\n]{0,40}?(?:INR|Rs\.?|₹|Indian\s+Rupees?)\s*([0-9][0-9,]*(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_WB_SIGNED_INR_RE_2 = re.compile(
+    r"(?:signed\s+contract\s+price|final\s+contract\s+price|contract\s+price|awarded\s+(?:price|value|amount))"
+    r"[^0-9\n]{0,30}?([0-9][0-9,]*(?:\.\d+)?)\s*(?:INR|Indian\s+Rupees?)",
+    re.IGNORECASE,
+)
+_WB_AWARD_DATE_RE = re.compile(
+    r"(?:contract\s+signature\s+date|date\s+of\s+contract\s+signature|date\s+of\s+award|award\s+date)"
+    r"\s*[:|]?\s*([0-9]{1,2}[-/\s][A-Za-z0-9]{2,9}[-/\s]20\d{2}|20\d{2}-\d{2}-\d{2})",
+    re.IGNORECASE,
+)
+_WB_DIRECT_METHODS = frozenset({"DIR", "CDS", "SSS"})
+
+
+def _extract_wb_bidders(section_lines: list[str]) -> list[tuple[str, str]]:
+    """Extract (supplier_name, numeric_supplier_id) entries from a World Bank STEP bidder section."""
+    bidders: list[tuple[str, str]] = []
+    for ln in section_lines:
+        m_name = _WB_NAME_LINE_RE.match(ln)
+        if m_name:
+            cand = m_name.group(1).strip(" |")
+            if cand and not _WB_META_PREFIX_RE.match(cand):
+                m_id = _WB_SUPPLIER_ID_RE.match(cand)
+                if m_id:
+                    bidders.append((m_id.group(1).strip(), m_id.group(2).strip()))
+                else:
+                    bidders.append((cand, ""))
+    if bidders:
+        return bidders
+
+    # Fallback: table/paragraph lines bearing World Bank numeric Supplier IDs "(123456)"
+    for ln in section_lines:
+        if _WB_META_PREFIX_RE.match(ln):
+            continue
+        first_cell = ln.split(" | ", 1)[0].strip()
+        m_id = _WB_SUPPLIER_ID_RE.match(first_cell)
+        if m_id and m_id.group(1).strip():
+            bidders.append((m_id.group(1).strip(), m_id.group(2).strip()))
+    return bidders
+
+
+def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[dict[str, Any]]:
+    """Parse World Bank ``procnotices[]`` JSON + STEP HTML ``notice_text`` into canonical procurement rows.
+
+    Forensic hygiene rules:
+    - Drops corrupt upstream notices where ``bid_reference_no`` is non-empty but absent from ``notice_text``.
+    - In WB STEP HTML, ``Evaluated Bidder(s)`` lists *other* evaluated losing bidders:
+      ``bids_received = 1 + len(evaluated) + len(rejected)``, ``qualified_bid_count = 1 + len(evaluated)``.
+    - On competitive methods (RFB/RFQ/QCBS/etc.) where NEITHER ``Evaluated`` NOR ``Rejected`` section is
+      present, leaves ``bid_count = None`` and ``qualified_bid_count = None`` (never misclassifying as 1 bid).
+    """
+    records: list[dict[str, Any]] = []
+    for idx, item in enumerate(notices, start=1):
+        if not isinstance(item, dict):
+            continue
+        notice_id = str(item.get("id") or "").strip()
+        bid_ref = str(item.get("bid_reference_no") or "").strip()
+        raw_html = str(item.get("notice_text") or "")
+
+        parser = _WBNoticeHTMLToLines()
+        parser.feed(raw_html)
+        parser.close()
+        lines = parser.lines()
+        plain_text = "\n".join(lines)
+
+        # Drop corrupt notices where bid_reference_no is absent from notice_text
+        if bid_ref and plain_text:
+            norm_plain = re.sub(r"\s+", " ", plain_text).lower()
+            norm_ref = re.sub(r"\s+", " ", bid_ref).lower()
+            if norm_ref not in norm_plain:
+                continue
+
+        sections: dict[str, list[str]] = {"awarded": [], "evaluated": [], "rejected": []}
+        has_evaluated_section = False
+        has_rejected_section = False
+        active_sec: str | None = None
+
+        for ln in lines:
+            if _WB_AWARDED_HEAD_RE.match(ln):
+                active_sec = "awarded"
+                continue
+            if _WB_EVALUATED_HEAD_RE.match(ln):
+                active_sec = "evaluated"
+                has_evaluated_section = True
+                continue
+            if _WB_REJECTED_HEAD_RE.match(ln):
+                active_sec = "rejected"
+                has_rejected_section = True
+                continue
+            if _WB_STOP_HEAD_RE.match(ln):
+                active_sec = None
+                continue
+            if active_sec is not None:
+                sections[active_sec].append(ln)
+
+        awarded_bidders = _extract_wb_bidders(sections["awarded"])
+        evaluated_bidders = _extract_wb_bidders(sections["evaluated"])
+        rejected_bidders = _extract_wb_bidders(sections["rejected"])
+
+        winner_name = awarded_bidders[0][0] if awarded_bidders else ""
+        vendor_id = awarded_bidders[0][1] if awarded_bidders else ""
+
+        awarded_blob = "\n".join(sections["awarded"]) + "\n" + plain_text
+        award_value_inr: float | None = None
+        for rx in (_WB_SIGNED_INR_RE_1, _WB_SIGNED_INR_RE_2):
+            m_val = rx.search(awarded_blob)
+            if m_val:
+                parsed_v = _to_float_safe(m_val.group(1), 0.0)
+                if parsed_v > 0:
+                    award_value_inr = parsed_v
+                    break
+
+        award_date = ""
+        m_dt = _WB_AWARD_DATE_RE.search(plain_text)
+        if m_dt:
+            parsed_dt = _parse_datetime_flex(m_dt.group(1).strip())
+            if parsed_dt is not None:
+                award_date = parsed_dt.date().isoformat()
+        noticedate = str(item.get("noticedate") or item.get("submission_date") or "").strip()
+        if not award_date and noticedate:
+            parsed_nd = _parse_datetime_flex(noticedate)
+            if parsed_nd is not None:
+                award_date = parsed_nd.date().isoformat()
+
+        method_code = str(item.get("procurement_method_code") or "").strip().upper()
+        method_name = str(item.get("procurement_method_name") or "").strip()
+        is_direct = method_code in _WB_DIRECT_METHODS or "direct selection" in method_name.lower() or "single source" in method_name.lower()
+
+        n_eval = len(evaluated_bidders)
+        n_rej = len(rejected_bidders)
+        if is_direct:
+            proc_method = "direct"
+            bid_count: int | None = 1 + n_eval + n_rej
+            qualified_bid_count: int | None = 1 + n_eval
+        else:
+            proc_method = "open"
+            if has_evaluated_section or has_rejected_section:
+                bid_count = 1 + n_eval + n_rej
+                qualified_bid_count = 1 + n_eval
+            else:
+                # Awarded-only RFB/RFQ without Evaluated or Rejected section: NEVER misclassify as 1 bid!
+                bid_count = None
+                qualified_bid_count = None
+
+        method_details = f"{method_code} ({method_name})".strip() if method_code and method_name else (method_code or method_name)
+        buyer_name = str(
+            item.get("contact_organization")
+            or item.get("implementing_agency")
+            or item.get("borrower")
+            or item.get("project_name")
+            or ""
+        ).strip()
+        title = str(
+            item.get("bid_description")
+            or item.get("notice_description")
+            or item.get("project_name")
+            or bid_ref
+            or notice_id
+        ).strip()
+        category = str(item.get("procurement_group_desc") or item.get("procurement_group") or "Public Procurement").strip()
+        detail_url = (
+            f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{notice_id}"
+            if notice_id
+            else (source_ref if _is_url(source_ref) else "https://projects.worldbank.org")
+        )
+        fiscal_year = _normalize_fy(item.get("fiscal_year"), fallback_date=award_date or noticedate)
+
+        records.append(
+            {
+                "id": notice_id,
+                "ocid": notice_id,
+                "tender_id": bid_ref or notice_id,
+                "bid_reference_no": bid_ref,
+                "project_id": str(item.get("project_id") or "").strip(),
+                "project_name": str(item.get("project_name") or "").strip(),
+                "tender_title": title,
+                "buyer_name": buyer_name,
+                "vendor_name": winner_name,
+                "vendor_id": vendor_id,
+                "procurement_method": proc_method,
+                "procurement_method_details": method_details,
+                "exemption_reason": "",
+                "bid_count": bid_count,
+                "qualified_bid_count": qualified_bid_count,
+                "evaluated_bidder_count": n_eval,
+                "rejected_bidder_count": n_rej,
+                "has_award": bool(award_value_inr or winner_name),
+                "award_value_inr": award_value_inr,
+                "award_amount_inr": award_value_inr,
+                "tender_estimate_inr": 0.0,
+                "tender_value_inr": 0.0,
+                "amount_type": "award_value" if award_value_inr is not None else "unrecorded",
+                "award_date": award_date,
+                "release_date": noticedate,
+                "tender_published_date": "",
+                "bid_window_days": None,
+                "item_category": category,
+                "jurisdiction": _infer_jurisdiction(f"{buyer_name} {item.get('project_name') or ''}"),
+                "fiscal_year": fiscal_year,
+                "source_url": detail_url,
+                "record_url": detail_url,
+                "source_row_index": idx,
+            }
+        )
+    return records
 
 
 def _parse_zip_bytes(
@@ -2173,6 +2477,14 @@ def _resolve_provenance(
         inferred_publisher = "Public Procurement Open Contracting India"
         inferred_landing = source_ref
         inferred_mirror = "CivicDataLab Open Contracting India"
+    elif host == "data.open-contracting.org" or host.endswith(".open-contracting.org"):
+        inferred_publisher = "Open Contracting Partnership Data Registry (India OCDS)"
+        inferred_landing = "https://data.open-contracting.org"
+        inferred_mirror = "Open Contracting Partnership Data Registry"
+    elif is_github_host and path_lower.startswith("/civicdatalab/flood-data-ecosystem-"):
+        inferred_publisher = "State e-Procurement Portal (CivicDataLab IDS-DRR Open Data)"
+        inferred_landing = "https://github.com/CivicDataLab"
+        inferred_mirror = "GitHub Mirror (CivicDataLab IDS-DRR)"
     elif host == "data.gov.in" or host.endswith(".data.gov.in"):
         inferred_publisher = "Open Government Data (OGD) Platform India, NIC"
         inferred_landing = "https://data.gov.in"
@@ -2432,7 +2744,7 @@ def load_dataset(
             max_decompressed_bytes=max_decompressed_bytes,
             max_compression_ratio=max_compression_ratio,
         )
-        inner_ref = source_ref[:-3] if source_ref.lower().endswith(".gz") else source_ref
+        inner_ref = re.sub(r"\.gz(?=$|[&#])", "", source_ref, flags=re.IGNORECASE)
         inner_fmt = _infer_format(inner_ref, None, "", decompressed)
         if inner_fmt == "gzip":
             head_strip = decompressed[:2048].decode("utf-8-sig", errors="replace").lstrip()
