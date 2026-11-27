@@ -21,7 +21,7 @@ Track **1,000 formal ministerial assurances** across **56 Union Ministries** in 
 - **Lok Sabha (18th LS, Sessions 1–7):** `546` assurances (with official Digital Sansad Question & Answer PDFs pinned as `secondary_url` where published)
 - **Rajya Sabha (Sessions 260–271):** `454` assurances (with official Implementation Report PDFs `irUrl` pinned as `secondary_url` for `FIMP` assurances)
 - **Recorded Status Breakdown:** `Pending`: `578` · `Fully Implemented`: `388` · `Partly Implemented`: `2` · `Dropped`: `32`
-- **Deterministic Dry-Run (`as_of_date=2026-11-27`):** `952` leads · `48` cleared · `0` unevaluable
+- **Deterministic Dry-Run (`as_of_date=2026-11-27`):** `959` leads · `41` cleared · `0` unevaluable
 
 ## Deterministic Rules (`P6`)
 1. **Overdue Pending Assurance (`P6-OVERDUE-PENDING` / `overdue_pending_assurance`)**: Recorded status is `pending` and elapsed time exceeds the parliamentary **90-day (3-month)** fulfillment standard (`medium` at `91–180` days, `high` at `181–365` days, `critical` at `>365` days or `>= 2` Committee extensions).

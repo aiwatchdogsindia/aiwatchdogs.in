@@ -25,7 +25,7 @@
       "partly_implemented": 0,
       "dropped": 30,
       "with_secondary_pdf": 146,
-      "leads_in_dry_run": 446
+      "leads_in_dry_run": 453
     }
   },
   "by_recorded_status": {
@@ -36,11 +36,11 @@
   },
   "dry_run_summary": {
     "tasks_tested": 1000,
-    "leads": 952,
-    "cleared": 48,
+    "leads": 959,
+    "cleared": 41,
     "unevaluable": 0,
     "by_signal": {
-      "delayed_or_unreadable_followup": 340,
+      "delayed_or_unreadable_followup": 347,
       "dropped_without_fulfillment": 32,
       "overdue_pending_assurance": 578,
       "partly_implemented_assurance": 2
@@ -208,7 +208,7 @@
       "fulfilled_count": 8,
       "partly_implemented_count": 0,
       "dropped_count": 1,
-      "leads_in_dry_run": 19
+      "leads_in_dry_run": 20
     },
     {
       "ministry": "Textiles",
@@ -328,7 +328,7 @@
       "fulfilled_count": 11,
       "partly_implemented_count": 0,
       "dropped_count": 0,
-      "leads_in_dry_run": 19
+      "leads_in_dry_run": 20
     },
     {
       "ministry": "Housing and Urban Affairs",
@@ -340,7 +340,7 @@
       "fulfilled_count": 11,
       "partly_implemented_count": 0,
       "dropped_count": 0,
-      "leads_in_dry_run": 21
+      "leads_in_dry_run": 22
     },
     {
       "ministry": "Labour and Employment",
@@ -436,7 +436,7 @@
       "fulfilled_count": 2,
       "partly_implemented_count": 0,
       "dropped_count": 1,
-      "leads_in_dry_run": 13
+      "leads_in_dry_run": 14
     },
     {
       "ministry": "Coal",
@@ -484,7 +484,7 @@
       "fulfilled_count": 11,
       "partly_implemented_count": 0,
       "dropped_count": 2,
-      "leads_in_dry_run": 21
+      "leads_in_dry_run": 22
     },
     {
       "ministry": "Railways",
@@ -508,7 +508,7 @@
       "fulfilled_count": 10,
       "partly_implemented_count": 0,
       "dropped_count": 0,
-      "leads_in_dry_run": 18
+      "leads_in_dry_run": 19
     },
     {
       "ministry": "Youth Affairs and Sports",
@@ -544,7 +544,7 @@
       "fulfilled_count": 9,
       "partly_implemented_count": 0,
       "dropped_count": 1,
-      "leads_in_dry_run": 15
+      "leads_in_dry_run": 16
     },
     {
       "ministry": "Fisheries, Animal Husbandry and Dairying",
