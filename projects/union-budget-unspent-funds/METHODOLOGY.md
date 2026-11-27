@@ -45,8 +45,13 @@ needed. Three other volunteers repeat every lead independently before it is show
   add up.
 * **A scheme is compared as a whole.** Where a heading splits a scheme by source of funds (Gross
   Budgetary Support, National Investment Fund, cess-funded Koshes, CRIF, PMSSN) or by component
-  (programme, externally aided, grant and loan parts), all its rows are added, because money moves
-  between them during the year.
+  (programme, externally aided, grant and loan parts), UB1 v2 adds its spending rows. It excludes
+  numbered recoveries and loan-interest payments on both sides of the comparison. Interest
+  subsidies remain spending. When a heading has other funded rows, the finding title identifies
+  the budget lines included. A named top-level programme component can form its own unit.
+* **Component coverage.** Each funded component in a grouped actuals comparison must have a
+  counterpart by printed name in the later statement. Row numbers may change. Missing components
+  make the actuals comparison unevaluable. Only evaluated lines contribute to the audited amount.
 * **A printed nil is not read as "nothing spent"** unless the line continues into the next year in
   both budgets and its revised estimate had already been cut to a quarter or less.
 * **Left out by design:** repayment of debt and interest payments; the Railways statement, whose

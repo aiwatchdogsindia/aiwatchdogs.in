@@ -131,6 +131,46 @@ def test_throttled_heartbeats_never_fail_a_task() -> None:
     assert len(hub.bodies("/api/desk/submit")) == 1
 
 
+def test_unknown_adjudication_engine_releases_without_a_vote(tmp_path: Path) -> None:
+    lease = _lease("unknown")
+    lease["task"].update(task_type="peer_verify", methodology_code="FUTURE")
+    lease["task"]["payload"] = {"finding": {"id": "fnd-unknown", "methodology_code": "FUTURE"}}
+    hub = _Hub([lease])
+    runner, _ = _runner(hub, tmp_path)
+    summary = runner.run_loop(max_tasks=1)
+    assert "P6" in hub.bodies("/api/desk/next")[0]["supported_methodologies"]
+    assert summary.results[0]["reason"] == "incompatible_engine"
+    assert hub.bodies("/api/desk/release") and not hub.bodies("/api/desk/submit")
+
+
+def test_cleared_whisper_fits_hub_and_validation_detail_reaches_runner(tmp_path: Path) -> None:
+    hub = _Hub([_lease("bad-submit")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/desk/submit" and json.loads(request.content)["outcome"] == "finding":
+            return httpx.Response(422, json={"detail": [{
+                "loc": ["body", "finding"], "msg": "invalid field", "input": "private submitted data",
+            }]})
+        return hub(request)
+
+    runner, _ = _runner(handler, tmp_path)
+    runner.submit("cleared-p6", outcome="cleared", whisper="a" * 800)
+    assert hub.bodies("/api/desk/submit")[0]["whisper"] == "a" * 500
+    error = runner.run_loop(max_tasks=1).results[0]
+    assert error["reason"] == "validation_error"
+    assert error["error"] == "HTTP 422: body.finding: invalid field"
+
+
+def test_p1_keeps_all_signals_and_reports_explicit_limit() -> None:
+    records = [{"page": 1, "raw_text": _PAGE}]
+    spec = _P1_CONTEXT["budget_lines"][0]
+    ctx = {**_P1_CONTEXT, "budget_lines": [{**spec, "key": f"head-{i}"} for i in range(10)]}
+    assert len(run_engine("P1", records, context=ctx).leads) == 10
+    limited = run_engine("P1", records, context={**ctx, "max_leads": 8})
+    assert len(limited.leads) == 8 and limited.omitted_leads == 2
+    assert "omitted 2" in limited.summary
+
+
 def test_a_refusal_without_retry_after_is_not_retried() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(429, json={"detail": "Agent already holds 2 active task leases"})
@@ -312,6 +352,54 @@ def _register(client: TestClient, handle: str) -> dict[str, str]:
     return {"X-Agent-Token": client.post("/api/agents/register", json=body).json()["api_token"]}
 
 
+@pytest.mark.production_missions
+def test_multi_year_p1_audit_and_peers_reproduce_same_fingerprint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aiwatchdogs.core.safety import compute_sha256
+
+    project = json.loads((REPO_PROJECTS / "police-finances.json").read_text(encoding="utf-8"))
+    project["tasks"] = project["tasks"][:1]
+    _, db = _hub_with(tmp_path, monkeypatch, [project])
+    app = create_app(db_path=db, seed=True)
+    audit_id = "prj-" + project["tasks"][0]["id"]
+    source = tmp_path / "police-budget.json"
+    source.write_text(json.dumps([{"page": 1, "raw_text": _PAGE}]), encoding="utf-8")
+    payload = {
+        "fiscal_year": "FY2023-26", "context": _P1_CONTEXT, "retrieval_url": str(source),
+        "source_landing_page": "https://www.indiabudget.gov.in/",
+        "expected_sha256": compute_sha256(source.read_bytes()), "as_of_date": "2026-11-27",
+    }
+    with app.state.db.transaction() as conn:
+        conn.execute("UPDATE tasks SET payload_json = ? WHERE id = ?", (json.dumps(payload), audit_id))
+
+    with TestClient(app, base_url="http://testserver") as client:
+        def run(handle: str, task_id: str):
+            runner = AgentRunner(
+                AgentConfig(handle=handle, hub_url="http://testserver"), http_client=client,
+                config_path=tmp_path / f"{handle}.json", allow_local_files=True,
+            )
+            result = runner.run_loop(task_id=task_id, save_on_register=False)
+            assert result.tasks_completed == 1, result.results
+            return result.results[0]
+
+        audit = run("p1-auditor", audit_id)
+        fingerprint = audit["metrics"]["script_hash"]
+        assert audit["finding"]["fiscal_year"] == "FY2025-26"
+        peers = audit["response"]["peer_verify_task_ids"]
+        # One verification was queued by an older hub before audit inputs were snapshotted.
+        with app.state.db.transaction() as conn:
+            row = conn.execute("SELECT payload_json FROM tasks WHERE id = ?", (peers[1],)).fetchone()
+            old = json.loads(row["payload_json"])
+            assert old.pop("audit_context_fields")["fiscal_year"] == "FY2023-26"
+            assert old.pop("verifier_script_hash") == fingerprint
+            conn.execute("UPDATE tasks SET payload_json = ? WHERE id = ?", (json.dumps(old), peers[1]))
+        for slot, peer_id in enumerate(peers):
+            vote = run(f"p1-peer-{slot}", peer_id)["verification"]
+            assert vote["reproduced_metrics"]["script_hash"] == fingerprint
+            assert vote["verdict"] == "confirm"
+        detail = client.get("/api/findings/" + audit["response"]["finding_id"]).json()
+        assert detail["status"] == "verified" and detail["fiscal_year"] == "FY2025-26"
+
+
 _FINDING = {
     "title": "Test Police: revised estimate vs budget estimate is 20.0% below (Major Head 2055)",
     "summary": "The official budget document prints 160.00 crore against 200.00 crore. Statistical divergence for public review.",
@@ -399,8 +487,29 @@ def test_out_of_date_official_cli_is_asked_to_refresh(tmp_path: Path, monkeypatc
         old = client.post("/api/agents/register", json=body, headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.2"})
         assert old.status_code == 426 and "refresh" in old.json()["detail"]
         assert client.post("/api/desk/next", json={}, headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.2"}).status_code == 426
+        # 255b699 (no P6) and later P6-capable builds shared this user-agent.
+        assert client.post("/api/desk/next", json={}, headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.7"}).status_code == 426
         for agent in (CLI_USER_AGENT, "curl/8.5.0", "python-httpx/0.28"):  # current CLI and hand-written clients pass
             assert client.post("/api/agents/register", json={**body, "handle": f"ok-{abs(hash(agent)) % 10**6}"}, headers={"User-Agent": agent}).status_code == 200
+
+
+@pytest.mark.production_missions
+def test_claims_respect_advertised_engines_and_open_list_is_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project()
+    _, db = _hub_with(tmp_path, monkeypatch, [project])
+    with TestClient(create_app(db_path=db, seed=True)) as client:
+        auth = _register(client, "method-filter")
+        url = "/api/missions/test-city-budget/tasks?kind=audit&status=open"
+        page = client.get(url)
+        assert page.headers["cache-control"] == "no-store"
+        task_id = page.json()["tasks"][0]["id"]
+        for methods in ([], ["P6"]):
+            params = {"supported_methodologies": methods}
+            assert client.post("/api/desk/next", headers=auth, json=params).status_code == 204
+            assert client.post("/api/desk/next", headers=auth, json={**params, "task_id": task_id}).status_code == 409
+        res = client.post("/api/desk/next", headers=auth, json={"supported_methodologies": ["M5"]})
+        assert res.json()["task"]["id"] == task_id
+        assert client.get(url).json()["total"] == 0
 
 
 @pytest.mark.production_missions

@@ -98,7 +98,7 @@ def _is_statistical_table_digits(
     matched: str,
     cue_re: re.Pattern[str],
 ) -> bool:
-    """Return True only when whitespace-separated numbers sit inside an unlabelled >=5-column numeric table row."""
+    """Recognize numeric table rows, including a four-cell police budget total."""
     if not any(ch.isspace() for ch in matched) or any(
         ch in "-\u2010\u2011\u2012\u2013\u2014\u2015" for ch in matched
     ):
@@ -111,6 +111,13 @@ def _is_statistical_table_digits(
         return False
     before_on_line = text[line_start:start]
     after_on_line = text[end:end_idx]
+    # A printed police budget total can have just four cells: its major head
+    # followed by three amounts. Keep this exception specific to that layout.
+    if cue_re is _PHONE_CONTEXT_CUE_RE and re.fullmatch(
+        r"[ \t]*(?:(?:Grand[ \t]+)?Total[ \t]+(?:2055|4055)|(?:2055|4055)[ \t]+Police)"
+        r"(?:[ \t]+\d[\d,.]*){3}[ \t]*", line, re.IGNORECASE
+    ):
+        return True
     adjacent_col = bool(re.search(r"\b\d+\s+$", before_on_line) or re.match(r"^\s+\d+\b", after_on_line))
     return adjacent_col and len(re.findall(r"\b\d+\b", line)) >= 5
 

@@ -95,16 +95,6 @@ MAX_DEMAND_PROBE = 125
 # Railways statement prints its works net of the railway funds that pay for them, so a line can
 # fall to nil in a year when the work went ahead on fund money.
 EXCLUDED_DEPARTMENTS = frozenset({"repaymentofdebt", "interestpayments", "ministryofrailways"})
-# Book entries, not money to be spent: transfers into and out of reserve funds, appropriations to
-# funds, ways and means advances, suspense heads, and the servicing of a body's loans.
-BOOK_ENTRY_RE = re.compile(
-    r"^(?:tran\w*fers?\s+(?:to|of)\b|appropriation\s+to\b|amount\s+met\s+from\b|met\s+(?:from|through)\b|less\b|deduct\b"
-    r"|ways\s+and\s+means\b|inter\s+railway\s+financial\s+adjus|inter\s+account\s+transfer"
-    r"|from\s+(?:railways'?\s+resources|general\s+revenues)\b|.*\bfund\s+transfer$|.*\bsuspense$"
-    r"|repayment\s+of\b|payment\s+of\s+interest\b|interest\s+payments?\b|interest\s+on\b"
-    r"|.*\bdividend\s+reliefs?\b.*)",
-    re.IGNORECASE,
-)
 _FUND = (
     r"(?:gross\s+budget\w*\s+support|gbs|national\s+investment\s+funds?|nif|pmssn"
     r"|central\s+roads?\s+(?:and|&)\s+infrastructure\s+fund|crif|central\s+road\s+fund|crf"
@@ -328,7 +318,7 @@ def _clean(name: str) -> str:
     return " ".join(name.split())
 
 
-def units_of(st: Statement) -> list[Unit]:
+def units_of(st: Statement, left_out: collections.Counter[str] | None = None) -> list[Unit]:
     """The spending lines of one statement.
 
     Rows that only say where a scheme's money comes from are added together under the scheme, so
@@ -336,11 +326,20 @@ def units_of(st: Statement) -> list[Unit]:
     lump-sum provisions and rows that are financing in themselves are left out.
     """
     by_parent: dict[tuple[str, ...], list[ub.LineReading]] = collections.defaultdict(list)
+    groups: list[list[ub.LineReading]] = []
     for line in st.lines:
-        by_parent[line.parents].append(line)
+        if line.parents:
+            by_parent[line.parents].append(line)
+        else:
+            groups.append([line])
     units: list[Unit] = []
-    for parents, rows in by_parent.items():
+    for rows in [*groups, *by_parent.values()]:
+        parents = rows[0].parents
         names = [_clean(row.name) for row in rows]
+        if not parents and FUNDING_ROW_RE.match(names[0]) and not FUNDING_SUFFIX_RE.search(names[0]):
+            if left_out is not None and (rows[0].values[COL_BP] or 0) > 0:
+                left_out["funding source without a named scheme"] += 1
+            continue
         if any(NON_CASH_RE.search(name) for name in names):
             continue  # paid in securities, not in cash
         if any(LUMP_SUM_RE.search(_clean(part)) for part in parents):
@@ -359,9 +358,9 @@ def units_of(st: Statement) -> list[Unit]:
         spending = [
             row
             for row, name in zip(rows, names, strict=True)
-            if name and not BOOK_ENTRY_RE.match(name) and not LUMP_SUM_RE.search(name)
+            if name and not ub.BOOK_ENTRY_RE.match(name) and not LUMP_SUM_RE.search(name)
         ]
-        funding = [row for row in spending if FUNDING_ROW_RE.match(_clean(row.name))]
+        funding = [row for row in spending if parents and FUNDING_ROW_RE.match(_clean(row.name))]
         schemes = [row for row in spending if row not in funding]
         if parents and funding:
             heading = _clean(parents[-1])
@@ -437,7 +436,7 @@ def link_year(year: str, by_budget: dict[str, dict[int, Statement]], left_out: c
             continue
         if ub.normalise_name(st.doc.department) in EXCLUDED_DEPARTMENTS:
             continue
-        units = units_of(st)
+        units = units_of(st, left_out)
         allocation = [unit for unit in units if (unit.values[COL_BP] or 0.0) > 0]
         if not st.closed:
             left_out["statement does not add up to its Grand Total"] += len(allocation)
@@ -534,6 +533,7 @@ def link_year(year: str, by_budget: dict[str, dict[int, Statement]], left_out: c
                 if (
                     (actual is None or actual >= 0)
                     and (actual is not None or (continues and written_down))
+                    and not ub.unmatched_allocations(unit.rows, found.rows)
                     and not _absorbed(found, act_units[target.number], COL_A, COL_BP)
                 ):
                     item.actuals, item.act, item.link = target, found, basis
