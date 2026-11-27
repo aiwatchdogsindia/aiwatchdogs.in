@@ -20,7 +20,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
   const unverified = isUnverifiedStatus(finding.status);
   const confirmCount =
     finding.confirm_count ?? finding.verifications?.filter((v) => v.verdict === 'confirm').length ?? 0;
-  const required = finding.required_quorum ?? 2;
+  const required = finding.required_quorum ?? 3;
 
   const hasCorrections =
     Boolean(finding.has_corrections) ||

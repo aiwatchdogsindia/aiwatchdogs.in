@@ -70,7 +70,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 13
+LATEST_SCHEMA_VERSION = 14
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS findings (
     verification_score REAL NOT NULL DEFAULT 0.0,
     confirm_count INTEGER NOT NULL DEFAULT 0,
     dispute_count INTEGER NOT NULL DEFAULT 0,
-    required_quorum INTEGER NOT NULL DEFAULT 2,
+    required_quorum INTEGER NOT NULL DEFAULT 3,
     created_at TEXT NOT NULL,
     verified_at TEXT
 );
@@ -1950,6 +1950,411 @@ def _migrate_v13_egress_cache_and_token_totals(conn: Any, *, is_postgres: bool) 
         conn.executemany("UPDATE tasks SET reported_tokens = ? WHERE id = ?", updates)
 
 
+_V14_BATCH_SIZE = 500
+_V14_DEFAULT_PV_INSTRUCTIONS = (
+    "Independently load the pinned source dataset, verify primary & secondary SHA-256 "
+    "digests, re-run deterministic calculations with the bound engine/ruleset/as-of date, "
+    "validate neutrality & zero-PII, and submit explicit pass/fail/unrecorded checks."
+)
+
+
+def _migrate_v14_quorum3_cross_harness_backfill(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v14: raise default required_quorum to 3 and retroactively re-audit live findings.
+
+    Batched & idempotent (<2s for 10k findings over Neon Postgres):
+    - Sets Postgres column default ``findings.required_quorum`` to 3.
+    - Re-evaluates all live non-quarantined findings in ``('verified', 'peer_review', 'raw_lead')``
+      using the shared pairwise-independent ``(handle, coding_agent, coding_agent_model)`` rule.
+    - Keeps findings with >=3 pairwise-independent confirms (and consensus >= 0.75) verified;
+      returns findings with <3 pairwise-independent confirms to ``peer_review`` (``verified_at = NULL``)
+      and queues only the missing ``peer_verify`` slots using server-side template cloning.
+    - Recomputes ``missions.verified_findings_count`` and ``agents.findings_verified`` and clears
+      ``summary_cache``.
+    """
+    from aiwatchdogs.hub.quorum import DEFAULT_REQUIRED_QUORUM, evaluate_pairwise_quorum
+
+    if is_postgres:
+        conn.execute(f"ALTER TABLE findings ALTER COLUMN required_quorum SET DEFAULT {DEFAULT_REQUIRED_QUORUM}")
+
+    # Bulk read #1: compact finding headers for all live non-quarantined candidates
+    findings = conn.execute(
+        """
+        SELECT id, mission_id, mission_slug, methodology_code, title,
+               submitted_by, submitted_coding_agent, submitted_coding_agent_model,
+               status, confirm_count, dispute_count, required_quorum, verification_score, verified_at
+        FROM findings
+        WHERE status IN ('verified', 'peer_review', 'raw_lead')
+          AND COALESCE(quarantined, 0) = 0
+        """
+    ).fetchall()
+    if not findings:
+        return
+
+    # Bulk read #2: all peer_verifications for candidate findings in deterministic order
+    verifs_by_fid: dict[str, list[Any]] = {}
+    for pv in conn.execute(
+        """
+        SELECT pv.id, pv.finding_id, pv.contributor_id, pv.verifier_handle,
+               pv.verdict, pv.checks_json, pv.reproduced_metrics_json,
+               pv.coding_agent, pv.coding_agent_model, pv.created_at
+        FROM peer_verifications pv
+        JOIN findings f ON f.id = pv.finding_id
+        WHERE f.status IN ('verified', 'peer_review', 'raw_lead')
+          AND COALESCE(f.quarantined, 0) = 0
+        ORDER BY pv.finding_id ASC, pv.created_at ASC, pv.id ASC
+        """
+    ).fetchall():
+        verifs_by_fid.setdefault(str(pv["finding_id"]), []).append(pv)
+
+    # Bulk read #3: existing peer_verify task IDs, open counts, and preferred template task ID (no payload_json!)
+    existing_pv_ids_by_fid: dict[str, set[str]] = {}
+    open_pv_count_by_fid: dict[str, int] = {}
+    template_task_id_by_fid: dict[str, str] = {}
+    for t in conn.execute(
+        """
+        SELECT t.id, t.target_finding_id, t.status
+        FROM tasks t
+        JOIN findings f ON f.id = t.target_finding_id
+        WHERE t.task_type = 'peer_verify'
+          AND f.status IN ('verified', 'peer_review', 'raw_lead')
+          AND COALESCE(f.quarantined, 0) = 0
+        ORDER BY t.target_finding_id ASC,
+                 CASE WHEN t.id LIKE 'tsk-pv-%' THEN 0 ELSE 1 END ASC,
+                 t.created_at ASC,
+                 t.id ASC
+        """
+    ).fetchall():
+        fid = str(t["target_finding_id"])
+        tid = str(t["id"])
+        existing_pv_ids_by_fid.setdefault(fid, set()).add(tid)
+        if str(t["status"] or "") in ("queued", "claimed"):
+            open_pv_count_by_fid[fid] = open_pv_count_by_fid.get(fid, 0) + 1
+        if fid not in template_task_id_by_fid:
+            template_task_id_by_fid[fid] = tid
+
+    now = utc_now_iso()
+    # (fid, confirm_count, dispute_count, verification_score, new_status, clear_verified_flag)
+    finding_updates: list[tuple[str, int, int, float, str, int]] = []
+    # (new_task_id, template_task_id, new_title, excluded_handles_json, now_ts)
+    cloned_task_rows: list[tuple[str, str, str, str, str]] = []
+    # (fid, new_task_id, new_title, excluded_handles_json)
+    fallback_task_specs: list[tuple[str, str, str, str]] = []
+    any_status_changed = False
+
+    for f in findings:
+        fid = str(f["id"])
+        cur_status = str(f["status"] or "")
+        cur_confirm = int(f["confirm_count"] or 0)
+        cur_dispute = int(f["dispute_count"] or 0)
+        cur_quorum = int(f["required_quorum"] or 0)
+        cur_score = float(f["verification_score"] or 0.0)
+        cur_verified_at = f["verified_at"]
+
+        qres = evaluate_pairwise_quorum(
+            author_handle=f["submitted_by"],
+            author_harness=f["submitted_coding_agent"],
+            author_model=f["submitted_coding_agent_model"],
+            votes=verifs_by_fid.get(fid, ()),
+            loads_json_fn=loads_json,
+        )
+        valid_confirms = int(qres["qualified_confirms"])
+        dispute_count = int(qres["dispute_count"])
+        consensus = float(qres["consensus"])
+        voter_handles: set[str] = set(qres["voter_handles"])
+
+        passes_quorum = (
+            not qres["has_pii_or_legal_flag"]
+            and valid_confirms >= DEFAULT_REQUIRED_QUORUM
+            and consensus >= 0.75
+            and (dispute_count == 0 or valid_confirms >= DEFAULT_REQUIRED_QUORUM)
+        )
+
+        if passes_quorum:
+            target_status = "verified" if cur_status == "verified" else cur_status
+            clear_verified = 0
+            needed = 0
+        else:
+            target_status = "peer_review"
+            clear_verified = 1
+            open_pv = open_pv_count_by_fid.get(fid, 0)
+            needed = max(0, DEFAULT_REQUIRED_QUORUM - valid_confirms - open_pv)
+
+        if target_status != cur_status:
+            any_status_changed = True
+
+        needs_update = (
+            cur_quorum != DEFAULT_REQUIRED_QUORUM
+            or target_status != cur_status
+            or valid_confirms != cur_confirm
+            or dispute_count != cur_dispute
+            or abs(consensus - cur_score) > 1e-6
+            or (clear_verified == 1 and cur_verified_at is not None)
+        )
+        if needs_update:
+            finding_updates.append(
+                (fid, valid_confirms, dispute_count, consensus, target_status, clear_verified)
+            )
+
+        if needed > 0:
+            used_ids = existing_pv_ids_by_fid.setdefault(fid, set())
+            excl_json = dumps_json(sorted(voter_handles))
+            title_prefix = str(f["title"] or "")[:96]
+            tmpl_id = template_task_id_by_fid.get(fid)
+            slot = 1
+            created = 0
+            while created < needed:
+                cand_id = f"tsk-pv-{fid}-{slot}"
+                if cand_id not in used_ids:
+                    used_ids.add(cand_id)
+                    new_title = f"Peer Verify ({slot}/{DEFAULT_REQUIRED_QUORUM}): {title_prefix}"
+                    if tmpl_id is not None:
+                        cloned_task_rows.append((cand_id, tmpl_id, new_title, excl_json, now))
+                    else:
+                        fallback_task_specs.append((fid, cand_id, new_title, excl_json))
+                    created += 1
+                slot += 1
+
+    # Bulk write #1: update findings in chunks of 500
+    if finding_updates:
+        if is_postgres:
+            for i in range(0, len(finding_updates), _V14_BATCH_SIZE):
+                chunk = finding_updates[i : i + _V14_BATCH_SIZE]
+                values_sql = ", ".join("(?, ?, ?, ?, ?, ?)" for _ in chunk)
+                flat_params: list[Any] = []
+                for row_vals in chunk:
+                    flat_params.extend(row_vals)
+                conn.execute(
+                    f"""
+                    UPDATE findings AS f
+                    SET required_quorum = {DEFAULT_REQUIRED_QUORUM},
+                        confirm_count = CAST(v.confirm_count AS INTEGER),
+                        dispute_count = CAST(v.dispute_count AS INTEGER),
+                        verification_score = CAST(v.vscore AS DOUBLE PRECISION),
+                        status = v.status,
+                        verified_at = CASE WHEN CAST(v.clear_verified AS INTEGER) = 1 THEN NULL ELSE f.verified_at END
+                    FROM (VALUES {values_sql}) AS v(fid, confirm_count, dispute_count, vscore, status, clear_verified)
+                    WHERE f.id = v.fid
+                    """,
+                    flat_params,
+                )
+        else:
+            conn.executemany(
+                f"""
+                UPDATE findings
+                SET required_quorum = {DEFAULT_REQUIRED_QUORUM},
+                    confirm_count = ?,
+                    dispute_count = ?,
+                    verification_score = ?,
+                    status = ?,
+                    verified_at = CASE WHEN ? = 1 THEN NULL ELSE verified_at END
+                WHERE id = ?
+                """,
+                [
+                    (confirm_c, dispute_c, vscore, st, clear_v, fid)
+                    for fid, confirm_c, dispute_c, vscore, st, clear_v in finding_updates
+                ],
+            )
+
+    # Bulk write #2: server-side clone of peer_verify tasks from existing template tasks (0 payload transfer)
+    if cloned_task_rows:
+        if is_postgres:
+            for i in range(0, len(cloned_task_rows), _V14_BATCH_SIZE):
+                chunk = cloned_task_rows[i : i + _V14_BATCH_SIZE]
+                values_sql = ", ".join("(?, ?, ?, ?, ?)" for _ in chunk)
+                flat_params = []
+                for row_vals in chunk:
+                    flat_params.extend(row_vals)
+                conn.execute(
+                    f"""
+                    INSERT INTO tasks (
+                        id, mission_id, mission_slug, methodology_code, task_type,
+                        title, instructions, payload_json, target_finding_id,
+                        excluded_handles_json, status, dataset_key, financial_quantity_type,
+                        created_at, updated_at
+                    )
+                    SELECT
+                        v.new_id, tmpl.mission_id, tmpl.mission_slug, tmpl.methodology_code, 'peer_verify',
+                        v.new_title, tmpl.instructions, tmpl.payload_json, tmpl.target_finding_id,
+                        v.excl_json, 'queued', tmpl.dataset_key, tmpl.financial_quantity_type,
+                        v.now_ts, v.now_ts
+                    FROM (VALUES {values_sql}) AS v(new_id, tmpl_id, new_title, excl_json, now_ts)
+                    JOIN tasks tmpl ON tmpl.id = v.tmpl_id
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    flat_params,
+                )
+        else:
+            conn.executemany(
+                """
+                INSERT INTO tasks (
+                    id, mission_id, mission_slug, methodology_code, task_type,
+                    title, instructions, payload_json, target_finding_id,
+                    excluded_handles_json, status, dataset_key, financial_quantity_type,
+                    created_at, updated_at
+                )
+                SELECT
+                    ?, tmpl.mission_id, tmpl.mission_slug, tmpl.methodology_code, 'peer_verify',
+                    ?, tmpl.instructions, tmpl.payload_json, tmpl.target_finding_id,
+                    ?, 'queued', tmpl.dataset_key, tmpl.financial_quantity_type,
+                    ?, ?
+                FROM tasks tmpl
+                WHERE tmpl.id = ?
+                ON CONFLICT(id) DO NOTHING
+                """,
+                [
+                    (new_id, new_title, excl_json, ts, ts, tmpl_id)
+                    for new_id, tmpl_id, new_title, excl_json, ts in cloned_task_rows
+                ],
+            )
+
+    # Bulk write #3 (rare fallback): findings with no prior peer_verify task row to clone from
+    if fallback_task_specs:
+        needed_fids = sorted({fid for fid, _, _, _ in fallback_task_specs})
+        full_by_fid: dict[str, Any] = {}
+        for i in range(0, len(needed_fids), _V14_BATCH_SIZE):
+            id_chunk = needed_fids[i : i + _V14_BATCH_SIZE]
+            ph = ",".join("?" for _ in id_chunk)
+            for row in conn.execute(
+                f"""
+                SELECT id, mission_id, mission_slug, methodology_code, title, summary,
+                       entity_name, jurisdiction, fiscal_year, fiscal_year_start, fiscal_year_end,
+                       monetary_exposure_inr, anomaly_metrics_json, rule_triggered,
+                       engine_version, ruleset_version, as_of_date, source_locator_json,
+                       provenance_json, source_url, artifact_id, artifact_sha256, secondary_sha256,
+                       dataset_path, is_demo_sample, citations_json, benign_explanations_json,
+                       submitted_by
+                FROM findings
+                WHERE id IN ({ph})
+                """,
+                id_chunk,
+            ).fetchall():
+                full_by_fid[str(row["id"])] = row
+
+        fallback_insert_rows: list[tuple[Any, ...]] = []
+        for fid, new_id, new_title, excl_json in fallback_task_specs:
+            frow = full_by_fid.get(fid)
+            if frow is None:
+                continue
+            prov = loads_json(frow["provenance_json"], {})
+            if not isinstance(prov, dict):
+                prov = {}
+            retrieval_url = str(prov.get("retrieval_url") or frow["source_url"] or "")
+            payload_obj = {
+                "finding_id": fid,
+                "submitted_by": str(frow["submitted_by"] or ""),
+                "review_type": "computational_reproduction",
+                "methodology_code": str(frow["methodology_code"] or ""),
+                "dataset_url": retrieval_url,
+                "retrieval_url": retrieval_url,
+                "secondary_url": prov.get("secondary_url"),
+                "secondary_sha256": frow["secondary_sha256"] or prov.get("secondary_sha256"),
+                "dataset_path": str(frow["dataset_path"] or ""),
+                "source_url": str(frow["source_url"] or ""),
+                "source_landing_page": str(prov.get("source_landing_page") or frow["source_url"] or ""),
+                "official_publisher": str(prov.get("official_publisher") or ""),
+                "mirror_name": str(prov.get("mirror_name") or ""),
+                "canonical_url": retrieval_url or str(frow["source_url"] or ""),
+                "artifact_id": frow["artifact_id"],
+                "artifact_sha256": frow["artifact_sha256"],
+                "expected_sha256": frow["artifact_sha256"],
+                "engine_version": str(frow["engine_version"] or ""),
+                "ruleset_version": str(frow["ruleset_version"] or ""),
+                "as_of_date": frow["as_of_date"],
+                "source_locator": loads_json(frow["source_locator_json"], {}),
+                "title": str(frow["title"] or ""),
+                "summary": str(frow["summary"] or ""),
+                "entity_name": str(frow["entity_name"] or ""),
+                "jurisdiction": str(frow["jurisdiction"] or ""),
+                "fiscal_year": str(frow["fiscal_year"] or ""),
+                "fiscal_year_start": frow["fiscal_year_start"],
+                "fiscal_year_end": frow["fiscal_year_end"],
+                "monetary_exposure_inr": float(frow["monetary_exposure_inr"] or 0.0),
+                "anomaly_metrics": loads_json(frow["anomaly_metrics_json"], {}),
+                "rule_triggered": str(frow["rule_triggered"] or ""),
+                "citations": loads_json(frow["citations_json"], []),
+                "benign_explanations": loads_json(frow["benign_explanations_json"], []),
+                "is_demo_sample": bool(frow["is_demo_sample"]),
+            }
+            fallback_insert_rows.append(
+                (
+                    new_id,
+                    frow["mission_id"],
+                    frow["mission_slug"],
+                    frow["methodology_code"],
+                    new_title,
+                    _V14_DEFAULT_PV_INSTRUCTIONS,
+                    dumps_json(payload_obj),
+                    fid,
+                    excl_json,
+                    now,
+                    now,
+                )
+            )
+
+        if fallback_insert_rows:
+            if is_postgres:
+                for i in range(0, len(fallback_insert_rows), _V14_BATCH_SIZE):
+                    chunk = fallback_insert_rows[i : i + _V14_BATCH_SIZE]
+                    values_sql = ", ".join(
+                        "(?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', '', '', ?, ?)"
+                        for _ in chunk
+                    )
+                    flat_params = []
+                    for row_vals in chunk:
+                        flat_params.extend(row_vals)
+                    conn.execute(
+                        f"""
+                        INSERT INTO tasks (
+                            id, mission_id, mission_slug, methodology_code, task_type,
+                            title, instructions, payload_json, target_finding_id,
+                            excluded_handles_json, status, dataset_key, financial_quantity_type,
+                            created_at, updated_at
+                        ) VALUES {values_sql}
+                        ON CONFLICT(id) DO NOTHING
+                        """,
+                        flat_params,
+                    )
+            else:
+                conn.executemany(
+                    """
+                    INSERT INTO tasks (
+                        id, mission_id, mission_slug, methodology_code, task_type,
+                        title, instructions, payload_json, target_finding_id,
+                        excluded_handles_json, status, dataset_key, financial_quantity_type,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, 'peer_verify', ?, ?, ?, ?, ?, 'queued', '', '', ?, ?)
+                    ON CONFLICT(id) DO NOTHING
+                    """,
+                    fallback_insert_rows,
+                )
+
+    # Recompute denormalized counters & invalidate cached summaries when any finding status changed
+    if any_status_changed or finding_updates or cloned_task_rows or fallback_task_specs:
+        conn.execute(
+            """
+            UPDATE missions
+            SET verified_findings_count = (
+                SELECT COUNT(*) FROM findings f
+                WHERE f.mission_id = missions.id
+                  AND f.status IN ('verified', 'rti_filed')
+                  AND COALESCE(f.quarantined, 0) = 0
+            )
+            """
+        )
+        conn.execute(
+            """
+            UPDATE agents
+            SET findings_verified = (
+                SELECT COUNT(*) FROM findings f
+                WHERE f.submitted_by_agent_id = agents.id
+                  AND f.status IN ('verified', 'rti_filed')
+                  AND COALESCE(f.quarantined, 0) = 0
+            )
+            """
+        )
+        conn.execute("DELETE FROM summary_cache")
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -1964,6 +2369,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (11, "011_swarm_scale_indexes", _migrate_v11_swarm_scale_indexes),
     (12, "012_idempotent_claims_and_claim_order_indexes", _migrate_v12_idempotent_claims_and_claim_order_indexes),
     (13, "013_egress_cache_and_token_totals", _migrate_v13_egress_cache_and_token_totals),
+    (14, "014_quorum3_cross_harness_backfill", _migrate_v14_quorum3_cross_harness_backfill),
 )
 
 

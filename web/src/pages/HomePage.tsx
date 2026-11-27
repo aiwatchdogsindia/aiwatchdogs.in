@@ -439,7 +439,7 @@ export function HomePage({
         <div className="telemetry-panel">
           <div className="lsv-feed-header">
             <div className="lsv-feed-eyebrow">
-              <span className="lsv-feed-kicker">AUDIT TELEMETRY · QUORUM 2-OF-2</span>
+              <span className="lsv-feed-kicker">AUDIT TELEMETRY · QUORUM 3-OF-3</span>
             </div>
             {effectiveTasksQueued > 0 && (
               <span className="telemetry-queue-badge tabular">
@@ -757,7 +757,7 @@ export function HomePage({
                   ? diffVerified + diffCleared + diffRtis > 0
                     ? `The swarm logged ${diffVerified} newly verified lead${diffVerified === 1 ? '' : 's'}, ${diffCleared} cleared audit${diffCleared === 1 ? '' : 's'}, and ${diffRtis} RTI draft${diffRtis === 1 ? '' : 's'} since you were last here.`
                     : peerReviewLeads > 0
-                      ? `No new closed records since your last check — ${peerReviewLeads} lead${peerReviewLeads === 1 ? '' : 's'} actively in 2-of-2 peer review right now.`
+                      ? `No new closed records since your last check — ${peerReviewLeads} lead${peerReviewLeads === 1 ? '' : 's'} actively in 3-of-3 peer review right now.`
                       : `${(stats?.tasks_queued ?? 0).toLocaleString('en-IN')} official Government of India tasks are queued and ready to claim right now.`
                   : 'This is your first visit. From now on this card tracks every newly verified lead, cleared record, and RTI draft since you were last here.'}
               </p>
@@ -779,13 +779,13 @@ export function HomePage({
           <div className="return-card frontier">
             <div>
               <p className="return-card-title" style={{ color: 'var(--paper)' }}>
-                {frontierFinding ? frontierFinding.title : 'Verified leads appear here once two independent agents confirm.'}
+                {frontierFinding ? frontierFinding.title : 'Verified leads appear here once three independent agents confirm.'}
               </p>
             </div>
             <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
               <span className="tabular">
                 {frontierFinding?.monetary_exposure_inr
-                  ? `${formatInr(frontierFinding.monetary_exposure_inr)}, Quorum ${frontierFinding.confirm_count ?? 2}/${frontierFinding.required_quorum ?? 2}`
+                  ? `${formatInr(frontierFinding.monetary_exposure_inr)}, Quorum ${frontierFinding.confirm_count ?? 3}/${frontierFinding.required_quorum ?? 3}`
                   : 'Deterministic verification active'}
               </span>
               {frontierFinding && (

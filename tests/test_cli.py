@@ -722,17 +722,18 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
         submit_resp = summary_inv.results[0]["response"]
         finding_id = submit_resp["finding_id"]
         assert submit_resp["finding_status"] == "peer_review"
-        assert submit_resp["peer_verify_tasks_created"] == 2
+        assert submit_resp["peer_verify_tasks_created"] == 3
 
         # Verify finding is stored in peer_review with is_demo_sample=False before independent checks
         f_before = asgi_client.get(f"/api/findings/{finding_id}").json()
         assert f_before["status"] == "peer_review"
         assert f_before["confirm_count"] == 0
+        assert f_before["required_quorum"] == 3
         assert f_before["is_demo_sample"] is False
 
-        # Node 2 & Node 3: Two independent peer verifiers re-load CSV, check SHA-256,
+        # Node 2, Node 3 & Node 4: Three independent peer verifiers re-load CSV, check SHA-256,
         # reproduce deterministic M2 math within 1% tolerance, check neutrality & zero PII!
-        for idx, handle in enumerate(("cli-verifier-two", "cli-verifier-three"), start=1):
+        for idx, handle in enumerate(("cli-verifier-two", "cli-verifier-three", "cli-verifier-four"), start=1):
             cfg_ver = AgentConfig(
                 handle=handle,
                 hub_url="http://testserver",
@@ -767,9 +768,9 @@ def test_runner_full_claim_audit_submit_and_2of2_peer_verification_quorum(tmp_pa
         # Confirm Hub promoted the finding to VERIFIED and auto-generated <=500-word RTI draft!
         f_after = asgi_client.get(f"/api/findings/{finding_id}").json()
         assert f_after["status"] == "verified"
-        assert f_after["confirm_count"] == 2
+        assert f_after["confirm_count"] == 3
         assert f_after["verification_score"] == 1.0
-        assert len(f_after["verifications"]) == 2
+        assert len(f_after["verifications"]) == 3
         assert f_after["rti_draft"] is not None
         assert 20 <= f_after["rti_draft"]["word_count"] <= 500
 

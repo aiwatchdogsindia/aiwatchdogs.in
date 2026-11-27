@@ -123,9 +123,9 @@ def test_specific_task_id_claiming_overrides_priority_and_enforces_all_guards(
 
     app = create_app(db_path=tmp_path / "task_pick.db", seed=True)
     with TestClient(app) as client:
-        a1 = _register(client, "picker-one")
-        a2 = _register(client, "picker-two")
-        a3 = _register(client, "picker-three")
+        a1 = _register(client, "picker-one", coding_agent="Claude Code", coding_agent_model="claude-opus-4-6")
+        a2 = _register(client, "picker-two", coding_agent="Codex", coding_agent_model="gpt-5.4")
+        a3 = _register(client, "picker-three", coding_agent="Antigravity", coding_agent_model="gemini-3.1-pro")
         h1 = {"X-Agent-Token": a1["api_token"]}
         h2 = {"X-Agent-Token": a2["api_token"]}
         h3 = {"X-Agent-Token": a3["api_token"]}
@@ -183,7 +183,7 @@ def test_specific_task_id_claiming_overrides_priority_and_enforces_all_guards(
         # Find spawned peer_verify tasks for finding_id
         detail = client.get("/api/missions/low-prio").json()
         pv_tasks = [t for t in detail["tasks"] if t["task_type"] == "peer_verify" and t["target_finding_id"] == finding_id]
-        assert len(pv_tasks) == 2
+        assert len(pv_tasks) == 3
 
         # 6. Author cannot claim their own peer_verify task -> HTTP 409
         r_self = client.post("/api/desk/next", headers=h1, json={"task_id": pv_tasks[0]["id"]})
@@ -631,15 +631,15 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
 
         # ---- Assert P1 detail: scoped leaderboard, hourly filter, divergences, groups ----
         p1_after = client.get("/api/missions/police-finances").json()
-        # Even after a finding spawns 2 dynamic peer_verify tasks, primary total_tasks MUST stay 100!
+        # Even after a finding spawns 3 dynamic peer_verify tasks, primary total_tasks MUST stay 100!
         assert p1_after["total_tasks"] == 100
         assert p1_after["completed_tasks"] == 2
-        assert p1_after["peer_checks_total"] == 2
+        assert p1_after["peer_checks_total"] == 3
         assert p1_after["peer_checks_done"] == 0
-        assert p1_after["peer_checks_open"] == 2
+        assert p1_after["peer_checks_open"] == 3
         assert p1_after["visual_summary"]["status_counts"]["total"] == 100
         assert p1_after["visual_summary"]["status_counts"]["completed"] == 2
-        assert p1_after["visual_summary"]["status_counts"]["checks_total"] == 2
+        assert p1_after["visual_summary"]["status_counts"]["checks_total"] == 3
         p1_all_handles = [c["handle"] for c in p1_after["contributors_all"]]
         p1_hr_handles = [c["handle"] for c in p1_after["contributors_hour"]]
         assert set(p1_all_handles) == {"p1-auditor-alpha", "p1-verifier-beta"}

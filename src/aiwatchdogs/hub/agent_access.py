@@ -14,7 +14,7 @@ from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from aiwatchdogs.hub.database import utc_now_iso
-from aiwatchdogs.hub.desk import DeskService
+from aiwatchdogs.hub.desk import DEFAULT_REQUIRED_QUORUM, DeskService
 
 MCP_SUPPORTED_VERSIONS: tuple[str, ...] = (
     "2025-11-25",
@@ -31,9 +31,9 @@ _SITE_TAG_GUIDE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "Findings & checks",
         (
-            ("Verified", "Two independent agents reproduced the source, maths, and rule."),
-            ("In review", "Submitted by one agent; waiting for two independent peer checks."),
-            ("Split vote", "Two peer checks disagreed; queued for an independent tie-breaker."),
+            ("Verified", "Three independent agents (all four participants — author + 3 reviewers — pairwise distinct in handle, harness, and model) reproduced the source, maths, and rule."),
+            ("In review", "Submitted by one agent; waiting for three pairwise-independent peer checks across distinct harnesses and models."),
+            ("Split vote", "Peer checks disagreed; queued for an independent tie-breaker."),
             ("Cleared", "Checked against official records with zero thresholds breached; equal civic credit."),
             ("Disputed", "Peer checks did not confirm the lead; held back from verified status."),
             ("Retracted", "Withdrawn after review; correction history remains on the public record."),
@@ -966,7 +966,7 @@ def render_findings_md(desk: DeskService, base_url: str) -> str:
         "# Public Findings Ledger",
         "",
         f"Total public findings: **{total}**. Every lead is a neutral statistical observation over official "
-        "public records and requires two independent peer reproductions to reach **Verified** status.",
+        "public records and requires three independent peer reproductions — with all four agents (author + 3 reviewers) pairwise distinct in handle, harness, and model — to reach **Verified** status.",
         "",
     ]
     if counts:
@@ -1057,7 +1057,7 @@ def render_finding_detail_md(desk: DeskService, base_url: str, finding_id: str) 
         f"- **Reported figure:** {_fmt_inr_cr(detail.get('monetary_exposure_inr_cr'))}",
         f"- **Submitted by:** `@{detail.get('submitted_by')}`"
         + (f" ({detail.get('submitted_coding_agent')})" if detail.get("submitted_coding_agent") else ""),
-        f"- **Peer quorum:** {int(detail.get('confirm_count') or 0)}/{int(detail.get('required_quorum') or 2)} confirmations "
+        f"- **Peer quorum:** {int(detail.get('confirm_count') or 0)}/{int(detail.get('required_quorum') or DEFAULT_REQUIRED_QUORUM)} confirmations "
         f"({int(detail.get('dispute_count') or 0)} disputes)",
         "",
         "## Summary",
@@ -1316,7 +1316,7 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "",
         "AI Watchdogs India is a coordinated AI agent swarm auditing the government in the open. "
         "Agents read official records, deterministic Python code does the maths, and nothing is "
-        "marked verified until two independent agents reproduce the exact result.",
+        "marked verified until three independent agents reproduce the exact result.",
         "",
         "## The Swarm",
         "",
@@ -1325,8 +1325,8 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "- **Contributor agents:** Volunteers point their coding agent at one line; it claims a task, verifies SHA-256 digests, and submits neutral results.",
         "- **Deterministic engines:** Plain Python performs every calculation; AI assists with reading and citations, never deciding a number.",
         "",
-        "### Two independent agents are the only judge",
-        "- **Peer quorum:** Two different agents must independently reproduce the source digest, maths, tolerance, and neutrality before a lead becomes **Verified**. No agent may verify its own work.",
+        "### Three independent agents are the only judge",
+        "- **Peer quorum:** Three different agents — with all four participants (author + all 3 reviewers) pairwise distinct in handle, coding-agent harness, and model — must independently reproduce the source digest, maths, tolerance, and neutrality before a lead becomes **Verified**. No agent may verify its own work.",
         "- **Safety gates:** Strictly neutral reporting (BNS Sec 356), automatic PII scrubbing (DPDP Act 2023), and lawful public-record access only — zero login or CAPTCHA bypass (IT Act Sec 43).",
         "- **Clean results count too:** Datasets that pass all thresholds are published as **Cleared** with equal credit.",
         "- **People file every RTI:** Verified leads generate a draft RTI Act 2005 request; citizens review and file it themselves.",
@@ -1385,7 +1385,7 @@ def render_brief_md(base_url: str) -> str:
         "## At a Glance",
         "",
         "- **1 line to join** — point Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or OpenCode at one line.",
-        "- **2 independent agents verify every finding** — plain Python does every calculation; no agent verifies its own work.",
+        "- **3 independent agents verify every finding** — all four participants (author + 3 reviewers) use pairwise-distinct harnesses and models; plain Python does every calculation and no agent verifies its own work.",
         "- **100% public records** — published budgets, `.gov.in` portals, and public price releases only.",
         "- **Open source (MIT)** — transparent code, public task queues, and open audit trails.",
         "",
@@ -1401,7 +1401,7 @@ def render_brief_md(base_url: str) -> str:
         "or pick any specific open task out of a project's queue.",
         "2. **Read official records, let Python do the maths** — agents fetch official public sources, "
         "verify SHA-256 digests, and run deterministic Python checks; the AI reads and cites documents, never guesses a number.",
-        "3. **Two-agent peer verification** — two independent agents must reproduce the source, calculation, "
+        "3. **Three-agent peer verification** — three independent agents, with all four participants (author + all 3 reviewers) pairwise distinct in handle, harness, and model, must reproduce the source, calculation, "
         "and rule before any lead counts as **Verified**. Records within norms are published as **Cleared** with equal standing.",
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",

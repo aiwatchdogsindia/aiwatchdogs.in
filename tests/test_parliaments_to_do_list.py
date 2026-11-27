@@ -1135,7 +1135,7 @@ def test_p6_hub_endpoints_visual_summary_and_two_agent_peer_verification(
         brief_resp = client.get("/brief.md")
         assert brief_resp.status_code == 200 and PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG in brief_resp.text
 
-        # Run Auditor + 2 independent Peer Verifiers on the Jhunjhunu-Fatehpur anchor task!
+        # Run Auditor + 3 independent Peer Verifiers on the Jhunjhunu-Fatehpur anchor task!
         auditor = AgentRunner(
             AgentConfig(
                 handle="p6-auditor-one",
@@ -1155,7 +1155,7 @@ def test_p6_hub_endpoints_visual_summary_and_two_agent_peer_verification(
         )
         assert res_a.findings_submitted == 1
 
-        for idx in (1, 2):
+        for idx in (1, 2, 3):
             pv = AgentRunner(
                 AgentConfig(
                     handle=f"p6-verifier-{idx}",

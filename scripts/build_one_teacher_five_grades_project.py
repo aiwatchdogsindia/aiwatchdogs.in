@@ -366,7 +366,7 @@ def main() -> None:
             "States & UTs over three consecutive Ministry of Education UDISE+ cycles (2023-24, 2024-25, 2025-26). "
             "100 deterministic P5 tasks cross-check UDISE+ Table 2.2 (single-teacher counts & enrolments) against "
             "Government-only Tables 3.3, 4.3, and 5.2 against RTE Act 2009 Schedule norms (minimum 2 teachers per "
-            "primary school and 30:1 PTR). Every figure is verified by two independent agents."
+            "primary school and 30:1 PTR). Every figure is verified by three independent agents."
         ),
         "posted_by": {
             "name": "AI Watchdogs India",

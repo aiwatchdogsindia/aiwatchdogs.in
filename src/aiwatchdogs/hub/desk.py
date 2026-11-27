@@ -44,6 +44,19 @@ from aiwatchdogs.engines.gigw_matrix import (
     load_conformity_matrix,
 )
 from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, loads_json, utc_now_iso
+from aiwatchdogs.hub.quorum import (
+    CANONICAL_CHECKS,
+    DEFAULT_REQUIRED_QUORUM,
+    LEGACY_CHECK_TO_CANONICAL as _LEGACY_CHECK_TO_CANONICAL,
+    VALID_CHECK_STATES,
+    all_checks_passed as _all_checks_passed,
+    build_attr_conflict_sql,
+    check_pairwise_verifier_independence,
+    evaluate_pairwise_quorum,
+    norm_attr,
+    normalize_check_state as _quorum_normalize_check_state,
+    normalize_checks as _quorum_normalize_checks,
+)
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
 from aiwatchdogs.projects import (
@@ -149,7 +162,8 @@ TASK_ROLES: dict[str, dict[str, str]] = {
         "brief": (
             "You are the first agent on this check. Download the pinned official file, verify its "
             "SHA-256, run the deterministic check, and submit either a neutral lead or a cleared "
-            "result. Two other agents will repeat your work independently."
+            "result. Three other agents — all four pairwise distinct in handle, harness, and model — "
+            "will repeat your work independently."
         ),
         "submit_outcomes": "finding | cleared",
     },
@@ -159,7 +173,8 @@ TASK_ROLES: dict[str, dict[str, str]] = {
         "brief": (
             "Another agent submitted this lead. Independently download the same pinned file, verify "
             "its SHA-256, re-run the check and submit an explicit verdict with all four checks. "
-            "You can never verify your own lead."
+            "Your handle, harness, and model must be distinct from the author and every other "
+            "reviewer on this finding."
         ),
         "submit_outcomes": "verification",
     },
@@ -167,8 +182,9 @@ TASK_ROLES: dict[str, dict[str, str]] = {
         "name": "adjudicator",
         "title": "Adjudicator",
         "brief": (
-            "Two agents disagreed on this lead. Independently download the same pinned file, verify "
-            "its SHA-256, re-run the check and submit the tie-breaking verdict with all four checks."
+            "Peer verifiers disagreed on this lead. Independently download the same pinned file, verify "
+            "its SHA-256, re-run the check and submit the tie-breaking verdict with all four checks. "
+            "Your handle, harness, and model must be distinct from the author and all prior reviewers."
         ),
         "submit_outcomes": "verification",
     },
@@ -297,19 +313,6 @@ VALID_VERDICTS: frozenset[str] = frozenset(
 VALID_REVIEW_TYPES: frozenset[str] = frozenset(
     {"computational_reproduction", "editorial_review", "adjudication"}
 )
-CANONICAL_CHECKS: tuple[str, ...] = (
-    "bytes_digest",
-    "deterministic_reproduction",
-    "metric_tolerance",
-    "neutrality_privacy",
-)
-_LEGACY_CHECK_TO_CANONICAL: dict[str, str] = {
-    "provenance_ok": "bytes_digest",
-    "math_reproduced": "deterministic_reproduction",
-    "rule_valid": "metric_tolerance",
-    "legal_pii_ok": "neutrality_privacy",
-}
-VALID_CHECK_STATES: frozenset[str] = frozenset({"pass", "fail", "unrecorded"})
 
 # Published transparent scoring weights used to derive both all-time and hourly leaderboards
 # strictly from timestamped rows in ``score_events`` (zero hybrid double-counting).
@@ -564,26 +567,10 @@ def _check_reproduced_metrics_consistency(
 
 
 def _normalize_check_state(raw_val: Any, *, field_name: str, strict: bool) -> str:
-    if raw_val is None:
-        return "unrecorded"
-    if isinstance(raw_val, bool):
-        return "pass" if raw_val else "fail"
-    if isinstance(raw_val, str):
-        norm = raw_val.strip().lower()
-        if norm in VALID_CHECK_STATES:
-            return norm
-        if norm in {"true", "ok", "passed"}:
-            return "pass"
-        if norm in {"false", "failed"}:
-            return "fail"
-        if norm in {"", "unknown", "none", "null", "n/a"}:
-            return "unrecorded"
-    if strict:
-        raise HTTPException(
-            status_code=422,
-            detail=f"checks.{field_name} must be 'pass', 'fail', or 'unrecorded'",
-        )
-    return "unrecorded"
+    try:
+        return _quorum_normalize_check_state(raw_val, field_name=field_name, strict=strict)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _normalize_checks(raw_checks: Any, *, strict: bool = False) -> dict[str, str]:
@@ -591,30 +578,69 @@ def _normalize_checks(raw_checks: Any, *, strict: bool = False) -> dict[str, str
 
     Missing checks ALWAYS normalize to ``"unrecorded"`` — never ``"pass"``.
     """
-    result: dict[str, str] = {key: "unrecorded" for key in CANONICAL_CHECKS}
-    if not isinstance(raw_checks, dict):
-        if strict and raw_checks is not None:
-            raise HTTPException(status_code=422, detail="verification.checks must be an object")
-        return result
+    try:
+        return _quorum_normalize_checks(raw_checks, strict=strict)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # Map legacy keys first so canonical keys take precedence if both supplied
-    for legacy_key, canon_key in _LEGACY_CHECK_TO_CANONICAL.items():
-        if legacy_key in raw_checks:
-            result[canon_key] = _normalize_check_state(
-                raw_checks[legacy_key], field_name=legacy_key, strict=strict
+
+def _load_finding_participants(
+    conn: Any,
+    finding_id: str,
+    *,
+    exclude_task_id: str | None = None,
+) -> list[tuple[str, Any, Any, Any]]:
+    """Return ``(source_label, handle, coding_agent, coding_agent_model)`` for all verifiers & active leases."""
+    participants: list[tuple[str, Any, Any, Any]] = []
+    for pv in conn.execute(
+        """
+        SELECT contributor_id, verifier_handle, coding_agent, coding_agent_model
+        FROM peer_verifications
+        WHERE finding_id = ?
+        """,
+        (finding_id,),
+    ).fetchall():
+        participants.append(
+            (
+                "peer_verification",
+                pv["contributor_id"] or pv["verifier_handle"],
+                _row_get(pv, "coding_agent", ""),
+                _row_get(pv, "coding_agent_model", ""),
             )
-
-    for canon_key in CANONICAL_CHECKS:
-        if canon_key in raw_checks:
-            result[canon_key] = _normalize_check_state(
-                raw_checks[canon_key], field_name=canon_key, strict=strict
+        )
+    if exclude_task_id:
+        lease_rows = conn.execute(
+            """
+            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model
+            FROM tasks t
+            LEFT JOIN agents a ON a.id = t.claimed_by_agent_id
+            WHERE t.status = 'claimed'
+              AND t.target_finding_id = ?
+              AND t.id != ?
+            """,
+            (finding_id, exclude_task_id),
+        ).fetchall()
+    else:
+        lease_rows = conn.execute(
+            """
+            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model
+            FROM tasks t
+            LEFT JOIN agents a ON a.id = t.claimed_by_agent_id
+            WHERE t.status = 'claimed'
+              AND t.target_finding_id = ?
+            """,
+            (finding_id,),
+        ).fetchall()
+    for lr in lease_rows:
+        participants.append(
+            (
+                "active_lease",
+                lr["claimed_by_handle"],
+                _row_get(lr, "coding_agent", ""),
+                _row_get(lr, "coding_agent_model", ""),
             )
-
-    return result
-
-
-def _all_checks_passed(checks: dict[str, str]) -> bool:
-    return all(checks.get(k) == "pass" for k in CANONICAL_CHECKS)
+        )
+    return participants
 
 
 def _is_quarantined_row(row: Any) -> bool:
@@ -954,7 +980,7 @@ class DeskService:
             "verification_score": 0.0,
             "confirm_count": 0,
             "dispute_count": int(row["dispute_count"] or 0),
-            "required_quorum": int(row["required_quorum"] or 2),
+            "required_quorum": int(row["required_quorum"] or DEFAULT_REQUIRED_QUORUM),
             "has_rti_draft": False,
             "correction_count": len(corr_list),
             "has_corrections": len(corr_list) > 0,
@@ -1045,7 +1071,7 @@ class DeskService:
             "verification_score": _safe_finite_float(row["verification_score"], 0.0),
             "confirm_count": int(row["confirm_count"] or 0),
             "dispute_count": int(row["dispute_count"] or 0),
-            "required_quorum": int(row["required_quorum"] or 2),
+            "required_quorum": int(row["required_quorum"] or DEFAULT_REQUIRED_QUORUM),
             "has_rti_draft": has_rti_draft,
             "correction_count": len(corr_list),
             "has_corrections": len(corr_list) > 0,
@@ -2563,7 +2589,7 @@ class DeskService:
                 f"{tasks_queued} official datasets are queued across {n_projects} "
                 f"{projects_label}" + (f" ({project_names})" if project_names else "") + ". "
                 f"{len(active_agents)} contributor agents are active. Every lead needs SHA-256 provenance, "
-                "neutral wording and two independent agents agreeing."
+                "neutral wording and three independent agents agreeing."
             )
         else:
             orchestrator_brief = (
@@ -4993,7 +5019,7 @@ class DeskService:
                     "reproduction_summary": {
                         "computational_confirm_count": 0,
                         "editorial_review_count": 0,
-                        "required_quorum": int(row["required_quorum"] or 2),
+                        "required_quorum": int(row["required_quorum"] or DEFAULT_REQUIRED_QUORUM),
                     },
                     "rti_draft": None,
                     "artifact": None,
@@ -5001,7 +5027,7 @@ class DeskService:
                 }
 
             verif_rows = conn.execute(
-                "SELECT * FROM peer_verifications WHERE finding_id = ? ORDER BY created_at ASC",
+                "SELECT * FROM peer_verifications WHERE finding_id = ? ORDER BY created_at ASC, id ASC",
                 (finding_id,),
             ).fetchall()
             rti_row = conn.execute(
@@ -5056,13 +5082,20 @@ class DeskService:
                     "fetched_at": art_row["fetched_at"],
                 }
 
-            comp_confirms = sum(
-                1
-                for v in verifications
-                if v["review_type"] in ("computational_reproduction", "adjudication")
-                and v["verdict"] == "confirm"
-                and v["all_checks_passed"]
-                and bool(v["reproduced_metrics"])
+            comp_verif_rows = [
+                vr
+                for vr in verif_rows
+                if str(_row_get(vr, "review_type", "computational_reproduction") or "")
+                in ("computational_reproduction", "adjudication")
+            ]
+            comp_confirms = int(
+                evaluate_pairwise_quorum(
+                    author_handle=row["submitted_by"],
+                    author_harness=_row_get(row, "submitted_coding_agent", ""),
+                    author_model=_row_get(row, "submitted_coding_agent_model", ""),
+                    votes=comp_verif_rows,
+                    loads_json_fn=loads_json,
+                )["qualified_confirms"]
             )
             editorial_reviews = sum(
                 1 for v in verifications if v["review_type"] == "editorial_review"
@@ -5075,7 +5108,7 @@ class DeskService:
             "reproduction_summary": {
                 "computational_confirm_count": comp_confirms,
                 "editorial_review_count": editorial_reviews,
-                "required_quorum": int(row["required_quorum"] or 2),
+                "required_quorum": int(row["required_quorum"] or DEFAULT_REQUIRED_QUORUM),
             },
             "rti_draft": rti_draft,
             "artifact": artifact,
@@ -5303,7 +5336,7 @@ class DeskService:
                 draft = generate_rti_draft(finding_dict, public_authority=custom_authority)
                 notice = (
                     f"Personal preview only (finding status: {finding_status}). "
-                    "Shared RTI drafts are published only for independently 2-of-2 verified leads."
+                    "Shared RTI drafts are published only for independently 3-of-3 verified leads."
                 )
                 if existing is not None and _row_get(existing, "editorial_notice", ""):
                     notice = str(existing["editorial_notice"])
@@ -7125,8 +7158,10 @@ class DeskService:
 
                 target_fid = cand["target_finding_id"]
                 if target_fid:
+                    finding_lock = " FOR UPDATE" if self.db.is_postgres else ""
                     f_row = conn.execute(
-                        "SELECT submitted_by, status, quarantined FROM findings WHERE id = ?",
+                        "SELECT submitted_by, status, quarantined, submitted_coding_agent, submitted_coding_agent_model "
+                        f"FROM findings WHERE id = ?{finding_lock}",
                         (target_fid,),
                     ).fetchone()
                     if f_row is not None:
@@ -7135,31 +7170,43 @@ class DeskService:
                                 status_code=status.HTTP_409_CONFLICT,
                                 detail=f"Task '{resolved_tid}' targets a quarantined finding and cannot be claimed.",
                             )
-                        if str(f_row["submitted_by"] or "") == agent_handle:
+                        participants = _load_finding_participants(conn, str(target_fid))
+                        indep_err = check_pairwise_verifier_independence(
+                            finding_id=str(target_fid),
+                            candidate_handle=agent_handle,
+                            candidate_harness=_row_get(agent, "coding_agent", ""),
+                            candidate_model=_row_get(agent, "coding_agent_model", ""),
+                            author_handle=f_row["submitted_by"],
+                            author_harness=_row_get(f_row, "submitted_coding_agent", ""),
+                            author_model=_row_get(f_row, "submitted_coding_agent_model", ""),
+                            existing_participants=participants,
+                        )
+                        if indep_err:
                             raise HTTPException(
                                 status_code=status.HTTP_409_CONFLICT,
-                                detail=f"Agent '{agent_handle}' cannot peer-verify its own finding '{target_fid}'.",
+                                detail=indep_err,
                             )
-                    dup_pv = conn.execute(
-                        "SELECT 1 FROM peer_verifications WHERE finding_id = ? "
-                        "AND (contributor_id = ? OR verifier_handle = ?) LIMIT 1",
-                        (target_fid, agent_handle, agent_handle),
-                    ).fetchone()
-                    if dup_pv is not None:
-                        raise HTTPException(
-                            status_code=status.HTTP_409_CONFLICT,
-                            detail=f"Agent '{agent_handle}' has already verified finding '{target_fid}'.",
-                        )
-                    dup_lease = conn.execute(
-                        "SELECT 1 FROM tasks WHERE status = 'claimed' AND claimed_by_handle = ? "
-                        "AND target_finding_id = ? LIMIT 1",
-                        (agent_handle, target_fid),
-                    ).fetchone()
-                    if dup_lease is not None:
-                        raise HTTPException(
-                            status_code=status.HTTP_409_CONFLICT,
-                            detail=f"Agent '{agent_handle}' already holds an active verification lease for finding '{target_fid}'.",
-                        )
+                    else:
+                        dup_pv = conn.execute(
+                            "SELECT 1 FROM peer_verifications WHERE finding_id = ? "
+                            "AND (contributor_id = ? OR verifier_handle = ?) LIMIT 1",
+                            (target_fid, agent_handle, agent_handle),
+                        ).fetchone()
+                        if dup_pv is not None:
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail=f"Agent '{agent_handle}' has already verified finding '{target_fid}'.",
+                            )
+                        dup_lease = conn.execute(
+                            "SELECT 1 FROM tasks WHERE status = 'claimed' AND claimed_by_handle = ? "
+                            "AND target_finding_id = ? LIMIT 1",
+                            (agent_handle, target_fid),
+                        ).fetchone()
+                        if dup_lease is not None:
+                            raise HTTPException(
+                                status_code=status.HTTP_409_CONFLICT,
+                                detail=f"Agent '{agent_handle}' already holds an active verification lease for finding '{target_fid}'.",
+                            )
 
                 excluded = set(loads_json(cand["excluded_handles_json"], []))
                 if agent_handle in excluded:
@@ -7220,28 +7267,55 @@ class DeskService:
                 else:
                     phases = ("peer_verify", "scan")
 
+                verifier_harness_norm = norm_attr(_row_get(agent, "coding_agent", ""))
+                verifier_model_norm = norm_attr(_row_get(agent, "coding_agent_model", ""))
+
+                f_har_sql, f_har_params = build_attr_conflict_sql("f.submitted_coding_agent", verifier_harness_norm)
+                f_mod_sql, f_mod_params = build_attr_conflict_sql("f.submitted_coding_agent_model", verifier_model_norm)
+                pv_har_sql, pv_har_params = build_attr_conflict_sql("pv.coding_agent", verifier_harness_norm)
+                pv_mod_sql, pv_mod_params = build_attr_conflict_sql("pv.coding_agent_model", verifier_model_norm)
+                a2_har_sql, a2_har_params = build_attr_conflict_sql("a2.coding_agent", verifier_harness_norm)
+                a2_mod_sql, a2_mod_params = build_attr_conflict_sql("a2.coding_agent_model", verifier_model_norm)
+
                 base_clauses = [
                     "t.status = 'queued'",
                     "(t.available_at IS NULL OR t.available_at <= ?)",
                     "t.excluded_handles_json NOT LIKE ? ESCAPE '\\'",
-                    # Exclude self-authored findings, quarantined findings, already-verified findings,
-                    # and findings this agent already holds an active lease on (pure SQL NOT EXISTS — no bind limit!).
-                    """(t.target_finding_id IS NULL OR (
+                    # Enforce pairwise independence of (handle, coding_agent, coding_agent_model)
+                    # against the author (findings), all existing reviewers (peer_verifications),
+                    # and all active claimed leases (tasks JOIN agents), plus quarantine exclusion.
+                    f"""(t.target_finding_id IS NULL OR (
                         NOT EXISTS (
                             SELECT 1 FROM findings f
                             WHERE f.id = t.target_finding_id
-                              AND (f.submitted_by = ? OR COALESCE(f.quarantined, 0) = 1 OR f.status = 'quarantined')
+                              AND (
+                                  f.submitted_by = ?
+                                  OR COALESCE(f.quarantined, 0) = 1
+                                  OR f.status = 'quarantined'
+                                  OR {f_har_sql}
+                                  OR {f_mod_sql}
+                              )
                         )
                         AND NOT EXISTS (
                             SELECT 1 FROM peer_verifications pv
                             WHERE pv.finding_id = t.target_finding_id
-                              AND (pv.contributor_id = ? OR pv.verifier_handle = ?)
+                              AND (
+                                  pv.contributor_id = ?
+                                  OR pv.verifier_handle = ?
+                                  OR {pv_har_sql}
+                                  OR {pv_mod_sql}
+                              )
                         )
                         AND NOT EXISTS (
                             SELECT 1 FROM tasks t2
+                            LEFT JOIN agents a2 ON a2.id = t2.claimed_by_agent_id
                             WHERE t2.status = 'claimed'
-                              AND t2.claimed_by_handle = ?
                               AND t2.target_finding_id = t.target_finding_id
+                              AND (
+                                  t2.claimed_by_handle = ?
+                                  OR {a2_har_sql}
+                                  OR {a2_mod_sql}
+                              )
                         )
                     ))""",
                 ]
@@ -7249,9 +7323,15 @@ class DeskService:
                     now,
                     f'%"{escaped_handle}"%',
                     agent_handle,
+                    *f_har_params,
+                    *f_mod_params,
                     agent_handle,
                     agent_handle,
+                    *pv_har_params,
+                    *pv_mod_params,
                     agent_handle,
+                    *a2_har_params,
+                    *a2_mod_params,
                 ]
                 if not website_observations:
                     base_clauses.append("t.methodology_code != 'W1'")
@@ -7326,7 +7406,10 @@ class DeskService:
                     )
                     return None
 
-                # Defense-in-depth exclusion verification
+                # Defense-in-depth exclusion & concurrent pairwise-lease serialization (canonical lock order:
+                # agents -> tasks -> findings -> missions). Locking the target finding serializes simultaneous
+                # claims of sibling peer_verify slots on Postgres so two agents sharing a harness or model
+                # can never acquire concurrent leases on the same finding.
                 excluded = set(loads_json(cand["excluded_handles_json"], []))
                 if agent_handle in excluded:
                     conn.execute(
@@ -7334,6 +7417,37 @@ class DeskService:
                         (now, agent["id"]),
                     )
                     return None
+                if cand["target_finding_id"]:
+                    cand_fid = str(cand["target_finding_id"])
+                    finding_lock = " FOR UPDATE" if self.db.is_postgres else ""
+                    f_row = conn.execute(
+                        "SELECT submitted_by, status, quarantined, submitted_coding_agent, submitted_coding_agent_model "
+                        f"FROM findings WHERE id = ?{finding_lock}",
+                        (cand_fid,),
+                    ).fetchone()
+                    if f_row is not None:
+                        if bool(f_row["quarantined"]) or str(f_row["status"] or "") == "quarantined":
+                            conn.execute(
+                                "UPDATE agents SET last_heartbeat_at = ?, status = 'active', registration_key_hash = NULL WHERE id = ?",
+                                (now, agent["id"]),
+                            )
+                            return None
+                        participants = _load_finding_participants(conn, cand_fid)
+                        if check_pairwise_verifier_independence(
+                            finding_id=cand_fid,
+                            candidate_handle=agent_handle,
+                            candidate_harness=_row_get(agent, "coding_agent", ""),
+                            candidate_model=_row_get(agent, "coding_agent_model", ""),
+                            author_handle=f_row["submitted_by"],
+                            author_harness=_row_get(f_row, "submitted_coding_agent", ""),
+                            author_model=_row_get(f_row, "submitted_coding_agent_model", ""),
+                            existing_participants=participants,
+                        ):
+                            conn.execute(
+                                "UPDATE agents SET last_heartbeat_at = ?, status = 'active', registration_key_hash = NULL WHERE id = ?",
+                                (now, agent["id"]),
+                            )
+                            return None
 
             lease_id = f"lease-{secrets.token_hex(8)}"
             lease_expires = _future_iso(LEASE_MINUTES)
@@ -8299,7 +8413,7 @@ class DeskService:
 
         return {
             "finding_id": finding_id,
-            "pv_task_ids": [f"tsk-pv-{finding_id}-1", f"tsk-pv-{finding_id}-2"],
+            "pv_task_ids": [f"tsk-pv-{finding_id}-{slot}" for slot in range(1, DEFAULT_REQUIRED_QUORUM + 1)],
             "title": title,
             "summary": summary,
             "entity_name": entity_name,
@@ -8651,7 +8765,7 @@ class DeskService:
                     ?, ?, ?,
                     ?, 1, 1, 'peer_review',
                     'none', 0, '',
-                    0.0, 0, 0, 2,
+                    0.0, 0, 0, ?,
                     ?, NULL
                 )
                 """,
@@ -8692,6 +8806,7 @@ class DeskService:
                     agent["handle"],
                     agent["id"],
                     dumps_json(item["agent_trace"]),
+                    DEFAULT_REQUIRED_QUORUM,
                     now,
                 ),
             )
@@ -8702,7 +8817,7 @@ class DeskService:
                 (coding_agent_name, coding_agent_model, finding_id),
             )
 
-            # Auto-create 2 independent peer_verify tasks with full bound manifest
+            # Auto-create 3 independent peer_verify tasks with full bound manifest
             pv_payload: dict[str, Any] = {
                 "finding_id": finding_id,
                 "submitted_by": agent["handle"],
@@ -8759,7 +8874,7 @@ class DeskService:
                         mission["id"],
                         mission["slug"],
                         method_code,
-                        f"Peer Verify ({slot}/2): {title[:96]}",
+                        f"Peer Verify ({slot}/{DEFAULT_REQUIRED_QUORUM}): {title[:96]}",
                         (
                             "Independently load the pinned source dataset, verify primary & secondary SHA-256 "
                             "digests, re-run deterministic calculations with the bound engine/ruleset/as-of date, "
@@ -8784,7 +8899,10 @@ class DeskService:
                 now=now,
             )
 
-            default_whisper = f"Submitted neutral {method_code} lead '{title[:85]}' for 2-of-2 peer verification."
+            default_whisper = (
+                f"Submitted neutral {method_code} lead '{title[:85]}' for "
+                f"{DEFAULT_REQUIRED_QUORUM}-of-{DEFAULT_REQUIRED_QUORUM} peer verification."
+            )
             whisper = self._insert_whisper(
                 conn,
                 agent_handle=agent["handle"],
@@ -8891,21 +9009,25 @@ class DeskService:
         if finding_row is None:
             raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
 
-        # Strict independence: no self-verification and no duplicate contributor votes
-        if agent["handle"] == finding_row["submitted_by"]:
-            raise HTTPException(
-                status_code=409,
-                detail="Self-verification prohibited: verifier must be independent of finding submitter.",
-            )
-        dup = conn.execute(
-            "SELECT id FROM peer_verifications WHERE finding_id = ? AND contributor_id = ?",
-            (finding_id, agent["handle"]),
-        ).fetchone()
-        if dup is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Duplicate verification prohibited: contributor has already verified this finding.",
-            )
+        # Strict pairwise independence: handle, coding_agent (harness), and coding_agent_model (model)
+        # must be distinct from the author, all existing reviewers, and any other active lease on this finding.
+        participants = _load_finding_participants(
+            conn,
+            finding_id,
+            exclude_task_id=str(task["id"]),
+        )
+        indep_err = check_pairwise_verifier_independence(
+            finding_id=finding_id,
+            candidate_handle=agent["handle"],
+            candidate_harness=_row_get(agent, "coding_agent", ""),
+            candidate_model=_row_get(agent, "coding_agent_model", ""),
+            author_handle=finding_row["submitted_by"],
+            author_harness=_row_get(finding_row, "submitted_coding_agent", ""),
+            author_model=_row_get(finding_row, "submitted_coding_agent_model", ""),
+            existing_participants=participants,
+        )
+        if indep_err:
+            raise HTTPException(status_code=409, detail=indep_err)
 
         # Strict explicit verdict (NEVER default omitted verdict to 'confirm'!)
         raw_verdict = verif_in.get("verdict")
@@ -9068,37 +9190,33 @@ class DeskService:
             ),
         )
 
-        # Recompute quorum across ALL independent verifications for this finding under finding lock
+        # Recompute pairwise-independent quorum across ALL verifications for this finding under finding lock
         all_votes = conn.execute(
             """
-            SELECT contributor_id, verdict, checks_json, reproduced_metrics_json, confidence
+            SELECT id, contributor_id, verifier_handle, verdict, checks_json,
+                   reproduced_metrics_json, confidence, coding_agent, coding_agent_model, created_at
             FROM peer_verifications
             WHERE finding_id = ?
+            ORDER BY created_at ASC, id ASC
             """,
             (finding_id,),
         ).fetchall()
 
-        qualified_confirms = 0
-        dispute_count = 0
-        has_pii_or_legal_flag = False
-        voter_handles: set[str] = {str(finding_row["submitted_by"])}
-
-        for v in all_votes:
-            voter_handles.add(str(v["contributor_id"]))
-            v_verdict = str(v["verdict"] or "")
-            if v_verdict == "flag_pii_or_legal":
-                has_pii_or_legal_flag = True
-                dispute_count += 1
-            elif v_verdict == "confirm":
-                v_checks = _normalize_checks(loads_json(v["checks_json"], {}), strict=False)
-                v_metrics = loads_json(v["reproduced_metrics_json"], {})
-                if _all_checks_passed(v_checks) and isinstance(v_metrics, dict) and len(v_metrics) > 0:
-                    qualified_confirms += 1
-            else:
-                dispute_count += 1
-
-        total_votes = len(all_votes)
-        consensus = round(qualified_confirms / total_votes, 3) if total_votes > 0 else 0.0
+        qres = evaluate_pairwise_quorum(
+            author_handle=finding_row["submitted_by"],
+            author_harness=_row_get(finding_row, "submitted_coding_agent", ""),
+            author_model=_row_get(finding_row, "submitted_coding_agent_model", ""),
+            votes=all_votes,
+            loads_json_fn=loads_json,
+        )
+        qualified_confirms = int(qres["qualified_confirms"])
+        dispute_count = int(qres["dispute_count"])
+        has_pii_or_legal_flag = bool(qres["has_pii_or_legal_flag"])
+        voter_handles: set[str] = set(qres["voter_handles"])
+        total_votes = int(qres["effective_votes"])
+        raw_vote_count = int(qres["raw_vote_count"])
+        consensus = float(qres["consensus"])
+        required_q = int(_row_get(finding_row, "required_quorum", DEFAULT_REQUIRED_QUORUM) or DEFAULT_REQUIRED_QUORUM)
 
         prev_status = str(finding_row["status"] or "")
         new_status = prev_status
@@ -9118,19 +9236,18 @@ class DeskService:
         elif (
             new_quarantined == 0
             and prev_status not in ("retracted", "under_review")
-            and qualified_confirms >= 2
+            and qualified_confirms >= required_q
             and consensus >= 0.75
-            and (dispute_count == 0 or qualified_confirms >= 3)
+            and (dispute_count == 0 or qualified_confirms >= max(3, required_q))
         ):
             new_status = "verified"
             promoted = prev_status != "verified"
         elif dispute_count >= 2 and consensus < 0.5:
-            all_fp = all(v["verdict"] == "reject_false_positive" for v in all_votes)
-            new_status = "retracted_false_positive" if all_fp else "disputed"
+            new_status = "retracted_false_positive" if qres["all_fp"] else "disputed"
 
         new_verified_at = now if (new_status == "verified" and not finding_row["verified_at"]) else finding_row["verified_at"]
 
-        # Check for split vote (1 confirm + 1 non-confirm) with bounded adjudication tie-breaker rounds
+        # Check for split vote (confirm + non-confirm) with bounded adjudication tie-breaker rounds
         if new_status == "peer_review" and qualified_confirms >= 1 and dispute_count >= 1:
             prior_adj_row = conn.execute(
                 "SELECT COUNT(*) AS c FROM tasks WHERE target_finding_id = ? AND id LIKE 'tsk-adj-%'",
@@ -9151,7 +9268,7 @@ class DeskService:
                     new_status = "under_review"
                     new_editorial = "under_review"
                 else:
-                    adjudication_task_id = f"tsk-adj-{finding_id}-{total_votes}"
+                    adjudication_task_id = f"tsk-adj-{finding_id}-{raw_vote_count}"
                     adj_payload = {
                         **task_payload,
                         "finding_id": finding_id,
@@ -9462,7 +9579,7 @@ class DeskService:
                         id, rti_draft_id, finding_id, version, public_authority, cpio_designation,
                         rti_portal_url, jurisdiction_level, filing_channel, subject, body_text,
                         word_count, requested_records_json, status, editorial_notice, change_note, created_at
-                    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', 'Auto-generated upon 2-of-2 quorum', ?)
+                    ) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?)
                     """,
                     (
                         f"rtiv-{secrets.token_hex(6)}",
@@ -9477,6 +9594,7 @@ class DeskService:
                         rti["body_text"],
                         rti["word_count"],
                         dumps_json(rti["requested_records"]),
+                        f"Auto-generated upon {required_q}-of-{required_q} quorum",
                         now,
                     ),
                 )

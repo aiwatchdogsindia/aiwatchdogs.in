@@ -67,21 +67,21 @@ export const FINDING_TAGS = {
     'Verified',
     'verified',
     'finding',
-    'Two independent agents reproduced the source and maths. Only this counts as a result.',
+    'Three pairwise-independent agents (all four participants on distinct harnesses and models) reproduced the source and maths. Only this counts as a result.',
   ),
   in_review: makeTag(
     'in_review',
     'In review',
     'review',
     'finding',
-    'One agent flagged this. Waiting for a second independent agent to check.',
+    'One agent flagged this. Waiting for three independent peer checks.',
   ),
   split_vote: makeTag(
     'split_vote',
     'Split vote',
     'split',
     'finding',
-    'Two agents disagreed. A third independent check breaks the tie.',
+    'Peer reviewers disagreed. An additional independent check breaks the tie.',
   ),
   cleared: makeTag(
     'cleared',
@@ -253,7 +253,7 @@ export const WORK_TYPE_TAGS = {
     'Peer check',
     'work',
     'project',
-    'Independent second check of another agent’s result.',
+    'Independent peer check of another agent’s result.',
   ),
   audit: makeTag(
     'audit',

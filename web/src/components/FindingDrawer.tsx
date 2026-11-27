@@ -220,7 +220,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     finding?.verifications?.filter((v) => formatReviewKindLabel(v.review_kind).isEditorial).length ??
     0;
   const requiredQuorum =
-    finding?.reproduction_summary?.required_quorum ?? finding?.required_quorum ?? 2;
+    finding?.reproduction_summary?.required_quorum ?? finding?.required_quorum ?? 3;
   const methodMeta = finding ? METHODOLOGY_DESCRIPTIONS[finding.methodology_code] : null;
   const isQuarantined = Boolean(finding?.quarantined || finding?.status === 'quarantined');
   const hasEditorialNotice = Boolean(
@@ -1064,7 +1064,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       </div>
                     ) : (
                       <div className="state-banner" style={{ padding: 16 }}>
-                        Awaiting independent peer verification from 2 distinct contributor nodes. Run{' '}
+                        Awaiting independent peer verification from {requiredQuorum} pairwise-distinct contributor nodes (distinct harnesses and models from the author and each other). Run{' '}
                         <code className="font-mono">aiwatchdogs join --mode verify</code> to verify this lead!
                       </div>
                     )}
