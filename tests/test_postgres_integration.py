@@ -122,6 +122,25 @@ def test_postgres_union_budget_task_paging_search_and_year_rollup(
         db.close()
 
 
+def _insert_or1_findings(
+    conn, slug: str, findings: list[tuple[str, str, str, str, float, str, int]], *, amount_scale: float = 1.0,
+) -> None:
+    conn.execute(
+        "INSERT INTO missions (id, slug, title, description, pillar, methodology_code, "
+        "jurisdiction, ministry_or_authority, created_at) "
+        "VALUES (?, ?, 'One Road, Two Bills', '', 'procurement', 'OR1', '', '', '2026-01-01')",
+        (slug, slug),
+    )
+    for finding_id, year, status, rule, amount, metrics, quarantined in findings:
+        conn.execute(
+            "INSERT INTO findings (id, mission_id, mission_slug, pillar, title, summary, methodology_code, "
+            "entity_name, jurisdiction, fiscal_year, status, rule_triggered, monetary_exposure_inr, "
+            "anomaly_metrics_json, quarantined, submitted_by, created_at) "
+            "VALUES (?, ?, ?, 'procurement', ?, '', 'OR1', '', '', ?, ?, ?, ?, ?, ?, 'fixture', '2026-01-01')",
+            (finding_id, slug, slug, finding_id, year, status, rule, amount * amount_scale, metrics, quarantined),
+        )
+
+
 @pytest.mark.parametrize("backend", ["sqlite", "postgres"])
 def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
     backend: str, request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -135,12 +154,18 @@ def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
     app = create_app(db_path=db_path, seed=False)
 
     def linked(kind: str, key: str = "a" * 64) -> str:
-        return json.dumps({"exposure_reference_key": key, "exposure_reference_kind": kind})
+        return json.dumps({
+            "exposure_reference_key": key, "exposure_reference_kind": kind, "unused": "linked-transfer-marker\0",
+        })
 
     detail = linked("detail")
     summary = linked("summary")
     escaped_summary = summary.replace("exposure_", r"\u0065xposure_")
-    legacy = json.dumps({"legacy_payload": "legacy-transfer-marker" * 100})
+    escaped_summary = '{"exposure_reference_key":"ignored","exposure_reference_kind":"detail",' + escaped_summary[1:]
+    legacy_payload = r"\u0065" + "legacy-transfer-marker" * 100
+    legacy = json.dumps({"legacy_payload": legacy_payload})
+    nested_legacy = json.dumps({"legacy_payload": legacy_payload, "nested": json.loads(summary)})
+    invalid_ref = linked("summary", "a" * 64 + "\0invalid-transfer-marker")
     zero = json.dumps({**json.loads(summary), "unused": "zero-transfer-marker"})
     duplicate = "OR1-DUPLICATE-BILLING"
     dual = "OR1-DUAL-AGENCY"
@@ -155,10 +180,10 @@ def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
         ("next-year", "2026", "verified", dual, 2, summary, 0),
         ("next-year-again", "FY2026", "raw_lead", dual, 2, summary, 0),
         ("legacy-first", "2025", "verified", "duplicate-billing", 2, legacy, 0),
-        ("legacy-second", "2025", "verified", "", 2, legacy, 0),
+        ("legacy-second", "2025", "verified", "", 2, nested_legacy, 0),
         ("unlisted", "2030", "raw_lead", "", 1, linked("detail", "b" * 64), 0),
         ("unlisted-peer", "2026", "raw_lead", "", 1, linked("summary", "b" * 64), 0),
-        ("invalid-ref", "2026", "raw_lead", "", 0.5, linked("summary", "invalid"), 0),
+        ("invalid-ref", "2026", "raw_lead", "", 0.5, invalid_ref, 0),
         ("malformed", "2026", "peer_review", "", 0.5, '{"exposure_reference_key":', 0),
         ("zero", "2026", "peer_review", duplicate, 0, zero, 0),
         ("zero-only", "FY2027", "raw_lead", "", 0, zero, 0),
@@ -167,7 +192,7 @@ def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
         ("held-status", "2025", "quarantined", dual, 100, legacy, 0),
         ("held-flag", "2025", "verified", duplicate, 100, detail, 1),
     ]
-    findings.extend((f"legacy-bulk-{i}", "2026", "disputed", "", 0.1, legacy, 0) for i in range(20))
+    findings.extend((f"legacy-bulk-{i}", "2026", "disputed", "", 0.002, legacy, 0) for i in range(1000))
     # Only SQLite can store these amounts with the current schema constraints.
     invalid_amounts = []
     if backend == "sqlite":
@@ -179,20 +204,7 @@ def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
 
     with TestClient(app) as client:
         with app.state.db.transaction() as conn:
-            conn.execute(
-                "INSERT INTO missions (id, slug, title, description, pillar, methodology_code, "
-                "jurisdiction, ministry_or_authority, created_at) "
-                "VALUES (?, ?, 'One Road, Two Bills', '', 'procurement', 'OR1', '', '', '2026-01-01')",
-                (slug, slug),
-            )
-            for finding_id, year, status, rule, amount, metrics, quarantined in findings:
-                conn.execute(
-                    "INSERT INTO findings (id, mission_id, mission_slug, pillar, title, summary, methodology_code, "
-                    "entity_name, jurisdiction, fiscal_year, status, rule_triggered, monetary_exposure_inr, "
-                    "anomaly_metrics_json, quarantined, submitted_by, created_at) "
-                    "VALUES (?, ?, ?, 'procurement', ?, '', 'OR1', '', '', ?, ?, ?, ?, ?, ?, 'fixture', '2026-01-01')",
-                    (finding_id, slug, slug, finding_id, year, status, rule, amount * 1e7, metrics, quarantined),
-                )
+            _insert_or1_findings(conn, slug, findings, amount_scale=1e7)
 
         rollup_rows = []
         original_summary = app.state.desk._one_road_two_bills_summary
@@ -214,17 +226,54 @@ def test_or1_mission_rollup_deduplicates_exposure_with_bounded_transfer(
 
     assert response.status_code == 200, response.text
     rollup = response.json()["visual_summary"]["one_road_two_bills"]
-    assert rollup["leads"] == 35 + len(invalid_amounts)
+    assert rollup["leads"] == 1015 + len(invalid_amounts)
     assert rollup["verified"] == 4
     assert rollup["peer_review"] == 10 + len(invalid_amounts)
     assert rollup["flagged_inr_cr"] == 15.0
     assert rollup["by_signal"] == {"duplicate_payment_or_billing": 5, "dual_agency_or_scheme_overlap": 3}
     assert [(yr["year"], yr["leads"], yr["flagged_inr_cr"]) for yr in rollup["years"]] == [
-        ("2025", 7, 11.0), ("2026", 26 + len(invalid_amounts), 6.0), ("2027", 1, 0.0),
+        ("2025", 7, 11.0), ("2026", 1006 + len(invalid_amounts), 6.0), ("2027", 1, 0.0),
     ]
     assert len(rollup["top_leads"]) == 15
-    assert 0 < len(rollup_rows) <= 4 + 11  # One aggregate per year and at most 11 positive reference candidates.
+    assert 0 < len(rollup_rows) <= 4 + 9  # One aggregate per year and at most nine valid positive references.
     assert all("transfer-marker" not in str(row) for row in rollup_rows)
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "postgres"])
+@pytest.mark.parametrize("scenario", ["one-year", "split-years", "year-only-boundary"])
+def test_or1_mission_rollup_preserves_rounding_at_half_step(
+    backend: str, scenario: str, request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    slug = ONE_ROAD_TWO_BILLS_PROJECT_SLUG
+    coverage_dir = tmp_path / slug
+    coverage_dir.mkdir()
+    (coverage_dir / "coverage.json").write_text(json.dumps({"report_years": ["2025", "2026"]}))
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(tmp_path))
+    db_path = request.getfixturevalue("pg_schema_url") if backend == "postgres" else tmp_path / "or1.db"
+    app = create_app(db_path=db_path, seed=False)
+
+    # Sequential addition within a year or combining rounded year subtotals can push
+    # an accurately summed 50,000 INR below the half-step at 0.005 crore.
+    if scenario == "split-years":
+        exposures = [("2025", 9_768.07), ("2025", 31_919.30), ("2026", 7_787.73), ("2026", 524.90)]
+    else:
+        exposures = [("2026", amount) for amount in (49_999.70, 0.10, 0.10, 0.10)]
+    if scenario == "year-only-boundary":
+        exposures.append(("2025", 10_000.0))
+    findings = [
+        (f"ordinary-{i}", year, "verified", "", amount, "{}", 0)
+        for i, (year, amount) in enumerate(exposures)
+    ]
+    with TestClient(app) as client:
+        with app.state.db.transaction() as conn:
+            _insert_or1_findings(conn, slug, findings)
+        response = client.get(f"/api/missions/{slug}")
+
+    assert response.status_code == 200, response.text
+    rollup = response.json()["visual_summary"]["one_road_two_bills"]
+    assert rollup["flagged_inr_cr"] == 0.01
+    expected_2026 = 0.0 if scenario == "split-years" else 0.01
+    assert [year["flagged_inr_cr"] for year in rollup["years"]] == [0.0, expected_2026]
 
 
 def test_postgres_legacy_v0_to_v4_migration_and_seed_idempotency(pg_schema_url: str) -> None:

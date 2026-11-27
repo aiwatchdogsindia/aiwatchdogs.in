@@ -3928,72 +3928,107 @@ class DeskService:
             "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
             "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
         )
-        leads = verified = peer_review = 0
-        ordinary_exposures: dict[str, tuple[dict[str, Any], float]] = {}
-        linked_exposures: list[tuple[dict[str, Any], float]] = []
-        linked_exposures_by_year: dict[str, list[tuple[dict[str, Any], float]]] = {}
-        by_signal: dict[str, int] = {
-            "duplicate_payment_or_billing": 0,
-            "dual_agency_or_scheme_overlap": 0,
-        }
-        position = "STRPOS" if self.db.is_postgres else "INSTR"
-        positive_finite = "monetary_exposure_inr > 0 AND monetary_exposure_inr < ?"
-        # Return yearly aggregates and candidate references in one snapshot. Metrics are stored
-        # as text, so also look for Unicode escapes that can appear in the key.
-        for r in conn.execute(
-            f"""
+        if self.db.is_postgres:
+            position = "STRPOS"
+            # PostgreSQL cannot decode a NUL or an unpaired surrogate to text. Replace these
+            # escapes with a tilde, which cannot occur in a reference key, hash or kind.
+            metrics_object = """CASE WHEN anomaly_metrics_json IS JSON OBJECT
+                                    THEN CAST(REGEXP_REPLACE(anomaly_metrics_json, ?, ?, 'gi') AS JSON) END"""
+            metrics_params = (r"\\u(?:0000|d[89a-f][0-9a-f]{2})", r"\\u007e")
+            reference_field = """CASE WHEN json_typeof(metrics_object -> '{field}') = 'string'
+                                     THEN metrics_object ->> '{field}' END"""
+            valid_key = "reference_key ~ '^[0-9a-f]{64}$'"
+        else:
+            position = "INSTR"
+            metrics_object = "CASE WHEN json_valid(anomaly_metrics_json) THEN anomaly_metrics_json END"
+            metrics_params = ()
+            # JSON object keys may be escaped or repeated. Python's JSON decoder keeps the last one.
+            reference_field = """(SELECT CASE WHEN type = 'text' THEN value END FROM json_each(metrics_object)
+                                  WHERE key = '{field}' ORDER BY id DESC LIMIT 1)"""
+            valid_key = (
+                "LENGTH(reference_key) = 64 AND INSTR(reference_key, CHAR(0)) = 0 "
+                "AND reference_key NOT GLOB '*[^0-9a-f]*'"
+            )
+
+        reference_key = reference_field.format(field="exposure_reference_key")
+        reference_kind = reference_field.format(field="exposure_reference_kind")
+        rollup_sql = f"""
             WITH live_exposures AS (
                 SELECT CASE WHEN SUBSTR(fiscal_year, 1, 2) = 'FY' THEN SUBSTR(fiscal_year, 3)
                             ELSE COALESCE(fiscal_year, '') END AS year,
                        status,
                        CASE WHEN {position}(rule_triggered, 'DUPLICATE-BILLING') > 0 THEN 'duplicate'
                             WHEN {position}(rule_triggered, 'DUAL-AGENCY') > 0 THEN 'dual' END AS signal,
-                       CASE WHEN {positive_finite} THEN monetary_exposure_inr ELSE 0.0 END AS inr,
-                       CASE WHEN {positive_finite} AND (
-                                anomaly_metrics_json LIKE ? ESCAPE '!'
-                                OR anomaly_metrics_json LIKE ? ESCAPE '!'
-                                OR anomaly_metrics_json LIKE ? ESCAPE '!'
-                                OR anomaly_metrics_json LIKE ? ESCAPE '!'
-                            ) THEN anomaly_metrics_json END AS linked_metrics
+                       CASE WHEN monetary_exposure_inr > 0 AND monetary_exposure_inr < ?
+                            THEN monetary_exposure_inr ELSE 0.0 END AS inr,
+                       anomaly_metrics_json
                 FROM findings WHERE {live}
+            ), metrics_objects AS (
+                SELECT year, status, signal, inr,
+                       CASE WHEN inr > 0 THEN {metrics_object} END AS metrics_object
+                FROM live_exposures
+            ), references_by_finding AS (
+                SELECT year, status, signal, inr,
+                       {reference_key} AS reference_key, {reference_kind} AS reference_kind
+                FROM metrics_objects
+            ), classified AS (
+                SELECT *, COALESCE({valid_key} AND reference_kind IN ('summary', 'detail'), FALSE) AS linked
+                FROM references_by_finding
             )
             SELECT year, COUNT(*) AS leads,
                    SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) AS verified,
                    SUM(CASE WHEN status IN ('peer_review', 'raw_lead') THEN 1 ELSE 0 END) AS peer_review,
                    SUM(CASE WHEN signal = 'duplicate' THEN 1 ELSE 0 END) AS duplicate,
                    SUM(CASE WHEN signal = 'dual' THEN 1 ELSE 0 END) AS dual,
-                   SUM(CASE WHEN linked_metrics IS NULL THEN inr ELSE 0.0 END) AS inr,
-                   NULL AS linked_metrics
-            FROM live_exposures GROUP BY year
+                   COUNT(CASE WHEN NOT linked AND inr > 0 THEN 1 END) AS ordinary_count,
+                   SUM(CASE WHEN ? AND NOT linked THEN inr ELSE 0.0 END) AS inr,
+                   NULL AS reference_key, NULL AS reference_kind
+            FROM classified GROUP BY year
             UNION ALL
-            SELECT year, 0, 0, 0, 0, 0, inr, linked_metrics
-            FROM live_exposures WHERE linked_metrics IS NOT NULL
-            """,
-            (math.inf, math.inf, '%"exposure!_reference!_key"%', r"%\u005%", r"%\u006%", r"%\u007%", mid),
-        ).fetchall():
-            year = r["year"]
-            amount = _safe_finite_float(r["inr"], 0.0)
-            if r["linked_metrics"] is not None:
-                metrics = loads_json(r["linked_metrics"], {})
-                exposure = (metrics if isinstance(metrics, dict) else {}, amount)
-                linked_exposures.append(exposure)
-                if year in years:
-                    linked_exposures_by_year.setdefault(year, []).append(exposure)
-                continue
+            SELECT year, 0, 0, 0, 0, 0, 0, inr,
+                   CASE WHEN linked THEN reference_key END, CASE WHEN linked THEN reference_kind END
+            FROM classified WHERE linked OR (NOT ? AND inr > 0)
+        """
 
-            ordinary_exposures[year] = ({}, amount)
-            leads += int(r["leads"])
-            verified += int(r["verified"])
-            peer_review += int(r["peer_review"])
-            by_signal["duplicate_payment_or_billing"] += int(r["duplicate"])
-            by_signal["dual_agency_or_scheme_overlap"] += int(r["dual"])
-            if year in years:
-                years[year]["leads"] = int(r["leads"])
+        def rounding_can_change(inr: float, additions: int) -> bool:
+            # Bound error from the SQL additions and Python's final sum in units of the total's ULP.
+            # All amounts are positive, so the partial sums cannot amplify error through cancellation.
+            error = 2 * math.ulp(inr) * (additions + 1)
+            return bool(additions) and _inr_to_cr(inr - error) != _inr_to_cr(inr + error)
+
+        # Ordinarily SQL returns just yearly subtotals and compact reference rows. If rounding is
+        # ambiguous, fetch individual amounts and the same counts/references in a single snapshot.
+        for use_subtotals in (True, False):
+            stats_by_year: dict[str, Any] = {}
+            exposures_by_year: dict[str, list[tuple[dict[str, Any], float]]] = {}
+            for r in conn.execute(rollup_sql, (math.inf, mid, *metrics_params, use_subtotals, use_subtotals)).fetchall():
+                year = r["year"]
+                if r["leads"]:
+                    stats_by_year[year] = r
+                amount = _safe_finite_float(r["inr"], 0.0)
+                if amount > 0:
+                    metrics = {
+                        "exposure_reference_key": r["reference_key"],
+                        "exposure_reference_kind": r["reference_kind"],
+                    }
+                    exposures_by_year.setdefault(year, []).append((metrics, amount))
+
+            project_inr = aggregate_exposure_inr(
+                exposure for exposures in exposures_by_year.values() for exposure in exposures
+            )
+            year_totals = {year: aggregate_exposure_inr(exposures_by_year.get(year, [])) for year in years}
+            if not use_subtotals:
+                break
+            additions_by_year = {year: max(0, r["ordinary_count"] - 1) for year, r in stats_by_year.items()}
+            if not rounding_can_change(project_inr, sum(additions_by_year.values())) and not any(
+                rounding_can_change(inr, additions_by_year.get(year, 0)) for year, inr in year_totals.items()
+            ):
+                break
 
         for year, entry in years.items():
+            entry["leads"] = int(stats_by_year[year]["leads"]) if year in stats_by_year else 0
             entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
-            year_exposures = [ordinary_exposures.get(year, ({}, 0.0)), *linked_exposures_by_year.get(year, [])]
-            entry["flagged_inr_cr"] = _inr_to_cr(aggregate_exposure_inr(year_exposures))
+            entry["flagged_inr_cr"] = _inr_to_cr(year_totals[year])
 
         top_leads: list[dict[str, Any]] = []
         for r in conn.execute(
@@ -4024,12 +4059,15 @@ class DeskService:
             "blocks": int(coverage.get("blocks") or 0),
             "report_years": report_years,
             "generated_on": str(coverage.get("generated_on") or ""),
-            "leads": leads,
-            "verified": verified,
-            "peer_review": peer_review,
+            "leads": sum(int(r["leads"]) for r in stats_by_year.values()),
+            "verified": sum(int(r["verified"]) for r in stats_by_year.values()),
+            "peer_review": sum(int(r["peer_review"]) for r in stats_by_year.values()),
             "cleared_tasks": int(mission_row["cleared_count"] or 0),
-            "flagged_inr_cr": _inr_to_cr(aggregate_exposure_inr([*ordinary_exposures.values(), *linked_exposures])),
-            "by_signal": by_signal,
+            "flagged_inr_cr": _inr_to_cr(project_inr),
+            "by_signal": {
+                "duplicate_payment_or_billing": sum(int(r["duplicate"]) for r in stats_by_year.values()),
+                "dual_agency_or_scheme_overlap": sum(int(r["dual"]) for r in stats_by_year.values()),
+            },
             "years": [years[y] for y in sorted(years)],
             "top_leads": top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
