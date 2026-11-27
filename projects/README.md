@@ -124,13 +124,13 @@ The script fetches and SHA-256 pins 1,000 unique single-question Digital Sansad 
 
 ### Only One Bid (`P7`)
 
-`projects/only-one-bid.json` is generated from verified Tier-1 Indian public procurement records spanning 2016–2026 across 10,000 tasks (Union Ministries & 20+ States, 234 procuring authorities, 8 open registries/portals), anchored by Task #1 `p7-bo-2020-00001` (`IN-MPRRDA-194572-CW-RFB` / `OP00113760`, ₹14.52 Cr, 5 bids received → 1 technically qualified bidder with 7-of-7 single-qualified wins):
+`projects/only-one-bid.json` is generated from verified Tier-1 Indian public procurement records spanning 2016–2026 (`FY2016-17` through `FY2026-27`) across 10,000 tasks (Union Ministries & 20+ States, 248 procuring authorities, 8 open registries/portals), anchored by Task #1 `p7-bo-2020-00001` (`IN-MPRRDA-194572-CW-RFB` / `OP00113760`, ₹14.52 Cr, 5 bids received → 1 technically qualified bidder with 7-of-7 single-qualified wins):
 
 ```
 uv run python scripts/build_only_one_bid_project.py
 ```
 
-The script fetches, caches, and SHA-256 pins 239 immutable/byte-stable shards (all `<= 30.03 MiB`: OCP Data Registry #77 HP OCDS & #131 Assam OCDS `.jsonl.gz`, CivicDataLab Assam OCDS v3 `.json.zip`, CivicDataLab IDS-DRR `Accepted-AOC` CSVs for Assam/HP/Odisha/UP, and World Bank Official India STEP closed project shards + 2024–2026 immutable single-notice JSON records), enforces forensic bid-count and `Accepted-AOC` hygiene, scrubs PII and verifies BNS Sec 356 neutrality, keeps the JSON header `< 10 KiB` and total file `<= 20 MiB`, and writes `only-one-bid/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+The script fetches, caches, and SHA-256 pins immutable/byte-stable shards (all `<= 30.03 MiB`, strictly India-only: OCP Data Registry #77 HP OCDS & #131 Assam OCDS `.jsonl.gz`, CivicDataLab Assam OCDS v3 `.json.zip`, CivicDataLab IDS-DRR `Accepted-AOC` CSVs for Assam/HP/Odisha/UP, and **Indian Government (World Bank–assisted projects)** closed project shards + 2024–2026 immutable single-notice JSON records strictly filtered to `project_ctry_code=IN`), enforces forensic bid-count and `Accepted-AOC` hygiene, scrubs PII and verifies BNS Sec 356 neutrality, keeps the JSON header `< 10 KiB` and total file `<= 20 MiB`, and writes `only-one-bid/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
 ## Renaming a project
 

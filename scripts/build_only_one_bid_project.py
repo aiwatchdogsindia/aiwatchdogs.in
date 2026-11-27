@@ -17,9 +17,10 @@ publicly verifiable sources:
   4. CivicDataLab IDS-DRR Multi-State GePNIC AOC CSVs (Assam 2016–2026, Himachal Pradesh 2016–2025,
      Odisha 2019–2026, Uttar Pradesh 2018–2024; commit-SHA pinned, strictly filtered to verified
      `Status == "Accepted-AOC"` rows and never using the mislabeled `No of Bids Received` cover-count column)
-  5. World Bank Official India Procurement Contract Awards API (`search.worldbank.org/api/v2/procnotices`,
-     pan-India Central + 20+ States, 2016–2026: dormant/closed project shards `total <= 1,000` with
-     `last_notice < 2025-06-01`, plus permanently immutable individual `id=OP...` notices for 2025–2026)
+  5. Indian Government (World Bank–assisted projects) Contract Awards API
+     (`search.worldbank.org/api/v2/procnotices`, strictly filtered to `project_ctry_code=IN`,
+     pan-India Central + 20+ States, 2016–2026: closed/dormant project shards `total <= 1,000`
+     with `last_notice < 2025-06-01`, plus permanently immutable individual `id=OP...` notices for 2024–2026)
 
 Every shard is <= 32 MiB (fitting cleanly in `connectors/loader.py`'s `_PINNED_MEM_CACHE`),
 SHA-256 verified, checked for BNS Sec 356 neutrality and DPDP Act 2023 PII cleanliness, and written to:
@@ -203,10 +204,11 @@ STATIC_SHARDS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Curated closed/dormant World Bank India projects (all last_notice < 2025-06-01, total <= 1,000,
-# permanently byte-stable single-request JSON shards spanning Union Ministries + 15+ States).
+# Live-verified 100% India (`project_ctry_code == "IN"`) closed/dormant Indian Government
+# (World Bank–assisted) projects: all last_notice < 2025-06-01, total <= 1,000,
+# permanently byte-stable single-request JSON shards spanning Union Ministries + 20+ States.
 WB_CLOSED_PROJECTS: tuple[tuple[str, str, str, str], ...] = (
-    # (project_id, jurisdiction, jurisdiction_level, short_label)
+    # (project_id, jurisdiction, jurisdiction_level, exact_official_project_name)
     ("P157054", "State:Madhya Pradesh", "state", "Madhya Pradesh Rural Connectivity Project"),
     ("P151744", "State:Himachal Pradesh", "state", "Himachal Pradesh Horticulture Development Project"),
     ("P105311", "State:West Bengal", "state", "West Bengal Accelerated Development of Minor Irrigation"),
@@ -216,42 +218,57 @@ WB_CLOSED_PROJECTS: tuple[tuple[str, str, str, str], ...] = (
     ("P154847", "State:Andhra Pradesh", "state", "Andhra Pradesh Disaster Recovery Project"),
     ("P155522", "State:Bihar", "state", "Bihar Rural Roads Project"),
     ("P133803", "Union of India", "central", "India Ecosystems Service Improvement Project"),
-    ("P120836", "State:Bihar", "state", "Bihar Kosi Basin Development Project"),
+    ("P120836", "State:Maharashtra", "state", "Maharashtra Agricultural Competitiveness Project"),
     ("P102627", "State:Bihar", "state", "Bihar Panchayat Strengthening Project"),
     ("P159576", "State:Bihar", "state", "Bihar Transformative Development Project"),
-    ("P147921", "State:Nagaland", "state", "Nagaland Health Project"),
-    ("P154784", "State:Jharkhand", "state", "Jharkhand Opportunities for Harnessing Rural Growth"),
-    ("P150395", "State:Uttarakhand", "state", "Uttarakhand Water Supply Program for Peri-Urban Areas"),
-    ("P158146", "State:Maharashtra", "state", "Maharashtra Project on Climate Resilient Agriculture"),
-    ("P160018", "State:Andhra Pradesh", "state", "Andhra Pradesh Integrated Irrigation and Agriculture Transformation"),
-    ("P157702", "State:Uttar Pradesh", "state", "Uttar Pradesh Core Road Network Development Project"),
-    ("P143751", "State:Uttarakhand", "state", "Uttarakhand Disaster Recovery Project"),
-    ("P130444", "State:Tamil Nadu", "state", "Tamil Nadu Sustainable Urban Development Program"),
-    ("P162058", "State:Tamil Nadu", "state", "Tamil Nadu Health System Reform Program"),
-    ("P146936", "State:Assam", "state", "Assam Citizen-Centric Service Delivery Project"),
-    ("P147560", "State:Kerala", "state", "Kerala Local Government Service Delivery Project"),
-    ("P128891", "Union of India", "central", "National Cyclone Risk Mitigation Project II"),
-    ("P143608", "Union of India", "central", "National AIDS Control Support Project"),
+    ("P144726", "Union of India", "central", "National Cyclone Risk Mitigation Project-II"),
+    ("P146653", "State:Uttarakhand", "state", "Uttarakhand Disaster Recovery Project"),
+    ("P157836", "State:Meghalaya", "state", "Meghalaya Community-led Landscapes Management Project"),
+    ("P127725", "State:Bihar", "state", "Bihar Kosi Basin Development Project"),
+    ("P149340", "State:Nagaland", "state", "Nagaland Health Project"),
+    ("P112033", "State:Uttar Pradesh", "state", "Uttar Pradesh Sodic Lands Reclamation III Project"),
+    ("P150395", "State:Tamil Nadu", "state", "Tamil Nadu Sustainable Urban Development Project"),
+    ("P145502", "Union of India", "central", "Technology Center Systems Project (TCSP)"),
+    ("P130339", "State:Kerala", "state", "Second Kerala State Transport Project"),
+    ("P160463", "State:Andhra Pradesh", "state", "AP Integrated Irrigation & Agriculture Transformation Project"),
+    ("P158798", "State:Jharkhand", "state", "Jharkhand Opportunities for Harnessing Rural Growth Project"),
+    ("P154525", "State:Uttarakhand", "state", "Uttarakhand Workforce Development Project"),
+    ("P156363", "Union of India", "central", "Nai Manzil - Education and Skills Training"),
+    ("P127974", "Union of India", "central", "North Eastern Region Power System Improvement Project"),
+    ("P071250", "State:Andhra Pradesh", "state", "Andhra Pradesh and Telangana Municipal Development Project"),
+    ("P118826", "State:Bihar", "state", "Bihar Integrated Social Protection Strengthening Project"),
+    ("P148531", "State:Uttarakhand", "state", "Uttarakhand Health Systems Development Project"),
+    ("P155038", "State:Andhra Pradesh", "state", "Andhra Pradesh 24x7 Power for All"),
+    ("P156869", "State:Rajasthan", "state", "Strengthening Public Financial Management in Rajasthan"),
+    ("P157198", "State:Assam", "state", "Assam State Public Finance Institutional Reforms (ASPIRe)"),
     ("P119085", "Union of India", "central", "National Ganga River Basin Project"),
-    ("P121774", "Union of India", "central", "Second Kerala State Transport Project"),
-    ("P155303", "State:Gujarat", "state", "Gujarat Resilient Cities Partnership"),
-    ("P150485", "State:Odisha", "state", "Odisha Disaster Recovery Project"),
-    ("P131263", "State:Maharashtra", "state", "Maharashtra Rural Water Supply and Sanitation Program"),
-    ("P166328", "State:Andhra Pradesh", "state", "Andhra Pradesh Health Systems Strengthening Project"),
-    ("P154437", "State:Madhya Pradesh", "state", "Madhya Pradesh Urban Development Project"),
-    ("P148775", "State:Karnataka", "state", "Karnataka Urban Water Supply Modernization Project"),
-    ("P155283", "State:West Bengal", "state", "West Bengal Institutional Strengthening of Gram Panchayats II"),
-    ("P157929", "State:Himachal Pradesh", "state", "Himachal Pradesh Public Financial Management Project"),
-    ("P150394", "State:Assam", "state", "Assam State Roads Project"),
-    ("P125996", "Union of India", "central", "Neeranchal National Watershed Project"),
-    ("P152210", "Union of India", "central", "Technical Education Quality Improvement Project III"),
+    ("P132418", "Union of India", "central", "Efficient & Sustainable City Bus Services"),
+    ("P121774", "State:Kerala", "state", "Second Kerala Rural Water Supply and Sanitation (Jalanidhi II)"),
+    ("P150308", "State:Assam", "state", "Assam Citizen-Centric Service Delivery Project"),
+    ("P167350", "Union of India", "central", "Green National Highways Corridor Project"),
+    ("P162086", "State:Jharkhand", "state", "Jharkhand Power System Improvement Project"),
+    ("P146936", "State:Uttar Pradesh", "state", "Uttar Pradesh Pro-Poor Tourism Development Project"),
+    ("P143751", "State:Tamil Nadu", "state", "Second Tamil Nadu Road Sector Project"),
+    ("P155303", "State:Madhya Pradesh", "state", "Madhya Pradesh Urban Development Project"),
+    ("P160408", "State:Maharashtra", "state", "Maharashtra Project on Climate Resilient Agriculture"),
+    ("P114827", "State:Gujarat", "state", "Second Gujarat State Highway Project (GSHP II)"),
+    ("P145778", "State:Mizoram", "state", "Mizoram State Roads II Project"),
+    ("P152210", "State:Andhra Pradesh", "state", "Andhra Pradesh Rural Inclusive Growth Project"),
+    ("P150394", "State:Madhya Pradesh", "state", "MP Higher Education Quality Improvement Project"),
+    ("P102330", "Union of India", "central", "North East Rural Livelihoods Project (NERLP)"),
+    ("P170645", "State:Chhattisgarh", "state", "Chhattisgarh Inclusive Rural and Accelerated Agriculture Project"),
+    ("P130544", "State:Karnataka", "state", "Karnataka Urban Water Supply Modernization Project"),
+    ("P157141", "State:Rajasthan", "state", "Rajasthan State Highways Development Program II"),
+    ("P154283", "Union of India", "central", "Shared Infrastructure for Solar Parks Project"),
+    ("P132739", "Union of India", "central", "Neeranchal National Watershed Project"),
 )
 
 WB_FIELDS = (
-    "id,noticedate,submission_date,bid_reference_no,agency_name,"
+    "id,noticedate,submission_date,bid_reference_no,agency_name,project_ctry_code,project_ctry_name,"
     "procurement_method_code,procurement_method_name,procurement_group_desc,"
     "project_id,project_name,noticetitle,notice_text"
 )
+WB_PORTAL_LABEL = "Indian Government (World Bank–assisted projects)"
 
 STATE_KEYWORDS: tuple[tuple[str, str], ...] = (
     ("himachal", "State:Himachal Pradesh"),
@@ -288,7 +305,11 @@ STATE_KEYWORDS: tuple[tuple[str, str], ...] = (
 )
 
 # Entity-name canonicalization matching `engines/only_one_bid.py`
-_ENTITY_PREFIX_RE = re.compile(r"^(?:m\s*/\s*s\.?|messrs\.?|ms\.?|shri\.?|smt\.?|sri\.?|dr\.?|er\.?)\s+", re.IGNORECASE)
+_ENTITY_PREFIX_RE = re.compile(
+    r"^(?:m\s*/\s*s\.\s*|m\s*/\s*s\s+|messrs\.\s*|messrs\s+|ms\.\s*|ms\s+|"
+    r"shri\.\s*|shri\s+|smt\.\s*|smt\s+|sri\.\s*|sri\s+|dr\.\s*|dr\s+|er\.\s*|er\s+)",
+    re.IGNORECASE,
+)
 _ENTITY_SUFFIX_RE = re.compile(
     r"\b(?:private\s+limited|pvt\.?\s*ltd\.?|p\.?\s*ltd\.?|public\s+limited|limited|ltd\.?|"
     r"llp|l\.l\.p\.?|opc|one\s+person\s+company|incorporated|inc\.?|corp\.?|corporation|"
@@ -409,19 +430,35 @@ def parse_date_opt(val: Any) -> date | None:
     return None
 
 
-def year_to_fy(yr: int, dt: date | None = None) -> str:
-    if dt is not None:
-        fy_start = dt.year if dt.month >= 4 else dt.year - 1
-    else:
-        fy_start = yr
-    fy_start = max(2015, min(2026, fy_start))
+def date_to_fy_start(dt: date) -> int:
+    """Return Indian Financial Year start year (Apr–Mar): e.g. 2026-02-15 -> 2025 (FY2025-26)."""
+    return dt.year if dt.month >= 4 else dt.year - 1
+
+
+def fy_start_to_label(fy_start: int) -> str:
     return f"FY{fy_start}-{(fy_start + 1) % 100:02d}"
+
+
+_STATE_ABBREV_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b(?:mprrda|mp)\b", re.IGNORECASE), "State:Madhya Pradesh"),
+    (re.compile(r"\b(?:hpsebl|hp)\b", re.IGNORECASE), "State:Himachal Pradesh"),
+    (re.compile(r"\b(?:brrda)\b", re.IGNORECASE), "State:Bihar"),
+    (re.compile(r"\b(?:up)\b", re.IGNORECASE), "State:Uttar Pradesh"),
+    (re.compile(r"\b(?:ap)\b", re.IGNORECASE), "State:Andhra Pradesh"),
+    (re.compile(r"\b(?:wb)\b", re.IGNORECASE), "State:West Bengal"),
+    (re.compile(r"\b(?:tn)\b", re.IGNORECASE), "State:Tamil Nadu"),
+    (re.compile(r"\b(?:uk|uttaranchal)\b", re.IGNORECASE), "State:Uttarakhand"),
+    (re.compile(r"\b(?:j&k|j\s+and\s+k)\b", re.IGNORECASE), "State:Jammu and Kashmir"),
+)
 
 
 def infer_wb_jurisdiction(project_name: str, agency_name: str) -> tuple[str, str]:
     blob = f"{project_name} {agency_name}".lower()
     for kw, jur in STATE_KEYWORDS:
         if kw in blob:
+            return jur, "state"
+    for pat, jur in _STATE_ABBREV_PATTERNS:
+        if pat.search(blob):
             return jur, "state"
     return "Union of India", "central"
 
@@ -511,6 +548,8 @@ class Candidate:
     related_record_ids: list[str]
     cohort: str  # "sb" | "rw" | "bo"
     priority_score: float
+    authority_total_awards: int = 0
+    authority_total_value_inr: float = 0.0
     is_cleared_control: bool = False
     secondary_url: str = ""
     secondary_expected_sha256: str = ""
@@ -566,11 +605,30 @@ def parse_wb_notice_html(nt: str) -> dict[str, Any]:
     rj = extract_bidders(blocks["rejected"])
 
     clean = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", nt))
-    m_price = re.search(r"(?:Signed Contract price|Contract Price)\s*:?\s*(INR|USD|EUR)\s*([\d,]+(?:\.\d+)?)", clean, re.I)
+    awarded_clean = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", blocks["awarded"]))
     currency, amount = None, None
-    if m_price:
-        currency = m_price.group(1).upper()
-        amount = parse_float_opt(m_price.group(2))
+    for blob in (awarded_clean, clean):
+        if not blob:
+            continue
+        m_price = re.search(
+            r"(?:Signed\s+Contract\s+price|Contract\s+Price|Contract\s+Value|Awarded\s+Price)\s*:?\s*(INR|USD|EUR)\s*([\d,]+(?:\.\d+)?)",
+            blob,
+            re.I,
+        )
+        if not m_price:
+            m_price = re.search(
+                r"(?:Signed\s+Contract\s+price|Contract\s+Price)\s*:?\s*([\d,]+(?:\.\d+)?)\s*(INR|USD|EUR)",
+                blob,
+                re.I,
+            )
+            if m_price:
+                currency = m_price.group(2).upper()
+                amount = parse_float_opt(m_price.group(1))
+        else:
+            currency = m_price.group(1).upper()
+            amount = parse_float_opt(m_price.group(2))
+        if amount is not None:
+            break
 
     m_scope = re.search(r"Scope of Contract:\s*(.*?)(?:Notice Version No:|Date Notification|Contract Signature)", clean, re.I)
     scope = m_scope.group(1).strip() if m_scope else ""
@@ -614,6 +672,7 @@ def load_ocp77_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any]])
 
     # First pass: compute repeat-winner & single-bid counts per (normalized_winner, normalized_buyer)
     wb_rows: dict[tuple[str, str], list[tuple[str, float, int | None]]] = defaultdict(list)
+    buyer_totals: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
     parsed: list[dict[str, Any]] = []
     for idx, r in rows:
         t = r.get("tender") or {}
@@ -629,7 +688,10 @@ def load_ocp77_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any]])
         if not ad:
             ad = parse_date_opt(a0.get("date"))
         dt = ad or pd
-        if dt is None or not (YEAR_MIN <= dt.year <= YEAR_MAX):
+        if dt is None:
+            continue
+        fy_start = date_to_fy_start(dt)
+        if not (YEAR_MIN <= fy_start <= YEAR_MAX):
             continue
         sups = a0.get("suppliers") or []
         w_raw = (sups[0].get("name") or "").strip() if sups and isinstance(sups[0], dict) else ""
@@ -643,6 +705,9 @@ def load_ocp77_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any]])
             continue
         if w_key and b_key:
             wb_rows[(w_key, b_key)].append((tid, av or tv or 0.0, nb))
+        if b_key:
+            buyer_totals[b_key][0] += 1.0
+            buyer_totals[b_key][1] += av or tv or 0.0
         parsed.append(
             {
                 "idx": idx,
@@ -654,6 +719,7 @@ def load_ocp77_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any]])
                 "w_key": w_key,
                 "nb": nb,
                 "dt": dt,
+                "fy_start": fy_start,
                 "av": av,
                 "tv": tv,
                 "title": str(t.get("title") or "").strip(),
@@ -715,8 +781,8 @@ def load_ocp77_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any]])
                 official_publisher=meta["official_publisher"],
                 source_landing_page=meta["landing_url"],
                 artifact_title=meta["artifact_title"],
-                year=p["dt"].year,
-                fiscal_year=year_to_fy(p["dt"].year, p["dt"]),
+                year=p["fy_start"],
+                fiscal_year=fy_start_to_label(p["fy_start"]),
                 tender_title=neutralize_clean(p["title"] or p["tid"], max_len=140),
                 category=neutralize_clean(p["cat"], max_len=80),
                 winner_name=neutralize_clean(p["w_raw"], max_len=120),
@@ -737,6 +803,8 @@ def load_ocp77_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any]])
                 related_record_ids=rel_ids,
                 cohort=cohort,
                 priority_score=score,
+                authority_total_awards=int(buyer_totals[p["b_key"]][0]),
+                authority_total_value_inr=round(buyer_totals[p["b_key"]][1], 2),
                 is_cleared_control=cleared,
             )
         )
@@ -759,6 +827,7 @@ def load_assam_v3_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any
     }
 
     wb_rows: dict[tuple[str, str], list[tuple[str, float, int | None]]] = defaultdict(list)
+    buyer_totals: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
     parsed: list[dict[str, Any]] = []
     for idx, r in enumerate(rels, start=1):
         awards = r.get("awards") or []
@@ -783,7 +852,10 @@ def load_assam_v3_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any
         pd = parse_date_opt(t.get("datePublished"))
         ad = parse_date_opt(a0.get("date") or (a0.get("contractPeriod") or {}).get("startDate"))
         dt = ad or pd
-        if dt is None or not (YEAR_MIN <= dt.year <= YEAR_MAX):
+        if dt is None:
+            continue
+        fy_start = date_to_fy_start(dt)
+        if not (YEAR_MIN <= fy_start <= YEAR_MAX):
             continue
         bids_d = (r.get("bids") or {}).get("details", []) if isinstance(r.get("bids"), dict) else []
         if not bids_d:
@@ -803,6 +875,8 @@ def load_assam_v3_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any
         if not ocid or not tid:
             continue
         wb_rows[(w_key, b_key)].append((tid, av or tv or 0.0, eff))
+        buyer_totals[b_key][0] += 1.0
+        buyer_totals[b_key][1] += av or tv or 0.0
         parsed.append(
             {
                 "idx": idx,
@@ -816,6 +890,7 @@ def load_assam_v3_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any
                 "qual": qual,
                 "eff": eff,
                 "dt": dt,
+                "fy_start": fy_start,
                 "av": av,
                 "tv": tv,
                 "title": str(t.get("title") or "").strip(),
@@ -881,8 +956,8 @@ def load_assam_v3_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any
                 official_publisher=meta["official_publisher"],
                 source_landing_page=meta["landing_url"],
                 artifact_title=meta["artifact_title"],
-                year=p["dt"].year,
-                fiscal_year=year_to_fy(p["dt"].year, p["dt"]),
+                year=p["fy_start"],
+                fiscal_year=fy_start_to_label(p["fy_start"]),
                 tender_title=neutralize_clean(p["title"] or p["tid"], max_len=140),
                 category=neutralize_clean(p["cat"], max_len=80),
                 winner_name=neutralize_clean(p["w_raw"], max_len=120),
@@ -903,6 +978,8 @@ def load_assam_v3_candidates(cache_dir: Path, doc_stats: dict[str, dict[str, Any
                 related_record_ids=rel_ids,
                 cohort=cohort,
                 priority_score=score,
+                authority_total_awards=int(buyer_totals[p["b_key"]][0]),
+                authority_total_value_inr=round(buyer_totals[p["b_key"]][1], 2),
                 is_cleared_control=cleared,
             )
         )
@@ -928,6 +1005,7 @@ def load_gepnic_aoc_candidates(
     accepted: list[dict[str, Any]] = []
     # Track exact raw org chain counts AND by Tender ID (for Assam OCP#131 join)
     exact_wb: dict[tuple[str, str], list[tuple[str, float]]] = defaultdict(list)
+    buyer_totals: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
     by_tid: dict[str, dict[str, Any]] = {}
     years_seen: list[int] = []
 
@@ -945,13 +1023,18 @@ def load_gepnic_aoc_candidates(
         ad = parse_date_opt(row.get(award_col))
         pd = parse_date_opt(row.get("Published Date"))
         dt = ad or pd
-        if dt is None or not (YEAR_MIN <= dt.year <= YEAR_MAX):
+        if dt is None:
+            continue
+        fy_start = date_to_fy_start(dt)
+        if not (YEAR_MIN <= fy_start <= YEAR_MAX):
             continue
         av = parse_float_opt(row.get("Awarded Value"))
         tv = parse_float_opt(row.get("Tender Value in ₹"))
         val = av or tv or 0.0
-        years_seen.append(dt.year)
+        years_seen.append(fy_start)
         exact_wb[(w_key, b_key)].append((tid, val))
+        buyer_totals[b_key][0] += 1.0
+        buyer_totals[b_key][1] += val
         rec = {
             "idx": idx,
             "tid": tid,
@@ -960,6 +1043,7 @@ def load_gepnic_aoc_candidates(
             "w_raw": w_raw,
             "w_key": w_key,
             "dt": dt,
+            "fy_start": fy_start,
             "av": av,
             "tv": tv,
             "title": (row.get("tender_title") or row.get("Work Description") or tid).strip(),
@@ -999,8 +1083,8 @@ def load_gepnic_aoc_candidates(
         coh_inr = round(sum(v for _, v in w_list), 2)
         rel_ids = list(dict.fromkeys(t for t, _ in w_list))[:15]
         auth = clean_authority_name(p["org_raw"], meta["state_suffix"])
-        # Prioritize persistent >=5 wins and recent 2023-2026 coverage
-        recency_bonus = 15.0 if p["dt"].year >= 2023 else 0.0
+        # Prioritize persistent >=5 wins and recent FY2023-24..FY2026-27 coverage
+        recency_bonus = 15.0 if p["fy_start"] >= 2023 else 0.0
         score = 40.0 + min(wins, 40) * 2.0 + math.log10(max(p["av"] or p["tv"] or 1.0, 1.0)) * 3.0 + recency_bonus
         cands.append(
             Candidate(
@@ -1025,8 +1109,8 @@ def load_gepnic_aoc_candidates(
                 official_publisher=meta["official_publisher"],
                 source_landing_page=meta["landing_url"],
                 artifact_title=meta["artifact_title"],
-                year=p["dt"].year,
-                fiscal_year=year_to_fy(p["dt"].year, p["dt"]),
+                year=p["fy_start"],
+                fiscal_year=fy_start_to_label(p["fy_start"]),
                 tender_title=neutralize_clean(p["title"], max_len=140),
                 category=neutralize_clean(p["cat"], max_len=80),
                 winner_name=neutralize_clean(p["w_raw"], max_len=120),
@@ -1047,6 +1131,8 @@ def load_gepnic_aoc_candidates(
                 related_record_ids=rel_ids,
                 cohort="rw",
                 priority_score=score,
+                authority_total_awards=int(buyer_totals[p["b_key"]][0]),
+                authority_total_value_inr=round(buyer_totals[p["b_key"]][1], 2),
                 is_cleared_control=False,
                 status_equals="Accepted-AOC",
                 field_map=dict(fmap),
@@ -1058,6 +1144,8 @@ def load_gepnic_aoc_candidates(
         rec["wins"] = len(w_list)
         rec["coh_inr"] = round(sum(v for _, v in w_list), 2)
         rec["rel_ids"] = list(dict.fromkeys(t for t, _ in w_list))[:15]
+        rec["auth_awards"] = int(buyer_totals[rec["b_key"]][0])
+        rec["auth_val"] = round(buyer_totals[rec["b_key"]][1], 2)
     return cands, by_tid
 
 
@@ -1098,7 +1186,10 @@ def load_ocp131_candidates(
         if nb is None or nb <= 0:
             continue
         pd = parse_date_opt(t.get("datePublished") or (t.get("tenderPeriod") or {}).get("startDate"))
-        if pd is None or not (YEAR_MIN <= pd.year <= YEAR_MAX):
+        if pd is None:
+            continue
+        fy_start = date_to_fy_start(pd)
+        if not (YEAR_MIN <= fy_start <= YEAR_MAX):
             continue
         ocid = str(r.get("ocid") or "").strip()
         tid = str(t.get("id") or ocid).strip()
@@ -1135,8 +1226,8 @@ def load_ocp131_candidates(
                     official_publisher=meta["official_publisher"],
                     source_landing_page=meta["landing_url"],
                     artifact_title=meta["artifact_title"],
-                    year=pd.year,
-                    fiscal_year=year_to_fy(pd.year, pd),
+                    year=fy_start,
+                    fiscal_year=fy_start_to_label(fy_start),
                     tender_title=neutralize_clean(t.get("title") or tid, max_len=140),
                     category=neutralize_clean(t.get("mainProcurementCategory") or "Works", max_len=80),
                     winner_name=neutralize_clean(aoc_match["w_raw"], max_len=120),
@@ -1157,6 +1248,8 @@ def load_ocp131_candidates(
                     related_record_ids=aoc_match["rel_ids"],
                     cohort="bo",
                     priority_score=110.0 + aoc_match["wins"] * 2 + math.log10(max(aoc_match["av"] or tv or 1.0, 1.0)) * 4,
+                    authority_total_awards=int(aoc_match.get("auth_awards") or 0),
+                    authority_total_value_inr=float(aoc_match.get("auth_val") or 0.0),
                     secondary_url=aoc_meta["retrieval_url"],
                     secondary_expected_sha256=aoc_meta["expected_sha256"],
                     secondary_source_format="gepnic_aoc_csv",
@@ -1194,8 +1287,8 @@ def load_ocp131_candidates(
                     official_publisher=meta["official_publisher"],
                     source_landing_page=meta["landing_url"],
                     artifact_title=meta["artifact_title"],
-                    year=pd.year,
-                    fiscal_year=year_to_fy(pd.year, pd),
+                    year=fy_start,
+                    fiscal_year=fy_start_to_label(fy_start),
                     tender_title=neutralize_clean(t.get("title") or tid, max_len=140),
                     category=neutralize_clean(t.get("mainProcurementCategory") or "Works", max_len=80),
                     winner_name=neutralize_clean(aoc_match["w_raw"], max_len=120) if aoc_match else "",
@@ -1249,8 +1342,8 @@ def load_ocp131_candidates(
                     official_publisher=meta["official_publisher"],
                     source_landing_page=meta["landing_url"],
                     artifact_title=meta["artifact_title"],
-                    year=pd.year,
-                    fiscal_year=year_to_fy(pd.year, pd),
+                    year=fy_start,
+                    fiscal_year=fy_start_to_label(fy_start),
                     tender_title=neutralize_clean(t.get("title") or tid, max_len=140),
                     category=neutralize_clean(t.get("mainProcurementCategory") or "Works", max_len=80),
                     winner_name="",
@@ -1278,21 +1371,24 @@ def load_ocp131_candidates(
 
 
 def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]]) -> list[Candidate]:
-    """Fetch and parse closed/dormant World Bank India projects (total <= 1,000, last_notice < 2025-06-01)."""
+    """Fetch and parse strictly India (`project_ctry_code=IN`) closed/dormant Indian Government (World Bank–assisted) projects."""
 
     def _fetch_one(item: tuple[str, str, str, str]) -> tuple[str, str, str, str, str, bytes, str] | None:
         pid, jur, jlevel, label = item
         url = (
-            f"https://search.worldbank.org/api/v2/procnotices?format=json"
+            f"https://search.worldbank.org/api/v2/procnotices?format=json&project_ctry_code=IN"
             f"&project_id={pid}&notice_type_exact=Contract%20Award&srt=id&order=asc&rows=1000&fl={WB_FIELDS}"
         )
-        cname = f"wb_{pid}.json"
+        cname = f"wb_in_{pid}.json"
         raw, sha = fetch_cached_shard(cache_dir, cname, url)
         data = json.loads(raw.decode("utf-8", "replace"))
         total = int(data.get("total") or 0)
         notices = data.get("procnotices") or []
         if total == 0 or total > 1000 or not notices:
             return None
+        # Strict India-only provenance assertion (zero non-India leakage!)
+        if any((str(n.get("project_ctry_code") or "").strip().upper() != "IN") for n in notices):
+            raise RuntimeError(f"Non-India notice detected inside project {pid}!")
         # Safety check: verify no notice newer than 2025-06-01 so closed/dormant shard stays byte-stable
         max_sub = max((str(n.get("submission_date") or "")[:10] for n in notices), default="")
         if max_sub >= "2025-06-01":
@@ -1310,18 +1406,24 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
         shard_id = f"p7-wb-{pid.lower()}"
         notices = json.loads(raw.decode("utf-8", "replace")).get("procnotices") or []
         wb_rows: dict[tuple[str, str], list[tuple[str, float, int | None]]] = defaultdict(list)
+        buyer_totals: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
         parsed: list[dict[str, Any]] = []
         years_seen: list[int] = []
 
         for idx, n in enumerate(notices, start=1):
+            if str(n.get("project_ctry_code") or "").strip().upper() != "IN":
+                continue
             nt = n.get("notice_text") or ""
             ref = (n.get("bid_reference_no") or "").strip()
-            # Drop corrupt upstream records where notice_text mismatches bid_reference_no
+            # Drop malformed upstream records where notice_text mismatches bid_reference_no
             if ref and ref not in nt:
                 continue
             phtml = parse_wb_notice_html(nt)
             aw = phtml.get("awarded") or []
             if not aw:
+                continue
+            # Ensure INR or explicit India provenance (never foreign-only notices)
+            if phtml.get("currency") and phtml.get("currency") != "INR" and "india" not in nt.lower():
                 continue
             w_raw = aw[0][0].strip()
             w_key = normalize_entity_name(w_raw)
@@ -1341,33 +1443,38 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
                 qual: int | None = 1
                 eff: int | None = 1
                 mech = "single_bid_received"
-            elif has_rj and not has_ev:
+            elif has_rj and not has_ev and len(rj) > 0:
                 bids_rec = 1 + len(rj)
                 qual = 1
                 eff = 1
                 mech = "single_qualified_after_rejection"
-            elif has_ev:
+            elif has_ev and len(ev) > 0:
                 bids_rec = 1 + len(ev) + len(rj)
                 qual = 1 + len(ev)
                 eff = qual
                 mech = "multi_bid" if qual >= 2 else "single_bid_received"
             else:
-                # Awarded-only RFB/RFQ notice: bid count is genuinely unrecorded!
+                # Awarded-only or unparsed-section RFB/RFQ notice: bid count is genuinely unrecorded!
                 bids_rec = None
                 qual = None
                 eff = None
                 mech = "unrecorded"
 
             dt = phtml.get("award_date") or parse_date_opt(n.get("submission_date")) or parse_date_opt(n.get("noticedate"))
-            if dt is None or not (YEAR_MIN <= dt.year <= YEAR_MAX):
+            if dt is None:
                 continue
-            years_seen.append(dt.year)
+            fy_start = date_to_fy_start(dt)
+            if not (YEAR_MIN <= fy_start <= YEAR_MAX):
+                continue
+            years_seen.append(fy_start)
             amt_inr = phtml["amount"] if phtml.get("currency") == "INR" else None
             wb_id = str(n.get("id") or "").strip()
             if not wb_id:
                 continue
             tid = ref or wb_id
             wb_rows[(w_key, b_key)].append((tid, amt_inr or 0.0, eff))
+            buyer_totals[b_key][0] += 1.0
+            buyer_totals[b_key][1] += amt_inr or 0.0
             parsed.append(
                 {
                     "idx": idx,
@@ -1384,6 +1491,7 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
                     "eff": eff,
                     "mech": mech,
                     "dt": dt,
+                    "fy_start": fy_start,
                     "amt_inr": amt_inr,
                     "title": str(n.get("noticetitle") or phtml.get("scope") or tid).strip(),
                     "cat": str(n.get("procurement_group_desc") or "Works").strip(),
@@ -1392,11 +1500,11 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
 
         doc_stats[shard_id] = {
             "source_format": "worldbank_procnotices_json",
-            "portal": "projects.worldbank.org (India STEP)",
-            "portal_key": "worldbank-india-step",
+            "portal": WB_PORTAL_LABEL,
+            "portal_key": "indian-govt-wb-assisted",
             "jurisdiction": jur,
             "jurisdiction_level": jlevel,
-            "official_publisher": f"World Bank / Government of India — {label} ({pid})",
+            "official_publisher": f"{WB_PORTAL_LABEL} — {label} ({pid})",
             "retrieval_url": url,
             "landing_url": f"https://projects.worldbank.org/en/projects-operations/project-detail/{pid}",
             "bytes": len(raw),
@@ -1436,14 +1544,19 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
                 continue
 
             auth = neutralize_clean(p["ag_raw"], max_len=150) or label
+            cand_jur, cand_jlevel = jur, jlevel
+            if cand_jlevel == "central":
+                ag_jur, ag_jlevel = infer_wb_jurisdiction("", p["ag_raw"])
+                if ag_jlevel == "state":
+                    cand_jur, cand_jlevel = ag_jur, ag_jlevel
             cands.append(
                 Candidate(
                     shard_id=shard_id,
                     source_format="worldbank_procnotices_json",
-                    portal="projects.worldbank.org (India STEP)",
-                    portal_key="worldbank-india-step",
-                    jurisdiction=jur,
-                    jurisdiction_level=jlevel,
+                    portal=WB_PORTAL_LABEL,
+                    portal_key="indian-govt-wb-assisted",
+                    jurisdiction=cand_jur,
+                    jurisdiction_level=cand_jlevel,
                     authority=auth,
                     authority_key=slugify_key(auth),
                     raw_buyer=p["ag_raw"],
@@ -1456,11 +1569,11 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
                     record_url=f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{p['wb_id']}",
                     retrieval_url=url,
                     expected_sha256=sha,
-                    official_publisher=f"World Bank / Government of India — {label} ({pid})",
+                    official_publisher=f"{WB_PORTAL_LABEL} — {pid}",
                     source_landing_page=f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{p['wb_id']}",
-                    artifact_title=f"World Bank India Contract Awards — {label} ({pid})",
-                    year=p["dt"].year,
-                    fiscal_year=year_to_fy(p["dt"].year, p["dt"]),
+                    artifact_title=f"Indian Government (WB-assisted) {pid}",
+                    year=p["fy_start"],
+                    fiscal_year=fy_start_to_label(p["fy_start"]),
                     tender_title=neutralize_clean(p["title"], max_len=140),
                     category=neutralize_clean(p["cat"], max_len=80),
                     winner_name=neutralize_clean(p["w_raw"], max_len=120),
@@ -1481,6 +1594,8 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
                     related_record_ids=rel_ids,
                     cohort=cohort,
                     priority_score=score,
+                    authority_total_awards=int(buyer_totals[p["b_key"]][0]),
+                    authority_total_value_inr=round(buyer_totals[p["b_key"]][1], 2),
                     is_cleared_control=cleared,
                     is_anchor=is_anchor,
                 )
@@ -1491,8 +1606,8 @@ def load_wb_closed_projects(cache_dir: Path, doc_stats: dict[str, dict[str, Any]
 def load_wb_recent_2025_2026_notices(
     cache_dir: Path, doc_stats: dict[str, dict[str, Any]], *, max_notices: int = 240
 ) -> list[Candidate]:
-    """Fetch permanently immutable single-notice JSON records (`id=OP...`, total=1) for 2024–2026 India awards."""
-    index_cache = cache_dir / "wb_recent_2024_2026_index.json"
+    """Fetch permanently immutable India-only (`project_ctry_code=IN`) single-notice JSON records (`id=OP...`, total=1) for 2024–2026."""
+    index_cache = cache_dir / "wb_in_recent_2024_2026_index.json"
     if index_cache.exists():
         recent_pool = json.loads(index_cache.read_text(encoding="utf-8"))
     else:
@@ -1510,6 +1625,8 @@ def load_wb_recent_2025_2026_notices(
     selected_meta: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for n in recent_pool:
+        if str(n.get("project_ctry_code") or "").strip().upper() != "IN":
+            continue
         wb_id = str(n.get("id") or "").strip()
         if not wb_id or wb_id in seen_ids:
             continue
@@ -1522,34 +1639,40 @@ def load_wb_recent_2025_2026_notices(
         if not aw:
             continue
         dt = phtml.get("award_date") or parse_date_opt(n.get("submission_date"))
-        if dt is None or dt.year not in (2024, 2025, 2026):
+        if dt is None:
+            continue
+        fy_start = date_to_fy_start(dt)
+        if fy_start not in (2024, 2025, 2026):
             continue
         mc = (n.get("procurement_method_code") or "").strip().upper()
         has_ev = bool(phtml.get("has_ev_section"))
         has_rj = bool(phtml.get("has_rj_section"))
-        is_sq = has_rj and not has_ev
+        rj = phtml.get("rejected") or []
+        is_sq = has_rj and not has_ev and len(rj) > 0
         is_dir = mc in ("DIR", "CDS")
         if not (is_sq or is_dir):
             continue
         if phtml.get("currency") != "INR" or not phtml.get("amount"):
             continue
         seen_ids.add(wb_id)
-        selected_meta.append({"n": n, "phtml": phtml, "dt": dt, "is_sq": is_sq, "is_dir": is_dir})
+        selected_meta.append({"n": n, "phtml": phtml, "dt": dt, "fy_start": fy_start, "is_sq": is_sq, "is_dir": is_dir})
 
-    # Balanced across 2024, 2025, 2026 (up to 80 per year), prioritizing single_qualified_after_rejection & highest INR
+    # Balanced across FY2024-25, FY2025-26, FY2026-27 (up to 80 per FY), prioritizing single_qualified_after_rejection & highest INR
     chosen: list[dict[str, Any]] = []
     per_yr = max(1, max_notices // 3)
     for yr in (2026, 2025, 2024):
-        sub = [x for x in selected_meta if x["dt"].year == yr]
+        sub = [x for x in selected_meta if x["fy_start"] == yr]
         sub.sort(key=lambda x: (0 if x["is_sq"] else 1, -(x["phtml"]["amount"] or 0.0)))
         chosen.extend(sub[:per_yr])
 
     def _pin_single(item: dict[str, Any]) -> tuple[dict[str, Any], str, bytes, str] | None:
         wb_id = str(item["n"]["id"]).strip()
-        u = f"https://search.worldbank.org/api/v2/procnotices?format=json&id={wb_id}&fl={WB_FIELDS}"
-        raw, sha = fetch_cached_shard(cache_dir, f"wb_notice_{wb_id}.json", u)
+        u = f"https://search.worldbank.org/api/v2/procnotices?format=json&project_ctry_code=IN&id={wb_id}&fl={WB_FIELDS}"
+        raw, sha = fetch_cached_shard(cache_dir, f"wb_in_notice_{wb_id}.json", u)
         d = json.loads(raw.decode("utf-8", "replace"))
         if str(d.get("total")) != "1" or not d.get("procnotices"):
+            return None
+        if str(d["procnotices"][0].get("project_ctry_code") or "").strip().upper() != "IN":
             return None
         return (item, u, raw, sha)
 
@@ -1564,6 +1687,7 @@ def load_wb_recent_2025_2026_notices(
         n = item["n"]
         phtml = item["phtml"]
         dt = item["dt"]
+        fy_start = item["fy_start"]
         wb_id = str(n["id"]).strip()
         ref = (n.get("bid_reference_no") or wb_id).strip()
         proj_name = str(n.get("project_name") or "").strip()
@@ -1579,26 +1703,26 @@ def load_wb_recent_2025_2026_notices(
         shard_id = f"p7-wb-notice-{wb_id.lower()}"
         doc_stats[shard_id] = {
             "source_format": "worldbank_procnotices_json",
-            "portal": "projects.worldbank.org (India STEP)",
-            "portal_key": "worldbank-india-step",
+            "portal": WB_PORTAL_LABEL,
+            "portal_key": "indian-govt-wb-assisted",
             "jurisdiction": jur,
             "jurisdiction_level": jlevel,
-            "official_publisher": f"World Bank / Government of India — {proj_name or wb_id}",
+            "official_publisher": f"{WB_PORTAL_LABEL} — {proj_name or wb_id}",
             "retrieval_url": u,
             "landing_url": f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{wb_id}",
             "bytes": len(raw),
             "sha256": sha,
             "total_rows": 1,
-            "year_min": dt.year,
-            "year_max": dt.year,
+            "year_min": fy_start,
+            "year_max": fy_start,
         }
         auth = neutralize_clean(ag_raw, max_len=150)
         cands.append(
             Candidate(
                 shard_id=shard_id,
                 source_format="worldbank_procnotices_json",
-                portal="projects.worldbank.org (India STEP)",
-                portal_key="worldbank-india-step",
+                portal=WB_PORTAL_LABEL,
+                portal_key="indian-govt-wb-assisted",
                 jurisdiction=jur,
                 jurisdiction_level=jlevel,
                 authority=auth,
@@ -1613,11 +1737,11 @@ def load_wb_recent_2025_2026_notices(
                 record_url=f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{wb_id}",
                 retrieval_url=u,
                 expected_sha256=sha,
-                official_publisher=f"World Bank / Government of India — {proj_name or wb_id}",
+                official_publisher=f"{WB_PORTAL_LABEL} — {wb_id}",
                 source_landing_page=f"https://projects.worldbank.org/en/projects-operations/procurement-detail/{wb_id}",
-                artifact_title=f"World Bank India Contract Award {wb_id} ({dt.year})",
-                year=dt.year,
-                fiscal_year=year_to_fy(dt.year, dt),
+                artifact_title=f"Indian Government (WB-assisted) {wb_id}",
+                year=fy_start,
+                fiscal_year=fy_start_to_label(fy_start),
                 tender_title=neutralize_clean(n.get("noticetitle") or phtml.get("scope") or ref, max_len=140),
                 category=neutralize_clean(n.get("procurement_group_desc") or "Works", max_len=80),
                 winner_name=neutralize_clean(w_raw, max_len=120),
@@ -1702,9 +1826,9 @@ def build_task_dict(c: Candidate, seq_num: int) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "retrieval_url": c.retrieval_url,
         "expected_sha256": c.expected_sha256,
-        "official_publisher": c.official_publisher[:60],
+        "official_publisher": c.official_publisher,
         "source_landing_page": c.source_landing_page,
-        "artifact_title": c.artifact_title[:56],
+        "artifact_title": c.artifact_title,
         "fiscal_year": c.fiscal_year,
         "jurisdiction": c.jurisdiction,
         "context": {
@@ -1942,11 +2066,11 @@ Audit **10,000 real, SHA-256-pinned Indian government tender and contract-award 
   2. **OCP Data Registry Pub #131** (`assamtenders.gov.in`, Assam State Finance Dept OCDS `full.jsonl.gz`, 2016–2022)
   3. **CivicDataLab Assam OCDS v3** (`assamtenders.gov.in`, `ocds_mapped_data_fiscal_year_2016_2022_v3.json.zip`, 2017–2023)
   4. **CivicDataLab IDS-DRR State AOC Mirrors** (`assamtenders.gov.in` 2016–2026, `hptenders.gov.in` 2016–2025, `tendersodisha.gov.in` 2019–2026, `etender.up.nic.in` 2018–2024 — strictly filtered to `Status == "Accepted-AOC"`)
-  5. **World Bank Official India STEP Contract Awards API** (`search.worldbank.org/api/v2/procnotices`, closed/dormant pan-India project shards 2016–2025 + permanently immutable individual `id=OP...` notices 2025–2026)
+  5. **Indian Government (World Bank–assisted projects)** (`search.worldbank.org/api/v2/procnotices`, strictly `project_ctry_code=IN` domestic Indian Union & State agency tenders: closed/dormant project shards 2016–2025 + permanently immutable individual `id=OP...` notices 2024–2026)
 
 ## Forensic Data-Hygiene Safeguards
 - **GePNIC Cover-Count Separation:** Cross-verifying CivicDataLab IDS-DRR CSVs against Assam OCDS v2/v3 and HP OCP #77 established that the CSV column `No of Bids Received` records GePNIC cover counts (`1` or `2` envelopes), not bidder counts. `P7` explicitly disables `bid_count` (`null`) on GePNIC AOC CSV shards and restricts winner attribution strictly to `Status == "Accepted-AOC"` (100.0% verified match across 2,514 cross-checked awards; `Rejected-*` rows are excluded).
-- **World Bank STEP Section Hygiene:** Upstream corrupt notices where `bid_reference_no` does not appear in `notice_text` are dropped. `Evaluated Bidder(s)` lists non-winning evaluated bidders (`bids_received = 1 + len(evaluated) + len(rejected)`). Notices listing only `Awarded Bidder(s)` on `RFB`/`RFQ` without `Evaluated` or `Rejected` sections preserve `bids_received = None` (never misclassified as 1 bid).
+- **World Bank STEP Section Hygiene:** Malformed upstream notices where `bid_reference_no` does not appear in `notice_text` are dropped. `Evaluated Bidder(s)` lists non-winning evaluated bidders (`bids_received = 1 + len(evaluated) + len(rejected)`). Notices listing only `Awarded Bidder(s)` on `RFB`/`RFQ` without `Evaluated` or `Rejected` sections preserve `bids_received = None` (never misclassified as 1 bid).
 - **Anti-Double-Counting Exposure:** Every finding records `monetary_exposure_inr` strictly equal to the target tender's own value; `winner_cohort_total_inr` is stored separately inside `anomaly_metrics`.
 - **Legal & Privacy Charter:** Strict BNS Section 356 non-accusatory framing (`lint_neutrality`), mandatory lawful benign explanations (GFR 2017 Rule 166 PAC/OEM exemptions, genuine L1 competitive repeats, thin regional markets, emergency/retendered procurements), jurisdiction-aware statutory scope (Central GFR 2017 vs State Procurement Rules), and DPDP Act 2023 PII scrubbing (`scrub_pii`).
 """
@@ -2004,14 +2128,25 @@ def main() -> None:
         for y in range(YEAR_MIN, YEAR_MAX + 1)
     }
     jur_stats: dict[str, dict[str, Any]] = {}
+    jur_portals: dict[str, Counter[str]] = defaultdict(Counter)
     auth_stats: dict[str, dict[str, Any]] = {}
+    auth_portals: dict[str, Counter[str]] = defaultdict(Counter)
+    auth_known_bids: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     rw_clusters: dict[tuple[str, str], dict[str, Any]] = {}
+    rw_meta: dict[tuple[str, str], dict[str, Any]] = {}
     portals_used: set[str] = set()
     distinct_rw_keys: set[str] = set()
     cleared_controls = 0
 
     for seq_num, c in enumerate(selected, start=1):
         t = build_task_dict(c, seq_num)
+        spec_chk = t["payload"]["context"]["only_one_bid"]
+        id_yr = int(t["id"].split("-")[2])
+        fy_yr = int(spec_chk["fiscal_year"][2:6])
+        if not (YEAR_MIN <= id_yr <= YEAR_MAX and id_yr == fy_yr == spec_chk["year"]):
+            raise RuntimeError(
+                f"Year/FY invariant violated on {t['id']}: id_yr={id_yr}, fy={spec_chk['fiscal_year']}, year={spec_chk['year']}"
+            )
         tasks.append(t)
         shard_task_counts[c.shard_id] += 1
         cname = {"sb": "single_bidder", "rw": "repeat_winner", "bo": "both"}[c.cohort]
@@ -2037,6 +2172,7 @@ def main() -> None:
         )
         js["tasks"] += 1
         js[f"{cname}_tasks"] += 1
+        jur_portals[c.jurisdiction][c.portal] += 1
 
         au = auth_stats.setdefault(
             c.authority,
@@ -2044,6 +2180,7 @@ def main() -> None:
                 "authority": c.authority,
                 "authority_key": c.authority_key,
                 "jurisdiction": c.jurisdiction,
+                "portal": c.portal,
                 "tasks": 0,
                 "single_bidder_tasks": 0,
                 "repeat_winner_tasks": 0,
@@ -2052,27 +2189,79 @@ def main() -> None:
         )
         au["tasks"] += 1
         au[f"{cname}_tasks"] += 1
+        auth_portals[c.authority][c.portal] += 1
+        if c.effective_bids is not None:
+            auth_known_bids[c.authority][0] += 1
+            if c.effective_bids == 1:
+                auth_known_bids[c.authority][1] += 1
 
         if c.normalized_winner_key and c.winner_total_wins >= 3:
             distinct_rw_keys.add(c.normalized_winner_key)
             rkey = (c.normalized_winner_key, c.authority)
             entry = rw_clusters.get(rkey)
+            val_cr = round(c.winner_cohort_total_inr / 1e7, 2)
+            share_cnt = (
+                round(min(100.0, c.winner_total_wins / c.authority_total_awards * 100.0), 1)
+                if c.authority_total_awards >= 5
+                else None
+            )
+            share_val = (
+                round(min(100.0, c.winner_cohort_total_inr / c.authority_total_value_inr * 100.0), 1)
+                if c.authority_total_value_inr > 0 and c.winner_cohort_total_inr > 0
+                else None
+            )
             if entry is None:
-                rw_clusters[rkey] = {
+                entry = {
                     "winner_name": c.winner_name,
                     "normalized_winner_key": c.normalized_winner_key,
                     "authority": c.authority,
                     "jurisdiction": c.jurisdiction,
                     "win_count": c.winner_total_wins,
                     "single_bid_wins": c.winner_single_bid_wins,
-                    "total_value_inr_cr": round(c.winner_cohort_total_inr / 1e7, 2),
+                    "total_value_inr_cr": val_cr,
                     "tasks": 1,
+                }
+                if share_cnt is not None:
+                    entry["share_by_count_pct"] = share_cnt
+                if share_val is not None:
+                    entry["share_by_value_pct"] = share_val
+                rw_clusters[rkey] = entry
+                rw_meta[rkey] = {
+                    "min_y": c.year,
+                    "max_y": c.year,
+                    "tids": list(dict.fromkeys([c.tender_id] + list(c.related_record_ids[:6])))[:6],
                 }
             else:
                 entry["tasks"] += 1
-                entry["win_count"] = max(entry["win_count"], c.winner_total_wins)
+                if c.winner_total_wins > entry["win_count"]:
+                    entry["win_count"] = c.winner_total_wins
+                    if share_cnt is not None:
+                        entry["share_by_count_pct"] = share_cnt
                 entry["single_bid_wins"] = max(entry["single_bid_wins"], c.winner_single_bid_wins)
-                entry["total_value_inr_cr"] = max(entry["total_value_inr_cr"], round(c.winner_cohort_total_inr / 1e7, 2))
+                if val_cr > entry["total_value_inr_cr"]:
+                    entry["total_value_inr_cr"] = val_cr
+                    if share_val is not None:
+                        entry["share_by_value_pct"] = share_val
+                rm = rw_meta[rkey]
+                rm["min_y"] = min(rm["min_y"], c.year)
+                rm["max_y"] = max(rm["max_y"], c.year)
+                if c.tender_id and c.tender_id not in rm["tids"] and len(rm["tids"]) < 6:
+                    rm["tids"].append(c.tender_id)
+
+    for jur_name, js in jur_stats.items():
+        if jur_portals[jur_name]:
+            js["portal"] = jur_portals[jur_name].most_common(1)[0][0]
+    for auth_name, au in auth_stats.items():
+        if auth_portals[auth_name]:
+            au["portal"] = auth_portals[auth_name].most_common(1)[0][0]
+        known_n, sb_n = auth_known_bids[auth_name]
+        if known_n >= 3:
+            au["single_bid_rate_pct"] = round(sb_n / known_n * 100.0, 1)
+    for rkey, entry in rw_clusters.items():
+        rm = rw_meta[rkey]
+        entry["year_range"] = f"{rm['min_y']}–{rm['max_y']}" if rm["min_y"] != rm["max_y"] else str(rm["min_y"])
+        if rm["tids"]:
+            entry["sample_tender_ids"] = rm["tids"][:6]
 
     # Build top-level project header (strictly < 10 KiB before "tasks":[)
     project_header: dict[str, Any] = {
@@ -2080,10 +2269,11 @@ def main() -> None:
         "project_code": PROJECT_CODE,
         "title": PROJECT_TITLE,
         "summary": (
-            "10,000 deterministic checks across 10 years (2016–2026) of Indian government procurement "
-            "records (OCP Registry OCDS, CivicDataLab multi-state AOC datasets, and World Bank India "
-            "STEP Contract Awards) flagging single-bidder tenders, sole-qualified evaluations, and "
-            "repeat-winner concentration while transparently clearing documented exemptions."
+            "10,000 deterministic checks across 10 years (2016–2026) of domestic Indian government "
+            "procurement records — Assam, Himachal Pradesh, Odisha, and Uttar Pradesh state OCDS/AOC "
+            "tenders plus Indian Government (World Bank–assisted projects) across Union Ministries and "
+            "20+ States — surfacing single-bidder tenders, sole-qualified evaluations, and repeat-winner "
+            "patterns while transparently clearing documented exemptions."
         ),
         "jurisdiction": "India (Union Ministries & 20+ States)",
         "authority": "Central Ministries, State Public Works / Irrigation / Power / Health Departments & Indian Implementing Agencies",
@@ -2138,8 +2328,8 @@ def main() -> None:
                 "url": "https://drr.open-contracting.in/en",
             },
             {
-                "name": "World Bank Official India Procurement Contract Awards API (2016–2026)",
-                "publisher": "World Bank Group / Indian Implementing Agencies (STEP)",
+                "name": "Indian Government (World Bank–assisted projects) — Official Contract Awards API (2016–2026, project_ctry_code=IN)",
+                "publisher": "Indian Union & State Implementing Agencies (published via World Bank STEP)",
                 "url": "https://projects.worldbank.org/en/projects-operations/procurement",
             },
         ],
