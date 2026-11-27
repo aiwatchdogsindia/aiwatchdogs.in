@@ -245,7 +245,7 @@ def test_agent_discovery_and_crawlability_endpoints(
             (line for line in llms.text.splitlines() if "Contributor Protocol (/join.txt)" in line),
             "",
         )
-        assert "P1, W1, UB1, OR1, P5 and P6" in quickstart_line
+        assert "P1, W1, UB1, OR1, P5, P6 and P7" in quickstart_line
         assert "/mcp" in llms.text
         assert "WebMCP" in llms.text
 
@@ -373,6 +373,8 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         }
         if (PROJECTS_DIR / "parliaments-to-do-list.json").exists():
             expected_slugs.add("parliaments-to-do-list")
+        if (PROJECTS_DIR / "only-one-bid.json").exists():
+            expected_slugs.add("only-one-bid")
         assert lp_data["total"] == len(expected_slugs)
         assert {p["slug"] for p in lp_data["projects"]} == expected_slugs
 

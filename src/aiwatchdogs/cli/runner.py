@@ -147,6 +147,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "official_publisher",
         "one_road_two_bills",
         "one_teacher_five_grades",
+        "only_one_bid",
         "pac_note_threshold_inr",
         "parliaments_to_do_list",
         "q4_ceiling_pct",
@@ -190,6 +191,9 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
         "signal_category",
         "recorded_status",
         "followup_text_status",
+        "verdict",
+        "exemption_status",
+        "single_bid_mechanism",
     }
 )
 
@@ -200,6 +204,8 @@ RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "state_key",
     "assurance_key",
     "assurance_ref",
+    "case_key",
+    "normalized_winner_key",
     "source_locator",
     "ocid",
     "tender_id",

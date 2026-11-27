@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6, P7)."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from aiwatchdogs.engines import (
     fiscal,
     one_road_two_bills,
     one_teacher_five_grades,
+    only_one_bid,
     parliaments_to_do_list,
     police,
     procurement,
@@ -41,6 +42,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "OR1": "OR1-2026.11-v1",
     "P5": "P5-2026.11-v1",
     "P6": "P6-2026.11-v1",
+    "P7": "P7-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -272,6 +274,27 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://sansad.in/api_ls/govtAssurance/assurances?loksabha=18&session=7&qNo=544&qType=SQ&page=1&size=20&locale=en",
         "module": "aiwatchdogs.engines.parliaments_to_do_list",
     },
+    "P7": {
+        "code": "P7",
+        "name": "Only One Bid: Single-Bidder Tenders & Repeat-Winner Procurement Patterns",
+        "pillar": "procurement",
+        "ruleset_version": RULESET_VERSIONS["P7"],
+        "statutory_anchors": [
+            "GFR-2017-R166",
+            "GFR-2017-R173(xx)",
+            "CVC-Single-Bid-Guidelines",
+            "DoE-Procurement-Manual",
+            "Competition-Act-2002-Sec3(3)(d)",
+            "RTI-Act-2005-Sec4(1)(b)",
+        ],
+        "description": (
+            "Audits pinned public Indian government procurement tenders and contract awards (2016–2026) "
+            "for unexplained single-bidder competitive tenders and repeat-winner concentration within "
+            "procuring-authority cohorts while transparently clearing documented PAC/OEM and emergency exemptions."
+        ),
+        "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/1e12e516748130c15398b2501fb092bfa7413941/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv",
+        "module": "aiwatchdogs.engines.only_one_bid",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -288,6 +311,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "OR1": (one_road_two_bills.run_or1_duplicate_billing, one_road_two_bills),
     "P5": (one_teacher_five_grades.run_p5_single_teacher_schools, one_teacher_five_grades),
     "P6": (parliaments_to_do_list.run_p6_parliamentary_assurances, parliaments_to_do_list),
+    "P7": (only_one_bid.run_p7_only_one_bid, only_one_bid),
 }
 
 

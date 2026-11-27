@@ -12,7 +12,7 @@ interface FindingsPageProps {
 }
 
 const PAGE_SIZE = 25;
-const PILLAR_FILTERS = ['', 'budget', 'disclosure', 'audit', 'scheme', 'parliament'];
+const PILLAR_FILTERS = ['', 'procurement', 'budget', 'disclosure', 'audit', 'scheme', 'parliament'];
 
 const STATUS_TABS: Array<{ value: string; label: string; hint: string }> = [
   { value: '', label: 'All', hint: 'Every record, newest first.' },

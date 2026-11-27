@@ -45,6 +45,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "one-road-two-bills": "P4",
     "one-teacher-five-grades": "P5",
     "parliaments-to-do-list": "P6",
+    "only-one-bid": "P7",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -108,6 +109,8 @@ ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG = "one-teacher-five-grades"
 ONE_TEACHER_FIVE_GRADES_METHODOLOGY = "P5"
 PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG = "parliaments-to-do-list"
 PARLIAMENTS_TO_DO_LIST_METHODOLOGY = "P6"
+ONLY_ONE_BID_PROJECT_SLUG = "only-one-bid"
+ONLY_ONE_BID_METHODOLOGY = "P7"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -492,6 +495,17 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             errors.append(
                 f"{where} must use the parliamentary_assurances quantity type with {PARLIAMENTS_TO_DO_LIST_METHODOLOGY}."
             )
+        if code == ONLY_ONE_BID_METHODOLOGY:
+            if task.get("financial_quantity_type") not in {"awarded_contract_values", "tender_estimates"}:
+                errors.append(
+                    f"{where} must use awarded_contract_values or tender_estimates with {ONLY_ONE_BID_METHODOLOGY}."
+                )
+            from aiwatchdogs.engines.only_one_bid import P7_TASK_ID_RE
+
+            if isinstance(tid, str) and not P7_TASK_ID_RE.fullmatch(tid):
+                errors.append(
+                    f"{where}.id must match 'p7-(sb|rw|bo)-YYYY-NNNNN' for {ONLY_ONE_BID_METHODOLOGY} tasks."
+                )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
@@ -582,6 +596,10 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             from aiwatchdogs.engines.parliaments_to_do_list import validate_context as validate_p6_context
 
             errors.extend(validate_p6_context(ctx, where))
+        if code == ONLY_ONE_BID_METHODOLOGY:
+            from aiwatchdogs.engines.only_one_bid import validate_context as validate_p7_context
+
+            errors.extend(validate_p7_context(ctx, where))
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -629,6 +647,7 @@ def _validation_code_digest() -> str:
     from aiwatchdogs.engines import (
         one_road_two_bills,
         one_teacher_five_grades,
+        only_one_bid,
         parliaments_to_do_list,
         union_budget,
     )
@@ -641,6 +660,7 @@ def _validation_code_digest() -> str:
         one_road_two_bills,
         one_teacher_five_grades,
         parliaments_to_do_list,
+        only_one_bid,
     ):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():

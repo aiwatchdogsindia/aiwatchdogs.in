@@ -61,6 +61,14 @@ const LIVE_PROJECTS = [
     summary:
       'A minister promised Parliament an answer. Did it ever get one? Audits 1,000 formal ministerial assurances across all 56 Union Ministries on Digital Sansad — citing the original promise, recorded status, and what the follow-up actually answered.',
   },
+  {
+    code: 'P7',
+    slug: 'only-one-bid',
+    title: 'Only One Bid',
+    tag: WORK_TYPE_TAGS.single_bid_procurement,
+    summary:
+      'When a public tender draws only one bid — or the same contractor keeps winning — what do the official records show? Audits 10,000 Indian government procurement records (2016–2026) for single-bidder tenders, repeat-winner concentration, and compressed bid windows under GFR 2017 and CVC guidelines.',
+  },
 ];
 
 const EXPLORE_LINKS = [

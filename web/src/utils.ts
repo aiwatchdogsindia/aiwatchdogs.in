@@ -164,6 +164,7 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'one-road-two-bills': 'P4',
   'one-teacher-five-grades': 'P5',
   'parliaments-to-do-list': 'P6',
+  'only-one-bid': 'P7',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -173,6 +174,7 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   OR1: 'P4',
   P5: 'P5',
   P6: 'P6',
+  P7: 'P7',
 };
 
 /**
@@ -245,6 +247,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P6: {
     name: "Parliament's To-Do List: ministerial assurances & follow-up answers",
     rule: 'Verifies formal ministerial assurances across all 56 Union Ministries from Digital Sansad (18th Lok Sabha & Rajya Sabha), citing the original promise, recorded status, and what the follow-up implementation statement actually answered.',
+  },
+  P7: {
+    name: 'Only One Bid: single-bidder tenders & repeat-winner patterns (2016–2026)',
+    rule: 'Audits official Indian public procurement records (2016–2026) for non-exempt single-bidder awards, repeat-winner concentration, and compressed bid windows against GFR 2017 Rules 166/173(xx), CVC guidelines, and State procurement rules, separating target tender value from cohort totals.',
   },
 };
 
@@ -503,6 +509,51 @@ function metricNum(m: Record<string, unknown>, ...keys: string[]): number | null
   return null;
 }
 
+function metricStrList(m: Record<string, unknown>, ...keys: string[]): string[] {
+  for (const k of keys) {
+    const v = m[k];
+    if (Array.isArray(v)) {
+      return v
+        .map((item) => (typeof item === 'string' || typeof item === 'number' ? String(item).trim() : ''))
+        .filter(Boolean);
+    }
+    if (typeof v === 'string' && v.trim()) {
+      const trimmed = v.trim();
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed)) {
+            return parsed
+              .map((item) => (typeof item === 'string' || typeof item === 'number' ? String(item).trim() : ''))
+              .filter(Boolean);
+          }
+        } catch {
+          // fall through to comma split
+        }
+      }
+      return trimmed
+        .split(/[,;]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function metricBool(m: Record<string, unknown>, ...keys: string[]): boolean {
+  for (const k of keys) {
+    const v = m[k];
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    if (typeof v === 'string') {
+      const lower = v.trim().toLowerCase();
+      if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+      if (lower === 'false' || lower === '0' || lower === 'no') return false;
+    }
+  }
+  return false;
+}
+
 export function extractAssuranceMetrics(
   metrics?: Record<string, unknown> | null,
 ): ParsedAssuranceMetrics | null {
@@ -534,6 +585,317 @@ export function extractAssuranceMetrics(
   };
 }
 
+export type ProcurementSignalKey =
+  | 'single_bidder_repeat_winner'
+  | 'unexplained_single_bidder'
+  | 'repeat_winner_concentration'
+  | 'short_window_or_process_gap'
+  | 'other';
+
+export interface ProcurementSignalMeta {
+  key: ProcurementSignalKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatProcurementSignal(raw?: string | null): ProcurementSignalMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'single_bidder_repeat_winner') {
+    return {
+      key: 'single_bidder_repeat_winner',
+      label: 'Single Bid + Repeat Winner',
+      shortLabel: 'Single bid + repeat',
+      chipClass: 'p7-signal p7-signal--combined',
+    };
+  }
+  if (s === 'unexplained_single_bidder') {
+    return {
+      key: 'unexplained_single_bidder',
+      label: 'Single-Bidder Tender',
+      shortLabel: 'Single bidder',
+      chipClass: 'p7-signal p7-signal--single',
+    };
+  }
+  if (s === 'repeat_winner_concentration') {
+    return {
+      key: 'repeat_winner_concentration',
+      label: 'Repeat-Winner Concentration',
+      shortLabel: 'Repeat winner',
+      chipClass: 'p7-signal p7-signal--repeat',
+    };
+  }
+  if (s === 'short_window_or_process_gap') {
+    return {
+      key: 'short_window_or_process_gap',
+      label: 'Compressed Window / Process Gap',
+      shortLabel: 'Process gap',
+      chipClass: 'p7-signal p7-signal--process',
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Procurement Pattern Lead',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Procurement lead',
+    chipClass: 'p7-signal p7-signal--other',
+  };
+}
+
+export function formatSingleBidMechanism(raw?: string | null): string | null {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (
+    !s ||
+    s === 'none' ||
+    s === 'not_applicable' ||
+    s === 'multiple_bids' ||
+    s === 'multi_bid' ||
+    s === 'unrecorded' ||
+    s === 'unknown' ||
+    s === 'n_a'
+  ) {
+    return null;
+  }
+  if (s === 'single_bid_received') return 'Only 1 bid received';
+  if (
+    s === 'single_qualified_after_rejection' ||
+    s === 'single_qualified_after_tech_rejection'
+  ) {
+    return '1 qualified after technical screening';
+  }
+  if (s === 'single_tender_enquiry') return 'Single tender enquiry';
+  return (raw || '').trim().replace(/_/g, ' ');
+}
+
+export function resolveCitationHref(
+  cit: {
+    role?: string | null;
+    source_url?: string | null;
+    source_ref?: string | null;
+    source_landing_page?: string | null;
+    sha256?: string | null;
+  },
+  artifactSha?: string,
+): string | null {
+  const role = (cit.role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (role === 'statutory_benchmark') {
+    return safeExternalUrl(cit.source_landing_page || cit.source_url || cit.source_ref);
+  }
+  const ownDocument =
+    cit.source_url && cit.sha256 && artifactSha && cit.sha256 !== artifactSha
+      ? cit.source_url
+      : null;
+  return safeExternalUrl(ownDocument || cit.source_ref || cit.source_url);
+}
+
+export function formatProcurementAmountType(raw?: string | null): string {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'awarded_contract_values' || s === 'award_value' || s === 'awarded_value') {
+    return 'Awarded contract value';
+  }
+  if (s === 'tender_estimates' || s === 'tender_estimate' || s === 'estimated_value') {
+    return 'Tender estimate';
+  }
+  return 'Target tender value';
+}
+
+export function formatCitationRoleLabel(role?: string | null): string | null {
+  const r = (role || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (!r) return null;
+  const map: Record<string, string> = {
+    primary_tender: 'Primary Tender Record',
+    repeat_winner_cohort: 'Repeat-Winner Cohort',
+    statutory_benchmark: 'Statutory Benchmark',
+    original_promise: 'Original Promise',
+    recorded_status: 'Recorded Status',
+    followup_answer: 'Follow-Up Answer',
+  };
+  if (map[r]) return map[r];
+  const readable = r.replace(/_/g, ' ');
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
+export interface ParsedOnlyOneBidMetrics {
+  caseKey: string | null;
+  auditMode: string | null;
+  verdict: string | null;
+  signalCategory: string | null;
+  triggeredRules: string[];
+  portal: string | null;
+  authority: string | null;
+  authorityKey: string | null;
+  jurisdiction: string | null;
+  jurisdictionLevel: string | null;
+  tenderId: string | null;
+  ocid: string | null;
+  tenderTitle: string | null;
+  itemCategory: string | null;
+  procurementMethod: string | null;
+  exemptionStatus: string | null;
+  bidsReceived: number | null;
+  technicallyQualifiedBids: number | null;
+  effectiveBids: number | null;
+  singleBidMechanism: string | null;
+  bidWindowDays: number | null;
+  publishDate: string | null;
+  closeDate: string | null;
+  awardDate: string | null;
+  fiscalYear: string | null;
+  fiscalYearStart: string | null;
+  fiscalYearEnd: string | null;
+  amountType: string | null;
+  awardValueInr: number | null;
+  tenderEstimateInr: number | null;
+  /** Target tender's own value only (award value, else tender estimate) — NEVER the cohort total. */
+  targetTenderValueInr: number | null;
+  winnerName: string | null;
+  normalizedWinnerKey: string | null;
+  winnerTotalWins: number | null;
+  winnerSingleBidWins: number | null;
+  /** Separate multi-award cohort total for context only — never summed into project exposure. */
+  winnerCohortTotalInr: number | null;
+  winnerShareByCountPct: number | null;
+  winnerShareByValuePct: number | null;
+  consecutiveWinStreak: number | null;
+  authorityCohortTenders: number | null;
+  authoritySingleBidRatePct: number | null;
+  relatedTenderIds: string[];
+  governingInstrument: string | null;
+  sourceLocator: string | null;
+  isAnchorCase: boolean;
+}
+
+const P7_SIGNAL_SET = new Set([
+  'single_bidder_repeat_winner',
+  'unexplained_single_bidder',
+  'repeat_winner_concentration',
+  'short_window_or_process_gap',
+]);
+
+export function extractOnlyOneBidMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedOnlyOneBidMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const tenderId = metricStr(metrics, 'tender_id');
+  const ocid = metricStr(metrics, 'ocid');
+  const winnerName = metricStr(metrics, 'winner_name');
+  const singleBidMechanism = metricStr(metrics, 'single_bid_mechanism');
+  const signalCategory = metricStr(metrics, 'signal_category');
+  const bidsReceived = metricNum(metrics, 'bids_received');
+  const technicallyQualifiedBids = metricNum(metrics, 'technically_qualified_bids');
+  const effectiveBids = metricNum(metrics, 'effective_bids');
+  const winnerTotalWins = metricNum(metrics, 'winner_total_wins');
+
+  const hasP7Signal = Boolean(signalCategory && P7_SIGNAL_SET.has(signalCategory.toLowerCase()));
+  if (
+    !tenderId &&
+    !ocid &&
+    !winnerName &&
+    !singleBidMechanism &&
+    bidsReceived === null &&
+    technicallyQualifiedBids === null &&
+    effectiveBids === null &&
+    winnerTotalWins === null &&
+    !hasP7Signal
+  ) {
+    return null;
+  }
+
+  const awardValueInr = metricNum(metrics, 'award_value_inr');
+  const tenderEstimateInr = metricNum(metrics, 'tender_estimate_inr');
+  const targetTenderValueInr =
+    awardValueInr != null && awardValueInr > 0
+      ? awardValueInr
+      : tenderEstimateInr != null && tenderEstimateInr > 0
+        ? tenderEstimateInr
+        : null;
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    auditMode: metricStr(metrics, 'audit_mode'),
+    verdict: metricStr(metrics, 'verdict'),
+    signalCategory,
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    portal: metricStr(metrics, 'portal'),
+    authority: metricStr(metrics, 'authority'),
+    authorityKey: metricStr(metrics, 'authority_key'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    jurisdictionLevel: metricStr(metrics, 'jurisdiction_level'),
+    tenderId,
+    ocid,
+    tenderTitle: metricStr(metrics, 'tender_title'),
+    itemCategory: metricStr(metrics, 'item_category'),
+    procurementMethod: metricStr(metrics, 'procurement_method'),
+    exemptionStatus: metricStr(metrics, 'exemption_status'),
+    bidsReceived,
+    technicallyQualifiedBids,
+    effectiveBids,
+    singleBidMechanism,
+    bidWindowDays: metricNum(metrics, 'bid_window_days'),
+    publishDate: metricStr(metrics, 'publish_date'),
+    closeDate: metricStr(metrics, 'close_date'),
+    awardDate: metricStr(metrics, 'award_date'),
+    fiscalYear: metricStr(metrics, 'fiscal_year'),
+    fiscalYearStart: metricStr(metrics, 'fiscal_year_start'),
+    fiscalYearEnd: metricStr(metrics, 'fiscal_year_end'),
+    amountType: metricStr(metrics, 'amount_type'),
+    awardValueInr,
+    tenderEstimateInr,
+    targetTenderValueInr,
+    winnerName,
+    normalizedWinnerKey: metricStr(metrics, 'normalized_winner_key'),
+    winnerTotalWins,
+    winnerSingleBidWins: metricNum(metrics, 'winner_single_bid_wins'),
+    winnerCohortTotalInr: metricNum(metrics, 'winner_cohort_total_inr'),
+    winnerShareByCountPct: metricNum(metrics, 'winner_share_by_count_pct'),
+    winnerShareByValuePct: metricNum(metrics, 'winner_share_by_value_pct'),
+    consecutiveWinStreak: metricNum(metrics, 'consecutive_win_streak'),
+    authorityCohortTenders: metricNum(metrics, 'authority_cohort_tenders'),
+    authoritySingleBidRatePct: metricNum(metrics, 'authority_single_bid_rate_pct'),
+    relatedTenderIds: metricStrList(metrics, 'related_tender_ids'),
+    governingInstrument: metricStr(metrics, 'governing_instrument'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+  };
+}
+
+export function formatOnlyOneBidBidsSummary(rec: ParsedOnlyOneBidMetrics): string | null {
+  const recCount = rec.bidsReceived;
+  const qualCount = rec.technicallyQualifiedBids;
+  const effCount = rec.effectiveBids;
+
+  if (recCount != null && qualCount != null && recCount !== qualCount) {
+    return `${recCount.toLocaleString('en-IN')} received → ${qualCount.toLocaleString('en-IN')} qualified`;
+  }
+  if (recCount != null) {
+    return `${recCount.toLocaleString('en-IN')} ${recCount === 1 ? 'bid' : 'bids'} received`;
+  }
+  if (qualCount != null) {
+    return `${qualCount.toLocaleString('en-IN')} qualified ${qualCount === 1 ? 'bid' : 'bids'}`;
+  }
+  if (effCount != null) {
+    return `${effCount.toLocaleString('en-IN')} effective ${effCount === 1 ? 'bid' : 'bids'}`;
+  }
+  return null;
+}
+
+function formatOnlyOneBidSignalSummary(rec: ParsedOnlyOneBidMetrics): string | null {
+  const parts: string[] = [];
+  if (rec.effectiveBids != null) {
+    parts.push(`${rec.effectiveBids.toLocaleString('en-IN')} ${rec.effectiveBids === 1 ? 'bid' : 'bids'}`);
+  } else if (rec.bidsReceived != null) {
+    parts.push(`${rec.bidsReceived.toLocaleString('en-IN')} ${rec.bidsReceived === 1 ? 'bid' : 'bids'}`);
+  }
+  if (rec.winnerTotalWins != null && rec.winnerTotalWins >= 2) {
+    parts.push(`${rec.winnerTotalWins.toLocaleString('en-IN')} wins`);
+  }
+  if (rec.winnerShareByCountPct != null && rec.winnerShareByCountPct > 0 && parts.length < 2) {
+    parts.push(`${rec.winnerShareByCountPct.toFixed(0)}% share`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 export interface FindingDrawerMetric {
   label: string;
   value: string;
@@ -557,7 +919,10 @@ type FindingMetricSource = {
  * Resolve the headline metric shown in FindingDrawer's metadata strip.
  * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`
  * (which is stored as 0 for non-monetary parliamentary assurances).
- * Non-P6 findings retain their exact existing behavior.
+ * For P7 findings, target tender value (never the repeat-winner cohort total) is labeled
+ * with its exact amount type (`Awarded contract value` / `Tender estimate`), or falls back
+ * to a factual competition readout when value is unrecorded.
+ * Non-P6/P7 findings retain their exact existing behavior.
  */
 export function resolveFindingDrawerMetric(
   finding: FindingMetricSource,
@@ -582,6 +947,25 @@ export function resolveFindingDrawerMetric(
     };
   }
 
+  if (finding.methodology_code === 'P7' && !isQuarantined) {
+    const p7Record = extractOnlyOneBidMetrics(finding.anomaly_metrics);
+    const targetVal =
+      finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : p7Record?.targetTenderValueInr ?? null;
+    if (targetVal != null && targetVal > 0) {
+      return {
+        label: formatProcurementAmountType(p7Record?.amountType ?? finding.amount_label),
+        value: formatInr(targetVal),
+      };
+    }
+    const signalSummary = p7Record ? formatOnlyOneBidSignalSummary(p7Record) : null;
+    return {
+      label: signalSummary ? 'Competition Pattern' : 'Target Tender Value',
+      value: signalSummary ?? 'Unrecorded',
+    };
+  }
+
   return {
     label: finding.amount_label
       ? finding.amount_label.replace(/_/g, ' ')
@@ -596,7 +980,9 @@ export function resolveFindingDrawerMetric(
 /**
  * Resolve the top-right headline readout shown on FindingCard.
  * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`.
- * Non-P6 findings remain completely unchanged.
+ * For P7 findings, target tender value (never cohort total) takes precedence when > 0,
+ * falling back to a crisp competition readout (e.g. "1 bid · 6 wins") when unrecorded.
+ * Non-P6/P7 findings remain completely unchanged.
  */
 export function resolveFindingCardMetric(
   finding: FindingMetricSource,
@@ -621,6 +1007,22 @@ export function resolveFindingCardMetric(
 
   if (p6RightLabel) {
     return { value: p6RightLabel, prominent: true };
+  }
+
+  if (finding.methodology_code === 'P7') {
+    const p7Record = extractOnlyOneBidMetrics(finding.anomaly_metrics);
+    const targetVal =
+      finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : p7Record?.targetTenderValueInr ?? null;
+    if (targetVal != null && targetVal > 0) {
+      return { value: formatInr(targetVal), prominent: true };
+    }
+    const signalSummary = p7Record ? formatOnlyOneBidSignalSummary(p7Record) : null;
+    if (signalSummary) {
+      return { value: signalSummary, prominent: true };
+    }
+    return { value: 'Procurement lead', prominent: false };
   }
 
   if (finding.monetary_exposure_inr) {

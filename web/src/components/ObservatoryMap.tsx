@@ -707,7 +707,7 @@ export function ObservatoryMap({
           ctx.fillStyle = '#ECE8DF';
           ctx.fill();
         } else if (wn.kind === 'disputed') {
-          // Disputed:  fill + #C2412D ring + internal × cross
+          // Disputed: ring + internal × cross
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
           ctx.fillStyle = '#0F1013';

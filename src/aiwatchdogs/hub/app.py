@@ -72,6 +72,7 @@ from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url
 from aiwatchdogs.projects import (
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
+    ONLY_ONE_BID_PROJECT_SLUG,
     PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
     UNION_BUDGET_PROJECT_SLUG,
     project_codes_by_slug,
@@ -1033,6 +1034,23 @@ def create_app(
         from aiwatchdogs.projects import default_projects_dir
 
         path = default_projects_dir() / PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get(f"/api/missions/{ONLY_ONE_BID_PROJECT_SLUG}/{{filename}}")
+    def api_only_one_bid_file(filename: str) -> Response:
+        """The procurement datasets audited by P7 (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / ONLY_ONE_BID_PROJECT_SLUG / filename
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Not found")
         return Response(

@@ -3,7 +3,13 @@ import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from '
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
 import {
+  extractOnlyOneBidMetrics,
+  formatInr,
+  formatOnlyOneBidBidsSummary,
+  formatProcurementAmountType,
+  formatProcurementSignal,
   formatRelativeTime,
+  formatSingleBidMechanism,
   isUnverifiedStatus,
   resolveFindingCardMetric,
 } from '../utils';
@@ -28,6 +34,19 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     Boolean(finding.corrections && finding.corrections.length > 0);
   const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
   const cardMetric = resolveFindingCardMetric(finding, FINDING_TAGS.withheld.label);
+  const p7Record =
+    finding.methodology_code === 'P7' && !isQuarantined
+      ? extractOnlyOneBidMetrics(finding.anomaly_metrics)
+      : null;
+  const p7Signal = p7Record?.signalCategory
+    ? formatProcurementSignal(p7Record.signalCategory)
+    : null;
+  const p7BidsText = p7Record ? formatOnlyOneBidBidsSummary(p7Record) : null;
+  const p7MechText = p7Record ? formatSingleBidMechanism(p7Record.singleBidMechanism) : null;
+  const p7TargetVal =
+    finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+      ? finding.monetary_exposure_inr
+      : p7Record?.targetTenderValueInr ?? null;
 
   return (
     <article
@@ -67,6 +86,11 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           <span className={workTag.badgeClass} title={`${finding.methodology_code}: ${workTag.description}`}>
             {workTag.label}
           </span>
+          {p7Signal && (
+            <span className={p7Signal.chipClass} title={`Procurement signal: ${p7Signal.label}`}>
+              {p7Signal.shortLabel}
+            </span>
+          )}
           {hasCorrections && sm.id !== 'corrected' && (
             <span className={FINDING_TAGS.corrected.badgeClass} title={FINDING_TAGS.corrected.description}>
               {finding.corrections && finding.corrections.length > 0
@@ -119,6 +143,70 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
                 : finding.summary
               : ''}
         </p>
+      )}
+
+      {p7Record && (
+        <div className="fc-p7-strip" aria-label="Tender competition facts">
+          <div className="fc-p7-meta-row">
+            {p7Record.portal && <span className="tag-mono">{p7Record.portal}</span>}
+            {(p7Record.tenderId || p7Record.ocid) && (
+              <span className="tag-mono font-mono">
+                {p7Record.tenderId || p7Record.ocid}
+              </span>
+            )}
+            {p7BidsText && <span className="tag-mono tabular">{p7BidsText}</span>}
+            {p7MechText && !compact && <span className="tag-mono">{p7MechText}</span>}
+            {p7Record.bidWindowDays != null && !compact && (
+              <span className="tag-mono tabular">{p7Record.bidWindowDays}d window</span>
+            )}
+          </div>
+
+          <div className="fc-p7-facts-grid tabular">
+            {p7Record.winnerName && (
+              <div className="fc-p7-fact">
+                <span className="fc-p7-fact-label">Awardee &amp; repeat pattern</span>
+                <span className="fc-p7-fact-val">
+                  <strong>{p7Record.winnerName}</strong>
+                  {p7Record.winnerTotalWins != null && p7Record.winnerTotalWins > 0
+                    ? ` · ${p7Record.winnerTotalWins.toLocaleString('en-IN')} ${
+                        p7Record.winnerTotalWins === 1 ? 'win' : 'wins'
+                      }`
+                    : ''}
+                  {p7Record.winnerSingleBidWins != null && p7Record.winnerSingleBidWins > 0
+                    ? ` (${p7Record.winnerSingleBidWins.toLocaleString('en-IN')} single-bid)`
+                    : ''}
+                  {p7Record.winnerShareByCountPct != null && p7Record.winnerShareByCountPct > 0
+                    ? ` · ${p7Record.winnerShareByCountPct.toFixed(1)}% share`
+                    : ''}
+                  {p7Record.consecutiveWinStreak != null && p7Record.consecutiveWinStreak >= 2
+                    ? ` · ${p7Record.consecutiveWinStreak}-win streak`
+                    : ''}
+                </span>
+              </div>
+            )}
+
+            {(p7TargetVal != null ||
+              (p7Record.winnerCohortTotalInr != null && p7Record.winnerCohortTotalInr > 0)) && (
+              <div className="fc-p7-fact">
+                <span className="fc-p7-fact-label">Values (separated — never double-counted)</span>
+                <span className="fc-p7-fact-val">
+                  <span>
+                    {formatProcurementAmountType(p7Record.amountType ?? finding.amount_label)}:{' '}
+                    <strong>{p7TargetVal != null ? formatInr(p7TargetVal) : 'Unrecorded'}</strong>
+                  </span>
+                  {p7Record.winnerCohortTotalInr != null &&
+                  p7Record.winnerCohortTotalInr > 0 &&
+                  (p7Record.winnerTotalWins ?? 0) >= 2 ? (
+                    <span className="fc-p7-cohort-sep">
+                      {' · '}Cohort total ({p7Record.winnerTotalWins?.toLocaleString('en-IN')} awards):{' '}
+                      {formatInr(p7Record.winnerCohortTotalInr)}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       <div

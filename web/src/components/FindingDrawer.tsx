@@ -26,12 +26,19 @@ import {
   copyToClipboard,
   downloadTextFile,
   extractAssuranceMetrics,
+  extractOnlyOneBidMetrics,
   formatAssuranceStatus,
   formatBytes,
+  formatCitationRoleLabel,
   formatDateShort,
   formatInr,
+  formatOnlyOneBidBidsSummary,
+  formatProcurementAmountType,
+  formatProcurementSignal,
   formatRelativeTime,
+  formatSingleBidMechanism,
   isOfficialGovUrl,
+  resolveCitationHref,
   resolveFindingDrawerMetric,
   safeExternalUrl,
 } from '../utils';
@@ -85,14 +92,12 @@ function formatReviewKindLabel(kind?: string): { label: string; isEditorial: boo
 }
 
 /**
- * The document a citation's line was read from. Two-document methods (UB1 actuals, P1 reference rows)
- * cite a second PDF: its own source_url and a sha256 different from the finding's artifact. Otherwise
- * prefer the finding's dataset (source_ref) over a portal-homepage fallback in source_url.
+ * The document a citation's line was read from. Statutory benchmarks prefer their official
+ * landing/source link over a raw dataset file in `source_ref`; two-document methods cite their
+ * own `source_url` when `sha256` differs from the finding's artifact.
  */
 function citationHref(cit: Citation, artifactSha?: string): string | null {
-  const ownDocument =
-    cit.source_url && cit.sha256 && artifactSha && cit.sha256 !== artifactSha ? cit.source_url : null;
-  return safeExternalUrl(ownDocument || cit.source_ref || cit.source_url);
+  return resolveCitationHref(cit, artifactSha);
 }
 
 export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawerProps) {
@@ -259,6 +264,19 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
   const p6Status = p6Record?.recordedStatus
     ? formatAssuranceStatus(p6Record.recordedStatus)
     : null;
+  const p7Record =
+    finding?.methodology_code === 'P7' && !isQuarantined
+      ? extractOnlyOneBidMetrics(finding.anomaly_metrics)
+      : null;
+  const p7Signal = p7Record?.signalCategory
+    ? formatProcurementSignal(p7Record.signalCategory)
+    : null;
+  const p7BidsText = p7Record ? formatOnlyOneBidBidsSummary(p7Record) : null;
+  const p7MechText = p7Record ? formatSingleBidMechanism(p7Record.singleBidMechanism) : null;
+  const p7TargetVal =
+    finding && finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+      ? finding.monetary_exposure_inr
+      : p7Record?.targetTenderValueInr ?? null;
   const drawerMetric = finding ? resolveFindingDrawerMetric(finding) : null;
   const displayMetricEntries = finding
     ? Object.entries(finding.anomaly_metrics).filter(
@@ -624,6 +642,252 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                     </section>
                   )}
 
+                  {/* P7 Structured Procurement Record (Bid Competition -> Repeat-Winner Pattern -> Separated Values & Statutory Benchmark) */}
+                  {p7Record && (
+                    <section className="card card-pad drawer-p7-card" aria-label="Procurement tender dossier">
+                      <div className="drawer-p6-head">
+                        <div>
+                          <div className="section-kicker" style={{ marginBottom: 4 }}>
+                            Procurement Record · Competition &amp; Award Dossier
+                          </div>
+                          <div className="drawer-p6-meta">
+                            {p7Record.portal && <span className="tag-mono">{p7Record.portal}</span>}
+                            {p7Record.tenderId && (
+                              <span className="tag-mono font-mono">Tender {p7Record.tenderId}</span>
+                            )}
+                            {p7Record.ocid && p7Record.ocid !== p7Record.tenderId && (
+                              <span className="tag-mono font-mono">OCID {p7Record.ocid}</span>
+                            )}
+                            {p7Record.fiscalYear && (
+                              <span className="tag-mono tabular">{p7Record.fiscalYear}</span>
+                            )}
+                            {p7Record.procurementMethod && (
+                              <span className="tag-mono">{p7Record.procurementMethod}</span>
+                            )}
+                            {p7Record.exemptionStatus && (
+                              <span className="tag-mono">
+                                Exemption: {p7Record.exemptionStatus.replace(/_/g, ' ')}
+                              </span>
+                            )}
+                            {p7Record.isAnchorCase && <span className="tag-mono">Featured case</span>}
+                          </div>
+                        </div>
+                        {p7Signal && <span className={p7Signal.chipClass}>{p7Signal.label}</span>}
+                      </div>
+
+                      {p7Record.tenderTitle && p7Record.tenderTitle !== finding.title && (
+                        <h3 className="drawer-p7-title">{p7Record.tenderTitle}</h3>
+                      )}
+
+                      {(p7Record.authority || p7Record.itemCategory) && (
+                        <div className="drawer-p6-people">
+                          {p7Record.authority && (
+                            <span>
+                              <strong>Procuring authority:</strong> {p7Record.authority}
+                            </span>
+                          )}
+                          {p7Record.itemCategory && (
+                            <span>
+                              <strong>Category:</strong> {p7Record.itemCategory}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="drawer-p7-grid">
+                        <div className="drawer-p6-step">
+                          <div className="drawer-p6-step-kicker">01 · Bid Competition &amp; Process</div>
+                          <dl className="drawer-p7-stat-list tabular">
+                            <div className="drawer-p7-stat-row">
+                              <dt>Bids received</dt>
+                              <dd>
+                                {p7Record.bidsReceived != null
+                                  ? p7Record.bidsReceived.toLocaleString('en-IN')
+                                  : 'Unrecorded'}
+                              </dd>
+                            </div>
+                            <div className="drawer-p7-stat-row">
+                              <dt>Technically qualified</dt>
+                              <dd>
+                                {p7Record.technicallyQualifiedBids != null
+                                  ? p7Record.technicallyQualifiedBids.toLocaleString('en-IN')
+                                  : 'Unrecorded'}
+                              </dd>
+                            </div>
+                            {p7Record.effectiveBids != null && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Effective competing bids</dt>
+                                <dd>
+                                  <strong>{p7Record.effectiveBids.toLocaleString('en-IN')}</strong>
+                                </dd>
+                              </div>
+                            )}
+                            {p7MechText && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Single-bid mechanism</dt>
+                                <dd>{p7MechText}</dd>
+                              </div>
+                            )}
+                            {p7Record.bidWindowDays != null && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Bid window</dt>
+                                <dd>{p7Record.bidWindowDays.toLocaleString('en-IN')} days</dd>
+                              </div>
+                            )}
+                            {(p7Record.publishDate || p7Record.closeDate || p7Record.awardDate) && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Timeline</dt>
+                                <dd>
+                                  {[
+                                    p7Record.publishDate ? `Pub ${p7Record.publishDate}` : null,
+                                    p7Record.closeDate ? `Close ${p7Record.closeDate}` : null,
+                                    p7Record.awardDate ? `Award ${p7Record.awardDate}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </dd>
+                              </div>
+                            )}
+                            {p7Record.authoritySingleBidRatePct != null && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Authority single-bid rate</dt>
+                                <dd>
+                                  {p7Record.authoritySingleBidRatePct.toFixed(1)}%
+                                  {p7Record.authorityCohortTenders != null
+                                    ? ` (${p7Record.authorityCohortTenders.toLocaleString('en-IN')} tenders)`
+                                    : ''}
+                                </dd>
+                              </div>
+                            )}
+                          </dl>
+                        </div>
+
+                        <div className="drawer-p6-step">
+                          <div className="drawer-p6-step-kicker">02 · Repeat-Winner Concentration</div>
+                          <dl className="drawer-p7-stat-list tabular">
+                            <div className="drawer-p7-stat-row">
+                              <dt>Recorded awardee</dt>
+                              <dd>
+                                <strong>{p7Record.winnerName || 'Unrecorded'}</strong>
+                              </dd>
+                            </div>
+                            <div className="drawer-p7-stat-row">
+                              <dt>Total wins at authority</dt>
+                              <dd>
+                                {p7Record.winnerTotalWins != null
+                                  ? p7Record.winnerTotalWins.toLocaleString('en-IN')
+                                  : 'Unrecorded'}
+                              </dd>
+                            </div>
+                            <div className="drawer-p7-stat-row">
+                              <dt>Single-bid wins</dt>
+                              <dd>
+                                {p7Record.winnerSingleBidWins != null
+                                  ? p7Record.winnerSingleBidWins.toLocaleString('en-IN')
+                                  : 'Unrecorded'}
+                              </dd>
+                            </div>
+                            {p7Record.winnerShareByCountPct != null && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Authority share (by count)</dt>
+                                <dd>{p7Record.winnerShareByCountPct.toFixed(1)}%</dd>
+                              </div>
+                            )}
+                            {p7Record.winnerShareByValuePct != null && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Authority share (by value)</dt>
+                                <dd>{p7Record.winnerShareByValuePct.toFixed(1)}%</dd>
+                              </div>
+                            )}
+                            {p7Record.consecutiveWinStreak != null && p7Record.consecutiveWinStreak >= 2 && (
+                              <div className="drawer-p7-stat-row">
+                                <dt>Consecutive win streak</dt>
+                                <dd>{p7Record.consecutiveWinStreak.toLocaleString('en-IN')} awards</dd>
+                              </div>
+                            )}
+                          </dl>
+                          {p7Record.relatedTenderIds.length > 0 && (
+                            <div className="drawer-p7-chips" aria-label="Corroborating tender IDs">
+                              {p7Record.relatedTenderIds.slice(0, 10).map((rid) => (
+                                <span key={rid} className="tag-mono font-mono">
+                                  {rid}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="drawer-p6-step drawer-p7-grid-full">
+                          <div className="drawer-p6-step-kicker">
+                            03 · Financial Figures (Separated) &amp; Statutory Benchmark
+                          </div>
+                          <div className="drawer-p7-values-split tabular">
+                            <div className="drawer-p7-value-box drawer-p7-value-box--target">
+                              <div className="drawer-p7-value-kicker">
+                                Target tender · {formatProcurementAmountType(p7Record.amountType ?? finding.amount_label)}
+                              </div>
+                              <div className="drawer-p7-value-num">
+                                {p7TargetVal != null ? formatInr(p7TargetVal) : 'Unrecorded'}
+                              </div>
+                              <p className="drawer-p7-value-note">
+                                Counted once in finding exposure
+                                {p7Record.awardValueInr != null &&
+                                p7Record.tenderEstimateInr != null &&
+                                p7Record.awardValueInr > 0 &&
+                                p7Record.tenderEstimateInr > 0
+                                  ? ` (Award: ${formatInr(p7Record.awardValueInr)} · Estimate: ${formatInr(p7Record.tenderEstimateInr)})`
+                                  : ''}
+                                {p7BidsText ? ` · ${p7BidsText}` : ''}.
+                              </p>
+                            </div>
+
+                            <div className="drawer-p7-value-box drawer-p7-value-box--cohort">
+                              <div className="drawer-p7-value-kicker">
+                                Repeat-winner cohort total (context only)
+                              </div>
+                              <div className="drawer-p7-value-num">
+                                {p7Record.winnerCohortTotalInr != null && p7Record.winnerCohortTotalInr > 0
+                                  ? formatInr(p7Record.winnerCohortTotalInr)
+                                  : 'Not applicable'}
+                              </div>
+                              <p className="drawer-p7-value-note">
+                                {p7Record.winnerCohortTotalInr != null && p7Record.winnerCohortTotalInr > 0
+                                  ? `Aggregate across ${
+                                      p7Record.winnerTotalWins != null
+                                        ? `${p7Record.winnerTotalWins.toLocaleString('en-IN')} awards`
+                                        : 'multi-award cohort'
+                                    }. Shown separately so project totals never double-count overlapping tenders.`
+                                  : 'No multi-award cohort total recorded beyond this individual tender.'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {(p7Record.governingInstrument || p7Record.triggeredRules.length > 0) && (
+                            <div style={{ marginTop: 10 }}>
+                              {p7Record.governingInstrument && (
+                                <p className="drawer-p6-step-sub" style={{ marginTop: 0 }}>
+                                  <strong>Statutory benchmark:</strong> {p7Record.governingInstrument}
+                                  {p7Record.jurisdictionLevel === 'state'
+                                    ? ' (State-level procurement authority; Central GFR cited only as comparative reference).'
+                                    : ''}
+                                </p>
+                              )}
+                              {p7Record.triggeredRules.length > 0 && (
+                                <div className="drawer-p7-chips">
+                                  {p7Record.triggeredRules.map((rule) => (
+                                    <span key={rule} className="tag-mono font-mono">
+                                      {rule}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
                   {/* Deterministic Metrics Table */}
                   {displayMetricEntries.length > 0 && (
                     <div>
@@ -664,14 +928,20 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                     : typeof v === 'number'
                                       ? k.includes('inr')
                                         ? formatInr(v)
-                                        : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
+                                        : k.endsWith('_pct')
+                                          ? `${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}%`
+                                          : v.toLocaleString('en-IN', { maximumFractionDigits: 3 })
                                       : typeof v === 'boolean'
                                         ? v
                                           ? 'Yes'
                                           : 'No'
-                                        : typeof v === 'object'
-                                          ? JSON.stringify(v)
-                                          : String(v)}
+                                        : Array.isArray(v)
+                                          ? v.length > 0
+                                            ? v.map((item) => String(item)).join(', ')
+                                            : 'None'
+                                          : typeof v === 'object'
+                                            ? JSON.stringify(v)
+                                            : String(v)}
                                 </td>
                               </tr>
                             ))}
@@ -856,6 +1126,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                         </div>
                         {finding.citations.map((cit, i) => {
                           const citHref = citationHref(cit, finding.artifact_sha256);
+                          const roleLabel = formatCitationRoleLabel(cit.role);
                           return (
                             <div
                               key={i}
@@ -866,16 +1137,26 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                                 fontSize: 13,
                               }}
                             >
-                              <div className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>
-                                {[
-                                  cit.title,
-                                  cit.source_locator,
-                                  cit.page != null ? `Page ${cit.page}` : null,
-                                  cit.para ? `Para ${cit.para}` : null,
-                                  cit.row_id != null ? `Row ${cit.row_id}` : null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(', ') || 'Source record excerpt'}
+                              <div className="drawer-citation-head">
+                                {roleLabel && (
+                                  <span className="drawer-citation-role">{roleLabel}</span>
+                                )}
+                                <span className="font-mono" style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                                  {[
+                                    cit.title,
+                                    cit.source_locator,
+                                    cit.page != null ? `Page ${cit.page}` : null,
+                                    cit.para ? `Para ${cit.para}` : null,
+                                    cit.row_id != null ? `Row ${cit.row_id}` : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(', ') || 'Source record excerpt'}
+                                </span>
+                                {cit.sha256 && (
+                                  <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                    sha256:{cit.sha256.slice(0, 10)}
+                                  </span>
+                                )}
                               </div>
                               {cit.excerpt && (
                                 <div style={{ color: 'var(--ink-primary)', fontStyle: 'italic' }}>
@@ -1116,7 +1397,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           marginBottom: 12,
                           padding: '10px 12px',
                           background: 'var(--red-bg)',
-                          border: '1px solid #E2B8B0',
+                          border: '1px solid var(--ep-disputed-bd)',
                           borderRadius: 6,
                           fontSize: 13,
                           color: 'var(--red)',
