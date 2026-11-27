@@ -47,11 +47,14 @@ from aiwatchdogs.hub.database import DB_INTEGRITY_ERRORS, Database, dumps_json, 
 from aiwatchdogs.hub.quorum import (
     CANONICAL_CHECKS,
     DEFAULT_REQUIRED_QUORUM,
+    IN_REVIEW_FINDING_STATUSES,
     LEGACY_CHECK_TO_CANONICAL as _LEGACY_CHECK_TO_CANONICAL,
+    REVIEWABLE_FINDING_STATUSES,
     VALID_CHECK_STATES,
     all_checks_passed as _all_checks_passed,
     build_attr_conflict_sql,
     check_pairwise_verifier_independence,
+    compute_project_progress,
     evaluate_pairwise_quorum,
     norm_attr,
     normalize_check_state as _quorum_normalize_check_state,
@@ -756,11 +759,24 @@ class DeskService:
         peer_checks_total: int = 0,
         peer_checks_done: int = 0,
         peer_checks_open: int = 0,
+        review_progress: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         planned = DeskService._planned_tasks(row)
         total = int(primary_total_tasks if primary_total_tasks is not None else (row["total_tasks"] or 0))
         completed = int(primary_completed_tasks if primary_completed_tasks is not None else (row["completed_tasks"] or 0))
-        progress_pct = round((completed / total) * 100.0, 1) if total > 0 else 0.0
+        rp = review_progress or {}
+        prog = compute_project_progress(
+            total_tasks=total,
+            completed_tasks=completed,
+            review_slots_required=int(rp.get("review_slots_required", 0)),
+            review_slots_done=int(rp.get("review_slots_done", 0)),
+            in_review_findings=max(int(peer_review_count or 0), int(rp.get("in_review_findings", 0))),
+            peer_checks_total=int(peer_checks_total),
+            peer_checks_done=int(peer_checks_done),
+            peer_checks_open=int(peer_checks_open),
+            required_reviews=int(rp.get("required_reviews", DEFAULT_REQUIRED_QUORUM) or DEFAULT_REQUIRED_QUORUM),
+        )
+        progress_pct = prog["progress_pct"]
         workload_inr = float(row["monetary_audited_inr"] or 0.0)
         uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
         qty_type = str(_row_get(row, "financial_quantity_type", "") or "")
@@ -802,6 +818,17 @@ class DeskService:
             "peer_checks_done": int(peer_checks_done),
             "peer_checks_open": int(peer_checks_open),
             "progress_pct": progress_pct,
+            "reviews_required": prog["reviews_required"],
+            "reviews_done": prog["reviews_done"],
+            "reviews_remaining": prog["reviews_remaining"],
+            "required_reviews": prog["required_reviews"],
+            "per_review_pct": prog["per_review_pct"],
+            "task_progress_pct": prog["task_progress_pct"],
+            "review_progress_pct": prog["review_progress_pct"],
+            "review_remaining_pct": prog["review_remaining_pct"],
+            "task_weight_pct": prog["task_weight_pct"],
+            "review_weight_pct": prog["review_weight_pct"],
+            "has_reviews_remaining": prog["has_reviews_remaining"],
             "verified_findings_count": int(row["verified_findings_count"] or 0),
             "peer_review_count": peer_review_count,
             "cleared_count": cleared_scans,
@@ -2906,6 +2933,58 @@ class DeskService:
             result[mid] = [it[3] for it in items]
         return result
 
+    @staticmethod
+    def _fetch_mission_review_progress(
+        conn: Any, *, mission_id: str | None = None
+    ) -> dict[str, dict[str, int]]:
+        """Aggregate independent peer-review slot completion per mission from live findings."""
+        dq = int(DEFAULT_REQUIRED_QUORUM)
+        req_expr = f"(CASE WHEN COALESCE(required_quorum, {dq}) > 0 THEN COALESCE(required_quorum, {dq}) ELSE {dq} END)"
+        in_review_sql = ", ".join(f"'{s}'" for s in IN_REVIEW_FINDING_STATUSES)
+        reviewable_sql = ", ".join(f"'{s}'" for s in REVIEWABLE_FINDING_STATUSES)
+        where_parts = [
+            "COALESCE(quarantined, 0) = 0",
+            f"status IN ({reviewable_sql})",
+        ]
+        params: list[Any] = []
+        if mission_id is not None:
+            where_parts.append("mission_id = ?")
+            params.append(mission_id)
+        where_sql = " AND ".join(where_parts)
+        rows = conn.execute(
+            f"""
+            SELECT mission_id,
+                   SUM(CASE WHEN status IN ({in_review_sql}) THEN 1 ELSE 0 END) AS in_review_findings,
+                   SUM({req_expr}) AS review_slots_required,
+                   SUM(
+                       CASE
+                           WHEN status IN ({in_review_sql}) THEN
+                               CASE
+                                   WHEN COALESCE(confirm_count, 0) < 0 THEN 0
+                                   WHEN COALESCE(confirm_count, 0) >= {req_expr} THEN {req_expr} - 1
+                                   ELSE COALESCE(confirm_count, 0)
+                               END
+                           ELSE {req_expr}
+                       END
+                   ) AS review_slots_done,
+                   MAX({req_expr}) AS max_required_quorum
+            FROM findings
+            WHERE {where_sql}
+            GROUP BY mission_id
+            """,
+            params,
+        ).fetchall()
+        out: dict[str, dict[str, int]] = {}
+        for r in rows:
+            mid = str(r["mission_id"])
+            out[mid] = {
+                "in_review_findings": int(r["in_review_findings"] or 0),
+                "review_slots_required": int(r["review_slots_required"] or 0),
+                "review_slots_done": int(r["review_slots_done"] or 0),
+                "required_reviews": int(r["max_required_quorum"] or dq),
+            }
+        return out
+
     def _fetch_missions_with_coverage(
         self, conn: Any
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -2925,13 +3004,13 @@ class DeskService:
             st = str(r["status"] or "")
             if int(r["is_pv"]) == 1:
                 pv_total_map[mid] = pv_total_map.get(mid, 0) + cnt
-                if st == "completed":
+                if st in ("completed", "settled"):
                     pv_done_map[mid] = pv_done_map.get(mid, 0) + cnt
                 elif st in ("queued", "claimed"):
                     pv_open_map[mid] = pv_open_map.get(mid, 0) + cnt
             else:
                 primary_total_map[mid] = primary_total_map.get(mid, 0) + cnt
-                if st == "completed":
+                if st in ("completed", "settled"):
                     primary_done_map[mid] = primary_done_map.get(mid, 0) + cnt
                 elif st == "queued":
                     queued_map[mid] = queued_map.get(mid, 0) + cnt
@@ -2945,6 +3024,7 @@ class DeskService:
                 "GROUP BY mission_id"
             ).fetchall()
         }
+        review_progress_map = self._fetch_mission_review_progress(conn)
         cleared_findings_map = {
             r["mission_id"]: int(r["c"])
             for r in conn.execute(
@@ -2977,6 +3057,7 @@ class DeskService:
                 peer_checks_total=pv_total_map.get(r["id"], 0),
                 peer_checks_done=pv_done_map.get(r["id"], 0),
                 peer_checks_open=pv_open_map.get(r["id"], 0),
+                review_progress=review_progress_map.get(str(r["id"])),
             )
             for r in rows
         ]
@@ -3426,6 +3507,7 @@ class DeskService:
         findings: list[dict[str, Any]],
         cleared_findings_count: int,
         counts: dict[str, int],
+        review_progress: dict[str, int] | None = None,
         pending_cache_writes: list[tuple[str, str, dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         methodology_code = str(mission_row["methodology_code"] or "").strip()
@@ -3437,9 +3519,26 @@ class DeskService:
         audits_done = completed_cnt
         checks_done = counts["checks_done"]
         checks_total = counts["checks_total"]
+        checks_open = counts.get("checks_open", int(mission.get("peer_checks_open") or 0))
         waiting_cnt = 0
         planned_cnt = len(mission.get("planned_tasks") or [])
-        pct_complete = round((completed_cnt / total_cnt) * 100.0, 2) if total_cnt > 0 else 0.0
+        rp = review_progress or {}
+        prog = compute_project_progress(
+            total_tasks=total_cnt,
+            completed_tasks=completed_cnt,
+            review_slots_required=int(rp.get("review_slots_required", mission.get("reviews_required") or 0)),
+            review_slots_done=int(rp.get("review_slots_done", mission.get("reviews_done") or 0)),
+            in_review_findings=max(int(mission.get("peer_review_count") or 0), int(rp.get("in_review_findings", 0))),
+            peer_checks_total=checks_total,
+            peer_checks_done=checks_done,
+            peer_checks_open=checks_open,
+            required_reviews=int(
+                rp.get("required_reviews")
+                or mission.get("required_reviews")
+                or DEFAULT_REQUIRED_QUORUM
+            ),
+        )
+        pct_complete = prog["pct_complete"]
 
         summary: dict[str, Any] = {
             "project_code": str(mission.get("project_code") or self.resolve_project_code(mission_row["slug"], methodology_code)),
@@ -3452,6 +3551,18 @@ class DeskService:
                 "planned": planned_cnt,
                 "total": total_cnt,
                 "pct_complete": pct_complete,
+                "task_pct_complete": prog["task_pct_complete"],
+                "task_progress_pct": prog["task_progress_pct"],
+                "review_progress_pct": prog["review_progress_pct"],
+                "review_remaining_pct": prog["review_remaining_pct"],
+                "task_weight_pct": prog["task_weight_pct"],
+                "review_weight_pct": prog["review_weight_pct"],
+                "required_reviews": prog["required_reviews"],
+                "per_review_pct": prog["per_review_pct"],
+                "reviews_required": prog["reviews_required"],
+                "reviews_done": prog["reviews_done"],
+                "reviews_remaining": prog["reviews_remaining"],
+                "has_reviews_remaining": prog["has_reviews_remaining"],
                 "audits_done": audits_done,
                 "audits_total": audits_total,
                 "checks_done": checks_done,
@@ -3729,13 +3840,13 @@ class DeskService:
                 st = str(r["status"] or "")
                 if int(r["is_pv"]) == 1:
                     pv_total += cnt
-                    if st == "completed":
+                    if st in ("completed", "settled"):
                         pv_done += cnt
                     elif st in ("queued", "claimed"):
                         pv_open += cnt
                 else:
                     primary_total += cnt
-                    if st == "completed":
+                    if st in ("completed", "settled"):
                         primary_done += cnt
                     elif st == "queued":
                         queued_cnt += cnt
@@ -3748,6 +3859,7 @@ class DeskService:
                     (mid,),
                 ).fetchone()["c"]
             )
+            review_progress = self._fetch_mission_review_progress(conn, mission_id=str(mid)).get(str(mid))
             cf_cnt = int(
                 conn.execute(
                     "SELECT COUNT(*) AS c FROM findings WHERE mission_id = ? "
@@ -3772,6 +3884,7 @@ class DeskService:
                 peer_checks_total=pv_total,
                 peer_checks_done=pv_done,
                 peer_checks_open=pv_open,
+                review_progress=review_progress,
             )
 
             source_ids = mission["source_ids"]
@@ -3850,7 +3963,9 @@ class DeskService:
                     "claimed": claimed_cnt,
                     "checks_total": pv_total,
                     "checks_done": pv_done,
+                    "checks_open": pv_open,
                 },
+                review_progress=review_progress,
                 pending_cache_writes=pending_cache_writes,
             )
 
@@ -5509,6 +5624,7 @@ class DeskService:
                 """
             ).fetchall()
             mission_unique_inr, _ = self._compute_coverage_summary(conn, mission_rows)
+            review_progress_map = self._fetch_mission_review_progress(conn)
             missions = [
                 {
                     "id": str(r["id"]),
@@ -5521,11 +5637,24 @@ class DeskService:
                     "source_ids": loads_json(r["source_ids_json"], []),
                     "status": str(r["status"]),
                     "is_demo_sample": str(r["data_mode"] or "") == "demo_sample",
-                    "progress_pct": round(
-                        (int(r["completed_tasks"] or 0) / int(r["total_tasks"] or 1)) * 100.0, 1
-                    )
-                    if int(r["total_tasks"] or 0) > 0
-                    else 0.0,
+                    "progress_pct": compute_project_progress(
+                        total_tasks=int(r["total_tasks"] or 0),
+                        completed_tasks=int(r["completed_tasks"] or 0),
+                        review_slots_required=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get("review_slots_required", 0)
+                        ),
+                        review_slots_done=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get("review_slots_done", 0)
+                        ),
+                        in_review_findings=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get("in_review_findings", 0)
+                        ),
+                        required_reviews=int(
+                            (review_progress_map.get(str(r["id"])) or {}).get(
+                                "required_reviews", DEFAULT_REQUIRED_QUORUM
+                            )
+                        ),
+                    )["progress_pct"],
                     "verified_findings_count": int(r["verified_findings_count"] or 0),
                     "unique_coverage_inr_cr": _inr_to_cr(mission_unique_inr.get(str(r["id"]), 0.0)),
                     "financial_quantity_type": str(_row_get(r, "financial_quantity_type", "") or ""),

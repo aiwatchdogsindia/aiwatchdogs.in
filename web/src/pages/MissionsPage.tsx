@@ -631,6 +631,13 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                         peerReview={
                           m.methodology_code !== WEBSITE_METHOD ? m.peer_review_count : undefined
                         }
+                        reviewsRequired={m.reviews_required}
+                        reviewsDone={m.reviews_done}
+                        reviewsRemaining={m.reviews_remaining}
+                        requiredReviews={m.required_reviews}
+                        peerChecksTotal={m.peer_checks_total}
+                        peerChecksDone={m.peer_checks_done}
+                        peerChecksOpen={m.peer_checks_open}
                       />
                     </div>
 

@@ -7,6 +7,10 @@
   --pv-done: #2F6B4F;
   --pv-done-strong: #138808;
   --pv-done-soft: #E8F3EC;
+  --pv-review: #C7771E;
+  --pv-review-stripe: #DA8E36;
+  --pv-review-soft: #FDF3E7;
+  --pv-review-border: #B96B16;
   --pv-claimed: #3B5998;
   --pv-claimed-soft: #EBF0FA;
   --pv-open: #DFCFAF;
@@ -120,7 +124,8 @@
   bottom: calc(100% + 8px);
   padding: 6px 10px;
   font-size: 12px;
-  white-space: nowrap;
+  max-width: min(420px, 88vw);
+  white-space: normal;
 }
 
 .pv-tooltip--left {
@@ -140,7 +145,9 @@
   top: -8px;
   left: 50%;
   transform: translate(-50%, -100%);
-  white-space: nowrap;
+  max-width: min(360px, 85vw);
+  white-space: normal;
+  text-align: center;
 }
 
 .pv-tooltip--bar {
@@ -277,6 +284,16 @@
   background: var(--pv-done);
 }
 
+.pv-compact-seg--review {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--pv-review),
+    var(--pv-review) 4px,
+    var(--pv-review-stripe) 4px,
+    var(--pv-review-stripe) 8px
+  );
+}
+
 .pv-compact-seg--claimed {
   background: var(--pv-claimed);
 }
@@ -401,6 +418,20 @@
   margin-top: 2px;
 }
 
+.pv-donut-sub--reviews {
+  font-size: 11px;
+  color: var(--pv-review-border);
+  margin-top: 1px;
+}
+
+.pv-weight-note {
+  margin: 8px 0 0;
+  padding: 0 10px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-4);
+}
+
 /* Legend List */
 .pv-legend-list {
   display: flex;
@@ -451,6 +482,11 @@
 
 .pv-swatch--completed {
   background: var(--pv-done);
+}
+
+.pv-swatch--review {
+  background: var(--pv-review);
+  border: 1px solid var(--pv-review-border);
 }
 
 .pv-swatch--claimed {
