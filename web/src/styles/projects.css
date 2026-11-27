@@ -2137,6 +2137,14 @@
   max-width: 240px;
 }
 
+.pv-p6-ministries-table tbody tr.pv-p6-ministry-row--interactive {
+  cursor: pointer;
+}
+
+.pv-p6-ministries-table tbody tr.pv-p6-ministry-row--interactive:hover .pv-ub-link {
+  text-decoration-color: var(--ink);
+}
+
 .pv-p6-lead-rec {
   white-space: nowrap;
 }
@@ -3388,6 +3396,12 @@
   .pv-p6-ministry-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .pv-p6-search-wrap {
+    flex: none;
+    width: 100%;
+    min-width: 0;
   }
 
   .pv-p6-search {

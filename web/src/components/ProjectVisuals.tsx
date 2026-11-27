@@ -3339,6 +3339,12 @@ export function p6FilterMinistries(
   });
 }
 
+/** Exact ministry prefix token matching every P6 task title (`"${ministry} · ..."`). */
+export function p6MinistryFilterQuery(ministry: string): string {
+  const clean = ministry.trim();
+  return clean ? `${clean} ·` : '';
+}
+
 function p6ShortText(text?: string | null, maxLen = 155): string {
   const clean = (text || '').replace(/\s+/g, ' ').trim();
   if (!clean) return '—';
@@ -3585,7 +3591,7 @@ function ParliamentsToDoListVisualizer({
               <button
                 type="button"
                 className="btn btn-secondary btn-xs"
-                onClick={() => onFilterTasks(anchor.assurance_ref || anchor.ministry)}
+                onClick={() => onFilterTasks(anchor.assurance_ref || p6MinistryFilterQuery(anchor.ministry))}
               >
                 Find task in queue
               </button>
@@ -3701,14 +3707,29 @@ function ParliamentsToDoListVisualizer({
                         const hasHouses =
                           (m.lok_sabha_tasks ?? 0) > 0 || (m.rajya_sabha_tasks ?? 0) > 0;
 
+                        const filterQuery = p6MinistryFilterQuery(m.ministry);
+
                         return (
-                          <tr key={m.ministry_key || m.ministry}>
+                          <tr
+                            key={m.ministry_key || m.ministry}
+                            className={onFilterTasks ? 'pv-p6-ministry-row--interactive' : undefined}
+                            onClick={
+                              onFilterTasks
+                                ? (e) => {
+                                    const target = e.target as HTMLElement | null;
+                                    if (target?.closest('a, button')) return;
+                                    if (window.getSelection?.()?.toString()) return;
+                                    onFilterTasks(filterQuery);
+                                  }
+                                : undefined
+                            }
+                          >
                             <th scope="row" className="pv-ub-year pv-p6-ministry-name">
                               {onFilterTasks ? (
                                 <button
                                   type="button"
                                   className="pv-ub-link"
-                                  onClick={() => onFilterTasks(m.ministry)}
+                                  onClick={() => onFilterTasks(filterQuery)}
                                   aria-label={`Show tasks for ${m.ministry}`}
                                 >
                                   {m.ministry}

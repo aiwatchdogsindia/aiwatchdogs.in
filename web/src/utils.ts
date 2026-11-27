@@ -533,3 +533,102 @@ export function extractAssuranceMetrics(
     signalCategory: metricStr(metrics, 'signal_category'),
   };
 }
+
+export interface FindingDrawerMetric {
+  label: string;
+  value: string;
+}
+
+export interface FindingCardMetric {
+  value: string;
+  prominent: boolean;
+}
+
+type FindingMetricSource = {
+  methodology_code: string;
+  monetary_exposure_inr?: number | null;
+  amount_label?: string | null;
+  anomaly_metrics?: Record<string, unknown> | null;
+  quarantined?: boolean;
+  status?: string;
+};
+
+/**
+ * Resolve the headline metric shown in FindingDrawer's metadata strip.
+ * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`
+ * (which is stored as 0 for non-monetary parliamentary assurances).
+ * Non-P6 findings retain their exact existing behavior.
+ */
+export function resolveFindingDrawerMetric(
+  finding: FindingMetricSource,
+): FindingDrawerMetric {
+  const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+  const p6Record =
+    finding.methodology_code === 'P6' && !isQuarantined
+      ? extractAssuranceMetrics(finding.anomaly_metrics)
+      : null;
+  const p6Status = p6Record?.recordedStatus
+    ? formatAssuranceStatus(p6Record.recordedStatus)
+    : null;
+
+  if (p6Status) {
+    return {
+      label: 'Recorded Status',
+      value: `${p6Status.label}${
+        p6Record?.daysElapsed != null
+          ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d`
+          : ''
+      }`,
+    };
+  }
+
+  return {
+    label: finding.amount_label
+      ? finding.amount_label.replace(/_/g, ' ')
+      : 'Reported Figure',
+    value:
+      finding.monetary_exposure_inr != null
+        ? formatInr(finding.monetary_exposure_inr)
+        : 'Disclosure Lead',
+  };
+}
+
+/**
+ * Resolve the top-right headline readout shown on FindingCard.
+ * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`.
+ * Non-P6 findings remain completely unchanged.
+ */
+export function resolveFindingCardMetric(
+  finding: FindingMetricSource,
+  withheldLabel = 'Withheld',
+): FindingCardMetric {
+  const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
+  if (isQuarantined) {
+    return { value: withheldLabel, prominent: false };
+  }
+
+  const p6Record =
+    finding.methodology_code === 'P6'
+      ? extractAssuranceMetrics(finding.anomaly_metrics)
+      : null;
+  const p6RightLabel = p6Record?.recordedStatus
+    ? `${formatAssuranceStatus(p6Record.recordedStatus).label}${
+        p6Record.daysElapsed != null
+          ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d`
+          : ''
+      }`
+    : null;
+
+  if (p6RightLabel) {
+    return { value: p6RightLabel, prominent: true };
+  }
+
+  if (finding.monetary_exposure_inr) {
+    return { value: formatInr(finding.monetary_exposure_inr), prominent: true };
+  }
+
+  return {
+    value: finding.amount_label || 'Disclosure lead',
+    prominent: false,
+  };
+}

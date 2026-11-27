@@ -3,11 +3,9 @@ import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from '
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
 import {
-  extractAssuranceMetrics,
-  formatAssuranceStatus,
-  formatInr,
   formatRelativeTime,
   isUnverifiedStatus,
+  resolveFindingCardMetric,
 } from '../utils';
 
 interface FindingCardProps {
@@ -29,15 +27,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     Boolean(finding.editorial_status && finding.editorial_status !== 'none') ||
     Boolean(finding.corrections && finding.corrections.length > 0);
   const isQuarantined = Boolean(finding.quarantined || finding.status === 'quarantined');
-  const p6Record =
-    finding.methodology_code === 'P6' && !isQuarantined
-      ? extractAssuranceMetrics(finding.anomaly_metrics)
-      : null;
-  const p6RightLabel = p6Record?.recordedStatus
-    ? `${formatAssuranceStatus(p6Record.recordedStatus).label}${
-        p6Record.daysElapsed != null ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d` : ''
-      }`
-    : null;
+  const cardMetric = resolveFindingCardMetric(finding, FINDING_TAGS.withheld.label);
 
   return (
     <article
@@ -96,14 +86,10 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           style={{
             fontSize: 13,
             fontWeight: 500,
-            color: finding.monetary_exposure_inr && !isQuarantined ? 'var(--ink)' : 'var(--ink-4)',
+            color: cardMetric.prominent ? 'var(--ink)' : 'var(--ink-4)',
           }}
         >
-          {isQuarantined
-            ? FINDING_TAGS.withheld.label
-            : finding.monetary_exposure_inr
-              ? formatInr(finding.monetary_exposure_inr)
-              : p6RightLabel || finding.amount_label || 'Disclosure lead'}
+          {cardMetric.value}
         </div>
       </div>
 

@@ -32,6 +32,7 @@ import {
   formatInr,
   formatRelativeTime,
   isOfficialGovUrl,
+  resolveFindingDrawerMetric,
   safeExternalUrl,
 } from '../utils';
 import { useToast } from './Toast';
@@ -258,6 +259,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
   const p6Status = p6Record?.recordedStatus
     ? formatAssuranceStatus(p6Record.recordedStatus)
     : null;
+  const drawerMetric = finding ? resolveFindingDrawerMetric(finding) : null;
   const displayMetricEntries = finding
     ? Object.entries(finding.anomaly_metrics).filter(
         ([k]) =>
@@ -460,22 +462,10 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       </div>
                       <div>
                         <div className="kicker" style={{ fontSize: 10.5 }}>
-                          {p6Status
-                            ? 'Recorded Status'
-                            : finding.amount_label
-                              ? finding.amount_label.replace(/_/g, ' ')
-                              : 'Reported Figure'}
+                          {drawerMetric?.label ?? 'Reported Figure'}
                         </div>
                         <div className="font-mono tabular" style={{ fontSize: 15.5, marginTop: 3 }}>
-                          {finding.monetary_exposure_inr != null
-                            ? formatInr(finding.monetary_exposure_inr)
-                            : p6Status
-                              ? `${p6Status.label}${
-                                  p6Record?.daysElapsed != null
-                                    ? ` · ${p6Record.daysElapsed.toLocaleString('en-IN')}d`
-                                    : ''
-                                }`
-                              : 'Disclosure Lead'}
+                          {drawerMetric?.value ?? 'Disclosure Lead'}
                         </div>
                       </div>
                       <div>

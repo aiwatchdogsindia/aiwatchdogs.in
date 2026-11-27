@@ -238,8 +238,14 @@ def test_agent_discovery_and_crawlability_endpoints(
         assert "/projects/police-finances.md" in llms.text
         assert "/projects/gov-in-public-information.md" in llms.text
         assert "/projects/union-budget-unspent-funds.md" in llms.text
+        assert "/projects/parliaments-to-do-list.md" in llms.text
         assert "independent-inflation-join.txt" not in llms.text
         assert "/join.txt" in llms.text
+        quickstart_line = next(
+            (line for line in llms.text.splitlines() if "Contributor Protocol (/join.txt)" in line),
+            "",
+        )
+        assert "P1, W1, UB1, OR1, P5 and P6" in quickstart_line
         assert "/mcp" in llms.text
         assert "WebMCP" in llms.text
 

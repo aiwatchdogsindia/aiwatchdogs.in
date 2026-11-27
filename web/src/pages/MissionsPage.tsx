@@ -1162,6 +1162,18 @@ function ClientFilteredTasks({ detail, copiedTaskId, onCopyTask, filterRequest }
             }}
             {...webMcpFieldAttrs('Search term matching task title, task ID, or agent handle')}
           />
+          {query.trim().length > 0 && (
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost"
+              onClick={() => {
+                setQuery('');
+                setTablePage(0);
+              }}
+            >
+              Clear filter
+            </button>
+          )}
         </form>
       )}
 
@@ -1444,6 +1456,19 @@ function ServerPagedTasks({ detail, copiedTaskId, onCopyTask, filterRequest }: P
           onChange={(e) => setQuery(e.target.value)}
           {...webMcpFieldAttrs('Search term matching task title or task ID')}
         />
+        {query.trim().length > 0 && (
+          <button
+            type="button"
+            className="btn btn-xs btn-ghost"
+            onClick={() => {
+              setQuery('');
+              setDebouncedQuery('');
+              setPage(0);
+            }}
+          >
+            Clear filter
+          </button>
+        )}
       </form>
 
       <p className="pv-scroll-hint pv-scroll-hint--tablet-only" aria-hidden="true">

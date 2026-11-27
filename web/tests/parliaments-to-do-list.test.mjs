@@ -223,3 +223,167 @@ test('API client normalizes P6 mission fallback code and citation role cleanly',
   assert.equal(finding.citations[0].title, 'Original Promise');
   assert.equal(finding.citations[0].excerpt, 'DPR initiated in January 2026.');
 });
+
+test('P6 drawer and card headline metrics show recorded status ahead of monetary_exposure_inr: 0 while leaving non-P6 unchanged', () => {
+  const pendingP6 = {
+    methodology_code: 'P6',
+    monetary_exposure_inr: 0,
+    amount_label: null,
+    anomaly_metrics: {
+      recorded_status: 'pending',
+      days_elapsed: 480,
+      original_promise: 'The Government is actively engaged with manuscript stakeholders.',
+    },
+  };
+  assert.deepEqual(utilsMod.resolveFindingDrawerMetric(pendingP6), {
+    label: 'Recorded Status',
+    value: 'Pending · 480d',
+  });
+  assert.deepEqual(utilsMod.resolveFindingCardMetric(pendingP6), {
+    value: 'Pending · 480d',
+    prominent: true,
+  });
+
+  const fulfilledP6 = {
+    methodology_code: 'P6',
+    monetary_exposure_inr: 0,
+    anomaly_metrics: {
+      recorded_status: 'FULLY IMPLEMENTED',
+      days_elapsed: null,
+    },
+  };
+  assert.deepEqual(utilsMod.resolveFindingDrawerMetric(fulfilledP6), {
+    label: 'Recorded Status',
+    value: 'Fully implemented',
+  });
+  assert.deepEqual(utilsMod.resolveFindingCardMetric(fulfilledP6), {
+    value: 'Fully implemented',
+    prominent: true,
+  });
+
+  // Even if monetary_exposure_inr were non-zero, P6 status still takes precedence
+  const droppedP6 = {
+    methodology_code: 'P6',
+    monetary_exposure_inr: 100000,
+    anomaly_metrics: {
+      recorded_status: 'DROPPED',
+      days_elapsed: 215,
+    },
+  };
+  assert.deepEqual(utilsMod.resolveFindingDrawerMetric(droppedP6), {
+    label: 'Recorded Status',
+    value: 'Dropped · 215d',
+  });
+  assert.deepEqual(utilsMod.resolveFindingCardMetric(droppedP6), {
+    value: 'Dropped · 215d',
+    prominent: true,
+  });
+
+  // Quarantined P6 finding stays withheld on card
+  assert.deepEqual(
+    utilsMod.resolveFindingCardMetric({ ...pendingP6, quarantined: true }, 'Withheld'),
+    { value: 'Withheld', prominent: false },
+  );
+
+  // Non-P6 findings remain completely unchanged
+  const p1Monetary = {
+    methodology_code: 'P1',
+    monetary_exposure_inr: 180_000_000,
+    amount_label: 'budget_variance',
+    anomaly_metrics: { pct_difference: -16.5 },
+  };
+  assert.deepEqual(utilsMod.resolveFindingDrawerMetric(p1Monetary), {
+    label: 'budget variance',
+    value: utilsMod.formatInr(180_000_000),
+  });
+  assert.deepEqual(utilsMod.resolveFindingCardMetric(p1Monetary), {
+    value: utilsMod.formatInr(180_000_000),
+    prominent: true,
+  });
+
+  const nonP6Zero = {
+    methodology_code: 'P5',
+    monetary_exposure_inr: 0,
+    amount_label: null,
+    anomaly_metrics: { single_teacher_schools: 120 },
+  };
+  assert.deepEqual(utilsMod.resolveFindingDrawerMetric(nonP6Zero), {
+    label: 'Reported Figure',
+    value: '₹0',
+  });
+  assert.deepEqual(utilsMod.resolveFindingCardMetric(nonP6Zero), {
+    value: 'Disclosure lead',
+    prominent: false,
+  });
+
+  const nonP6Null = {
+    methodology_code: 'W1',
+    monetary_exposure_inr: null,
+    amount_label: null,
+    anomaly_metrics: {},
+  };
+  assert.deepEqual(utilsMod.resolveFindingDrawerMetric(nonP6Null), {
+    label: 'Reported Figure',
+    value: 'Disclosure Lead',
+  });
+  assert.deepEqual(utilsMod.resolveFindingCardMetric(nonP6Null), {
+    value: 'Disclosure lead',
+    prominent: false,
+  });
+});
+
+test('p6MinistryFilterQuery formats exact `${ministry} ·` prefix and has zero substring collisions across all 1,000 P6 tasks', () => {
+  assert.equal(visualsMod.p6MinistryFilterQuery('Culture'), 'Culture ·');
+  assert.equal(
+    visualsMod.p6MinistryFilterQuery('  Road Transport and Highways  '),
+    'Road Transport and Highways ·',
+  );
+  assert.equal(visualsMod.p6MinistryFilterQuery('   '), '');
+
+  const projectPath = path.resolve(webDir, '../projects/parliaments-to-do-list.json');
+  const project = JSON.parse(fs.readFileSync(projectPath, 'utf8'));
+  const tasks = project.tasks;
+  assert.equal(tasks.length, 1000);
+
+  const byMinistry = new Map();
+  for (const t of tasks) {
+    const ministry = t.payload.context.parliaments_to_do_list.ministry;
+    assert.ok(
+      t.title.startsWith(`${ministry} · `),
+      `Task ${t.id} title ${JSON.stringify(t.title)} must start with "${ministry} · "`,
+    );
+    if (!byMinistry.has(ministry)) byMinistry.set(ministry, []);
+    byMinistry.get(ministry).push(t);
+  }
+  assert.equal(byMinistry.size, 56);
+
+  // Verify zero substring collisions across all 56 ministries using the same case-insensitive
+  // substring matching used by `desk.py` (`LOWER(t.title) LIKE '%needle%'`).
+  for (const [ministry, expectedTasks] of byMinistry.entries()) {
+    const needle = visualsMod.p6MinistryFilterQuery(ministry).toLowerCase();
+    const matched = tasks.filter(
+      (t) =>
+        t.title.toLowerCase().includes(needle) ||
+        String(t.id).toLowerCase().includes(needle),
+    );
+    assert.equal(
+      matched.length,
+      expectedTasks.length,
+      `Filter query ${JSON.stringify(needle)} matched ${matched.length} tasks instead of ${expectedTasks.length} for ${ministry}`,
+    );
+    for (const m of matched) {
+      assert.equal(m.payload.context.parliaments_to_do_list.ministry, ministry);
+    }
+  }
+
+  // Explicit regression check for the reported Culture vs Agriculture and Farmers Welfare collision
+  const cultureNeedle = visualsMod.p6MinistryFilterQuery('Culture').toLowerCase();
+  const cultureMatches = tasks.filter((t) => t.title.toLowerCase().includes(cultureNeedle));
+  assert.ok(cultureMatches.length > 0);
+  assert.equal(
+    cultureMatches.some((t) =>
+      t.payload.context.parliaments_to_do_list.ministry.includes('Agriculture'),
+    ),
+    false,
+  );
+});
