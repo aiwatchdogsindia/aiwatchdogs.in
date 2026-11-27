@@ -191,7 +191,7 @@ def test_or1_table_attribution_does_not_cross_flattened_rows() -> None:
 
 @pytest.mark.parametrize(
     "continuation",
-    ["none", "labeled", "contd", "compact-contd", "dash-contd", "captioned-contd", "split-with-blank",
+    ["none", "labeled", "contd", "compact-contd", "dash-contd", "captioned-contd", "dash-captioned-contd", "split-with-blank",
      "implicit", "third-labeled", "third-implicit"],
 )
 def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None:
@@ -211,6 +211,8 @@ def test_or1_flattened_recovery_table_requires_review(continuation: str) -> None
         current_page = "Annexure-X–Contd.\n" + affected_row
     elif continuation == "captioned-contd":
         current_page = "Annexure X: Recoveries at the instance of Audit\n(Contd.)\n" + affected_row
+    elif continuation == "dash-captioned-contd":
+        current_page = "Annexure X – Recoveries at the instance of Audit\n(Contd.)\n" + affected_row
     elif continuation == "split-with-blank":
         current_page = "Annexure X\n\n(Contd.)\n" + affected_row
     elif continuation.endswith("labeled"):
@@ -460,10 +462,12 @@ def test_or1_prose_attribution_keeps_quote_without_borrowing_subject_or_amount(i
         ("The road contract was valued at Rs 5 crore and one invoice of Rs 2.50 crore was paid twice.", 25_000_000.0),
         ("The same invoice was paid twice and the resulting overpayment was Rs 2.50 crore.", 25_000_000.0),
         ("The same invoice was paid twice for the road work and the overpayment was Rs 2.50 crore.", 25_000_000.0),
+        ("The same invoice was paid twice for the road work, and the overpayment was Rs 2.50 crore.", 25_000_000.0),
         ("The same invoice was paid twice for the road work and the invoice value was Rs 2.50 crore.", 0.0),
     ],
     ids=["one-exposure", "recovery-only", "competing-amounts", "prior-contract-value", "following-contract-value",
-         "contract-value-and-duplicate-amount", "linked-overpayment", "explicit-overpayment", "invoice-face-value"],
+         "contract-value-and-duplicate-amount", "linked-overpayment", "explicit-overpayment", "comma-overpayment",
+         "invoice-face-value"],
 )
 def test_or1_attribution_requires_one_exposure_amount(evidence: str, expected_amount: float) -> None:
     records, ctx = _or1_ctx(evidence)
@@ -557,7 +561,8 @@ def test_or1_links_repeated_summary_and_detail_without_losing_either_citation(
     )
     summary = (
         f"Report No. 17 of 2025\nxi\n{summary_heading}{quote}\n\n"
-        "Recommendation:\nMoP may reconcile connections.\n(Para 6.3.1.2)"
+        "Recommendation:\nMoP may reconcile connections. The Ministry should have a register of road payments.\n"
+        "(Para 6.3.1.2)"
     )
     opener = "Eastern Power Limited made an irregular payment for these works.\n" if detail_payer else ""
     detail = (
@@ -747,6 +752,7 @@ def test_or1_explicit_finding_actor_takes_precedence_over_section_opening_payer(
     ("evidence", "payer"),
     [
         ("The road contract cost Rs 5 crore and NTPC paid the same invoice twice for the road work.", "NTPC"),
+        ("The road contract cost Rs 5 crore, and NTPC paid the same invoice twice for the road work.", "NTPC"),
         ("NTPC paid for bridge works and NHPC paid the same invoice twice for the road work.", "NHPC"),
         ("Western Power Limited paid Rs 5 crore for the road contract and the same invoice was paid twice by NTPC.", "NTPC"),
         ("NTPC and NHPC paid the same invoice twice for the road work.", "Comptroller and Auditor General of India / PAC"),

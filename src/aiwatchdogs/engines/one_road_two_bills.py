@@ -53,7 +53,8 @@ _SUMMARY_REFERENCE_RE = re.compile(r"\(Para(?:graph)?\.?\s+(\d+(?:\.\d+)+)\)", r
 _RECOMMENDATION_HEADING_RE = re.compile(r"Recommendations?(?:\s*:\s*(.*))?", re.IGNORECASE)
 _RECOMMENDATION_SENTENCE_RE = re.compile(
     r"^(?:(?!(?:that|is|are|was|were|said|reported|stated|observed|found|noted|showed|revealed)\b)"
-    r"[\w’/-]+\s+){1,12}(?:may|should|must|shall)\b(?!\s+have\b)",
+    r"[\w’/-]+\s+){1,12}(?:may|should|must|shall)\b"
+    r"(?!\s+have\b(?!\s+(?:a|an|the|to)\b))",
     re.IGNORECASE,
 )
 _AMOUNT_FOOTNOTE_RE = re.compile(
@@ -259,7 +260,7 @@ _CLAUSE_BREAK_RE = re.compile(
 )
 # A new subject and finite verb can introduce a different payment within a sentence.
 _PAYMENT_CLAUSE_BREAK_RE = re.compile(
-    rf"{_CLAUSE_BREAK_RE.pattern}|(?P<coordinator>\s+(?:and|but|whereas|while)\s+)",
+    rf"(?P<comma>,)?\s+(?P<conjunction>and|but|whereas|while)\s+|{_CLAUSE_BREAK_RE.pattern}",
     re.IGNORECASE,
 )
 _INDEPENDENT_SUBJECT_RE = re.compile(
@@ -434,18 +435,22 @@ def _payment_clauses(sentence: str) -> Iterable[tuple[int, str]]:
     """Use the same clause boundaries for payer and amount attribution."""
     start = 0
     for marker in _PAYMENT_CLAUSE_BREAK_RE.finditer(sentence):
-        if marker["coordinator"]:
+        next_start = marker.end()
+        if marker["conjunction"]:
             right = sentence[marker.end():]
-            if not (_PAYMENT_ACTOR_RE.match(right) or _INDEPENDENT_SUBJECT_RE.match(right)):
+            if _PAYMENT_ACTOR_RE.match(right) or _INDEPENDENT_SUBJECT_RE.match(right):
+                remainder = sentence[start:]
+                actor_text = _PARAGRAPH_ITEM_RE.sub("", remainder.lstrip())
+                actor = _PAYMENT_ACTOR_RE.match(actor_text)
+                actor_offset = len(remainder) - len(actor_text)
+                if actor and marker.start() - start < actor_offset + actor.end():
+                    continue  # Keep compound payer names and coordinated payer subjects together.
+            elif marker["comma"]:
+                next_start = marker.start("conjunction")  # Keep the ordinary comma boundary.
+            else:
                 continue
-            remainder = sentence[start:]
-            actor_text = _PARAGRAPH_ITEM_RE.sub("", remainder.lstrip())
-            actor = _PAYMENT_ACTOR_RE.match(actor_text)
-            actor_offset = len(remainder) - len(actor_text)
-            if actor and marker.start() - start < actor_offset + actor.end():
-                continue  # Keep compound payer names and coordinated payer subjects together.
         yield start, sentence[start:marker.start()]
-        start = marker.end()
+        start = next_start
     yield start, sentence[start:]
 
 
@@ -543,9 +548,12 @@ def _table_heading(lines: list[str], index: int) -> tuple[re.Match[str] | None, 
     line = lines[index].strip()
     continuation = _CONTINUED_TABLE_RE.match(line)
     title = _table_title(line, continuation)
-    if not continuation and title and (title.end() == len(line) or line[title.end():].lstrip().startswith(":")):
-        following = next((raw.strip() for raw in lines[index + 1:] if raw.strip()), "")
-        return title, bool(_CONTINUATION_MARKER_RE.fullmatch(following))
+    if not continuation and title:
+        tail = line[title.end():].lstrip()
+        is_caption = tail.startswith(":") or (tail[:1] in ("-", "–", "—") and tail[1:2].isspace())
+        if not tail or is_caption:
+            following = next((raw.strip() for raw in lines[index + 1:] if raw.strip()), "")
+            return title, bool(_CONTINUATION_MARKER_RE.fullmatch(following))
     return title, bool(continuation)
 
 
