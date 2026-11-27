@@ -156,7 +156,10 @@ def test_fetch_budget_index_rejects_oversized_page() -> None:
 
 
 def test_fetch_budget_index_rejects_redirect_off_kerala_host() -> None:
+    requested: list[str] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
         if request.url.host == "www.finance.kerala.gov.in":
             return httpx.Response(
                 302, headers={"location": "https://example.com/not-kerala.html"}
@@ -165,12 +168,108 @@ def test_fetch_budget_index_rejects_redirect_off_kerala_host() -> None:
             200, headers={"content-type": "text/html"}, text="<html></html>"
         )
 
+    # Automatic redirect following is disabled even for an injected client.
     client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
     try:
         with pytest.raises(ValueError, match="non-Kerala"):
             kerala.fetch_kerala_budget_documents(client=client)
     finally:
         client.close()
+
+    # No request is ever made to the off-host redirect target.
+    assert requested == ["https://www.finance.kerala.gov.in/bdgtDcs.jsp"]
+    assert not any("example.com" in url for url in requested)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "https://example.com/not-kerala.html",
+        "http://www.finance.kerala.gov.in/bdgtDcs.jsp",
+        "https://127.0.0.1/admin",
+        "https://169.254.169.254/latest/meta-data/",
+        "https://[::1]/admin",
+        "https://localhost/admin",
+        "//evil.example.com/budget",
+    ],
+)
+def test_fetch_budget_index_blocked_redirect_makes_no_offhost_request(
+    location: str,
+) -> None:
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        if request.url.path == "/bdgtDcs.jsp":
+            return httpx.Response(302, headers={"location": location})
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, text="<html></html>"
+        )
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    try:
+        with pytest.raises(ValueError):
+            kerala.fetch_kerala_budget_documents(client=client)
+    finally:
+        client.close()
+
+    assert requested == ["https://www.finance.kerala.gov.in/bdgtDcs.jsp"]
+
+
+def test_fetch_budget_index_follows_same_host_redirect() -> None:
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        if request.url.host == "www.finance.kerala.gov.in":
+            return httpx.Response(
+                302,
+                headers={"location": "https://finance.kerala.gov.in/bdgtDcs.jsp"},
+            )
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, text=_INDEX_HTML
+        )
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
+    try:
+        documents = kerala.fetch_kerala_budget_documents(client=client)
+    finally:
+        client.close()
+
+    # Both hops are on official Kerala Finance hosts; the second is validated
+    # before it is requested.
+    assert requested == [
+        "https://www.finance.kerala.gov.in/bdgtDcs.jsp",
+        "https://finance.kerala.gov.in/bdgtDcs.jsp",
+    ]
+    assert len(documents) == 2
+
+
+def test_fetch_budget_index_rejects_excessive_redirects() -> None:
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(
+            302, headers={"location": "https://www.finance.kerala.gov.in/bdgtDcs.jsp"}
+        )
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), follow_redirects=False
+    )
+    try:
+        with pytest.raises(ValueError, match="maximum allowed redirects"):
+            kerala.fetch_kerala_budget_documents(client=client)
+    finally:
+        client.close()
+
+    # Only Kerala-host requests are ever issued, and only max_redirects + 1 of them.
+    assert all(
+        url.startswith("https://www.finance.kerala.gov.in/") for url in requested
+    )
+    assert len(requested) == kerala.MAX_INDEX_REDIRECTS + 1
 
 
 def test_load_budget_document_forces_pdf_and_passes_digest(

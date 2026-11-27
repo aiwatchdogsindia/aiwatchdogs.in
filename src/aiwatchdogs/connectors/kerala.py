@@ -39,6 +39,9 @@ KERALA_BUDGET_VIEWER_PATH: Final[str] = "includeWeb/fileViewer.jsp"
 KERALA_BUDGET_PUBLISHER: Final[str] = "Finance Department, Government of Kerala"
 KERALA_BUDGET_JURISDICTION: Final[str] = "State:Kerala"
 MAX_INDEX_BYTES: Final[int] = 5 * 1024 * 1024
+MAX_INDEX_REDIRECTS: Final[int] = 5
+
+_REDIRECT_STATUSES: Final[frozenset[int]] = frozenset({301, 302, 303, 307, 308})
 
 KERALA_BUDGET_SOURCE: Final[dict[str, Any]] = {
     "id": "src-kerala-finance",
@@ -245,30 +248,58 @@ def _read_index_html(
     url: str,
     *,
     max_bytes: int,
+    max_redirects: int = MAX_INDEX_REDIRECTS,
 ) -> tuple[str, str]:
-    with client.stream("GET", url, headers={"User-Agent": USER_AGENT}) as response:
-        response.raise_for_status()
-        final_url = _validate_kerala_finance_url(str(response.url))
-        content_type = response.headers.get("content-type", "").lower()
-        if (
-            content_type
-            and "html" not in content_type
-            and "text/plain" not in content_type
-        ):
-            raise ValueError(
-                f"Kerala budget index returned non-HTML content type {content_type!r}."
-            )
-        chunks: list[bytes] = []
-        total = 0
-        for chunk in response.iter_bytes():
-            total += len(chunk)
-            if total > max_bytes:
+    """Fetch the budget index with hop-by-hop redirect validation.
+
+    Automatic redirect following is disabled (both on the client we create and
+    per request, including for injected clients).  Every redirect destination is
+    validated against the official Kerala Finance hosts *before* any request is
+    made to it, so a redirect cannot steer the request to a blocked or private
+    host.
+    """
+    current_url = _validate_kerala_finance_url(url)
+    for _hop in range(max_redirects + 1):
+        with client.stream(
+            "GET",
+            current_url,
+            headers={"User-Agent": USER_AGENT},
+            follow_redirects=False,
+        ) as response:
+            if response.status_code in _REDIRECT_STATUSES:
+                location = response.headers.get("location", "").strip()
+                if not location:
+                    raise ValueError(
+                        f"Redirect response from {current_url} missing Location header."
+                    )
+                next_url = _validate_kerala_finance_url(urljoin(current_url, location))
+                current_url = next_url
+                continue
+            response.raise_for_status()
+            final_url = _validate_kerala_finance_url(str(response.url or current_url))
+            content_type = response.headers.get("content-type", "").lower()
+            if (
+                content_type
+                and "html" not in content_type
+                and "text/plain" not in content_type
+            ):
                 raise ValueError(
-                    f"Kerala budget index exceeds maximum allowed size of {max_bytes} bytes."
+                    f"Kerala budget index returned non-HTML content type {content_type!r}."
                 )
-            chunks.append(chunk)
-        encoding = response.encoding or "utf-8"
-        return b"".join(chunks).decode(encoding, errors="replace"), final_url
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(
+                        f"Kerala budget index exceeds maximum allowed size of {max_bytes} bytes."
+                    )
+                chunks.append(chunk)
+            encoding = response.encoding or "utf-8"
+            return b"".join(chunks).decode(encoding, errors="replace"), final_url
+    raise ValueError(
+        f"Kerala budget index exceeded maximum allowed redirects ({max_redirects})."
+    )
 
 
 def fetch_kerala_budget_documents(
@@ -279,15 +310,16 @@ def fetch_kerala_budget_documents(
 ) -> list[KeralaBudgetDocument]:
     """Fetch and parse the live Kerala Finance Department budget index.
 
-    ``client`` is injectable for offline tests.  Redirects are followed only to
-    the same official Kerala Finance hosts.
+    ``client`` is injectable for offline tests.  Automatic redirect following is
+    disabled; every redirect destination is validated against the official
+    Kerala Finance hosts before any request is made to it.
     """
     landing = _validate_kerala_finance_url(KERALA_BUDGET_LANDING_URL)
     owns_client = client is None
     if client is None:
         client = httpx.Client(
             headers={"User-Agent": USER_AGENT},
-            follow_redirects=True,
+            follow_redirects=False,
             timeout=timeout,
         )
     try:
