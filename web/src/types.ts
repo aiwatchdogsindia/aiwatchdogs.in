@@ -742,6 +742,35 @@ export interface PaginatedFindings {
   has_more: boolean;
 }
 
+export interface FindingPatternItem {
+  id: string;
+  label: string;
+  fiscal_year: string;
+  amount_inr: number;
+}
+
+export interface FindingPattern {
+  key: string;
+  mission_slug: string;
+  mission_title: string;
+  methodology_code: string;
+  group: string;
+  group_kind: 'department' | 'jurisdiction';
+  count: number;
+  total_inr: number;
+  fy_from: string;
+  fy_to: string;
+  jurisdiction_count: number;
+  items: FindingPatternItem[];
+}
+
+export interface FindingPatterns {
+  patterns: FindingPattern[];
+  pattern_count: number;
+  finding_count: number;
+  total_inr: number;
+}
+
 export interface WhisperItem {
   id?: string | number;
   event_id?: number;

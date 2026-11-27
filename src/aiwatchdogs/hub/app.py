@@ -1045,6 +1045,14 @@ def create_app(
             offset=offset,
         )
 
+    @application.get("/api/findings/patterns")
+    def api_finding_patterns(
+        response: Response,
+        limit: int = Query(default=40, ge=1, le=100),
+    ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        return desk.finding_patterns(limit=limit)
+
     @application.get("/api/findings/{finding_id}")
     def api_finding_detail(finding_id: str, response: Response) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE

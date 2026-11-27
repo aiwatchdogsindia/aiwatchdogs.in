@@ -18,6 +18,7 @@ import type {
   MissionItem,
   MissionRung,
   MissionTask,
+  FindingPatterns,
   PaginatedFindings,
   PeerVerification,
   ProjectTaskKindFilter,
@@ -913,11 +914,16 @@ export const api = {
     };
   },
 
+  async getFindingPatterns(): Promise<FindingPatterns> {
+    return fetchJson<FindingPatterns>('/api/findings/patterns');
+  },
+
   async getFindings(
     params: {
       status?: string;
       pillar?: string;
       methodology?: string;
+      mission?: string;
       search?: string;
       limit?: number;
       offset?: number;
@@ -927,6 +933,7 @@ export const api = {
     if (params.status) sp.set('status', params.status);
     if (params.pillar) sp.set('pillar', params.pillar);
     if (params.methodology) sp.set('methodology', params.methodology);
+    if (params.mission) sp.set('mission', params.mission);
     if (params.search) sp.set('search', params.search);
     if (params.limit != null) sp.set('limit', String(params.limit));
     if (params.offset != null) sp.set('offset', String(params.offset));

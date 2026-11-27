@@ -205,6 +205,8 @@ _TASK_LIST_COLUMNS_PG_COMPACT = (
 # Lightweight columns for finding list endpoints (/api/findings, /api/head, /api/missions/{slug}).
 # Heavy dossier blobs (citations_json, agent_trace_json, benign_explanations_json, source_locator_json,
 # editorial_interpretation) are fetched on demand by GET /api/findings/{finding_id}.
+_PATTERN_DEPT_RE = re.compile(r"^(.*\S)\s*\(((?:Department|Ministry|Dept\.?)\b[^()]*)\)\s*$", re.IGNORECASE)
+
 _FINDING_SUMMARY_COLUMNS = (
     "id, mission_id, mission_slug, pillar, task_id, artifact_id, source_id, "
     "title, summary, methodology_code, entity_name, jurisdiction, fiscal_year, "
@@ -4338,6 +4340,81 @@ class DeskService:
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }
+
+    def finding_patterns(self, *, limit: int = 40) -> dict[str, Any]:
+        eff_limit = max(1, min(int(limit), 100))
+        now = time.monotonic()
+        cached = getattr(self, "_patterns_cache", None)
+        if cached and cached[0] == eff_limit and now - cached[1] < 120:
+            return cached[2]
+        with self.db.read() as conn:
+            titles = {
+                str(r["slug"]): str(r["title"])
+                for r in conn.execute("SELECT slug, title FROM missions").fetchall()
+            }
+            rows = conn.execute(
+                "SELECT id, mission_slug, methodology_code, entity_name, jurisdiction, fiscal_year, "
+                "monetary_exposure_inr FROM findings "
+                "WHERE status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0"
+            ).fetchall()
+        groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for r in rows:
+            entity = str(r["entity_name"] or "").strip()
+            jurisdiction = str(r["jurisdiction"] or "").strip()
+            match = _PATTERN_DEPT_RE.match(entity)
+            if match:
+                label, group, kind = match.group(1).strip(), match.group(2).strip(), "department"
+            else:
+                label, group, kind = entity, jurisdiction or entity, "jurisdiction"
+            key = (str(r["mission_slug"]), str(r["methodology_code"]).upper(), group)
+            g = groups.get(key)
+            if g is None:
+                g = groups[key] = {
+                    "key": "|".join(key),
+                    "mission_slug": key[0],
+                    "mission_title": titles.get(key[0], key[0]),
+                    "methodology_code": key[1],
+                    "group": group,
+                    "group_kind": kind,
+                    "count": 0,
+                    "total_inr": 0.0,
+                    "fiscal_years": set(),
+                    "jurisdictions": set(),
+                    "items": [],
+                }
+            amount = float(r["monetary_exposure_inr"] or 0.0)
+            g["count"] += 1
+            g["total_inr"] += amount
+            if r["fiscal_year"]:
+                g["fiscal_years"].add(str(r["fiscal_year"]))
+            if jurisdiction:
+                g["jurisdictions"].add(jurisdiction)
+            g["items"].append(
+                {
+                    "id": str(r["id"]),
+                    "label": label or entity,
+                    "fiscal_year": str(r["fiscal_year"] or ""),
+                    "amount_inr": amount,
+                }
+            )
+        ordered = sorted(groups.values(), key=lambda g: (-g["total_inr"], -g["count"], g["key"]))
+        patterns = []
+        for g in ordered[:eff_limit]:
+            years = sorted(g.pop("fiscal_years"))
+            g["fy_from"] = years[0] if years else ""
+            g["fy_to"] = years[-1] if years else ""
+            g["jurisdiction_count"] = len(g.pop("jurisdictions"))
+            g["items"] = sorted(g["items"], key=lambda it: (-it["amount_inr"], it["id"]))[:8]
+            g["total_inr"] = round(g["total_inr"], 2)
+            patterns.append(g)
+        result = {
+            "patterns": patterns,
+            "pattern_count": len(groups),
+            "finding_count": len(rows),
+            "total_inr": round(sum(float(r["monetary_exposure_inr"] or 0.0) for r in rows), 2),
+        }
+        self._patterns_cache = (eff_limit, now, result)
+        return result
 
     def list_findings(
         self,

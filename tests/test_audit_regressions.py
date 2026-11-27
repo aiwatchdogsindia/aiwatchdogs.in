@@ -2331,3 +2331,43 @@ def test_durable_events_sse_replay_findings_pagination_event_scores_and_join_sh(
             assert sh_check.returncode == 0, sh_check.stderr
     finally:
         app.state.db.close()
+
+
+def test_finding_patterns_group_confirmed_findings_by_department(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "patterns.db", seed=True)
+    try:
+        with TestClient(app) as client:
+            agent = _register(client, "pattern-agent")
+            ids = []
+            for slug in ("assam-ocds-single-bid", "assam-gfr-split-tendering", "ocds-vendor-concentration"):
+                ids.append(_submit_clean_finding(client, agent, preferred_mission=slug)[1])
+            assert client.get("/api/findings/patterns").json()["finding_count"] == 0
+
+            with app.state.db.transaction() as conn:
+                conn.execute(
+                    "UPDATE findings SET status = 'verified', entity_name = ?, monetary_exposure_inr = ? WHERE id = ?",
+                    ("Scheme A (Department of Higher Education)", 5_00_00_000.0, ids[0]),
+                )
+                conn.execute(
+                    "UPDATE findings SET status = 'verified', entity_name = ?, monetary_exposure_inr = ?, "
+                    "mission_slug = (SELECT mission_slug FROM findings WHERE id = ?), "
+                    "methodology_code = (SELECT methodology_code FROM findings WHERE id = ?) WHERE id = ?",
+                    ("Scheme B (Department of Higher Education)", 9_00_00_000.0, ids[0], ids[0], ids[1]),
+                )
+            app.state.desk._patterns_cache = None
+
+            resp = client.get("/api/findings/patterns")
+            assert resp.status_code == 200
+            assert "s-maxage=60" in resp.headers["cache-control"]
+            body = resp.json()
+            assert body["finding_count"] == 2
+            assert body["pattern_count"] == 1
+            top = body["patterns"][0]
+            assert top["group"] == "Department of Higher Education"
+            assert top["group_kind"] == "department"
+            assert top["count"] == 2
+            assert top["total_inr"] == 14_00_00_000.0
+            assert [it["label"] for it in top["items"]] == ["Scheme B", "Scheme A"]
+            assert client.get(f"/api/findings/{ids[0]}").status_code == 200
+    finally:
+        app.state.db.close()
