@@ -627,6 +627,12 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                     errors.append(
                         f"{where}.id tier '{id_match.group(1)}' does not match payload.context.sovereign_lies.jurisdiction_level '{jlevel}'."
                     )
+            if isinstance(p8_spec, dict):
+                sec_role = str(p8_spec.get("secondary_role") or "").strip()
+                if sec_role and sec_url in (None, ""):
+                    errors.append(
+                        f"{where}.payload.secondary_url is required when payload.context.sovereign_lies.secondary_role is '{sec_role}'."
+                    )
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [

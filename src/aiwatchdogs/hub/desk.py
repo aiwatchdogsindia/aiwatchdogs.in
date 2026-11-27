@@ -5199,7 +5199,6 @@ class DeskService:
             item = raw_jlevels.get(lvl)
             if isinstance(item, dict):
                 by_jurisdiction_level[lvl]["tasks"] = int(item.get("tasks") or 0)
-                by_jurisdiction_level[lvl]["cleared"] = int(item.get("cleared") or 0)
 
         by_mechanism: dict[str, dict[str, int]] = {
             m: {"tasks": 0, "leads": 0}
@@ -5273,7 +5272,7 @@ class DeskService:
                 "tasks": int(jitem.get("tasks") or 0),
                 "done": 0,
                 "leads": 0,
-                "cleared": int(jitem.get("cleared") or 0),
+                "cleared": 0,
                 "flagged_inr_cr": 0.0,
             }
 
@@ -5375,7 +5374,6 @@ class DeskService:
                     t_spec = t_ctx.get("sovereign_lies") if isinstance(t_ctx.get("sovereign_lies"), dict) else {}
                     if not t_spec:
                         continue
-                    is_done = str(tr["status"] or "") == "completed"
                     mech = str(t_spec.get("walkback_mechanism") or "").strip().lower()
                     imp = str(t_spec.get("retroactive_impact") or "").strip().lower()
                     cat = str(t_spec.get("scheme_category") or "").strip().lower()
@@ -5393,8 +5391,6 @@ class DeskService:
                         by_retroactive_impact[imp] += 1
                     if cat in categories_map:
                         categories_map[cat]["tasks"] += 1
-                        if is_done:
-                            categories_map[cat]["done"] += 1
                     j_entry = jurisdictions_map.setdefault(
                         jur,
                         {
@@ -5409,8 +5405,6 @@ class DeskService:
                         },
                     )
                     j_entry["tasks"] += 1
-                    if is_done:
-                        j_entry["done"] += 1
                     if sslug == "sovereign-gold-bond" or bool(t_spec.get("is_sgb_anchor")):
                         db_sgb_tasks += 1
                     if sname and sslug:
@@ -5456,6 +5450,46 @@ class DeskService:
                             "secondary_url": str(t_payload.get("secondary_url") or "") or None,
                             "portal_url": str(t_payload.get("source_landing_page") or ""),
                         }
+
+            # Always aggregate live completed-task progress (`done` and `cleared`) into categories & jurisdictions
+            # regardless of whether coverage.json is present (never rely on stale coverage.json execution counts).
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 1500",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = t_ctx.get("sovereign_lies") if isinstance(t_ctx.get("sovereign_lies"), dict) else {}
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                cat = str(t_spec.get("scheme_category") or "").strip().lower()
+                if cat in categories_map:
+                    categories_map[cat]["done"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                s_ut = t_spec.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(
+                    jur,
+                    {
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                        "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                j_entry["done"] += 1
+                if is_cleared_task:
+                    j_entry["cleared"] += 1
         else:
             for lvl in ("union", "state", "ut"):
                 by_jurisdiction_level[lvl]["open"] = by_jurisdiction_level[lvl]["tasks"]

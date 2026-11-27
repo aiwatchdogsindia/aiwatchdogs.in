@@ -167,6 +167,7 @@ class _TokenVerification:
     all_matched: bool
     matched_tokens: list[str]
     missing_tokens: list[str]
+    best_doc_role: str
     best_locator: str
     best_page: int | None
     excerpt: str
@@ -446,6 +447,7 @@ def _verify_evidence_tokens(
             all_matched=False,
             matched_tokens=[],
             missing_tokens=list(tokens),
+            best_doc_role="",
             best_locator="",
             best_page=None,
             excerpt="",
@@ -467,6 +469,7 @@ def _verify_evidence_tokens(
             all_matched=False,
             matched_tokens=[],
             missing_tokens=missing,
+            best_doc_role="",
             best_locator="",
             best_page=None,
             excerpt="",
@@ -492,6 +495,7 @@ def _verify_evidence_tokens(
         all_matched=(len(missing) == 0),
         matched_tokens=matched,
         missing_tokens=missing,
+        best_doc_role=best_seg.doc_role,
         best_locator=best_seg.locator,
         best_page=best_seg.page,
         excerpt=excerpt,
@@ -600,6 +604,26 @@ def run_p8_sovereign_lies(
             0,
             0.0,
             f"P8 unevaluable ({case_key}): unrecognized walkback_mechanism or retroactive_impact.",
+            meta,
+        )
+
+    if (walkback_mechanism == "grandfathered_or_honored") != (retroactive_impact == "grandfathered_or_honored"):
+        meta.update(
+            {
+                "verdict": "unevaluable",
+                "unevaluable_count": 1,
+                "reason": "mismatched_grandfathered_pair",
+                "case_key": case_key,
+            }
+        )
+        return (
+            [],
+            0,
+            0.0,
+            (
+                f"P8 unevaluable ({case_key}): walkback_mechanism and retroactive_impact must both be "
+                "'grandfathered_or_honored' or neither."
+            ),
             meta,
         )
 
@@ -719,26 +743,20 @@ def run_p8_sovereign_lies(
     if has_secondary and secondary_role == "promise_document":
         promise_segments = secondary_segments
         walkback_segments = primary_segments
-        promise_uses_secondary = True
-        walkback_uses_secondary = False
     elif has_secondary and secondary_role in {"", "walkback_document"}:
         promise_segments = primary_segments
         walkback_segments = secondary_segments
-        promise_uses_secondary = False
-        walkback_uses_secondary = True
     elif has_secondary and secondary_role == "corroborating_record":
         promise_segments = primary_segments + secondary_segments
         walkback_segments = primary_segments + secondary_segments
-        promise_uses_secondary = False
-        walkback_uses_secondary = True
     else:
         promise_segments = primary_segments
         walkback_segments = primary_segments
-        promise_uses_secondary = False
-        walkback_uses_secondary = False
 
     promise_ver = _verify_evidence_tokens(promise_tokens, promise_segments, preferred_page=promise_page_hint)
     walkback_ver = _verify_evidence_tokens(walkback_tokens, walkback_segments, preferred_page=walkback_page_hint)
+    promise_uses_secondary = promise_ver.best_doc_role == "secondary"
+    walkback_uses_secondary = walkback_ver.best_doc_role == "secondary"
 
     if promise_ver.total_chars < MIN_READABLE_DOC_CHARS or walkback_ver.total_chars < MIN_READABLE_DOC_CHARS:
         meta.update(
@@ -892,6 +910,9 @@ def run_p8_sovereign_lies(
         days_from_promise_to_walkback=days_between,
     )
 
+    safe_promise_tokens = [clean_scheme_text(t, max_len=120) for t in promise_ver.matched_tokens]
+    safe_walkback_tokens = [clean_scheme_text(t, max_len=120) for t in walkback_ver.matched_tokens]
+
     if not flagged:
         cleared_summary = clean_scheme_text(
             f"P8 cleared ({case_key}, grandfathered_or_honored): {scheme_name} ({jurisdiction}) — "
@@ -906,8 +927,8 @@ def run_p8_sovereign_lies(
                 "scheme_slug": scheme_slug,
                 "walkback_mechanism": walkback_mechanism,
                 "retroactive_impact": retroactive_impact,
-                "promise_tokens_matched": promise_ver.matched_tokens,
-                "walkback_tokens_matched": walkback_ver.matched_tokens,
+                "promise_tokens_matched": safe_promise_tokens,
+                "walkback_tokens_matched": safe_walkback_tokens,
                 "unevaluable_count": 0,
             }
         )
@@ -925,9 +946,9 @@ def run_p8_sovereign_lies(
     official_publisher = clean_scheme_text(ctx.get("official_publisher") or authority, max_len=200)
 
     promise_url = (secondary_url if promise_uses_secondary and secondary_url else retrieval_url) or landing_url
-    promise_sha = expected_sec_sha if (promise_uses_secondary and expected_sec_sha) else expected_sha
+    promise_sha = expected_sec_sha if promise_uses_secondary else expected_sha
     walkback_url = (secondary_url if walkback_uses_secondary and secondary_url else retrieval_url) or landing_url
-    walkback_sha = expected_sec_sha if (walkback_uses_secondary and expected_sec_sha) else expected_sha
+    walkback_sha = expected_sec_sha if walkback_uses_secondary else expected_sha
 
     section_hint = clean_scheme_text(selector.get("section_hint"), max_len=120)
     promise_locator = promise_ver.best_locator + (f"; {section_hint}" if section_hint else "")
@@ -1055,13 +1076,13 @@ def run_p8_sovereign_lies(
             "promise_document_ref": promise_document_ref,
             "promise_excerpt": promise_ver.excerpt,
             "promise_locator": promise_locator,
-            "promise_tokens_matched": promise_ver.matched_tokens,
+            "promise_tokens_matched": safe_promise_tokens,
             "walkback_date": walkback_date_iso,
             "walkback_summary": walkback_summary,
             "walkback_document_ref": walkback_document_ref,
             "walkback_excerpt": walkback_ver.excerpt,
             "walkback_locator": walkback_locator,
-            "walkback_tokens_matched": walkback_ver.matched_tokens,
+            "walkback_tokens_matched": safe_walkback_tokens,
             "walkback_mechanism": walkback_mechanism,
             "retroactive_impact": retroactive_impact,
             "days_from_promise_to_walkback": days_between,
@@ -1137,30 +1158,54 @@ def validate_context(ctx: Any, where: str) -> list[str]:
             f"{where}.payload.context.sovereign_lies.jurisdiction_level must be one of {sorted(VALID_JURISDICTION_LEVELS)}."
         )
 
+    state_or_ut = spec.get("state_or_ut")
+    clean_state_or_ut = state_or_ut.strip() if isinstance(state_or_ut, str) else ""
+    if jlevel in {"state", "ut"}:
+        if not isinstance(state_or_ut, str) or not clean_state_or_ut or len(state_or_ut) > 80:
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.state_or_ut is required (<= 80 chars) for state/ut tasks."
+            )
+        elif scan_forbidden_terms(clean_state_or_ut):
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.state_or_ut contains prohibited non-neutral terminology."
+            )
+    elif jlevel == "union":
+        if state_or_ut is not None:
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.state_or_ut must be null when jurisdiction_level is 'union'."
+            )
+    elif state_or_ut is not None and (not isinstance(state_or_ut, str) or len(state_or_ut) > 80):
+        errors.append(f"{where}.payload.context.sovereign_lies.state_or_ut must be null or a short string.")
+
     jur = spec.get("jurisdiction")
     if not isinstance(jur, str) or not jur.strip() or len(jur) > 120:
         errors.append(f"{where}.payload.context.sovereign_lies.jurisdiction must be non-empty text (<= 120 chars).")
+    elif scan_forbidden_terms(jur):
+        errors.append(
+            f"{where}.payload.context.sovereign_lies.jurisdiction contains prohibited non-neutral terminology."
+        )
     elif jlevel == "union" and jur.strip() != "Union of India":
         errors.append(
             f"{where}.payload.context.sovereign_lies.jurisdiction must be 'Union of India' when jurisdiction_level is 'union'."
         )
-    elif jlevel == "state" and not jur.strip().startswith("State:"):
-        errors.append(
-            f"{where}.payload.context.sovereign_lies.jurisdiction must start with 'State:' when jurisdiction_level is 'state'."
-        )
-    elif jlevel == "ut" and not jur.strip().startswith("UT:"):
-        errors.append(
-            f"{where}.payload.context.sovereign_lies.jurisdiction must start with 'UT:' when jurisdiction_level is 'ut'."
-        )
-
-    state_or_ut = spec.get("state_or_ut")
-    if jlevel in {"state", "ut"}:
-        if not isinstance(state_or_ut, str) or not state_or_ut.strip() or len(state_or_ut) > 80:
+    elif jlevel == "state":
+        if not jur.strip().startswith("State:") or not jur.strip()[6:].strip():
             errors.append(
-                f"{where}.payload.context.sovereign_lies.state_or_ut is required (<= 80 chars) for state/ut tasks."
+                f"{where}.payload.context.sovereign_lies.jurisdiction must be 'State:<Name>' when jurisdiction_level is 'state'."
             )
-    elif state_or_ut is not None and (not isinstance(state_or_ut, str) or len(state_or_ut) > 80):
-        errors.append(f"{where}.payload.context.sovereign_lies.state_or_ut must be null or a short string.")
+        elif clean_state_or_ut and jur.strip() != f"State:{clean_state_or_ut}":
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.jurisdiction ('{jur.strip()}') must match 'State:{clean_state_or_ut}'."
+            )
+    elif jlevel == "ut":
+        if not jur.strip().startswith("UT:") or not jur.strip()[3:].strip():
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.jurisdiction must be 'UT:<Name>' when jurisdiction_level is 'ut'."
+            )
+        elif clean_state_or_ut and jur.strip() != f"UT:{clean_state_or_ut}":
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.jurisdiction ('{jur.strip()}') must match 'UT:{clean_state_or_ut}'."
+            )
 
     scat = spec.get("scheme_category")
     if scat not in VALID_SCHEME_CATEGORIES:
@@ -1263,6 +1308,10 @@ def validate_context(ctx: Any, where: str) -> list[str]:
                 f"{where}.payload.context.sovereign_lies.{tok_field} must list {MIN_EVIDENCE_TOKENS} to "
                 f"{MAX_EVIDENCE_TOKENS} verbatim documentary tokens (each 3..120 chars)."
             )
+        elif any(scan_forbidden_terms(t) for t in toks):
+            errors.append(
+                f"{where}.payload.context.sovereign_lies.{tok_field} contains prohibited non-neutral terminology."
+            )
 
     exp_raw = spec.get("estimated_exposure_inr")
     if exp_raw is not None:
@@ -1310,8 +1359,13 @@ def validate_context(ctx: Any, where: str) -> list[str]:
                         f"{where}.payload.context.sovereign_lies.record_selector.{pkey} must be a positive page integer (1..5000)."
                     )
             shint = selector.get("section_hint")
-            if shint not in (None, "") and (not isinstance(shint, str) or len(shint) > 120):
-                errors.append(f"{where}.payload.context.sovereign_lies.record_selector.section_hint must be <= 120 chars.")
+            if shint not in (None, ""):
+                if not isinstance(shint, str) or len(shint) > 120:
+                    errors.append(f"{where}.payload.context.sovereign_lies.record_selector.section_hint must be <= 120 chars.")
+                elif scan_forbidden_terms(shint):
+                    errors.append(
+                        f"{where}.payload.context.sovereign_lies.record_selector.section_hint contains prohibited non-neutral terminology."
+                    )
             rurl = selector.get("record_url")
             if rurl not in (None, ""):
                 try:

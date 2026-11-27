@@ -665,6 +665,99 @@ def test_p8_loader_html_visible_text_and_promise_document_role(tmp_path: Path) -
     assert cits["subsequent_walkback"]["sha256"] == html_sha
 
 
+def test_p8_corroborating_record_provenance_and_mismatched_grandfathered_fail_closed() -> None:
+    # Fix 1: In corroborating_record mode, citation URL/SHA/page must derive from the actual matched doc_role!
+    # Here, primary (page 7) contains walk-back tokens and secondary (page 3) contains promise tokens.
+    corrob_spec = _sample_sgb_spec(
+        secondary_role="corroborating_record",
+        record_selector=None,
+    )
+    records = [
+        {
+            "document": "primary",
+            "page": 7,
+            "raw_text": (
+                "Union Budget 2026-27 Memorandum: Finance Bill 2026 limits Sovereign Gold Bond capital gains "
+                "exemption strictly to the original subscriber holding continuously until maturity."
+            ),
+        },
+        {
+            "document": "secondary",
+            "page": 3,
+            "raw_text": (
+                "Finance Act 2016 Section 47(viic): transfer by way of redemption of Sovereign Gold Bond "
+                "by an individual enjoys full capital gains tax exemption at maturity."
+            ),
+            "secondary_sha256": "b" * 64,
+        },
+    ]
+    res = run_engine(
+        "P8",
+        records,
+        context={
+            "sovereign_lies": corrob_spec,
+            "retrieval_url": "https://www.indiabudget.gov.in/primary_walkback.pdf",
+            "secondary_url": "https://www.rbi.org.in/secondary_promise.pdf",
+            "expected_sha256": "a" * 64,
+            "secondary_expected_sha256": "b" * 64,
+        },
+    )
+    assert len(res.leads) == 1
+    cits = {c["role"]: c for c in res.leads[0].citations}
+    assert cits["original_promise"]["source_url"] == "https://www.rbi.org.in/secondary_promise.pdf"
+    assert cits["original_promise"]["sha256"] == "b" * 64
+    assert cits["original_promise"]["page"] == 3
+    assert cits["subsequent_walkback"]["source_url"] == "https://www.indiabudget.gov.in/primary_walkback.pdf"
+    assert cits["subsequent_walkback"]["sha256"] == "a" * 64
+    assert cits["subsequent_walkback"]["page"] == 7
+
+    # Also ensure secondary citation never inherits primary SHA when secondary SHA is absent
+    records_no_sec_sha = [
+        records[0],
+        {k: v for k, v in records[1].items() if k != "secondary_sha256"},
+    ]
+    res_no_sec_sha = run_engine(
+        "P8",
+        records_no_sec_sha,
+        context={
+            "sovereign_lies": corrob_spec,
+            "retrieval_url": "https://www.indiabudget.gov.in/primary_walkback.pdf",
+            "secondary_url": "https://www.rbi.org.in/secondary_promise.pdf",
+            "expected_sha256": "a" * 64,
+        },
+    )
+    assert len(res_no_sec_sha.leads) == 1
+    cits_no_sec = {c["role"]: c for c in res_no_sec_sha.leads[0].citations}
+    assert cits_no_sec["original_promise"]["sha256"] is None
+    assert cits_no_sec["subsequent_walkback"]["sha256"] == "a" * 64
+
+    # Fix 3: Direct engine invocation with mismatched grandfathered_or_honored pair MUST fail closed (unevaluable, not Cleared!)
+    single_doc = [
+        {
+            "page": 1,
+            "raw_text": (
+                "Sovereign Gold Bond 47(viic) capital gains redemption and Finance Bill 2026 "
+                "original subscriber continuously until maturity."
+            ),
+        }
+    ]
+    for mech, impact in (
+        ("retroactive_tax_reversal", "grandfathered_or_honored"),
+        ("grandfathered_or_honored", "retroactive_existing_holders"),
+    ):
+        mismatch_spec = _sample_sgb_spec(
+            walkback_mechanism=mech,
+            retroactive_impact=impact,
+            secondary_role="",
+            record_selector=None,
+        )
+        res_mm = run_engine("P8", single_doc, context={"sovereign_lies": mismatch_spec})
+        assert res_mm.leads == []
+        assert res_mm.cleared_count == 0
+        assert res_mm.unevaluable_count == 1
+        assert "grandfathered_or_honored" in res_mm.summary
+
+
 # ---------------------------------------------------------------------------
 # 4. BNS Sec 356 Neutrality & DPDP Act 2023 PII Scrubbing
 # ---------------------------------------------------------------------------
@@ -729,6 +822,40 @@ def test_p8_neutralizes_quoted_forbidden_terms_and_scrubs_pii() -> None:
     assert "citizen.test@gmail.com" not in dumped
     assert not contains_pii(lead.model_dump())[0]
 
+    # Direct runtime check: even if matched evidence tokens contain a BNS-restricted word,
+    # emitted anomaly_metrics tokens are neutralized so lead outputs pass lint_neutrality.
+    tok_spec = _sample_sgb_spec(
+        promise_evidence_tokens=["47(viic)", "Anti-Corruption check"],
+        walkback_evidence_tokens=["original subscriber", "fraud control unit"],
+        secondary_role="",
+        record_selector=None,
+    )
+    tok_res = run_engine(
+        "P8",
+        [
+            {
+                "page": 1,
+                "raw_text": (
+                    "Section 47(viic) Anti-Corruption check on Sovereign Gold Bond capital gains and "
+                    "Finance Bill 2026 original subscriber review by fraud control unit."
+                ),
+            }
+        ],
+        context={"sovereign_lies": tok_spec},
+    )
+    assert len(tok_res.leads) == 1
+    am = tok_res.leads[0].anomaly_metrics
+    tok_lint = lint_neutrality(
+        tok_res.leads[0].title,
+        tok_res.leads[0].summary,
+        tok_res.leads[0].benign_explanations,
+        extra_fields={
+            "promise_tokens_matched": " ".join(am["promise_tokens_matched"]),
+            "walkback_tokens_matched": " ".join(am["walkback_tokens_matched"]),
+        },
+    )
+    assert tok_lint.passed, tok_lint.violations
+
 
 # ---------------------------------------------------------------------------
 # 5. Strict Project Validation (`validate_project`) & RTI Drafting
@@ -790,6 +917,71 @@ def test_p8_project_validation_rules_and_rejections() -> None:
         ]
     )
     assert any("40-character commit SHA" in e for e in validate_project(bad_url, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    # 10. Union task with non-null state_or_ut rejected
+    bad_union_state = _sample_p8_project(
+        [_sample_p8_task("p8-union-st-0009", _sample_sgb_spec(jurisdiction_level="union", state_or_ut="Maharashtra"))]
+    )
+    assert any("state_or_ut must be null" in e for e in validate_project(bad_union_state, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    # 11. Bare "State:" / "UT:" and mismatched State:<X> vs state_or_ut=<Y> rejected
+    bare_state = _sample_p8_project(
+        [
+            _sample_p8_task(
+                "p8-state-bare-0010",
+                _sample_sgb_spec(jurisdiction_level="state", jurisdiction="State:", state_or_ut="Maharashtra"),
+            )
+        ]
+    )
+    assert any("State:<Name>" in e for e in validate_project(bare_state, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    bare_ut = _sample_p8_project(
+        [
+            _sample_p8_task(
+                "p8-ut-bare-0011",
+                _sample_sgb_spec(jurisdiction_level="ut", jurisdiction="UT:", state_or_ut="Delhi"),
+            )
+        ]
+    )
+    assert any("UT:<Name>" in e for e in validate_project(bare_ut, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    mismatch_state = _sample_p8_project(
+        [
+            _sample_p8_task(
+                "p8-state-mm-0012",
+                _sample_sgb_spec(jurisdiction_level="state", jurisdiction="State:Karnataka", state_or_ut="Maharashtra"),
+            )
+        ]
+    )
+    assert any("State:Maharashtra" in e for e in validate_project(mismatch_state, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    # 12. Non-neutral BNS terms rejected inside evidence tokens and record_selector.section_hint
+    bad_ptok = _sample_p8_project(
+        [_sample_p8_task("p8-union-ptok-0013", _sample_sgb_spec(promise_evidence_tokens=["47(viic)", "blatant scam"]))]
+    )
+    assert any("promise_evidence_tokens" in e and "non-neutral" in e for e in validate_project(bad_ptok, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    bad_wtok = _sample_p8_project(
+        [_sample_p8_task("p8-union-wtok-0014", _sample_sgb_spec(walkback_evidence_tokens=["original subscriber", "corrupt clause"]))]
+    )
+    assert any("walkback_evidence_tokens" in e and "non-neutral" in e for e in validate_project(bad_wtok, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    bad_hint = _sample_p8_project(
+        [_sample_p8_task("p8-union-hint-0015", _sample_sgb_spec(record_selector={"section_hint": "Rigged clause 35"}))]
+    )
+    assert any("section_hint" in e and "non-neutral" in e for e in validate_project(bad_hint, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
+
+    # 13. Non-empty secondary_role requires payload.secondary_url
+    missing_sec_url = _sample_p8_project(
+        [
+            _sample_p8_task(
+                "p8-union-sec-0016",
+                _sample_sgb_spec(secondary_role="walkback_document"),
+                secondary_url=None,
+            )
+        ]
+    )
+    assert any("secondary_url is required" in e for e in validate_project(missing_sec_url, filename_stem=SOVEREIGN_LIES_PROJECT_SLUG))
 
 
 def test_p8_rti_draft_union_state_and_delhi_ut() -> None:
@@ -949,9 +1141,9 @@ def test_p8_hub_summary_endpoint_live_aggregation_and_fallback(
         "sgb_tasks_count": 1,
         "cleared_control_tasks_embedded": 1,
         "by_jurisdiction_level": {
-            "union": {"tasks": 1},
-            "state": {"tasks": 1},
-            "ut": {"tasks": 1},
+            "union": {"tasks": 1, "cleared": 5},
+            "state": {"tasks": 1, "cleared": 9},
+            "ut": {"tasks": 1, "cleared": 4},
         },
         "by_mechanism": {
             "retroactive_tax_reversal": {"tasks": 1},
@@ -969,9 +1161,9 @@ def test_p8_hub_summary_endpoint_live_aggregation_and_fallback(
             {"category": "welfare_health_public_services", "tasks": 1},
         ],
         "jurisdictions": [
-            {"jurisdiction": "Union of India", "jurisdiction_level": "union", "state_or_ut": None, "tasks": 1},
-            {"jurisdiction": "State:Karnataka", "jurisdiction_level": "state", "state_or_ut": "Karnataka", "tasks": 1},
-            {"jurisdiction": "UT:Delhi", "jurisdiction_level": "ut", "state_or_ut": "Delhi", "tasks": 1},
+            {"jurisdiction": "Union of India", "jurisdiction_level": "union", "state_or_ut": None, "tasks": 1, "cleared": 6},
+            {"jurisdiction": "State:Karnataka", "jurisdiction_level": "state", "state_or_ut": "Karnataka", "tasks": 1, "cleared": 7},
+            {"jurisdiction": "UT:Delhi", "jurisdiction_level": "ut", "state_or_ut": "Delhi", "tasks": 1, "cleared": 8},
         ],
         "top_schemes": [
             {
@@ -1113,8 +1305,29 @@ def test_p8_hub_summary_endpoint_live_aggregation_and_fallback(
         assert summary["by_mechanism"]["retroactive_tax_reversal"]["leads"] == 1
         assert summary["by_jurisdiction_level"]["union"]["done"] == 1
         assert summary["by_jurisdiction_level"]["union"]["leads"] == 1
+        assert summary["by_jurisdiction_level"]["union"]["cleared"] == 0
+        assert summary["by_jurisdiction_level"]["state"]["done"] == 0
+        assert summary["by_jurisdiction_level"]["state"]["cleared"] == 0
         assert summary["by_jurisdiction_level"]["ut"]["done"] == 1
         assert summary["by_jurisdiction_level"]["ut"]["cleared"] == 1
+
+        # Fix 2: live `done` and `cleared` populated on by_category & jurisdictions even with coverage.json present,
+        # and stale coverage.json `cleared` numbers are never leaked!
+        cats_by_key = {c["category"]: c for c in summary["by_category"]}
+        assert cats_by_key["sovereign_bonds_small_savings"]["done"] == 1
+        assert cats_by_key["sovereign_bonds_small_savings"]["leads"] == 1
+        assert cats_by_key["scholarships_education"]["done"] == 0
+        assert cats_by_key["welfare_health_public_services"]["done"] == 1
+
+        jurs_by_name = {j["jurisdiction"]: j for j in summary["jurisdictions"]}
+        assert jurs_by_name["Union of India"]["done"] == 1
+        assert jurs_by_name["Union of India"]["leads"] == 1
+        assert jurs_by_name["Union of India"]["cleared"] == 0
+        assert jurs_by_name["State:Karnataka"]["done"] == 0
+        assert jurs_by_name["State:Karnataka"]["cleared"] == 0
+        assert jurs_by_name["UT:Delhi"]["done"] == 1
+        assert jurs_by_name["UT:Delhi"]["cleared"] == 1
+
         assert summary["sgb_anchor_case"]["finding_id"] == sgb_finding_id
         assert len(summary["top_leads"]) == 1
         assert summary["top_leads"][0]["finding_id"] == sgb_finding_id
