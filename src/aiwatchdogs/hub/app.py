@@ -74,6 +74,7 @@ from aiwatchdogs.projects import (
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
     ONLY_ONE_BID_PROJECT_SLUG,
     PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
+    SOVEREIGN_LIES_PROJECT_SLUG,
     UNION_BUDGET_PROJECT_SLUG,
     project_codes_by_slug,
     slug_aliases,
@@ -1058,6 +1059,29 @@ def create_app(
             media_type=media_types[filename],
             headers={"Cache-Control": "public, max-age=3600"},
         )
+
+    @application.get(f"/api/missions/{SOVEREIGN_LIES_PROJECT_SLUG}/{{filename}}")
+    def api_sovereign_lies_file(filename: str) -> Response:
+        """The official scheme documents audited by P8 (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / SOVEREIGN_LIES_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get(f"/api/projects/{SOVEREIGN_LIES_PROJECT_SLUG}/summary")
+    def api_sovereign_lies_summary(response: Response) -> dict[str, Any]:
+        """Dedicated P8 Sovereign Lies summary endpoint matching visual_summary.sovereign_lies."""
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        return desk.get_sovereign_lies_summary()
 
     @application.get("/api/findings")
     def api_findings(

@@ -72,9 +72,16 @@ from aiwatchdogs.projects import (
     ONLY_ONE_BID_PROJECT_SLUG,
     PARLIAMENTS_TO_DO_LIST_METHODOLOGY,
     PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
+    SOVEREIGN_LIES_METHODOLOGY,
+    SOVEREIGN_LIES_PROJECT_SLUG,
     UNION_BUDGET_METHODOLOGY,
     UNION_BUDGET_PROJECT_SLUG,
 )
+
+_FINANCIAL_QUANTITY_LABELS: dict[str, str] = {
+    **FINANCIAL_QUANTITY_LABELS,
+    "scheme_promises_and_revisions": "Scheme launch promises, amendments, & published outlays",
+}
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -156,6 +163,7 @@ OPEN_CHOICE_PROJECTS = frozenset(
         ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
         PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
         ONLY_ONE_BID_PROJECT_SLUG,
+        SOVEREIGN_LIES_PROJECT_SLUG,
     }
 )
 
@@ -788,7 +796,7 @@ class DeskService:
         workload_inr = float(row["monetary_audited_inr"] or 0.0)
         uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
         qty_type = str(_row_get(row, "financial_quantity_type", "") or "")
-        qty_label = FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported project figure")
+        qty_label = _FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported project figure")
         cleared_scans = int(row["cleared_count"] or 0)
         cleared_findings = int(
             cleared_findings_count
@@ -2173,7 +2181,7 @@ class DeskService:
             breakdown.append(
                 {
                     "quantity_type": qtype,
-                    "label": FINANCIAL_QUANTITY_LABELS.get(qtype, qtype),
+                    "label": _FINANCIAL_QUANTITY_LABELS.get(qtype, qtype),
                     "unique_datasets": len(dmap),
                     "deduplicated_inr": dedup_inr,
                     "deduplicated_inr_cr": _inr_to_cr(dedup_inr),
@@ -3734,6 +3742,10 @@ class DeskService:
             summary["only_one_bid"] = self._only_one_bid_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == SOVEREIGN_LIES_METHODOLOGY:
+            summary["sovereign_lies"] = self._sovereign_lies_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -3948,6 +3960,7 @@ class DeskService:
                         UNION_BUDGET_METHODOLOGY,
                         ONE_ROAD_TWO_BILLS_METHODOLOGY,
                         ONLY_ONE_BID_METHODOLOGY,
+                        SOVEREIGN_LIES_METHODOLOGY,
                     )
                 )
                 else _TASK_LIST_COLUMNS
@@ -5131,6 +5144,600 @@ class DeskService:
             "top_repeat_winners": top_repeat_winners[:30],
             "anchor_case": anchor_case,
             "top_leads": top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def get_sovereign_lies_summary(self) -> dict[str, Any]:
+        """Public summary endpoint payload for Project 8 (Sovereign Lies)."""
+        slug = self.resolve_slug(SOVEREIGN_LIES_PROJECT_SLUG)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT * FROM missions WHERE slug = ? OR methodology_code = ? LIMIT 1",
+                (slug, SOVEREIGN_LIES_METHODOLOGY),
+            ).fetchone()
+            if row is not None:
+                return self._sovereign_lies_summary(conn, mission_row=row)
+        coverage = _project_coverage(slug)
+        if not coverage:
+            raise HTTPException(status_code=404, detail="Project 'sovereign-lies' not found")
+        return self._sovereign_lies_summary(None, mission_row=None)
+
+    def _sovereign_lies_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fallback-safe Union & State/UT summary, mechanism breakdown, SGB anchor, and top leads for P8."""
+        from aiwatchdogs.engines.sovereign_lies import (
+            P8_DEFAULT_HOOK,
+            SCHEME_CATEGORY_LABELS,
+            SIGNAL_CATEGORIES,
+            VALID_RETROACTIVE_IMPACTS,
+            VALID_WALKBACK_MECHANISMS,
+            WALKBACK_MECHANISM_RULES,
+            canonical_key,
+        )
+
+        mid = str(mission_row["id"]) if mission_row is not None else None
+        slug = str(mission_row["slug"]) if mission_row is not None else SOVEREIGN_LIES_PROJECT_SLUG
+        coverage = _project_coverage(slug)
+
+        def _opt_int(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            return None
+
+        by_jurisdiction_level: dict[str, dict[str, Any]] = {
+            lvl: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "pct": 0.0, "leads": 0, "cleared": 0}
+            for lvl in ("union", "state", "ut")
+        }
+        raw_jlevels = (
+            coverage.get("by_jurisdiction_level")
+            if isinstance(coverage.get("by_jurisdiction_level"), dict)
+            else {}
+        )
+        for lvl in ("union", "state", "ut"):
+            item = raw_jlevels.get(lvl)
+            if isinstance(item, dict):
+                by_jurisdiction_level[lvl]["tasks"] = int(item.get("tasks") or 0)
+
+        by_mechanism: dict[str, dict[str, int]] = {
+            m: {"tasks": 0, "leads": 0}
+            for m in (*SIGNAL_CATEGORIES, "grandfathered_or_honored")
+        }
+        raw_mechs = coverage.get("by_mechanism") if isinstance(coverage.get("by_mechanism"), dict) else {}
+        for m in VALID_WALKBACK_MECHANISMS:
+            val = raw_mechs.get(m)
+            if isinstance(val, dict):
+                by_mechanism[m]["tasks"] = int(val.get("tasks") or 0)
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_mechanism[m]["tasks"] = int(val)
+
+        by_signal: dict[str, int] = {sig: 0 for sig in SIGNAL_CATEGORIES}
+        rule_to_signal = {rule: mech for mech, rule in WALKBACK_MECHANISM_RULES.items()}
+
+        by_retroactive_impact: dict[str, int] = {imp: 0 for imp in sorted(VALID_RETROACTIVE_IMPACTS)}
+        raw_impacts = (
+            coverage.get("by_retroactive_impact")
+            if isinstance(coverage.get("by_retroactive_impact"), dict)
+            else {}
+        )
+        for imp in by_retroactive_impact:
+            val = raw_impacts.get(imp)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_retroactive_impact[imp] = int(val)
+
+        categories_map: dict[str, dict[str, Any]] = {
+            cat: {
+                "category": cat,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "flagged_inr_cr": 0.0,
+            }
+            for cat, label in SCHEME_CATEGORY_LABELS.items()
+        }
+        raw_cats = coverage.get("by_category")
+        if isinstance(raw_cats, list):
+            for citem in raw_cats:
+                if not isinstance(citem, dict):
+                    continue
+                ckey = str(citem.get("category") or "").strip().lower()
+                if ckey in categories_map:
+                    categories_map[ckey]["tasks"] = int(citem.get("tasks") or 0)
+        elif isinstance(raw_cats, dict):
+            for ckey, cval in raw_cats.items():
+                if ckey in categories_map:
+                    if isinstance(cval, dict):
+                        categories_map[ckey]["tasks"] = int(cval.get("tasks") or 0)
+                    elif isinstance(cval, (int, float)) and not isinstance(cval, bool):
+                        categories_map[ckey]["tasks"] = int(cval)
+
+        jurisdictions_map: dict[str, dict[str, Any]] = {}
+        for jitem in coverage.get("jurisdictions") if isinstance(coverage.get("jurisdictions"), list) else []:
+            if not isinstance(jitem, dict):
+                continue
+            jname = str(jitem.get("jurisdiction") or "").strip()
+            if not jname:
+                continue
+            jlvl = str(
+                jitem.get("jurisdiction_level")
+                or ("union" if jname == "Union of India" else ("ut" if jname.startswith("UT:") else "state"))
+            ).strip().lower()
+            s_ut = jitem.get("state_or_ut")
+            jurisdictions_map[jname] = {
+                "jurisdiction": jname,
+                "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                "tasks": int(jitem.get("tasks") or 0),
+                "done": 0,
+                "leads": 0,
+                "cleared": 0,
+                "flagged_inr_cr": 0.0,
+            }
+
+        schemes_map: dict[str, dict[str, Any]] = {}
+        for sitem in coverage.get("top_schemes") if isinstance(coverage.get("top_schemes"), list) else []:
+            if not isinstance(sitem, dict):
+                continue
+            sname = str(sitem.get("scheme_name") or "").strip()
+            if not sname:
+                continue
+            sslug = str(sitem.get("scheme_slug") or canonical_key(sname)).strip().lower()
+            schemes_map[sslug] = {
+                "scheme_name": sname,
+                "scheme_slug": sslug,
+                "jurisdiction": str(sitem.get("jurisdiction") or "Union of India"),
+                "jurisdiction_level": str(sitem.get("jurisdiction_level") or "union"),
+                "scheme_category": str(sitem.get("scheme_category") or "welfare_health_public_services"),
+                "walkback_mechanism": str(sitem.get("walkback_mechanism") or ""),
+                "retroactive_impact": str(sitem.get("retroactive_impact") or ""),
+                "tasks": int(sitem.get("tasks") or 0),
+                "leads": 0,
+                "is_sgb_anchor": bool(sitem.get("is_sgb_anchor")),
+            }
+
+        anchor_raw = coverage.get("sgb_anchor_case") or coverage.get("anchor_case")
+        sgb_anchor_case: dict[str, Any] | None = dict(anchor_raw) if isinstance(anchor_raw, dict) else None
+        if sgb_anchor_case is not None:
+            sgb_anchor_case.setdefault("finding_id", None)
+
+        db_total_tasks = 0
+        db_sgb_tasks = 0
+        db_cleared_controls = 0
+        has_coverage = bool(coverage)
+
+        if conn is not None and mid is not None:
+            lvl_counts_from_db: dict[str, dict[str, int]] = {
+                lvl: {"tasks": 0, "done": 0, "claimed": 0, "open": 0}
+                for lvl in ("union", "state", "ut")
+            }
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN id LIKE 'prj-p8-union-%' OR id LIKE 'p8-union-%' THEN 'union' "
+                "WHEN id LIKE 'prj-p8-ut-%' OR id LIKE 'p8-ut-%' THEN 'ut' "
+                "WHEN id LIKE 'prj-p8-state-%' OR id LIKE 'p8-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, status, COUNT(*) AS c "
+                "FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status != 'retired' "
+                "GROUP BY jlvl, status",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                st = str(r["status"] or "")
+                n = int(r["c"] or 0)
+                db_total_tasks += n
+                bucket = lvl_counts_from_db[jlvl]
+                bucket["tasks"] += n
+                if st == "completed":
+                    bucket["done"] += n
+                elif st == "claimed":
+                    bucket["claimed"] += n
+                elif st == "queued":
+                    bucket["open"] += n
+
+            for lvl in ("union", "state", "ut"):
+                if lvl_counts_from_db[lvl]["tasks"] > 0:
+                    by_jurisdiction_level[lvl]["tasks"] = lvl_counts_from_db[lvl]["tasks"]
+                    by_jurisdiction_level[lvl]["done"] = lvl_counts_from_db[lvl]["done"]
+                    by_jurisdiction_level[lvl]["claimed"] = lvl_counts_from_db[lvl]["claimed"]
+                    by_jurisdiction_level[lvl]["open"] = lvl_counts_from_db[lvl]["open"]
+                else:
+                    by_jurisdiction_level[lvl]["open"] = max(
+                        0,
+                        by_jurisdiction_level[lvl]["tasks"]
+                        - by_jurisdiction_level[lvl]["done"]
+                        - by_jurisdiction_level[lvl]["claimed"],
+                    )
+
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN t.id LIKE 'prj-p8-union-%' OR t.id LIKE 'p8-union-%' THEN 'union' "
+                "WHEN t.id LIKE 'prj-p8-ut-%' OR t.id LIKE 'p8-ut-%' THEN 'ut' "
+                "WHEN t.id LIKE 'prj-p8-state-%' OR t.id LIKE 'p8-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, COUNT(*) AS c "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "AND NOT EXISTS (SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id) "
+                "GROUP BY jlvl",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                by_jurisdiction_level[jlvl]["cleared"] = int(r["c"] or 0)
+
+            if not has_coverage and db_total_tasks > 0:
+                for tr in conn.execute(
+                    "SELECT id, status, payload_json FROM tasks WHERE mission_id = ? "
+                    "AND task_type != 'peer_verify' AND status != 'retired' LIMIT 1500",
+                    (mid,),
+                ).fetchall():
+                    t_payload = loads_json(tr["payload_json"], {})
+                    t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                    t_spec = t_ctx.get("sovereign_lies") if isinstance(t_ctx.get("sovereign_lies"), dict) else {}
+                    if not t_spec:
+                        continue
+                    mech = str(t_spec.get("walkback_mechanism") or "").strip().lower()
+                    imp = str(t_spec.get("retroactive_impact") or "").strip().lower()
+                    cat = str(t_spec.get("scheme_category") or "").strip().lower()
+                    jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                    jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                    s_ut = t_spec.get("state_or_ut")
+                    sname = str(t_spec.get("scheme_name") or "").strip()
+                    sslug = str(t_spec.get("scheme_slug") or canonical_key(sname)).strip().lower()
+
+                    if mech in by_mechanism:
+                        by_mechanism[mech]["tasks"] += 1
+                    if mech == "grandfathered_or_honored":
+                        db_cleared_controls += 1
+                    if imp in by_retroactive_impact:
+                        by_retroactive_impact[imp] += 1
+                    if cat in categories_map:
+                        categories_map[cat]["tasks"] += 1
+                    j_entry = jurisdictions_map.setdefault(
+                        jur,
+                        {
+                            "jurisdiction": jur,
+                            "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                            "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                            "tasks": 0,
+                            "done": 0,
+                            "leads": 0,
+                            "cleared": 0,
+                            "flagged_inr_cr": 0.0,
+                        },
+                    )
+                    j_entry["tasks"] += 1
+                    if sslug == "sovereign-gold-bond" or bool(t_spec.get("is_sgb_anchor")):
+                        db_sgb_tasks += 1
+                    if sname and sslug:
+                        s_entry = schemes_map.setdefault(
+                            sslug,
+                            {
+                                "scheme_name": sname,
+                                "scheme_slug": sslug,
+                                "jurisdiction": jur,
+                                "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                                "scheme_category": cat if cat in categories_map else "welfare_health_public_services",
+                                "walkback_mechanism": mech,
+                                "retroactive_impact": imp,
+                                "tasks": 0,
+                                "leads": 0,
+                                "is_sgb_anchor": bool(t_spec.get("is_sgb_anchor")),
+                            },
+                        )
+                        s_entry["tasks"] += 1
+                        if bool(t_spec.get("is_sgb_anchor")):
+                            s_entry["is_sgb_anchor"] = True
+                    if sgb_anchor_case is None and bool(t_spec.get("is_sgb_anchor")):
+                        sgb_anchor_case = {
+                            "task_id": str(tr["id"]).removeprefix("prj-"),
+                            "finding_id": None,
+                            "scheme_name": sname,
+                            "tranche_or_phase": str(t_spec.get("tranche_or_phase") or ""),
+                            "jurisdiction": jur,
+                            "authority": str(t_spec.get("authority") or ""),
+                            "promise_date": str(t_spec.get("promise_date") or ""),
+                            "promise_summary": str(t_spec.get("promise_summary") or ""),
+                            "promise_document_ref": str(t_spec.get("promise_document_ref") or ""),
+                            "walkback_date": t_spec.get("walkback_date"),
+                            "walkback_summary": str(t_spec.get("walkback_summary") or ""),
+                            "walkback_document_ref": str(t_spec.get("walkback_document_ref") or ""),
+                            "walkback_mechanism": mech,
+                            "retroactive_impact": imp,
+                            "promised_metric": str(t_spec.get("promised_metric") or ""),
+                            "revised_metric": str(t_spec.get("revised_metric") or ""),
+                            "affected_group": str(t_spec.get("affected_group") or ""),
+                            "days_from_promise_to_walkback": None,
+                            "source_url": str(t_payload.get("retrieval_url") or ""),
+                            "secondary_url": str(t_payload.get("secondary_url") or "") or None,
+                            "portal_url": str(t_payload.get("source_landing_page") or ""),
+                        }
+
+            # Always aggregate live completed-task progress (`done` and `cleared`) into categories & jurisdictions
+            # regardless of whether coverage.json is present (never rely on stale coverage.json execution counts).
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 1500",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = t_ctx.get("sovereign_lies") if isinstance(t_ctx.get("sovereign_lies"), dict) else {}
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                cat = str(t_spec.get("scheme_category") or "").strip().lower()
+                if cat in categories_map:
+                    categories_map[cat]["done"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                s_ut = t_spec.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(
+                    jur,
+                    {
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                        "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                j_entry["done"] += 1
+                if is_cleared_task:
+                    j_entry["cleared"] += 1
+        else:
+            for lvl in ("union", "state", "ut"):
+                by_jurisdiction_level[lvl]["open"] = by_jurisdiction_level[lvl]["tasks"]
+
+        for entry in by_jurisdiction_level.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        leads = verified = peer_review = 0
+        flagged_total_cr = 0.0
+        top_leads: list[dict[str, Any]] = []
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        if conn is not None and mid is not None:
+            live = (
+                "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+                "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+            )
+            for r in conn.execute(
+                f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
+                f"monetary_exposure_inr, anomaly_metrics_json, source_url, task_id "
+                f"FROM findings WHERE {live} ORDER BY id ASC",
+                (mid,),
+            ).fetchall():
+                leads += 1
+                st = str(r["status"] or "")
+                if st == "verified":
+                    verified += 1
+                elif st in ("peer_review", "raw_lead"):
+                    peer_review += 1
+
+                exposure_inr = _safe_finite_float(r["monetary_exposure_inr"], 0.0)
+                crore = exposure_inr / 1e7
+                flagged_total_cr += crore
+
+                metrics = loads_json(r["anomaly_metrics_json"], {})
+                metrics = metrics if isinstance(metrics, dict) else {}
+
+                rule = str(r["rule_triggered"] or "").strip()
+                sig = str(metrics.get("signal_category") or rule_to_signal.get(rule) or "").strip()
+                mech = str(metrics.get("walkback_mechanism") or sig).strip()
+                imp = str(metrics.get("retroactive_impact") or "").strip()
+                if sig in by_signal:
+                    by_signal[sig] += 1
+                if mech in by_mechanism:
+                    by_mechanism[mech]["leads"] += 1
+
+                jlvl = str(metrics.get("jurisdiction_level") or "").strip().lower()
+                jur = str(metrics.get("jurisdiction") or r["jurisdiction"] or "Union of India").strip()
+                if jlvl not in {"union", "state", "ut"}:
+                    if jur.startswith("State:"):
+                        jlvl = "state"
+                    elif jur.startswith("UT:"):
+                        jlvl = "ut"
+                    else:
+                        jlvl = "union"
+                by_jurisdiction_level[jlvl]["leads"] += 1
+
+                cat = str(metrics.get("scheme_category") or "").strip().lower()
+                if cat in categories_map:
+                    categories_map[cat]["leads"] += 1
+                    categories_map[cat]["flagged_inr_cr"] = round(categories_map[cat]["flagged_inr_cr"] + crore, 4)
+
+                s_ut_val = metrics.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(
+                    jur,
+                    {
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl,
+                        "state_or_ut": str(s_ut_val).strip() if isinstance(s_ut_val, str) and s_ut_val.strip() else None,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                j_entry["leads"] += 1
+                j_entry["flagged_inr_cr"] = round(j_entry["flagged_inr_cr"] + crore, 4)
+
+                sname = str(metrics.get("scheme_name") or "").strip()
+                sslug = str(metrics.get("scheme_slug") or canonical_key(sname)).strip().lower()
+                is_sgb = bool(metrics.get("is_sgb_anchor"))
+                if sslug:
+                    s_entry = schemes_map.setdefault(
+                        sslug,
+                        {
+                            "scheme_name": sname or sslug,
+                            "scheme_slug": sslug,
+                            "jurisdiction": jur,
+                            "jurisdiction_level": jlvl,
+                            "scheme_category": cat if cat in categories_map else "welfare_health_public_services",
+                            "walkback_mechanism": mech,
+                            "retroactive_impact": imp,
+                            "tasks": 0,
+                            "leads": 0,
+                            "is_sgb_anchor": is_sgb,
+                        },
+                    )
+                    s_entry["leads"] += 1
+                    if is_sgb:
+                        s_entry["is_sgb_anchor"] = True
+
+                if is_sgb:
+                    if sgb_anchor_case is None:
+                        sgb_anchor_case = {
+                            "task_id": str(r["task_id"] or "").removeprefix("prj-") or None,
+                            "finding_id": str(r["id"]),
+                            "scheme_name": sname,
+                            "tranche_or_phase": str(metrics.get("tranche_or_phase") or ""),
+                            "jurisdiction": jur,
+                            "authority": str(metrics.get("authority") or r["entity_name"] or ""),
+                            "promise_date": str(metrics.get("promise_date") or ""),
+                            "promise_summary": str(metrics.get("promise_summary") or ""),
+                            "promise_document_ref": str(metrics.get("promise_document_ref") or ""),
+                            "walkback_date": metrics.get("walkback_date"),
+                            "walkback_summary": str(metrics.get("walkback_summary") or ""),
+                            "walkback_document_ref": str(metrics.get("walkback_document_ref") or ""),
+                            "walkback_mechanism": mech,
+                            "retroactive_impact": imp,
+                            "promised_metric": str(metrics.get("promised_metric") or ""),
+                            "revised_metric": str(metrics.get("revised_metric") or ""),
+                            "affected_group": str(metrics.get("affected_group") or ""),
+                            "days_from_promise_to_walkback": _opt_int(metrics.get("days_from_promise_to_walkback")),
+                            "source_url": str(r["source_url"] or ""),
+                            "secondary_url": None,
+                            "portal_url": str(r["source_url"] or ""),
+                        }
+                    elif not sgb_anchor_case.get("finding_id"):
+                        sgb_anchor_case["finding_id"] = str(r["id"])
+
+                top_leads.append(
+                    {
+                        "finding_id": str(r["id"]),
+                        "title": str(r["title"] or ""),
+                        "scheme_name": sname or str(r["entity_name"] or ""),
+                        "scheme_slug": sslug,
+                        "tranche_or_phase": str(metrics.get("tranche_or_phase") or ""),
+                        "entity_name": str(r["entity_name"] or ""),
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl,
+                        "state_or_ut": str(s_ut_val).strip() if isinstance(s_ut_val, str) and s_ut_val.strip() else None,
+                        "scheme_category": cat,
+                        "walkback_mechanism": mech,
+                        "retroactive_impact": imp,
+                        "signal_category": sig,
+                        "promise_date": str(metrics.get("promise_date") or ""),
+                        "walkback_date": metrics.get("walkback_date"),
+                        "days_from_promise_to_walkback": _opt_int(metrics.get("days_from_promise_to_walkback")),
+                        "promised_metric": str(metrics.get("promised_metric") or ""),
+                        "revised_metric": str(metrics.get("revised_metric") or ""),
+                        "promise_summary": str(metrics.get("promise_summary") or ""),
+                        "walkback_summary": str(metrics.get("walkback_summary") or ""),
+                        "affected_group": str(metrics.get("affected_group") or ""),
+                        "is_sgb_anchor": is_sgb,
+                        "monetary_exposure_inr": round(exposure_inr, 2),
+                        "flagged_inr_cr": round(crore, 4),
+                        "severity": str(r["severity"] or "medium"),
+                        "status": st,
+                        "_sort_anchor": 1 if is_sgb else 0,
+                        "_sort_sev": sev_rank.get(str(r["severity"] or "").lower(), 0),
+                    }
+                )
+
+            if sgb_anchor_case is not None and not sgb_anchor_case.get("finding_id") and sgb_anchor_case.get("task_id"):
+                raw_tid = str(sgb_anchor_case.get("task_id") or "").strip()
+                pref_tid = raw_tid if raw_tid.startswith("prj-") else f"prj-{raw_tid}"
+                arow = conn.execute(
+                    f"SELECT id FROM findings WHERE {live} AND task_id IN (?, ?) ORDER BY id ASC LIMIT 1",
+                    (mid, raw_tid, pref_tid),
+                ).fetchone()
+                if arow is not None:
+                    sgb_anchor_case["finding_id"] = str(arow["id"])
+
+        top_leads.sort(
+            key=lambda x: (
+                -int(x["_sort_anchor"]),
+                -int(x["_sort_sev"]),
+                -float(x["monetary_exposure_inr"]),
+                str(x["finding_id"]),
+            )
+        )
+        cleaned_top_leads = [
+            {k: v for k, v in item.items() if not k.startswith("_sort_")}
+            for item in top_leads[:20]
+        ]
+
+        by_category_list = sorted(
+            categories_map.values(),
+            key=lambda c: (-int(c["tasks"]), -int(c["leads"]), str(c["category"])),
+        )
+        jurisdictions_list = sorted(
+            jurisdictions_map.values(),
+            key=lambda j: (
+                0 if j["jurisdiction_level"] == "union" else 1,
+                -int(j["tasks"]),
+                -int(j["leads"]),
+                str(j["jurisdiction"]).lower(),
+            ),
+        )
+        top_schemes_list = sorted(
+            schemes_map.values(),
+            key=lambda s: (
+                0 if s.get("is_sgb_anchor") else 1,
+                -int(s["tasks"]),
+                -int(s["leads"]),
+                str(s["scheme_name"]).lower(),
+            ),
+        )[:40]
+
+        states_uts_count = sum(
+            1
+            for j in jurisdictions_list
+            if j["jurisdiction_level"] in {"state", "ut"} and (j["tasks"] > 0 or j["leads"] > 0)
+        )
+        total_tasks_resolved = int(
+            coverage.get("total_tasks")
+            or db_total_tasks
+            or (mission_row["total_tasks"] if mission_row is not None else 0)
+            or 0
+        )
+
+        return {
+            "hook": str(coverage.get("hook") or P8_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": str(coverage.get("as_of_date") or ""),
+            "total_tasks": total_tasks_resolved,
+            "unique_schemes_covered": int(coverage.get("unique_schemes_covered") or len(schemes_map)),
+            "states_and_uts_covered": int(coverage.get("states_and_uts_covered") or states_uts_count),
+            "sgb_tasks_count": int(coverage.get("sgb_tasks_count") or db_sgb_tasks),
+            "cleared_control_tasks_embedded": int(
+                coverage.get("cleared_control_tasks_embedded")
+                or by_mechanism["grandfathered_or_honored"]["tasks"]
+                or db_cleared_controls
+            ),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
+            "flagged_total_inr_cr": round(flagged_total_cr, 2),
+            "by_jurisdiction_level": by_jurisdiction_level,
+            "by_mechanism": by_mechanism,
+            "by_signal": by_signal,
+            "by_retroactive_impact": by_retroactive_impact,
+            "by_category": by_category_list,
+            "jurisdictions": jurisdictions_list,
+            "top_schemes": top_schemes_list,
+            "sgb_anchor_case": sgb_anchor_case,
+            "top_leads": cleaned_top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }

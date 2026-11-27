@@ -725,6 +725,11 @@ def _infer_format(source_ref: str, fmt: str | None, content_type: str = "", raw_
         return "csv"
     if "text/html" in ct:
         return "html"
+    if "text/plain" in ct:
+        return "txt"
+    head_sniff = raw_bytes[:512].lstrip().lower()
+    if head_sniff.startswith((b"<!doctype html", b"<html", b"<?xml")):
+        return "html"
     return "json"
 
 
@@ -2121,6 +2126,63 @@ class _HTMLTableParser(HTMLParser):
         self._in_tr = False
 
 
+class _HTMLVisibleTextParser(HTMLParser):
+    """Linear-time O(N) visible-text extractor for official government HTML press releases & circulars."""
+
+    _SKIP_TAGS = frozenset({"script", "style", "noscript", "svg", "template"})
+    _BREAK_TAGS = frozenset(
+        {"br", "p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "article", "header", "footer", "hr", "dd", "dt"}
+    )
+    _CELL_TAGS = frozenset({"td", "th"})
+
+    def __init__(self, *, max_chars: int = DEFAULT_MAX_PDF_CHARS) -> None:
+        super().__init__(convert_charrefs=True)
+        self.max_chars = max_chars
+        self._skip_depth = 0
+        self._parts: list[str] = []
+        self._chars = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        t = tag.lower()
+        if t in self._SKIP_TAGS:
+            self._skip_depth += 1
+        elif self._skip_depth == 0 and t in self._BREAK_TAGS and self._chars < self.max_chars:
+            self._parts.append("\n")
+            self._chars += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        t = tag.lower()
+        if t in self._SKIP_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
+        elif self._skip_depth == 0 and self._chars < self.max_chars:
+            if t in self._BREAK_TAGS:
+                self._parts.append("\n")
+                self._chars += 1
+            elif t in self._CELL_TAGS:
+                self._parts.append(" | ")
+                self._chars += 3
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth == 0 and data and self._chars < self.max_chars:
+            rem = self.max_chars - self._chars
+            chunk = data[:rem]
+            self._parts.append(chunk)
+            self._chars += len(chunk)
+
+    def extract_text(self) -> str:
+        raw = "".join(self._parts).replace("\xa0", " ")
+        lines = [" ".join(ln.split()).strip() for ln in raw.splitlines()]
+        return "\n".join(ln for ln in lines if ln)
+
+
+def _extract_html_visible_text(raw_bytes: bytes, *, max_chars: int = DEFAULT_MAX_PDF_CHARS) -> str:
+    text = raw_bytes.decode("utf-8", errors="replace")
+    parser = _HTMLVisibleTextParser(max_chars=max_chars)
+    parser.feed(text)
+    parser.close()
+    return parser.extract_text()
+
+
 def _strip_html_cell(fragment: str) -> str:
     class _Strip(HTMLParser):
         def __init__(self) -> None:
@@ -2547,6 +2609,48 @@ def _resolve_provenance(
         inferred_publisher = "Parliament of India (Digital Sansad)"
         inferred_landing = "https://sansad.in"
         inferred_mirror = None
+    elif host == "rbi.org.in" or host.endswith(".rbi.org.in"):
+        inferred_publisher = "Reserve Bank of India"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "pib.gov.in" or host.endswith(".pib.gov.in"):
+        inferred_publisher = "Press Information Bureau, Government of India"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "indiabudget.gov.in" or host.endswith(".indiabudget.gov.in"):
+        inferred_publisher = "Ministry of Finance, Government of India (Union Budget)"
+        inferred_landing = "https://www.indiabudget.gov.in"
+        inferred_mirror = None
+    elif host == "incometaxindia.gov.in" or host.endswith(".incometaxindia.gov.in"):
+        inferred_publisher = "Central Board of Direct Taxes, Ministry of Finance"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "indiacode.nic.in" or host.endswith(".indiacode.nic.in"):
+        inferred_publisher = "Legislative Department, Ministry of Law and Justice (India Code)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "egazette.gov.in" or host.endswith(".egazette.gov.in"):
+        inferred_publisher = "The Gazette of India, Department of Publication"
+        inferred_landing = "https://egazette.gov.in"
+        inferred_mirror = None
+    elif host == "myscheme.gov.in" or host.endswith(".myscheme.gov.in"):
+        inferred_publisher = "National e-Governance Division, MeitY (myScheme)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "epfindia.gov.in" or host.endswith(".epfindia.gov.in"):
+        inferred_publisher = "Employees' Provident Fund Organisation (EPFO)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "pfrda.org.in" or host.endswith(".pfrda.org.in"):
+        inferred_publisher = "Pension Fund Regulatory and Development Authority (PFRDA)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host in {"dea.gov.in", "dor.gov.in", "finmin.nic.in", "nsiindia.gov.in"} or host.endswith(
+        (".dea.gov.in", ".dor.gov.in", ".finmin.nic.in", ".nsiindia.gov.in")
+    ):
+        inferred_publisher = "Ministry of Finance, Government of India"
+        inferred_landing = source_ref
+        inferred_mirror = None
     elif host == "open-contracting.in" or host.endswith(".open-contracting.in"):
         inferred_publisher = "Public Procurement Open Contracting India"
         inferred_landing = source_ref
@@ -2872,7 +2976,22 @@ def load_dataset(
         records, raw_text, resolved_fmt = _parse_html_bytes(
             raw_bytes, source_ref, max_parse_rows=max_parse_rows
         )
-        source_locator = f"table_rows=1-{len(records)}" if records else "table_rows=0"
+        if isinstance(ctx.get("sovereign_lies"), dict) or ctx.get("_extract_html_text"):
+            visible_text = _extract_html_visible_text(raw_bytes, max_chars=max_pdf_chars)
+            html_body_record = {
+                "page": 1,
+                "raw_text": visible_text,
+                "source_ref": source_ref,
+                "source_url": source_ref if _is_url(source_ref) else "",
+                "source_format": "html",
+                "jurisdiction": _infer_jurisdiction(source_ref),
+            }
+            records = [html_body_record, *records]
+            raw_text = visible_text[:65_536]
+            resolved_fmt = "html"
+            source_locator = "html_body"
+        else:
+            source_locator = f"table_rows=1-{len(records)}" if records else "table_rows=0"
     elif resolved_fmt == "pdf":
         records, raw_text, source_locator = _parse_pdf_bytes(
             raw_bytes, source_ref, max_pdf_pages=max_pdf_pages, max_pdf_chars=max_pdf_chars
@@ -2901,7 +3020,15 @@ def load_dataset(
     secondary_sha256: str | None = None
     secondary_digest_verified: bool | None = None
     secondary_provenance: dict[str, Any] | None = None
-    if secondary_ref and secondary_ref != source_ref:
+    if secondary_ref and secondary_ref == source_ref:
+        if resolved_sec_expected_sha is not None and sha256.lower() != resolved_sec_expected_sha:
+            raise DigestMismatchError(
+                f"Secondary artifact SHA-256 mismatch for {secondary_ref}: "
+                f"expected {resolved_sec_expected_sha}, observed {sha256}."
+            )
+        secondary_sha256 = sha256
+        secondary_digest_verified = True if resolved_sec_expected_sha is not None else digest_verified
+    elif secondary_ref and secondary_ref != source_ref:
         sec_ctx: dict[str, Any] = {
             "max_download_bytes": max_download_bytes,
             "max_decompressed_bytes": max_decompressed_bytes,
@@ -2911,6 +3038,8 @@ def load_dataset(
             "max_pdf_pages": max_pdf_pages,
             "max_pdf_chars": max_pdf_chars,
         }
+        if isinstance(ctx.get("sovereign_lies"), dict):
+            sec_ctx["_extract_html_text"] = True
         sec_ds = load_dataset(
             secondary_ref,
             context=sec_ctx,
@@ -2937,6 +3066,18 @@ def load_dataset(
             # P7 attaches a pinned companion procurement shard for cross-year repeat-winner cohorts.
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {**rec, "document": "secondary", "secondary_sha256": sec_ds.sha256} for rec in sec_ds.records
+            ]
+        elif isinstance(ctx.get("sovereign_lies"), dict):
+            # P8 pairs a launch-promise official record with a walk-back/amendment official record
+            # across PDF, HTML, JSON, CSV, or TXT formats while keeping both sets clearly tagged.
+            records = [{**rec, "document": "primary"} for rec in records] + [
+                {
+                    **rec,
+                    "document": "secondary",
+                    "secondary_sha256": sec_ds.sha256,
+                    "secondary_format": sec_ds.format,
+                }
+                for rec in sec_ds.records
             ]
         else:
             records = _join_secondary_records(records, sec_ds.records, secondary_ref, sec_ds.sha256)

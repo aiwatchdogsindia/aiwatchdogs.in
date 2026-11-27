@@ -948,6 +948,94 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "sovereign_lies" in vs:
+        p8 = vs["sovereign_lies"]
+        by_lvl = p8.get("by_jurisdiction_level") or {}
+        by_mech = p8.get("by_mechanism") or {}
+        anchor = p8.get("sgb_anchor_case")
+        top_schemes = p8.get("top_schemes") or []
+        union_b = by_lvl.get("union") or {}
+        state_b = by_lvl.get("state") or {}
+        ut_b = by_lvl.get("ut") or {}
+        out.extend(
+            [
+                "## Sovereign Lies (P8)",
+                "",
+                f"> {p8.get('hook') or 'The government made a promise when it launched the scheme. Did it keep it?'}",
+                "",
+                f"- **Coverage:** {int(p8.get('total_tasks') or 0):,} scheme commitment checks across "
+                f"{int(p8.get('unique_schemes_covered') or 0):,} distinct Union & State/UT schemes "
+                f"({int(p8.get('states_and_uts_covered') or 0):,} States/UTs; {int(p8.get('sgb_tasks_count') or 0):,} SGB tasks; "
+                f"{int(p8.get('cleared_control_tasks_embedded') or 0):,} honored/grandfathered controls)",
+                f"- **Jurisdiction tiers:** Union: {int(union_b.get('done') or 0):,}/{int(union_b.get('tasks') or 0):,} · "
+                f"States: {int(state_b.get('done') or 0):,}/{int(state_b.get('tasks') or 0):,} · "
+                f"UTs: {int(ut_b.get('done') or 0):,}/{int(ut_b.get('tasks') or 0):,}",
+                f"- **Leads so far:** {int(p8.get('leads') or 0):,} ({int(p8.get('verified') or 0):,} verified) · "
+                f"{int(p8.get('cleared_tasks') or 0):,} cleared · Published exposure: {_fmt_inr_cr(p8.get('flagged_total_inr_cr'))}",
+                f"- **Summary API (JSON):** [{base_url}/api/projects/sovereign-lies/summary]({base_url}/api/projects/sovereign-lies/summary)",
+                f"- **Source records indexed, with SHA-256 (CSV):** [{base_url}{p8.get('documents_url')}]({base_url}{p8.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p8.get('coverage_url')}]({base_url}{p8.get('coverage_url')})",
+                "",
+            ]
+        )
+        if isinstance(anchor, dict) and anchor.get("scheme_name"):
+            out.extend(
+                [
+                    "### Sovereign Gold Bond (SGB) Anchor Case",
+                    "",
+                    f"- **Scheme:** **{anchor.get('scheme_name')}** — {_md_cell(anchor.get('tranche_or_phase'), max_len=160)}",
+                    f"- **Original Promise ({anchor.get('promise_date')}):** {_md_cell(anchor.get('promise_summary'), max_len=260)}",
+                    f"- **Subsequent Walk-Back ({anchor.get('walkback_date')}):** {_md_cell(anchor.get('walkback_summary'), max_len=260)}",
+                    f"- **Mechanism & Impact:** `{anchor.get('walkback_mechanism')}` · `{anchor.get('retroactive_impact')}`",
+                    "",
+                ]
+            )
+        if by_mech:
+            out.extend(
+                [
+                    "### Walk-Back Mechanisms",
+                    "",
+                    "| Mechanism | Tasks | Leads |",
+                    "| :--- | ---: | ---: |",
+                ]
+            )
+            for mkey, mval in by_mech.items():
+                if isinstance(mval, dict):
+                    out.append(f"| `{mkey}` | {int(mval.get('tasks') or 0):,} | {int(mval.get('leads') or 0):,} |")
+            out.append("")
+        if top_schemes:
+            out.extend(
+                [
+                    "### Top Schemes Audited",
+                    "",
+                    "| Scheme | Jurisdiction | Mechanism | Tasks | Leads |",
+                    "| :--- | :--- | :--- | ---: | ---: |",
+                ]
+            )
+            for sc in top_schemes[:15]:
+                out.append(
+                    f"| {_md_cell(sc.get('scheme_name'), max_len=55)} | {_md_cell(sc.get('jurisdiction'), max_len=28)} | "
+                    f"`{sc.get('walkback_mechanism')}` | {int(sc.get('tasks') or 0):,} | {int(sc.get('leads') or 0):,} |"
+                )
+            out.append("")
+        top = p8.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "### Flagged Scheme Commitment Divergences So Far",
+                    "",
+                    "| Scheme | Jurisdiction | Mechanism | Promise Date | Walk-Back Date | Status |",
+                    "| :--- | :--- | :--- | :---: | :---: | :--- |",
+                ]
+            )
+            for row in top:
+                out.append(
+                    f"| [{_md_cell(row.get('scheme_name') or row.get('title'), max_len=48)}]({base_url}/findings/{row.get('finding_id')}.md) | "
+                    f"{_md_cell(row.get('jurisdiction'), max_len=26)} | `{row.get('walkback_mechanism')}` | "
+                    f"{row.get('promise_date') or '—'} | {row.get('walkback_date') or '—'} | {_status_label(row.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -1545,7 +1633,7 @@ def render_brief_md(base_url: str) -> str:
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (7 Live Projects)",
+        "## What We're Auditing Right Now (8 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
@@ -1554,6 +1642,7 @@ def render_brief_md(base_url: str) -> str:
         f"- **[One Teacher, Five Grades]({base_url}/projects/one-teacher-five-grades.md)** (`P5`) — Official Ministry of Education UDISE+ national reports (2023-24 to 2025-26) audited across 100 State/UT tasks to map single-teacher schools, pupil overcrowding, and under-staffed Government Primary schools.",
         f"- **[Parliament's To-Do List]({base_url}/projects/parliaments-to-do-list.md)** (`P6`) — A minister promised Parliament an answer. Did it ever get one? Auditing 1,000 formal ministerial assurances across Union Ministries on Digital Sansad, citing each original promise, recorded status, and what the follow-up actually answered.",
         f"- **[Only One Bid]({base_url}/projects/only-one-bid.md)** (`P7`) — Which public purchases consistently attract just one bidder — and keep going to the same winner across 10 years of Indian government tenders? Auditing 10,000 real procurement records (2016–2026) while transparently clearing documented PAC/OEM exemptions.",
+        f"- **[Sovereign Lies]({base_url}/projects/sovereign-lies.md)** (`P8`) — The government made a promise when it launched the scheme. Did it keep it? Auditing 1,000 Union and State/UT government scheme commitments (anchored by the Sovereign Gold Bond Scheme) against subsequent tax reversals, benefit cuts, discontinuations, eligibility narrowing, lock-in changes, and arrears while transparently clearing honored or grandfathered schemes.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1801,7 +1890,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6 and P7 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6, P7 and P8 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",
@@ -2004,7 +2093,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list', 'only-one-bid').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list', 'only-one-bid', 'sovereign-lies').",
                     }
                 },
                 "required": ["slug"],

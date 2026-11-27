@@ -208,6 +208,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "single_bid_share_threshold",
         "source_landing_page",
         "source_url",
+        "sovereign_lies",
         "suggested_authority",
         "union_budget",
         "upper_ratio",
@@ -240,6 +241,10 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
         "verdict",
         "exemption_status",
         "single_bid_mechanism",
+        "walkback_mechanism",
+        "retroactive_impact",
+        "scheme_category",
+        "jurisdiction_level",
     }
 )
 
@@ -251,6 +256,7 @@ RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "assurance_key",
     "assurance_ref",
     "case_key",
+    "scheme_slug",
     "normalized_winner_key",
     "source_locator",
     "ocid",
