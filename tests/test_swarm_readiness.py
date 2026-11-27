@@ -131,6 +131,36 @@ def test_throttled_heartbeats_never_fail_a_task() -> None:
     assert len(hub.bodies("/api/desk/submit")) == 1
 
 
+def test_unknown_adjudication_engine_releases_without_a_vote(tmp_path: Path) -> None:
+    lease = _lease("unknown")
+    lease["task"].update(task_type="peer_verify", methodology_code="FUTURE")
+    lease["task"]["payload"] = {"finding": {"id": "fnd-unknown", "methodology_code": "FUTURE"}}
+    hub = _Hub([lease])
+    runner, _ = _runner(hub, tmp_path)
+    summary = runner.run_loop(max_tasks=1)
+    assert "P6" in hub.bodies("/api/desk/next")[0]["supported_methodologies"]
+    assert summary.results[0]["reason"] == "incompatible_engine"
+    assert hub.bodies("/api/desk/release") and not hub.bodies("/api/desk/submit")
+
+
+def test_cleared_whisper_fits_hub_and_validation_detail_reaches_runner(tmp_path: Path) -> None:
+    hub = _Hub([_lease("bad-submit")])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/desk/submit" and json.loads(request.content)["outcome"] == "finding":
+            return httpx.Response(422, json={"detail": [{
+                "loc": ["body", "finding"], "msg": "invalid field", "input": "private submitted data",
+            }]})
+        return hub(request)
+
+    runner, _ = _runner(handler, tmp_path)
+    runner.submit("cleared-p6", outcome="cleared", whisper="a" * 800)
+    assert hub.bodies("/api/desk/submit")[0]["whisper"] == "a" * 500
+    error = runner.run_loop(max_tasks=1).results[0]
+    assert error["reason"] == "validation_error"
+    assert error["error"] == "HTTP 422: body.finding: invalid field"
+
+
 def test_p1_keeps_all_signals_and_reports_explicit_limit() -> None:
     records = [{"page": 1, "raw_text": _PAGE}]
     spec = _P1_CONTEXT["budget_lines"][0]
@@ -409,8 +439,29 @@ def test_out_of_date_official_cli_is_asked_to_refresh(tmp_path: Path, monkeypatc
         old = client.post("/api/agents/register", json=body, headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.2"})
         assert old.status_code == 426 and "refresh" in old.json()["detail"]
         assert client.post("/api/desk/next", json={}, headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.2"}).status_code == 426
+        # 255b699 (no P6) and later P6-capable builds shared this user-agent.
+        assert client.post("/api/desk/next", json={}, headers={"User-Agent": "AIWatchdogs-India-AgentCLI/0.7"}).status_code == 426
         for agent in (CLI_USER_AGENT, "curl/8.5.0", "python-httpx/0.28"):  # current CLI and hand-written clients pass
             assert client.post("/api/agents/register", json={**body, "handle": f"ok-{abs(hash(agent)) % 10**6}"}, headers={"User-Agent": agent}).status_code == 200
+
+
+@pytest.mark.production_missions
+def test_claims_respect_advertised_engines_and_open_list_is_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _project()
+    _, db = _hub_with(tmp_path, monkeypatch, [project])
+    with TestClient(create_app(db_path=db, seed=True)) as client:
+        auth = _register(client, "method-filter")
+        url = "/api/missions/test-city-budget/tasks?kind=audit&status=open"
+        page = client.get(url)
+        assert page.headers["cache-control"] == "no-store"
+        task_id = page.json()["tasks"][0]["id"]
+        for methods in ([], ["P6"]):
+            params = {"supported_methodologies": methods}
+            assert client.post("/api/desk/next", headers=auth, json=params).status_code == 204
+            assert client.post("/api/desk/next", headers=auth, json={**params, "task_id": task_id}).status_code == 409
+        res = client.post("/api/desk/next", headers=auth, json={"supported_methodologies": ["M5"]})
+        assert res.json()["task"]["id"] == task_id
+        assert client.get(url).json()["total"] == 0
 
 
 @pytest.mark.production_missions

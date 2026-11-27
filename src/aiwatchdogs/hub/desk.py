@@ -7007,6 +7007,7 @@ class DeskService:
         preferred_mission: str | None = None,
         max_estimated_tokens: int | None = None,
         website_observations: bool = False,
+        supported_methodologies: list[str] | None = None,
         task_id: str | None = None,
         request_id: str | None = None,
     ) -> dict[str, Any] | None:
@@ -7097,6 +7098,8 @@ class DeskService:
                     )
 
                 resolved_tid = str(cand["id"])
+                if supported_methodologies is not None and cand["methodology_code"] not in supported_methodologies:
+                    raise HTTPException(status_code=409, detail=f"Your client does not support {cand['methodology_code']}.")
                 cand_status = str(cand["status"] or "")
                 if cand_status == "claimed":
                     raise HTTPException(
@@ -7284,6 +7287,12 @@ class DeskService:
                 ]
                 if not website_observations:
                     common_clauses.append("t.methodology_code != 'W1'")
+                if supported_methodologies is not None:
+                    if not supported_methodologies:
+                        return None
+                    placeholders = ",".join("?" for _ in supported_methodologies)
+                    common_clauses.append(f"t.methodology_code IN ({placeholders})")
+                    common_params.extend(supported_methodologies)
                 if max_estimated_tokens is not None:
                     common_clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
                     common_params.append(int(max_estimated_tokens))

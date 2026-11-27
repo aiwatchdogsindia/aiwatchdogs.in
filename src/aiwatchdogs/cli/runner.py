@@ -59,7 +59,7 @@ CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
-CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.7"
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.8"
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
 MAX_RATE_LIMIT_WAITS = 12
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
@@ -215,6 +215,10 @@ class DigestMismatchFailure(ValueError):
     """Raised when a primary or secondary artifact SHA-256 digest fails verification."""
 
 
+class IncompatibleEngine(ValueError):
+    """The client cannot run the recorded engine for this peer check."""
+
+
 class UnevaluableSourceFailure(ValueError):
     """Raised when the check could not read any of the figures it was asked to compare."""
 
@@ -239,6 +243,29 @@ def _retry_after_seconds(resp: httpx.Response) -> float | None:
         return max(1.0, min(float(raw.strip()), MAX_RATE_LIMIT_WAIT_SECONDS))
     except ValueError:
         return None
+
+
+def _validation_detail(response: httpx.Response) -> str:
+    """Format hub and FastAPI errors without echoing submitted field values."""
+    try:
+        body = response.json()
+    except ValueError:
+        return ""
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if isinstance(detail, list):
+        messages = []
+        for item in detail:
+            if isinstance(item, dict) and isinstance(item.get("loc"), list):
+                field = ".".join(str(part) for part in item["loc"])
+                messages.append(f"{field}: {item.get('msg', 'invalid value')}")
+        detail = "; ".join(messages)
+    elif isinstance(detail, dict):
+        violations = detail.get("violations")
+        message = str(detail.get("message") or "")
+        if isinstance(violations, list):
+            message = " ".join([message, *(str(v) for v in violations)])
+        detail = message
+    return scrub_pii(" ".join(detail.split())[:500])[0] if isinstance(detail, str) else ""
 
 
 def _is_lease_cap_429(resp: httpx.Response) -> bool:
@@ -1462,6 +1489,7 @@ class AgentRunner:
             "request_id": claim_request_id,
         }
         body["website_observations"] = True
+        body["supported_methodologies"] = sorted([*METHODOLOGY_CATALOG, "W1"])
         if preferred_mission:
             body["preferred_mission"] = preferred_mission
         cleaned_task_id = (task_id or "").strip()
@@ -1497,7 +1525,7 @@ class AgentRunner:
         """Send live heartbeat + optional whisper. Returns False on 410 Gone."""
         body: dict[str, Any] = {"lease_id": lease_id}
         if whisper is not None:
-            body["whisper"] = whisper
+            body["whisper"] = whisper[:500]
         if progress_pct is not None:
             body["progress_pct"] = progress_pct
 
@@ -1672,7 +1700,7 @@ class AgentRunner:
             "idempotency_key": idem_key,
         }
         if whisper is not None:
-            body["whisper"] = whisper
+            body["whisper"] = whisper[:500]
         if observations is not None:
             body["observations"] = observations
         if finding is not None:
@@ -2071,7 +2099,6 @@ class AgentRunner:
             reverse=True,
         )
         leads_to_submit = sorted_leads[:25]
-
         if methodology_code == "P1":
             metrics["omitted_leads"] = (
                 getattr(engine_res, "omitted_leads", 0) + len(sorted_leads) - len(leads_to_submit)
@@ -2264,6 +2291,8 @@ class AgentRunner:
         methodology_code = str(
             finding.get("methodology_code") or task.get("methodology_code") or ""
         ).upper().strip()
+        if methodology_code not in METHODOLOGY_CATALOG:
+            raise IncompatibleEngine(f"Cannot reproduce {methodology_code!r} with this CLI. Refresh the CLI and retry.")
 
         # Check 4: Neutrality & recursive PII safety across ALL finding fields (including nested metrics/citations/editorial)
         title = str(finding.get("title", ""))
@@ -2422,10 +2451,6 @@ class AgentRunner:
                 "records_scanned": records_count,
                 "aborted_due_to_digest_mismatch": True,
             }
-        elif methodology_code not in METHODOLOGY_CATALOG:
-            reproduction_state = CHECK_FAIL
-            metric_tolerance_state = CHECK_FAIL
-            notes_parts.append(f"Unknown methodology_code {methodology_code!r}.")
         elif dataset is not None:
             repro = self._invoke_engine(
                 methodology_code,
@@ -2436,6 +2461,15 @@ class AgentRunner:
             reproduced_leads_count = len(repro.leads)
             bound_engine_version = str(getattr(repro, "engine_version", None) or "2.0.0")
             bound_ruleset_version = str(getattr(repro, "ruleset_version", None) or f"{methodology_code}-v2")
+            trace = finding.get("agent_trace")
+            trace = trace if isinstance(trace, dict) else {}
+            for field, actual in (("engine_version", bound_engine_version), ("ruleset_version", bound_ruleset_version)):
+                expected = finding.get(field) or trace.get(field)
+                if expected and expected != actual:
+                    raise IncompatibleEngine(f"The finding requires {field} {expected!r}. This CLI ran {actual!r}.")
+            expected_hash = finding.get("verifier_script_hash") or trace.get("verifier_script_hash") or trace.get("script_hash")
+            if expected_hash and expected_hash != repro.script_hash:
+                raise IncompatibleEngine("The local engine fingerprint differs from the one recorded on this finding.")
             bound_as_of_date = str(getattr(repro, "as_of_date", None) or as_of_date or "") or None
 
             match_res = _match_reproduced_lead_strict(
@@ -2587,12 +2621,22 @@ class AgentRunner:
                 self._clear_lease_note(lease_id=lease_id)
                 self._emit("lease_gone", {"lease_id": lease_id})
                 return {"status": "aborted_410", "task_id": task.get("id"), "outcome": "aborted_410"}
-            if _is_digest_mismatch_exception(exc):
+            error = str(exc)
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 422:
+                release_reason = "validation_error"
+                safe_release_note = "The hub rejected the task submission or progress update."
+                detail = _validation_detail(exc.response)
+                if detail:
+                    error = f"HTTP 422: {detail}"
+            elif _is_digest_mismatch_exception(exc):
                 release_reason = "digest_mismatch"
                 safe_release_note = "Artifact SHA-256 digest mismatch."
             elif isinstance(exc, UnevaluableSourceFailure):
                 release_reason = "unevaluable_source"
                 safe_release_note = "The check could not read the figures it was asked to compare."
+            elif isinstance(exc, IncompatibleEngine):
+                release_reason = "incompatible_engine"
+                safe_release_note = "The local CLI could not run the recorded methodology and ruleset."
             elif isinstance(exc, PermissionError):
                 exc_msg = str(exc)
                 if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:
@@ -2618,7 +2662,7 @@ class AgentRunner:
                     "lease_id": lease_id,
                     "task_id": task.get("id"),
                     "reason": release_reason,
-                    "error": str(exc),
+                    "error": error,
                 },
             )
             return {
@@ -2626,7 +2670,7 @@ class AgentRunner:
                 "task_id": task.get("id"),
                 "outcome": "released",
                 "reason": release_reason,
-                "error": str(exc),
+                "error": error,
             }
 
     def run_loop(

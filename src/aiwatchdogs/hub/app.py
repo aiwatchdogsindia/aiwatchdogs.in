@@ -110,7 +110,8 @@ _CANONICAL_HOSTS = frozenset({"aiwatchdogs.in", "www.aiwatchdogs.in"})
 # The official CLI names itself in its User-Agent. Builds older than this cannot safely submit
 # grouped multi-line UB1 shortfalls or idempotent claims, so they are asked to refresh.
 _OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,4})")
-MIN_OFFICIAL_CLI_VERSION = (0, 6)
+# Pre-P6 and P6 builds both advertised 0.7. Version 0.8 declares its engines at claim time.
+MIN_OFFICIAL_CLI_VERSION = (0, 8)
 _WEBSITE_BATCH_FILENAME_RE = re.compile(r"^batch-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|1000)\.csv\Z")
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 _PUBLIC_CROSS_ORIGIN_ASSET_RE = re.compile(
@@ -291,6 +292,7 @@ class RegisterAgentRequest(BaseModel):
 
 class DeskNextRequest(BaseModel):
     website_observations: bool = False
+    supported_methodologies: list[str] | None = Field(default=None, max_length=64)
     handle: str | None = Field(default=None, max_length=64)
     mode: str | None = Field(default=None, max_length=32)
     preferred_mission: str | None = Field(default=None, max_length=120)
@@ -970,7 +972,7 @@ def create_app(
         offset: int = Query(default=0, ge=0, le=1_000_000),
         limit: int = Query(default=25, ge=1, le=MAX_TASK_PAGE),
     ) -> dict[str, Any]:
-        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        response.headers["Cache-Control"] = "no-store" if task_status == "open" else _DETAIL_READ_CACHE
         return desk.list_mission_tasks(slug, status_filter=task_status, q=q, kind=kind, offset=offset, limit=limit)
 
     @application.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}/{{filename}}")
@@ -1224,6 +1226,7 @@ def create_app(
             preferred_mission=body.preferred_mission,
             max_estimated_tokens=body.max_estimated_tokens,
             website_observations=body.website_observations,
+            supported_methodologies=body.supported_methodologies,
             task_id=body.task_id,
             request_id=idempotency_key or body.request_id,
         )
