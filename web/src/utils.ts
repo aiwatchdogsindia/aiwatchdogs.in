@@ -198,6 +198,7 @@ export function projectCodeFor(
 }
 
 export interface PillarTint {
+  /** CSS colour for inline styles: a design token, so it follows the theme. */
   hex: string;
   rgb: string;
   wash: string;
@@ -207,27 +208,27 @@ export interface PillarTint {
 export function pillarTint(pillar?: string): PillarTint {
   const p = (pillar || '').toLowerCase();
   if (p.includes('procure') || p.includes('tender')) {
-    return { hex: '#FF9933', rgb: '255, 153, 51', wash: 'rgba(255, 153, 51, 0.14)', label: 'Procurement' };
+    return { hex: 'var(--secondary)', rgb: '255, 153, 51', wash: 'rgba(255, 153, 51, 0.14)', label: 'Procurement' };
   }
   if (p.includes('audit') || p.includes('cag')) {
-    return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: 'CAG & Compliance' };
+    return { hex: 'var(--primary)', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: 'CAG & Compliance' };
   }
   if (p.includes('budget') || p.includes('fiscal')) {
-    return { hex: '#138808', rgb: '95, 211, 90', wash: 'rgba(19, 136, 8, 0.12)', label: 'Budgets & Fiscal' };
+    return { hex: 'var(--tertiary)', rgb: '95, 211, 90', wash: 'rgba(19, 136, 8, 0.12)', label: 'Budgets & Fiscal' };
   }
   if (p.includes('infra') || p.includes('work') || p.includes('road')) {
-    return { hex: '#8A4200', rgb: '168, 79, 0', wash: 'rgba(138, 66, 0, 0.12)', label: 'Infrastructure' };
+    return { hex: 'var(--secondary-ink)', rgb: '168, 79, 0', wash: 'rgba(138, 66, 0, 0.12)', label: 'Infrastructure' };
   }
   if (p.includes('scheme') || p.includes('welfare') || p.includes('social')) {
-    return { hex: '#E06A10', rgb: '255, 184, 102', wash: 'rgba(224, 106, 16, 0.12)', label: 'Welfare & Schemes' };
+    return { hex: 'var(--secondary-hover)', rgb: '255, 184, 102', wash: 'rgba(224, 106, 16, 0.12)', label: 'Welfare & Schemes' };
   }
   if (p.includes('corp') || p.includes('politic') || p.includes('disclos') || p.includes('gov')) {
-    return { hex: '#4FA83E', rgb: '150, 225, 130', wash: 'rgba(79, 168, 62, 0.12)', label: 'Disclosures' };
+    return { hex: 'var(--tertiary-ink)', rgb: '150, 225, 130', wash: 'rgba(79, 168, 62, 0.12)', label: 'Disclosures' };
   }
   if (p.includes('parl')) {
-    return { hex: '#A84F00', rgb: '168, 79, 0', wash: 'rgba(168, 79, 0, 0.11)', label: 'Parliament & RTI' };
+    return { hex: 'var(--secondary-ink)', rgb: '168, 79, 0', wash: 'rgba(168, 79, 0, 0.11)', label: 'Parliament & RTI' };
   }
-  return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: pillarLabel(pillar) };
+  return { hex: 'var(--ink-3)', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: pillarLabel(pillar) };
 }
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {

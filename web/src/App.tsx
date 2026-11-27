@@ -7,6 +7,7 @@ import { Header } from './components/Header';
 import { JustInBar } from './components/JustInBar';
 import { computeEffectiveWorkingNow } from './components/LiveSwarmViewer';
 import { ToastProvider } from './components/Toast';
+import { useReveal } from './hooks/useReveal';
 import type { SseStatus } from './hooks/useSwarmStream';
 import { HomePage } from './pages/HomePage';
 import { initAnalytics } from './lib/analytics';
@@ -87,6 +88,7 @@ function AppShell() {
     initAnalytics();
   }, []);
   const needsLiveUpdates = cleanPath === '/' || cleanPath === '/live';
+  useReveal(cleanPath);
 
   const [head, setHead] = useState<HeadData | null>(null);
   const [headLoading, setHeadLoading] = useState(true);

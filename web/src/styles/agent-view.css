@@ -287,23 +287,22 @@
   outline: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  .av-raw-shell {
-    background: #121212;
-    color: #E5E5E5;
-  }
+/* Follows the site theme switch (data-theme on <html>), not just the OS. */
+:root[data-theme='dark'] .av-raw-shell {
+  background: #121212;
+  color: #E5E5E5;
+}
 
-  .av-raw-exit {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(18, 18, 18, 0.9);
-    color: #BDBDBD;
-  }
+:root[data-theme='dark'] .av-raw-exit {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(18, 18, 18, 0.9);
+  color: #BDBDBD;
+}
 
-  .av-raw-exit:hover,
-  .av-raw-exit:focus-visible {
-    color: #FFFFFF;
-    border-color: #FFFFFF;
-  }
+:root[data-theme='dark'] .av-raw-exit:hover,
+:root[data-theme='dark'] .av-raw-exit:focus-visible {
+  color: #FFFFFF;
+  border-color: #FFFFFF;
 }
 
 @media print {

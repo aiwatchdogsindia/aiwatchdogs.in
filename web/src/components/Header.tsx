@@ -3,18 +3,19 @@ import { useEffect, useState } from 'react';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
-import { SocialIcon, SocialIconRow } from './SocialLinks';
+import { SocialIcon } from './SocialLinks';
+import { ThemeToggle } from './ThemeToggle';
 
 interface HeaderProps {
   onOpenJoin: () => void;
 }
 
 const NAV_ITEMS = [
-  { to: '/#map', label: 'Map', key: 'map' },
   { to: '/projects', label: 'Projects', key: 'projects' },
   { to: '/findings', label: 'Findings', key: 'findings' },
-  { to: '/graveyard', label: 'Graveyard', key: 'graveyard' },
   { to: '/live', label: 'Live', key: 'live' },
+  { to: '/#map', label: 'Map', key: 'map' },
+  { to: '/graveyard', label: 'Graveyard', key: 'graveyard' },
   { to: '/contributors', label: 'Contributors', key: 'contributors' },
   { to: '/how-it-works', label: 'How it works', key: 'how-it-works' },
 ];
@@ -22,10 +23,18 @@ const NAV_ITEMS = [
 export function Header({ onOpenJoin }: HeaderProps) {
   const { pathname, hash } = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname, hash]);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     if (!mobileOpen) return;
@@ -45,57 +54,59 @@ export function Header({ onOpenJoin }: HeaderProps) {
   };
 
   return (
-    <header className="site-header">
-      <div className="site-header-row">
-        <div className="brand-wrap">
-          <Link to="/" className="brand" onClick={() => setMobileOpen(false)}>
-            <img
-              src="/logo.svg"
-              alt="AI Watchdogs India"
-              className="brand-logo"
-              width={128}
-              height={128}
-            />
-            <span className="brand-text">
-              <span className="brand-mark">AI Watchdogs India</span>
-              <span className="brand-tag">A COORDINATED AI AGENT SWARM AUDITING THE GOVERNMENT IN THE OPEN</span>
-            </span>
-          </Link>
-        </div>
+    <header className={`hdr ${scrolled ? 'is-scrolled' : ''} ${mobileOpen ? 'is-open' : ''}`}>
+      {/* Tiranga ribbon: saffron, white, green */}
+      <div className="hdr-ribbon" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
 
-        <nav className="site-nav" aria-label="Primary navigation">
+      <div className="hdr-row">
+        <Link to="/" className="hdr-brand" onClick={() => setMobileOpen(false)}>
+          <img src="/logo.svg" alt="" className="hdr-logo" width={44} height={44} />
+          <span className="hdr-wordmark">
+            <span className="hdr-name">AI Watchdogs India</span>
+            <span className="hdr-tag">Public spending, audited in the open</span>
+          </span>
+        </Link>
+
+        <nav className="hdr-nav" aria-label="Primary navigation">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.key}
               to={item.to}
-              className={`site-nav-link ${isActive(item) ? 'active' : ''}`}
+              className={`hdr-link ${isActive(item) ? 'is-active' : ''}`}
+              aria-current={isActive(item) ? 'page' : undefined}
             >
               {item.label}
             </Link>
           ))}
         </nav>
 
-        <div className="header-right">
-          <SocialIconRow />
-          <span className="header-divider" aria-hidden="true" />
+        <div className="hdr-tools">
           <AgentModeToggle variant="header" />
+          <ThemeToggle />
+          <button type="button" className="btn btn-primary btn-sm hdr-join" onClick={onOpenJoin}>
+            Join Us
+          </button>
           <button
             type="button"
-            className="mobile-menu-btn"
+            className="hdr-menu-btn"
             aria-label="Toggle navigation menu"
             aria-expanded={mobileOpen}
             onClick={() => setMobileOpen((v) => !v)}
           >
-            {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
       </div>
 
-      <div className={`mobile-nav-drawer ${mobileOpen ? 'open' : ''}`}>
-        <div className="mobile-nav-list">
+      <div className="hdr-drawer" hidden={!mobileOpen}>
+        <nav className="hdr-drawer-nav" aria-label="Mobile navigation">
           <Link
             to="/"
-            className={`mobile-nav-link ${pathname === '/' && !hash ? 'active' : ''}`}
+            className={`hdr-drawer-link ${pathname === '/' && !hash ? 'is-active' : ''}`}
             onClick={() => setMobileOpen(false)}
           >
             Home
@@ -104,7 +115,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
             <Link
               key={item.key}
               to={item.to}
-              className={`mobile-nav-link ${isActive(item) ? 'active' : ''}`}
+              className={`hdr-drawer-link ${isActive(item) ? 'is-active' : ''}`}
               onClick={() => setMobileOpen(false)}
             >
               {item.label}
@@ -112,53 +123,51 @@ export function Header({ onOpenJoin }: HeaderProps) {
           ))}
           <Link
             to="/brief"
-            className={`mobile-nav-link ${pathname === '/brief' ? 'active' : ''}`}
+            className={`hdr-drawer-link ${pathname === '/brief' ? 'is-active' : ''}`}
             onClick={() => setMobileOpen(false)}
           >
             Project Brief
           </Link>
           <Link
             to="/changelog"
-            className={`mobile-nav-link ${pathname === '/changelog' ? 'active' : ''}`}
+            className={`hdr-drawer-link ${pathname === '/changelog' ? 'is-active' : ''}`}
             onClick={() => setMobileOpen(false)}
           >
             Changelog
           </Link>
+        </nav>
+
+        <div className="hdr-drawer-actions">
           <button
             type="button"
-            className="mobile-nav-link mobile-nav-join"
+            className="btn btn-primary"
             onClick={() => {
               setMobileOpen(false);
               onOpenJoin();
             }}
           >
-            Join Swarm
+            Join Us
           </button>
-          <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
+          <span onClick={() => setMobileOpen(false)}>
             <AgentModeToggle variant="compact" />
-          </div>
+          </span>
         </div>
 
-        <div className="mobile-nav-socials">
-          <div className="kicker" style={{ marginBottom: 8 }}>
-            Socials
-          </div>
-          <div className="mobile-social-grid">
-            {OFFICIAL_SOCIALS.map((social) => (
-              <a
-                key={social.id}
-                href={social.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={social.ariaLabel}
-                className="mobile-social-link"
-                onClick={() => setMobileOpen(false)}
-              >
-                <SocialIcon id={social.id} size={15} />
-                <span>{social.name}</span>
-              </a>
-            ))}
-          </div>
+        <div className="hdr-drawer-socials">
+          {OFFICIAL_SOCIALS.map((social) => (
+            <a
+              key={social.id}
+              href={social.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={social.ariaLabel}
+              className="hdr-drawer-social"
+              onClick={() => setMobileOpen(false)}
+            >
+              <SocialIcon id={social.id} size={16} />
+              <span>{social.name}</span>
+            </a>
+          ))}
         </div>
       </div>
     </header>

@@ -1,5 +1,6 @@
 import { ArrowUpRight, ChevronLeft, ChevronRight, ExternalLink, Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cssToken, useTheme } from '../lib/theme';
 import { useRouter } from '../router';
 import type { GraphData, GraphNode } from '../types';
 import { formatInrCr, isUnverifiedStatus, pillarLabel, pillarTint, projectCodeFor, safeExternalUrl, statusMeta } from '../utils';
@@ -12,6 +13,45 @@ interface ObservatoryMapProps {
   missionsCount?: number;
   refreshTick?: number;
   onSelectFinding: (id: string | number) => void;
+}
+
+/** Canvas colours, resolved from the design tokens for the active theme. */
+interface MapPalette {
+  ink: string;
+  ink3: string;
+  ink5: string;
+  paper: string;
+  raised: string;
+  well: string;
+  primary: string;
+  secondary: string;
+  tertiary: string;
+  tertiaryInk: string;
+  danger: string;
+}
+
+function readMapPalette(): MapPalette {
+  return {
+    ink: cssToken('--ink', '#1D1B16'),
+    ink3: cssToken('--ink-3', '#575145'),
+    ink5: cssToken('--ink-5', '#9A917F'),
+    paper: cssToken('--sunk', '#F4EEE0'),
+    raised: cssToken('--raised', '#FFFDF8'),
+    well: cssToken('--sunk-2', '#ECE4D2'),
+    primary: cssToken('--primary', '#1B2A80'),
+    secondary: cssToken('--secondary', '#FF9933'),
+    tertiary: cssToken('--tertiary', '#138808'),
+    tertiaryInk: cssToken('--tertiary-ink', '#0E6B06'),
+    danger: cssToken('--danger', '#A2321F'),
+  };
+}
+
+/** `#RRGGBB` token with an alpha channel, for canvas strokes and fills. */
+function withAlpha(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
 interface WorldNode {
@@ -75,6 +115,9 @@ export function ObservatoryMap({
   onSelectFinding,
 }: ObservatoryMapProps) {
   const { navigate } = useRouter();
+  const { theme } = useTheme();
+  // Re-read the tokens whenever the theme flips; the draw effect depends on this
+  const palette = useMemo(() => readMapPalette(), [theme]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
@@ -564,12 +607,13 @@ export function ObservatoryMap({
       ctx.translate(-cam.x, -cam.y);
 
       const focusId = hoveredIdRef.current || pinnedIdRef.current;
+      const pal = palette;
 
       // 1. Cluster radial hazes & dashed perimeter clouds
       for (const cl of world.clusters) {
         ctx.save();
         ctx.setLineDash([3 / cam.zoom, 5 / cam.zoom]);
-        ctx.strokeStyle = `rgba(${cl.tint.rgb}, 0.24)`;
+        ctx.strokeStyle = withAlpha(pal.ink5, 0.6);
         ctx.lineWidth = 1 / cam.zoom;
         ctx.beginPath();
         ctx.arc(cl.cx, cl.cy, cl.radius, 0, Math.PI * 2);
@@ -586,14 +630,14 @@ export function ObservatoryMap({
           ? Math.max(9.5 / cam.zoom, 11 / Math.sqrt(cam.zoom))
           : Math.max(9.5, 11 / Math.sqrt(cam.zoom));
         const maxLabelChars = isNarrowCanvas ? 18 : 26;
-        ctx.font = `400 ${titleWorldPx}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(27, 26, 23, 0.88)';
+        ctx.font = `600 ${titleWorldPx}px "Geist", system-ui, sans-serif`;
+        ctx.fillStyle = withAlpha(pal.ink, 0.88);
         ctx.textAlign = 'center';
         const shortLabel = `${cl.shortCode}, ${cl.label.length > maxLabelChars ? `${cl.label.slice(0, maxLabelChars - 1)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + (isNarrowCanvas ? 14 / cam.zoom : 16 / Math.sqrt(cam.zoom)));
 
-        ctx.font = `400 ${subWorldPx}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(27, 26, 23, 0.68)';
+        ctx.font = `400 ${subWorldPx}px "Geist", system-ui, sans-serif`;
+        ctx.fillStyle = withAlpha(pal.ink, 0.66);
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
             ? `${cl.verifiedCount} verified, ${cl.reviewCount} in review`
@@ -624,18 +668,18 @@ export function ObservatoryMap({
         ctx.quadraticCurveTo(cx, cy, t.x, t.y);
 
         if (isInc) {
-          ctx.strokeStyle = 'rgba(27, 26, 23, 0.72)';
+          ctx.strokeStyle = withAlpha(pal.ink, 0.72);
           ctx.lineWidth = 1.9 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'disputed' || t.kind === 'disputed') {
-          ctx.strokeStyle = '#4A2622';
+          ctx.strokeStyle = withAlpha(pal.danger, 0.7);
           ctx.setLineDash([3, 4]);
           ctx.lineWidth = 1.1 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'review' || t.kind === 'review') {
-          ctx.strokeStyle = 'rgba(27, 26, 23, 0.22)';
+          ctx.strokeStyle = withAlpha(pal.ink, 0.26);
           ctx.setLineDash([2, 5]);
           ctx.lineWidth = 1 / Math.sqrt(cam.zoom);
         } else {
-          ctx.strokeStyle = crossCluster ? 'rgba(27,26,23,0.12)' : 'rgba(27,26,23,0.38)';
+          ctx.strokeStyle = withAlpha(pal.ink, crossCluster ? 0.12 : 0.38);
           ctx.lineWidth = (crossCluster ? 1 : 1.25) / Math.sqrt(cam.zoom);
         }
         ctx.stroke();
@@ -657,7 +701,7 @@ export function ObservatoryMap({
             if (rp > 0 && rp < 1) {
               ctx.beginPath();
               ctx.arc(wn.x, wn.y, r + rp * 44, 0, Math.PI * 2);
-              ctx.strokeStyle = `rgba(27, 26, 23, ${(1 - rp) * 0.6})`;
+              ctx.strokeStyle = withAlpha(pal.secondary, (1 - rp) * 0.8);
               ctx.lineWidth = 1.6 / cam.zoom;
               ctx.stroke();
             }
@@ -668,51 +712,51 @@ export function ObservatoryMap({
         if (wn.isCommunity) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 3.6, 0, Math.PI * 2);
-          ctx.strokeStyle = '#1B1A17';
+          ctx.strokeStyle = pal.ink;
           ctx.lineWidth = 2.4 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
 
-        // Verified node: warm-cream #FFFFFF solid dot + pre-rendered radial glow (ONLY resting glow!)
+        // Verified: the only solid green node
         if (wn.kind === 'verified') {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.fillStyle = pal.tertiary;
           ctx.fill();
         } else if (wn.kind === 'review') {
-          // In Peer Review / Unverified: HOLLOW dashed #CFE8CA + orbiting cyan agent comet!
+          // In peer review: hollow dashed ring with an orbiting agent comet
           ctx.save();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#F28A1E';
+          ctx.fillStyle = pal.raised;
           ctx.fill();
           ctx.setLineDash([2.2, 2.2]);
-          ctx.strokeStyle = '#3A2E1E';
+          ctx.strokeStyle = pal.ink3;
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.restore();
 
-          // Orbiting cyan agent-at-work comet (#FFD9B3 core + #FFB866 tail)
+          // Orbiting agent-at-work comet: saffron head, ink tail
           const phase = tSec * 1.45 + fnv1a(wn.node.id) * Math.PI * 2;
           const orbR = r + 5.2;
           const cx = wn.x + Math.cos(phase) * orbR;
           const cy = wn.y + Math.sin(phase) * orbR;
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, orbR, phase - 1.15, phase);
-          ctx.strokeStyle = 'rgba(27, 26, 23, 0.5)';
+          ctx.strokeStyle = withAlpha(pal.secondary, 0.7);
           ctx.lineWidth = 1.4;
           ctx.stroke();
           ctx.beginPath();
-          ctx.arc(cx, cy, 1.9, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.arc(cx, cy, 2.1, 0, Math.PI * 2);
+          ctx.fillStyle = pal.secondary;
           ctx.fill();
         } else if (wn.kind === 'disputed') {
-          // Disputed: #053402 fill + #C2412D ring + internal × cross
+          // Disputed: red ring with an internal cross
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#F28A1E';
+          ctx.fillStyle = pal.raised;
           ctx.fill();
-          ctx.strokeStyle = '#8A1C0C';
+          ctx.strokeStyle = pal.danger;
           ctx.lineWidth = 1.6;
           ctx.stroke();
           const d = r * 0.48;
@@ -721,44 +765,44 @@ export function ObservatoryMap({
           ctx.lineTo(wn.x + d, wn.y + d);
           ctx.moveTo(wn.x + d, wn.y - d);
           ctx.lineTo(wn.x - d, wn.y + d);
-          ctx.strokeStyle = '#8A1C0C';
+          ctx.strokeStyle = pal.danger;
           ctx.lineWidth = 1.4;
           ctx.stroke();
         } else if (wn.kind === 'cleared') {
-          // Cleared & Explained: #053402 fill + #8FC287 ring + horizontal stop bar −
+          // Cleared and explained: green ring with a horizontal stop bar
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#F28A1E';
+          ctx.fillStyle = pal.raised;
           ctx.fill();
-          ctx.strokeStyle = '#0F7306';
+          ctx.strokeStyle = pal.tertiaryInk;
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(wn.x - r * 0.52, wn.y);
           ctx.lineTo(wn.x + r * 0.52, wn.y);
-          ctx.strokeStyle = '#3A2E1E';
+          ctx.strokeStyle = pal.ink3;
           ctx.lineWidth = 1.5;
           ctx.stroke();
         } else if (wn.kind === 'mission') {
-          // Mission core node: warm amber outline
+          // Project core: navy disc
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#1B1A17';
+          ctx.fillStyle = pal.primary;
           ctx.fill();
-          ctx.strokeStyle = '#FFFFFF';
+          ctx.strokeStyle = pal.paper;
           ctx.lineWidth = 1.8;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, 2.4, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.fillStyle = pal.paper;
           ctx.fill();
         } else if (wn.kind === 'source') {
-          // Official .gov.in source: quiet cobalt diamond
+          // Official .gov.in source: quiet diamond
           ctx.save();
           ctx.translate(wn.x, wn.y);
           ctx.rotate(Math.PI / 4);
-          ctx.fillStyle = '#F28A1E';
-          ctx.strokeStyle = '#3A2E1E';
+          ctx.fillStyle = pal.raised;
+          ctx.strokeStyle = pal.ink3;
           ctx.lineWidth = 1.3;
           ctx.fillRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
           ctx.strokeRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
@@ -767,9 +811,9 @@ export function ObservatoryMap({
           // Ministry / jurisdiction anchor
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#F4F4F4';
+          ctx.fillStyle = pal.well;
           ctx.fill();
-          ctx.strokeStyle = '#1B1A17';
+          ctx.strokeStyle = pal.ink;
           ctx.lineWidth = 1.25;
           ctx.stroke();
         }
@@ -778,7 +822,7 @@ export function ObservatoryMap({
         if (isPinned || isHov) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 5.5, 0, Math.PI * 2);
-          ctx.strokeStyle = isPinned ? '#1B1A17' : 'rgba(255,255,255,0.75)';
+          ctx.strokeStyle = isPinned ? pal.ink : withAlpha(pal.ink, 0.45);
           ctx.lineWidth = 1.5 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
@@ -786,8 +830,8 @@ export function ObservatoryMap({
         // Zoomed-in crisp node labels
         if (cam.zoom >= 1.32 || isPinned || isHov) {
           ctx.save();
-          ctx.font = `400 ${12.5 / Math.sqrt(cam.zoom)}px "Geist Serif", Georgia, serif`;
-          ctx.fillStyle = isPinned || isHov ? '#1B1A17' : 'rgba(27,26,23,0.82)';
+          ctx.font = `500 ${12.5 / Math.sqrt(cam.zoom)}px "Geist", system-ui, sans-serif`;
+          ctx.fillStyle = isPinned || isHov ? pal.ink : withAlpha(pal.ink, 0.82);
           ctx.textAlign = 'left';
           const lbl = wn.node.label.length > 28 ? `${wn.node.label.slice(0, 27)}…` : wn.node.label;
           ctx.fillText(lbl, wn.x + r + 7, wn.y + 3.5 / Math.sqrt(cam.zoom));
@@ -821,12 +865,12 @@ export function ObservatoryMap({
           for (const wn of world.worldNodes) {
             mctx.fillStyle =
               wn.kind === 'verified'
-                ? '#0F7306'
+                ? pal.tertiary
                 : wn.kind === 'mission'
-                  ? '#FF9933'
+                  ? pal.primary
                   : wn.kind === 'disputed'
-                    ? '#8A1C0C'
-                    : '#6E4A1C';
+                    ? pal.danger
+                    : pal.ink5;
             mctx.fillRect(toMx(wn.x) - 1, toMy(wn.y) - 1, 2.2, 2.2);
           }
 
@@ -835,8 +879,8 @@ export function ObservatoryMap({
           const vy1 = toMy(cam.y - h / (2 * cam.zoom));
           const vx2 = toMx(cam.x + w / (2 * cam.zoom));
           const vy2 = toMy(cam.y + h / (2 * cam.zoom));
-          mctx.strokeStyle = 'rgba(27, 26, 23, 0.8)';
-          mctx.fillStyle = 'rgba(27, 26, 23, 0.08)';
+          mctx.strokeStyle = withAlpha(pal.ink, 0.8);
+          mctx.fillStyle = withAlpha(pal.ink, 0.08);
           mctx.lineWidth = 1;
           mctx.fillRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
           mctx.strokeRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
@@ -919,7 +963,7 @@ export function ObservatoryMap({
       mq?.removeEventListener?.('change', onMotionChange);
       window.removeEventListener('resize', onResize);
     };
-  }, [edges, world]);
+  }, [edges, world, palette]);
 
   // Pointer & Wheel Handlers
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1086,12 +1130,9 @@ export function ObservatoryMap({
       {/* Top-Left Editorial Title + Breadcrumb */}
       <div className="map-head">
         <div className="map-head-inner">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src="/logo-dark.svg" alt="" className="map-head-logo" width={64} height={64} />
-            <span className="kicker" style={{ color: 'var(--obs-mist)' }}>
-              Observatory map
-            </span>
-          </div>
+          <span className="kicker" style={{ color: 'var(--obs-mist)' }}>
+            Observatory map
+          </span>
           <h2>
             {verifiedCount > 0 || agentsActive > 0
               ? `${verifiedCount} peer-verified lead${verifiedCount === 1 ? '' : 's'} and ${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing across ${missionsCount} ${missionsCount === 1 ? 'project' : 'projects'}.`
@@ -1296,10 +1337,10 @@ export function ObservatoryMap({
                       textTransform: 'uppercase',
                       color:
                         wn.kind === 'verified'
-                          ? '#0F7306'
+                          ? 'var(--tertiary-ink)'
                           : wn.kind === 'mission'
-                            ? '#8A4200'
-                            : '#45351F',
+                            ? 'var(--primary-ink)'
+                            : 'var(--ink-4)',
                       flexShrink: 0,
                     }}
                   >
@@ -1333,7 +1374,7 @@ export function ObservatoryMap({
           </div>
           <div className="map-card-title">{hoveredNode.wn.node.label}</div>
           {hoveredNode.wn.node.value_inr_cr != null && hoveredNode.wn.node.value_inr_cr > 0 && (
-            <div className="font-mono tabular" style={{ fontSize: 11, color: '#0F7306', marginTop: 4 }}>
+            <div className="font-mono tabular" style={{ fontSize: 11, color: 'var(--tertiary-ink)', marginTop: 4 }}>
               {formatInrCr(hoveredNode.wn.node.value_inr_cr)}
             </div>
           )}
@@ -1539,8 +1580,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: '#FFFFFF',
-                boxShadow: '0 0 7px rgba(255,255,255,0.8)',
+                background: 'var(--tertiary)',
               }}
             />
             <span>verified</span>
@@ -1551,13 +1591,13 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.25px dashed #3A2E1E',
+                border: '1.25px dashed var(--ink-3)',
               }}
             />
             <span>in review</span>
           </span>
           <span className="map-leg-item">
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1B1A17' }} />
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--secondary)' }} />
             <span>agent comet</span>
           </span>
           <span className="map-leg-item">
@@ -1566,7 +1606,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #8A1C0C',
+                border: '1.4px solid var(--danger)',
               }}
             />
             <span>disputed ×</span>
@@ -1577,7 +1617,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #0F7306',
+                border: '1.4px solid var(--tertiary-ink)',
               }}
             />
             <span>cleared −</span>
@@ -1588,7 +1628,7 @@ export function ObservatoryMap({
                 width: 9,
                 height: 9,
                 borderRadius: '50%',
-                border: '2px solid #1B1A17',
+                border: '2px solid var(--ink)',
               }}
             />
             <span>community node</span>
