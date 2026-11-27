@@ -70,7 +70,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 14
+LATEST_SCHEMA_VERSION = 15
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -2355,6 +2355,20 @@ def _migrate_v14_quorum3_cross_harness_backfill(conn: Any, *, is_postgres: bool)
         conn.execute("DELETE FROM summary_cache")
 
 
+_V15_PEER_VERIFY_CLAIM_INDEXES: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS idx_tasks_claimed_target_finding ON tasks(target_finding_id) WHERE status = 'claimed' AND target_finding_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_findings_peer_review_mission ON findings(mission_id, id) WHERE status = 'peer_review' AND quarantined = 0",
+    "CREATE INDEX IF NOT EXISTS idx_findings_unattributed_peer_review ON findings(status, quarantined, mission_id, submitted_coding_agent, submitted_coding_agent_model) WHERE status = 'peer_review' AND quarantined = 0 AND (TRIM(submitted_coding_agent) = '' OR TRIM(submitted_coding_agent_model) = '')",
+)
+
+
+def _migrate_v15_peer_verify_claim_indexes(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v15: partial indexes for O(1) active-lease conflict fetch and peer_verify claim fast-paths."""
+    _ = is_postgres
+    for stmt in _V15_PEER_VERIFY_CLAIM_INDEXES:
+        conn.execute(stmt)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -2370,6 +2384,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (12, "012_idempotent_claims_and_claim_order_indexes", _migrate_v12_idempotent_claims_and_claim_order_indexes),
     (13, "013_egress_cache_and_token_totals", _migrate_v13_egress_cache_and_token_totals),
     (14, "014_quorum3_cross_harness_backfill", _migrate_v14_quorum3_cross_harness_backfill),
+    (15, "015_peer_verify_claim_indexes", _migrate_v15_peer_verify_claim_indexes),
 )
 
 

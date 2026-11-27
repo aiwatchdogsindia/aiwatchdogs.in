@@ -592,6 +592,9 @@ def test_postgres_security_hardening_constraints_indexes_and_races(pg_schema_url
                 "uq_score_events_dedup",
                 "idx_tasks_status_lease_exp",
                 "idx_events_finding_id",
+                "idx_tasks_claimed_target_finding",
+                "idx_findings_peer_review_mission",
+                "idx_findings_unattributed_peer_review",
             ):
                 assert expected_idx in idx_names, f"Missing PG index {expected_idx}"
 
