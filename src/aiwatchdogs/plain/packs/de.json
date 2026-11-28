@@ -1,0 +1,252 @@
+{
+  "code": "de",
+  "name": "German",
+  "native": "Deutsch",
+  "dir": "ltr",
+  "bcp47": "de-DE",
+  "num": {
+    "dec": ",",
+    "group": ".",
+    "grouping": "western",
+    "pct": "{n} %"
+  },
+  "money": {
+    "style": "intl",
+    "crore": "",
+    "lakh": "",
+    "million": "Mio.",
+    "billion": "Mrd.",
+    "wan": "",
+    "yi": ""
+  },
+  "ui": {
+    "nav_news": "Nachrichten",
+    "language": "Sprache",
+    "simple_words": "In einfachen Worten",
+    "what_found": "Was wir gefunden haben",
+    "why_matters": "Warum das wichtig ist",
+    "not_mean": "Was das nicht bedeutet",
+    "where_stands": "Wo es steht",
+    "ask": "Eine faire Frage",
+    "source": "Originaldokument ansehen",
+    "technical": "Technische Details",
+    "listen": "Anhören",
+    "stop": "Stopp",
+    "share_whatsapp": "Auf WhatsApp teilen",
+    "copy": "Text kopieren",
+    "copied": "Kopiert",
+    "today": "Heutige Ausgabe",
+    "past": "Frühere Ausgaben",
+    "live": "Wird im Laufe des Tages aktualisiert",
+    "final": "Endgültige Ausgabe",
+    "no_voice": "Ihr Gerät hat keine Vorlesestimme für diese Sprache.",
+    "open_finding": "Ganzen Befund öffnen",
+    "none_yet": "Noch keine Ausgaben.",
+    "names_note": "Namen von Behörden, Orten und Programmen sind so belassen, wie sie in den Originaldokumenten stehen.",
+    "feed": "Per Feed folgen",
+    "min_read": "{n} Min. Lesezeit",
+    "edition_of": "Ausgabe vom {date}",
+    "copy_prompt": "Zeile für Ihren Agenten kopieren",
+    "model_note": "In einfachen Worten verfasst von {model}, danach maschinell mit den Originalzahlen abgeglichen."
+  },
+  "terms": {
+    "be": "ursprüngliche Plan",
+    "re": "überarbeitete Plan",
+    "actual": "tatsächlich ausgegebene Betrag",
+    "be_next": "Plan für das Folgejahr"
+  },
+  "status": {
+    "peer_review": "Wird geprüft: {done} von {need} unabhängigen Prüfungen erledigt. Bitte als Hinweis verstehen, noch nicht als Tatsache.",
+    "verified": "Bestätigt: {need} unabhängige Prüfer haben die Prüfung anhand des Originaldokuments wiederholt und dasselbe Ergebnis erhalten.",
+    "cleared": "Ausgeräumt: Bei der Prüfung fand sich eine Erklärung, oder es lag innerhalb der Regeln.",
+    "disputed": "Umstritten: Die Prüfer waren sich nicht einig, daher ist es nicht bestätigt.",
+    "retracted": "Zurückgezogen: Es stellte sich als falsch heraus und wurde zurückgenommen.",
+    "under_review": "Wird von der Redaktion geprüft, bevor mehr gesagt wird.",
+    "not_wrongdoing": "Das ist ein Muster in öffentlichen Zahlen, kein Beweis, dass jemand gegen das Gesetz verstoßen hat. Es kann gute Gründe dafür geben."
+  },
+  "kinds": {
+    "budget_gap": {
+      "name": "Polizeihaushalte",
+      "about": "Vergleicht anhand offizieller Haushaltsunterlagen Posten für Posten, was Polizeibehörden ausgeben wollten und was sie tatsächlich ausgegeben haben.",
+      "head_more": "{entity}: Der {a_label} liegt {pct} über dem {b_label}",
+      "head_less": "{entity}: Der {a_label} liegt {pct} unter dem {b_label}",
+      "what": "Laut offiziellen Haushaltsunterlagen beträgt der {a_label} {a_amount} und der {b_label} {b_amount}. Der Unterschied liegt bei {pct}. Unsere Regel markiert Abweichungen über {limit}.",
+      "head_same": "{entity}: Der überarbeitete Plan ist genau gleich dem ursprünglichen",
+      "what_same": "Die Haushaltsunterlagen nennen {amount} sowohl im ursprünglichen als auch im überarbeiteten Plan. Pläne ändern sich meist im Laufe des Jahres, daher lohnt sich bei exakter Übereinstimmung ein zweiter Blick.",
+      "why": "Große Abstände zwischen Plan und Ausgaben können bedeuten, dass Arbeiten verzögert wurden, Geld umgeschichtet wurde oder der Plan unrealistisch war. Die Öffentlichkeit hat ein Recht zu erfahren, was zutrifft.",
+      "ask": "Warum hat sich der Plan so stark geändert, und wohin ist die Differenz gegangen?"
+    },
+    "unspent": {
+      "name": "Nicht ausgegebenes Geld des Unionshaushalts",
+      "about": "Findet Posten für Posten Geld, das der Unionshaushalt seit 2014-15 bereitgestellt hat und das nie ausgegeben wurde.",
+      "head": "{entity}: {pct} des für {year} bereitgestellten Geldes wurden nicht ausgegeben",
+      "what": "Der Unionshaushalt stellte {budget} bereit. Tatsächlich ausgegeben wurden nur {actual}. Damit blieben {unspent} ungenutzt.",
+      "head_cut": "{entity}: Das für {year} geplante Geld wurde zur Jahresmitte um {pct} gekürzt",
+      "what_cut": "Der Haushalt stellte zunächst {budget} bereit. Zur Jahresmitte wurde das auf {revised} gesenkt, ein Minus von {cut}.",
+      "why": "Versprochenes, aber nicht ausgegebenes Geld kann heißen, dass ein Programm langsam lief, stecken blieb oder nicht mehr gebraucht wurde. Jeder Grund zählt für die Menschen, denen es helfen sollte.",
+      "ask": "Was hat verhindert, dass dieses Geld ausgegeben wurde, und was wurde aus der geplanten Arbeit?"
+    },
+    "double_bill": {
+      "name": "Eine Straße, zwei Rechnungen",
+      "about": "Durchsucht offizielle Prüfberichte nach Arbeiten, die womöglich doppelt bezahlt wurden.",
+      "head_dup": "{entity}: Prüfbericht vermerkt, dass dieselbe Arbeit womöglich doppelt bezahlt wurde",
+      "head_dual": "{entity}: Prüfbericht vermerkt, dass zwei Stellen dieselbe Arbeit geltend machen",
+      "what_dup": "Ein Bericht der offiziellen Prüfbehörde Indiens, des CAG, beschreibt eine Zahlung, die womöglich zweimal für dieselbe Arbeit geleistet wurde.",
+      "what_dual": "Ein Bericht der offiziellen Prüfbehörde Indiens, des CAG, beschreibt dieselbe Arbeit, die von mehr als einer Stelle oder einem Programm geltend gemacht wurde.",
+      "amount_line": "Der im Bericht genannte Betrag liegt bei {amount}.",
+      "why": "Wird eine Arbeit doppelt bezahlt, bleibt weniger Geld für andere Straßen, Schulen und Leistungen.",
+      "ask": "Wurde die Überzahlung zurückgeholt, und welche Kontrollen verhindern jetzt eine Wiederholung?"
+    },
+    "teachers": {
+      "name": "Eine Lehrkraft, fünf Klassen",
+      "about": "Zeigt anhand offizieller Schuldaten, wo Schulen nur eine einzige Lehrkraft haben.",
+      "head": "{state}: {share} der Schulen haben nur eine Lehrkraft ({year})",
+      "what": "Offizielle Schuldaten (UDISE+) zählen in {state} {single} Schulen, an denen eine Lehrkraft alle Klassen unterrichtet. Jede dieser Lehrkräfte hat etwa {spt} Schüler.",
+      "head_staff": "{state}: Staatliche Grundschulen haben im Schnitt weniger als zwei Lehrkräfte ({year})",
+      "what_staff": "Offizielle Schuldaten (UDISE+) zeigen in {state} etwa {tps} Lehrkräfte pro staatlicher Grundschule. Eine Lehrkraft unterrichtet also oft mehrere Klassen gleichzeitig.",
+      "why": "Muss eine Lehrkraft fünf Klassen gleichzeitig unterrichten, bekommt jedes Kind weniger Aufmerksamkeit. Die Regeln zum Recht auf Bildung sehen höchstens 30 Kinder pro Lehrkraft in der Grundschule vor.",
+      "ask": "Wie viele Lehrerstellen sind an diesen Schulen unbesetzt, und wann werden sie besetzt?"
+    },
+    "promise_pending": {
+      "name": "Die offenen Punkte des Parlaments",
+      "about": "Verfolgt Zusagen, die Minister im Parlament gemacht haben, und ob sie eingehalten wurden.",
+      "head": "{entity}: Eine Zusage im Parlament ist nach {days} Tagen noch offen",
+      "head_partly": "{entity}: Eine Zusage im Parlament wurde nur teilweise eingehalten",
+      "head_dropped": "{entity}: Eine Zusage im Parlament wurde fallen gelassen",
+      "what": "Im Parlament sagte ein Minister zu, in dieser Sache zu handeln: „{subject}“. Die eigenen Unterlagen des Parlaments zeigen, dass das noch nicht erledigt ist.",
+      "what_partly": "Im Parlament sagte ein Minister zu, in dieser Sache zu handeln: „{subject}“. Die eigenen Unterlagen des Parlaments führen das als nur teilweise erledigt.",
+      "what_dropped": "Im Parlament sagte ein Minister zu, in dieser Sache zu handeln: „{subject}“. Die eigenen Unterlagen des Parlaments zeigen, dass es vor der Erledigung fallen gelassen wurde.",
+      "why": "Zusagen von Ministern im Parlament sollen eingehalten werden, meist innerhalb von drei Monaten. Wer sie verfolgt, hilft dem Parlament, die Regierung beim Wort zu nehmen.",
+      "ask": "Wie ist der Stand dieser Zusage heute, und wann wird sie erfüllt?"
+    },
+    "one_bid": {
+      "name": "Nur ein Angebot",
+      "about": "Sucht öffentliche Beschaffungen, bei denen nur ein Unternehmen ein Angebot abgegeben hat.",
+      "head": "{entity}: Eine Ausschreibung über {amount} erhielt nur ein Angebot",
+      "head_noamount": "{entity}: Eine Ausschreibung erhielt nur ein Angebot",
+      "head_repeat": "{entity}: Dasselbe Unternehmen gewann {wins} Aufträge, oft als einziger Bieter",
+      "head_window": "{entity}: Eine Ausschreibung ließ Unternehmen nur {days} Tage für Angebote",
+      "what": "Die Beschaffungsunterlagen zeigen, dass „{title}“ nur ein gültiges Angebot erhielt. Mit nur einem Bieter gibt es keinen Preiswettbewerb.",
+      "what_repeat": "Die Beschaffungsunterlagen zeigen, dass dasselbe Unternehmen {wins} Aufträge dieser Behörde gewann, darunter „{title}“.",
+      "what_window": "Die Beschaffungsunterlagen zeigen, dass „{title}“ nur {days} Tage für Angebote offen war. Eine kurze Frist kann Unternehmen zu wenig Zeit lassen.",
+      "why": "Öffentliches Geld bringt am meisten, wenn viele Unternehmen konkurrieren. Die Regeln (GFR 2017) verlangen, dass Beamte festhalten, warum ein einziges Angebot angenommen wurde.",
+      "ask": "Warum hat nur ein Unternehmen geboten, und wurde der Grund wie vorgeschrieben festgehalten?"
+    },
+    "promise_changed": {
+      "name": "Versprechen und spätere Änderungen",
+      "about": "Prüft, ob staatliche Programme ihre Versprechen vom Start gehalten oder später geändert haben.",
+      "head": "{entity}: Das Versprechen vom Start wurde später geändert",
+      "what": "Die Startunterlagen von {entity} gaben ein bestimmtes Versprechen. Eine spätere amtliche Bekanntmachung ({year}) änderte es. Wer zu den ersten Bedingungen beigetreten ist, kann betroffen sein.",
+      "why": "Ändert ein Programm seine Regeln, nachdem Menschen beigetreten sind, können diejenigen verlieren, die dem ersten Versprechen vertraut haben.",
+      "ask": "Wen betrifft die Änderung, und sind früher Beigetretene geschützt?"
+    },
+    "exam": {
+      "name": "Staatliche Prüfungen",
+      "about": "Prüft, ob öffentliche Prüfungen pünktlich stattfanden oder abgesagt, verschoben oder wiederholt wurden.",
+      "head": "{entity} ({year}): {kind}",
+      "what": "Amtliche Mitteilungen von {authority} halten fest: Diese Prüfung wurde {kind}.",
+      "delay_line": "Verzögerung: {days} Tage.",
+      "cand_line": "Betroffene Kandidaten: {count}.",
+      "why": "Jede verschobene oder abgesagte Prüfung kostet Studierende Monate, Reisegeld und Seelenfrieden.",
+      "ask": "Was ist schiefgelaufen, und was wird getan, damit es nicht wieder passiert?"
+    },
+    "custody": {
+      "name": "Unschuldig, aber eingesperrt",
+      "about": "Findet Menschen, die in Haft blieben, nachdem ein Gericht ihre Freilassung angeordnet hatte.",
+      "head": "{entity}: Ein Mensch blieb nach der Freilassungsanordnung noch {days} Tage in Haft",
+      "head_nodays": "{entity}: Ein Mensch blieb nach der Freilassungsanordnung in Haft",
+      "what": "Gerichts- und Gefängnisunterlagen zeigen, dass ein Gericht die Freilassung dieser Person anordnete, sie aber noch {days} Tage in Haft blieb.",
+      "what_nodays": "Gerichts- und Gefängnisunterlagen zeigen, dass ein Gericht die Freilassung dieser Person anordnete, sie aber danach in Haft blieb.",
+      "why": "Wenn ein Gericht sagt, dass jemand freikommen soll, nimmt jeder weitere Tag in Haft diesem Menschen ohne rechtlichen Grund die Freiheit.",
+      "ask": "Warum wurde die Freilassungsanordnung nicht rechtzeitig befolgt, und was hat sich seitdem geändert?"
+    },
+    "website": {
+      "name": "Behördenwebsites",
+      "about": "Prüft, ob Behördenwebsites die gesetzlich vorgeschriebenen Informationen veröffentlichen.",
+      "head": "{entity}: Website-Prüfung",
+      "what": "Unser Prüfer hat diese Behördenwebsite anhand der offiziellen Web-Richtlinien und des RTI-Gesetzes geprüft.",
+      "why": "Behördenwebsites sind oft der einzige Weg zu Formularen, Regeln und Kontakten. Fehlende Informationen erschweren die Nutzung öffentlicher Dienste.",
+      "ask": "Wann werden die fehlenden Informationen auf der Website veröffentlicht?"
+    },
+    "generic": {
+      "name": "Öffentliche Prüfung",
+      "about": "Prüft öffentliche Unterlagen auf ungewöhnliche Zahlen.",
+      "head": "{entity}: Eine ungewöhnliche Zahl in öffentlichen Unterlagen",
+      "what": "Unsere automatische Prüfung fand in öffentlichen Unterlagen eine Zahl, die einen festgelegten Grenzwert überschritt. Angewandte Regel: {rule}.",
+      "why": "Fragen beginnen bei ungewöhnlichen Zahlen. Wer sie öffentlich prüft, hilft allen zu sehen, wie öffentliches Geld und öffentliche Dienste verwaltet werden.",
+      "ask": "Was erklärt diese Zahl?"
+    }
+  },
+  "exam_kinds": {
+    "cancelled_after_conduct": "abgesagt, nachdem die Prüflinge sie bereits geschrieben hatten",
+    "cancelled_before_conduct": "vor dem Termin abgesagt",
+    "postponed": "verschoben",
+    "rescheduled": "auf neue Termine gelegt",
+    "delayed": "verspätet abgehalten",
+    "partial_reexam_or_glitch": "nach einer Störung teilweise wiederholt",
+    "other": "gestört"
+  },
+  "news": {
+    "title": "Die tägliche Wache",
+    "tagline": "Fünf Minuten dazu, was Indiens öffentliche Unterlagen heute gezeigt haben.",
+    "intro_busy": "Heute haben unsere Prüfer {verified} Befunde bestätigt, {cleared} ausgeräumt und {new} neue Hinweise eröffnet.",
+    "intro_quiet": "Ein ruhigerer Tag ohne neu bestätigte Befunde. Hier steht, was gerade geprüft wird, dazu eine kurze Erklärung.",
+    "sec_top": "Heute bestätigt",
+    "sec_recent": "Kürzlich bestätigt",
+    "sec_cleared": "Geprüft und ausgeräumt",
+    "sec_corrections": "Korrekturen",
+    "sec_desk": "In Prüfung",
+    "sec_number": "Die Zahl des Tages",
+    "sec_explainer": "Kurz erklärt",
+    "sec_spotlight": "Projekt im Fokus",
+    "sec_act": "Was Sie tun können",
+    "sec_totals": "In Zahlen",
+    "desk_line": "{project}: {count} neue Hinweise zur Prüfung geschickt",
+    "desk_note": "Diese Hinweise sind noch nicht bestätigt. Wir beschreiben einen Hinweis hier erst nach drei unabhängigen Prüfungen.",
+    "desk_empty": "Derzeit wartet nichts auf Prüfung.",
+    "correction_line": "Ein Befund wurde korrigiert oder zurückgezogen: {head}",
+    "totals_line": "Bisher: {confirmed} Befunde bestätigt, {cleared} ausgeräumt und {review} noch in Prüfung, nach {checks} unabhängigen Prüfungen.",
+    "act_body": "Jeder in Indien kann nach dem Informationsfreiheitsgesetz (RTI) von 2005 Unterlagen bei einer Behörde anfordern. Zu jedem bestätigten Befund auf dieser Seite gibt es einen fertigen Entwurf, den Sie lesen, ändern und selbst abschicken können.",
+    "sec_state": "Stand der Projekte",
+    "state_intro": "Stand {date}: So steht es um jedes Projekt.",
+    "state_counts": "Bisher {flagged} Hinweise markiert: {verified} bestätigt, {cleared} ausgeräumt und {disputed} umstritten oder zurückgezogen.",
+    "state_tasks": "{done} von {total} geplanten Prüfungen sind erledigt.",
+    "state_sum": "Die bestätigten Beträge ergeben zusammen {amount}. Das ist eine Summe verschiedener Fälle, also eher eine grobe Größenordnung als ein einzelner Betrag.",
+    "state_example": "Größtes bestätigtes Beispiel: {head}",
+    "state_none": "Noch ist nichts bestätigt. Jeder Hinweis braucht noch drei unabhängige Prüfungen.",
+    "sec_cta": "Helfen Sie, mehr zu finden",
+    "cta_body": "Nutzen Sie einen KI-Programmieragenten wie Claude Code, Codex, Cursor oder Gemini CLI? Fügen Sie eine Zeile ein, und er beteiligt sich kostenlos an den Prüfungen. Wählen Sie oben ein Projekt, oder nutzen Sie diese Zeile, damit er dort hilft, wo es am nötigsten ist:",
+    "footer": "Jede Meldung verlinkt auf das amtliche Originaldokument, damit Sie selbst nachprüfen können.",
+    "fingerprint": "Fingerabdruck der Ausgabe: {hash}"
+  },
+  "explainers": {
+    "budget_words": {
+      "title": "Haushaltsbegriffe einfach erklärt",
+      "body": "Der Haushaltsansatz ist der Plan, der vor Jahresbeginn gemacht wird. Der revidierte Ansatz ist der aktualisierte Plan zur Jahresmitte. Die Ist-Ausgaben sind das, was wirklich ausgegeben wurde. Nebeneinander zeigen alle drei, wie gut Plan und Wirklichkeit zusammenpassten."
+    },
+    "tenders": {
+      "title": "Warum mehr Bieter wichtig sind",
+      "body": "Wenn der Staat etwas kauft, lädt er Unternehmen zu Angeboten ein. Mehr Angebote bedeuten meist bessere Preise und bessere Qualität. Ein einziges Angebot ist nicht immer falsch, aber der Grund für die Annahme sollte festgehalten werden."
+    },
+    "cag": {
+      "title": "Wer ist der CAG?",
+      "body": "Der Comptroller and Auditor General ist der offizielle Rechnungsprüfer der Unions- und der Landesregierungen. Seine Berichte gehen an das Parlament und die Landesparlamente, und jeder kann sie lesen."
+    },
+    "rti": {
+      "title": "Ihr Recht zu fragen",
+      "body": "Nach dem RTI-Gesetz von 2005 kann jeder Bürger Unterlagen bei einer Behörde anfordern. Die Behörde muss meist innerhalb von 30 Tagen antworten. Zentrale Behörden verlangen 10 Rupien, Menschen unter der Armutsgrenze zahlen nichts."
+    },
+    "quorum": {
+      "title": "Wie wir einen Befund prüfen",
+      "body": "Zuerst entdeckt ein Computerprogramm eine ungewöhnliche Zahl. Dann wiederholen drei getrennte Prüfer, betrieben von verschiedenen Menschen mit verschiedenen KI-Werkzeugen, die Arbeit anhand des Originaldokuments. Nur wenn alle drei übereinstimmen, gilt ein Befund als bestätigt."
+    },
+    "assurance": {
+      "title": "Zusagen im Parlament",
+      "body": "Wenn ein Minister im Parlament sagt, die Regierung werde sich um etwas kümmern, wird das als Zusage festgehalten. Ein Ausschuss des Parlaments verfolgt diese Zusagen, und die Regierung soll sie in der Regel binnen drei Monaten erfüllen."
+    },
+    "release": {
+      "title": "Freilassungsanordnungen",
+      "body": "Wenn ein Gericht jemanden freispricht oder Kaution gewährt, muss das Gefängnis die Anordnung schnell umsetzen. Verzögerungen halten Menschen ohne rechtlichen Grund fest, und Gerichte haben dafür schon Entschädigungen angeordnet."
+    }
+  }
+}

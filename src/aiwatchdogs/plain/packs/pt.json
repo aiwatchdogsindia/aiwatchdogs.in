@@ -1,0 +1,252 @@
+{
+  "code": "pt",
+  "name": "Portuguese",
+  "native": "Português",
+  "dir": "ltr",
+  "bcp47": "pt-BR",
+  "num": {
+    "dec": ",",
+    "group": ".",
+    "grouping": "western",
+    "pct": "{n}%"
+  },
+  "money": {
+    "style": "intl",
+    "crore": "",
+    "lakh": "",
+    "million": "milhões",
+    "billion": "bilhões",
+    "wan": "",
+    "yi": ""
+  },
+  "ui": {
+    "nav_news": "Notícias",
+    "language": "Idioma",
+    "simple_words": "Em palavras simples",
+    "what_found": "O que encontramos",
+    "why_matters": "Por que isso importa",
+    "not_mean": "O que isso não significa",
+    "where_stands": "Em que pé está",
+    "ask": "Uma pergunta justa",
+    "source": "Ver o registro original",
+    "technical": "Detalhes técnicos",
+    "listen": "Ouvir",
+    "stop": "Parar",
+    "share_whatsapp": "Compartilhar no WhatsApp",
+    "copy": "Copiar texto",
+    "copied": "Copiado",
+    "today": "Edição de hoje",
+    "past": "Edições anteriores",
+    "live": "Atualizada ao longo do dia",
+    "final": "Edição final",
+    "no_voice": "Seu aparelho não tem voz de leitura para este idioma.",
+    "open_finding": "Abrir a constatação completa",
+    "none_yet": "Ainda não há edições.",
+    "names_note": "Os nomes de órgãos, lugares e programas são mantidos como aparecem nos registros originais.",
+    "feed": "Seguir pelo feed",
+    "min_read": "{n} min de leitura",
+    "edition_of": "Edição de {date}",
+    "copy_prompt": "Copiar a linha para o seu agente",
+    "model_note": "Escrito em palavras simples por {model} e depois conferido por máquina com os números originais."
+  },
+  "terms": {
+    "be": "primeiro plano",
+    "re": "plano revisado",
+    "actual": "valor realmente gasto",
+    "be_next": "plano do ano seguinte"
+  },
+  "status": {
+    "peer_review": "Em verificação: {done} de {need} checagens independentes feitas. Trate como uma pista, ainda não como um fato.",
+    "verified": "Confirmado: {need} verificadores independentes refizeram a checagem com o registro original e chegaram ao mesmo resultado.",
+    "cleared": "Esclarecido: na checagem, havia uma explicação ou estava dentro das regras.",
+    "disputed": "Contestado: os verificadores não concordaram, então não está confirmado.",
+    "retracted": "Retirado: mostrou-se errado e foi retirado.",
+    "under_review": "Em análise pelos editores antes de qualquer outra conclusão.",
+    "not_wrongdoing": "É um padrão em números públicos, não uma prova de que alguém violou a lei. Pode haver boas razões para isso."
+  },
+  "kinds": {
+    "budget_gap": {
+      "name": "Orçamentos da polícia",
+      "about": "Compara o que os departamentos de polícia planejaram gastar com o que realmente gastaram, linha por linha, usando documentos oficiais do orçamento.",
+      "head_more": "{entity}: o {a_label} é {pct} maior que o {b_label}",
+      "head_less": "{entity}: o {a_label} é {pct} menor que o {b_label}",
+      "what": "Os documentos oficiais do orçamento mostram {a_amount} como {a_label} e {b_amount} como {b_label}. A diferença é de {pct}. Nossa regra aponta diferenças acima de {limit}.",
+      "head_same": "{entity}: o plano revisado é idêntico ao primeiro plano",
+      "what_same": "Os documentos do orçamento trazem {amount} tanto no primeiro plano quanto no plano revisado. Os planos costumam mudar durante o ano, então uma coincidência exata merece um segundo olhar.",
+      "why": "Uma grande diferença entre o planejado e o gasto pode indicar obras atrasadas, dinheiro remanejado ou um plano pouco realista. As pessoas têm o direito de saber qual é o caso.",
+      "ask": "Por que o plano mudou tanto, e para onde foi a diferença?"
+    },
+    "unspent": {
+      "name": "Dinheiro não gasto do Orçamento da União",
+      "about": "Encontra, linha por linha, o dinheiro reservado pelo Orçamento da União desde 2014-15 que nunca foi gasto.",
+      "head": "{entity}: {pct} do dinheiro reservado para {year} não foi gasto",
+      "what": "O Orçamento da União reservou {budget}. Só {actual} foram gastos de fato. Sobraram {unspent} sem uso.",
+      "head_cut": "{entity}: o dinheiro previsto para {year} foi cortado em {pct} no meio do ano",
+      "what_cut": "O orçamento reservou primeiro {budget}. No meio do ano, o valor caiu para {revised}, um corte de {cut}.",
+      "why": "Dinheiro prometido e não gasto pode significar que um programa andou devagar, travou ou deixou de ser necessário. Cada motivo importa para quem deveria ser ajudado.",
+      "ask": "O que impediu esse dinheiro de ser gasto, e o que aconteceu com o trabalho a que se destinava?"
+    },
+    "double_bill": {
+      "name": "Uma estrada, duas contas",
+      "about": "Examina relatórios oficiais de auditoria em busca de obras que podem ter sido pagas duas vezes.",
+      "head_dup": "{entity}: relatório de auditoria aponta que a mesma obra pode ter sido paga duas vezes",
+      "head_dual": "{entity}: relatório de auditoria aponta dois órgãos reivindicando a mesma obra",
+      "what_dup": "Um relatório do auditor oficial da Índia, o CAG, descreve um pagamento que pode ter sido feito duas vezes pela mesma obra.",
+      "what_dual": "Um relatório do auditor oficial da Índia, o CAG, descreve a mesma obra reivindicada por mais de um órgão ou programa.",
+      "amount_line": "O valor citado no relatório é de {amount}.",
+      "why": "Pagar duas vezes por um trabalho deixa menos dinheiro para outras estradas, escolas e serviços.",
+      "ask": "O pagamento a mais foi recuperado, e que controles agora impedem que isso se repita?"
+    },
+    "teachers": {
+      "name": "Um professor, cinco séries",
+      "about": "Mostra onde há escolas com apenas um professor, a partir de dados escolares oficiais.",
+      "head": "{state}: {share} das escolas têm só um professor ({year})",
+      "what": "Os dados escolares oficiais (UDISE+) contam {single} escolas em {state} onde um único professor dá todas as aulas. Cada um desses professores tem cerca de {spt} alunos.",
+      "head_staff": "{state}: escolas primárias públicas têm menos de dois professores em média ({year})",
+      "what_staff": "Os dados escolares oficiais (UDISE+) mostram cerca de {tps} professores por escola primária pública em {state}. Assim, um professor muitas vezes ensina várias séries ao mesmo tempo.",
+      "why": "Quando um professor precisa ensinar cinco séries ao mesmo tempo, cada criança recebe menos atenção. As regras do Direito à Educação pedem no máximo 30 crianças por professor no ensino primário.",
+      "ask": "Quantas vagas de professor estão abertas nessas escolas, e quando serão preenchidas?"
+    },
+    "promise_pending": {
+      "name": "As pendências do Parlamento",
+      "about": "Acompanha as promessas que ministros fizeram no Parlamento e se foram cumpridas.",
+      "head": "{entity}: uma promessa feita no Parlamento segue aberta após {days} dias",
+      "head_partly": "{entity}: uma promessa feita no Parlamento foi cumprida só em parte",
+      "head_dropped": "{entity}: uma promessa feita no Parlamento foi abandonada",
+      "what": "No Parlamento, um ministro prometeu agir sobre o tema: \"{subject}\". Os próprios registros do Parlamento mostram que ainda não foi concluído.",
+      "what_partly": "No Parlamento, um ministro prometeu agir sobre o tema: \"{subject}\". Os próprios registros do Parlamento o marcam como feito só em parte.",
+      "what_dropped": "No Parlamento, um ministro prometeu agir sobre o tema: \"{subject}\". Os próprios registros do Parlamento mostram que foi abandonado antes de ser concluído.",
+      "why": "Promessas de ministros no Parlamento devem ser cumpridas, normalmente em três meses. Acompanhá-las ajuda o Parlamento a cobrar que o governo cumpra a palavra.",
+      "ask": "Qual é a situação dessa promessa hoje, e quando ela será cumprida?"
+    },
+    "one_bid": {
+      "name": "Uma única proposta",
+      "about": "Procura compras públicas em que só uma empresa apresentou proposta.",
+      "head": "{entity}: uma licitação de {amount} recebeu uma única proposta",
+      "head_noamount": "{entity}: uma licitação recebeu uma única proposta",
+      "head_repeat": "{entity}: a mesma empresa venceu {wins} contratos, muitas vezes como única proponente",
+      "head_window": "{entity}: uma licitação deu às empresas só {days} dias para propor",
+      "what": "Os registros de compras públicas mostram que \"{title}\" recebeu uma única proposta válida. Com um só proponente, não há concorrência no preço.",
+      "what_repeat": "Os registros de compras públicas mostram que a mesma empresa venceu {wins} contratos deste órgão, incluindo \"{title}\".",
+      "what_window": "Os registros de compras públicas mostram que \"{title}\" ficou aberta a propostas por só {days} dias. Um prazo curto pode deixar pouco tempo para as empresas se candidatarem.",
+      "why": "O dinheiro público rende mais quando muitas empresas competem. As regras (GFR 2017) pedem que os servidores registrem por que uma proposta única foi aceita.",
+      "ask": "Por que só uma empresa fez proposta, e o motivo foi registrado como as regras exigem?"
+    },
+    "promise_changed": {
+      "name": "Promessas e mudanças posteriores",
+      "about": "Verifica se programas do governo cumpriram as promessas de lançamento ou as mudaram depois.",
+      "head": "{entity}: a promessa de lançamento foi alterada depois",
+      "what": "Os documentos de lançamento de {entity} fizeram uma promessa. Um aviso oficial posterior ({year}) a alterou. Quem entrou com as primeiras condições pode ser afetado.",
+      "why": "Quando um programa muda as regras depois que as pessoas já entraram, quem confiou na primeira promessa pode sair perdendo.",
+      "ask": "Quem é afetado pela mudança, e quem entrou antes está protegido?"
+    },
+    "exam": {
+      "name": "Provas do governo",
+      "about": "Verifica se as provas públicas foram realizadas no prazo ou se foram canceladas, adiadas ou refeitas.",
+      "head": "{entity} ({year}): {kind}",
+      "what": "Avisos oficiais de {authority} registram que esta prova foi: {kind}.",
+      "delay_line": "Atraso: {days} dias.",
+      "cand_line": "Candidatos afetados: {count}.",
+      "why": "Cada prova adiada ou cancelada custa aos estudantes meses de tempo, dinheiro de viagem e tranquilidade.",
+      "ask": "O que deu errado, e o que está sendo feito para que não se repita?"
+    },
+    "custody": {
+      "name": "Inocentes, mas presos",
+      "about": "Encontra pessoas que continuaram presas depois que um tribunal ordenou sua soltura.",
+      "head": "{entity}: uma pessoa ficou presa {days} dias após a ordem de soltura",
+      "head_nodays": "{entity}: uma pessoa continuou presa após a ordem de soltura",
+      "what": "Registros judiciais e prisionais mostram que um tribunal ordenou a soltura dessa pessoa, mas ela ficou detida por mais {days} dias.",
+      "what_nodays": "Registros judiciais e prisionais mostram que um tribunal ordenou a soltura dessa pessoa, mas ela continuou detida depois disso.",
+      "why": "Quando um tribunal diz que alguém deve ser solto, cada dia a mais na prisão tira sua liberdade sem motivo legal.",
+      "ask": "Por que a ordem de soltura não foi cumprida a tempo, e o que mudou desde então?"
+    },
+    "website": {
+      "name": "Sites do governo",
+      "about": "Verifica se os sites do governo publicam as informações que a lei exige.",
+      "head": "{entity}: checagem do site",
+      "what": "Nosso verificador analisou este site do governo com base nas diretrizes oficiais para sites e na lei RTI.",
+      "why": "Os sites do governo muitas vezes são o único jeito de achar formulários, regras e contatos. Sem essas informações, fica mais difícil usar os serviços públicos.",
+      "ask": "Quando as informações que faltam serão publicadas no site?"
+    },
+    "generic": {
+      "name": "Auditoria pública",
+      "about": "Examina registros públicos em busca de números incomuns.",
+      "head": "{entity}: um número incomum nos registros públicos",
+      "what": "Nossa checagem automática encontrou nos registros públicos um número que passou de um limite definido. A regra usada foi: {rule}.",
+      "why": "As perguntas começam nos números incomuns. Checá-los em público ajuda todos a ver como o dinheiro e os serviços públicos são administrados.",
+      "ask": "O que explica este número?"
+    }
+  },
+  "exam_kinds": {
+    "cancelled_after_conduct": "cancelada depois que os estudantes já a tinham feito",
+    "cancelled_before_conduct": "cancelada antes de acontecer",
+    "postponed": "adiada",
+    "rescheduled": "transferida para novas datas",
+    "delayed": "atrasada",
+    "partial_reexam_or_glitch": "refeita em parte após um problema",
+    "other": "interrompida"
+  },
+  "news": {
+    "title": "A Vigília Diária",
+    "tagline": "Cinco minutos sobre o que os registros públicos da Índia mostraram hoje.",
+    "intro_busy": "Hoje nossos verificadores confirmaram {verified} constatações, esclareceram {cleared} e abriram {new} novas pistas.",
+    "intro_quiet": "Um dia mais calmo, sem novas constatações confirmadas. Veja o que está na mesa de verificação, mais uma breve explicação.",
+    "sec_top": "Confirmado hoje",
+    "sec_recent": "Confirmado recentemente",
+    "sec_cleared": "Verificado e esclarecido",
+    "sec_corrections": "Correções",
+    "sec_desk": "Na mesa de verificação",
+    "sec_number": "O número do dia",
+    "sec_explainer": "Para entender",
+    "sec_spotlight": "Projeto em destaque",
+    "sec_act": "O que você pode fazer",
+    "sec_totals": "Em números",
+    "desk_line": "{project}: {count} novas pistas enviadas para verificação",
+    "desk_note": "Estas pistas ainda não foram confirmadas. Só descrevemos uma pista aqui depois de três checagens independentes.",
+    "desk_empty": "Nada está aguardando na mesa de verificação agora.",
+    "correction_line": "Uma constatação foi corrigida ou retirada: {head}",
+    "totals_line": "Até agora: {confirmed} constatações confirmadas, {cleared} esclarecidas e {review} ainda em verificação, após {checks} checagens independentes.",
+    "act_body": "Qualquer pessoa na Índia pode pedir registros a um órgão público pela Lei de Direito à Informação (RTI), de 2005. Cada constatação confirmada neste site vem com um rascunho pronto, que você pode ler, alterar e enviar por conta própria.",
+    "sec_state": "Em que pé estão os projetos",
+    "state_intro": "Em {date}, esta é a situação de cada projeto.",
+    "state_counts": "{flagged} pistas apontadas até agora: {verified} confirmadas, {cleared} esclarecidas e {disputed} contestadas ou retiradas.",
+    "state_tasks": "Feitas {done} de {total} checagens previstas.",
+    "state_sum": "Os valores confirmados somam {amount}. É a soma de casos diferentes, então trate como um tamanho aproximado, não como um valor único.",
+    "state_example": "Maior exemplo confirmado: {head}",
+    "state_none": "Nada foi confirmado ainda. Cada pista ainda precisa de três checagens independentes.",
+    "sec_cta": "Ajude a encontrar mais",
+    "cta_body": "Você usa um agente de programação com IA, como Claude Code, Codex, Cursor ou Gemini CLI? Cole uma linha nele e ele entra na verificação, sem custo. Escolha um projeto acima ou use esta linha para ajudar onde for mais necessário:",
+    "footer": "Cada notícia leva ao registro oficial original, para você conferir por conta própria.",
+    "fingerprint": "Impressão digital da edição: {hash}"
+  },
+  "explainers": {
+    "budget_words": {
+      "title": "Palavras do orçamento, sem complicação",
+      "body": "A estimativa orçamentária é o plano feito antes de o ano começar. A estimativa revisada é o plano atualizado no meio do ano. O gasto efetivo é o que foi realmente gasto. Colocar os três lado a lado mostra o quanto os planos bateram com a realidade."
+    },
+    "tenders": {
+      "title": "Por que mais propostas importam",
+      "body": "Quando o governo compra algo, convida empresas a apresentar propostas. Mais propostas costumam significar preços melhores e mais qualidade. Uma proposta única nem sempre é um problema, mas o motivo para aceitá-la deve ficar registrado."
+    },
+    "cag": {
+      "title": "Quem é o CAG?",
+      "body": "O Controlador e Auditor-Geral é o auditor oficial do governo da União e dos estados. Seus relatórios vão ao Parlamento e às assembleias estaduais, e qualquer pessoa pode lê-los."
+    },
+    "rti": {
+      "title": "Seu direito de perguntar",
+      "body": "Pela lei RTI, de 2005, qualquer cidadão pode pedir registros a um órgão público. O órgão normalmente precisa responder em 30 dias. Os órgãos centrais cobram 10 rúpias, e pessoas abaixo da linha da pobreza não pagam."
+    },
+    "quorum": {
+      "title": "Como checamos uma constatação",
+      "body": "Primeiro, um programa de computador detecta um número incomum. Depois, três verificadores separados, operados por pessoas diferentes com ferramentas de IA diferentes, refazem o trabalho a partir do documento original. Só quando os três concordam a constatação é marcada como confirmada."
+    },
+    "assurance": {
+      "title": "Promessas no Parlamento",
+      "body": "Quando um ministro diz no Parlamento que o governo vai analisar algo, isso é registrado como um compromisso. Uma comissão do Parlamento acompanha essas promessas, e espera-se que o governo as cumpra, normalmente em três meses."
+    },
+    "release": {
+      "title": "Ordens de soltura",
+      "body": "Quando um tribunal absolve alguém ou concede fiança, a prisão deve cumprir a ordem rapidamente. Os atrasos mantêm pessoas presas sem motivo legal, e tribunais já mandaram pagar indenizações por isso."
+    }
+  }
+}

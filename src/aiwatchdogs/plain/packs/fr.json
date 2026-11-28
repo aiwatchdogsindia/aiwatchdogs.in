@@ -1,0 +1,252 @@
+{
+  "code": "fr",
+  "name": "French",
+  "native": "Français",
+  "dir": "ltr",
+  "bcp47": "fr-FR",
+  "num": {
+    "dec": ",",
+    "group": " ",
+    "grouping": "western",
+    "pct": "{n} %"
+  },
+  "money": {
+    "style": "intl",
+    "crore": "",
+    "lakh": "",
+    "million": "millions",
+    "billion": "milliards",
+    "wan": "",
+    "yi": ""
+  },
+  "ui": {
+    "nav_news": "Actualités",
+    "language": "Langue",
+    "simple_words": "En termes simples",
+    "what_found": "Ce que nous avons trouvé",
+    "why_matters": "Pourquoi c'est important",
+    "not_mean": "Ce que cela ne veut pas dire",
+    "where_stands": "Où en est-on",
+    "ask": "Une question légitime à poser",
+    "source": "Voir le document original",
+    "technical": "Détails techniques",
+    "listen": "Écouter",
+    "stop": "Arrêter",
+    "share_whatsapp": "Partager sur WhatsApp",
+    "copy": "Copier le texte",
+    "copied": "Copié",
+    "today": "Édition du jour",
+    "past": "Éditions précédentes",
+    "live": "Mise à jour au fil de la journée",
+    "final": "Édition finale",
+    "no_voice": "Votre appareil n'a pas de voix de lecture pour cette langue.",
+    "open_finding": "Ouvrir le constat complet",
+    "none_yet": "Pas encore d'édition.",
+    "names_note": "Les noms des administrations, des lieux et des programmes sont repris tels qu'ils figurent dans les documents originaux.",
+    "feed": "Suivre par flux",
+    "min_read": "{n} min de lecture",
+    "edition_of": "Édition du {date}",
+    "copy_prompt": "Copier la ligne pour votre agent",
+    "model_note": "Rédigé en termes simples par {model}, puis vérifié automatiquement avec les chiffres d'origine."
+  },
+  "terms": {
+    "be": "premier plan",
+    "re": "plan révisé",
+    "actual": "montant réellement dépensé",
+    "be_next": "plan de l'année suivante"
+  },
+  "status": {
+    "peer_review": "En vérification : {done} contrôles indépendants sur {need} effectués. À considérer comme une piste, pas encore comme un fait.",
+    "verified": "Confirmé : {need} vérificateurs indépendants ont refait le contrôle à partir du document original et obtenu le même résultat.",
+    "cleared": "Levé : après vérification, cela s'expliquait ou restait dans les règles.",
+    "disputed": "Contesté : les vérificateurs ne sont pas d'accord, ce n'est donc pas confirmé.",
+    "retracted": "Retiré : cela s'est révélé faux et a été retiré.",
+    "under_review": "En cours d'examen par la rédaction avant toute autre conclusion.",
+    "not_wrongdoing": "Il s'agit d'une tendance dans des chiffres publics, pas d'une preuve que quelqu'un a enfreint la loi. Il peut y avoir de bonnes raisons."
+  },
+  "kinds": {
+    "budget_gap": {
+      "name": "Budgets de la police",
+      "about": "Compare ce que les services de police prévoyaient de dépenser avec ce qu'ils ont réellement dépensé, ligne par ligne, à partir des documents budgétaires officiels.",
+      "head_more": "{entity} : le {a_label} dépasse de {pct} le {b_label}",
+      "head_less": "{entity} : le {a_label} est inférieur de {pct} au {b_label}",
+      "what": "Les documents budgétaires officiels indiquent {a_amount} pour le {a_label} et {b_amount} pour le {b_label}. L'écart est de {pct}. Notre règle signale les écarts supérieurs à {limit}.",
+      "head_same": "{entity} : le plan révisé est identique au premier plan",
+      "what_same": "Les documents budgétaires indiquent {amount} pour le premier plan comme pour le plan révisé. Les plans changent souvent en cours d'année, donc une égalité parfaite mérite un second regard.",
+      "why": "Un grand écart entre le prévu et le dépensé peut signifier des travaux retardés, de l'argent déplacé ou un plan irréaliste. Le public a le droit de savoir lequel.",
+      "ask": "Pourquoi le plan a-t-il autant changé, et où est passée la différence ?"
+    },
+    "unspent": {
+      "name": "Argent non dépensé du budget de l'Union",
+      "about": "Repère, ligne par ligne, l'argent réservé par le budget de l'Union depuis 2014-15 qui n'a jamais été dépensé.",
+      "head": "{entity} : {pct} de l'argent réservé pour {year} n'a pas été dépensé",
+      "what": "Le budget de l'Union avait réservé {budget}. Seuls {actual} ont été dépensés. Il reste {unspent} inutilisés.",
+      "head_cut": "{entity} : l'argent prévu pour {year} a été réduit de {pct} en cours d'année",
+      "what_cut": "Le budget avait d'abord réservé {budget}. En cours d'année, ce montant a été ramené à {revised}, soit une baisse de {cut}.",
+      "why": "De l'argent promis mais non dépensé peut vouloir dire qu'un programme a avancé lentement, s'est bloqué ou n'était plus nécessaire. Chaque raison compte pour ceux qu'il devait aider.",
+      "ask": "Qu'est-ce qui a empêché de dépenser cet argent, et qu'est devenu le travail prévu ?"
+    },
+    "double_bill": {
+      "name": "Une route, deux factures",
+      "about": "Examine les rapports d'audit officiels à la recherche de travaux peut-être payés deux fois.",
+      "head_dup": "{entity} : un rapport d'audit relève que les mêmes travaux ont peut-être été payés deux fois",
+      "head_dual": "{entity} : un rapport d'audit relève deux organismes revendiquant les mêmes travaux",
+      "what_dup": "Un rapport de l'auditeur officiel de l'Inde, le CAG, décrit un paiement peut-être effectué deux fois pour les mêmes travaux.",
+      "what_dual": "Un rapport de l'auditeur officiel de l'Inde, le CAG, décrit les mêmes travaux revendiqués par plusieurs organismes ou programmes.",
+      "amount_line": "Le montant cité dans le rapport est de {amount}.",
+      "why": "Payer deux fois un même chantier laisse moins d'argent pour d'autres routes, écoles et services.",
+      "ask": "Le trop-perçu a-t-il été récupéré, et quels contrôles empêchent désormais que cela se reproduise ?"
+    },
+    "teachers": {
+      "name": "Un enseignant, cinq niveaux",
+      "about": "Montre où les écoles n'ont qu'un seul enseignant, à partir des données scolaires officielles.",
+      "head": "{state} : {share} des écoles n'ont qu'un seul enseignant ({year})",
+      "what": "Les données scolaires officielles (UDISE+) recensent {single} écoles au {state} où un seul enseignant assure toutes les classes. Chacun de ces enseignants a environ {spt} élèves.",
+      "head_staff": "{state} : les écoles primaires publiques ont moins de deux enseignants en moyenne ({year})",
+      "what_staff": "Les données scolaires officielles (UDISE+) indiquent environ {tps} enseignants par école primaire publique au {state}. Un enseignant doit donc souvent gérer plusieurs niveaux à la fois.",
+      "why": "Quand un enseignant doit faire cours à cinq niveaux à la fois, chaque enfant reçoit moins d'attention. Les règles du droit à l'éducation prévoient au plus 30 enfants par enseignant en primaire.",
+      "ask": "Combien de postes d'enseignant sont vacants dans ces écoles, et quand seront-ils pourvus ?"
+    },
+    "promise_pending": {
+      "name": "Les engagements en attente du Parlement",
+      "about": "Suit les promesses faites par les ministres au Parlement et vérifie si elles ont été tenues.",
+      "head": "{entity} : une promesse faite au Parlement reste ouverte après {days} jours",
+      "head_partly": "{entity} : une promesse faite au Parlement n'a été tenue qu'en partie",
+      "head_dropped": "{entity} : une promesse faite au Parlement a été abandonnée",
+      "what": "Au Parlement, un ministre a promis d'agir sur ce sujet : « {subject} ». Les registres du Parlement montrent que ce n'est toujours pas achevé.",
+      "what_partly": "Au Parlement, un ministre a promis d'agir sur ce sujet : « {subject} ». Les registres du Parlement l'indiquent comme réalisé en partie seulement.",
+      "what_dropped": "Au Parlement, un ministre a promis d'agir sur ce sujet : « {subject} ». Les registres du Parlement montrent qu'il a été abandonné avant d'être mené à bien.",
+      "why": "Les promesses des ministres au Parlement doivent être tenues, en général sous trois mois. Les suivre aide le Parlement à obliger le gouvernement à respecter sa parole.",
+      "ask": "Où en est cette promesse aujourd'hui, et quand sera-t-elle tenue ?"
+    },
+    "one_bid": {
+      "name": "Une seule offre",
+      "about": "Recherche les achats publics pour lesquels une seule entreprise a fait une offre.",
+      "head": "{entity} : un appel d'offres de {amount} n'a reçu qu'une seule offre",
+      "head_noamount": "{entity} : un appel d'offres n'a reçu qu'une seule offre",
+      "head_repeat": "{entity} : la même entreprise a remporté {wins} marchés, souvent en étant seule à concourir",
+      "head_window": "{entity} : un appel d'offres n'a laissé que {days} jours aux entreprises pour répondre",
+      "what": "Les registres des achats publics montrent que « {title} » n'a reçu qu'une seule offre valable. Avec un seul candidat, il n'y a pas de concurrence sur le prix.",
+      "what_repeat": "Les registres des achats publics montrent que la même entreprise a remporté {wins} marchés de cette administration, dont « {title} ».",
+      "what_window": "Les registres des achats publics montrent que « {title} » n'est resté ouvert aux offres que {days} jours. Un délai court peut laisser trop peu de temps pour répondre.",
+      "why": "L'argent public est mieux utilisé quand de nombreuses entreprises sont en concurrence. Les règles (GFR 2017) demandent aux responsables de consigner pourquoi une offre unique a été acceptée.",
+      "ask": "Pourquoi une seule entreprise a-t-elle répondu, et la raison a-t-elle été consignée comme l'exigent les règles ?"
+    },
+    "promise_changed": {
+      "name": "Promesses et changements ultérieurs",
+      "about": "Vérifie si les programmes publics ont tenu leurs promesses de lancement ou les ont modifiées ensuite.",
+      "head": "{entity} : la promesse de départ a été modifiée ensuite",
+      "what": "Les documents de lancement de {entity} faisaient une promesse. Un avis officiel ultérieur ({year}) l'a modifiée. Les personnes entrées aux premières conditions peuvent être touchées.",
+      "why": "Quand un programme change ses règles après que des gens l'ont rejoint, ceux qui ont cru la première promesse peuvent y perdre.",
+      "ask": "Qui est touché par ce changement, et les premiers inscrits sont-ils protégés ?"
+    },
+    "exam": {
+      "name": "Examens publics",
+      "about": "Vérifie si les examens publics ont eu lieu à temps ou ont été annulés, reportés ou repassés.",
+      "head": "{entity} ({year}) : {kind}",
+      "what": "Les avis officiels de {authority} indiquent que cet examen a été : {kind}.",
+      "delay_line": "Retard : {days} jours.",
+      "cand_line": "Candidats concernés : {count}.",
+      "why": "Chaque examen reporté ou annulé coûte aux étudiants des mois de travail, des frais de transport et leur tranquillité d'esprit.",
+      "ask": "Qu'est-ce qui n'a pas fonctionné, et que fait-on pour que cela ne se reproduise pas ?"
+    },
+    "custody": {
+      "name": "Innocents mais enfermés",
+      "about": "Repère les personnes restées en prison après qu'un tribunal a ordonné leur libération.",
+      "head": "{entity} : une personne est restée {days} jours en prison après l'ordre de libération",
+      "head_nodays": "{entity} : une personne est restée en prison après l'ordre de libération",
+      "what": "Les registres judiciaires et pénitentiaires montrent qu'un tribunal a ordonné la libération de cette personne, mais qu'elle est restée détenue {days} jours de plus.",
+      "what_nodays": "Les registres judiciaires et pénitentiaires montrent qu'un tribunal a ordonné la libération de cette personne, mais qu'elle est restée détenue après cela.",
+      "why": "Quand un tribunal dit qu'une personne doit être libérée, chaque jour de plus en prison la prive de liberté sans raison légale.",
+      "ask": "Pourquoi l'ordre de libération n'a-t-il pas été exécuté à temps, et qu'est-ce qui a changé depuis ?"
+    },
+    "website": {
+      "name": "Sites web publics",
+      "about": "Vérifie si les sites web publics publient les informations exigées par la loi.",
+      "head": "{entity} : contrôle du site web",
+      "what": "Notre vérificateur a examiné ce site public au regard des directives web officielles et de la loi RTI.",
+      "why": "Les sites publics sont souvent le seul moyen de trouver formulaires, règles et contacts. Sans ces informations, il est plus difficile d'utiliser les services publics.",
+      "ask": "Quand les informations manquantes seront-elles publiées sur le site ?"
+    },
+    "generic": {
+      "name": "Audit public",
+      "about": "Examine les documents publics à la recherche de chiffres inhabituels.",
+      "head": "{entity} : un chiffre inhabituel dans les documents publics",
+      "what": "Notre contrôle automatique a trouvé dans les documents publics un chiffre qui dépasse une limite fixée. La règle appliquée était : {rule}.",
+      "why": "Les questions naissent des chiffres inhabituels. Les vérifier en public aide chacun à voir comment l'argent et les services publics sont gérés.",
+      "ask": "Qu'est-ce qui explique ce chiffre ?"
+    }
+  },
+  "exam_kinds": {
+    "cancelled_after_conduct": "annulé alors que les élèves l'avaient déjà passé",
+    "cancelled_before_conduct": "annulé avant d'avoir lieu",
+    "postponed": "reporté",
+    "rescheduled": "déplacé à de nouvelles dates",
+    "delayed": "retardé",
+    "partial_reexam_or_glitch": "repassé en partie après un problème",
+    "other": "perturbé"
+  },
+  "news": {
+    "title": "La Veille du jour",
+    "tagline": "Cinq minutes sur ce que les documents publics de l'Inde ont montré aujourd'hui.",
+    "intro_busy": "Aujourd'hui, nos vérificateurs ont confirmé {verified} constats, en ont levé {cleared} et ont ouvert {new} nouvelles pistes.",
+    "intro_quiet": "Une journée plus calme, sans nouveau constat confirmé. Voici ce qui est en cours de vérification, et une courte explication.",
+    "sec_top": "Confirmé aujourd'hui",
+    "sec_recent": "Confirmé récemment",
+    "sec_cleared": "Vérifié et levé",
+    "sec_corrections": "Corrections",
+    "sec_desk": "En cours de vérification",
+    "sec_number": "Le chiffre du jour",
+    "sec_explainer": "Pour comprendre",
+    "sec_spotlight": "Projet à la une",
+    "sec_act": "Ce que vous pouvez faire",
+    "sec_totals": "En chiffres",
+    "desk_line": "{project} : {count} nouvelles pistes envoyées en vérification",
+    "desk_note": "Ces pistes ne sont pas encore confirmées. Nous ne décrivons une piste ici qu'après trois contrôles indépendants.",
+    "desk_empty": "Rien n'attend de vérification pour le moment.",
+    "correction_line": "Un constat a été corrigé ou retiré : {head}",
+    "totals_line": "À ce jour : {confirmed} constats confirmés, {cleared} levés et {review} encore en vérification, après {checks} contrôles indépendants.",
+    "act_body": "En Inde, toute personne peut demander des documents à une administration grâce à la loi sur le droit à l'information (RTI) de 2005. Chaque constat confirmé sur ce site est accompagné d'un brouillon prêt à l'emploi, que vous pouvez lire, modifier et envoyer vous-même.",
+    "sec_state": "Où en sont les projets",
+    "state_intro": "Au {date}, voici où en est chaque projet.",
+    "state_counts": "{flagged} pistes signalées à ce jour : {verified} confirmées, {cleared} levées, et {disputed} contestées ou retirées.",
+    "state_tasks": "{done} contrôles prévus sur {total} sont faits.",
+    "state_sum": "Les montants confirmés totalisent {amount}. C'est une addition de cas distincts : à prendre comme un ordre de grandeur, pas comme une somme unique.",
+    "state_example": "Plus gros exemple confirmé : {head}",
+    "state_none": "Rien n'est encore confirmé. Chaque piste doit encore passer trois contrôles indépendants.",
+    "sec_cta": "Aidez à en trouver davantage",
+    "cta_body": "Vous utilisez un agent de programmation IA comme Claude Code, Codex, Cursor ou Gemini CLI ? Collez-y une ligne et il rejoindra les vérifications, gratuitement. Choisissez un projet ci-dessus, ou utilisez cette ligne pour aider là où c'est le plus utile :",
+    "footer": "Chaque article renvoie au document officiel d'origine, pour que vous puissiez vérifier vous-même.",
+    "fingerprint": "Empreinte de l'édition : {hash}"
+  },
+  "explainers": {
+    "budget_words": {
+      "title": "Le vocabulaire du budget, en clair",
+      "body": "L'estimation budgétaire est le plan établi avant le début de l'année. L'estimation révisée est le plan mis à jour en cours d'année. Les dépenses réelles sont ce qui a vraiment été dépensé. Les comparer montre à quel point les plans ont collé à la réalité."
+    },
+    "tenders": {
+      "title": "Pourquoi plusieurs offres comptent",
+      "body": "Quand l'État achète quelque chose, il invite les entreprises à faire des offres. Plus d'offres signifie en général de meilleurs prix et une meilleure qualité. Une offre unique n'est pas toujours un problème, mais la raison de l'accepter doit être consignée."
+    },
+    "cag": {
+      "title": "Qui est le CAG ?",
+      "body": "Le Contrôleur et auditeur général est l'auditeur officiel du gouvernement de l'Union et des États. Ses rapports sont remis au Parlement et aux assemblées des États, et tout le monde peut les lire."
+    },
+    "rti": {
+      "title": "Votre droit de demander",
+      "body": "Grâce à la loi RTI de 2005, tout citoyen peut demander ses documents à une administration. Elle doit en général répondre sous 30 jours. Les administrations centrales demandent 10 roupies, et les personnes sous le seuil de pauvreté ne paient pas."
+    },
+    "quorum": {
+      "title": "Comment nous vérifions un constat",
+      "body": "D'abord, un programme informatique repère un chiffre inhabituel. Ensuite, trois vérificateurs distincts, pilotés par des personnes différentes avec des outils d'IA différents, refont le travail à partir du document original. Un constat n'est confirmé que si les trois sont d'accord."
+    },
+    "assurance": {
+      "title": "Les promesses au Parlement",
+      "body": "Quand un ministre déclare au Parlement que le gouvernement va examiner une question, c'est enregistré comme un engagement. Une commission du Parlement suit ces promesses, et le gouvernement doit en principe les tenir sous trois mois."
+    },
+    "release": {
+      "title": "Les ordres de libération",
+      "body": "Quand un tribunal acquitte une personne ou lui accorde une libération sous caution, la prison doit exécuter l'ordre rapidement. Les retards maintiennent des personnes enfermées sans raison légale, et les tribunaux ont ordonné des indemnisations pour ces retards."
+    }
+  }
+}

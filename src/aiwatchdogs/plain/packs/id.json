@@ -1,0 +1,252 @@
+{
+  "code": "id",
+  "name": "Indonesian",
+  "native": "Bahasa Indonesia",
+  "dir": "ltr",
+  "bcp47": "id-ID",
+  "num": {
+    "dec": ",",
+    "group": ".",
+    "grouping": "western",
+    "pct": "{n}%"
+  },
+  "money": {
+    "style": "intl",
+    "crore": "",
+    "lakh": "",
+    "million": "juta",
+    "billion": "miliar",
+    "wan": "",
+    "yi": ""
+  },
+  "ui": {
+    "nav_news": "Berita",
+    "language": "Bahasa",
+    "simple_words": "Dengan kata sederhana",
+    "what_found": "Apa yang kami temukan",
+    "why_matters": "Mengapa ini penting",
+    "not_mean": "Apa yang tidak dimaksud",
+    "where_stands": "Posisinya sekarang",
+    "ask": "Pertanyaan yang wajar diajukan",
+    "source": "Lihat catatan aslinya",
+    "technical": "Detail teknis",
+    "listen": "Dengarkan",
+    "stop": "Berhenti",
+    "share_whatsapp": "Bagikan ke WhatsApp",
+    "copy": "Salin teks",
+    "copied": "Tersalin",
+    "today": "Edisi hari ini",
+    "past": "Edisi sebelumnya",
+    "live": "Diperbarui sepanjang hari",
+    "final": "Edisi final",
+    "no_voice": "Perangkat Anda tidak punya suara pembaca untuk bahasa ini.",
+    "open_finding": "Buka temuan lengkap",
+    "none_yet": "Belum ada edisi.",
+    "names_note": "Nama kantor, tempat, dan program ditulis seperti dalam catatan aslinya.",
+    "feed": "Ikuti lewat feed",
+    "min_read": "{n} menit baca",
+    "edition_of": "Edisi {date}",
+    "copy_prompt": "Salin baris untuk agen Anda",
+    "model_note": "Ditulis dengan kata sederhana oleh {model}, lalu diperiksa mesin dengan angka aslinya."
+  },
+  "terms": {
+    "be": "rencana awal",
+    "re": "rencana revisi",
+    "actual": "jumlah yang benar-benar dibelanjakan",
+    "be_next": "rencana tahun berikutnya"
+  },
+  "status": {
+    "peer_review": "Sedang diperiksa: {done} dari {need} pemeriksaan independen selesai. Anggap ini petunjuk, belum fakta.",
+    "verified": "Terkonfirmasi: {need} pemeriksa independen mengulang pemeriksaan dari catatan asli dan mendapat hasil yang sama.",
+    "cleared": "Bersih: setelah diperiksa, ada penjelasannya atau masih sesuai aturan.",
+    "disputed": "Diperdebatkan: para pemeriksa tidak sepakat, jadi ini belum terkonfirmasi.",
+    "retracted": "Ditarik: ternyata keliru dan sudah ditarik.",
+    "under_review": "Sedang ditinjau editor sebelum ada keterangan lain.",
+    "not_wrongdoing": "Ini pola dalam angka publik, bukan bukti bahwa seseorang melanggar hukum. Bisa ada alasan yang wajar di baliknya."
+  },
+  "kinds": {
+    "budget_gap": {
+      "name": "Anggaran polisi",
+      "about": "Membandingkan rencana belanja dinas kepolisian dengan belanja sebenarnya, pos demi pos, dari dokumen anggaran resmi.",
+      "head_more": "{entity}: {a_label} {pct} lebih tinggi dari {b_label}",
+      "head_less": "{entity}: {a_label} {pct} lebih rendah dari {b_label}",
+      "what": "Dokumen anggaran resmi mencatat {a_amount} untuk {a_label} dan {b_amount} untuk {b_label}. Selisihnya {pct}. Aturan kami menandai selisih di atas {limit}.",
+      "head_same": "{entity}: rencana revisi persis sama dengan rencana awal",
+      "what_same": "Dokumen anggaran mencantumkan {amount} untuk rencana awal maupun rencana revisi. Rencana biasanya berubah di tengah tahun, jadi angka yang persis sama layak dilihat lagi.",
+      "why": "Selisih besar antara rencana dan belanja bisa berarti pekerjaan tertunda, uang dialihkan, atau rencananya tidak realistis. Publik berhak tahu yang mana.",
+      "ask": "Mengapa rencananya berubah sebanyak ini, dan ke mana selisihnya?"
+    },
+    "unspent": {
+      "name": "Uang Anggaran Union yang tidak terpakai",
+      "about": "Menemukan, pos demi pos, uang yang disediakan Anggaran Union sejak 2014-15 tetapi tidak pernah dibelanjakan.",
+      "head": "{entity}: {pct} uang yang disediakan untuk {year} tidak dibelanjakan",
+      "what": "Anggaran Union menyediakan {budget}. Yang benar-benar dibelanjakan hanya {actual}. Masih ada {unspent} yang tidak terpakai.",
+      "head_cut": "{entity}: uang yang direncanakan untuk {year} dipotong {pct} di tengah tahun",
+      "what_cut": "Anggaran awalnya menyediakan {budget}. Di tengah tahun angka itu dipotong menjadi {revised}, turun {cut}.",
+      "why": "Uang yang dijanjikan tetapi tidak dibelanjakan bisa berarti program berjalan lambat, macet, atau tidak lagi dibutuhkan. Setiap alasan penting bagi orang yang seharusnya terbantu.",
+      "ask": "Apa yang menghalangi uang ini dibelanjakan, dan bagaimana nasib pekerjaan yang dituju?"
+    },
+    "double_bill": {
+      "name": "Satu jalan, dua tagihan",
+      "about": "Menelusuri laporan audit resmi untuk pekerjaan yang mungkin dibayar dua kali.",
+      "head_dup": "{entity}: laporan audit mencatat pekerjaan yang sama mungkin dibayar dua kali",
+      "head_dual": "{entity}: laporan audit mencatat dua lembaga mengklaim pekerjaan yang sama",
+      "what_dup": "Sebuah laporan auditor resmi India, CAG, menjelaskan satu pembayaran yang mungkin dilakukan dua kali untuk pekerjaan yang sama.",
+      "what_dual": "Sebuah laporan auditor resmi India, CAG, menjelaskan pekerjaan yang sama diklaim oleh lebih dari satu lembaga atau program.",
+      "amount_line": "Jumlah yang disebut dalam laporan adalah {amount}.",
+      "why": "Membayar dua kali untuk satu pekerjaan membuat uang untuk jalan, sekolah, dan layanan lain berkurang.",
+      "ask": "Apakah kelebihan bayar sudah ditarik kembali, dan pemeriksaan apa yang kini mencegahnya terulang?"
+    },
+    "teachers": {
+      "name": "Satu guru, lima kelas",
+      "about": "Menunjukkan di mana sekolah hanya punya satu guru, berdasarkan data sekolah resmi.",
+      "head": "{state}: {share} sekolah hanya punya satu guru ({year})",
+      "what": "Data sekolah resmi (UDISE+) mencatat {single} sekolah di {state} yang semua kelasnya diajar satu guru. Setiap guru itu mengajar sekitar {spt} murid.",
+      "head_staff": "{state}: SD negeri rata-rata punya kurang dari dua guru ({year})",
+      "what_staff": "Data sekolah resmi (UDISE+) menunjukkan sekitar {tps} guru per SD negeri di {state}. Jadi satu guru sering mengajar beberapa kelas sekaligus.",
+      "why": "Jika satu guru harus mengajar lima kelas sekaligus, setiap anak mendapat perhatian lebih sedikit. Aturan Hak atas Pendidikan meminta tidak lebih dari 30 anak per guru di sekolah dasar.",
+      "ask": "Berapa formasi guru yang kosong di sekolah-sekolah ini, dan kapan akan diisi?"
+    },
+    "promise_pending": {
+      "name": "Daftar tunggakan Parlemen",
+      "about": "Melacak janji para menteri di Parlemen dan apakah janji itu ditepati.",
+      "head": "{entity}: janji di Parlemen masih terbuka setelah {days} hari",
+      "head_partly": "{entity}: janji di Parlemen hanya ditepati sebagian",
+      "head_dropped": "{entity}: janji di Parlemen dibatalkan",
+      "what": "Di Parlemen, seorang menteri berjanji bertindak soal: \"{subject}\". Catatan Parlemen sendiri menunjukkan hal itu belum selesai.",
+      "what_partly": "Di Parlemen, seorang menteri berjanji bertindak soal: \"{subject}\". Catatan Parlemen sendiri menandainya baru selesai sebagian.",
+      "what_dropped": "Di Parlemen, seorang menteri berjanji bertindak soal: \"{subject}\". Catatan Parlemen sendiri menunjukkan janji itu dibatalkan sebelum selesai.",
+      "why": "Janji menteri di Parlemen seharusnya ditepati, biasanya dalam tiga bulan. Melacaknya membantu Parlemen menagih pemerintah agar memegang kata-katanya.",
+      "ask": "Bagaimana status janji ini sekarang, dan kapan akan diselesaikan?"
+    },
+    "one_bid": {
+      "name": "Hanya satu penawaran",
+      "about": "Mencari pengadaan pemerintah yang hanya diikuti satu perusahaan.",
+      "head": "{entity}: tender senilai {amount} hanya mendapat satu penawaran",
+      "head_noamount": "{entity}: sebuah tender hanya mendapat satu penawaran",
+      "head_repeat": "{entity}: perusahaan yang sama memenangkan {wins} kontrak, sering sebagai satu-satunya penawar",
+      "head_window": "{entity}: sebuah tender hanya memberi perusahaan {days} hari untuk menawar",
+      "what": "Catatan pengadaan publik menunjukkan \"{title}\" hanya mendapat satu penawaran sah. Dengan satu penawar, tidak ada persaingan harga.",
+      "what_repeat": "Catatan pengadaan publik menunjukkan perusahaan yang sama memenangkan {wins} kontrak dari kantor ini, termasuk \"{title}\".",
+      "what_window": "Catatan pengadaan publik menunjukkan \"{title}\" hanya dibuka untuk penawaran selama {days} hari. Waktu sesingkat itu bisa membuat perusahaan tidak sempat mendaftar.",
+      "why": "Uang publik paling bernilai jika banyak perusahaan bersaing. Aturan (GFR 2017) meminta pejabat mencatat alasan menerima satu-satunya penawaran.",
+      "ask": "Mengapa hanya satu perusahaan yang menawar, dan apakah alasannya dicatat sesuai aturan?"
+    },
+    "promise_changed": {
+      "name": "Janji dan perubahan sesudahnya",
+      "about": "Memeriksa apakah program pemerintah menepati janji peluncurannya atau mengubahnya kemudian.",
+      "head": "{entity}: janji peluncuran kemudian diubah",
+      "what": "Dokumen peluncuran {entity} memuat sebuah janji. Pemberitahuan resmi sesudahnya ({year}) mengubahnya. Orang yang bergabung dengan syarat awal bisa terdampak.",
+      "why": "Jika sebuah program mengubah aturan setelah orang bergabung, mereka yang percaya pada janji pertama bisa dirugikan.",
+      "ask": "Siapa yang terdampak perubahan ini, dan apakah orang yang bergabung lebih awal dilindungi?"
+    },
+    "exam": {
+      "name": "Ujian pemerintah",
+      "about": "Memeriksa apakah ujian publik digelar tepat waktu, atau dibatalkan, ditunda, atau diulang.",
+      "head": "{entity} ({year}): {kind}",
+      "what": "Pemberitahuan resmi dari {authority} mencatat ujian ini: {kind}.",
+      "delay_line": "Keterlambatan: {days} hari.",
+      "cand_line": "Peserta terdampak: {count}.",
+      "why": "Setiap ujian yang ditunda atau dibatalkan membuat siswa kehilangan waktu berbulan-bulan, ongkos perjalanan, dan ketenangan.",
+      "ask": "Apa yang salah, dan apa yang dilakukan agar tidak terulang?"
+    },
+    "custody": {
+      "name": "Tak bersalah, tetap ditahan",
+      "about": "Menemukan orang yang tetap dipenjara setelah pengadilan memerintahkan pembebasannya.",
+      "head": "{entity}: seseorang tetap dipenjara {days} hari setelah perintah bebas",
+      "head_nodays": "{entity}: seseorang tetap dipenjara setelah perintah bebas",
+      "what": "Catatan pengadilan dan penjara menunjukkan pengadilan memerintahkan orang ini dibebaskan, tetapi ia tetap ditahan {days} hari lagi.",
+      "what_nodays": "Catatan pengadilan dan penjara menunjukkan pengadilan memerintahkan orang ini dibebaskan, tetapi ia tetap ditahan sesudahnya.",
+      "why": "Ketika pengadilan menyatakan seseorang harus bebas, setiap hari tambahan di penjara merampas kebebasannya tanpa alasan hukum.",
+      "ask": "Mengapa perintah bebas tidak dijalankan tepat waktu, dan apa yang berubah sejak itu?"
+    },
+    "website": {
+      "name": "Situs web pemerintah",
+      "about": "Memeriksa apakah situs web pemerintah memuat informasi yang diwajibkan hukum.",
+      "head": "{entity}: pemeriksaan situs web",
+      "what": "Pemeriksa kami menilai situs web pemerintah ini berdasarkan pedoman situs resmi dan UU RTI.",
+      "why": "Situs web pemerintah sering jadi satu-satunya cara menemukan formulir, aturan, dan kontak. Informasi yang hilang membuat layanan publik lebih sulit digunakan.",
+      "ask": "Kapan informasi yang belum ada akan dimuat di situs web?"
+    },
+    "generic": {
+      "name": "Audit publik",
+      "about": "Memeriksa catatan publik untuk angka yang tidak biasa.",
+      "head": "{entity}: angka tidak biasa dalam catatan publik",
+      "what": "Pemeriksaan otomatis kami menemukan angka dalam catatan publik yang melewati batas yang ditetapkan. Aturan yang dipakai: {rule}.",
+      "why": "Pertanyaan berawal dari angka yang tidak biasa. Memeriksanya secara terbuka membantu semua orang melihat bagaimana uang dan layanan publik dikelola.",
+      "ask": "Apa yang menjelaskan angka ini?"
+    }
+  },
+  "exam_kinds": {
+    "cancelled_after_conduct": "dibatalkan setelah siswa mengerjakannya",
+    "cancelled_before_conduct": "dibatalkan sebelum digelar",
+    "postponed": "ditunda",
+    "rescheduled": "dipindah ke tanggal baru",
+    "delayed": "terlambat digelar",
+    "partial_reexam_or_glitch": "diulang sebagian setelah ada masalah",
+    "other": "terganggu"
+  },
+  "news": {
+    "title": "Pantauan Harian",
+    "tagline": "Lima menit tentang apa yang ditunjukkan catatan publik India hari ini.",
+    "intro_busy": "Hari ini pemeriksa kami mengonfirmasi {verified} temuan, membersihkan {cleared}, dan membuka {new} petunjuk baru.",
+    "intro_quiet": "Hari yang lebih tenang, tanpa temuan baru yang terkonfirmasi. Berikut yang sedang diperiksa, plus penjelasan singkat.",
+    "sec_top": "Terkonfirmasi hari ini",
+    "sec_recent": "Baru-baru ini terkonfirmasi",
+    "sec_cleared": "Diperiksa dan bersih",
+    "sec_corrections": "Koreksi",
+    "sec_desk": "Di meja pemeriksaan",
+    "sec_number": "Angka hari ini",
+    "sec_explainer": "Penjelasan singkat",
+    "sec_spotlight": "Sorotan proyek",
+    "sec_act": "Yang bisa Anda lakukan",
+    "sec_totals": "Dalam angka",
+    "desk_line": "{project}: {count} petunjuk baru dikirim untuk diperiksa",
+    "desk_note": "Petunjuk ini belum terkonfirmasi. Kami baru menjelaskan sebuah petunjuk di sini setelah tiga pemeriksaan independen.",
+    "desk_empty": "Saat ini tidak ada yang menunggu di meja pemeriksaan.",
+    "correction_line": "Sebuah temuan dikoreksi atau ditarik: {head}",
+    "totals_line": "Sejauh ini: {confirmed} temuan terkonfirmasi, {cleared} bersih, dan {review} masih diperiksa, setelah {checks} pemeriksaan independen.",
+    "act_body": "Siapa pun di India boleh meminta catatan dari kantor pemerintah berdasarkan UU Hak atas Informasi (RTI) tahun 2005. Setiap temuan terkonfirmasi di situs ini disertai draf siap pakai yang bisa Anda baca, ubah, dan kirim sendiri.",
+    "sec_state": "Posisi proyek saat ini",
+    "state_intro": "Per {date}, inilah posisi setiap proyek.",
+    "state_counts": "Sejauh ini {flagged} petunjuk ditandai: {verified} terkonfirmasi, {cleared} bersih, dan {disputed} diperdebatkan atau ditarik.",
+    "state_tasks": "{done} dari {total} pemeriksaan yang direncanakan sudah selesai.",
+    "state_sum": "Jumlah yang terkonfirmasi bila dijumlahkan menjadi {amount}. Ini penjumlahan kasus yang berbeda, jadi anggap sebagai gambaran kasar, bukan satu jumlah tunggal.",
+    "state_example": "Contoh terkonfirmasi terbesar: {head}",
+    "state_none": "Belum ada yang terkonfirmasi. Setiap petunjuk masih butuh tiga pemeriksaan independen.",
+    "sec_cta": "Bantu temukan lebih banyak",
+    "cta_body": "Apakah Anda memakai agen pemrograman AI seperti Claude Code, Codex, Cursor, atau Gemini CLI? Tempelkan satu baris ke dalamnya dan agen itu ikut memeriksa, tanpa biaya. Pilih proyek di atas, atau pakai baris ini agar ia membantu di tempat yang paling membutuhkan:",
+    "footer": "Setiap berita terhubung ke catatan resmi aslinya, jadi Anda bisa memeriksanya sendiri.",
+    "fingerprint": "Sidik jari edisi: {hash}"
+  },
+  "explainers": {
+    "budget_words": {
+      "title": "Istilah anggaran, dibuat sederhana",
+      "body": "Perkiraan Anggaran adalah rencana yang dibuat sebelum tahun dimulai. Perkiraan Revisi adalah rencana yang diperbarui di tengah tahun. Realisasi adalah yang benar-benar dibelanjakan. Menjajarkan ketiganya menunjukkan seberapa cocok rencana dengan kenyataan."
+    },
+    "tenders": {
+      "title": "Mengapa banyak penawar itu penting",
+      "body": "Saat pemerintah membeli sesuatu, ia mengundang perusahaan untuk menawar. Lebih banyak penawaran biasanya berarti harga lebih baik dan mutu lebih tinggi. Satu penawaran tidak selalu salah, tetapi alasan menerimanya harus tercatat."
+    },
+    "cag": {
+      "title": "Siapa CAG?",
+      "body": "Comptroller and Auditor General adalah auditor resmi pemerintah Union dan pemerintah negara bagian. Laporannya diserahkan ke Parlemen dan dewan negara bagian, dan siapa pun boleh membacanya."
+    },
+    "rti": {
+      "title": "Hak Anda untuk bertanya",
+      "body": "Berdasarkan UU RTI tahun 2005, setiap warga negara boleh meminta catatan dari kantor pemerintah. Kantor itu biasanya wajib menjawab dalam 30 hari. Kantor pusat memungut biaya 10 rupee, dan warga di bawah garis kemiskinan tidak membayar."
+    },
+    "quorum": {
+      "title": "Cara kami memeriksa temuan",
+      "body": "Pertama, sebuah program komputer menemukan angka yang tidak biasa. Lalu tiga pemeriksa terpisah, dijalankan oleh orang berbeda dengan alat AI berbeda, mengulang pekerjaan dari dokumen asli. Temuan baru dinyatakan terkonfirmasi jika ketiganya sepakat."
+    },
+    "assurance": {
+      "title": "Janji di Parlemen",
+      "body": "Ketika seorang menteri mengatakan di Parlemen bahwa pemerintah akan menindaklanjuti sesuatu, hal itu dicatat sebagai jaminan. Sebuah komite Parlemen memantau janji-janji ini, dan pemerintah diharapkan menyelesaikannya, biasanya dalam tiga bulan."
+    },
+    "release": {
+      "title": "Perintah pembebasan",
+      "body": "Ketika pengadilan membebaskan seseorang atau mengabulkan jaminan, penjara harus segera menjalankan perintah itu. Keterlambatan membuat orang tetap ditahan tanpa alasan hukum, dan pengadilan pernah memerintahkan ganti rugi atas keterlambatan seperti itu."
+    }
+  }
+}
