@@ -3,6 +3,22 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 78,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/78",
+      "mergedAt": "2026-11-28T11:51:37Z",
+      "title": "Harden R1 server-side verification, 2nd-model scan routing, reading-first /join.txt, and reproduce engine execution",
+      "items": [
+        "Server-side R1 quote, header, and figure grounding (closes 1-row spoof loophole)",
+        "Pinned SHA-256-verified PDF page text bundles for all 11 live P3 R1 Union Budget statements under projects/union-budget-unspent-funds/reading_pages/*.json (240 KB total; bundled into Vercel serverless via vercel.json includeFiles) and referenced via page_texts_path + page_texts_sha256 + min_rows: 2.",
+        "Upgraded verify_budget_extraction() (src/aiwatchdogs/engines/reading_verifier.py) with row_figures_grounded, min_rows, require_text_verification, and golden_calibration checks; rejects \"Grand Total\" lines inside leaf-row quotes and requires a real text layer for deterministic_verified (textless scans always route to requires_second_model).",
+        "Wired DeskService._load_pinned_reading_page_texts() in POST /api/desk/submit so the Hub runs all quote, header, figure, Grand Total, and golden-calibration checks server-side (zero outbound HTTP, fail-closed 503 if bundle is missing or tampered).",
+        "Real engine execution in aiwatchdogs reproduce + PR CI trigger",
+        "Added src/aiwatchdogs/engines/reproduce_suite.py so aiwatchdogs reproduce executes all 19 deterministic engines (M1–M8, P1, UB1, OR1, P5–P10, W1, R1) over canonical inputs, verifies all 11 pinned R1 reading_pages/*.json SHA-256 digests and live anti-spoofing 1-row rejections, and hashes actual normalized engine outputs (engine_outputs_hash + release_hash).",
+        "Added --execute-live / --live-limit to optionally download live pinned datasets, verify SHA-256, run engines, and emit live_outputs_hash.",
+        "Updated .github/workflows/deterministic-verify.yml to run on pull_request and push to main (and diff two consecutive reproduce runs) in addition to weekly schedule and manual dispatch."
+      ]
+    },
+    {
       "pr": 76,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/76",
       "mergedAt": "2026-11-28T10:40:56Z",
@@ -42,7 +58,7 @@
     {
       "pr": 71,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/71",
-      "mergedAt": "2026-11-28T07:24:52Z",
+      "mergedAt": "2026-11-28T07:28:11Z",
       "title": "Dark mode is true black with neutral greys",
       "items": [
         "The dark background is pure black instead of a dark grey.",
@@ -54,7 +70,7 @@
     {
       "pr": 70,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/70",
-      "mergedAt": "2026-11-28T07:09:09Z",
+      "mergedAt": "2026-11-28T07:15:02Z",
       "title": "Dark mode, a footer theme picker and a live status line",
       "items": [
         "A sun/moon button in the header (and a row in the mobile menu) switches the whole site between light and dark.",
@@ -68,7 +84,7 @@
     {
       "pr": 63,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/63",
-      "mergedAt": "2026-11-28T05:33:52Z",
+      "mergedAt": "2026-11-28T05:37:23Z",
       "title": "White site: saffron, green and navy now appear only as small marks",
       "items": [
         "Every page band is white: the saffron band (live viewer, projects, map, numbers), the green record band and the navy footer are replaced by white paper separated by hairline rules.",
