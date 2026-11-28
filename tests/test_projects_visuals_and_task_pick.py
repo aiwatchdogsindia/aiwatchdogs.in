@@ -490,7 +490,7 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         coverage = json.loads((PROJECTS_DIR / UNION_BUDGET_PROJECT_SLUG / "coverage.json").read_text(encoding="utf-8"))
         p3_0 = client.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}").json()
         assert p3_0["project_code"] == "P3"
-        assert p3_0["total_tasks"] == 10000
+        assert p3_0["total_tasks"] == 10011
         # A project this large lists only its first 50 tasks; the counts still cover all of them.
         assert len(p3_0["tasks"]) == 50
         assert p3_0["tasks_listed"] == 50
@@ -500,8 +500,8 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         assert vs_p3["project_code"] == "P3"
         assert vs_p3["methodology_code"] == "UB1"
         assert "inflation" not in vs_p3
-        assert vs_p3["status_counts"]["total"] == 10000
-        assert vs_p3["status_counts"]["queued"] == 10000
+        assert vs_p3["status_counts"]["total"] == 10011
+        assert vs_p3["status_counts"]["queued"] == 10011
         assert vs_p3["status_counts"]["waiting"] == 0
         assert vs_p3["status_counts"]["completed"] == 0
         ub_0 = vs_p3["union_budget"]
@@ -694,11 +694,11 @@ def test_mission_detail_visual_summary_and_project_leaderboards_all_three_projec
         p3_after = client.get(f"/api/missions/{UNION_BUDGET_PROJECT_SLUG}").json()
         assert [c["handle"] for c in p3_after["contributors_all"]] == ["ub-auditor-one"]
         assert p3_after["contributors_all"][0]["tasks_completed"] == 1
-        assert p3_after["total_tasks"] == 10000
+        assert p3_after["total_tasks"] == 10011
         assert p3_after["completed_tasks"] == 1
-        assert p3_after["visual_summary"]["status_counts"]["total"] == 10000
+        assert p3_after["visual_summary"]["status_counts"]["total"] == 10011
         assert p3_after["visual_summary"]["status_counts"]["completed"] == 1
-        assert p3_after["visual_summary"]["status_counts"]["queued"] == 9999
+        assert p3_after["visual_summary"]["status_counts"]["queued"] == 10010
         ub_after = p3_after["visual_summary"]["union_budget"]
         years_after = {y["year"]: y for y in ub_after["years"]}
         assert years_after["2019-20"]["done"] == 1

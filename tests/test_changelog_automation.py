@@ -199,3 +199,60 @@ def test_changelog_workflow_handles_org_pr_restriction_gracefully() -> None:
     assert "secrets.CHANGELOG_BOT_TOKEN || secrets.GITHUB_TOKEN" in wf
     assert "not permitted to create or approve pull requests" in wf
     assert "::warning" in wf
+    assert "--min-new-prs 10" in wf
+    assert "--min-new-prs 1" in wf
+
+
+def test_min_new_prs_batches_updates_every_10_merged_prs(tmp_path: Path, monkeypatch: Any) -> None:
+    mod = _load_script()
+    backend = tmp_path / "backend_changelog.json"
+    web = tmp_path / "web_changelog.json"
+    base_doc = {
+        "schemaVersion": 1,
+        "repository": "aiwatchdogsindia/aiwatchdogs.in",
+        "entries": [
+            {
+                "pr": 1,
+                "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/1",
+                "mergedAt": "2026-11-20T10:00:00Z",
+                "title": "Initial release",
+                "items": ["Shipped initial version."],
+            }
+        ],
+    }
+    raw = mod.serialize_changelog(base_doc)
+    backend.write_text(raw, encoding="utf-8")
+    web.write_text(raw, encoding="utf-8")
+
+    def _fake_prs(count: int) -> list[dict[str, Any]]:
+        return [
+            {
+                "number": 10 + i,
+                "title": f"feat: batch change {i}",
+                "body": f"- Implemented batch change number {i} cleanly.",
+                "merged_at": f"2026-11-28T10:{i:02d}:00Z",
+                "html_url": f"https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/{10 + i}",
+                "base": {"ref": "main"},
+                "head": {"ref": f"feat/change-{i}"},
+            }
+            for i in range(1, count + 1)
+        ]
+
+    # 9 new merged PRs -> below threshold of 10, files stay untouched
+    monkeypatch.setattr(mod, "fetch_merged_prs_from_github", lambda repo, token=None: _fake_prs(9))
+    rc_9 = mod.main(
+        ["--from-github", "--min-new-prs", "10", "--backend-path", str(backend), "--web-path", str(web)]
+    )
+    assert rc_9 == 0
+    assert len(json.loads(backend.read_text(encoding="utf-8"))["entries"]) == 1
+    assert backend.read_text(encoding="utf-8") == raw
+
+    # 10 new merged PRs -> hits threshold of 10, both files updated in parity
+    monkeypatch.setattr(mod, "fetch_merged_prs_from_github", lambda repo, token=None: _fake_prs(10))
+    rc_10 = mod.main(
+        ["--from-github", "--min-new-prs", "10", "--backend-path", str(backend), "--web-path", str(web)]
+    )
+    assert rc_10 == 0
+    updated_doc = json.loads(backend.read_text(encoding="utf-8"))
+    assert len(updated_doc["entries"]) == 11
+    assert backend.read_text(encoding="utf-8") == web.read_text(encoding="utf-8")

@@ -42,6 +42,8 @@ _CONVENTIONAL_PREFIX_RE = re.compile(
 )
 _AUTO_CHANGELOG_TITLE_RE = re.compile(r"^chore\(changelog\)\s*:", re.IGNORECASE)
 _AUTO_CHANGELOG_BRANCHES = frozenset({"chore/auto-changelog-sync", "auto/changelog-sync"})
+# PRs merged and reverted within minutes (already summarized under their revert PR #72).
+SUPPRESSED_PR_NUMBERS: frozenset[int] = frozenset({65, 66, 67, 68})
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _SKIP_SECTION_RE = re.compile(
     r"^\s*#{1,6}\s*(?:test(?:ing|s|\s+plan)?|verification|qa|screenshots?|checklist|how\s+to\s+test|ci|notes?\s+for\s+reviewers?)\b",
@@ -129,7 +131,10 @@ def extract_pr_bullets(body: str | None, fallback_title: str, *, max_items: int 
 
 
 def is_automated_changelog_pr(pr_obj: dict[str, Any]) -> bool:
-    """Return True if *pr_obj* is an automated changelog-sync PR that should not self-log."""
+    """Return True if *pr_obj* is an automated changelog-sync PR (or suppressed reverted stub) that should not self-log."""
+    raw_num = pr_obj.get("number")
+    if isinstance(raw_num, int) and not isinstance(raw_num, bool) and raw_num in SUPPRESSED_PR_NUMBERS:
+        return True
     title = str(pr_obj.get("title") or "").strip()
     if _AUTO_CHANGELOG_TITLE_RE.match(title):
         return True
@@ -282,6 +287,21 @@ def fetch_merged_prs_from_github(repository: str, *, token: str | None = None, m
     return prs
 
 
+def count_new_pr_entries(existing_doc: dict[str, Any], updated_doc: dict[str, Any]) -> int:
+    """Return the number of newly added PR entries in *updated_doc* compared to *existing_doc*."""
+    old_prs = {
+        int(e["pr"])
+        for e in (existing_doc.get("entries") or [])
+        if isinstance(e, dict) and isinstance(e.get("pr"), int) and not isinstance(e.get("pr"), bool)
+    }
+    new_prs = {
+        int(e["pr"])
+        for e in (updated_doc.get("entries") or [])
+        if isinstance(e, dict) and isinstance(e.get("pr"), int) and not isinstance(e.get("pr"), bool)
+    }
+    return len(new_prs - old_prs)
+
+
 def serialize_changelog(doc: dict[str, Any]) -> str:
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
@@ -371,6 +391,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend-path", type=Path, default=DEFAULT_BACKEND_PATH)
     parser.add_argument("--web-path", type=Path, default=DEFAULT_WEB_PATH)
     parser.add_argument("--backend-only", action="store_true", help="Write only backend JSON (skip writing web JSON)")
+    parser.add_argument(
+        "--min-new-prs",
+        type=int,
+        default=1,
+        help="With --from-github, only write updates once at least this many new merged PRs have accumulated (default: 1).",
+    )
     args = parser.parse_args(argv)
 
     if args.check:
@@ -388,6 +414,14 @@ def main(argv: list[str] | None = None) -> int:
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or None
         prs = fetch_merged_prs_from_github(args.repo, token=token)
         updated = merge_github_prs(existing, prs, repository=args.repo)
+        new_pr_count = count_new_pr_entries(existing, updated)
+        min_new = max(1, int(args.min_new_prs))
+        if min_new > 1 and new_pr_count < min_new:
+            print(
+                f"Holding changelog sync: {new_pr_count} new merged PR(s) since last update "
+                f"(waiting for batch of {min_new})."
+            )
+            return 0
     else:
         updated = normalize_document(existing, repository=args.repo)
 
