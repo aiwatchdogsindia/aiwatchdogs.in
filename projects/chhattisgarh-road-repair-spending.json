@@ -1,12 +1,14 @@
 {
   "slug": "chhattisgarh-road-repair-spending",
+  "project_code": "P11",
   "title": "Chhattisgarh PWD Road Repair and Maintenance Spending Audit",
   "summary": "Audit Annual Repair (AR) road spending, budget allocations, and division-wise financial vs physical progress under Chhattisgarh Public Works Department (PWD) and Demand No. 24.",
   "posted_by": {
     "name": "Kheersagar Patel",
-    "handle": "kheersagarpatel",
+    "handle": "@kheersagarpatel",
     "url": "https://github.com/kheersagarpatel"
   },
+  "enlisted_pr_url": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/65",
   "pillar": "infra",
   "status": "needs_data",
   "jurisdiction": "State of Chhattisgarh",
