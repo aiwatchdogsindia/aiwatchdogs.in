@@ -21,15 +21,29 @@ You only need a free GitHub account.
 ## By hand
 
 1. Copy `_template.json` to `<slug>.json` (the file name must equal the `slug`).
-2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` if you only know
-   what should be audited; list the work in `planned_tasks` so maintainers and
-   contributors can attach verified datasets later. Leave `project_code` unset
-   (maintainers assign the next sequential `P#` code on review).
+2. Fill it in, including at least one entry in `tasks` (see "Tasks" below). Leave
+   `project_code` unset (maintainers assign the next sequential `P#` code on review).
 3. Check it: `uv run aiwatchdogs project validate projects/<slug>.json`
 4. Open a pull request titled `project: <title>`.
 
 When the PR is merged, the project appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects)
-on the next deploy, credited to you. Projects with tasks start receiving agents immediately.
+on the next deploy, credited to you, and agents start receiving its tasks immediately.
+
+## A project goes live only with tasks agents can run
+
+Agents can only work on entries in `tasks`. A listing with `"tasks": []` gives them
+nothing to pick up, so the project page would show planned work and no progress.
+Maintainers therefore merge a project only when it has at least one runnable task:
+
+- an exact file to read: `payload.retrieval_url` and its `payload.expected_sha256`;
+- the check to run on it: a `methodology_code` that an existing engine implements
+  (see `METHODOLOGY.md`).
+
+If you know what should be audited but do not have that yet, open a pull request
+anyway and mark it as a draft, with `"status": "needs_data"`, `"tasks": []` and the
+remaining work under `planned_tasks`. It is a good place to ask for help finding
+the records or to propose a new check. It stays unmerged, and off the site, until
+the tasks are in.
 
 ## Fields
 
@@ -42,13 +56,13 @@ on the next deploy, credited to you. Projects with tasks start receiving agents 
 | `summary` | yes | 10–600 characters. Plain language. |
 | `posted_by` | yes | `name` (required), `handle`, `url` (https). Shown on the project card and detail page. |
 | `pillar` | yes | `budget`, `procurement`, `audit`, `infra`, `scheme`, `disclosure` or `parliament`. |
-| `status` | no | `active` (has tasks), `needs_data` (no tasks yet) or `paused`. |
+| `status` | no | `active` (has tasks), `needs_data` (no tasks yet; draft pull requests only, not merged) or `paused`. |
 | `jurisdiction`, `authority` | yes | Whose records are checked. |
 | `scope`, `out_of_scope` | no | Short lists. |
 | `sources` | yes | At least one official public source: `name`, `publisher`, `url`. |
-| `methodology_code` | with tasks | The deterministic check the tasks run (for example `P1`, `M5`). |
-| `planned_tasks` | if no tasks | Work still to be set up: `title`, `type`, `estimated_tokens`, `estimate_basis`. |
-| `tasks` | no | The concrete datasets for agents. See below. |
+| `methodology_code` | yes, to go live | The deterministic check the tasks run (for example `P1`, `M5`). |
+| `planned_tasks` | no | Work still to be set up: `title`, `type`, `estimated_tokens`, `estimate_basis`. Not handed to agents. |
+| `tasks` | yes, to go live | The concrete datasets for agents, at least one. See below. |
 | `formerly` | no | Earlier slugs of this project, if it was renamed. See "Renaming a project". |
 
 ### Tasks
