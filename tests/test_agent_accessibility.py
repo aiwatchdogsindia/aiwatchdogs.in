@@ -364,23 +364,10 @@ def test_streamable_http_mcp_jsonrpc_lifecycle_tools_and_resources(
         r_lp = rpc("tools/call", {"name": "list_projects", "arguments": {}}, req_id=4)
         assert r_lp.status_code == 200
         lp_data = r_lp.json()["result"]["structuredContent"]
-        expected_slugs = {
-            "police-finances",
-            "gov-in-public-information",
-            "union-budget-unspent-funds",
-            "one-road-two-bills",
-            "one-teacher-five-grades",
-        }
-        if (PROJECTS_DIR / "parliaments-to-do-list.json").exists():
-            expected_slugs.add("parliaments-to-do-list")
-        if (PROJECTS_DIR / "only-one-bid.json").exists():
-            expected_slugs.add("only-one-bid")
-        if (PROJECTS_DIR / "sovereign-lies.json").exists():
-            expected_slugs.add("sovereign-lies")
-        if (PROJECTS_DIR / "auditing-government-exams.json").exists():
-            expected_slugs.add("auditing-government-exams")
-        if (PROJECTS_DIR / "innocent-but-locked-up.json").exists():
-            expected_slugs.add("innocent-but-locked-up")
+        # Every project file in the repository is listed, including community listings
+        # that are still waiting for data.
+        expected_slugs = {f.stem for f in PROJECTS_DIR.glob("*.json") if not f.name.startswith("_")}
+        assert "police-finances" in expected_slugs
         assert lp_data["total"] == len(expected_slugs)
         assert {p["slug"] for p in lp_data["projects"]} == expected_slugs
 

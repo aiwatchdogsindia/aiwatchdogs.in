@@ -1,0 +1,74 @@
+{
+  "slug": "karnataka-hospital-medicine-procurement",
+  "title": "Karnataka hospital medicines: annual indent versus actual supply",
+  "summary": "Compares Karnataka's 2025-26 annual medicine indent with KSMSCL tenders, purchase orders, hospital supply records and payments, to identify quantity or value gaps that citizens can follow up through public records.",
+  "posted_by": {
+    "name": "Aditya Anand",
+    "handle": "anand1996aditya",
+    "url": ""
+  },
+  "pillar": "procurement",
+  "status": "needs_data",
+  "jurisdiction": "Karnataka, India — State government hospitals and KSMSCL",
+  "authority": "Karnataka State Medical Supplies Corporation Ltd (KSMSCL), Department of Health and Family Welfare",
+  "scope": [
+    "Drug-wise annual indent quantities and procurement mode for 2025-26.",
+    "Tendered, awarded and supplied quantities for the same drugs.",
+    "Unexplained gaps between indent, purchase orders, hospital receipts and payments.",
+    "Whether purchases follow Karnataka's public procurement rules."
+  ],
+  "out_of_scope": [
+    "Private individuals, patients or clinical decisions",
+    "Non-public or leaked records",
+    "Allegations of criminal conduct"
+  ],
+  "statutory_anchors": [
+    "Karnataka Transparency in Public Procurements Act, 1999",
+    "Karnataka Transparency in Public Procurements Rules, 2000"
+  ],
+  "sources": [
+    {
+      "name": "Annual Indent 2025-26 — 890 Drugs",
+      "publisher": "Karnataka State Medical Supplies Corporation Ltd",
+      "url": "https://www.ksmscl.in/files/AI-2025-26.pdf"
+    },
+    {
+      "name": "Report No. 8 of 2024 — Public Health Infrastructure and Management of Health Services, Government of Karnataka",
+      "publisher": "Comptroller and Auditor General of India",
+      "url": "https://cag.gov.in/uploads/download_audit_report/2022/PUBLIC-HEALTH-Report-No.-8-Eng-0675bff96bd2ca2.88544443.pdf"
+    }
+  ],
+  "tasks": [],
+  "planned_tasks": [
+    {
+      "title": "Locate KSMSCL tenders, awards, purchase orders and supply records",
+      "type": "find_sources",
+      "estimated_tokens": 1500000,
+      "estimate_basis": "Rough guess: about 30 agent turns over KPPP and KSMSCL pages."
+    },
+    {
+      "title": "Extract 890 drug lines and their indent quantities",
+      "type": "extract_data",
+      "estimated_tokens": 2500000,
+      "estimate_basis": "Rough guess: 26-page PDF, repeated extraction and validation passes."
+    },
+    {
+      "title": "Cross-check indent, award and supply quantities",
+      "type": "cross_check",
+      "estimated_tokens": 2000000,
+      "estimate_basis": "Rough guess: match drug codes across indent, tender and supply records."
+    },
+    {
+      "title": "Run the reconciliation check on one complete drug category",
+      "type": "run_check",
+      "estimated_tokens": 1000000,
+      "estimate_basis": "Rough guess: one category, full record set and a second pass."
+    },
+    {
+      "title": "Write the neutral method, coverage and limitations note",
+      "type": "summarise",
+      "estimated_tokens": 500000,
+      "estimate_basis": "Rough guess: one short report over the verified results."
+    }
+  ]
+}
