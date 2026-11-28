@@ -3,6 +3,16 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 94,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/94",
+      "mergedAt": "2026-11-28T19:45:00Z",
+      "title": "Findings Trending line now lists the projects",
+      "items": [
+        "The Trending line on /findings now shows each live project (Only One Bid, Unspent Union Budget, Parliament's To-Do List, Sovereign Lies and the rest) instead of loose headline words, sized by how many verified findings it has; clicking a project shows only its findings, and All projects resets the list.",
+        "The separate row of topic buttons is gone, since the Trending line now does that job; project names and counts come from the projects API, so a new project appears there once it has verified findings."
+      ]
+    },
+    {
       "pr": 92,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/92",
       "mergedAt": "2026-11-28T19:20:00Z",
