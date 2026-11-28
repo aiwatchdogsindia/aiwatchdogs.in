@@ -7500,3 +7500,101 @@ code.font-mono {
 ) {
   filter: invert(1) hue-rotate(180deg);
 }
+
+/* Footer theme picker: device / light / dark in one pill (the chosen one ringed) */
+.theme-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-999);
+  background: var(--paper);
+}
+
+.theme-switcher-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-999);
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.theme-switcher-option:hover {
+  color: var(--ink);
+}
+
+.theme-switcher-option.is-active {
+  color: var(--ink);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.theme-switcher-option:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+@media (max-width: 760px) {
+  .theme-switcher-option {
+    width: 40px;
+    height: 38px;
+  }
+}
+
+/* Footer status line, fed by the hub's /health endpoint */
+.system-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  font-family: var(--font-code);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink-3);
+}
+
+.system-status:hover,
+.system-status:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.system-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-5);
+}
+
+.system-status--ok {
+  color: var(--flag-green-deep);
+}
+
+.system-status--ok .system-status-dot {
+  background: var(--live);
+}
+
+.system-status--degraded .system-status-dot {
+  background: var(--flag-saffron);
+}
+
+.system-status--unreachable {
+  color: var(--red);
+}
+
+.system-status--unreachable .system-status-dot {
+  background: var(--mid);
+}

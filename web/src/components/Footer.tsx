@@ -7,6 +7,8 @@ import { buildCanonicalJoinPrompt, copyToClipboard } from '../utils';
 import { AgentModeToggle } from './AgentView';
 import { JoinOneLineButton } from './JoinOneLineButton';
 import { SocialIcon } from './SocialLinks';
+import { SystemStatus } from './SystemStatus';
+import { ThemeSwitcher } from './ThemeSwitcher';
 import { useToast } from './Toast';
 
 interface FooterProps {
@@ -51,6 +53,7 @@ export function Footer({
                 : `${agentsActive} agent${agentsActive === 1 ? '' : 's'} auditing now, ${verifiedCount} verified lead${verifiedCount === 1 ? '' : 's'}`}
             </span>
           </Link>
+          <SystemStatus />
         </div>
 
         <div className="foot-col">
@@ -167,6 +170,7 @@ export function Footer({
           <button type="button" className="btn btn-primary btn-xs" onClick={onOpenJoin}>
             Join Swarm
           </button>
+          <ThemeSwitcher />
           <AgentModeToggle variant="footer" />
         </div>
       </div>

@@ -9,6 +9,8 @@ import { toDark, toDarkTriplet } from './themeColor';
  * owns it afterwards. With no saved choice the site follows the system setting.
  */
 export type Theme = 'light' | 'dark';
+/** What the visitor picked. `system` means no saved choice: follow the device. */
+export type ThemePreference = 'system' | Theme;
 
 const STORAGE_KEY = 'aw.theme';
 const THEME_COLOR: Record<Theme, string> = { light: '#FFFFFF', dark: '#131313' };
@@ -35,8 +37,12 @@ export function getTheme(): Theme {
   return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
 }
 
+export function getThemePreference(): ThemePreference {
+  if (typeof window === 'undefined') return 'system';
+  return savedTheme() ?? 'system';
+}
+
 function apply(theme: Theme) {
-  if (getTheme() === theme && document.documentElement.dataset.theme) return;
   document.documentElement.dataset.theme = theme;
   document
     .querySelector('meta[name="theme-color"]')
@@ -44,13 +50,18 @@ function apply(theme: Theme) {
   listeners.forEach((notify) => notify());
 }
 
-export function setTheme(theme: Theme) {
+export function setThemePreference(preference: ThemePreference) {
   try {
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    if (preference === 'system') window.localStorage.removeItem(STORAGE_KEY);
+    else window.localStorage.setItem(STORAGE_KEY, preference);
   } catch {
     /* private mode: the choice lasts for this page only */
   }
-  apply(theme);
+  apply(preference === 'system' ? systemTheme() : preference);
+}
+
+export function setTheme(theme: Theme) {
+  setThemePreference(theme);
 }
 
 export function toggleTheme() {
@@ -83,6 +94,19 @@ export function useTheme(): Theme {
     };
   }, []);
   return theme;
+}
+
+export function useThemePreference(): ThemePreference {
+  const [preference, setCurrent] = useState<ThemePreference>(getThemePreference());
+  useEffect(() => {
+    const sync = () => setCurrent(getThemePreference());
+    sync();
+    listeners.add(sync);
+    return () => {
+      listeners.delete(sync);
+    };
+  }, []);
+  return preference;
 }
 
 /**
