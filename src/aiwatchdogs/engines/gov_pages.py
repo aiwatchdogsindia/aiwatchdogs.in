@@ -499,8 +499,11 @@ class Page(HTMLParser):
 
     def handle_endtag(self, tag: str) -> None:
         if self._hidden:
-            if self._hidden[-1] == tag:
-                self._hidden.pop()
+            # HTML lets <p>, <li>, <option> etc. go unclosed, so an end tag closes every element opened
+            # after its own start tag (as browsers do). Popping only an exact top-of-stack match left the
+            # rest of the page hidden after "<div hidden><p>menu</div>", hiding real contact/RTI links.
+            if tag in self._hidden:
+                del self._hidden[len(self._hidden) - 1 - self._hidden[::-1].index(tag) :]
             return
         if tag == "title":
             self._in_title = False

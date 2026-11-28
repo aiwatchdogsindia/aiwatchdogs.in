@@ -533,3 +533,35 @@ def test_slow_rti_subpage_timeout_emits_valid_rti_unavailable_without_contact_li
     assert res2["checks"]["gov_email_domain"] == "observed"
     assert res2["checks"]["pio_faa_disclosure"] == "unassessable"
     _validate_evidence(res2, HOST)
+
+
+@pytest.mark.parametrize(
+    "hidden_block",
+    [
+        '<div style="display:none"><p>Mobile menu</div>',
+        "<noscript><p>Please enable JavaScript</noscript>",
+        "<select hidden><option>A<option>B</select>",
+        "<div hidden><ul><li>One<li>Two</ul></div>",
+    ],
+)
+def test_unclosed_tags_inside_hidden_blocks_do_not_hide_the_rest_of_the_page(hidden_block):
+    page = audit.Page(
+        f"<main>{hidden_block}<p>Ministry of Example, Shastri Bhawan, New Delhi 110001</p>"
+        '<a href="/contact-us">Contact Us</a> <a href="/rti">Right to Information</a></main>'
+    )
+    links = {(href, label.strip()) for href, label in page.links}
+    assert ("/contact-us", "Contact Us") in links
+    assert ("/rti", "Right to Information") in links
+    assert "Shastri Bhawan" in page.body
+    assert "Mobile menu" not in page.body and "enable JavaScript" not in page.body
+
+
+def test_nested_hidden_blocks_still_hide_their_whole_content():
+    page = audit.Page(
+        "<main><p>Visible intro text for the ministry homepage.</p>"
+        '<div hidden><div><a href="/secret">Hidden link</a></div><p>still hidden</div>'
+        '<a href="/contact-us">Contact Us</a></main>'
+    )
+    assert ("/contact-us", "Contact Us") in {(href, label.strip()) for href, label in page.links}
+    assert all(href != "/secret" for href, _ in page.links)
+    assert "still hidden" not in page.body
