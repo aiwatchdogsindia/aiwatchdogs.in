@@ -3,7 +3,8 @@
  *
  * The site is designed on white paper. Dark mode keeps every hue and flips
  * lightness in OKLCH, so each ink/paper pair keeps its contrast:
- *   - white paper becomes near-black, near-black ink becomes ivory;
+ *   - white paper becomes true black, near-black ink becomes near-white, and
+ *     the warm greys in between become neutral greys;
  *   - pale tints (washes, hairlines) become deep tints of the same hue;
  *   - dark saturated colours (navy, deep green, brick) are lifted until they
  *     read on dark paper;
@@ -86,22 +87,55 @@ const smoothstep = (lo: number, hi: number, v: number) => {
   return t * t * (3 - 2 * t);
 };
 
-/** Lightness of dark paper, and the slope that sends near-black ink to ivory. */
-const DARK_PAPER_L = 0.185;
-const SLOPE = 0.953;
+/**
+ * Light lightness -> dark lightness (OKLCH L), as a curve through fixed points.
+ * White paper lands on true black and the greys step up from it the way a
+ * neutral black UI does: #0A0A0A surfaces, #1F1F1F hairlines, #A1A1A1
+ * secondary text, #EDEDED ink.
+ */
+const CURVE: readonly (readonly [number, number])[] = [
+  [0, 1],
+  [0.217, 0.945], // ink
+  [0.44, 0.71], // secondary text
+  [0.68, 0.5], // faint text
+  [0.85, 0.31], // strong hairline
+  [0.915, 0.24], // hairline
+  [0.967, 0.145], // sunk surface
+  [1, 0], // paper
+];
+
+function flipLightness(L: number): number {
+  for (let i = 1; i < CURVE.length; i += 1) {
+    const [x0, y0] = CURVE[i - 1];
+    const [x1, y1] = CURVE[i];
+    if (L <= x1) return y0 + ((L - x0) / (x1 - x0)) * (y1 - y0);
+  }
+  return 0;
+}
 
 export function darkRgba({ r, g, b, a }: Rgba): Rgba {
-  const [L, C, H] = rgbToOklch(r, g, b);
-  const flipped = clamp(DARK_PAPER_L + SLOPE * (1 - L), DARK_PAPER_L, 0.97);
+  const [L, sourceC, H] = rgbToOklch(r, g, b);
+  // The light palette's greys are warm (a faint yellow cast); on black that
+  // warmth reads as brown, so they go fully neutral. Real tints keep their hue.
+  const hue = ((H * 180) / Math.PI + 360) % 360;
+  const warmGreyBand = hue > 55 && hue < 115;
+  const tint = warmGreyBand
+    ? smoothstep(0.022, 0.036, sourceC)
+    : smoothstep(0.006, 0.014, sourceC);
+  // Pale washes sit very close to black once flipped: lift them a little and
+  // deepen the colour so a tinted chip still reads as tinted.
+  const paleWash = L > 0.85 ? tint : 0;
+  const C = sourceC * tint * (1 + 1.2 * paleWash);
+  const flipped = Math.max(flipLightness(clamp(L, 0, 1)), paleWash * 0.21);
   // Saturated mid-tones keep their own lightness unless flipping makes them brighter.
-  const keep = smoothstep(0.07, 0.13, C) * (1 - smoothstep(0.8, 0.9, L));
+  const keep = smoothstep(0.07, 0.13, sourceC) * (1 - smoothstep(0.8, 0.9, L));
   const targetL = flipped + keep * (Math.max(L, flipped) - flipped);
 
   let chroma = C;
   let rgb = oklchToRgb(targetL, chroma, H);
   if (!inGamut(rgb)) {
     let lo = 0;
-    let hi = C;
+    let hi = chroma;
     for (let i = 0; i < 18; i += 1) {
       chroma = (lo + hi) / 2;
       if (inGamut(oklchToRgb(targetL, chroma, H))) lo = chroma;

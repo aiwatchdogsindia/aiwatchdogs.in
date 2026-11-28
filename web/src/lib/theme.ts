@@ -13,7 +13,7 @@ export type Theme = 'light' | 'dark';
 export type ThemePreference = 'system' | Theme;
 
 const STORAGE_KEY = 'aw.theme';
-const THEME_COLOR: Record<Theme, string> = { light: '#FFFFFF', dark: '#131313' };
+const THEME_COLOR: Record<Theme, string> = { light: '#FFFFFF', dark: '#000000' };
 const listeners = new Set<() => void>();
 
 function savedTheme(): Theme | null {

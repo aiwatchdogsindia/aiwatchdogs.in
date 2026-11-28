@@ -3,6 +3,18 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 71,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/71",
+      "mergedAt": "2026-11-28T07:24:52Z",
+      "title": "Dark mode is true black with neutral greys",
+      "items": [
+        "The dark background is pure black instead of a dark grey.",
+        "Greys in dark mode (text, hairlines, panels) are neutral; the warm, brownish cast is gone.",
+        "Tinted chips (verified, disputed and similar) have slightly deeper colour so they still read on black.",
+        "Light mode is unchanged."
+      ]
+    },
+    {
       "pr": 70,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/70",
       "mergedAt": "2026-11-28T07:09:09Z",
