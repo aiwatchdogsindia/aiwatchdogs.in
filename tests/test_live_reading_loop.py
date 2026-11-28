@@ -138,9 +138,68 @@ def _valid_d57_extraction(sha: str = SAMPLE_SHA) -> dict[str, Any]:
     }
 
 
-def _seed_r1_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sha: str = SAMPLE_SHA) -> Path:
+def _seed_r1_project(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sha: str = SAMPLE_SHA,
+    *,
+    include_page_texts: bool = True,
+    min_rows: int = 2,
+    golden_expected: dict[str, Any] | None = None,
+    min_golden_accuracy: float | None = None,
+    extra_tasks: list[dict[str, Any]] | None = None,
+) -> Path:
     pdir = tmp_path / "projects"
     pdir.mkdir(exist_ok=True)
+    reading_ctx: dict[str, Any] = {
+        "document_type": "union_budget_sbe",
+        "union_budget": "2015-16",
+        "demand_no": 57,
+        "ministry": "Ministry of Home Affairs",
+        "department": "Transfers to Union Territory Governments",
+        "page_count": 3,
+        "table_pages": [1, 2],
+        "periods": [
+            "Actual 2013-2014",
+            "Budget 2014-2015",
+            "Revised 2014-2015",
+            "Budget 2015-2016",
+        ],
+        "subcolumns": ["Plan", "Non-Plan", "Total"],
+        "expected_grand_total": dict(SAMPLE_GT),
+        "min_rows": min_rows,
+    }
+    if include_page_texts:
+        reading_ctx["page_texts"] = {"1": PAGE_1_TEXT, "2": PAGE_2_TEXT}
+    if golden_expected is not None:
+        reading_ctx["golden_expected"] = golden_expected
+    if min_golden_accuracy is not None:
+        reading_ctx["min_golden_accuracy"] = min_golden_accuracy
+
+    tasks: list[dict[str, Any]] = [
+        {
+            "id": "r1-ub-2015-16-d057",
+            "title": "AI read · 2015-16 Demand 57: Transfers to Union Territory Governments (p.1–2, ₹1,768.00 Cr)",
+            "instructions": "Extract Section A leaf rows so all 12 columns sum to Grand Total.",
+            "type": "extract_data",
+            "methodology_code": "R1",
+            "dataset_key": "ub-reading-2015-16-d057",
+            "financial_quantity_type": "budget_and_treasury_expenditure",
+            "estimated_tokens": 12000,
+            "estimate_basis": "2 table pages (~6,000 tokens/page).",
+            "payload": {
+                "artifact_title": "Union Budget 2015-16 Demand No. 57",
+                "retrieval_url": "https://www.indiabudget.gov.in/budget2015-2016/ub2015-16/eb/sbe57.pdf",
+                "expected_sha256": sha,
+                "official_publisher": "Ministry of Finance, Government of India",
+                "source_landing_page": "https://www.indiabudget.gov.in/budget2015-2016/ub2015-16/eb/stat2.htm",
+                "context": {"reading": reading_ctx},
+            },
+        }
+    ]
+    if extra_tasks:
+        tasks.extend(extra_tasks)
+
     proj = {
         "slug": "union-budget-unspent-funds",
         "project_code": "P3",
@@ -160,45 +219,7 @@ def _seed_r1_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sha: str =
                 "url": "https://www.indiabudget.gov.in/budget2015-2016/ub2015-16/eb/sbe57.pdf",
             }
         ],
-        "tasks": [
-            {
-                "id": "r1-ub-2015-16-d057",
-                "title": "AI read · 2015-16 Demand 57: Transfers to Union Territory Governments (p.1–2, ₹1,768.00 Cr)",
-                "instructions": "Extract Section A leaf rows so all 12 columns sum to Grand Total.",
-                "type": "extract_data",
-                "methodology_code": "R1",
-                "dataset_key": "ub-reading-2015-16-d057",
-                "financial_quantity_type": "budget_and_treasury_expenditure",
-                "estimated_tokens": 12000,
-                "estimate_basis": "2 table pages (~6,000 tokens/page).",
-                "payload": {
-                    "artifact_title": "Union Budget 2015-16 Demand No. 57",
-                    "retrieval_url": "https://www.indiabudget.gov.in/budget2015-2016/ub2015-16/eb/sbe57.pdf",
-                    "expected_sha256": sha,
-                    "official_publisher": "Ministry of Finance, Government of India",
-                    "source_landing_page": "https://www.indiabudget.gov.in/budget2015-2016/ub2015-16/eb/stat2.htm",
-                    "context": {
-                        "reading": {
-                            "document_type": "union_budget_sbe",
-                            "union_budget": "2015-16",
-                            "demand_no": 57,
-                            "ministry": "Ministry of Home Affairs",
-                            "department": "Transfers to Union Territory Governments",
-                            "page_count": 3,
-                            "table_pages": [1, 2],
-                            "periods": [
-                                "Actual 2013-2014",
-                                "Budget 2014-2015",
-                                "Revised 2014-2015",
-                                "Budget 2015-2016",
-                            ],
-                            "subcolumns": ["Plan", "Non-Plan", "Total"],
-                            "expected_grand_total": dict(SAMPLE_GT),
-                        }
-                    },
-                },
-            }
-        ],
+        "tasks": tasks,
         "planned_tasks": [
             {
                 "title": "Find complete official copies of 6 truncated 2015-16 budget PDFs",
@@ -473,6 +494,429 @@ def test_production_p3_manifest_has_11_verified_r1_reading_tasks() -> None:
     assert len(r1) == 11
     total_be = sum(t["payload"]["context"]["reading"]["expected_grand_total"]["be_total"] for t in r1)
     assert total_be > 230_000.0  # ₹2.32 lakh crore+ unlocked for live AI reading
+    # Every pinned R1 task must reference an existing SHA-256-verified page_texts bundle on disk
+    for t in r1:
+        rc = t["payload"]["context"]["reading"]
+        rel_path = rc.get("page_texts_path")
+        expected_sha = rc.get("page_texts_sha256")
+        assert rel_path and expected_sha
+        bundle_file = REPO_PROJECTS / rel_path
+        assert bundle_file.is_file(), f"Missing pinned reading bundle: {rel_path}"
+        assert hashlib.sha256(bundle_file.read_bytes()).hexdigest() == expected_sha
+        bundle_data = json.loads(bundle_file.read_text(encoding="utf-8"))
+        assert len(bundle_data.get("pages") or {}) >= 1
     # Ensure planned_tasks now cleanly reflects the 6 truncated PDFs instead of all 17
     planned_titles = [p["title"] for p in data.get("planned_tasks", [])]
     assert any("6 truncated 2015-16" in t for t in planned_titles)
+
+
+def test_hub_rejects_fabricated_one_row_table_matching_official_grand_total(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closes Gap #1: Hub MUST run server-side quote/header/figure checks against pinned page texts."""
+    _seed_r1_project(tmp_path, monkeypatch, include_page_texts=True, min_rows=2)
+    app = create_app(db_path=tmp_path / "anti_spoof.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as client:
+        reg = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={"handle": "spoof-tester", "provider": "openai", "model": "gpt-4o-mini"},
+        ).json()
+        auth = {"X-Agent-Token": reg["api_token"], "User-Agent": CLI_USER_AGENT}
+        lease = client.post(
+            "/api/desk/next",
+            headers=auth,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        ).json()
+
+        # Attack A: 1-row invented table whose numbers equal the official Grand Total (fake quote)
+        attack_a = {
+            "document_sha256": SAMPLE_SHA,
+            "page": 1,
+            "pages": [1, 2],
+            "column_headers": ["Actual 2013-2014", "Budget 2015-2016", "Plan", "Non-Plan", "Total"],
+            "printed_grand_total": dict(SAMPLE_GT),
+            "rows": [
+                {
+                    "page": 1,
+                    "label": "Invented single row summing to Grand Total",
+                    **SAMPLE_GT,
+                    "verbatim_quote": "1.01.01 Fake row 1231.66 585.00 1816.66",
+                }
+            ],
+        }
+        r_a = client.post(
+            "/api/desk/submit",
+            headers=auth,
+            json={"lease_id": lease["lease_id"], "outcome": "reading_extraction", "extraction": attack_a},
+        )
+        assert r_a.status_code == 422, r_a.text
+
+        # Attack B: 2-row table copying the real "Grand Total" quote line to spoof verbatim quote check
+        half_gt = {k: round(v / 2.0, 2) for k, v in SAMPLE_GT.items()}
+        other_half = {k: round(SAMPLE_GT[k] - half_gt[k], 2) for k in SAMPLE_GT}
+        attack_b = {
+            "document_sha256": SAMPLE_SHA,
+            "page": 1,
+            "pages": [1, 2],
+            "column_headers": ["Actual 2013-2014", "Budget 2015-2016", "Plan", "Non-Plan", "Total"],
+            "printed_grand_total": dict(SAMPLE_GT),
+            "rows": [
+                {
+                    "page": 2,
+                    "label": "Fake Half 1",
+                    **half_gt,
+                    "verbatim_quote": "Grand Total 1231.66 585.00 1816.66",
+                },
+                {
+                    "page": 2,
+                    "label": "Fake Half 2",
+                    **other_half,
+                    "verbatim_quote": "Grand Total 1139.00 629.00 1768.00",
+                },
+            ],
+        }
+        r_b = client.post(
+            "/api/desk/submit",
+            headers=auth,
+            json={"lease_id": lease["lease_id"], "outcome": "reading_extraction", "extraction": attack_b},
+        )
+        assert r_b.status_code == 422, r_b.text
+
+        # Attack C: 2-row table with real Page-1 quotes paired with invented half-totals not on the page!
+        attack_c = {
+            "document_sha256": SAMPLE_SHA,
+            "page": 1,
+            "pages": [1, 2],
+            "column_headers": ["Actual 2013-2014", "Budget 2015-2016", "Plan", "Non-Plan", "Total"],
+            "printed_grand_total": dict(SAMPLE_GT),
+            "rows": [
+                {
+                    "page": 1,
+                    "label": "Spoofed Real Quote 1",
+                    **half_gt,
+                    "verbatim_quote": "1.01.01 Overall Gap 3602 ... 513.00 513.00",
+                },
+                {
+                    "page": 2,
+                    "label": "Spoofed Real Quote 2",
+                    **other_half,
+                    "verbatim_quote": "2.01 Puducherry Plan Assistance 3602 643.12",
+                },
+            ],
+        }
+        r_c = client.post(
+            "/api/desk/submit",
+            headers=auth,
+            json={"lease_id": lease["lease_id"], "outcome": "reading_extraction", "extraction": attack_c},
+        )
+        assert r_c.status_code == 422, r_c.text
+
+        # Contributor earned ZERO points and nothing was published!
+        prof = client.get("/api/contributors/spoof-tester").json()
+        assert prof["contributor"]["compute_score"] == 0
+        pub = client.get("/api/missions/union-budget-unspent-funds/readings/prj-r1-ub-2015-16-d057")
+        assert pub.status_code == 404
+
+
+def test_image_only_scan_routes_to_second_model_and_scores_on_agreement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closes Gap #4a: textless/scan R1 task is held as pending_second_model until 2nd distinct handle+model agrees."""
+    _seed_r1_project(tmp_path, monkeypatch, include_page_texts=False, min_rows=2)
+    app = create_app(db_path=tmp_path / "scan_two_model.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as client:
+        r1_agent = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={
+                "handle": "reader-alpha",
+                "provider": "anthropic",
+                "model": "claude-opus-4",
+                "coding_agent": "Claude Code",
+                "coding_agent_model": "claude-opus-4",
+            },
+        ).json()
+        r_same_model = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={
+                "handle": "reader-clone",
+                "provider": "anthropic",
+                "model": "claude-opus-4",
+                "coding_agent": "Claude Code",
+                "coding_agent_model": "claude-opus-4",
+            },
+        ).json()
+        r2_agent = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={
+                "handle": "reader-beta",
+                "provider": "openai",
+                "model": "gpt-5",
+                "coding_agent": "Codex",
+                "coding_agent_model": "gpt-5",
+            },
+        ).json()
+        auth1 = {"X-Agent-Token": r1_agent["api_token"], "User-Agent": CLI_USER_AGENT}
+        auth_clone = {"X-Agent-Token": r_same_model["api_token"], "User-Agent": CLI_USER_AGENT}
+        auth2 = {"X-Agent-Token": r2_agent["api_token"], "User-Agent": CLI_USER_AGENT}
+
+        # 1st reader claims and submits valid extraction on image-only scan (no pinned text layer)
+        lease1 = client.post(
+            "/api/desk/next",
+            headers=auth1,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        ).json()
+        sub1 = client.post(
+            "/api/desk/submit",
+            headers=auth1,
+            json={
+                "lease_id": lease1["lease_id"],
+                "outcome": "reading_extraction",
+                "extraction": _valid_d57_extraction(),
+            },
+        )
+        assert sub1.status_code == 200, sub1.text
+        b1 = sub1.json()
+        assert b1["status"] == "pending_second_model"
+        assert b1["verification_mode"] == "requires_second_model"
+        assert b1["verification_status"] == "pending_second_model"
+        assert b1["reading_url"] is None
+        assert b1["second_model_task_id"] == "prj-r1-ub-2015-16-d057-r2"
+
+        # 1st reader gets 0 pts so far, and reading is NOT published yet
+        assert client.get("/api/contributors/reader-alpha").json()["contributor"]["compute_score"] == 0
+        assert client.get("/api/missions/union-budget-unspent-funds/readings/prj-r1-ub-2015-16-d057").status_code == 404
+
+        # Same handle CANNOT claim the paired -r2 task
+        same_handle_claim = client.post(
+            "/api/desk/next",
+            headers=auth1,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        )
+        assert same_handle_claim.status_code == 204
+
+        # Different handle with SAME model is automatically skipped on queue claim (204) and blocked on explicit claim (409)
+        clone_queue = client.post(
+            "/api/desk/next",
+            headers=auth_clone,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        )
+        assert clone_queue.status_code == 204
+        clone_explicit = client.post(
+            "/api/desk/next",
+            headers=auth_clone,
+            json={
+                "task_id": "prj-r1-ub-2015-16-d057-r2",
+                "document_reading": True,
+                "supported_methodologies": ["R1"],
+            },
+        )
+        assert clone_explicit.status_code == 409
+        assert "distinct model" in clone_explicit.json()["detail"].lower()
+
+        # 2nd reader with distinct handle AND distinct model claims -r2 and agrees
+        lease2 = client.post(
+            "/api/desk/next",
+            headers=auth2,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        )
+        assert lease2.status_code == 200
+        assert lease2.json()["task"]["id"] == "prj-r1-ub-2015-16-d057-r2"
+        sub2 = client.post(
+            "/api/desk/submit",
+            headers=auth2,
+            json={
+                "lease_id": lease2.json()["lease_id"],
+                "outcome": "reading_extraction",
+                "extraction": _valid_d57_extraction(),
+            },
+        )
+        assert sub2.status_code == 200, sub2.text
+        b2 = sub2.json()
+        assert b2["status"] == "accepted"
+        assert b2["verification_status"] == "two_model_verified"
+        assert b2["reading_url"] == "/api/missions/union-budget-unspent-funds/readings/prj-r1-ub-2015-16-d057"
+
+        # BOTH readers receive +25 verified reading points and the reading is now published!
+        assert client.get("/api/contributors/reader-alpha").json()["contributor"]["compute_score"] == 25
+        assert client.get("/api/contributors/reader-beta").json()["contributor"]["compute_score"] == 25
+        pub = client.get(b2["reading_url"])
+        assert pub.status_code == 200
+        assert pub.json()["verification_status"] == "two_model_verified"
+
+
+def test_image_only_scan_disagreement_marks_disputed_without_points_or_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When two distinct models disagree on a scan reading, mark disputed_reading with 0 points and no publication."""
+    _seed_r1_project(tmp_path, monkeypatch, include_page_texts=False, min_rows=2)
+    # Use a scanned state budget document_type without pre-extracted expected_grand_total so two internally
+    # self-consistent readings with different totals pass individual math and trigger the Hub's 2-model check!
+    p3_file = tmp_path / "projects" / "union-budget-unspent-funds.json"
+    p3_doc = json.loads(p3_file.read_text(encoding="utf-8"))
+    rc = p3_doc["tasks"][0]["payload"]["context"]["reading"]
+    rc["document_type"] = "state_budget_scan"
+    rc.pop("expected_grand_total", None)
+    assert validate_project(p3_doc, filename_stem="union-budget-unspent-funds") == []
+    p3_file.write_text(json.dumps(p3_doc), encoding="utf-8")
+
+    app = create_app(db_path=tmp_path / "scan_disagree.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as client:
+        r1 = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={"handle": "scan-r1", "provider": "anthropic", "model": "claude-opus-4"},
+        ).json()
+        r2 = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={"handle": "scan-r2", "provider": "openai", "model": "gpt-5"},
+        ).json()
+        auth1 = {"X-Agent-Token": r1["api_token"], "User-Agent": CLI_USER_AGENT}
+        auth2 = {"X-Agent-Token": r2["api_token"], "User-Agent": CLI_USER_AGENT}
+
+        l1_resp = client.post(
+            "/api/desk/next",
+            headers=auth1,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        )
+        assert l1_resp.status_code == 200, l1_resp.text
+        l1 = l1_resp.json()
+        s1 = client.post(
+            "/api/desk/submit",
+            headers=auth1,
+            json={"lease_id": l1["lease_id"], "outcome": "reading_extraction", "extraction": _valid_d57_extraction()},
+        )
+        assert s1.status_code == 200
+        assert s1.json()["verification_status"] == "pending_second_model"
+
+        # Reader 2 submits a self-consistent extraction with a shifted total (disagrees with Reader 1)
+        alt_sub = _valid_d57_extraction()
+        alt_sub["rows"][0]["be_non_plan"] += 100.0
+        alt_sub["rows"][0]["be_total"] += 100.0
+        alt_sub["printed_grand_total"]["be_non_plan"] += 100.0
+        alt_sub["printed_grand_total"]["be_total"] += 100.0
+
+        l2 = client.post(
+            "/api/desk/next",
+            headers=auth2,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        ).json()
+        s2 = client.post(
+            "/api/desk/submit",
+            headers=auth2,
+            json={"lease_id": l2["lease_id"], "outcome": "reading_extraction", "extraction": alt_sub},
+        )
+        assert s2.status_code == 200, s2.text
+        b2 = s2.json()
+        assert b2["status"] == "disputed"
+        assert b2["verification_status"] == "disputed_reading"
+        assert b2["reading_url"] is None
+        assert len(b2["disagreement_details"]) >= 1
+        assert client.get("/api/contributors/scan-r1").json()["contributor"]["compute_score"] == 0
+        assert client.get("/api/contributors/scan-r2").json()["contributor"]["compute_score"] == 0
+        assert client.get("/api/missions/union-budget-unspent-funds/readings/prj-r1-ub-2015-16-d057").status_code == 404
+
+
+def test_hub_enforces_seeded_golden_expected_calibration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closes Gap #4b: Hub enforces golden_expected / min_golden_accuracy when present on an R1 task."""
+    golden = _valid_d57_extraction()
+    _seed_r1_project(
+        tmp_path,
+        monkeypatch,
+        include_page_texts=True,
+        min_rows=2,
+        golden_expected=golden,
+        min_golden_accuracy=0.95,
+    )
+    app = create_app(db_path=tmp_path / "golden_cal.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as client:
+        reg = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={"handle": "golden-reader", "provider": "openai", "model": "gpt-4o-mini"},
+        ).json()
+        auth = {"X-Agent-Token": reg["api_token"], "User-Agent": CLI_USER_AGENT}
+        lease = client.post(
+            "/api/desk/next",
+            headers=auth,
+            json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]},
+        ).json()
+
+        # Reordered / mislabeled extraction whose totals still sum to Grand Total and quotes still match page,
+        # but fails row-by-row golden calibration accuracy (< 0.95) -> rejected 422!
+        swapped = _valid_d57_extraction()
+        swapped["rows"] = list(reversed(swapped["rows"]))
+        r_bad = client.post(
+            "/api/desk/submit",
+            headers=auth,
+            json={"lease_id": lease["lease_id"], "outcome": "reading_extraction", "extraction": swapped},
+        )
+        assert r_bad.status_code == 422, r_bad.text
+        assert "golden" in r_bad.json()["detail"].lower()
+
+        # Exact match passes calibration and records golden_accuracy == 1.0
+        r_ok = client.post(
+            "/api/desk/submit",
+            headers=auth,
+            json={"lease_id": lease["lease_id"], "outcome": "reading_extraction", "extraction": golden},
+        )
+        assert r_ok.status_code == 200, r_ok.text
+        pub = client.get(r_ok.json()["reading_url"]).json()
+        assert pub["verification"]["golden_accuracy"] == pytest.approx(1.0)
+        assert pub["verification"]["checks"]["golden_calibration"] == "pass"
+
+
+def test_scan_png_export_and_reading_first_join_txt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closes Gaps #3 and #4c: scan PNG export for image-only pages + reading-first /join.txt."""
+    import shutil
+
+    from pypdf import PdfWriter
+
+    from aiwatchdogs.cli.reading_runner import render_pdf_pages_to_pngs
+
+    # 1. Create a real blank/image-only 1-page PDF and verify render_pdf_pages_to_pngs
+    pdf_path = tmp_path / "scan.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    with pdf_path.open("wb") as fh:
+        writer.write(fh)
+
+    rendered = render_pdf_pages_to_pngs(pdf_path.read_bytes(), pages=[1], out_dir=tmp_path / "pages")
+    if shutil.which("pdftoppm"):
+        assert 1 in rendered
+        assert Path(rendered[1]).is_file()
+        assert Path(rendered[1]).suffix == ".png"
+    else:
+        assert rendered == {}
+
+    bundle = build_coding_agent_reading_bundle(
+        {"lease_id": "lease-scan", "task": {"id": "t-scan", "payload": {"context": {"reading": {}}}}},
+        page_texts={1: ""},
+        sha256=SAMPLE_SHA,
+        page_images=rendered or {1: str(tmp_path / "pages" / "page-1.png")},
+    )
+    assert bundle["has_image_only_pages"] is True
+    assert bundle["image_only_pages"] == [1]
+    assert "1" in bundle["page_images"]
+
+    # 2. Verify /join.txt puts AI document reading (read-claim / read-submit) BEFORE rule-engine join!
+    _seed_r1_project(tmp_path, monkeypatch)
+    app = create_app(db_path=tmp_path / "join_check.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as client:
+        txt = client.get("/join.txt").text
+        idx_read = txt.find("read-claim")
+        idx_submit = txt.find("read-submit")
+        idx_rule_engine = txt.find("--provider rule-engine")
+        assert idx_read != -1 and idx_submit != -1 and idx_rule_engine != -1
+        assert idx_read < idx_submit < idx_rule_engine
+        lowered = txt.lower()
+        for forbidden in ("demo", "sample", "ollama", "join.sh", "local checkout"):
+            assert forbidden not in lowered
