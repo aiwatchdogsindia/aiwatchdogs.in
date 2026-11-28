@@ -286,6 +286,7 @@ def resolve_spa_markdown_path(norm_path: str) -> str | None:
         "back": "/back.md",
         "sponsors": "/back.md",
         "ledger": "/back.md",
+        "news": "/news.md",
     }
     if p in static_map:
         return static_map[p]
@@ -293,6 +294,10 @@ def resolve_spa_markdown_path(norm_path: str) -> str | None:
         slug = p.split("/", 1)[1].strip("/")
         if slug and "/" not in slug and _SAFE_ID_RE.fullmatch(slug):
             return f"/projects/{slug}.md"
+    if p.startswith("news/"):
+        day = p.split("/", 1)[1].strip("/")
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            return f"/news/{day}.md"
     if p.startswith("findings/"):
         fid = p.split("/", 1)[1].strip("/")
         if fid and "/" not in fid and _SAFE_ID_RE.fullmatch(fid):

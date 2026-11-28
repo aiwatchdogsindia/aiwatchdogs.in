@@ -68,6 +68,9 @@ export function JustInBar({ justIn, recentFindings, fallbackFinding, onSelectFin
       <div className="latest-strip-inner">
         <div className="latest-strip-head">
           <span className="latest-strip-kicker">{t('recently_confirmed')}</span>
+          <a className="latest-strip-more" href="/news">
+            {t('today')} <span aria-hidden="true">→</span>
+          </a>
         </div>
         {entries.length === 0 ? (
           <p className="latest-strip-empty">{t('nothing_confirmed')}</p>

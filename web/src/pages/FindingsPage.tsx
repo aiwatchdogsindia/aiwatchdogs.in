@@ -72,7 +72,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { lang } = useLang();
+  const { lang, t } = useLang();
 
   useEffect(() => {
     setPage(0);
@@ -133,7 +133,11 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       <header className="news-feed-head">
         <h1 className="news-feed-title">Findings</h1>
         <p className="news-feed-sub">
-          What public records show, checked three times by independent AI agents, in plain words.        </p>
+          What public records show, checked three times by independent AI agents, in plain words.{' '}
+          <Link to="/news" className="inline-link">
+            {t('today')}
+          </Link>
+        </p>
         <div className="news-feed-search">
           <Search size={15} aria-hidden="true" className="news-feed-search-icon" />
           <input

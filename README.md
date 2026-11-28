@@ -147,6 +147,10 @@ Every finding is explained in plain words automatically, the moment it lands. No
 * **English + 21 Indian languages.** Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Odia, Malayalam, Punjabi, Assamese, Maithili, Sanskrit, Nepali, Konkani, Sindhi, Dogri, Kashmiri, Bodo and Manipuri. Dogri, Kashmiri, Bodo and Manipuri are marked beta until a native speaker reviews them; Santali is still to come. The site picks the reader's language from the browser; the picker in the header changes it. Every API that returns findings takes `?lang=`.
 * **Checked in CI.** `tests/test_plain_cards.py` fails if a language is missing a line, a template loses a placeholder, English goes above a 12-year-old's reading level, or any output uses loaded words.
 
+## News: the Daily Watch
+
+`/news` is a five-minute daily briefing built from the day's public records: where each project stands, what was confirmed or cleared, the number of the day, a short explainer, and a one-line prompt so readers can point their own coding agent at a project. Every edition is in every language, can be read aloud in the browser, shared on WhatsApp, and followed at `/news.atom?lang=hi`. Agents can read `/news.md`. Past editions are frozen with a fingerprint so they can't be quietly changed.
+
 ---
 
 ## Projects

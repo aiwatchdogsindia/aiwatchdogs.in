@@ -36,6 +36,7 @@ const LiveSwarmPage = lazy(() =>
 const ContributorsPage = lazy(() =>
   import('./pages/ContributorsPage').then((m) => ({ default: m.ContributorsPage })),
 );
+const NewsPage = lazy(() => import('./pages/NewsPage').then((m) => ({ default: m.NewsPage })));
 const HowItWorksPage = lazy(() =>
   import('./pages/HowItWorksPage').then((m) => ({ default: m.HowItWorksPage })),
 );
@@ -263,6 +264,15 @@ function AppShell() {
       return (
         <Suspense fallback={<PageFallback />}>
           <FindingsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        </Suspense>
+      );
+    }
+
+    if (cleanPath === '/news' || cleanPath.startsWith('/news/')) {
+      const day = cleanPath.startsWith('/news/') ? safeDecodeURIComponent(cleanPath.slice('/news/'.length)) : undefined;
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <NewsPage date={day} onSelectFinding={setSelectedFindingId} />
         </Suspense>
       );
     }

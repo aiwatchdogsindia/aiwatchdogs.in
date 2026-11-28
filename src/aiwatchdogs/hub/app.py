@@ -69,7 +69,9 @@ from aiwatchdogs.hub.feed import feed_entries, graveyard_feed_entries, render_at
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.plain import available_languages, explain_finding, labels, resolve_lang
+from aiwatchdogs.plain import news as plain_news
 from aiwatchdogs.plain.answers import project_answers
+from aiwatchdogs.plain.store import load_texts
 from aiwatchdogs.hub.templates import (
     DEFAULT_PUBLIC_HUB_URL,
     normalize_base_url,
@@ -628,8 +630,9 @@ def _attach_plain(items: Any, lang: str, db: Any = None) -> None:
     if not isinstance(items, list):
         return
     rows = [i for i in items if isinstance(i, dict) and "methodology_code" in i]
+    written = load_texts(db, [f"finding:{i.get('id')}" for i in rows]) if db is not None else {}
     for item in rows:
-        item["plain"] = explain_finding(item, lang)
+        item["plain"] = explain_finding(item, lang, written.get(f"finding:{item.get('id')}"))
 
 
 def _attach_answers(missions: Any, lang: str, db: Any) -> None:
@@ -1327,6 +1330,79 @@ def create_app(
         meta = next(x for x in available_languages() if x["code"] == code)
         return {**meta, "labels": labels(code)}
 
+    def _render_news(d: Any, code: str, base: str) -> dict[str, Any]:
+        edition = plain_news.get_edition(db, d)
+        frozen = edition.get("written")
+        written = frozen if isinstance(frozen, dict) else load_texts(db, plain_news.text_keys(edition))
+        return plain_news.render(edition, code, base, written=written, lede=written.get(f"news:{d.isoformat()}"))
+
+    def _news_date(raw: str | None) -> Any:
+        d = plain_news.parse_date(raw)
+        if d is None:
+            raise HTTPException(status_code=404, detail="No edition for that date")
+        return d
+
+    def _news_cache(d: Any) -> str:
+        if d >= plain_news.today_ist():
+            return "public, max-age=60, s-maxage=120, stale-while-revalidate=600"
+        return "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+
+    @application.get("/api/news")
+    def api_news(
+        request: Request,
+        response: Response,
+        date: str | None = Query(default=None, max_length=10),
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
+        d = _news_date(date)
+        response.headers["Cache-Control"] = _news_cache(d)
+        return _render_news(d, resolve_lang(lang), _public_base_url(request))
+
+    @application.get("/api/news/editions")
+    def api_news_editions(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "public, max-age=120, s-maxage=600, stale-while-revalidate=3600"
+        dates = plain_news.list_dates(db)
+        return {"today": plain_news.today_ist().isoformat(), "dates": dates}
+
+    @application.get("/news.md")
+    @application.head("/news.md", include_in_schema=False)
+    def md_news(request: Request, lang: str | None = Query(default=None, max_length=32)) -> Response:
+        d = _news_date(None)
+        r = _render_news(d, resolve_lang(lang), _public_base_url(request))
+        return markdown_response(plain_news.render_markdown(r), md_path="/news.md")
+
+    @application.get("/news/{day}.md")
+    @application.head("/news/{day}.md", include_in_schema=False)
+    def md_news_day(day: str, request: Request, lang: str | None = Query(default=None, max_length=32)) -> Response:
+        d = _news_date(day)
+        r = _render_news(d, resolve_lang(lang), _public_base_url(request))
+        return markdown_response(plain_news.render_markdown(r), md_path=f"/news/{d.isoformat()}.md")
+
+    @application.get("/news.atom")
+    @application.head("/news.atom", include_in_schema=False)
+    def news_atom(request: Request, lang: str | None = Query(default=None, max_length=32)) -> Response:
+        code = resolve_lang(lang)
+        suffix = "" if code == "en" else f"?lang={code}"
+        entries = []
+        for day in plain_news.list_dates(db)[:14]:
+            d = plain_news.parse_date(day)
+            if d is None:
+                continue
+            r = _render_news(d, code, _public_base_url(request))
+            heads = [st["head"] for sec in r["sections"] for st in sec.get("stories", [])][:5]
+            entries.append(
+                {
+                    "key": f"news-{day}-{code}",
+                    "updated": f"{day}T18:29:59Z" if r["state"] == "final" else utc_now_iso(),
+                    "term": "daily_edition",
+                    "title": f"{r['title']} · {day}",
+                    "path": f"/news/{day}{suffix}",
+                    "summary": " ".join([r["intro"], *[f"• {h}" for h in heads]]),
+                }
+            )
+        title = f"AI Watchdogs India: {labels(code).get('nav_news', 'News')}"
+        return _atom(request, f"/news.atom{suffix}", title, f"/news{suffix}", entries)
+
     @application.get("/api/sponsors")
     def api_sponsors(response: Response) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
@@ -1861,6 +1937,11 @@ def create_app(
             return JSONResponse(status_code=404, content={"detail": "Not found"})
 
         md_alt = resolve_spa_markdown_path(norm_path)
+        if md_alt is not None and md_alt.startswith("/news") and prefers_markdown(request.headers.get("accept")):
+            day = md_alt[len("/news/") : -len(".md")] if md_alt != "/news.md" else None
+            d = _news_date(day)
+            r = _render_news(d, resolve_lang(request.query_params.get("lang")), _public_base_url(request))
+            return markdown_response(plain_news.render_markdown(r), md_path=md_alt)
         if md_alt is not None and prefers_markdown(request.headers.get("accept")):
             rendered = render_markdown_for_path(desk, _public_base_url(request), "/" + norm_path)
             if rendered is not None:

@@ -13,6 +13,7 @@ interface HeaderProps {
 
 const NAV_ITEMS = [
   { to: '/#map', label: 'Map', key: 'map' },
+  { to: '/news', label: 'News', key: 'news' },
   { to: '/projects', label: 'Projects', key: 'projects' },
   { to: '/findings', label: 'Findings', key: 'findings' },
   { to: '/graveyard', label: 'Graveyard', key: 'graveyard' },

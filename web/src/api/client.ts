@@ -1,4 +1,5 @@
 import type {
+  NewsEdition,
   PlainCard,
   PlainLanguage,
   AgentRecord,
@@ -818,6 +819,14 @@ export const api = {
     return asRecord(raw.labels) as Record<string, string>;
   },
 
+  async getNews(date?: string): Promise<NewsEdition> {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    return fetchJson<NewsEdition>(withLang(`/api/news${qs}`));
+  },
+
+  async getNewsEditions(): Promise<{ today: string; dates: string[] }> {
+    return fetchJson<{ today: string; dates: string[] }>('/api/news/editions');
+  },
 
   async getHead(): Promise<HeadData> {
     const raw = await fetchJson<Record<string, unknown>>(withLang('/api/head'));
