@@ -239,6 +239,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
       </div>
 
       <h3
+        dir={finding.plain?.dir}
         className="font-serif"
         style={{
           margin: 0,
@@ -250,15 +251,18 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           overflowWrap: 'break-word',
         }}
       >
-        {finding.title}
+        {finding.plain && !isQuarantined ? finding.plain.head : finding.title}
       </h3>
+      {finding.plain && !isQuarantined && !compact && <p className="fc-tech-title">{finding.title}</p>}
 
       {!compact && (
         <p style={{ margin: 0, fontSize: 14, color: 'var(--ink-2)', lineHeight: 1.55, overflowWrap: 'break-word' }}>
           {isQuarantined
             ? finding.quarantine_reason ||
               'This record is quarantined pending privacy or legal compliance review. Raw metrics and excerpts are withheld.'
-            : finding.summary
+            : finding.plain
+              ? finding.plain.what
+              : finding.summary
               ? finding.summary.length > 220
                 ? `${finding.summary.slice(0, 220)}…`
                 : finding.summary
