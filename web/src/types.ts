@@ -971,7 +971,7 @@ export interface VisualExamHeadlineCounts {
 export interface VisualExamDisruptionBucket {
   disruption_type: ExamDisruptionType | string;
   label?: string;
-  rule?: string;
+  rule?: string | null;
   tasks: number;
   done?: number;
   leads: number;

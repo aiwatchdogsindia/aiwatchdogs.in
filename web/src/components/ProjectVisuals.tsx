@@ -7997,6 +7997,7 @@ export function AuditingGovernmentExamsVisualiser({
 
   const topAuthorities = p9?.top_authorities ?? [];
   const authorityTypes = p9?.by_authority_type ?? [];
+  const activeAuthorityTypes = authorityTypes.filter((at) => at.tasks > 0);
   const examCategories = p9?.by_exam_category ?? [];
   const reasonCategories = p9?.by_reason_category ?? [];
   const anchorCases: VisualExamAnchorCase[] = p9?.anchor_cases ?? [];
@@ -8274,7 +8275,10 @@ export function AuditingGovernmentExamsVisualiser({
             </div>
             <div className="pv-p9-hero-num tabular">
               {fmtCount(headline.notFlawlessCount)}
-              <span className="pv-p9-hero-denom"> / {fmtCount(headline.totalAudited)} exams</span>
+              <span className="pv-p9-hero-denom">
+                {' '}
+                / {p9Plural(headline.totalAudited, 'exam')}
+              </span>
             </div>
             <p className="pv-overview-sub tabular">
               Postponed, rescheduled, delayed, glitch/re-exam, or cancelled (before or after conduct)
@@ -8302,7 +8306,10 @@ export function AuditingGovernmentExamsVisualiser({
             </div>
             <div className="pv-p9-hero-num tabular">
               {fmtCount(headline.flawlessCount)}
-              <span className="pv-p9-hero-denom"> / {fmtCount(headline.totalAudited)} exams</span>
+              <span className="pv-p9-hero-denom">
+                {' '}
+                / {p9Plural(headline.totalAudited, 'exam')}
+              </span>
             </div>
             <p className="pv-overview-sub tabular">
               Verified benchmark cohort conducted on schedule without documented cancellation, postponement, or re-exam
@@ -8962,19 +8969,27 @@ export function AuditingGovernmentExamsVisualiser({
                               <span className="pv-ub-cell-val tabular">
                                 {j.cancelled_after_conduct > 0
                                   ? `${fmtCount(j.cancelled_after_conduct)} sat & cancelled`
-                                  : `${fmtCount(j.postponed + j.rescheduled + j.delayed)} shifted`}
+                                  : j.not_flawless > 0
+                                    ? `${fmtCount(j.not_flawless)} disrupted`
+                                    : '0 disrupted'}
                               </span>
                               <span className="pv-ub-sub tabular">
                                 {[
                                   j.postponed > 0 ? `${fmtCount(j.postponed)} postp.` : null,
                                   j.rescheduled > 0 ? `${fmtCount(j.rescheduled)} resch.` : null,
                                   j.delayed > 0 ? `${fmtCount(j.delayed)} delayed` : null,
+                                  j.cancelled_before_conduct > 0
+                                    ? `${fmtCount(j.cancelled_before_conduct)} pre-cancel`
+                                    : null,
                                   j.partial_reexam_or_glitch > 0
                                     ? `${fmtCount(j.partial_reexam_or_glitch)} glitch`
                                     : null,
                                 ]
                                   .filter(Boolean)
-                                  .join(' · ') || 'No schedule shifts'}
+                                  .join(' · ') ||
+                                  (j.not_flawless === 0
+                                    ? 'No disruptions'
+                                    : 'Post-exam cancellation')}
                               </span>
                             </td>
                             <td className="num pv-ub-years-below" data-label="Queue">
@@ -9098,7 +9113,7 @@ export function AuditingGovernmentExamsVisualiser({
           </span>
         </div>
 
-        {authorityTypes.length > 0 ? (
+        {activeAuthorityTypes.length > 0 ? (
           <div
             className="pv-p8-cat-pills"
             style={{ marginBottom: 12 }}
@@ -9112,9 +9127,9 @@ export function AuditingGovernmentExamsVisualiser({
               className={`btn btn-xs ${selectedAuthorityType === 'all' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setSelectedAuthorityType('all')}
             >
-              All ({fmtCount(authorityTypes.length)})
+              All ({fmtCount(activeAuthorityTypes.length)})
             </button>
-            {authorityTypes.map((at) => {
+            {activeAuthorityTypes.map((at) => {
               const active = selectedAuthorityType === at.authority_type;
               const meta = formatExamAuthorityType(at.authority_type);
               return (

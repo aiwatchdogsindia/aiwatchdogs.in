@@ -571,12 +571,16 @@ test('AuditingGovernmentExamsVisualiser helpers normalize headline, 7 disruption
   assert.equal(leadsOnly.items[1].sharePct, 25);
   assert.equal(leadsOnly.items[2].sharePct, 0);
 
-  // Regression guards for zero-width bar safety and numeric year formatting
+  // Regression guards for zero-width bar safety, jurisdiction pre-cancel breakdown, active authority filter, hero pluralization, and numeric year formatting
   const visualsSrcCheck = fs.readFileSync(
     path.join(webDir, 'src/components/ProjectVisuals.tsx'),
     'utf8',
   );
   assert.match(visualsSrcCheck, /d\.sharePct > 0 \? Math\.max\(3, d\.sharePct\) : 0/);
+  assert.match(visualsSrcCheck, /p9Plural\(headline\.totalAudited, 'exam'\)/);
+  assert.match(visualsSrcCheck, /activeAuthorityTypes = authorityTypes\.filter\(\(at\) => at\.tasks > 0\)/);
+  assert.match(visualsSrcCheck, /j\.cancelled_before_conduct > 0/);
+  assert.match(visualsSrcCheck, /No disruptions/);
   const drawerSrcCheck = fs.readFileSync(
     path.join(webDir, 'src/components/FindingDrawer.tsx'),
     'utf8',
@@ -834,7 +838,7 @@ test('AuditingGovernmentExamsVisualiser renders without runtime errors for full,
         delayed: { disruption_type: 'delayed', label: 'Delayed', rule: 'P9-DELAYED', tasks: 110, done: 0, leads: 0, cleared: 0, pct: 11.0, documented_affected_candidates: 1500000 },
         cancelled_before_conduct: { disruption_type: 'cancelled_before_conduct', label: 'Cancelled Before Conduct', rule: 'P9-CANCELLED-BEFORE-CONDUCT', tasks: 45, done: 0, leads: 0, cleared: 0, pct: 4.5, documented_affected_candidates: 500000 },
         partial_reexam_or_glitch: { disruption_type: 'partial_reexam_or_glitch', label: 'Technical Glitch / Partial Re-Exam', rule: 'P9-PARTIAL-REEXAM-OR-GLITCH', tasks: 55, done: 0, leads: 0, cleared: 0, pct: 5.5, documented_affected_candidates: 1000000 },
-        flawless_conduct: { disruption_type: 'flawless_conduct', label: 'Conducted Flawlessly (Cleared)', rule: 'CLEARED', tasks: 150, done: 0, leads: 0, cleared: 0, pct: 15.0, documented_affected_candidates: 0 },
+        flawless_conduct: { disruption_type: 'flawless_conduct', label: 'Conducted Flawlessly (Cleared)', rule: null, tasks: 150, done: 0, leads: 0, cleared: 0, pct: 15.0, documented_affected_candidates: 0 },
       },
       by_jurisdiction_level: {
         union: { tasks: 420, done: 0, claimed: 0, open: 420, pct: 0, leads: 0, cleared: 0, not_flawless: 350, flawless: 70, cancelled_after_conduct: 40 },
