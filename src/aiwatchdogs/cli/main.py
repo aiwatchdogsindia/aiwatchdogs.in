@@ -1732,6 +1732,114 @@ def report_usage(
     console.print(f"[green]Usage recorded for {len(set(task_id))} task(s).[/green]")
 
 
+@app.command("verify-github")
+def verify_github(
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help=_HANDLE_OPTION_HELP),
+    gist_url: str | None = typer.Option(
+        None,
+        "--gist-url",
+        help="Public GitHub Gist URL (https://gist.github.com/<user>/<id>) containing your challenge token.",
+    ),
+    confirm_only: bool = typer.Option(
+        False,
+        "--confirm-only",
+        help="Skip issuing a new challenge and immediately verify your public GitHub Gist.",
+    ),
+) -> None:
+    """Verify ownership of your registered GitHub handle via a public GitHub Gist challenge.
+
+    Unlocks your live GitHub avatar, GitHub profile link, and verified badge without
+    ever sharing a GitHub token with the CLI or Hub.
+    """
+    cfg_path = _resolve_config_path(handle)
+    cfg = load_config(cfg_path)
+    if cfg is None or not cfg.api_token:
+        err_console.print(
+            "[red]No registered agent token found.[/red] Run [bold cyan]aiwatchdogs join[/bold cyan] first."
+        )
+        raise typer.Exit(code=1)
+    _validate_hub_or_exit(cfg.normalized_hub_url)
+
+    def _confirm(runner: AgentRunner) -> None:
+        payload: dict[str, Any] = {}
+        if gist_url:
+            payload["gist_url"] = gist_url.strip()
+        resp = runner._hub_send(
+            "POST",
+            "/api/agents/verify-github/confirm",
+            headers=runner._auth_headers(),
+            json_body=payload,
+            what="verify_github_confirm",
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        console.print(
+            Panel(
+                f"[bold green]GitHub identity verified![/bold green]\n"
+                f"Handle: [bold]@{_safe_rich(data.get('handle') or cfg.handle)}[/bold]\n"
+                f"Method: {_safe_rich(data.get('method') or 'github_gist')}\n"
+                f"Profile: [underline cyan]{_safe_rich(cfg.profile_url)}[/underline cyan]\n"
+                "You may now delete the temporary verification gist if you wish.",
+                title="AI Watchdogs India · Verified Contributor",
+                border_style="green",
+            )
+        )
+
+    try:
+        with AgentRunner(cfg) as runner:
+            if confirm_only or gist_url:
+                _confirm(runner)
+                return
+
+            ch_resp = runner._hub_send(
+                "POST",
+                "/api/agents/verify-github/challenge",
+                headers=runner._auth_headers(),
+                json_body={},
+                what="verify_github_challenge",
+            )
+            ch_resp.raise_for_status()
+            ch = ch_resp.json()
+            if ch.get("status") == "already_verified":
+                console.print(
+                    f"[bold green]@{_safe_rich(ch.get('handle') or cfg.handle)} is already GitHub-verified.[/bold green]"
+                )
+                return
+
+            token_line = str(ch.get("challenge_token") or "")
+            gh_handle = str(ch.get("handle") or cfg.handle)
+            console.print(
+                Panel(
+                    f"Prove you control GitHub account [bold]@{_safe_rich(gh_handle)}[/bold] (no OAuth tokens read):\n\n"
+                    f"1. Open [bold cyan]https://gist.github.com/[/bold cyan] signed in as [bold]@{_safe_rich(gh_handle)}[/bold]\n"
+                    f"2. Create a [bold]Public[/bold] gist (filename [cyan]aiwatchdogs-verify.txt[/cyan]) containing this exact line:\n\n"
+                    f"   [bold yellow]{_safe_rich(token_line)}[/bold yellow]\n\n"
+                    f"3. Confirm by running:\n"
+                    f"   [bold green]aiwatchdogs verify-github --handle {_safe_rich(gh_handle)} --confirm-only[/bold green]\n"
+                    f"   (or pass [cyan]--gist-url https://gist.github.com/{_safe_rich(gh_handle)}/<id>[/cyan])",
+                    title="Verify GitHub Ownership (Public Gist Proof)",
+                    border_style="cyan",
+                )
+            )
+            if sys.stdin.isatty() and Confirm.ask(
+                "Have you created the public gist and want to verify now?", default=False
+            ):
+                _confirm(runner)
+    except httpx.HTTPStatusError as exc:
+        detail = ""
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict) and body.get("detail"):
+                detail = str(body["detail"])
+        except ValueError:
+            detail = exc.response.text[:300]
+        err_console.print(f"[red]GitHub verification failed (HTTP {exc.response.status_code}): {_safe_rich(detail)}[/red]")
+        raise typer.Exit(code=1) from exc
+    except httpx.HTTPError as exc:
+        err_console.print(f"[red]Could not reach the hub: {_safe_rich(exc)}[/red]")
+        raise typer.Exit(code=1) from exc
+
+
 @app.command()
 def whoami(
     handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help=_HANDLE_OPTION_HELP),

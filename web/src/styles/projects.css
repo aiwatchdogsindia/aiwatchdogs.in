@@ -4051,6 +4051,13 @@
 }
 
 /* Projects Index Cards (/projects) */
+.project-head-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .project-index-list {
   display: flex;
   flex-direction: column;
@@ -4073,6 +4080,38 @@
 .project-index-card:hover {
   border-color: var(--ink);
   background: #FCFCFA;
+}
+
+.project-index-card--enlist {
+  grid-template-columns: minmax(0, 1fr) auto;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px dashed #CFC9BE;
+}
+
+.project-index-card--enlist:hover {
+  border-color: #8F897D;
+  background: #FFFFFF;
+}
+
+.tag-method--enlist {
+  background: transparent;
+  color: var(--ink);
+  border: 1px dashed var(--ink-3);
+}
+
+.project-index-card--enlist-race {
+  margin-bottom: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1.5px dashed rgba(27, 26, 23, 0.42);
+}
+
+.project-index-card--enlist-race:hover {
+  background: #FFFFFF;
+  border-color: var(--ink);
+}
+
+.project-index-card--enlist-race .project-index-meta {
+  color: var(--ink-2);
 }
 
 .project-index-main {

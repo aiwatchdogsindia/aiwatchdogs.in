@@ -20,6 +20,7 @@ from fastapi import HTTPException, status
 from aiwatchdogs.core.coding_agents import normalize_coding_agent, normalize_coding_agent_model
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import (
+    compute_client_ip_hash,
     compute_sha256,
     compute_token_digest,
     escape_like,
@@ -31,6 +32,7 @@ from aiwatchdogs.core.safety import (
     scrub_pii,
     scrub_pii_in_obj,
     validate_safe_http_url,
+    validate_safe_single_line_text,
     verify_token_digest,
 )
 from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usage, summarise_tokens, tokens_used
@@ -603,19 +605,54 @@ def _normalize_checks(raw_checks: Any, *, strict: bool = False) -> dict[str, str
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _require_github_verified_quorum() -> bool:
+    """Optional strict mode requiring GitHub-verified agents for peer-verification quorum."""
+    return os.environ.get("AIWATCHDOGS_REQUIRE_GITHUB_VERIFIED_QUORUM", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _load_author_identity(conn: Any, finding_row: Any) -> tuple[bool, str, str]:
+    """Return ``(github_verified, github_user_id, registered_ip_hash)`` for a finding's author."""
+    agent_id = str(_row_get(finding_row, "submitted_by_agent_id", "") or "").strip()
+    handle = str(_row_get(finding_row, "submitted_by", "") or "").strip().lower()
+    row = None
+    if agent_id:
+        row = conn.execute(
+            "SELECT github_verified, github_user_id, registered_ip_hash FROM agents WHERE id = ?",
+            (agent_id,),
+        ).fetchone()
+    if row is None and handle:
+        row = conn.execute(
+            "SELECT github_verified, github_user_id, registered_ip_hash FROM agents WHERE handle = ?",
+            (handle,),
+        ).fetchone()
+    if row is None:
+        return (False, "", "")
+    return (
+        bool(int(_row_get(row, "github_verified", 0) or 0)),
+        str(_row_get(row, "github_user_id", "") or "").strip(),
+        str(_row_get(row, "registered_ip_hash", "") or "").strip(),
+    )
+
+
 def _load_finding_participants(
     conn: Any,
     finding_id: str,
     *,
     exclude_task_id: str | None = None,
-) -> list[tuple[str, Any, Any, Any]]:
-    """Return ``(source_label, handle, coding_agent, coding_agent_model)`` for all verifiers & active leases."""
-    participants: list[tuple[str, Any, Any, Any]] = []
+) -> list[tuple[str, Any, Any, Any, bool, str, str]]:
+    """Return participant tuples ``(source_label, handle, harness, model, gh_verified, gh_uid, ip_hash)``."""
+    participants: list[tuple[str, Any, Any, Any, bool, str, str]] = []
     for pv in conn.execute(
         """
-        SELECT contributor_id, verifier_handle, coding_agent, coding_agent_model
-        FROM peer_verifications
-        WHERE finding_id = ?
+        SELECT pv.contributor_id, pv.verifier_handle, pv.coding_agent, pv.coding_agent_model,
+               a.github_verified, a.github_user_id, a.registered_ip_hash
+        FROM peer_verifications pv
+        LEFT JOIN agents a ON a.id = pv.verifier_node_id
+        WHERE pv.finding_id = ?
         """,
         (finding_id,),
     ).fetchall():
@@ -625,12 +662,16 @@ def _load_finding_participants(
                 pv["contributor_id"] or pv["verifier_handle"],
                 _row_get(pv, "coding_agent", ""),
                 _row_get(pv, "coding_agent_model", ""),
+                bool(int(_row_get(pv, "github_verified", 0) or 0)),
+                str(_row_get(pv, "github_user_id", "") or "").strip(),
+                str(_row_get(pv, "registered_ip_hash", "") or "").strip(),
             )
         )
     if exclude_task_id:
         lease_rows = conn.execute(
             """
-            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model
+            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model,
+                   a.github_verified, a.github_user_id, a.registered_ip_hash
             FROM tasks t
             LEFT JOIN agents a ON a.id = t.claimed_by_agent_id
             WHERE t.status = 'claimed'
@@ -642,7 +683,8 @@ def _load_finding_participants(
     else:
         lease_rows = conn.execute(
             """
-            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model
+            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model,
+                   a.github_verified, a.github_user_id, a.registered_ip_hash
             FROM tasks t
             LEFT JOIN agents a ON a.id = t.claimed_by_agent_id
             WHERE t.status = 'claimed'
@@ -657,6 +699,9 @@ def _load_finding_participants(
                 lr["claimed_by_handle"],
                 _row_get(lr, "coding_agent", ""),
                 _row_get(lr, "coding_agent_model", ""),
+                bool(int(_row_get(lr, "github_verified", 0) or 0)),
+                str(_row_get(lr, "github_user_id", "") or "").strip(),
+                str(_row_get(lr, "registered_ip_hash", "") or "").strip(),
             )
         )
     return participants
@@ -966,6 +1011,8 @@ class DeskService:
             "joined_at": row["joined_at"],
             "last_heartbeat_at": row["last_heartbeat_at"],
             "last_check_at": resolved_last_check,
+            "github_verified": bool(int(_row_get(row, "github_verified", 0) or 0)),
+            "github_verified_at": _row_get(row, "github_verified_at", None),
             "profile_url": f"/a/{row['handle']}",
         }
 
@@ -2457,7 +2504,8 @@ class DeskService:
             )
 
             just_joined_rows = conn.execute(
-                "SELECT handle, display_name, provider, model, coding_agent, coding_agent_model, joined_at "
+                "SELECT handle, display_name, provider, model, coding_agent, coding_agent_model, "
+                "github_verified, joined_at "
                 "FROM agents WHERE revoked_at IS NULL AND status != 'revoked' "
                 "ORDER BY joined_at DESC LIMIT 6"
             ).fetchall()
@@ -2469,6 +2517,7 @@ class DeskService:
                     "model": r["model"],
                     "coding_agent": str(_row_get(r, "coding_agent", "") or "").strip() or None,
                     "coding_agent_model": str(_row_get(r, "coding_agent_model", "") or "").strip() or None,
+                    "github_verified": bool(int(_row_get(r, "github_verified", 0) or 0)),
                     "joined_at": r["joined_at"],
                 }
                 for r in just_joined_rows
@@ -7087,6 +7136,8 @@ class DeskService:
                     a.tasks_completed,
                     a.verifications_done,
                     a.findings_submitted,
+                    a.github_verified,
+                    a.github_verified_at,
                     a.joined_at,
                     a.last_heartbeat_at,
                     CASE
@@ -7212,6 +7263,8 @@ class DeskService:
                         "tasks_completed": int(nr["tasks_completed"] or 0),
                         "verifications_done": int(nr["verifications_done"] or 0),
                         "findings_submitted": int(nr["findings_submitted"] or 0),
+                        "github_verified": bool(int(_row_get(nr, "github_verified", 0) or 0)),
+                        "github_verified_at": _row_get(nr, "github_verified_at", None),
                         "last_seen_at": str(nr["last_heartbeat_at"] or nr["joined_at"]),
                         "created_at": str(nr["joined_at"]),
                     }
@@ -7225,6 +7278,7 @@ class DeskService:
                     a.display_name,
                     a.coding_agent,
                     a.coding_agent_model,
+                    a.github_verified,
                     a.joined_at,
                     a.last_heartbeat_at,
                     CASE
@@ -7244,6 +7298,7 @@ class DeskService:
                     "display_name": str(jr["display_name"] or jr["handle"]),
                     "coding_agent": str(_row_get(jr, "coding_agent", "") or "").strip() or None,
                     "coding_agent_model": str(_row_get(jr, "coding_agent_model", "") or "").strip() or None,
+                    "github_verified": bool(int(_row_get(jr, "github_verified", 0) or 0)),
                     "created_at": str(jr["joined_at"]),
                     "last_seen_at": str(jr["last_heartbeat_at"] or jr["joined_at"]),
                     "is_working": bool(int(jr["is_working"] or 0)),
@@ -7854,12 +7909,30 @@ class DeskService:
     # Desk Coordination Plane
     # ------------------------------------------------------------------
 
+    def is_valid_reconnect_token(self, handle: str, token: str | None) -> bool:
+        """Return True iff ``token`` matches the active stored token for ``handle``."""
+        raw_handle = str(handle or "").strip().lower()
+        clean_tok = str(token or "").strip()
+        if not raw_handle or not clean_tok:
+            return False
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT api_token_hash, status, revoked_at FROM agents WHERE handle = ?",
+                (raw_handle,),
+            ).fetchone()
+        if row is None:
+            return False
+        if _row_get(row, "revoked_at", None) or str(_row_get(row, "status", "")) == "revoked":
+            return False
+        return verify_token_digest(clean_tok, str(row["api_token_hash"] or ""))
+
     def register_agent(
         self,
         payload: dict[str, Any],
         base_url: str,
         existing_token: str | None = None,
         registration_key: str | None = None,
+        client_ip: str | None = None,
     ) -> dict[str, Any]:
         raw_handle = str(payload.get("handle") or "").strip().lower()
         if not HANDLE_RE.match(raw_handle):
@@ -7881,21 +7954,54 @@ class DeskService:
                     "and put the tool name in 'coding_agent'."
                 ),
             )
-        display_name, _ = scrub_pii(str(payload.get("display_name") or raw_handle).strip()[:120])
-        provider, _ = scrub_pii(str(payload.get("provider") or "rule-engine").strip().lower()[:64])
-        model, _ = scrub_pii(str(payload.get("model") or "deterministic-cpu-v1").strip()[:120])
+        try:
+            raw_display_name = payload.get("display_name")
+            display_name = (
+                validate_safe_single_line_text(raw_display_name, field="display_name", max_length=120)
+                if raw_display_name is not None and str(raw_display_name) != ""
+                else raw_handle
+            ) or raw_handle
+            provider = (
+                validate_safe_single_line_text(
+                    payload.get("provider") or "rule-engine", field="provider", max_length=64
+                ).lower()
+                or "rule-engine"
+            )
+            model = (
+                validate_safe_single_line_text(
+                    payload.get("model") or "deterministic-cpu-v1", field="model", max_length=120
+                )
+                or "deterministic-cpu-v1"
+            )
+            region = (
+                validate_safe_single_line_text(payload.get("region") or "IN", field="region", max_length=64)
+                or "IN"
+            )
+            raw_coding_agent = payload.get("coding_agent")
+            if raw_coding_agent is not None and str(raw_coding_agent) != "":
+                validate_safe_single_line_text(raw_coding_agent, field="coding_agent", max_length=80)
+            raw_coding_model = payload.get("coding_agent_model")
+            if raw_coding_model is not None and str(raw_coding_model) != "":
+                validate_safe_single_line_text(raw_coding_model, field="coding_agent_model", max_length=120)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         mode = str(payload.get("mode") or "auto").strip().lower()
         if mode not in {"auto", "investigate", "verify"}:
             mode = "auto"
-        region, _ = scrub_pii(str(payload.get("region") or "IN").strip()[:64])
         raw_caps = payload.get("capabilities") or ["deterministic_audit", "peer_verify"]
         if not isinstance(raw_caps, list):
             raw_caps = ["deterministic_audit", "peer_verify"]
-        capabilities = [
-            scrub_pii(str(c).strip()[:64])[0]
-            for c in raw_caps[:20]
-            if isinstance(c, str) and c.strip()
-        ] or ["deterministic_audit", "peer_verify"]
+        capabilities: list[str] = []
+        for c in raw_caps[:20]:
+            if isinstance(c, str) and c.strip():
+                try:
+                    clean_cap = validate_safe_single_line_text(c, field="capabilities", max_length=64)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+                if clean_cap:
+                    capabilities.append(clean_cap)
+        if not capabilities:
+            capabilities = ["deterministic_audit", "peer_verify"]
         coding_agent = normalize_coding_agent(payload.get("coding_agent"))
         coding_agent_model = normalize_coding_agent_model(payload.get("coding_agent_model"))
         if not coding_agent:
@@ -7905,6 +8011,7 @@ class DeskService:
             coding_agent = _CANONICAL.get(provider, "")
             if coding_agent and not coding_agent_model:
                 coding_agent_model = normalize_coding_agent_model(model)
+        ip_hash = compute_client_ip_hash(client_ip)
         clean_reg_key = (registration_key or str(payload.get("registration_key") or "")).strip()[:128]
         # Require >=16 characters before storing a recovery digest so weak/guessable keys cannot recover handles.
         reg_key_hash: str | None = compute_token_digest(clean_reg_key) if len(clean_reg_key) >= 16 else None
@@ -7928,7 +8035,11 @@ class DeskService:
                         capabilities_json = ?, status = 'active', last_heartbeat_at = ?,
                         registration_key_hash = NULL,
                         coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
-                        coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
+                        coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END,
+                        registered_ip_hash = CASE
+                            WHEN COALESCE(TRIM(registered_ip_hash), '') = '' AND ? != '' THEN ?
+                            ELSE registered_ip_hash
+                        END
                     WHERE id = ?
                     """,
                     (
@@ -7943,6 +8054,8 @@ class DeskService:
                         coding_agent,
                         coding_agent_model,
                         coding_agent_model,
+                        ip_hash,
+                        ip_hash,
                         existing["id"],
                     ),
                 )
@@ -7951,6 +8064,7 @@ class DeskService:
                     "handle": raw_handle,
                     "api_token": existing_token.strip(),
                     "profile_url": profile_url,
+                    "github_verified": bool(int(_row_get(existing, "github_verified", 0) or 0)),
                     "status": "reconnected",
                 }
 
@@ -7998,7 +8112,11 @@ class DeskService:
                                 capabilities_json = ?, api_token_hash = ?, status = 'active',
                                 last_heartbeat_at = ?,
                                 coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
-                                coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
+                                coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END,
+                                registered_ip_hash = CASE
+                                    WHEN COALESCE(TRIM(registered_ip_hash), '') = '' AND ? != '' THEN ?
+                                    ELSE registered_ip_hash
+                                END
                             WHERE id = ?
                             """,
                             (
@@ -8014,6 +8132,8 @@ class DeskService:
                                 coding_agent,
                                 coding_agent_model,
                                 coding_agent_model,
+                                ip_hash,
+                                ip_hash,
                                 existing["id"],
                             ),
                         )
@@ -8022,6 +8142,7 @@ class DeskService:
                             "handle": raw_handle,
                             "api_token": recovered_token,
                             "profile_url": profile_url,
+                            "github_verified": bool(int(_row_get(existing, "github_verified", 0) or 0)),
                             "status": "active",
                         }
 
@@ -8052,8 +8173,8 @@ class DeskService:
                     id, handle, display_name, provider, model, mode, region,
                     capabilities_json, api_token_hash, registration_key_hash,
                     status, joined_at, last_heartbeat_at,
-                    coding_agent, coding_agent_model
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                    coding_agent, coding_agent_model, registered_ip_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                 ON CONFLICT(handle) DO NOTHING
                 """,
                 (
@@ -8071,6 +8192,7 @@ class DeskService:
                     now,
                     coding_agent,
                     coding_agent_model,
+                    ip_hash,
                 ),
             )
             if cur.rowcount == 0:
@@ -8104,6 +8226,7 @@ class DeskService:
                     "model": model,
                     "coding_agent": coding_agent or None,
                     "coding_agent_model": coding_agent_model or None,
+                    "github_verified": False,
                     "mode": mode,
                     "profile_url": profile_url,
                 },
@@ -8117,8 +8240,447 @@ class DeskService:
             "handle": raw_handle,
             "api_token": api_token,
             "profile_url": profile_url,
+            "github_verified": False,
             "status": "active",
         }
+
+    # ------------------------------------------------------------------
+    # GitHub Ownership Verification (Zero-Config Gist Proof + Optional Device Flow)
+    # ------------------------------------------------------------------
+
+    _GITHUB_USERNAME_STRICT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$")
+    _GITHUB_GIST_ID_RE = re.compile(r"^[0-9a-fA-F]{16,64}$")
+    _GITHUB_CHALLENGE_TTL_SECONDS = 1800
+    _GITHUB_API_MAX_BYTES = 512 * 1024
+
+    @classmethod
+    def _validate_verifiable_github_handle(cls, handle: str) -> str:
+        clean = str(handle or "").strip().lower()
+        if (
+            not clean
+            or clean.startswith("civic-")
+            or "--" in clean
+            or not cls._GITHUB_USERNAME_STRICT_RE.fullmatch(clean)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Handle '@{clean}' is a sandbox fallback or not a valid GitHub username and "
+                    "cannot be verified against GitHub."
+                ),
+            )
+        return clean
+
+    @classmethod
+    def _extract_gist_id(cls, *, gist_id: str | None = None, gist_url: str | None = None) -> str | None:
+        if gist_id and gist_id.strip():
+            cand = gist_id.strip()
+            if not cls._GITHUB_GIST_ID_RE.fullmatch(cand):
+                raise HTTPException(status_code=422, detail="Invalid GitHub Gist ID format.")
+            return cand
+        if gist_url and gist_url.strip():
+            raw = gist_url.strip()
+            parsed = urlparse(raw)
+            if parsed.scheme != "https" or (parsed.hostname or "").lower() not in {"gist.github.com", "api.github.com"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="gist_url must be a public https://gist.github.com/<user>/<gist_id> URL.",
+                )
+            segments = [s for s in parsed.path.split("/") if s]
+            if not segments:
+                raise HTTPException(status_code=422, detail="gist_url does not contain a valid Gist ID.")
+            cand = segments[-1]
+            if not cls._GITHUB_GIST_ID_RE.fullmatch(cand):
+                raise HTTPException(status_code=422, detail="gist_url does not end with a valid Gist ID.")
+            return cand
+        return None
+
+    @classmethod
+    def _github_api_get_json(cls, path: str, *, http_client: Any = None) -> Any:
+        import httpx
+
+        url = f"https://api.github.com{path}"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "AIWatchdogs-India-Hub/1.0",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        gh_token = os.environ.get("AIWATCHDOGS_GITHUB_API_TOKEN", "").strip()
+        if gh_token:
+            headers["Authorization"] = f"Bearer {gh_token}"
+
+        def _fetch(client: Any) -> Any:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 404:
+                return None
+            if resp.status_code == 403 and resp.headers.get("X-RateLimit-Remaining") == "0":
+                raise HTTPException(
+                    status_code=503,
+                    detail="GitHub public API rate limit temporarily exhausted; please retry shortly.",
+                )
+            if resp.status_code >= 400:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"GitHub API returned HTTP {resp.status_code} during identity verification.",
+                )
+            raw = resp.content or b""
+            if len(raw) > cls._GITHUB_API_MAX_BYTES:
+                raise HTTPException(status_code=502, detail="GitHub API response exceeded safety limit.")
+            return resp.json()
+
+        if http_client is not None:
+            return _fetch(http_client)
+        with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+            return _fetch(client)
+
+    def _finalize_github_verification(
+        self,
+        *,
+        agent_id: str,
+        handle: str,
+        github_user_id: str,
+        method: str,
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.db.transaction() as conn:
+            conflict = conn.execute(
+                """
+                SELECT handle FROM agents
+                WHERE github_user_id = ? AND id != ?
+                  AND revoked_at IS NULL AND status != 'revoked'
+                LIMIT 1
+                """,
+                (github_user_id, agent_id),
+            ).fetchone()
+            if conflict is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"This GitHub account (id={github_user_id}) is already verified on handle "
+                        f"'@{conflict['handle']}'. One GitHub account = one verified profile."
+                    ),
+                )
+            try:
+                conn.execute(
+                    """
+                    UPDATE agents
+                    SET github_verified = 1,
+                        github_user_id = ?,
+                        github_verified_at = ?,
+                        github_verification_method = ?
+                    WHERE id = ?
+                    """,
+                    (github_user_id, now, method, agent_id),
+                )
+            except DB_INTEGRITY_ERRORS as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This GitHub account is already verified on another handle.",
+                ) from exc
+            conn.execute("DELETE FROM github_verification_challenges WHERE agent_id = ?", (agent_id,))
+            conn.execute("DELETE FROM summary_cache")
+
+        return {
+            "status": "verified",
+            "handle": handle,
+            "github_verified": True,
+            "github_user_id": github_user_id,
+            "github_verified_at": now,
+            "method": method,
+        }
+
+    def create_github_verification_challenge(
+        self,
+        *,
+        token: str | None,
+        base_url: str,
+    ) -> dict[str, Any]:
+        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        now = now_dt.isoformat().replace("+00:00", "Z")
+        expires_at = (now_dt + timedelta(seconds=self._GITHUB_CHALLENGE_TTL_SECONDS)).isoformat().replace("+00:00", "Z")
+        with self.db.transaction() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            if int(_row_get(agent, "github_verified", 0) or 0) == 1:
+                return {
+                    "status": "already_verified",
+                    "handle": handle,
+                    "github_verified": True,
+                    "github_verified_at": _row_get(agent, "github_verified_at", None),
+                    "method": str(_row_get(agent, "github_verification_method", "") or ""),
+                }
+            challenge_token = f"aiwatchdogs-verify:{handle}:{secrets.token_hex(16)}"
+            conn.execute("DELETE FROM github_verification_challenges WHERE expires_at < ?", (now,))
+            conn.execute(
+                """
+                INSERT INTO github_verification_challenges (
+                    agent_id, handle, challenge_token, method, expires_at, created_at
+                ) VALUES (?, ?, ?, 'github_gist', ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    handle = excluded.handle,
+                    challenge_token = excluded.challenge_token,
+                    method = excluded.method,
+                    expires_at = excluded.expires_at,
+                    created_at = excluded.created_at
+                """,
+                (agent["id"], handle, challenge_token, expires_at, now),
+            )
+        return {
+            "status": "challenge_issued",
+            "handle": handle,
+            "challenge_token": challenge_token,
+            "expires_at": expires_at,
+            "gist_filename": "aiwatchdogs-verify.txt",
+            "gist_create_url": "https://gist.github.com/",
+            "confirm_url": f"{base_url.rstrip('/')}/api/agents/verify-github/confirm",
+            "device_flow_enabled": bool(os.environ.get("GITHUB_CLIENT_ID", "").strip()),
+            "instructions": (
+                f"Create a public GitHub Gist as @{handle} (https://gist.github.com/) containing "
+                f"the exact line `{challenge_token}`, then call POST /api/agents/verify-github/confirm "
+                "(or run `aiwatchdogs verify-github`). You may delete the gist after verification succeeds."
+            ),
+        }
+
+    def confirm_github_verification(
+        self,
+        *,
+        token: str | None,
+        gist_url: str | None = None,
+        gist_id: str | None = None,
+        http_client: Any = None,
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.db.read() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            if int(_row_get(agent, "github_verified", 0) or 0) == 1:
+                return {
+                    "status": "already_verified",
+                    "handle": handle,
+                    "github_verified": True,
+                    "github_verified_at": _row_get(agent, "github_verified_at", None),
+                    "method": str(_row_get(agent, "github_verification_method", "") or ""),
+                }
+            ch = conn.execute(
+                "SELECT * FROM github_verification_challenges WHERE agent_id = ?",
+                (agent["id"],),
+            ).fetchone()
+            if ch is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No active GitHub verification challenge found. Request /api/agents/verify-github/challenge first.",
+                )
+            if str(ch["expires_at"]) < now:
+                raise HTTPException(
+                    status_code=400,
+                    detail="GitHub verification challenge has expired. Request a new challenge and retry.",
+                )
+            expected_token = str(ch["challenge_token"])
+            agent_id = str(agent["id"])
+
+        explicit_gist_id = self._extract_gist_id(gist_id=gist_id, gist_url=gist_url)
+        candidate_ids: list[str] = []
+        if explicit_gist_id:
+            candidate_ids.append(explicit_gist_id)
+        else:
+            listing = self._github_api_get_json(f"/users/{handle}/gists?per_page=10", http_client=http_client)
+            if not isinstance(listing, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Could not find public gists for GitHub user '@{handle}'.",
+                )
+            # Prioritize gists with an aiwatchdogs-related filename.
+            prioritized = sorted(
+                listing,
+                key=lambda g: (
+                    0
+                    if any(
+                        "aiwatchdogs" in str(fn).lower()
+                        for fn in (g.get("files") or {}).keys()
+                    )
+                    else 1
+                ),
+            )
+            for item in prioritized[:5]:
+                if isinstance(item, dict) and item.get("public") is True:
+                    gid = str(item.get("id") or "").strip()
+                    if self._GITHUB_GIST_ID_RE.fullmatch(gid):
+                        candidate_ids.append(gid)
+
+        matched_uid: str | None = None
+        for gid in candidate_ids:
+            detail = self._github_api_get_json(f"/gists/{gid}", http_client=http_client)
+            if not isinstance(detail, dict):
+                continue
+            if detail.get("public") is not True:
+                continue
+            owner = detail.get("owner") or {}
+            owner_login = str(owner.get("login") or "").strip().lower()
+            owner_id = owner.get("id")
+            if owner_login != handle or not isinstance(owner_id, int) or isinstance(owner_id, bool) or owner_id <= 0:
+                if explicit_gist_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Gist owner '@{owner_login or 'unknown'}' does not match registered handle '@{handle}'.",
+                    )
+                continue
+            files = detail.get("files") or {}
+            found_token = False
+            if isinstance(files, dict):
+                for fmeta in files.values():
+                    if isinstance(fmeta, dict):
+                        content = str(fmeta.get("content") or "")
+                        if expected_token in content:
+                            found_token = True
+                            break
+            if found_token:
+                matched_uid = str(owner_id)
+                break
+
+        if not matched_uid:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Challenge token not found in a public GitHub Gist owned by '@{handle}'. "
+                    "Make sure the gist is Public (not Secret) and contains the exact challenge token."
+                ),
+            )
+
+        return self._finalize_github_verification(
+            agent_id=agent_id,
+            handle=handle,
+            github_user_id=matched_uid,
+            method="github_gist",
+        )
+
+    def start_github_device_flow(
+        self,
+        *,
+        token: str | None,
+        http_client: Any = None,
+    ) -> dict[str, Any]:
+        import httpx
+
+        client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+        if not client_id:
+            raise HTTPException(
+                status_code=501,
+                detail="GitHub Device Flow is not configured on this hub; use /api/agents/verify-github/challenge (public Gist proof).",
+            )
+        with self.db.read() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            if int(_row_get(agent, "github_verified", 0) or 0) == 1:
+                return {
+                    "status": "already_verified",
+                    "handle": handle,
+                    "github_verified": True,
+                }
+
+        def _post(client: Any) -> Any:
+            resp = client.post(
+                "https://github.com/login/device/code",
+                headers={"Accept": "application/json", "User-Agent": "AIWatchdogs-India-Hub/1.0"},
+                data={"client_id": client_id, "scope": "read:user"},
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail="Failed to initiate GitHub Device Flow.")
+            return resp.json()
+
+        if http_client is not None:
+            data = _post(http_client)
+        else:
+            with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+                data = _post(client)
+        return {
+            "status": "pending",
+            "handle": handle,
+            "device_code": data.get("device_code"),
+            "user_code": data.get("user_code"),
+            "verification_uri": data.get("verification_uri", "https://github.com/login/device"),
+            "expires_in": data.get("expires_in", 900),
+            "interval": data.get("interval", 5),
+        }
+
+    def poll_github_device_flow(
+        self,
+        *,
+        token: str | None,
+        device_code: str,
+        http_client: Any = None,
+    ) -> dict[str, Any]:
+        import httpx
+
+        client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+        if not client_id:
+            raise HTTPException(status_code=501, detail="GitHub Device Flow is not configured on this hub.")
+        clean_code = str(device_code or "").strip()
+        if not clean_code or len(clean_code) > 256:
+            raise HTTPException(status_code=422, detail="device_code is required.")
+        with self.db.read() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            agent_id = str(agent["id"])
+
+        def _exchange(client: Any) -> dict[str, Any]:
+            tok_resp = client.post(
+                "https://github.com/login/oauth/access_token",
+                headers={"Accept": "application/json", "User-Agent": "AIWatchdogs-India-Hub/1.0"},
+                data={
+                    "client_id": client_id,
+                    "device_code": clean_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+            )
+            if tok_resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail="GitHub OAuth token poll failed.")
+            tok_data = tok_resp.json()
+            if tok_data.get("error"):
+                err = str(tok_data["error"])
+                if err in {"authorization_pending", "slow_down"}:
+                    return {"status": "pending", "error": err}
+                raise HTTPException(status_code=400, detail=f"GitHub authorization error: {err}")
+            access_token = str(tok_data.get("access_token") or "").strip()
+            if not access_token:
+                raise HTTPException(status_code=502, detail="GitHub did not return an access token.")
+            user_resp = client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                    "User-Agent": "AIWatchdogs-India-Hub/1.0",
+                },
+            )
+            # Access token is never persisted and goes out of scope immediately.
+            if user_resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail="Failed to read authenticated GitHub user profile.")
+            return {"status": "ok", "user": user_resp.json()}
+
+        if http_client is not None:
+            result = _exchange(http_client)
+        else:
+            with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+                result = _exchange(client)
+        if result["status"] == "pending":
+            return {"status": "pending", "handle": handle, "error": result["error"]}
+        user = result["user"]
+        gh_login = str(user.get("login") or "").strip().lower()
+        gh_uid = user.get("id")
+        if gh_login != handle or not isinstance(gh_uid, int) or isinstance(gh_uid, bool) or gh_uid <= 0:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Authenticated GitHub account '@{gh_login or 'unknown'}' does not match handle '@{handle}'.",
+            )
+        return self._finalize_github_verification(
+            agent_id=agent_id,
+            handle=handle,
+            github_user_id=str(gh_uid),
+            method="github_device",
+        )
 
     @staticmethod
     def _build_claim_response(cand: Any, *, lease_id: str, lease_expires: str) -> dict[str, Any]:
@@ -8305,9 +8867,16 @@ class DeskService:
 
                 target_fid = cand["target_finding_id"]
                 if target_fid:
+                    cand_gh_verified = bool(int(_row_get(agent, "github_verified", 0) or 0))
+                    if _require_github_verified_quorum() and not cand_gh_verified:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="GitHub identity verification is required for peer verification. Run `aiwatchdogs verify-github`.",
+                        )
                     finding_lock = " FOR UPDATE" if self.db.is_postgres else ""
                     f_row = conn.execute(
-                        "SELECT submitted_by, status, quarantined, submitted_coding_agent, submitted_coding_agent_model "
+                        "SELECT submitted_by, submitted_by_agent_id, status, quarantined, "
+                        "submitted_coding_agent, submitted_coding_agent_model "
                         f"FROM findings WHERE id = ?{finding_lock}",
                         (target_fid,),
                     ).fetchone()
@@ -8317,6 +8886,7 @@ class DeskService:
                                 status_code=status.HTTP_409_CONFLICT,
                                 detail=f"Task '{resolved_tid}' targets a quarantined finding and cannot be claimed.",
                             )
+                        a_gh_v, a_gh_uid, a_ip_h = _load_author_identity(conn, f_row)
                         participants = _load_finding_participants(conn, str(target_fid))
                         indep_err = check_pairwise_verifier_independence(
                             finding_id=str(target_fid),
@@ -8327,6 +8897,12 @@ class DeskService:
                             author_harness=_row_get(f_row, "submitted_coding_agent", ""),
                             author_model=_row_get(f_row, "submitted_coding_agent_model", ""),
                             existing_participants=participants,
+                            candidate_github_verified=cand_gh_verified,
+                            candidate_github_user_id=_row_get(agent, "github_user_id", ""),
+                            candidate_ip_hash=_row_get(agent, "registered_ip_hash", ""),
+                            author_github_verified=a_gh_v,
+                            author_github_user_id=a_gh_uid,
+                            author_ip_hash=a_ip_h,
                         )
                         if indep_err:
                             raise HTTPException(
@@ -8407,6 +8983,10 @@ class DeskService:
                     else:
                         mission_buckets[-1].append(m_row)
 
+                cand_gh_verified = bool(int(_row_get(agent, "github_verified", 0) or 0))
+                cand_gh_uid = str(_row_get(agent, "github_user_id", "") or "").strip()
+                cand_ip_hash = str(_row_get(agent, "registered_ip_hash", "") or "").strip()
+
                 if eff_mode == "verify":
                     phases: tuple[str, ...] = ("peer_verify",)
                 elif eff_mode == "investigate":
@@ -8414,8 +8994,31 @@ class DeskService:
                 else:
                     phases = ("peer_verify", "scan")
 
+                if _require_github_verified_quorum() and not cand_gh_verified:
+                    phases = tuple(p for p in phases if p != "peer_verify")
+                    if not phases:
+                        return None
+
                 verifier_harness_norm = norm_attr(_row_get(agent, "coding_agent", ""))
                 verifier_model_norm = norm_attr(_row_get(agent, "coding_agent_model", ""))
+
+                def _sybil_conflict_sql(alias: str) -> tuple[list[str], list[Any]]:
+                    parts: list[str] = []
+                    params: list[Any] = []
+                    if cand_gh_uid:
+                        parts.append(f"COALESCE(TRIM({alias}.github_user_id), '') = ?")
+                        params.append(cand_gh_uid)
+                    if cand_ip_hash:
+                        if cand_gh_verified and cand_gh_uid:
+                            # Verified user still cannot share IP with an UNVERIFIED participant on the same finding.
+                            parts.append(
+                                f"(COALESCE(TRIM({alias}.registered_ip_hash), '') = ? "
+                                f"AND (COALESCE({alias}.github_verified, 0) = 0 OR COALESCE(TRIM({alias}.github_user_id), '') = ''))"
+                            )
+                        else:
+                            parts.append(f"COALESCE(TRIM({alias}.registered_ip_hash), '') = ?")
+                        params.append(cand_ip_hash)
+                    return parts, params
 
                 common_clauses: list[str] = [
                     "t.status = 'queued'",
@@ -8465,6 +9068,11 @@ class DeskService:
                     pv_mod_sql, pv_mod_params = build_attr_conflict_sql("pv.coding_agent_model", verifier_model_norm)
                     a2_har_sql, a2_har_params = build_attr_conflict_sql("a2.coding_agent", verifier_harness_norm)
                     a2_mod_sql, a2_mod_params = build_attr_conflict_sql("a2.coding_agent_model", verifier_model_norm)
+                    fa_syb_parts, fa_syb_params = _sybil_conflict_sql("fa")
+                    pva_syb_parts, pva_syb_params = _sybil_conflict_sql("pva")
+                    a2_syb_parts, a2_syb_params = _sybil_conflict_sql("a2")
+                    a2_syb_or = (" OR " + " OR ".join(a2_syb_parts)) if a2_syb_parts else ""
+                    pva_syb_or = (" OR " + " OR ".join(pva_syb_parts)) if pva_syb_parts else ""
 
                     # Pre-fetch active claimed finding conflicts ONCE over the tiny partial index
                     # `idx_tasks_claimed_target_finding` (~0-50 active rows) instead of running a
@@ -8481,9 +9089,10 @@ class DeskService:
                                   t2.claimed_by_handle = ?
                                   OR {a2_har_sql}
                                   OR {a2_mod_sql}
+                                  {a2_syb_or}
                               )
                             """,
-                            [agent_handle, *a2_har_params, *a2_mod_params],
+                            [agent_handle, *a2_har_params, *a2_mod_params, *a2_syb_params],
                         ).fetchall()
                         claimed_conflict_fids = [
                             str(r["target_finding_id"])
@@ -8496,20 +9105,29 @@ class DeskService:
                     # LEFT JOIN findings directly so Postgres/SQLite drive strictly from
                     # `idx_tasks_queued_pv_order` (zero sort) and evaluate author/quarantine/attribution
                     # via PK lookup per candidate row.
-                    pv_join_sql = "LEFT JOIN findings f ON f.id = t.target_finding_id"
+                    pv_join_sql = (
+                        "LEFT JOIN findings f ON f.id = t.target_finding_id "
+                        "LEFT JOIN agents fa ON fa.id = f.submitted_by_agent_id"
+                    )
+                    fa_syb_not = (
+                        "".join(f"\n                            AND NOT ({expr})" for expr in fa_syb_parts)
+                        if fa_syb_parts
+                        else ""
+                    )
                     pv_extra_clauses = [
                         f"""(f.id IS NULL OR (
                             COALESCE(f.submitted_by, '') != ?
                             AND COALESCE(f.quarantined, 0) = 0
                             AND f.status != 'quarantined'
                             AND NOT ({f_har_sql})
-                            AND NOT ({f_mod_sql})
+                            AND NOT ({f_mod_sql}){fa_syb_not}
                         ))""",
                     ]
                     pv_extra_params = [
                         agent_handle,
                         *f_har_params,
                         *f_mod_params,
+                        *fa_syb_params,
                     ]
 
                     pv_target_checks: list[str] = []
@@ -8530,24 +9148,27 @@ class DeskService:
                                           t2.claimed_by_handle = ?
                                           OR {a2_har_sql}
                                           OR {a2_mod_sql}
+                                          {a2_syb_or}
                                       )
                                 )"""
                             )
-                            pv_target_params.extend([agent_handle, *a2_har_params, *a2_mod_params])
+                            pv_target_params.extend([agent_handle, *a2_har_params, *a2_mod_params, *a2_syb_params])
 
                     pv_target_checks.append(
                         f"""NOT EXISTS (
                             SELECT 1 FROM peer_verifications pv
+                            LEFT JOIN agents pva ON pva.id = pv.verifier_node_id
                             WHERE pv.finding_id = t.target_finding_id
                               AND (
                                   pv.contributor_id = ?
                                   OR pv.verifier_handle = ?
                                   OR {pv_har_sql}
                                   OR {pv_mod_sql}
+                                  {pva_syb_or}
                               )
                         )"""
                     )
-                    pv_target_params.extend([agent_handle, agent_handle, *pv_har_params, *pv_mod_params])
+                    pv_target_params.extend([agent_handle, agent_handle, *pv_har_params, *pv_mod_params, *pva_syb_params])
 
                     pv_extra_clauses.append(f"(t.target_finding_id IS NULL OR ({' AND '.join(pv_target_checks)}))")
                     pv_extra_params.extend(pv_target_params)
@@ -10388,8 +11009,15 @@ class DeskService:
         if finding_row is None:
             raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
 
-        # Strict pairwise independence: handle, coding_agent (harness), and coding_agent_model (model)
-        # must be distinct from the author, all existing reviewers, and any other active lease on this finding.
+        # Strict pairwise independence: handle, coding_agent (harness), coding_agent_model (model),
+        # verified GitHub user ID, and Sybil IP independence across all participants.
+        cand_gh_verified = bool(int(_row_get(agent, "github_verified", 0) or 0))
+        if _require_github_verified_quorum() and not cand_gh_verified:
+            raise HTTPException(
+                status_code=403,
+                detail="GitHub identity verification is required to submit peer verifications. Run `aiwatchdogs verify-github`.",
+            )
+        a_gh_v, a_gh_uid, a_ip_h = _load_author_identity(conn, finding_row)
         participants = _load_finding_participants(
             conn,
             finding_id,
@@ -10404,6 +11032,12 @@ class DeskService:
             author_harness=_row_get(finding_row, "submitted_coding_agent", ""),
             author_model=_row_get(finding_row, "submitted_coding_agent_model", ""),
             existing_participants=participants,
+            candidate_github_verified=cand_gh_verified,
+            candidate_github_user_id=_row_get(agent, "github_user_id", ""),
+            candidate_ip_hash=_row_get(agent, "registered_ip_hash", ""),
+            author_github_verified=a_gh_v,
+            author_github_user_id=a_gh_uid,
+            author_ip_hash=a_ip_h,
         )
         if indep_err:
             raise HTTPException(status_code=409, detail=indep_err)
@@ -10572,11 +11206,14 @@ class DeskService:
         # Recompute pairwise-independent quorum across ALL verifications for this finding under finding lock
         all_votes = conn.execute(
             """
-            SELECT id, contributor_id, verifier_handle, verdict, checks_json,
-                   reproduced_metrics_json, confidence, coding_agent, coding_agent_model, created_at
-            FROM peer_verifications
-            WHERE finding_id = ?
-            ORDER BY created_at ASC, id ASC
+            SELECT pv.id, pv.contributor_id, pv.verifier_handle, pv.verdict, pv.checks_json,
+                   pv.reproduced_metrics_json, pv.confidence, pv.coding_agent, pv.coding_agent_model,
+                   pv.created_at,
+                   pva.github_verified, pva.github_user_id, pva.registered_ip_hash
+            FROM peer_verifications pv
+            LEFT JOIN agents pva ON pva.id = pv.verifier_node_id
+            WHERE pv.finding_id = ?
+            ORDER BY pv.created_at ASC, pv.id ASC
             """,
             (finding_id,),
         ).fetchall()
@@ -10587,6 +11224,10 @@ class DeskService:
             author_model=_row_get(finding_row, "submitted_coding_agent_model", ""),
             votes=all_votes,
             loads_json_fn=loads_json,
+            author_github_verified=a_gh_v,
+            author_github_user_id=a_gh_uid,
+            author_ip_hash=a_ip_h,
+            require_github_verified=_require_github_verified_quorum(),
         )
         qualified_confirms = int(qres["qualified_confirms"])
         dispute_count = int(qres["dispute_count"])

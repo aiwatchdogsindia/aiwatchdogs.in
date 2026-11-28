@@ -198,7 +198,70 @@ export function projectCodeFor(
   if (slug && SLUG_PROJECT_CODES[slug]) return SLUG_PROJECT_CODES[slug];
   const method = (mission?.methodology_code || '').trim().toUpperCase();
   if (method && METHODOLOGY_PROJECT_CODES[method]) return METHODOLOGY_PROJECT_CODES[method];
-  return method || 'P1';
+  return method || 'PRJ';
+}
+
+const SEQUENTIAL_PROJECT_CODE_RE = /^P([1-9][0-9]*)$/i;
+
+/** Parse the numeric suffix of a sequential project code like P8 -> 8, or null if unnumbered. */
+export function projectCodeNumber(
+  mission?: {
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+  } | null,
+): number | null {
+  const code = projectCodeFor(mission);
+  const match = SEQUENTIAL_PROJECT_CODE_RE.exec(code);
+  return match ? Number(match[1]) : null;
+}
+
+/** Compute the next sequential project code label (e.g. P9 when P8 is highest). */
+export function nextProjectCode(
+  missions: ReadonlyArray<{
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+  }>,
+): string {
+  let highest = 0;
+  for (const m of missions) {
+    const n = projectCodeNumber(m);
+    if (n !== null && n > highest) highest = n;
+  }
+  return highest > 0 ? `P${highest + 1}` : 'P1';
+}
+
+/**
+ * Sort projects in descending order so the latest listed project appears first:
+ * newly listed unnumbered community projects on top, then highest P# descending (P8, P7, P6, ... P1).
+ */
+export function sortProjectsDescending<
+  T extends {
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+    created_at?: string | null;
+  },
+>(missions: readonly T[]): T[] {
+  return missions.slice().sort((a, b) => {
+    const numA = projectCodeNumber(a);
+    const numB = projectCodeNumber(b);
+
+    // Newly listed community projects without a P# code yet sit at the very top.
+    if (numA === null && numB !== null) return -1;
+    if (numA !== null && numB === null) return 1;
+
+    if (numA !== null && numB !== null && numA !== numB) {
+      return numB - numA;
+    }
+
+    const tsA = Date.parse(a.created_at || '') || 0;
+    const tsB = Date.parse(b.created_at || '') || 0;
+    if (tsA !== tsB) return tsB - tsA;
+
+    return String(a.slug || '').localeCompare(String(b.slug || ''));
+  });
 }
 
 export interface PillarTint {
@@ -344,7 +407,13 @@ export function buildTaskJoinPrompt(
   return `Fetch and follow ${base}/join.txt and run task ${taskId} on ${slug} now`;
 }
 
+export function buildEnlistPrompt(origin: string = getCanonicalOrigin()): string {
+  const base = origin.replace(/\/+$/, '');
+  return `Fetch and follow ${base}/enlist.txt to list my audit project with me`;
+}
+
 export const CANONICAL_JOIN_PROMPT = buildCanonicalJoinPrompt();
+export const CANONICAL_ENLIST_PROMPT = buildEnlistPrompt();
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return 'Unrecorded';

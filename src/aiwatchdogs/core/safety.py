@@ -694,3 +694,94 @@ def verify_token_digest(token: str, stored_hash: str, *, pepper: str | None = No
         expected = "hmac:" + hmac.new(secret.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
         return hmac.compare_digest(expected, stored_hash)
     return hmac.compare_digest(compute_sha256(token), stored_hash)
+
+
+_DISALLOWED_HTML_CHARS = frozenset("<>")
+
+
+def validate_safe_single_line_text(
+    value: Any,
+    *,
+    field: str = "display_name",
+    max_length: int = 120,
+    disallow_html: bool = True,
+) -> str:
+    """Validate and clean a single-line public profile text field.
+
+    Rejects CR/LF newlines, ASCII/Unicode control or invisible format characters (Cc/Cf),
+    and (by default) raw HTML angle brackets ``<`` / ``>`` so probe payloads such as
+    ``<img src=x onerror=...>`` or YAML frontmatter newline injections fail closed with HTTP 422.
+    """
+    raw = str("" if value is None else value)
+    if "\r" in raw or "\n" in raw:
+        raise ValueError(f"{field} must be a single line (newlines are not allowed).")
+    for ch in raw:
+        cat = unicodedata.category(ch)
+        if cat in {"Cc", "Cf"}:
+            raise ValueError(f"{field} must not contain control or invisible formatting characters.")
+        if disallow_html and ch in _DISALLOWED_HTML_CHARS:
+            raise ValueError(f"{field} must not contain HTML angle brackets ('<' or '>').")
+    collapsed = " ".join(raw.split()).strip()[:max_length]
+    scrubbed, _ = scrub_pii(collapsed)
+    return scrubbed.strip()[:max_length]
+
+
+def sanitize_markdown_inline(value: Any, *, max_len: int = 160) -> str:
+    """Defense-in-depth inline Markdown sanitizer for untrusted/legacy DB strings.
+
+    Strips newlines and control/invisible characters, collapses whitespace, and escapes
+    raw HTML angle brackets so rendered `.md` pages can never break line structure or
+    embed raw HTML tags even if legacy rows exist in the database.
+    """
+    raw = str("" if value is None else value)
+    cleaned_chars = [
+        " " if ch in ("\r", "\n", "\t") else ch
+        for ch in raw
+        if ch in ("\r", "\n", "\t") or unicodedata.category(ch) not in {"Cc", "Cf"}
+    ]
+    text = " ".join("".join(cleaned_chars).split())
+    text = text.replace("<", "&lt;").replace(">", "&gt;")
+    if len(text) > max_len:
+        text = text[: max_len - 1] + "…"
+    return text
+
+
+_NON_SYBIL_CLIENT_IPS = frozenset({"", "unknown", "testclient", "localhost", "127.0.0.1", "::1"})
+
+
+def compute_client_ip_hash(client_ip: str | None) -> str:
+    """Compute a privacy-preserving salted hash for a real routable client IP (or '' for local/test).
+
+    Normalizes IPv4-mapped IPv6 addresses to IPv4 and collapses IPv6 addresses to their /64
+    prefix so privacy-address rotation on the same network maps consistently without ever
+    persisting raw IP addresses in the database.
+    """
+    raw = str(client_ip or "").strip().lower()
+    if not raw or raw in _NON_SYBIL_CLIENT_IPS:
+        return ""
+    if raw.startswith("[") and "]" in raw:
+        raw = raw[1 : raw.index("]")]
+    elif raw.count(":") == 1 and "." in raw:
+        # Strip trailing :port from IPv4:port
+        raw = raw.split(":", 1)[0]
+    try:
+        ip_obj = ipaddress.ip_address(raw)
+        if isinstance(ip_obj, ipaddress.IPv6Address) and ip_obj.ipv4_mapped is not None:
+            ip_obj = ip_obj.ipv4_mapped
+        if ip_obj.is_loopback or ip_obj.is_unspecified:
+            return ""
+        if isinstance(ip_obj, ipaddress.IPv6Address):
+            canonical = str(ipaddress.IPv6Network((ip_obj, 64), strict=False).network_address) + "/64"
+        else:
+            canonical = str(ip_obj)
+    except ValueError:
+        canonical = raw[:64]
+
+    secret = (
+        os.environ.get("AIWATCHDOGS_IP_HASH_SECRET", "").strip()
+        or os.environ.get("AIWATCHDOGS_TOKEN_PEPPER", "").strip()
+    )
+    msg = f"awd-ip-v1:{canonical}".encode("utf-8")
+    if secret:
+        return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()[:32]
+    return hashlib.sha256(msg).hexdigest()[:32]

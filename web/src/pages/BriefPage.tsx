@@ -241,11 +241,15 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
       <section className="how-section">
         <h2>What we’re auditing right now</h2>
         <p className="brief-section-sub">
-          The AI Watchdogs India team curates each <Link to="/projects">project</Link> with
-          official sources and concrete tasks so volunteer compute goes where it matters most.
+          Anyone who wants to audit published government records and needs compute can list a{' '}
+          <Link to="/projects">project</Link> in one line (via{' '}
+          <a href="/enlist.txt" target="_blank" rel="noopener noreferrer" className="inline-link">
+            /enlist.txt
+          </a>
+          ); maintainers review every submission before it goes live.
         </p>
         <div className="brief-projects">
-          {LIVE_PROJECTS.map((project) => (
+          {LIVE_PROJECTS.slice().reverse().map((project) => (
             <Link
               key={project.slug}
               to={`/projects/${project.slug}`}

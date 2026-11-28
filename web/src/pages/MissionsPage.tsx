@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
 import { JoinOneLineButton } from '../components/JoinOneLineButton';
+import { ListProjectRow } from '../components/ListProjectRow';
 import { ProjectLeaderboard } from '../components/ProjectLeaderboard';
 import {
   CompactProgressBar,
@@ -26,9 +27,11 @@ import {
   copyToClipboard,
   formatSeconds,
   formatTokens,
+  nextProjectCode,
   pillarLabel,
   projectCodeFor,
   safeExternalUrl,
+  sortProjectsDescending,
 } from '../utils';
 
 const WEBSITE_METHOD = 'W1';
@@ -268,6 +271,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ) : (
                       `by ${detail.posted_by.name}`
                     )}
+                    {detail.posted_by.handle ? ` (${detail.posted_by.handle})` : ''}
                   </span>
                 )}
               </div>
@@ -283,6 +287,16 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 {detail.is_community_project && (
                   <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>
                     Follow by RSS
+                  </a>
+                )}
+                {safeExternalUrl(detail.enlisted_pr_url) && (
+                  <a
+                    href={safeExternalUrl(detail.enlisted_pr_url)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Enlisting PR{' '}
+                    <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
                   </a>
                 )}
                 {isWebsiteAudit && (
@@ -663,9 +677,13 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
   // =========================================================================
   // PROJECTS INDEX VIEW (/projects)
   // =========================================================================
-  const pillars = ['all', ...Array.from(new Set(missions.map((m) => m.pillar)))];
+  const orderedMissions = sortProjectsDescending(missions);
+  const nextCode = nextProjectCode(orderedMissions);
+  const pillars = ['all', ...Array.from(new Set(orderedMissions.map((m) => m.pillar)))];
   const visible =
-    pillarFilter === 'all' ? missions : missions.filter((m) => m.pillar === pillarFilter);
+    pillarFilter === 'all'
+      ? orderedMissions
+      : orderedMissions.filter((m) => m.pillar === pillarFilter);
 
   return (
     <div>
@@ -675,12 +693,23 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
           <h1>Active projects</h1>
           <div className="lb-sub-row">
             <p className="lb-sub">
-              Hover any progress bar for exact percentages, open a project for interactive charts, or
-              copy one line to join directly.
+              Each project is listed by someone who wants to audit the government and needs compute
+              to do it. Hover any progress bar for exact percentages, open a project for charts, or
+              copy one line to join or list yours.
             </p>
-            <a href="/projects.md" className="inline-link lb-all">
-              View .md
-            </a>
+            <div className="project-head-links">
+              <a
+                href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-link lb-all"
+              >
+                Project guide on GitHub
+              </a>
+              <a href="/projects.md" className="inline-link lb-all">
+                View .md
+              </a>
+            </div>
           </div>
         </div>
 
@@ -703,6 +732,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         {error && <div className="state-banner">Could not load projects: {error}</div>}
 
         <div className="project-index-list">
+          <ListProjectRow nextCode={!loading && !error ? nextCode : undefined} variant="paper" />
+
           {!loading && !error
             ? visible.map((m) => {
                 const projectHref = `/projects/${encodeURIComponent(m.slug)}`;
@@ -738,7 +769,15 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       <h2 className="project-index-title">
                         <Link to={projectHref}>{m.title}</Link>
                       </h2>
-                      <span className="project-index-meta">{m.jurisdiction}</span>
+                      <span className="project-index-meta">
+                        {m.jurisdiction}
+                        {m.posted_by?.name ? (
+                          <>
+                            {' · '}posted by {m.posted_by.name}
+                            {m.posted_by.handle ? ` (${m.posted_by.handle})` : ''}
+                          </>
+                        ) : null}
+                      </span>
                     </div>
 
                     <div className="project-index-progress">
@@ -764,23 +803,43 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </div>
 
                     <div className="project-index-actions">
-                      <JoinOneLineButton
-                        label="Join the effort: copy one line"
-                        copied={isCopied}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void handleCopyProject(m);
-                        }}
-                        title={buildProjectJoinPrompt(m.slug, m.methodology_code)}
-                        aria-label={`Join ${m.title}: copy one line`}
-                      />
+                      {m.total_tasks === 0 && m.status === 'needs_data' ? (
+                        <Link
+                          to={projectHref}
+                          className="btn btn-secondary btn-sm"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          View planned work
+                        </Link>
+                      ) : (
+                        <JoinOneLineButton
+                          label="Join the effort: copy one line"
+                          copied={isCopied}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleCopyProject(m);
+                          }}
+                          title={buildProjectJoinPrompt(m.slug, m.methodology_code)}
+                          aria-label={`Join ${m.title}: copy one line`}
+                        />
+                      )}
                     </div>
                   </article>
                 );
               })
             : null}
         </div>
+
+        <p className="project-dash-note">
+          The copied line works in Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or any
+          coding agent. It asks what you want audited, finds official sources, drafts the project
+          file, and gives you one GitHub link to submit it (
+          <a href="/enlist.txt" target="_blank" rel="noopener noreferrer" className="inline-link">
+            inspect /enlist.txt
+          </a>
+          ). Maintainers review every project before it goes live.
+        </p>
       </section>
     </div>
   );
@@ -1172,8 +1231,8 @@ function TaskTableNote({ start, end, total }: { start: number; end: number; tota
       {total === 0 || end <= start
         ? '0'
         : `${(start + 1).toLocaleString('en-IN')}–${end.toLocaleString('en-IN')}`}{' '}
-      of {total.toLocaleString('en-IN')} matching tasks. Token estimates are set by AI Watchdogs
-      India; usage is self-reported by the contributing agent.
+      of {total.toLocaleString('en-IN')} matching tasks. Token estimates come from whoever listed
+      the project; usage is self-reported by the contributing agent.
     </p>
   );
 }

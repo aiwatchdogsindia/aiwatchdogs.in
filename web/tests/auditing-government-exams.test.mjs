@@ -199,6 +199,26 @@ test('BriefPage lists P9 Auditing Government Exams, FindingsPage supports audit 
   const briefSrc = fs.readFileSync(path.join(webDir, 'src/pages/BriefPage.tsx'), 'utf8');
   assert.match(briefSrc, /slug:\s*'auditing-government-exams'/);
   assert.match(briefSrc, /code:\s*'P9'/);
+  assert.match(briefSrc, /LIVE_PROJECTS\.slice\(\)\.reverse\(\)\.map/);
+
+  // P9 sorts newest-first ahead of P8..P1 and advances nextProjectCode to P10
+  const sorted = utilsMod.sortProjectsDescending([
+    { slug: 'police-finances', project_code: 'P1' },
+    { slug: 'sovereign-lies', project_code: 'P8' },
+    { slug: 'auditing-government-exams' },
+  ]);
+  assert.deepEqual(
+    sorted.map((m) => m.slug),
+    ['auditing-government-exams', 'sovereign-lies', 'police-finances'],
+  );
+  assert.equal(
+    utilsMod.nextProjectCode([
+      { slug: 'police-finances', project_code: 'P1' },
+      { slug: 'sovereign-lies', project_code: 'P8' },
+      { slug: 'auditing-government-exams' },
+    ]),
+    'P10',
+  );
 
   const missionsSrc = fs.readFileSync(path.join(webDir, 'src/pages/MissionsPage.tsx'), 'utf8');
   assert.match(missionsSrc, /AUDITING_EXAMS_METHOD\s*=\s*'P9'/);
