@@ -624,6 +624,22 @@ def _evaluate_severity_local(
     return "medium"
 
 
+_PAGE_FOOTER_TOK_RE = re.compile(r"^(?:page\s+)?(?:\d+\s+)?of\s+\d+\b", re.I)
+_KRUTIDEV_TOK_RE = re.compile(
+    r"(jktLFkku|fcgkj|vk;ksx|ijh\{kk|foHkkx|lsok|fnukad|lwpuk|gsrq|izkjafHkd|LFkfxr|yksd|lgk;d|vUrxZr|vH;fFkZ|foKkiu|iqfyl|[a-z][A-Z]{2,}[a-z])"
+)
+
+
+def _is_low_quality_token(tok: str) -> bool:
+    if _PAGE_FOOTER_TOK_RE.search(tok.strip()):
+        return True
+    if _KRUTIDEV_TOK_RE.search(tok):
+        return True
+    if re.search(r"[\^~`\\|{}]", tok):
+        return True
+    return False
+
+
 def _mine_distinct_tokens(
     raw_tokens: list[Any],
     recs: list[dict[str, Any]],
@@ -640,6 +656,8 @@ def _mine_distinct_tokens(
     def _try(tok: str) -> bool:
         c = neutralize_clean(tok, max_len=115).strip(" [].,;:-'\"")
         if len(c) < 3 or len(c) > 120:
+            return False
+        if _is_low_quality_token(c):
             return False
         if scan_forbidden_terms(c):
             return False
@@ -1246,6 +1264,8 @@ def _run_quality_gates(
             if len(toks) < 2:
                 errors.append(f"{tid} {side} has <2 tokens")
             for tok in toks:
+                if _is_low_quality_token(tok):
+                    errors.append(f"{tid} {side} low-quality/page-footer/KrutiDev token: {tok!r}")
                 if not word_boundary_match(tok, hay):
                     non_wb_hits.append(f"{tid}:{side}:{tok!r}")
 

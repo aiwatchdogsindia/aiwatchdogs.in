@@ -18,21 +18,21 @@
   },
   "total_tasks": 1000,
   "unique_exams_covered": 716,
-  "unique_authorities_covered": 165,
-  "unique_documents_count": 859,
-  "documents_count": 859,
+  "unique_authorities_covered": 163,
+  "unique_documents_count": 858,
+  "documents_count": 858,
   "states_and_uts_covered": 36,
-  "cleared_control_tasks_embedded": 255,
+  "cleared_control_tasks_embedded": 262,
   "headline_counts": {
     "total_audited": 1000,
-    "not_flawless_count": 745,
-    "flawless_count": 255,
-    "not_flawless_rate_pct": 74.5,
-    "flawless_rate_pct": 25.5,
+    "not_flawless_count": 738,
+    "flawless_count": 262,
+    "not_flawless_rate_pct": 73.8,
+    "flawless_rate_pct": 26.2,
     "cancelled_after_conduct": 10,
-    "postponed": 35,
+    "postponed": 32,
     "rescheduled": 120,
-    "delayed": 482,
+    "delayed": 478,
     "cancelled_before_conduct": 35,
     "partial_reexam_or_glitch": 63,
     "documented_affected_candidates_total": 15960703
@@ -50,8 +50,8 @@
       "disruption_type": "postponed",
       "label": "Postponed",
       "rule": "P9-POSTPONED",
-      "tasks": 35,
-      "pct": 3.5,
+      "tasks": 32,
+      "pct": 3.2,
       "documented_affected_candidates": 29000
     },
     "rescheduled": {
@@ -66,8 +66,8 @@
       "disruption_type": "delayed",
       "label": "Delayed",
       "rule": "P9-DELAYED",
-      "tasks": 482,
-      "pct": 48.2,
+      "tasks": 478,
+      "pct": 47.8,
       "documented_affected_candidates": 13400456
     },
     "cancelled_before_conduct": {
@@ -90,8 +90,8 @@
       "disruption_type": "flawless_conduct",
       "label": "Conducted Flawlessly (Cleared)",
       "rule": null,
-      "tasks": 255,
-      "pct": 25.5,
+      "tasks": 262,
+      "pct": 26.2,
       "documented_affected_candidates": 0
     }
   },
@@ -104,8 +104,8 @@
     },
     "state": {
       "tasks": 586,
-      "not_flawless": 474,
-      "flawless": 112,
+      "not_flawless": 467,
+      "flawless": 119,
       "cancelled_after_conduct": 4
     },
     "ut": {
@@ -119,9 +119,9 @@
     {
       "authority_type": "state_psc",
       "label": "State Public Service Commissions",
-      "tasks": 248,
-      "not_flawless": 165,
-      "flawless": 83,
+      "tasks": 250,
+      "not_flawless": 160,
+      "flawless": 90,
       "cancelled_after_conduct": 1
     },
     {
@@ -151,8 +151,8 @@
     {
       "authority_type": "state_police_or_subordinate",
       "label": "State Police & Subordinate Services Boards",
-      "tasks": 109,
-      "not_flawless": 96,
+      "tasks": 107,
+      "not_flawless": 94,
       "flawless": 13,
       "cancelled_after_conduct": 0
     },
@@ -185,9 +185,9 @@
     {
       "exam_category": "engineering_and_higher_ed",
       "label": "Engineering & Higher Education",
-      "tasks": 168,
+      "tasks": 170,
       "not_flawless": 111,
-      "flawless": 57,
+      "flawless": 59,
       "cancelled_after_conduct": 0
     },
     {
@@ -217,9 +217,9 @@
     {
       "exam_category": "civil_services_and_psc",
       "label": "Civil Services & PSC",
-      "tasks": 117,
-      "not_flawless": 80,
-      "flawless": 37,
+      "tasks": 114,
+      "not_flawless": 75,
+      "flawless": 39,
       "cancelled_after_conduct": 0
     },
     {
@@ -233,9 +233,9 @@
     {
       "exam_category": "police_and_defence",
       "label": "Police & Defence",
-      "tasks": 105,
-      "not_flawless": 87,
-      "flawless": 18,
+      "tasks": 106,
+      "not_flawless": 85,
+      "flawless": 21,
       "cancelled_after_conduct": 1
     },
     {
@@ -250,11 +250,11 @@
   "by_year": [
     {
       "year": 2023,
-      "tasks": 24,
-      "not_flawless": 15,
+      "tasks": 23,
+      "not_flawless": 14,
       "flawless": 9,
       "cancelled_after_conduct": 0,
-      "postponed": 1,
+      "postponed": 0,
       "rescheduled": 4,
       "delayed": 9,
       "cancelled_before_conduct": 1,
@@ -274,23 +274,23 @@
     },
     {
       "year": 2025,
-      "tasks": 331,
-      "not_flawless": 255,
-      "flawless": 76,
+      "tasks": 334,
+      "not_flawless": 251,
+      "flawless": 83,
       "cancelled_after_conduct": 5,
       "postponed": 13,
       "rescheduled": 24,
-      "delayed": 182,
+      "delayed": 178,
       "cancelled_before_conduct": 19,
       "partial_reexam_or_glitch": 12
     },
     {
       "year": 2026,
-      "tasks": 260,
-      "not_flawless": 190,
+      "tasks": 258,
+      "not_flawless": 188,
       "flawless": 70,
       "cancelled_after_conduct": 4,
-      "postponed": 12,
+      "postponed": 10,
       "rescheduled": 32,
       "delayed": 117,
       "cancelled_before_conduct": 5,
@@ -301,12 +301,12 @@
     {
       "reason_category": "administrative_or_logistical",
       "label": "Administrative or Logistical Reasons",
-      "tasks": 469
+      "tasks": 462
     },
     {
       "reason_category": "none_flawless",
       "label": "None (Conducted as Scheduled)",
-      "tasks": 255
+      "tasks": 262
     },
     {
       "reason_category": "judicial_or_policy_review",
@@ -371,16 +371,16 @@
       "jurisdiction": "State:Tamil Nadu",
       "jurisdiction_level": "state",
       "state_or_ut": "Tamil Nadu",
-      "tasks": 67,
+      "tasks": 74,
       "not_flawless": 59,
-      "flawless": 8,
+      "flawless": 15,
       "cancelled_after_conduct": 0,
       "postponed": 1,
       "rescheduled": 4,
       "delayed": 51,
       "cancelled_before_conduct": 0,
       "partial_reexam_or_glitch": 3,
-      "not_flawless_rate_pct": 88.06,
+      "not_flawless_rate_pct": 79.73,
       "documented_affected_candidates": 1595501
     },
     {
@@ -448,38 +448,6 @@
       "documented_affected_candidates": 174329
     },
     {
-      "jurisdiction": "State:Rajasthan",
-      "jurisdiction_level": "state",
-      "state_or_ut": "Rajasthan",
-      "tasks": 31,
-      "not_flawless": 16,
-      "flawless": 15,
-      "cancelled_after_conduct": 0,
-      "postponed": 0,
-      "rescheduled": 2,
-      "delayed": 12,
-      "cancelled_before_conduct": 1,
-      "partial_reexam_or_glitch": 1,
-      "not_flawless_rate_pct": 51.61,
-      "documented_affected_candidates": 641174
-    },
-    {
-      "jurisdiction": "State:Bihar",
-      "jurisdiction_level": "state",
-      "state_or_ut": "Bihar",
-      "tasks": 18,
-      "not_flawless": 16,
-      "flawless": 2,
-      "cancelled_after_conduct": 0,
-      "postponed": 2,
-      "rescheduled": 6,
-      "delayed": 6,
-      "cancelled_before_conduct": 0,
-      "partial_reexam_or_glitch": 2,
-      "not_flawless_rate_pct": 88.89,
-      "documented_affected_candidates": 931715
-    },
-    {
       "jurisdiction": "UT:Delhi",
       "jurisdiction_level": "ut",
       "state_or_ut": "Delhi",
@@ -494,6 +462,22 @@
       "partial_reexam_or_glitch": 3,
       "not_flawless_rate_pct": 65.22,
       "documented_affected_candidates": 279427
+    },
+    {
+      "jurisdiction": "State:Bihar",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Bihar",
+      "tasks": 16,
+      "not_flawless": 14,
+      "flawless": 2,
+      "cancelled_after_conduct": 0,
+      "postponed": 0,
+      "rescheduled": 6,
+      "delayed": 6,
+      "cancelled_before_conduct": 0,
+      "partial_reexam_or_glitch": 2,
+      "not_flawless_rate_pct": 87.5,
+      "documented_affected_candidates": 931715
     },
     {
       "jurisdiction": "State:West Bengal",
@@ -526,6 +510,22 @@
       "partial_reexam_or_glitch": 1,
       "not_flawless_rate_pct": 92.86,
       "documented_affected_candidates": 471881
+    },
+    {
+      "jurisdiction": "State:Rajasthan",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Rajasthan",
+      "tasks": 27,
+      "not_flawless": 12,
+      "flawless": 15,
+      "cancelled_after_conduct": 0,
+      "postponed": 0,
+      "rescheduled": 2,
+      "delayed": 8,
+      "cancelled_before_conduct": 1,
+      "partial_reexam_or_glitch": 1,
+      "not_flawless_rate_pct": 44.44,
+      "documented_affected_candidates": 641174
     },
     {
       "jurisdiction": "State:Andhra Pradesh",
@@ -688,22 +688,6 @@
       "documented_affected_candidates": 102718
     },
     {
-      "jurisdiction": "State:Chhattisgarh",
-      "jurisdiction_level": "state",
-      "state_or_ut": "Chhattisgarh",
-      "tasks": 8,
-      "not_flawless": 8,
-      "flawless": 0,
-      "cancelled_after_conduct": 0,
-      "postponed": 1,
-      "rescheduled": 2,
-      "delayed": 5,
-      "cancelled_before_conduct": 0,
-      "partial_reexam_or_glitch": 0,
-      "not_flawless_rate_pct": 100.0,
-      "documented_affected_candidates": 145684
-    },
-    {
       "jurisdiction": "State:Himachal Pradesh",
       "jurisdiction_level": "state",
       "state_or_ut": "Himachal Pradesh",
@@ -734,6 +718,22 @@
       "partial_reexam_or_glitch": 0,
       "not_flawless_rate_pct": 87.5,
       "documented_affected_candidates": 6730
+    },
+    {
+      "jurisdiction": "State:Chhattisgarh",
+      "jurisdiction_level": "state",
+      "state_or_ut": "Chhattisgarh",
+      "tasks": 7,
+      "not_flawless": 7,
+      "flawless": 0,
+      "cancelled_after_conduct": 0,
+      "postponed": 0,
+      "rescheduled": 2,
+      "delayed": 5,
+      "cancelled_before_conduct": 0,
+      "partial_reexam_or_glitch": 0,
+      "not_flawless_rate_pct": 100.0,
+      "documented_affected_candidates": 145684
     },
     {
       "jurisdiction": "State:Mizoram",
@@ -989,16 +989,16 @@
       "authority_type": "state_psc",
       "jurisdiction": "State:Tamil Nadu",
       "jurisdiction_level": "state",
-      "tasks": 57,
+      "tasks": 64,
       "not_flawless": 49,
-      "flawless": 8,
+      "flawless": 15,
       "cancelled_after_conduct": 0,
       "postponed": 0,
       "rescheduled": 2,
       "delayed": 45,
       "cancelled_before_conduct": 0,
       "partial_reexam_or_glitch": 2,
-      "not_flawless_rate_pct": 85.96,
+      "not_flawless_rate_pct": 76.56,
       "documented_affected_candidates": 0
     },
     {
@@ -1074,10 +1074,10 @@
       "documented_affected_candidates": 3202853
     },
     {
-      "authority": "National Medical Commission (MARB) & Chhattisgarh Counselling Authority",
+      "authority": "National Medical Commission (MARB) & Bihar Counselling Authority",
       "authority_key": "marb-nmc",
       "authority_type": "defence_medical_technical",
-      "jurisdiction": "State:Chhattisgarh",
+      "jurisdiction": "State:Bihar",
       "jurisdiction_level": "state",
       "tasks": 30,
       "not_flawless": 30,
@@ -1323,24 +1323,6 @@
       "cancelled_before_conduct": 0,
       "partial_reexam_or_glitch": 1,
       "not_flawless_rate_pct": 85.71,
-      "documented_affected_candidates": 0
-    },
-    {
-      "authority": "Rajasthan Public Service Commission (RPSC)",
-      "authority_key": "rpsc-rajasthan",
-      "authority_type": "state_psc",
-      "jurisdiction": "State:Rajasthan",
-      "jurisdiction_level": "state",
-      "tasks": 20,
-      "not_flawless": 5,
-      "flawless": 15,
-      "cancelled_after_conduct": 0,
-      "postponed": 0,
-      "rescheduled": 0,
-      "delayed": 5,
-      "cancelled_before_conduct": 0,
-      "partial_reexam_or_glitch": 0,
-      "not_flawless_rate_pct": 25.0,
       "documented_affected_candidates": 0
     },
     {
@@ -1648,6 +1630,24 @@
       "partial_reexam_or_glitch": 0,
       "not_flawless_rate_pct": 100.0,
       "documented_affected_candidates": 0
+    },
+    {
+      "authority": "AIIMS Jodhpur / AIIMS Delhi (NORCET, CRE & INI-CET)",
+      "authority_key": "aiims-jodhpur",
+      "authority_type": "defence_medical_technical",
+      "jurisdiction": "State:Rajasthan",
+      "jurisdiction_level": "state",
+      "tasks": 2,
+      "not_flawless": 2,
+      "flawless": 0,
+      "cancelled_after_conduct": 0,
+      "postponed": 0,
+      "rescheduled": 0,
+      "delayed": 2,
+      "cancelled_before_conduct": 0,
+      "partial_reexam_or_glitch": 0,
+      "not_flawless_rate_pct": 100.0,
+      "documented_affected_candidates": 0
     }
   ],
   "anchor_cases": [
@@ -1718,7 +1718,7 @@
       "severity": "critical"
     },
     {
-      "task_id": "p9-state-odisha-cbse-class-12-2025-bargarh-0188",
+      "task_id": "p9-state-odisha-cbse-class-12-2025-bargarh-0187",
       "case_key": "in-od-cbse-class12-2025-bargarh-cancel",
       "finding_id": null,
       "exam_name": "CBSE Class XII Board Examination 2025 — Bargarh Centres, Odisha",
@@ -1751,7 +1751,7 @@
       "severity": "critical"
     },
     {
-      "task_id": "p9-state-odisha-cbse-class-10-2025-bargarh-0186",
+      "task_id": "p9-state-odisha-cbse-class-10-2025-bargarh-0185",
       "case_key": "in-od-cbse-class10-2025-bargarh-cancel",
       "finding_id": null,
       "exam_name": "CBSE Class X Board Examination 2025 — Bargarh Centres, Odisha",
@@ -1817,7 +1817,7 @@
       "severity": "critical"
     },
     {
-      "task_id": "p9-state-uttar-prades-ecr-railways-dept-up-2025-0247",
+      "task_id": "p9-state-uttar-prades-ecr-railways-dept-up-2025-0246",
       "case_key": "in-up-ecr-railways-dept-2025-leak",
       "finding_id": null,
       "exam_name": "East Central Railway Group 'C' Departmental Examination (Uttar Pradesh)",
@@ -2226,7 +2226,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-odisha-cbse-class-12-2025-bargarh-0188",
+      "task_id": "p9-state-odisha-cbse-class-12-2025-bargarh-0187",
       "case_key": "in-od-cbse-class12-2025-bargarh-cancel",
       "title": "Odisha · CBSE Class XII Board Examination 2025 — Bargarh Centres, Odisha: Mass Copying Enquiry & Cancellation of 516 Class XII Student Results",
       "exam_name": "CBSE Class XII Board Examination 2025 — Bargarh Centres, Odisha",
@@ -2264,7 +2264,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-odisha-cbse-class-10-2025-bargarh-0186",
+      "task_id": "p9-state-odisha-cbse-class-10-2025-bargarh-0185",
       "case_key": "in-od-cbse-class10-2025-bargarh-cancel",
       "title": "Odisha · CBSE Class X Board Examination 2025 — Bargarh Centres, Odisha: Mass Copying Enquiry & Cancellation of 369 Class X Student Results",
       "exam_name": "CBSE Class X Board Examination 2025 — Bargarh Centres, Odisha",
@@ -2340,7 +2340,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-uttar-prades-ecr-railways-dept-up-2025-0247",
+      "task_id": "p9-state-uttar-prades-ecr-railways-dept-up-2025-0246",
       "case_key": "in-up-ecr-railways-dept-2025-leak",
       "title": "Uttar Pradesh · East Central Railway Group 'C' Departmental Examination (Uttar Pradesh): Departmental Exam Paper Leak, CBI Arrest of 26 Officials &…",
       "exam_name": "East Central Railway Group 'C' Departmental Examination (Uttar Pradesh)",
@@ -2682,7 +2682,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-ut-delhi-delhi-motor-vehicle-inspector-0295",
+      "task_id": "p9-ut-delhi-delhi-motor-vehicle-inspector-0294",
       "case_key": "delhi-dsssb-molor-vehicle-lnsp-2026-b3b7f5",
       "title": "Delhi · Motor Vehicle Inspector: Written Examination (2026)",
       "exam_name": "Motor Vehicle Inspector",
@@ -2796,7 +2796,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-bihar-neet-ug-2024-patna-0554",
+      "task_id": "p9-state-bihar-neet-ug-2024-patna-0065",
       "case_key": "in-br-neet-ug-2024-patna-fir",
       "title": "Bihar · NEET (UG) 2024 Examination — Patna Centre, Bihar: 5 May 2024 Shastrinagar Police Station Paper-Leak FIR & CBI Takeover (22 June)",
       "exam_name": "NEET (UG) 2024 Examination — Patna Centre, Bihar",
@@ -2834,7 +2834,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-08-2024-corrigendum-fo-0559",
+      "task_id": "p9-state-haryana-haryana-08-2024-corrigendum-fo-0557",
       "case_key": "haryana-hssc-08-2024-corrigendu-2026-d50152",
       "title": "Haryana · Corrigendum for various posts of Group-25 against Advt. No. 08/2024 of various Departments, Haryana (Advt. 08/2024): Mains Written Examination…",
       "exam_name": "Corrigendum for various posts of Group-25 against Advt. No. 08/2024 of various Departments, Haryana (Advt. 08/2024)",
@@ -2872,7 +2872,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-candidates-this-is-for-0561",
+      "task_id": "p9-state-haryana-haryana-candidates-this-is-for-0559",
       "case_key": "haryana-hssc-candidates-this-is-2024-29e842",
       "title": "Haryana · CANDIDATES This is for the information of the candidates regarding conducting of Physical Measurement Test (PMT) and Physical Screening Test…",
       "exam_name": "CANDIDATES This is for the information of the candidates regarding conducting of Physical Measurement Test (PMT) and Physical Screening Test",
@@ -2910,7 +2910,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-corrigendum-to-the-not-0562",
+      "task_id": "p9-state-haryana-haryana-corrigendum-to-the-not-0560",
       "case_key": "haryana-hssc-corrigendum-to-the-2024-e19c0d",
       "title": "Haryana · Corrigendum to the Notice dated 14.07.2024 for PMT for the post of Male Constable (GD) against Advt. No. 06/2024, Cat. No.01 of Police…",
       "exam_name": "Corrigendum to the Notice dated 14.07.2024 for PMT for the post of Male Constable (GD) against Advt. No. 06/2024, Cat. No.01 of Police Department, Haryana",
@@ -2948,7 +2948,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-declaration-of-result-0567",
+      "task_id": "p9-state-haryana-haryana-declaration-of-result-0565",
       "case_key": "haryana-hssc-declaration-of-res-2024-3a2e64",
       "title": "Haryana · Declaration of Result for appointment to the additional demand for posts of Male and Female Constable (GD) against Advt. No. 4/2020, Cat. No. 1…",
       "exam_name": "Declaration of Result for appointment to the additional demand for posts of Male and Female Constable (GD) against Advt. No. 4/2020, Cat. No. 1 & 2",
@@ -2986,7 +2986,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-haryana-staff-selectio-0581",
+      "task_id": "p9-state-haryana-haryana-haryana-staff-selectio-0579",
       "case_key": "haryana-hssc-regarding-biometri-2026-38dd58",
       "title": "Haryana · Haryana Staff Selection Commission 2026 Examination: Recruitment Examination (2026)",
       "exam_name": "Haryana Staff Selection Commission 2026 Examination",
@@ -3024,7 +3024,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-haryana-staff-selectio-0582",
+      "task_id": "p9-state-haryana-haryana-haryana-staff-selectio-0580",
       "case_key": "haryana-hssc-regarding-conducti-2026-a197fd",
       "title": "Haryana · Haryana Staff Selection Commission 2026 Examination: Screening Test (2026)",
       "exam_name": "Haryana Staff Selection Commission 2026 Examination",
@@ -3062,7 +3062,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-male-constable-general-0570",
+      "task_id": "p9-state-haryana-haryana-male-constable-general-0568",
       "case_key": "haryana-hssc-male-constable-gen-2026-ae61d6",
       "title": "Haryana · MALE CONSTABLE (GENERAL DUTY) AND MALE CONSTABLE (GOVERNMENT RAILWAY POLICE): Physical Measurement / Screening Test (2026)",
       "exam_name": "MALE CONSTABLE (GENERAL DUTY) AND MALE CONSTABLE (GOVERNMENT RAILWAY POLICE)",
@@ -3100,7 +3100,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-male-constable-general-0753",
+      "task_id": "p9-state-haryana-haryana-male-constable-general-0747",
       "case_key": "haryana-hssc-male-constable-gen-2026-361838",
       "title": "Haryana · Male Constable (General Duty) and Male Constable (Government Railway Police): Screening Test (2026)",
       "exam_name": "Male Constable (General Duty) and Male Constable (Government Railway Police)",
@@ -3138,9 +3138,9 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-male-constable-general-0754",
+      "task_id": "p9-state-haryana-haryana-male-constable-general-0748",
       "case_key": "haryana-hssc-male-constable-gen-2026-c51456",
-      "title": "Haryana · Male Constable (General Duty) and Male Constable (Government Railway Police): Screening Test (2026) (#754)",
+      "title": "Haryana · Male Constable (General Duty) and Male Constable (Government Railway Police): Screening Test (2026) (#748)",
       "exam_name": "Male Constable (General Duty) and Male Constable (Government Railway Police)",
       "exam_slug": "haryana-male-constable-general-duty-and-male-constable-government-railway-poli",
       "cycle_or_stage": "Screening Test (2026)",
@@ -3176,7 +3176,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-absentee-0571",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-absentee-0569",
       "case_key": "haryana-hssc-notice-to-the-abse-2024-515cbc",
       "title": "Haryana · NOTICE TO THE ABSENTEE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024…",
       "exam_name": "NOTICE TO THE ABSENTEE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024 OF POLICE DEPARTMENT, HARYANA",
@@ -3214,7 +3214,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0572",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0570",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-03d1f4",
       "title": "Haryana · Notice to the candidates for PMT for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department, Haryana…",
       "exam_name": "Notice to the candidates for PMT for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department, Haryana",
@@ -3252,7 +3252,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0573",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0571",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-464bfb",
       "title": "Haryana · NOTICE TO THE CANDIDATES FOR PHYSICAL MEASUREMENT TEST (PMT) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024…",
       "exam_name": "NOTICE TO THE CANDIDATES FOR PHYSICAL MEASUREMENT TEST (PMT) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024",
@@ -3290,7 +3290,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0574",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0572",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-47d512",
       "title": "Haryana · NOTICE TO THE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024 OF…",
       "exam_name": "NOTICE TO THE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024 OF POLICE DEPARTMENT, HARYANA",
@@ -3328,7 +3328,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0575",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0573",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-67752a",
       "title": "Haryana · Notice to the candidates for Physical Screening Test (PST) for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police…",
       "exam_name": "Notice to the candidates for Physical Screening Test (PST) for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department, Haryana",
@@ -3366,9 +3366,9 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0576",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0574",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-7d558c",
-      "title": "Haryana · Notice to the candidates for PMT for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department… (#576)",
+      "title": "Haryana · Notice to the candidates for PMT for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department… (#574)",
       "exam_name": "Notice to the candidates for PMT for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department, Haryana",
       "exam_slug": "haryana-notice-to-the-candidates-for-pmt-for-the-post-of-female-constable-gd-a",
       "cycle_or_stage": "Physical Measurement / Screening Test (2024)",
@@ -3404,9 +3404,9 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0577",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0575",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-b8b570",
-      "title": "Haryana · Notice to the candidates for Physical Screening Test (PST) for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of… (#577)",
+      "title": "Haryana · Notice to the candidates for Physical Screening Test (PST) for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of… (#575)",
       "exam_name": "Notice to the candidates for Physical Screening Test (PST) for the post of Female Constable (GD) against Advt. No. 06/2024, Cat. No.02 of Police Department, Haryana",
       "exam_slug": "haryana-notice-to-the-candidates-for-physical-screening-test-pst-for-the-post",
       "cycle_or_stage": "Screening Test (2024)",
@@ -3442,7 +3442,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0578",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0576",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-bad040",
       "title": "Haryana · NOTICE TO THE CANDIDATES FOR PHYSICAL MEASUREMENT TEST (PMT) & PHYSICAL SCREENING TEST (PST) FOR GROUP 56 & 57 AGAINST ADVT. NO. 04/2024 OF…",
       "exam_name": "NOTICE TO THE CANDIDATES FOR PHYSICAL MEASUREMENT TEST (PMT) & PHYSICAL SCREENING TEST (PST) FOR GROUP 56 & 57 AGAINST ADVT. NO. 04/2024 OF GROUP-C POSTS CET (2nd PHASE)",
@@ -3480,9 +3480,9 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0579",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0577",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-d5dff6",
-      "title": "Haryana · NOTICE TO THE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024… (#579)",
+      "title": "Haryana · NOTICE TO THE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024… (#577)",
       "exam_name": "NOTICE TO THE CANDIDATES FOR PHYSICAL SCREENING TEST (PST) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 & 02 AGAINST ADVT. NO. 6/2024 OF POLICE DEPARTMENT, HARYANA",
       "exam_slug": "haryana-notice-to-the-candidates-for-physical-screening-test-pst-of-male-and-a",
       "cycle_or_stage": "Screening Test (2024)",
@@ -3518,7 +3518,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0580",
+      "task_id": "p9-state-haryana-haryana-notice-to-the-candidat-0578",
       "case_key": "haryana-hssc-notice-to-the-cand-2024-e237bd",
       "title": "Haryana · NOTICE TO THE CANDIDATES FOR PHYSICAL MEASUREMENT TEST (PMT) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 and 02 AGAINST ADVT. NO. 6/2024 OF…",
       "exam_name": "NOTICE TO THE CANDIDATES FOR PHYSICAL MEASUREMENT TEST (PMT) OF MALE & FEMALE CONSTABLE (G.D.), CAT. NO. 01 and 02 AGAINST ADVT. NO. 6/2024 OF POLICE DEPARTMENT, HARYANA",
@@ -3556,7 +3556,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-postponement-notice-to-0757",
+      "task_id": "p9-state-haryana-haryana-postponement-notice-to-0751",
       "case_key": "haryana-hssc-postponement-notic-2024-3839e7",
       "title": "Haryana · POSTPONEMENT NOTICE TO THE CANDIDATES FOR WRITTEN EXAMINATION (OMR BASED) FOR GROUP NO. 01 AGAINST ADVT. NO. 04/2024 OF GROUP-C POSTS CET…",
       "exam_name": "POSTPONEMENT NOTICE TO THE CANDIDATES FOR WRITTEN EXAMINATION (OMR BASED) FOR GROUP NO. 01 AGAINST ADVT. NO. 04/2024 OF GROUP-C POSTS CET (2nd PHASE)",
@@ -3594,7 +3594,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-revised-result-of-grou-0584",
+      "task_id": "p9-state-haryana-haryana-revised-result-of-grou-0582",
       "case_key": "haryana-hssc-revised-result-of-2024-4aba69",
       "title": "Haryana · Revised Result of Group-C CET Phase 1 (Consolidated) held on 05 and 06 November, 2022 for Group-C Posts: Recruitment Examination (2024)",
       "exam_name": "Revised Result of Group-C CET Phase 1 (Consolidated) held on 05 and 06 November, 2022 for Group-C Posts",
@@ -3632,7 +3632,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-sd-under-secretary-exa-0585",
+      "task_id": "p9-state-haryana-haryana-sd-under-secretary-exa-0583",
       "case_key": "haryana-hssc-sd-under-secretary-2026-bb207a",
       "title": "Haryana · Sd/- Under Secretary, Examination: Screening Test (2026)",
       "exam_name": "Sd/- Under Secretary, Examination",
@@ -3670,7 +3670,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-haryana-the-registration-numbe-0586",
+      "task_id": "p9-state-haryana-haryana-the-registration-numbe-0584",
       "case_key": "haryana-hssc-the-registration-n-2026-eb86a0",
       "title": "Haryana · The registration numbers of shortlisted candidates arranged in ascending order of CET: Physical Measurement / Screening Test (2026)",
       "exam_name": "The registration numbers of shortlisted candidates arranged in ascending order of CET",
@@ -3708,7 +3708,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-tamil-nadu-tamil-nadu-assistant-public-0565",
+      "task_id": "p9-state-tamil-nadu-tamil-nadu-assistant-public-0563",
       "case_key": "tamil-nadu-tnpsc-assistant-public-p-2024-a3fd18",
       "title": "Tamil Nadu · ASSISTANT PUBLIC PROSECUTOR (GRADE II) APPLY ONLINE ADDENDUM_13A ADDENDUM_13B Download Ha: Preliminary Examination (2024)",
       "exam_name": "ASSISTANT PUBLIC PROSECUTOR (GRADE II) APPLY ONLINE ADDENDUM_13A ADDENDUM_13B Download Ha",
@@ -3898,7 +3898,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-depwd-pwd-exam-guidelines-2025-0526",
+      "task_id": "p9-union-depwd-pwd-exam-guidelines-2025-0525",
       "case_key": "in-union-depwd-pwd-exam-guidelines-abeyance",
       "title": "Union of India · DEPwD Revised PwD Competitive Public Examination Guidelines: 01.08.2025 Revised Scribe & Accommodation Guidelines Kept in Abeyance till…",
       "exam_name": "DEPwD Revised PwD Competitive Public Examination Guidelines",
@@ -3936,7 +3936,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ibps-crp-rrbs-scale1-0794",
+      "task_id": "p9-union-ibps-crp-rrbs-scale1-0788",
       "case_key": "ibps-crp-rrbs-xiv-scale1-prelims-postponed",
       "title": "Union of India · IBPS CRP RRBs-XIV — Officers Scale-I (Preliminary Examination): 2025–2026 Cycle — Prelims Postponed 27 Jul -> 22–23 Nov 2025 (+118d)",
       "exam_name": "IBPS CRP RRBs-XIV — Officers Scale-I (Preliminary Examination)",
@@ -4012,7 +4012,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-neet-pg-2024-0536",
+      "task_id": "p9-union-neet-pg-2024-0535",
       "case_key": "in-union-neet-pg-2024-postpone",
       "title": "Union of India · NEET-PG 2024 Examination: 2024 Cycle Postponement & Rescheduled Conduct (11 August 2024)",
       "exam_name": "NEET-PG 2024 Examination",
@@ -4050,7 +4050,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-nra-cet-2024-0544",
+      "task_id": "p9-union-nra-cet-2024-0543",
       "case_key": "in-union-nra-cet-2024-nonconduct",
       "title": "Union of India · National Recruitment Agency (NRA) Common Eligibility Test (CET): Multi-Year Non-Conduct of Promised Group B & C Common Eligibility Test",
       "exam_name": "National Recruitment Agency (NRA) Common Eligibility Test (CET)",
@@ -4202,7 +4202,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-nagaland-nagaland-nssb-hc-wpc-122-2024-0553",
+      "task_id": "p9-state-nagaland-nagaland-nssb-hc-wpc-122-2024-0552",
       "case_key": "nagaland-nssb-notification-cance-2023-ffdf74",
       "title": "Nagaland · Nagaland NSSB ANM / FHW Recruitment (Advt. No. NSSB/EXAM-4/CTS-1/18): Recruitment Process Cancellation per Gauhati HC WP(C) 122/2024 (Aug 2025)",
       "exam_name": "Nagaland NSSB ANM / FHW Recruitment (Advt. No. NSSB/EXAM-4/CTS-1/18)",
@@ -4240,7 +4240,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-rajasthan-rpsc-art317-proceedings-2024-0640",
+      "task_id": "p9-state-rajasthan-rpsc-art317-proceedings-2024-0634",
       "case_key": "in-rj-rpsc-2024-art317-removal",
       "title": "Rajasthan · Rajasthan Public Service Commission (RPSC) Recruitment Integrity Proceedings: Article 317(1)/(3) Presidential Removal Proceedings on Rajasthan…",
       "exam_name": "Rajasthan Public Service Commission (RPSC) Recruitment Integrity Proceedings",
@@ -4278,7 +4278,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ncert-ntse-2024-0421",
+      "task_id": "p9-union-ncert-ntse-2024-0420",
       "case_key": "in-union-ncert-ntse-2024-discontinued",
       "title": "Union of India · National Talent Search Examination (NTSE) 2024: 2024 National Cycle Discontinued Pending Post-2021 NEP Review",
       "exam_name": "National Talent Search Examination (NTSE) 2024",
@@ -4316,7 +4316,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-railways-group-c-departmental-2025-0764",
+      "task_id": "p9-union-railways-group-c-departmental-2025-0758",
       "case_key": "in-union-railways-dept-group-c-2025-cancel",
       "title": "Union of India · Indian Railways Group 'C' Departmental Promotion Examinations: Pan-India Cancellation of Pending Departmental Selections (4 March 2025) &…",
       "exam_name": "Indian Railways Group 'C' Departmental Promotion Examinations",
@@ -4620,7 +4620,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-west-bengal-cbse-apaar-2026-wb-0869",
+      "task_id": "p9-state-west-bengal-cbse-apaar-2026-wb-0862",
       "case_key": "in-wb-cbse-apaar-2026-linkage",
       "title": "West Bengal · Board Examination Registration APAAR ID Linkage — West Bengal: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — West Bengal",
@@ -4658,7 +4658,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-tamil-nadu-cbse-apaar-2026-tn-0889",
+      "task_id": "p9-state-tamil-nadu-cbse-apaar-2026-tn-0882",
       "case_key": "in-tn-cbse-apaar-2026-linkage",
       "title": "Tamil Nadu · Board Examination Registration APAAR ID Linkage — Tamil Nadu: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Tamil Nadu",
@@ -4696,7 +4696,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ugc-net-0422",
+      "task_id": "p9-union-ugc-net-0421",
       "case_key": "nta-ugc-net-jun-2024-answer-key-extended",
       "title": "Union of India · UGC-NET (University Grants Commission National Eligibility Test): June 2024 Rescheduled Cycle (Provisional Answer Key Window Extension)",
       "exam_name": "UGC-NET (University Grants Commission National Eligibility Test)",
@@ -4734,7 +4734,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ugc-net-0443",
+      "task_id": "p9-union-ugc-net-0442",
       "case_key": "nta-ugc-net-dec-2023-cyclone-michaung-delay",
       "title": "Union of India · UGC-NET (University Grants Commission National Eligibility Test): December 2023 Cycle (Cyclone Michaung Re-Exam & Result Delay)",
       "exam_name": "UGC-NET (University Grants Commission National Eligibility Test)",
@@ -4772,7 +4772,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-bihar-cbse-apaar-2026-br-0851",
+      "task_id": "p9-state-bihar-cbse-apaar-2026-br-0844",
       "case_key": "in-br-cbse-apaar-2026-linkage",
       "title": "Bihar · Board Examination Registration APAAR ID Linkage — Bihar: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (831,880 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Bihar",
@@ -4810,7 +4810,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-kerala-cbse-apaar-2026-kl-0131",
+      "task_id": "p9-state-kerala-cbse-apaar-2026-kl-0129",
       "case_key": "in-kl-cbse-apaar-2026-linkage",
       "title": "Kerala · Board Examination Registration APAAR ID Linkage — Kerala: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (656,911 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Kerala",
@@ -4848,7 +4848,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-jharkhand-cbse-apaar-2026-jh-0113",
+      "task_id": "p9-state-jharkhand-cbse-apaar-2026-jh-0111",
       "case_key": "in-jh-cbse-apaar-2026-linkage",
       "title": "Jharkhand · Board Examination Registration APAAR ID Linkage — Jharkhand: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Jharkhand",
@@ -4886,7 +4886,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-rajasthan-cbse-apaar-2026-rj-0880",
+      "task_id": "p9-state-rajasthan-cbse-apaar-2026-rj-0873",
       "case_key": "in-rj-cbse-apaar-2026-linkage",
       "title": "Rajasthan · Board Examination Registration APAAR ID Linkage — Rajasthan: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Rajasthan",
@@ -4924,7 +4924,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-karnataka-cbse-apaar-2026-ka-0122",
+      "task_id": "p9-state-karnataka-cbse-apaar-2026-ka-0120",
       "case_key": "in-ka-cbse-apaar-2026-linkage",
       "title": "Karnataka · Board Examination Registration APAAR ID Linkage — Karnataka: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Karnataka",
@@ -4962,7 +4962,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-madhya-prade-cbse-apaar-2026-mp-0140",
+      "task_id": "p9-state-madhya-prade-cbse-apaar-2026-mp-0138",
       "case_key": "in-mp-cbse-apaar-2026-linkage",
       "title": "Madhya Pradesh · Board Examination Registration APAAR ID Linkage — Madhya Pradesh: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Madhya Pradesh",
@@ -5000,7 +5000,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-uttar-prades-cuet-ug-2024-up-0837",
+      "task_id": "p9-state-uttar-prades-cuet-ug-2024-up-0254",
       "case_key": "in-up-cuet-ug-2024-hybrid-shift",
       "title": "Uttar Pradesh · CUET (UG) 2024 Hybrid-Mode Examination — Uttar Pradesh: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 347,736 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Uttar Pradesh",
@@ -5038,7 +5038,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-telangana-cbse-apaar-2026-tg-0865",
+      "task_id": "p9-state-telangana-cbse-apaar-2026-tg-0858",
       "case_key": "in-tg-cbse-apaar-2026-linkage",
       "title": "Telangana · Board Examination Registration APAAR ID Linkage — Telangana: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Telangana",
@@ -5076,7 +5076,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-odisha-cbse-apaar-2026-od-0836",
+      "task_id": "p9-state-odisha-cbse-apaar-2026-od-0829",
       "case_key": "in-od-cbse-apaar-2026-linkage",
       "title": "Odisha · Board Examination Registration APAAR ID Linkage — Odisha: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (305,471 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Odisha",
@@ -5152,7 +5152,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-ut-jammu-and-ka-cbse-apaar-2026-jk-0826",
+      "task_id": "p9-ut-jammu-and-ka-cbse-apaar-2026-jk-0819",
       "case_key": "in-jk-cbse-apaar-2026-linkage",
       "title": "Jammu and Kashmir · Board Examination Registration APAAR ID Linkage — Jammu and Kashmir: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Jammu and Kashmir",
@@ -5190,7 +5190,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-ut-delhi-cuet-ug-2024-dl-0852",
+      "task_id": "p9-ut-delhi-cuet-ug-2024-dl-0845",
       "case_key": "in-dl-cuet-ug-2024-hybrid-shift",
       "title": "Delhi · CUET (UG) 2024 Hybrid-Mode Examination — Delhi: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 156,412 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Delhi",
@@ -5228,7 +5228,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-assam-cbse-apaar-2026-as-0846",
+      "task_id": "p9-state-assam-cbse-apaar-2026-as-0839",
       "case_key": "in-as-cbse-apaar-2026-linkage",
       "title": "Assam · Board Examination Registration APAAR ID Linkage — Assam: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (125,793 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Assam",
@@ -5266,7 +5266,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-uttar-prades-cbse-apaar-2026-up-0255",
+      "task_id": "p9-state-uttar-prades-cbse-apaar-2026-up-0253",
       "case_key": "in-up-cbse-apaar-2026-linkage",
       "title": "Uttar Pradesh · Board Examination Registration APAAR ID Linkage — Uttar Pradesh: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Uttar Pradesh",
@@ -5304,7 +5304,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-ut-delhi-cbse-apaar-2026-dl-0856",
+      "task_id": "p9-ut-delhi-cbse-apaar-2026-dl-0849",
       "case_key": "in-dl-cbse-apaar-2026-linkage",
       "title": "Delhi · Board Examination Registration APAAR ID Linkage — Delhi: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (122,836 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Delhi",
@@ -5342,7 +5342,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-punjab-cbse-apaar-2026-pb-0200",
+      "task_id": "p9-state-punjab-cbse-apaar-2026-pb-0198",
       "case_key": "in-pb-cbse-apaar-2026-linkage",
       "title": "Punjab · Board Examination Registration APAAR ID Linkage — Punjab: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (122,715 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Punjab",
@@ -5380,7 +5380,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-chhattisgarh-cbse-apaar-2026-cg-0069",
+      "task_id": "p9-state-chhattisgarh-cbse-apaar-2026-cg-0067",
       "case_key": "in-cg-cbse-apaar-2026-linkage",
       "title": "Chhattisgarh · Board Examination Registration APAAR ID Linkage — Chhattisgarh: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Chhattisgarh",
@@ -5418,7 +5418,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-west-bengal-neet-ug-wb-uttar-dinajpur-0268",
+      "task_id": "p9-state-west-bengal-neet-ug-wb-uttar-dinajpur-0267",
       "case_key": "in-wb-neet-ug-2024-uttar-dinajpur-centre",
       "title": "West Bengal · NEET (UG) Examination — Uttar Dinajpur, West Bengal: Absence of District NEET Centre Despite 1,16,104 WB Candidates (2024)",
       "exam_name": "NEET (UG) Examination — Uttar Dinajpur, West Bengal",
@@ -5456,7 +5456,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-bihar-cuet-ug-2024-br-0847",
+      "task_id": "p9-state-bihar-cuet-ug-2024-br-0840",
       "case_key": "in-br-cuet-ug-2024-hybrid-shift",
       "title": "Bihar · CUET (UG) 2024 Hybrid-Mode Examination — Bihar: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 99,835 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Bihar",
@@ -5494,7 +5494,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-jharkhand-cuet-ug-2024-jh-0114",
+      "task_id": "p9-state-jharkhand-cuet-ug-2024-jh-0112",
       "case_key": "in-jh-cuet-ug-2024-hybrid-shift",
       "title": "Jharkhand · CUET (UG) 2024 Hybrid-Mode Examination — Jharkhand: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 90,568 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Jharkhand",
@@ -5532,7 +5532,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-rajasthan-cuet-ug-2024-rj-0875",
+      "task_id": "p9-state-rajasthan-cuet-ug-2024-rj-0855",
       "case_key": "in-rj-cuet-ug-2024-hybrid-shift",
       "title": "Rajasthan · CUET (UG) 2024 Hybrid-Mode Examination — Rajasthan: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 82,181 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Rajasthan",
@@ -5570,7 +5570,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-madhya-prade-cuet-ug-2024-mp-0141",
+      "task_id": "p9-state-madhya-prade-cuet-ug-2024-mp-0139",
       "case_key": "in-mp-cuet-ug-2024-hybrid-shift",
       "title": "Madhya Pradesh · CUET (UG) 2024 Hybrid-Mode Examination — Madhya Pradesh: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 76,962 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Madhya Pradesh",
@@ -5608,7 +5608,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-uttarakhand-cbse-apaar-2026-uk-0263",
+      "task_id": "p9-state-uttarakhand-cbse-apaar-2026-uk-0261",
       "case_key": "in-uk-cbse-apaar-2026-linkage",
       "title": "Uttarakhand · Board Examination Registration APAAR ID Linkage — Uttarakhand: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Uttarakhand",
@@ -5646,7 +5646,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-gujarat-cbse-apaar-2026-gj-0877",
+      "task_id": "p9-state-gujarat-cbse-apaar-2026-gj-0870",
       "case_key": "in-gj-cbse-apaar-2026-linkage",
       "title": "Gujarat · Board Examination Registration APAAR ID Linkage — Gujarat: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (66,529 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Gujarat",
@@ -5684,7 +5684,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-cbse-apaar-2026-hr-0891",
+      "task_id": "p9-state-haryana-cbse-apaar-2026-hr-0884",
       "case_key": "in-hr-cbse-apaar-2026-linkage",
       "title": "Haryana · Board Examination Registration APAAR ID Linkage — Haryana: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap (66,311 Secondary Pending)",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Haryana",
@@ -5722,7 +5722,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-haryana-cuet-ug-2024-hr-0887",
+      "task_id": "p9-state-haryana-cuet-ug-2024-hr-0880",
       "case_key": "in-hr-cuet-ug-2024-hybrid-shift",
       "title": "Haryana · CUET (UG) 2024 Hybrid-Mode Examination — Haryana: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 59,490 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Haryana",
@@ -5760,7 +5760,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-ut-jammu-and-ka-cuet-ug-2024-jk-0815",
+      "task_id": "p9-ut-jammu-and-ka-cuet-ug-2024-jk-0814",
       "case_key": "in-jk-cuet-ug-2024-hybrid-shift",
       "title": "Jammu and Kashmir · CUET (UG) 2024 Hybrid-Mode Examination — Jammu and Kashmir: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 57,454…",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Jammu and Kashmir",
@@ -5798,7 +5798,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-himachal-pra-cbse-apaar-2026-hp-0107",
+      "task_id": "p9-state-himachal-pra-cbse-apaar-2026-hp-0105",
       "case_key": "in-hp-cbse-apaar-2026-linkage",
       "title": "Himachal Pradesh · Board Examination Registration APAAR ID Linkage — Himachal Pradesh: 2026 Class IX/XI Registration Friction & UDISE-Aadhaar Gap…",
       "exam_name": "Board Examination Registration APAAR ID Linkage — Himachal Pradesh",
@@ -5836,7 +5836,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-kerala-cuet-ug-2024-kl-0132",
+      "task_id": "p9-state-kerala-cuet-ug-2024-kl-0130",
       "case_key": "in-kl-cuet-ug-2024-hybrid-shift",
       "title": "Kerala · CUET (UG) 2024 Hybrid-Mode Examination — Kerala: Mid-Cycle Pen-and-Paper Format Shift (20 April 2024 Notice) — 51,497 Registered",
       "exam_name": "CUET (UG) 2024 Hybrid-Mode Examination — Kerala",
@@ -5874,7 +5874,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ssc-cgle-0396",
+      "task_id": "p9-union-ssc-cgle-0395",
       "case_key": "ssc-cgl-2025-tier1-system-restarts-feedback",
       "title": "Union of India · Combined Graduate Level Examination (CGLE): 2025 Cycle — Tier-I First-Week System Restart Disruptions (~2,000 Reports)",
       "exam_name": "Combined Graduate Level Examination (CGLE)",
@@ -5912,7 +5912,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ssc-delhi-police-constable-executive-0445",
+      "task_id": "p9-union-ssc-delhi-police-constable-executive-0444",
       "case_key": "ssc-dp-constable-exec-2025-cat-oa2671-corrigendum",
       "title": "Union of India · Constable (Executive) Male and Female in Delhi Police Examination: 2025 Cycle — 423 Non-Processed Candidates Provisionally Admitted per…",
       "exam_name": "Constable (Executive) Male and Female in Delhi Police Examination",
@@ -5950,7 +5950,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ssc-delhi-police-driver-0446",
+      "task_id": "p9-union-ssc-delhi-police-driver-0445",
       "case_key": "ssc-dp-driver-2025-cat-oa2671-corrigendum",
       "title": "Union of India · Constable (Driver) Male in Delhi Police Examination: 2025 Cycle — 157 Non-Processed Candidates Provisionally Admitted per CAT Order",
       "exam_name": "Constable (Driver) Male in Delhi Police Examination",
@@ -5988,7 +5988,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-goa-imu-cet-2024-goa-0800",
+      "task_id": "p9-state-goa-imu-cet-2024-goa-0794",
       "case_key": "in-ga-imu-cet-2024-zero-centre",
       "title": "Goa · IMU-CET 2024 — Goa Examination Centre Deficit: Zero CBT Centres in Goa for 121 Registrants; Centre Deferred to CET 2025-26",
       "exam_name": "IMU-CET 2024 — Goa Examination Centre Deficit",
@@ -6026,7 +6026,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-ut-jammu-and-ka-cuet-ug-0296",
+      "task_id": "p9-ut-jammu-and-ka-cuet-ug-0295",
       "case_key": "nta-cuet-ug-2025-srinagar-13may-cancel",
       "title": "Jammu and Kashmir · Common University Entrance Test (UG) [CUET (UG)]: 2025 Cycle — Srinagar Kite Polytechnic 13 May Shift-II (76 Candidates)",
       "exam_name": "Common University Entrance Test (UG) [CUET (UG)]",
@@ -6064,7 +6064,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ssc-delhi-police-awo-tpo-0444",
+      "task_id": "p9-union-ssc-delhi-police-awo-tpo-0443",
       "case_key": "ssc-dp-awo-tpo-2025-cat-oa2671-corrigendum",
       "title": "Union of India · Head Constable (AWO/TPO) in Delhi Police Examination: 2025 Cycle — 60 Non-Processed Candidates Provisionally Admitted per CAT Order",
       "exam_name": "Head Constable (AWO/TPO) in Delhi Police Examination",
@@ -6102,7 +6102,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ssc-delhi-police-hcm-0447",
+      "task_id": "p9-union-ssc-delhi-police-hcm-0446",
       "case_key": "ssc-dp-hcm-2025-cat-oa2671-corrigendum",
       "title": "Union of India · Head Constable (Ministerial) in Delhi Police Examination: 2025 Cycle — 51 Non-Processed Candidates Provisionally Admitted per CAT Order",
       "exam_name": "Head Constable (Ministerial) in Delhi Police Examination",
@@ -6140,7 +6140,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-fmge-2024-0774",
+      "task_id": "p9-union-fmge-2024-0768",
       "case_key": "in-union-fmge-2024-results-withheld",
       "title": "Union of India · Foreign Medical Graduate Examination (FMGE) 2024: Individual Candidate Results Withheld Surge (39 Candidates vs 5 in 2023)",
       "exam_name": "Foreign Medical Graduate Examination (FMGE) 2024",
@@ -6178,7 +6178,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-ssc-si-dp-capf-0448",
+      "task_id": "p9-union-ssc-si-dp-capf-0447",
       "case_key": "ssc-si-cpo-2024-pet-pst-additional-37",
       "title": "Union of India · Sub-Inspector in Delhi Police and CAPFs Examination: 2024 Cycle — Second PET/PST Additional Revision (37 Candidates)",
       "exam_name": "Sub-Inspector in Delhi Police and CAPFs Examination",
@@ -6216,7 +6216,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-upsc-steno-ldce-0450",
+      "task_id": "p9-union-upsc-steno-ldce-0449",
       "case_key": "upsc-steno-ldce-2020-sealed-cover-court",
       "title": "Union of India · UPSC Combined Stenographers (Grade B/Grade I) LDCE, 2020: 2020 Select List — 18 Candidate Results Held in Sealed Cover",
       "exam_name": "UPSC Combined Stenographers (Grade B/Grade I) LDCE, 2020",
@@ -6254,7 +6254,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-upsc-so-ldce-0449",
+      "task_id": "p9-union-upsc-so-ldce-0448",
       "case_key": "upsc-so-ldce-2025-sealed-cover-17-candidates",
       "title": "Union of India · UPSC Combined Section Officers (Grade B) LDCE, 2025: 2025 Select List — 17 Candidate Results Held in Sealed Cover",
       "exam_name": "UPSC Combined Section Officers (Grade B) LDCE, 2025",
@@ -6292,7 +6292,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-union-fmge-2023-0519",
+      "task_id": "p9-union-fmge-2023-0518",
       "case_key": "in-union-fmge-2023-results-withheld",
       "title": "Union of India · Foreign Medical Graduate Examination (FMGE) 2023: Individual Candidate Results Withheld (5 Candidates)",
       "exam_name": "Foreign Medical Graduate Examination (FMGE) 2023",
@@ -6368,7 +6368,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-andhra-prade-aiims-mangalagiri-faculty-0808",
+      "task_id": "p9-state-andhra-prade-aiims-mangalagiri-faculty-0802",
       "case_key": "in-ap-aiims-mangalagiri-fac-2025",
       "title": "Andhra Pradesh · AIIMS Mangalagiri (Andhra Pradesh) — Standing Selection Committee Faculty Recruitment 2025: 2025-26 Faculty Selection Backlog…",
       "exam_name": "AIIMS Mangalagiri (Andhra Pradesh) — Standing Selection Committee Faculty Recruitment 2025",
@@ -6482,7 +6482,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-andhra-prade-neet-pg-2025-matrix-ap-0816",
+      "task_id": "p9-state-andhra-prade-neet-pg-2025-matrix-ap-0809",
       "case_key": "in-ap-neet-pg-2025-seat-matrix",
       "title": "Andhra Pradesh · NEET-PG 2025-26 Counselling Seat-Matrix Update — Andhra Pradesh: MARB LoD Appeals & Mid-Counselling Addition of 482 PG Seats…",
       "exam_name": "NEET-PG 2025-26 Counselling Seat-Matrix Update — Andhra Pradesh",
@@ -6558,7 +6558,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0587",
+      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0585",
       "case_key": "arunachal-prad-appsc-rescheduling-of-ex-2025-3c2827",
       "title": "Arunachal Pradesh · Arunachal Pradesh Public Service Commission 2025 Examination: Mains Written Examination (2025)",
       "exam_name": "Arunachal Pradesh Public Service Commission 2025 Examination",
@@ -6596,9 +6596,9 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0591",
+      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0589",
       "case_key": "arunachal-prad-apssb-arunachal-pradesh-2025-92b39d",
-      "title": "Arunachal Pradesh · Arunachal Pradesh Staff Selection Board Examination (2025): Physical Measurement / Screening Test (2025) (#591)",
+      "title": "Arunachal Pradesh · Arunachal Pradesh Staff Selection Board Examination (2025): Physical Measurement / Screening Test (2025) (#589)",
       "exam_name": "Arunachal Pradesh Staff Selection Board Examination (2025)",
       "exam_slug": "arunachal-pradesh-arunachal-pradesh-staff-selection-board-examination-2025",
       "cycle_or_stage": "Physical Measurement / Screening Test (2025)",
@@ -6634,7 +6634,7 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0648",
+      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0642",
       "case_key": "arunachal-prad-apssb-of-date-of-date-of-2023-c87d45",
       "title": "Arunachal Pradesh · Arunachal Pradesh Staff Selection Board 2023 Examination: Physical Measurement / Screening Test (2023)",
       "exam_name": "Arunachal Pradesh Staff Selection Board 2023 Examination",
@@ -6672,9 +6672,9 @@
     },
     {
       "finding_id": null,
-      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0649",
+      "task_id": "p9-state-arunachal-pr-arunachal-pradesh-arunach-0643",
       "case_key": "arunachal-prad-apssb-of-rajya-sainik-bo-2024-3a62af",
-      "title": "Arunachal Pradesh · Arunachal Pradesh Staff Selection Board 2024 Examination: Recruitment Examination (2024) (#649)",
+      "title": "Arunachal Pradesh · Arunachal Pradesh Staff Selection Board 2024 Examination: Recruitment Examination (2024) (#643)",
       "exam_name": "Arunachal Pradesh Staff Selection Board 2024 Examination",
       "exam_slug": "arunachal-pradesh-arunachal-pradesh-staff-selection-board-2024-examination",
       "cycle_or_stage": "Recruitment Examination (2024)",
@@ -6712,10 +6712,10 @@
   "dry_run_summary": {
     "status": "verified",
     "evaluated_tasks": 1000,
-    "flagged_leads": 745,
-    "cleared_flawless": 255,
+    "flagged_leads": 738,
+    "cleared_flawless": 262,
     "unevaluable": 0,
-    "verified_documents": 859,
+    "verified_documents": 858,
     "as_of_date": "2026-11-28"
   }
 }
