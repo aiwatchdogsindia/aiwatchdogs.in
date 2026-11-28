@@ -1,0 +1,72 @@
+{
+  "slug": "karnataka-public-health-procurement-cag",
+  "title": "Karnataka public health procurement: CAG audit paras",
+  "summary": "Tracks quantified CAG audit paragraphs on Karnataka public health procurement, including drugs, medicines and equipment, and checks for explicit amount linkage and dated departmental disposition.",
+  "posted_by": {
+    "name": "Aditya Anand",
+    "handle": "anand1996aditya",
+    "url": ""
+  },
+  "pillar": "procurement",
+  "status": "active",
+  "jurisdiction": "Karnataka, India",
+  "authority": "Principal Accountant General (Audit-II), Karnataka, and the Comptroller and Auditor General of India",
+  "scope": [
+    "Quantified CAG audit paragraphs on drugs, medicines and medical equipment procurement.",
+    "Explicit sentence, heading or table-cell linkage between each amount and its audit observation.",
+    "Dated departmental disposition evidence and repeat audit cycles.",
+    "Pending action on audit paragraphs that remain unresolved."
+  ],
+  "out_of_scope": [
+    "Private individuals, patients or clinical decisions",
+    "Non-public or leaked records",
+    "Allegations of criminal conduct"
+  ],
+  "statutory_anchors": [
+    "Articles 148–151 of the Constitution of India",
+    "Comptroller and Auditor General's (Duties, Powers and Conditions of Service) Act, 1971"
+  ],
+  "sources": [
+    {
+      "name": "Report No. 8 of 2024 — Public Health Infrastructure and Management of Health Services",
+      "publisher": "Comptroller and Auditor General of India",
+      "url": "https://cag.gov.in/ag2/karnataka/en/audit-report/details/121104"
+    },
+    {
+      "name": "Annual Indent 2025-26 — 890 Drugs",
+      "publisher": "Karnataka State Medical Supplies Corporation Ltd",
+      "url": "https://www.ksmscl.in/files/AI-2025-26.pdf"
+    }
+  ],
+  "methodology_code": "M6",
+  "tasks": [
+    {
+      "id": "karnataka-health-cag-2024-0001",
+      "title": "CAG Karnataka Report No. 8 of 2024 — public health procurement paragraphs",
+      "instructions": "Fetch the pinned CAG PDF, verify its SHA-256, extract audit paragraphs on drugs, medicines and medical equipment only where a sentence, heading or table cell explicitly links the amount, and report dated disposition evidence or mark it unrecorded.",
+      "dataset_key": "cag-karnataka-report-8-2024",
+      "financial_quantity_type": "cag_report_monetary_figures",
+      "type": "run_check",
+      "estimated_tokens": 2000000,
+      "estimate_basis": "Rough guess: 173-page PDF, extraction and one validation pass.",
+      "payload": {
+        "source_id": "src-cag",
+        "dataset_key": "cag-karnataka-report-8-2024",
+        "financial_quantity_type": "cag_report_monetary_figures",
+        "official_publisher": "Comptroller and Auditor General of India (cag.gov.in)",
+        "source_landing_page": "https://cag.gov.in/ag2/karnataka/en/audit-report/details/121104",
+        "mirror_name": "",
+        "retrieval_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2024/Report-No.-8,-2024,-Karnataka-06a2bce5ec213d0.88550062.pdf",
+        "dataset_url": "https://d1jmc0u14z2tmp.cloudfront.net/uploads/download_audit_report/2024/Report-No.-8,-2024,-Karnataka-06a2bce5ec213d0.88550062.pdf",
+        "source_url": "https://cag.gov.in/ag2/karnataka/en/audit-report/details/121104",
+        "expected_sha256": "3a06f8e44512c0acff4912a6b83858c34f732d3df3d2b5e88361fd52ec637185",
+        "methodology_code": "M6",
+        "jurisdiction": "State:Karnataka",
+        "fiscal_year": "FY2023-24",
+        "description": "CAG Karnataka Report No. 8 of 2024 — Performance Audit on Public Health Infrastructure and Management of Health Services.",
+        "artifact_title": "CAG Karnataka Report No. 8 of 2024 — Public Health Infrastructure and Management of Health Services",
+        "is_demo_sample": false
+      }
+    }
+  ]
+}
