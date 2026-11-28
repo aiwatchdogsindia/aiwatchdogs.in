@@ -1041,3 +1041,317 @@ def test_sec10_sec24_cli_providers_https_rich_escape_symlink_and_budget(
     allowed, reason = tracker.check_before_dispatch(gem_cfg, 0.05)
     assert allowed is False
     assert reason == "daily_budget_cap_exceeded"
+
+
+# ---------------------------------------------------------------------------
+# SEC-35 .. SEC-38: Anti-Impersonation, Registration Rate Limits, Sanitization,
+# GitHub Proof-of-Control, and Anti-Sybil Same-IP Quorum Hardening
+# ---------------------------------------------------------------------------
+
+
+def test_sec35_display_name_and_profile_sanitization_blocks_xss_and_markdown_injection(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "sec35.db", seed=True)
+    with TestClient(app) as client:
+        for bad_payload in (
+            {"handle": "probe-xss-1", "display_name": "<img src=x onerror=alert(1)>"},
+            {"handle": "probe-md-1", "display_name": 'evil"\ncanonical_url: "https://evil.example'},
+            {"handle": "probe-ctrl-1", "display_name": "norm\x00hidden"},
+            {"handle": "probe-html-reg", "region": "<script>alert(1)</script>"},
+            {"handle": "probe-html-agent", "coding_agent": "Codex\nInjected"},
+        ):
+            r = client.post("/api/agents/register", json=bad_payload)
+            assert r.status_code == 422, f"Expected 422 for {bad_payload}, got {r.status_code}: {r.text}"
+
+        # Defense-in-depth: even if a legacy dirty row already exists in DB, `.md` escapes HTML & strips newlines.
+        with app.state.db.transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO agents (
+                    id, handle, display_name, provider, model, mode, region,
+                    capabilities_json, api_token_hash, status, joined_at, last_heartbeat_at
+                ) VALUES (
+                    'agt-legacy-dirty', 'legacy-dirty',
+                    '<img src=x onerror=alert(1)>\ncanonical_url: "https://evil.example',
+                    'rule-engine', 'x', 'auto', 'IN', '[]', 'legacyhash', 'active',
+                    '2026-11-28T00:00:00Z', '2026-11-28T00:00:00Z'
+                )
+                """
+            )
+        md = client.get("/a/legacy-dirty.md")
+        assert md.status_code == 200
+        assert "<img" not in md.text
+        assert "&lt;img src=x onerror=alert(1)&gt;" in md.text
+        assert "\ncanonical_url: \"https://evil.example" not in md.text
+        assert "**GitHub verified:** No (self-declared handle)" in md.text
+
+
+def test_sec36_register_rate_limit_blocks_probe_bursts_while_allowing_valid_reconnects(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "sec36.db", seed=True)
+    with TestClient(app) as client:
+        first_token = ""
+        for i in range(5):
+            r = client.post(
+                "/api/agents/register",
+                json={"handle": f"rl-ok-{i}", "provider": "rule-engine", "model": "deterministic-python-v1"},
+            )
+            assert r.status_code == 200, r.text
+            if i == 0:
+                first_token = r.json()["api_token"]
+
+        # 6th new registration from the same IP in 10 min MUST be rate-limited (HTTP 429 + Retry-After).
+        r_blocked = client.post(
+            "/api/agents/register",
+            json={"handle": "rl-overflow-6", "provider": "rule-engine", "model": "deterministic-python-v1"},
+        )
+        assert r_blocked.status_code == 429
+        assert "retry-after" in r_blocked.headers
+
+        # A forged X-Agent-Token on a new handle MUST NOT bypass the new-registration rate limit.
+        r_forged = client.post(
+            "/api/agents/register",
+            headers={"X-Agent-Token": "awd_forged_token_attempt"},
+            json={"handle": "rl-forged-7", "provider": "rule-engine", "model": "deterministic-python-v1"},
+        )
+        assert r_forged.status_code == 429
+
+        # A legitimate existing agent reconnecting with its valid X-Agent-Token MUST still succeed!
+        r_reconn = client.post(
+            "/api/agents/register",
+            headers={"X-Agent-Token": first_token},
+            json={"handle": "rl-ok-0", "provider": "rule-engine", "model": "deterministic-python-v1"},
+        )
+        assert r_reconn.status_code == 200, r_reconn.text
+        assert r_reconn.json()["status"] == "reconnected"
+
+
+def test_sec37_github_gist_verification_flow_and_duplicate_github_uid_rejection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = create_app(db_path=tmp_path / "sec37.db", seed=True)
+    with TestClient(app) as client:
+        alice = _register(client, "alice-gh")
+        alt = _register(client, "alice-alt")
+        fallback = _register(client, "civic-sandbox-1234")
+
+        # Unverified by default across API responses
+        assert alice["github_verified"] is False
+        prof_before = client.get("/api/contributors/alice-gh").json()
+        assert prof_before["agent"]["github_verified"] is False
+        live_before = client.get("/api/swarm/live").json()
+        alice_node = next(n for n in live_before["active_nodes"] if n["handle"] == "alice-gh")
+        assert alice_node["github_verified"] is False
+
+        # Fallback civic-* handle cannot be GitHub-verified
+        r_fb = client.post(
+            "/api/agents/verify-github/challenge",
+            headers={"X-Agent-Token": fallback["api_token"]},
+        )
+        assert r_fb.status_code == 422
+
+        # Issue challenge for @alice-gh
+        ch = client.post(
+            "/api/agents/verify-github/challenge",
+            headers={"X-Agent-Token": alice["api_token"]},
+        )
+        assert ch.status_code == 200, ch.text
+        challenge_token = ch.json()["challenge_token"]
+        assert challenge_token.startswith("aiwatchdogs-verify:alice-gh:")
+
+        fake_gists: dict[str, dict[str, Any]] = {
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaa1111": {
+                "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaa1111",
+                "public": True,
+                "owner": {"login": "impersonator", "id": 99999},
+                "files": {"aiwatchdogs-verify.txt": {"content": challenge_token}},
+            },
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbb2222": {
+                "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbb2222",
+                "public": True,
+                "owner": {"login": "alice-gh", "id": 424242},
+                "files": {"aiwatchdogs-verify.txt": {"content": "wrong token"}},
+            },
+            "cccccccccccccccccccccccccccc3333": {
+                "id": "cccccccccccccccccccccccccccc3333",
+                "public": True,
+                "owner": {"login": "alice-gh", "id": 424242},
+                "files": {"aiwatchdogs-verify.txt": {"content": f"proof:\n{challenge_token}\n"}},
+            },
+        }
+
+        def _mock_gh_get(cls: Any, path: str, *, http_client: Any = None) -> Any:
+            _ = http_client
+            if path.startswith("/gists/"):
+                return fake_gists.get(path.split("/gists/", 1)[1])
+            return []
+
+        monkeypatch.setattr(app.state.desk.__class__, "_github_api_get_json", classmethod(_mock_gh_get))
+
+        # 1. Wrong gist owner -> 403
+        r_wrong_owner = client.post(
+            "/api/agents/verify-github/confirm",
+            headers={"X-Agent-Token": alice["api_token"]},
+            json={"gist_url": "https://gist.github.com/impersonator/aaaaaaaaaaaaaaaaaaaaaaaaaaaa1111"},
+        )
+        assert r_wrong_owner.status_code == 403
+
+        # 2. Missing challenge token -> 400
+        r_wrong_tok = client.post(
+            "/api/agents/verify-github/confirm",
+            headers={"X-Agent-Token": alice["api_token"]},
+            json={"gist_url": "https://gist.github.com/alice-gh/bbbbbbbbbbbbbbbbbbbbbbbbbbbb2222"},
+        )
+        assert r_wrong_tok.status_code == 400
+
+        # 3. Valid public gist owned by @alice-gh -> verified!
+        r_ok = client.post(
+            "/api/agents/verify-github/confirm",
+            headers={"X-Agent-Token": alice["api_token"]},
+            json={"gist_url": "https://gist.github.com/alice-gh/cccccccccccccccccccccccccccc3333"},
+        )
+        assert r_ok.status_code == 200, r_ok.text
+        assert r_ok.json()["github_verified"] is True
+        assert r_ok.json()["github_user_id"] == "424242"
+
+        # Profile JSON, live snapshot, and .md all reflect github_verified=True
+        assert client.get("/api/contributors/alice-gh").json()["agent"]["github_verified"] is True
+        live_after = client.get("/api/swarm/live").json()
+        assert next(n for n in live_after["active_nodes"] if n["handle"] == "alice-gh")["github_verified"] is True
+        assert "**GitHub verified:** Yes" in client.get("/a/alice-gh.md").text
+
+        # 4. Same GitHub numeric user ID (e.g. after username rename) MUST NOT verify a 2nd handle -> 409!
+        ch_alt = client.post(
+            "/api/agents/verify-github/challenge",
+            headers={"X-Agent-Token": alt["api_token"]},
+        )
+        assert ch_alt.status_code == 200
+        alt_tok = ch_alt.json()["challenge_token"]
+        fake_gists["dddddddddddddddddddddddddddd4444"] = {
+            "id": "dddddddddddddddddddddddddddd4444",
+            "public": True,
+            "owner": {"login": "alice-alt", "id": 424242},
+            "files": {"aiwatchdogs-verify.txt": {"content": alt_tok}},
+        }
+        r_dup_uid = client.post(
+            "/api/agents/verify-github/confirm",
+            headers={"X-Agent-Token": alt["api_token"]},
+            json={"gist_url": "https://gist.github.com/alice-alt/dddddddddddddddddddddddddddd4444"},
+        )
+        assert r_dup_uid.status_code == 409
+
+
+def test_sec38_sybil_same_ip_quorum_guard_blocks_unverified_sockpuppets_allows_verified_nat(
+    tmp_path: Path,
+) -> None:
+    app = create_app(db_path=tmp_path / "sec38.db", seed=True)
+    with TestClient(app) as client:
+        ip_a = {"x-vercel-forwarded-for": "203.0.113.42"}
+        ip_b = {"x-vercel-forwarded-for": "198.51.100.77"}
+
+        author = client.post(
+            "/api/agents/register",
+            headers=ip_a,
+            json={
+                "handle": "sybil-author",
+                "provider": "rule-engine",
+                "model": "deterministic-python-v1",
+                "coding_agent": "Claude Code",
+                "coding_agent_model": "claude-opus-4-6",
+            },
+        ).json()
+        sockpuppet = client.post(
+            "/api/agents/register",
+            headers=ip_a,
+            json={
+                "handle": "sybil-sock",
+                "provider": "rule-engine",
+                "model": "deterministic-python-v1",
+                "coding_agent": "Codex",
+                "coding_agent_model": "gpt-6",
+            },
+        ).json()
+        independent = client.post(
+            "/api/agents/register",
+            headers=ip_b,
+            json={
+                "handle": "indep-peer",
+                "provider": "rule-engine",
+                "model": "deterministic-python-v1",
+                "coding_agent": "Gemini",
+                "coding_agent_model": "gemini-3-pro",
+            },
+        ).json()
+
+        # Author submits a finding
+        claim = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": author["api_token"]},
+            json={"handle": author["handle"], "mode": "investigate", "preferred_mission": "assam-ocds-single-bid"},
+        )
+        assert claim.status_code == 200
+        real_sha = claim.json()["task"]["payload"]["expected_sha256"]
+        sub = client.post(
+            "/api/desk/submit",
+            headers={"X-Agent-Token": author["api_token"]},
+            json={
+                "lease_id": claim.json()["lease_id"],
+                "outcome": "finding",
+                "finding": {
+                    "title": "Public Record Anomaly: Sybil Independence Test",
+                    "summary": "Deterministic observation.",
+                    "methodology_code": "M1",
+                    "entity_name": "Assam Health",
+                    "artifact_sha256": real_sha,
+                    "anomaly_metrics": {"numerator": 50, "denominator": 100},
+                    "benign_explanations": ["Lawful OEM exception under GFR."],
+                },
+            },
+        )
+        assert sub.status_code == 200
+        fid = sub.json()["finding_id"]
+        with app.state.db.read() as conn:
+            pv_task_id = str(
+                conn.execute(
+                    "SELECT id FROM tasks WHERE target_finding_id = ? AND task_type = 'peer_verify' LIMIT 1",
+                    (fid,),
+                ).fetchone()["id"]
+            )
+
+        # 1. Unverified sockpuppet from SAME IP (even with distinct handle/harness/model!) is blocked!
+        auto_sock = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": sockpuppet["api_token"]},
+            json={"handle": sockpuppet["handle"], "mode": "verify"},
+        )
+        assert auto_sock.status_code == 204
+        explicit_sock = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": sockpuppet["api_token"]},
+            json={"handle": sockpuppet["handle"], "mode": "verify", "task_id": pv_task_id},
+        )
+        assert explicit_sock.status_code == 409
+        assert "sybil" in explicit_sock.text.lower()
+
+        # 2. Independent verifier from DIFFERENT IP CAN claim cleanly.
+        indep_claim = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": independent["api_token"]},
+            json={"handle": independent["handle"], "mode": "verify"},
+        )
+        assert indep_claim.status_code == 200
+        assert indep_claim.json()["task"]["target_finding_id"] == fid
+
+        # 3. Once both accounts on IP A prove distinct GitHub IDs (shared campus/office NAT), sockpuppet IS allowed!
+        with app.state.db.transaction() as conn:
+            conn.execute(
+                "UPDATE agents SET github_verified = 1, github_user_id = '1001' WHERE handle = 'sybil-author'"
+            )
+            conn.execute(
+                "UPDATE agents SET github_verified = 1, github_user_id = '1002' WHERE handle = 'sybil-sock'"
+            )
+        nat_claim = client.post(
+            "/api/desk/next",
+            headers={"X-Agent-Token": sockpuppet["api_token"]},
+            json={"handle": sockpuppet["handle"], "mode": "verify"},
+        )
+        assert nat_claim.status_code == 200
+        assert nat_claim.json()["task"]["target_finding_id"] == fid

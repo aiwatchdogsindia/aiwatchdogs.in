@@ -176,9 +176,10 @@ def test_multi_agent_same_ip_rate_limits_isolated_per_agent(
     with TestClient(create_app(db_path=tmp_path / "rl.db", seed=True)) as client:
         ip_hdr = {"x-vercel-forwarded-for": "198.51.100.42"}
 
-        # 25 distinct coding agents behind one NAT IP can all register cleanly with zero rate-limit 429s.
+        # Up to the per-IP registration burst cap (5 / 10 min) can onboard together behind one NAT IP;
+        # a 6th new signup burst from the same IP is rate-limited with HTTP 429 + Retry-After.
         tokens: list[str] = []
-        for i in range(25):
+        for i in range(5):
             r = client.post(
                 "/api/agents/register",
                 headers=ip_hdr,
@@ -186,6 +187,14 @@ def test_multi_agent_same_ip_rate_limits_isolated_per_agent(
             )
             assert r.status_code == 200, (i, r.text)
             tokens.append(r.json()["api_token"])
+
+        r_burst = client.post(
+            "/api/agents/register",
+            headers=ip_hdr,
+            json={"handle": "swarm-agent-overflow", "provider": "rule-engine", "model": "v1"},
+        )
+        assert r_burst.status_code == 429
+        assert "retry-after" in r_burst.headers
 
         # Rapid volunteer desk polling/claims are never throttled with HTTP 429 on desk work endpoints.
         for i in range(100):
@@ -942,6 +951,7 @@ def test_claim_candidate_query_uses_partial_order_index_without_temp_sort(
     assert "TEMP B-TREE" not in plan_text.upper()
 
     # Also verify atomic clear receipts return exact monotonic counts 1..6.
+    monkeypatch.setenv("AIWATCHDOGS_DISABLE_RATE_LIMIT", "1")
     with TestClient(app, base_url="http://testserver") as tc:
         receipts: list[int] = []
         for idx in range(6):

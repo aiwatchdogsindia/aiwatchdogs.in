@@ -302,6 +302,7 @@ export function LiveAgentStrip({
                 <GitHubAvatar
                   handle={cleanHandle}
                   size={22}
+                  verified={Boolean(join.github_verified)}
                   statusDot={isJoinLive ? 'working' : null}
                 />
                 <span className="lsv-join-handle">@{cleanHandle}</span>

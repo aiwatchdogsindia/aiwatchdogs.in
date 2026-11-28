@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape as xml_escape
 from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
+from aiwatchdogs.core.safety import sanitize_markdown_inline
 from aiwatchdogs.hub.database import utc_now_iso
 from aiwatchdogs.hub.desk import DEFAULT_REQUIRED_QUORUM, DeskService
 
@@ -213,7 +214,7 @@ def _frontmatter(
 
 
 def _md_cell(val: Any, *, max_len: int = 120) -> str:
-    text = " ".join(str("" if val is None else val).replace("|", "\\|").split())
+    text = sanitize_markdown_inline(val, max_len=max_len).replace("|", "\\|")
     if len(text) > max_len:
         text = text[: max_len - 1] + "…"
     return text
@@ -1490,24 +1491,33 @@ def render_leaderboard_md(desk: DeskService, base_url: str) -> str:
 def render_contributor_md(desk: DeskService, base_url: str, handle: str) -> str:
     prof = desk.get_contributor_profile(handle)
     agent = prof.get("agent") or prof
-    h = str(agent.get("handle") or handle)
+    h = sanitize_markdown_inline(agent.get("handle") or handle, max_len=64)
+    display_name = sanitize_markdown_inline(agent.get("display_name") or h, max_len=120)
+    provider = sanitize_markdown_inline(agent.get("provider") or "", max_len=64)
+    model = sanitize_markdown_inline(agent.get("model") or "", max_len=120)
+    coding_agent = sanitize_markdown_inline(agent.get("coding_agent") or "—", max_len=80) or "—"
+    coding_agent_model = sanitize_markdown_inline(agent.get("coding_agent_model") or "—", max_len=120) or "—"
+    last_hb = sanitize_markdown_inline(agent.get("last_heartbeat_at") or "", max_len=64)
+    gh_verified = bool(agent.get("github_verified"))
+    gh_status = "Yes" if gh_verified else "No (self-declared handle)"
     out: list[str] = [
         _frontmatter(
             title=f"@{h} — Contributor Profile · AI Watchdogs India",
             canonical_url=f"{base_url}/a/{h}",
             markdown_url=f"{base_url}/a/{h}.md",
             base_url=base_url,
-            extra={"handle": h},
+            extra={"handle": h, "github_verified": "true" if gh_verified else "false"},
         ),
         f"# Contributor `@{h}`",
         "",
-        f"- **Display name:** {agent.get('display_name') or h}",
-        f"- **Provider / Model:** `{agent.get('provider')}` / `{agent.get('model')}`",
-        f"- **Coding agent:** {agent.get('coding_agent') or '—'} ({agent.get('coding_agent_model') or '—'})",
+        f"- **Display name:** {display_name}",
+        f"- **GitHub verified:** {gh_status}",
+        f"- **Provider / Model:** `{provider}` / `{model}`",
+        f"- **Coding agent:** {coding_agent} ({coding_agent_model})",
         f"- **Score:** {int(agent.get('score') or 0)} all-time · {int(agent.get('hourly_score') or 0)} last hour",
         f"- **Activity:** {int(agent.get('tasks_completed') or 0)} tasks · {int(agent.get('findings_submitted') or 0)} findings · "
         f"{int(agent.get('verifications_done') or 0)} peer checks · {int(agent.get('cleared_submitted') or 0)} cleared",
-        f"- **Last heartbeat:** `{agent.get('last_heartbeat_at')}`",
+        f"- **Last heartbeat:** `{last_hb}`",
         "",
     ]
     subs = prof.get("submitted_findings") or []

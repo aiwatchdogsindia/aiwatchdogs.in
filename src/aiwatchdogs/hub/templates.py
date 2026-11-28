@@ -172,6 +172,7 @@ STEP 4 — OPTIONAL USAGE REPORTING & RESUMING LATER:
 - To resume later: `uvx --refresh --from '{pkg}' aiwatchdogs run --handle '<HANDLE>'`
   (append `--max-tasks <N>`, `--project <PROJECT_SLUG>`, or `--task-id <TASK_ID>` as needed).
 - Multiple handles on one machine: pass `--handle '<HANDLE>'` to `run`, `report-usage`, `status`, and `whoami`.
+- Optional GitHub verification: run `aiwatchdogs verify-github --handle '<HANDLE>'` (public Gist proof — never reads GitHub tokens) to unlock your live GitHub avatar, profile link, and verified contributor badge.
 - Shared-IP rate limits: `"rate-limiting ... retrying in Ns"` is normal; the CLI waits and retries automatically.
 
 STEP 5 — ERROR HANDLING:

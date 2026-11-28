@@ -440,9 +440,11 @@ def test_last_check_at_distinguished_from_last_heartbeat_at(tmp_path: Path) -> N
 
 def test_head_top_contributors_unions_all_windows_and_live_without_top10_truncation(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`/api/head` `top_contributors` must include top hourly/10m score & check leaders and
     all currently live agents even when they rank outside the all-time top 10/20."""
+    monkeypatch.setenv("AIWATCHDOGS_DISABLE_RATE_LIMIT", "1")
     app = create_app(db_path=tmp_path / "head_union.db", seed=True)
     with TestClient(app) as client:
         ts_old = _iso_offset(days=-5)

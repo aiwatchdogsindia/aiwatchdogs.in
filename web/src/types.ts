@@ -75,6 +75,7 @@ export interface JustJoinedAgent {
   display_name?: string;
   provider: string;
   model: string;
+  github_verified?: boolean;
   joined_at: string;
 }
 
@@ -143,6 +144,8 @@ export interface AgentRecord {
   hourly_points_36h?: number[];
   /** Length 36, index 0 = 35h ago, index 35 = current hour */
   hourly_checks_36h?: number[];
+  github_verified?: boolean;
+  github_verified_at?: string | null;
   current_task?: string | null;
 }
 
@@ -1335,6 +1338,8 @@ export interface LiveSwarmNode {
   tasks_completed: number;
   verifications_done: number;
   findings_submitted: number;
+  github_verified?: boolean;
+  github_verified_at?: string | null;
   last_seen_at?: string;
   created_at?: string;
 }
@@ -1344,6 +1349,7 @@ export interface LiveRecentJoin {
   display_name?: string;
   coding_agent?: string | null;
   coding_agent_model?: string | null;
+  github_verified?: boolean;
   created_at: string;
   last_seen_at?: string;
   is_working?: boolean;
