@@ -432,3 +432,12 @@ def test_news_uses_saved_model_cards(tmp_path: Path) -> None:
         r = news.render(ed, "en", written=written)
         top = next(x for x in r["sections"] if x["id"] == "top")
         assert top["stories"][0]["source"] == "model"
+
+
+def test_custody_records_without_a_person_do_not_claim_one() -> None:
+    base = SAMPLES[21]
+    rec = {**base, "anomaly_metrics": {**base["anomaly_metrics"], "overrun_mechanism": "institutional_compliance_gap", "overrun_days": None}}
+    for code in CODES:
+        card = explain_finding(rec, code)
+        assert card and card["head"] != explain_finding({**rec, "anomaly_metrics": {**rec["anomaly_metrics"], "overrun_mechanism": "bail_or_release_order_contempt"}}, code)["head"]
+    assert "stayed in jail" not in explain_finding(rec, "en")["head"]

@@ -1,16 +1,12 @@
-import { ChevronLeft, ChevronRight, Filter, RotateCcw, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronLeft, ChevronRight, RotateCcw, Search } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
-import { FindingCard } from '../components/FindingCard';
-import {
-  ACTION_TAGS,
-  FINDING_FILTER_OPTIONS,
-  FINDING_TAGS,
-  getWorkTypeTag,
-} from '../lib/tags';
+import { FindingNewsCard } from '../components/FindingNewsCard';
+import { FINDING_FILTER_OPTIONS, getWorkTypeTag } from '../lib/tags';
 import { useLang } from '../lib/lang';
 import { Link } from '../router';
 import type { FindingItem } from '../types';
+import '../styles/feed.css';
 import { METHODOLOGY_DESCRIPTIONS, pillarLabel } from '../utils';
 
 interface FindingsPageProps {
@@ -20,16 +16,48 @@ interface FindingsPageProps {
 
 const PAGE_SIZE = 24;
 
-const KEY_TAGS = [
-  FINDING_TAGS.verified,
-  FINDING_TAGS.in_review,
-  FINDING_TAGS.split_vote,
-  FINDING_TAGS.cleared,
-  FINDING_TAGS.disputed,
-  FINDING_TAGS.not_enough_data,
-  ACTION_TAGS.rti_draft,
-  ACTION_TAGS.rti_filed,
-];
+const TRENDING_MAX = 14;
+
+const MAX_RELATED = 4;
+
+function groupStories(items: FindingItem[]): { lead: FindingItem; related: FindingItem[] }[] {
+  const out: { lead: FindingItem; related: FindingItem[] }[] = [];
+  const byKey = new Map<string, { lead: FindingItem; related: FindingItem[] }>();
+  for (const f of items) {
+    const head = String(f.plain?.head || '').trim().toLowerCase();
+    const entity = String(f.entity_name || '').trim().toLowerCase();
+    const key = head ? `h|${head}` : entity ? `${f.methodology_code}|${entity}` : '';
+    const group = key ? byKey.get(key) : undefined;
+    if (group && group.related.length < MAX_RELATED) {
+      group.related.push(f);
+      continue;
+    }
+    const fresh = { lead: f, related: [] as FindingItem[] };
+    out.push(fresh);
+    if (key && !group) byKey.set(key, fresh);
+  }
+  return out;
+}
+
+function trendingTerms(items: FindingItem[]): { term: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const f of items) {
+    const seen = new Set<string>();
+    for (const raw of [f.entity_name, f.jurisdiction]) {
+      const term = String(raw || '')
+        .replace(/^(State|UT):/i, '')
+        .replace(/\s*[—–(].*$/, '')
+        .trim();
+      if (!term || term.length > 40 || seen.has(term.toLowerCase())) continue;
+      seen.add(term.toLowerCase());
+      counts.set(term, (counts.get(term) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([term, count]) => ({ term, count }))
+    .sort((a, b) => b.count - a.count || a.term.localeCompare(b.term))
+    .slice(0, TRENDING_MAX);
+}
 
 const PILLAR_FILTERS = ['', 'procurement', 'budget', 'disclosure', 'audit', 'scheme', 'parliament', 'justice'];
 
@@ -92,92 +120,68 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
     setPage(0);
   };
 
+  const trending = useMemo(() => trendingTerms(findings), [findings]);
+  const stories = useMemo(() => groupStories(findings), [findings]);
+  const topCount = trending[0]?.count || 1;
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const rangeEnd = Math.min(total, page * PAGE_SIZE + findings.length);
 
   return (
     <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
-      <div className="section-header">
-        <div>
-          <div className="section-kicker">Public Evidence Wall, Deterministic &amp; Neutral</div>
-          <h1 className="section-title">
-            Findings &amp; Evidence Ledger
-          </h1>
-          <p className="section-subtitle">
-            Every card explains one finding in plain words, in your language. Open a card to see the
-            numbers, the original government record, how it was checked, and a ready RTI request.{' '}
-            <Link to="/news" className="inline-link">
-              {t('today')}
-            </Link>
-          </p>
-        </div>
-      </div>
-
-      {/* Plain-English Tag Key */}
-      <div className="card-sunk card-pad-sm findings-tag-key">
-        <span className="findings-tag-key-label">Tag key:</span>
-        {KEY_TAGS.map((tag) => (
-          <span key={tag.id} className={tag.badgeClass} title={tag.description}>
-            {tag.label}
-          </span>
-        ))}
-        <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5, marginLeft: 'auto' }}>
-          Full tag guide
-        </Link>
-      </div>
-
-      {/* Filter Bar */}
-      <div className="filter-bar">
-        <div className="filter-search-wrap">
-          <Search
-            size={14}
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              left: 10,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--ink-3)',
-            }}
-          />
+      <header className="news-feed-head">
+        <h1 className="news-feed-title">Findings</h1>
+        <p className="news-feed-sub">
+          What public records show, checked three times by independent AI agents, in plain words.{' '}
+          <Link to="/news" className="inline-link">
+            {t('today')}
+          </Link>
+        </p>
+        <div className="news-feed-search">
+          <Search size={15} aria-hidden="true" className="news-feed-search-icon" />
           <input
-            type="text"
+            type="search"
             className="input-field"
-            style={{ width: '100%', paddingLeft: 32 }}
-            placeholder="Search ministry, state, exam, court, prison, scheme, rule, title, or entity…"
+            placeholder="Search ministry, state, exam, court, scheme"
             aria-label="Search public audit findings"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+      </header>
 
-        <select
-          className="select-field"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          aria-label="Filter by status"
-        >
+      {trending.length > 0 && (
+        <nav className="news-trending" aria-label="Trending in these findings">
+          <span className="news-trending-label">Trending</span>
+          {trending.map(({ term, count }) => (
+            <button
+              key={term}
+              type="button"
+              className={`news-trending-term news-trending-term--${count / topCount > 0.66 ? 'l' : count / topCount > 0.33 ? 'm' : 's'}`}
+              onClick={() => setSearch(term)}
+            >
+              {term}
+            </button>
+          ))}
+        </nav>
+      )}
+
+      <div className="news-feed-filters">
+        <select className="select-field" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
           {FINDING_FILTER_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>
           ))}
         </select>
-
-        <select
-          className="select-field"
-          value={pillar}
-          onChange={(e) => setPillar(e.target.value)}
-          aria-label="Filter by audit pillar"
-        >
+        <select className="select-field" value={pillar} onChange={(e) => setPillar(e.target.value)} aria-label="Filter by audit pillar">
           {PILLAR_FILTERS.map((p) => (
             <option key={p} value={p}>
               {p ? pillarLabel(p) : 'All areas'}
             </option>
           ))}
         </select>
-
         <select
           className="select-field"
           value={methodology}
@@ -191,48 +195,19 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
             </option>
           ))}
         </select>
-
         {(status || pillar || methodology || search) && (
           <button type="button" className="btn btn-ghost btn-sm" onClick={resetFilters}>
             <RotateCcw size={13} />
             <span>Reset</span>
           </button>
         )}
-      </div>
-
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 14,
-          fontSize: 13,
-          color: 'var(--ink-3)',
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={13} aria-hidden="true" />
-          <span className="font-mono tabular">
-            {loading ? (
-              'Querying public evidence ledger…'
-            ) : total > 0 ? (
-              <>
-                Showing <strong>{rangeStart}–{rangeEnd}</strong> of <strong>{total.toLocaleString('en-IN')}</strong>{' '}
-                public audit record{total === 1 ? '' : 's'}
-              </>
-            ) : (
-              'Showing 0 public audit records'
-            )}
-          </span>
+        <span className="news-feed-count font-mono tabular">
+          {loading
+            ? 'Loading…'
+            : total > 0
+              ? `${rangeStart}–${rangeEnd} of ${total.toLocaleString('en-IN')}`
+              : '0 records'}
         </span>
-
-        {!loading && total > PAGE_SIZE && (
-          <span className="font-mono tabular" style={{ fontSize: 12.5 }}>
-            Page {page + 1} of {totalPages}
-          </span>
-        )}
       </div>
 
       {loading && <div className="state-banner">Querying public evidence ledger…</div>}
@@ -248,9 +223,9 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
       {!loading && !error && findings.length > 0 && (
         <>
-          <div className="grid-2">
-            {findings.map((f) => (
-              <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
+          <div className="news-feed">
+            {stories.map(({ lead, related }) => (
+              <FindingNewsCard key={lead.id} finding={lead} related={related} onSelect={onSelectFinding} />
             ))}
           </div>
 
@@ -292,6 +267,13 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
           )}
         </>
       )}
+
+      <p className="news-feed-foot">
+        Every story passed three independent checks unless it is marked otherwise.{' '}
+        <Link to="/how-it-works" className="inline-link">
+          What the labels mean
+        </Link>
+      </p>
     </div>
   );
 }

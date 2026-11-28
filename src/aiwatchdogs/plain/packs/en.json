@@ -159,6 +159,8 @@
       "head_nodays": "{entity}: a person stayed in jail after release was ordered",
       "what": "Court and prison records show that a court ordered this person's release, but they stayed in custody for {days} more days.",
       "what_nodays": "Court and prison records show that a court ordered this person's release, but they stayed in custody after that.",
+      "head_record": "{entity}: an official record flags a problem with releasing people from custody",
+      "what_record": "A court, legal-aid or prison record points to a gap in how release orders are carried out. It does not say how many people were held, or for how long.",
       "why": "When a court says someone should go free, every extra day in jail takes away their freedom without a legal reason.",
       "ask": "Why was the release order not followed on time, and what has changed since?"
     },

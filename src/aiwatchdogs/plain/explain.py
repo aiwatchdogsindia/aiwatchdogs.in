@@ -241,12 +241,17 @@ def _exam(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
     return "exam", "head", "what", slots, extra
 
 
+_CUSTODY_PERSON = {"post_acquittal_contempt_overrun", "bail_or_release_order_contempt"}
+
+
 def _custody(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
     entity = _entity(f, m.get("state_ut"), m.get("jurisdiction"))
     days = _num(m.get("overrun_days"))
     if days and days > 0:
         return "custody", "head", "what", {"entity": entity, "days": fmt.number(days, lang)}, []
-    return "custody", "head_nodays", "what_nodays", {"entity": entity}, []
+    if str(m.get("overrun_mechanism") or "") in _CUSTODY_PERSON or not m.get("overrun_mechanism"):
+        return "custody", "head_nodays", "what_nodays", {"entity": entity}, []
+    return "custody", "head_record", "what_record", {"entity": entity}, []
 
 
 def _website(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
