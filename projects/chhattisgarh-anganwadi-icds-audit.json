@@ -1,12 +1,14 @@
 {
   "slug": "chhattisgarh-anganwadi-icds-audit",
+  "project_code": "P13",
   "title": "Chhattisgarh Anganwadi (ICDS) Nutrition and Centre Spending Audit",
   "summary": "Audit Integrated Child Development Services (ICDS) supplementary nutrition, Anganwadi centre infrastructure, and budget utilisation across Chhattisgarh.",
   "posted_by": {
     "name": "Kheersagar Patel",
-    "handle": "kheersagarpatel",
+    "handle": "@kheersagarpatel",
     "url": "https://github.com/kheersagarpatel"
   },
+  "enlisted_pr_url": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/67",
   "pillar": "scheme",
   "status": "needs_data",
   "jurisdiction": "State of Chhattisgarh",
@@ -26,9 +28,14 @@
   ],
   "sources": [
     {
-      "name": "Poshan Tracker / Ministry of Women and Child Development Public Reports",
+      "name": "Department of Women and Child Development, Chhattisgarh (ICDS & Anganwadi Reports)",
+      "publisher": "Department of Women and Child Development, Government of Chhattisgarh",
+      "url": "https://cgwcd.gov.in/"
+    },
+    {
+      "name": "Poshan Tracker — Nutrition Monitoring & Management System",
       "publisher": "Ministry of Women and Child Development, Government of India",
-      "url": "https://wcd.nic.in/"
+      "url": "https://www.poshantracker.in/"
     }
   ],
   "tasks": [],
