@@ -133,6 +133,8 @@ def _unspent(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
         if not actual_text:
             return "unspent", "head", "what_zero", slots, []
         return "unspent", "head", "what", {**slots, "actual": actual_text}, []
+    if m.get("revised_printed") is False:
+        return "unspent", "head_norevised", "what_norevised", {"entity": entity, "year": year, "budget": fmt.money(be * 1e7, lang)}, []
     rev, cut, pct = _num(m.get("revised_estimate")), _num(m.get("revised_cut")), _num(m.get("revised_cut_pct"))
     if rev is None or cut is None or pct is None:
         return None
@@ -196,12 +198,13 @@ def _promise_pending(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame |
     return "promise_pending", "head", "what", slots, []
 
 
-def _single_bid(m: dict[str, Any]) -> bool:
-    for key in ("effective_bids", "technically_qualified_bids", "qualified_bid_count", "bids_received", "number_of_bids"):
-        n = _num(m.get(key))
-        if n is not None:
-            return n == 1
-    return False
+def _bids(m: dict[str, Any]) -> tuple[float | None, float | None]:
+    received = next((n for n in (_num(m.get(k)) for k in ("bids_received", "number_of_bids")) if n is not None), None)
+    qualified = next(
+        (n for n in (_num(m.get(k)) for k in ("effective_bids", "technically_qualified_bids", "qualified_bid_count")) if n is not None),
+        None,
+    )
+    return received, qualified
 
 
 def _one_bid(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
@@ -209,22 +212,29 @@ def _one_bid(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
     entity = _entity(f, m.get("authority"))
     title = _clip(m.get("tender_title") or f.get("title"), 110)
     slots: dict[str, Any] = {"entity": entity, "title": title}
-    single = _single_bid(m)
+    received, qualified = _bids(m)
+    one_received = received == 1
+    one_qualified = not one_received and qualified == 1
+    what = "what"
+    if one_qualified and received is not None and received > 1:
+        slots["received"] = fmt.number(received, lang)
+        what = "what_qualified"
     wins = _num(m.get("winner_total_wins"))
     if sig in ("single_bidder_repeat_winner", "repeat_winner_concentration") and wins and wins > 1:
         slots["wins"] = fmt.number(wins, lang)
-        return "one_bid", "head_repeat", "what" if single else "what_repeat", slots, []
+        return "one_bid", "head_repeat", what if (one_received or one_qualified) else "what_repeat", slots, []
     days = _num(m.get("bid_window_days"))
     if sig == "short_window_or_process_gap" and days is not None and days >= 0:
         slots["days"] = fmt.number(days, lang)
         return "one_bid", "head_window", "what_window", slots, []
-    if not single:
+    if not (one_received or one_qualified):
         return None
+    prefix = "head_qualified" if one_qualified else "head"
     amount = _num(f.get("monetary_exposure_inr")) or _num(m.get("award_value_inr"))
     if amount and amount > 0:
         slots["amount"] = fmt.money(amount, lang)
-        return "one_bid", "head", "what", slots, []
-    return "one_bid", "head_noamount", "what", slots, []
+        return "one_bid", prefix, what, slots, []
+    return "one_bid", f"{prefix}_noamount", what, slots, []
 
 
 def _promise_changed(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
@@ -320,14 +330,23 @@ def _render(frame: Frame, lang: str) -> dict[str, str]:
     what = fill(tpl[what_key], slots)
     for key, extra_slots in extra:
         what = f"{what} {fill(tpl[key], extra_slots)}"
-    variant = head_key[len("head"):] if head_key.startswith("head_") else ""
     return {
         "head": fill(tpl[head_key], slots),
         "what": what,
-        "why": tpl.get(f"why{variant}") or tpl["why"],
-        "ask": tpl.get(f"ask{variant}") or tpl["ask"],
+        "why": _variant(tpl, "why", head_key),
+        "ask": _variant(tpl, "ask", head_key),
         "project": tpl["name"],
     }
+
+
+def _variant(tpl: dict[str, Any], base: str, head_key: str) -> str:
+    parts = head_key.split("_")[1:]
+    while parts:
+        val = tpl.get(base + "_" + "_".join(parts))
+        if val:
+            return str(val)
+        parts = parts[:-1]
+    return str(tpl[base])
 
 
 def explain_finding(f: dict[str, Any], lang: str = "en", written: dict[str, Any] | None = None) -> dict[str, Any] | None:

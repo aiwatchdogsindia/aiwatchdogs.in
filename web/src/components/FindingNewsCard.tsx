@@ -1,4 +1,4 @@
-import { getFindingTag } from '../lib/tags';
+import { FINDING_TAGS, getFindingTag } from '../lib/tags';
 import type { FindingItem } from '../types';
 import { formatRelativeTime, isUnverifiedStatus } from '../utils';
 
@@ -12,11 +12,21 @@ function Meta({ finding, source }: { finding: FindingItem; source?: string }) {
   const tag = getFindingTag(finding.status);
   const confirmed = finding.status === 'verified' || finding.status === 'rti_filed';
   const when = finding.verified_at || finding.created_at;
+  const corrected =
+    tag.id !== 'corrected' &&
+    (Boolean(finding.has_corrections) ||
+      Boolean(finding.editorial_status && finding.editorial_status !== 'none') ||
+      Boolean(finding.corrections && finding.corrections.length > 0));
   return (
     <p className="news-card-meta">
       {!confirmed && (
         <span className="news-card-status" title={tag.description}>
           {tag.label}
+        </span>
+      )}
+      {corrected && (
+        <span className="news-card-status news-card-status--corrected" title={FINDING_TAGS.corrected.description}>
+          {FINDING_TAGS.corrected.label}
         </span>
       )}
       {when && <span>{formatRelativeTime(when)}</span>}

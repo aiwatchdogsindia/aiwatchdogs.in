@@ -174,3 +174,58 @@ def test_news_page_negotiates_markdown(tmp_path: Path) -> None:
         for route in ("/news", f"/news/{news.today_ist().isoformat()}"):
             r = client.get(route, headers={"Accept": "text/markdown"})
             assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown"), route
+
+
+def test_past_editions_count_tasks_as_of_their_day(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        db = app.state.db
+        today = news.today_ist()
+        day = today - timedelta(days=2)
+        cutoff = news.window(day)[1]
+        with db.transaction() as conn:
+            m = conn.execute("SELECT id, slug FROM missions WHERE status != 'archived' ORDER BY id LIMIT 1").fetchone()
+            conn.execute("DELETE FROM tasks WHERE mission_slug = ?", (m["slug"],))
+            for i, (created, done_at) in enumerate([("2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"), ("2026-01-01T00:00:00Z", news.window(today)[0]), ("2026-01-01T00:00:00Z", None)]):
+                conn.execute(
+                    "INSERT INTO tasks (id, mission_id, mission_slug, methodology_code, task_type, title, instructions, payload_json, status, created_at, updated_at, completed_at) "
+                    "VALUES (?, ?, ?, 'UB1', 'audit', 't', 'i', '{}', ?, ?, ?, ?)",
+                    (f"tsk-asof-{i}", m["id"], m["slug"], "completed" if done_at else "queued", created, created, done_at),
+                )
+            conn.execute("UPDATE missions SET total_tasks = 3, completed_tasks = 2 WHERE id = ?", (m["id"],))
+        assert cutoff
+        ed = news.get_edition(db, day)
+        p = next(x for x in ed["projects"] if x["slug"] == m["slug"])
+        assert (p["total_tasks"], p["completed_tasks"]) == (3, 1)
+
+
+def test_first_reader_gets_the_saved_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        db = app.state.db
+        day = date(2026, 11, 5)
+        real_load = news.load_texts
+
+        def racing(db_, keys):
+            with db.read() as conn:
+                built = news.build_edition(conn, day)
+            winner = {**built, "fingerprint": "winner0000000000"}
+            with db.transaction() as w:
+                w.execute(
+                    "INSERT INTO plain_texts (key, source_hash, provider, model, payload_json, complete, created_at, updated_at) "
+                    "VALUES (?, ?, 'edition', '', ?, 1, ?, ?) ON CONFLICT(key) DO NOTHING",
+                    (f"{news.CACHE_PREFIX}{day.isoformat()}", "winner", json.dumps(winner), built["generated_at"], built["generated_at"]),
+                )
+            return real_load(db_, keys)
+
+        monkeypatch.setattr(news, "load_texts", racing)
+        assert news.get_edition(db, day)["fingerprint"] == "winner0000000000"
+
+
+def test_lede_hash_follows_the_facts() -> None:
+    story = {"id": "f-1", "status": "verified", "monetary_exposure_inr": 5e9, "title": "t", "summary": "s", "anomaly_metrics": {"a": 1}}
+    ed = {"date": "2026-11-01", "top": [story], "recent": [], "cleared": [], "corrections": [], "stats": {}, "projects": []}
+    base = news.lede_hash(ed)
+    assert news.lede_hash({**ed, "top": [{**story, "monetary_exposure_inr": 6e9}]}) != base
+    assert news.lede_hash({**ed, "top": [{**story, "anomaly_metrics": {"a": 2}}]}) != base
+    assert news.lede_hash({**ed, "projects": [{"slug": "p", "verified": 1, "total_tasks": 5, "completed_tasks": 2}]}) != base

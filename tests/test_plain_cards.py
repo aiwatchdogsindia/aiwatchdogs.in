@@ -275,3 +275,29 @@ def test_findings_api_has_plain_cards(tmp_path: Path) -> None:
 
         assert client.get("/api/plain/languages").json()["languages"][0]["code"] == "en"
         assert client.get("/api/plain/labels", params={"lang": "ur"}).json()["dir"] == "rtl"
+
+
+def test_one_qualified_bid_is_not_called_one_bid() -> None:
+    f = SAMPLES[16]
+    for code in CODES:
+        c = explain_finding(f, code)
+        assert c["head"] != explain_finding(SAMPLES[12], code)["head"].replace("Municipal Corporation of Pune", "Odisha Health Department")
+        assert fmt.number(3, code) in c["what"]
+    en = explain_finding(f, "en")
+    assert "only one qualified bid" in en["head"] and "3 bids" in en["what"] and "rejected" in en["ask"]
+    assert "only one bid" in explain_finding(SAMPLES[12], "en")["head"]
+
+
+def test_missing_revised_estimate_is_not_a_cut() -> None:
+    base = SAMPLES[4]
+    m = {**base["anomaly_metrics"], "revised_printed": False, "revised_estimate": 0.0, "revised_cut": base["anomaly_metrics"]["budget_estimate"], "revised_cut_pct": 100.0}
+    for code in CODES:
+        c = explain_finding({**base, "anomaly_metrics": m}, code)
+        assert fmt.percent(100, code) not in c["head"] + c["what"]
+    assert "no revised estimate" in explain_finding({**base, "anomaly_metrics": m}, "en")["head"]
+
+
+def test_declared_units_win_over_size() -> None:
+    allowed = checks.allowed_numbers({"unit": "crore", "budget_estimate": 120000.0})
+    assert checks.bad_numbers("₹1,20,000 crore", "en", allowed) == []
+    assert checks.bad_numbers("₹1,20,000 rupees and ₹1.2 lakh", "en", allowed)
