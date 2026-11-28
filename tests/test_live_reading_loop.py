@@ -920,3 +920,174 @@ def test_scan_png_export_and_reading_first_join_txt(
         lowered = txt.lower()
         for forbidden in ("demo", "sample", "ollama", "join.sh", "local checkout"):
             assert forbidden not in lowered
+
+
+def test_summary_plus_zero_row_bypass_and_mixed_scan_and_missing_column_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression tests for Greptile P1 findings:
+    1. Page-1 'Total ...' + all-zero row (and 'Revenue ...' + 'Capital ...' summary rows, or truncated summary quotes) MUST be rejected.
+    2. Mixed PDF with a sparse/image-only page (like r1-ub-2022-23-d046 page 5) routes to 2nd model instead of failing quote lookup.
+    3. 2nd-model corroboration MUST reject missing/extra columns even when shared columns match.
+    """
+    # 1. Summary-line + all-zero-row bypass against the REAL pinned r1-ub-2015-16-d057 text bundle!
+    d57_bundle = json.loads((REPO_PROJECTS / "union-budget-unspent-funds/reading_pages/r1-ub-2015-16-d057.json").read_text(encoding="utf-8"))
+    d57_pages = {int(k): v for k, v in d57_bundle["pages"].items()}
+    d57_sha = d57_bundle["document_sha256"]
+    zero_cols = {k: 0.0 for k in SAMPLE_GT}
+
+    # Bypass 1A: Page-1 'Total 1231.66 ...' summary + all-zero real row
+    bypass_total_zero = {
+        "document_sha256": d57_sha,
+        "page": 1,
+        "pages": [1, 2],
+        "column_headers": ["Actual 2013-2014", "Budget 2015-2016", "Plan", "Non-Plan", "Total"],
+        "printed_grand_total": dict(SAMPLE_GT),
+        "rows": [
+            {
+                "page": 1,
+                "label": "Summary Transfer Row",
+                **SAMPLE_GT,
+                "verbatim_quote": "Total 1231.66 585.00 1816.66 1139.00 587.50 1726.50 1113.00 587.50 1700.50 1139.00 629.00 1768.00",
+            },
+            {
+                "page": 1,
+                "label": "Zero Padding Row",
+                **zero_cols,
+                "verbatim_quote": "1.01.01 Overall Gap 3602",
+            },
+        ],
+    }
+    res_1a = verify_budget_extraction(
+        bypass_total_zero, expected_sha256=d57_sha, page_texts=d57_pages, expected_grand_total=SAMPLE_GT, min_rows=2
+    )
+    assert res_1a.accepted is False
+
+    # Bypass 1B: Truncated quote stripping 'Total' (quoting only numbers from the Capital/Total summary line) + zero row
+    bypass_trunc = json.loads(json.dumps(bypass_total_zero))
+    bypass_trunc["rows"][0]["verbatim_quote"] = "1231.66 585.00 1816.66 1139.00 587.50 1726.50"
+    res_1b = verify_budget_extraction(
+        bypass_trunc, expected_sha256=d57_sha, page_texts=d57_pages, expected_grand_total=SAMPLE_GT, min_rows=2
+    )
+    assert res_1b.accepted is False
+
+    # Bypass 1C: Page-1 'Revenue ...' + 'Capital ...' summary rows (both non-zero and summing to Grand Total!)
+    bypass_rev_cap = {
+        "document_sha256": d57_sha,
+        "page": 1,
+        "pages": [1, 2],
+        "column_headers": ["Actual 2013-2014", "Budget 2015-2016", "Plan", "Non-Plan", "Total"],
+        "printed_grand_total": dict(SAMPLE_GT),
+        "rows": [
+            {
+                "page": 1,
+                "label": "Revenue Summary",
+                "actual_plan": 1221.70, "actual_non_plan": 513.00, "actual_total": 1734.70,
+                "be_prev_plan": 1139.00, "be_prev_non_plan": 515.50, "be_prev_total": 1654.50,
+                "re_prev_plan": 1113.00, "re_prev_non_plan": 515.50, "re_prev_total": 1628.50,
+                "be_plan": 1139.00, "be_non_plan": 557.00, "be_total": 1696.00,
+                "verbatim_quote": "Revenue 1221.70 513.00 1734.70 1139.00 515.50 1654.50",
+            },
+            {
+                "page": 1,
+                "label": "Capital Summary",
+                "actual_plan": 9.96, "actual_non_plan": 72.00, "actual_total": 81.96,
+                "be_prev_plan": 0.0, "be_prev_non_plan": 72.00, "be_prev_total": 72.00,
+                "re_prev_plan": 0.0, "re_prev_non_plan": 72.00, "re_prev_total": 72.00,
+                "be_plan": 0.0, "be_non_plan": 72.00, "be_total": 72.00,
+                "verbatim_quote": "Capital 9.96 72.00 81.96 ... 72.00 72.00",
+            },
+        ],
+    }
+    res_1c = verify_budget_extraction(
+        bypass_rev_cap, expected_sha256=d57_sha, page_texts=d57_pages, expected_grand_total=SAMPLE_GT, min_rows=2
+    )
+    assert res_1c.accepted is False
+
+    # 2. Mixed scan PDF (page 1 text-backed, page 2 sparse < 20 chars like r1-ub-2022-23-d046 page 5)
+    # Valid rows citing text-backed page 1 AND scanned page 2 MUST be accepted and routed to requires_second_model!
+    mixed_pages = {1: PAGE_1_TEXT, 2: "NHM (NUHM & NRHM)"}
+    mixed_res = verify_budget_extraction(
+        _valid_d57_extraction(),
+        expected_sha256=SAMPLE_SHA,
+        page_texts=mixed_pages,
+        expected_grand_total=SAMPLE_GT,
+        min_rows=2,
+    )
+    assert mixed_res.accepted is True, mixed_res.errors
+    assert mixed_res.verification_mode == "requires_second_model"
+    assert mixed_res.checks["verbatim_quotes"] == "unrecorded"
+
+    # Bad quote on the text-backed page 1 of a mixed PDF is STILL rejected!
+    mixed_bad = _valid_d57_extraction()
+    mixed_bad["rows"][0]["verbatim_quote"] = "1.01.01 Fabricated Line 513.00"
+    mixed_bad_res = verify_budget_extraction(
+        mixed_bad,
+        expected_sha256=SAMPLE_SHA,
+        page_texts=mixed_pages,
+        expected_grand_total=SAMPLE_GT,
+        min_rows=2,
+    )
+    assert mixed_bad_res.accepted is False
+
+    # 3. 2nd-model scan corroboration rejects missing column subset even when shared column matches!
+    _seed_r1_project(tmp_path, monkeypatch, include_page_texts=False, min_rows=2)
+    p3_file = tmp_path / "projects" / "union-budget-unspent-funds.json"
+    p3_doc = json.loads(p3_file.read_text(encoding="utf-8"))
+    rc = p3_doc["tasks"][0]["payload"]["context"]["reading"]
+    rc["document_type"] = "state_budget_scan"
+    rc.pop("expected_grand_total", None)
+    p3_file.write_text(json.dumps(p3_doc), encoding="utf-8")
+
+    app = create_app(db_path=tmp_path / "scan_missing_col.db", seed=True)
+    with TestClient(app, base_url="http://testserver") as client:
+        a1 = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={"handle": "col-r1", "provider": "anthropic", "model": "claude-opus-4"},
+        ).json()
+        a2 = client.post(
+            "/api/agents/register",
+            headers={"User-Agent": CLI_USER_AGENT},
+            json={"handle": "col-r2", "provider": "openai", "model": "gpt-5"},
+        ).json()
+        h1 = {"X-Agent-Token": a1["api_token"], "User-Agent": CLI_USER_AGENT}
+        h2 = {"X-Agent-Token": a2["api_token"], "User-Agent": CLI_USER_AGENT}
+
+        # Reader 1 reports revenue + capital + total
+        sub_full = {
+            "document_sha256": SAMPLE_SHA,
+            "page": 1,
+            "column_headers": ["Revenue", "Capital", "Total"],
+            "printed_grand_total": {"revenue": 100.0, "capital": 50.0, "total": 150.0},
+            "rows": [
+                {"page": 1, "label": "Scheme A", "revenue": 100.0, "capital": 0.0, "total": 100.0, "verbatim_quote": "1. Scheme A 100.00"},
+                {"page": 1, "label": "Scheme B", "revenue": 0.0, "capital": 50.0, "total": 50.0, "verbatim_quote": "2. Scheme B 50.00"},
+            ],
+        }
+        l1 = client.post("/api/desk/next", headers=h1, json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]}).json()
+        r1_resp = client.post("/api/desk/submit", headers=h1, json={"lease_id": l1["lease_id"], "outcome": "reading_extraction", "extraction": sub_full})
+        assert r1_resp.status_code == 200
+        assert r1_resp.json()["verification_status"] == "pending_second_model"
+
+        # Reader 2 reports ONLY 'total': 150.0 (omitting revenue & capital!) -> MUST be disputed, NOT verified!
+        sub_partial = {
+            "document_sha256": SAMPLE_SHA,
+            "page": 1,
+            "column_headers": ["Total"],
+            "printed_grand_total": {"total": 150.0},
+            "rows": [
+                {"page": 1, "label": "Scheme A", "total": 100.0, "verbatim_quote": "1. Scheme A 100.00"},
+                {"page": 1, "label": "Scheme B", "total": 50.0, "verbatim_quote": "2. Scheme B 50.00"},
+            ],
+        }
+        l2 = client.post("/api/desk/next", headers=h2, json={"mode": "investigate", "document_reading": True, "supported_methodologies": ["R1"]}).json()
+        r2_resp = client.post("/api/desk/submit", headers=h2, json={"lease_id": l2["lease_id"], "outcome": "reading_extraction", "extraction": sub_partial})
+        assert r2_resp.status_code == 200, r2_resp.text
+        b2 = r2_resp.json()
+        assert b2["status"] == "disputed"
+        assert b2["verification_status"] == "disputed_reading"
+        assert b2["reading_url"] is None
+        assert any("missing column" in m.lower() for m in b2["disagreement_details"])
+        assert client.get("/api/contributors/col-r1").json()["contributor"]["compute_score"] == 0
+        assert client.get("/api/contributors/col-r2").json()["contributor"]["compute_score"] == 0

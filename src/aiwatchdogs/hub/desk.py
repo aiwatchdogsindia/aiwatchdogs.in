@@ -12118,7 +12118,6 @@ class DeskService:
                     else (0.95 if isinstance(golden_exp, dict) else None)
                 )
                 pinned_page_texts = self._load_pinned_reading_page_texts(reading_ctx)
-                require_text_check = bool(reading_ctx.get("page_texts_path") or reading_ctx.get("page_texts"))
 
                 vres = verify_budget_extraction(
                     raw_extraction,
@@ -12127,7 +12126,7 @@ class DeskService:
                     expected_grand_total=exp_gt if isinstance(exp_gt, dict) else None,
                     max_page=int(max_pg) if isinstance(max_pg, int) and not isinstance(max_pg, bool) else None,
                     min_rows=min_rows,
-                    require_text_verification=require_text_check,
+                    require_text_verification=False,
                     golden_expected=golden_exp if isinstance(golden_exp, dict) else None,
                     min_golden_accuracy=min_ga,
                 )
@@ -12162,7 +12161,15 @@ class DeskService:
                         )
                     first_sums = first_sub.get("column_sums") if isinstance(first_sub.get("column_sums"), dict) else {}
                     mismatches: list[str] = []
-                    shared_cols = sorted(set(first_sums.keys()) & set(vres.column_sums.keys()))
+                    first_cols = set(first_sums.keys())
+                    second_cols = set(vres.column_sums.keys())
+                    missing_cols = sorted(first_cols - second_cols)
+                    extra_cols = sorted(second_cols - first_cols)
+                    if missing_cols:
+                        mismatches.append(f"missing column(s) vs first reader: {', '.join(missing_cols)}")
+                    if extra_cols:
+                        mismatches.append(f"extra column(s) vs first reader: {', '.join(extra_cols)}")
+                    shared_cols = sorted(first_cols & second_cols)
                     if not shared_cols:
                         mismatches.append("no overlapping numeric columns with first reader")
                     for col in shared_cols:
