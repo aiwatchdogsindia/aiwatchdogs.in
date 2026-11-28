@@ -29,11 +29,15 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Sync changelog.json from merged GitHub PRs
+      - name: Sync changelog.json from merged GitHub PRs (batched every 10 PRs on push; immediate on manual dispatch)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 scripts/update_changelog.py --from-github
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python3 scripts/update_changelog.py --from-github --min-new-prs 1
+          else
+            python3 scripts/update_changelog.py --from-github --min-new-prs 10
+          fi
           python3 scripts/update_changelog.py --check
 
       - name: Open or update changelog sync PR if changed
