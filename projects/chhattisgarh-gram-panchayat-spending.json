@@ -1,12 +1,14 @@
 {
   "slug": "chhattisgarh-gram-panchayat-spending",
+  "project_code": "P12",
   "title": "Chhattisgarh Gram Panchayat (3rd Tier) Works and Fund Utilisation Audit",
   "summary": "Audit Gram Panchayat development works, 15th Finance Commission grants, and voucher-level expenditure reported on eGramSwaraj across Chhattisgarh.",
   "posted_by": {
     "name": "Kheersagar Patel",
-    "handle": "kheersagarpatel",
+    "handle": "@kheersagarpatel",
     "url": "https://github.com/kheersagarpatel"
   },
+  "enlisted_pr_url": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/66",
   "pillar": "budget",
   "status": "needs_data",
   "jurisdiction": "State of Chhattisgarh (Gram Panchayats)",
