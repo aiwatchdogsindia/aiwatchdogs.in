@@ -1,3 +1,4 @@
+import { themed, useTheme } from '../lib/theme';
 import {
   ArrowRight,
   Check,
@@ -823,6 +824,7 @@ export function LiveSwarmViewer({
   hideHeader = false,
   className = '',
 }: LiveSwarmViewerProps) {
+  const theme = useTheme();
   const HeadingTag = headingAs;
   const toast = useToast();
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -1237,8 +1239,8 @@ export function LiveSwarmViewer({
                 fill="none"
                 stroke={
                   ring.ringIndex === 0
-                    ? 'rgba(198, 134, 114, 0.34)'
-                    : 'rgba(198, 134, 114, 0.27)'
+                    ? themed('rgba(198, 134, 114, 0.34)', theme)
+                    : themed('rgba(198, 134, 114, 0.27)', theme)
                 }
                 strokeWidth={ring.ringIndex === 0 ? '1.25' : '1.15'}
                 strokeDasharray={ring.ringIndex === 0 ? '3 7' : '4 8'}
@@ -1285,8 +1287,8 @@ export function LiveSwarmViewer({
                 selectedHandle != null &&
                 normalizeHandle(item.node!.handle).toLowerCase() === selectedHandle.toLowerCase();
               const strokeColor = isNode
-                ? item.visual?.color ?? '#9E978B'
-                : '#C9C2B6';
+                ? themed(item.visual?.color ?? '#9E978B', theme)
+                : themed('#C9C2B6', theme);
               const strokeWidth = selected
                 ? 2.7
                 : leased
@@ -1366,7 +1368,7 @@ export function LiveSwarmViewer({
                 {workingNow > 0 ? (
                   <span className="lsv-hub-count tabular">{workingNow} live</span>
                 ) : (
-                  <span className="lsv-hub-count tabular" style={{ color: '#A39D92' }}>
+                  <span className="lsv-hub-count tabular" style={{ color: 'var(--ink-5)' }}>
                     standby
                   </span>
                 )}

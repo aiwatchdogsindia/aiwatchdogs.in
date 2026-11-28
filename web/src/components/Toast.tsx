@@ -1,3 +1,4 @@
+import { useTheme } from '../lib/theme';
 import React, { createContext, useCallback, useContext, useState } from 'react';
 import { Check } from 'lucide-react';
 
@@ -9,6 +10,7 @@ interface ToastItem {
 const ToastContext = createContext<(message: string) => void>(() => {});
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const theme = useTheme();
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const pushToast = useCallback((message: string) => {
@@ -25,7 +27,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div className="toast-stack" role="status" aria-live="polite">
         {toasts.map((t) => (
           <div key={t.id} className="toast">
-            <Check size={14} color="#5FD35A" style={{ flexShrink: 0 }} />
+            <Check size={14} color={theme === 'dark' ? '#138808' : '#5FD35A'} style={{ flexShrink: 0 }} />
             <span>{t.message}</span>
           </div>
         ))}
