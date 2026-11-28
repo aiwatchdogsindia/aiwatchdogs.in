@@ -797,6 +797,44 @@ def test_p9_project_validator_accepts_valid_and_rejects_defects() -> None:
     )
     assert any("state_or_ut must be null" in e for e in validate_project(bad_union, filename_stem=AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG))
 
+    # Duplicate case_key across distinct task IDs rejected
+    dup_case_key_proj = _sample_p9_project(
+        [
+            _sample_p9_task("p9-union-dup-0011", _sample_ugc_net_spec(case_key="p9-union-shared-case")),
+            _sample_p9_task("p9-union-dup-0012", _sample_ugc_net_spec(case_key="p9-union-shared-case")),
+        ]
+    )
+    assert any(
+        "case_key 'p9-union-shared-case' is used twice" in e
+        for e in validate_project(dup_case_key_proj, filename_stem=AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG)
+    )
+
+
+def test_p9_primary_citation_falls_back_to_observed_sha256() -> None:
+    obs_sha = "d" * 64
+    spec = _sample_ugc_net_spec(secondary_role="", secondary_source_format=None, record_selector=None)
+    records = [
+        {
+            "document": "primary",
+            "page": 1,
+            "raw_text": (
+                "National Testing Agency conducted UGC-NET on 18 June 2024; "
+                "on 19 June 2024 UGC-NET was cancelled."
+            ),
+        }
+    ]
+    res = run_engine(
+        "P9",
+        records,
+        context={"auditing_government_exams": spec, "observed_sha256": obs_sha},
+        as_of_date="2026-11-28",
+    )
+    assert len(res.leads) == 1
+    cits = res.leads[0].citations
+    assert cits[0]["sha256"] == obs_sha
+    assert cits[1]["sha256"] == obs_sha
+    assert cits[2]["sha256"] == obs_sha
+
 
 # ---------------------------------------------------------------------------
 # 6. RTI Act 2005 Draft Template (Union, State & UT Routing)
@@ -1194,7 +1232,32 @@ def test_p9_hub_summary_corpus_fallback_live_submissions_and_routes(
         assert len(summary["leads"]) == 1
         assert summary["leads"][0]["finding_id"] == ugc_finding_id
         assert summary["leads"][0]["disruption_type"] == "cancelled_after_conduct"
+        assert (
+            summary["leads"][0]["secondary_url"]
+            == "https://static.pib.gov.in/WriteReadData/specificdocs/documents/2024/jun/ugcnet_cancel.pdf"
+        )
+        assert summary["leads"][0]["portal_url"] == "https://www.nta.ac.in/"
         assert summary["anchor_cases"][0]["finding_id"] == ugc_finding_id
+
+        # Claim & submit Task #2 with unevaluable_count=1 to verify missions.unevaluable_count surfaces in summary
+        lease2 = client.post("/api/desk/next", headers=headers, json={"task_id": "prj-p9-state-up-roaro-0002"}).json()
+        sub2 = client.post(
+            "/api/desk/submit",
+            headers=headers,
+            json={
+                "lease_id": lease2["lease_id"],
+                "outcome": "cleared",
+                "metrics": {
+                    "records_scanned": 1,
+                    "cleared_count": 0,
+                    "unevaluable_count": 1,
+                    "monetary_audited_inr": 0.0,
+                },
+            },
+        )
+        assert sub2.status_code == 200, sub2.text
+        sum_after_uneval = client.get("/api/projects/auditing-government-exams/summary").json()
+        assert sum_after_uneval["unevaluable_tasks"] == 1
 
         assert summary["by_jurisdiction_level"]["union"]["done"] == 1
         assert summary["by_jurisdiction_level"]["union"]["leads"] == 1

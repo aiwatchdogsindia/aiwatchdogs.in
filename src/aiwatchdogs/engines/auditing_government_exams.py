@@ -1120,13 +1120,14 @@ def run_p9_auditing_government_exams(
     landing_url = str(
         selector.get("record_url") or ctx.get("source_landing_page") or ctx.get("source_url") or retrieval_url
     ).strip()
+    pri_sha_resolved = expected_sha or observed_sha
     sec_sha_resolved = expected_sec_sha or observed_sec_sha
     official_publisher = clean_exam_text(ctx.get("official_publisher") or authority, max_len=200)
 
     schedule_url = (secondary_url if schedule_uses_secondary and secondary_url else retrieval_url) or landing_url
-    schedule_sha = sec_sha_resolved if schedule_uses_secondary else expected_sha
+    schedule_sha = sec_sha_resolved if schedule_uses_secondary else pri_sha_resolved
     outcome_url = (secondary_url if outcome_uses_secondary and secondary_url else retrieval_url) or landing_url
-    outcome_sha = sec_sha_resolved if outcome_uses_secondary else expected_sha
+    outcome_sha = sec_sha_resolved if outcome_uses_secondary else pri_sha_resolved
 
     section_hint = clean_exam_text(selector.get("section_hint"), max_len=120)
     schedule_locator = schedule_ver.best_locator + (f"; {section_hint}" if section_hint else "")
@@ -1210,7 +1211,7 @@ def run_p9_auditing_government_exams(
         "source_landing_page": landing_url or retrieval_url,
         "official_publisher": official_publisher,
         "source_locator": f"rule={rule_triggered}; disruption={disruption_type}; reason={reason_category}",
-        "sha256": expected_sha,
+        "sha256": pri_sha_resolved,
         "excerpt": clean_exam_text(
             f"{rule_triggered}: Scheduled {scheduled_date_iso} vs Event {actual_or_event_date_iso} "
             f"({disruption_label}); verified {len(schedule_ver.matched_tokens)} schedule token(s) "

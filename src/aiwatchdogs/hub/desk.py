@@ -6453,7 +6453,7 @@ class DeskService:
             )
             for r in conn.execute(
                 f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
-                f"anomaly_metrics_json, source_url, task_id "
+                f"anomaly_metrics_json, provenance_json, source_url, task_id "
                 f"FROM findings WHERE {live_sql} ORDER BY id ASC",
                 (mid,),
             ).fetchall():
@@ -6466,6 +6466,8 @@ class DeskService:
 
                 metrics = loads_json(r["anomaly_metrics_json"], {})
                 metrics = metrics if isinstance(metrics, dict) else {}
+                prov = loads_json(r["provenance_json"], {})
+                prov = prov if isinstance(prov, dict) else {}
 
                 rule = str(r["rule_triggered"] or "").strip()
                 dtype = str(
@@ -6563,8 +6565,8 @@ class DeskService:
                         "affected_candidates_basis": str(metrics.get("affected_candidates_basis") or ""),
                         "statutory_anchor": str(metrics.get("statutory_anchor") or ""),
                         "source_url": str(r["source_url"] or ""),
-                        "secondary_url": None,
-                        "portal_url": str(r["source_url"] or ""),
+                        "secondary_url": str(prov.get("secondary_url") or "").strip() or None,
+                        "portal_url": str(prov.get("source_landing_page") or r["source_url"] or "").strip(),
                         "is_anchor_case": is_anchor,
                         "severity": sev,
                         "status": st,
@@ -6758,6 +6760,11 @@ class DeskService:
             "label": str(raw_aw.get("label") or P9_AUDIT_WINDOW_LABEL),
         }
 
+        resolved_unevaluable_tasks = max(
+            db_unevaluable_tasks,
+            int(_row_get(mission_row, "unevaluable_count", 0) or 0) if mission_row is not None else 0,
+        )
+
         raw_dry = coverage.get("dry_run_summary") if isinstance(coverage.get("dry_run_summary"), dict) else {}
         as_of_resolved = str(coverage.get("as_of_date") or P9_AUDIT_WINDOW_END.isoformat())
         dry_run_summary = {
@@ -6772,7 +6779,7 @@ class DeskService:
                 raw_dry.get("cleared_flawless") if raw_dry.get("cleared_flawless") is not None else flawless_count
             ),
             "unevaluable": int(
-                raw_dry.get("unevaluable") if raw_dry.get("unevaluable") is not None else db_unevaluable_tasks
+                raw_dry.get("unevaluable") if raw_dry.get("unevaluable") is not None else resolved_unevaluable_tasks
             ),
             "verified_documents": int(
                 raw_dry.get("verified_documents")
@@ -6796,7 +6803,7 @@ class DeskService:
             "verified": verified,
             "peer_review": peer_review,
             "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
-            "unevaluable_tasks": db_unevaluable_tasks,
+            "unevaluable_tasks": resolved_unevaluable_tasks,
             "unique_exams_covered": int(coverage.get("unique_exams_covered") or len(db_unique_exams)),
             "unique_authorities_covered": int(
                 coverage.get("unique_authorities_covered") or len(authorities_map)

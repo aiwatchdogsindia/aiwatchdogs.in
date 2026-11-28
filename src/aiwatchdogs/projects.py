@@ -462,6 +462,7 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         errors.append("A project with no tasks yet must use \"status\": \"needs_data\".")
 
     seen_task_ids: set[str] = set()
+    seen_p9_case_keys: set[str] = set()
     for i, task in enumerate(tasks):
         where = f"tasks[{i}]"
         if not isinstance(task, dict):
@@ -685,6 +686,15 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                         f"{where}.id tier '{id_match.group(1)}' does not match payload.context.auditing_government_exams.jurisdiction_level '{jlevel}'."
                     )
             if isinstance(p9_spec, dict):
+                p9_ckey = p9_spec.get("case_key")
+                if isinstance(p9_ckey, str) and p9_ckey.strip():
+                    norm_ckey = p9_ckey.strip()
+                    if norm_ckey in seen_p9_case_keys:
+                        errors.append(
+                            f"{where}.payload.context.auditing_government_exams.case_key '{norm_ckey}' is used twice."
+                        )
+                    else:
+                        seen_p9_case_keys.add(norm_ckey)
                 sec_role = str(p9_spec.get("secondary_role") or "").strip()
                 if sec_role and effective_sec_url in (None, ""):
                     errors.append(
