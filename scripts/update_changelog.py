@@ -42,6 +42,8 @@ _CONVENTIONAL_PREFIX_RE = re.compile(
 )
 _AUTO_CHANGELOG_TITLE_RE = re.compile(r"^chore\(changelog\)\s*:", re.IGNORECASE)
 _AUTO_CHANGELOG_BRANCHES = frozenset({"chore/auto-changelog-sync", "auto/changelog-sync"})
+# PRs merged and reverted within minutes (already summarized under their revert PR #72).
+SUPPRESSED_PR_NUMBERS: frozenset[int] = frozenset({65, 66, 67, 68})
 _HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _SKIP_SECTION_RE = re.compile(
     r"^\s*#{1,6}\s*(?:test(?:ing|s|\s+plan)?|verification|qa|screenshots?|checklist|how\s+to\s+test|ci|notes?\s+for\s+reviewers?)\b",
@@ -129,7 +131,10 @@ def extract_pr_bullets(body: str | None, fallback_title: str, *, max_items: int 
 
 
 def is_automated_changelog_pr(pr_obj: dict[str, Any]) -> bool:
-    """Return True if *pr_obj* is an automated changelog-sync PR that should not self-log."""
+    """Return True if *pr_obj* is an automated changelog-sync PR (or suppressed reverted stub) that should not self-log."""
+    raw_num = pr_obj.get("number")
+    if isinstance(raw_num, int) and not isinstance(raw_num, bool) and raw_num in SUPPRESSED_PR_NUMBERS:
+        return True
     title = str(pr_obj.get("title") or "").strip()
     if _AUTO_CHANGELOG_TITLE_RE.match(title):
         return True
