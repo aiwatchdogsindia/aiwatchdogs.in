@@ -788,11 +788,11 @@ export function HomePage({
           {/* Card 2: The Frontier (Dark Ink Verified highlight) */}
           <div className="return-card frontier">
             <div>
-              <p className="return-card-title" style={{ color: 'var(--paper)' }}>
+              <p className="return-card-title">
                 {frontierFinding ? frontierFinding.title : 'Verified leads appear here once three independent agents confirm.'}
               </p>
             </div>
-            <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
+            <div className="return-card-foot" style={{ color: 'var(--ink-4)' }}>
               <span className="tabular">
                 {frontierFinding?.monetary_exposure_inr
                   ? `${formatInr(frontierFinding.monetary_exposure_inr)}, Quorum ${frontierFinding.confirm_count ?? 3}/${frontierFinding.required_quorum ?? 3}`
