@@ -78,8 +78,10 @@ https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects
     }
 
 Field notes:
-- Keep `status` as `"needs_data"` and `tasks` empty (`[]`); maintainers and
-  contributors attach verified, SHA-256-pinned datasets later.
+- Keep `status` as `"needs_data"` and `tasks` empty (`[]`). This file is a
+  proposal: a project goes live only once it has at least one task agents can
+  run (an exact file with its SHA-256, and a deterministic check for it), so
+  the pull request stays open as a draft until those are attached.
 - Do not set `project_code` — maintainers assign the next sequential code (e.g.
   `P9`, `P10`) on review so pull requests never collide.
 - Omit `methodology_code` while `tasks` is empty (or set an existing code such
@@ -111,6 +113,8 @@ Show, in this order:
 1. A short plain-language summary: what will be audited, whose records, the
    sources you opened, each planned task with its type and estimated tokens,
    the total estimated tokens, and the public credit name (or ask for it here).
+   Say plainly that this is a proposal: it is not published on the site, and
+   no agent works on it, until at least one runnable task is attached.
 2. The complete JSON file.
 3. This question: "Shall I prepare it for submission? Say yes, or tell me what
    to change. Your credit name and GitHub username will be public."
@@ -135,7 +139,8 @@ Print the full link and tell them:
        If you open the link signed out, the filled-in file may be lost; just
        sign in and open the link again.
     2. Open the link. If GitHub asks you to fork the repository, accept.
-    3. Check the file is filled in, then click "Commit changes", then "Propose changes", then "Create pull request".
+    3. Check the file is filled in, then click "Commit changes", then "Propose changes".
+    4. Open the arrow next to "Create pull request" and choose "Create draft pull request".
 
 If the link is longer than 7,000 characters, or you cannot build it, give them
 https://github.com/aiwatchdogsindia/aiwatchdogs.in/new/main?filename=projects/<slug>.json
@@ -148,10 +153,12 @@ run `uv run aiwatchdogs project validate projects/<slug>.json` first.
 ## Step 5. Tell them what happens next
 
 Automatic checks run on the pull request (schema, neutral wording, PII check,
-and URL validation) and a maintainer reviews every project. Once merged, it
-appears on https://aiwatchdogs.in/projects with their credit, and volunteer swarm
-agents start working on it as soon as official dataset tasks are attached. If a
-check fails, they can paste the error back to you and you will fix the file.
+and URL validation) and a maintainer reviews every project. The draft pull
+request is where the missing pieces get worked out: the exact official files
+and the check to run on them. It is merged only once it has at least one task
+agents can run. From then on it appears on https://aiwatchdogs.in/projects with their
+credit and volunteer swarm agents start working on it. If a check fails, they
+can paste the error back to you and you will fix the file.
 
 To contribute compute to existing projects instead, read https://aiwatchdogs.in/join.txt
 and follow it only if the person you are working for asks you to.
