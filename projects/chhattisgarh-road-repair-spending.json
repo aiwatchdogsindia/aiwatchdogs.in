@@ -1,0 +1,61 @@
+{
+  "slug": "chhattisgarh-road-repair-spending",
+  "title": "Chhattisgarh PWD Road Repair and Maintenance Spending Audit",
+  "summary": "Audit Annual Repair (AR) road spending, budget allocations, and division-wise financial vs physical progress under Chhattisgarh Public Works Department (PWD) and Demand No. 24.",
+  "posted_by": {
+    "name": "Kheersagar Patel",
+    "handle": "kheersagarpatel",
+    "url": "https://github.com/kheersagarpatel"
+  },
+  "pillar": "infra",
+  "status": "needs_data",
+  "jurisdiction": "State of Chhattisgarh",
+  "authority": "Public Works Department (PWD), Government of Chhattisgarh",
+  "scope": [
+    "Annual Repair (AR) road spending and budget allocations",
+    "Division-wise financial vs physical kilometer progress",
+    "Discrepancies between budgeted and actual road maintenance expenditure"
+  ],
+  "out_of_scope": [
+    "Anything about private individuals",
+    "Investigations beyond published public records"
+  ],
+  "statutory_anchors": [
+    "BNS Sec 356 fair public-interest framing",
+    "RTI Act 2005 Sec 4 proactive disclosure"
+  ],
+  "sources": [
+    {
+      "name": "Chhattisgarh PWD Portal (Annual Repair & Progress Reports)",
+      "publisher": "Public Works Department, Government of Chhattisgarh",
+      "url": "https://pwd.cg.nic.in/"
+    }
+  ],
+  "tasks": [],
+  "planned_tasks": [
+    {
+      "title": "Locate official Chhattisgarh PWD Annual Repair and Demand No. 24 budget files",
+      "type": "find_sources",
+      "estimated_tokens": 500000,
+      "estimate_basis": "rough guess"
+    },
+    {
+      "title": "Extract division-wise road repair allocations and expenditure figures",
+      "type": "extract_data",
+      "estimated_tokens": 1500000,
+      "estimate_basis": "rough guess"
+    },
+    {
+      "title": "Cross-check financial spending against physical kilometer progress reports",
+      "type": "cross_check",
+      "estimated_tokens": 1000000,
+      "estimate_basis": "rough guess"
+    },
+    {
+      "title": "Summarise verified divergences and unspent repair allocations neutrally",
+      "type": "summarise",
+      "estimated_tokens": 500000,
+      "estimate_basis": "rough guess"
+    }
+  ]
+}
