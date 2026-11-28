@@ -1339,10 +1339,8 @@ def create_app(
 
     def _render_news(d: Any, code: str, base: str) -> dict[str, Any]:
         edition = plain_news.get_edition(db, d)
-        keys = [f"finding:{x['id']}" for k in ("top", "recent", "cleared", "corrections") for x in edition.get(k) or []]
-        keys += [f"finding:{p['largest']['id']}" for p in edition.get("projects") or [] if p.get("largest")]
-        keys.append(f"news:{d.isoformat()}")
-        written = plain_writer.load_texts(db, keys)
+        frozen = edition.get("written")
+        written = frozen if isinstance(frozen, dict) else plain_writer.load_texts(db, plain_news.text_keys(edition))
         return plain_news.render(edition, code, base, written=written, lede=written.get(f"news:{d.isoformat()}"))
 
     def _news_date(raw: str | None) -> Any:
@@ -1958,6 +1956,11 @@ def create_app(
             return JSONResponse(status_code=404, content={"detail": "Not found"})
 
         md_alt = resolve_spa_markdown_path(norm_path)
+        if md_alt is not None and md_alt.startswith("/news") and prefers_markdown(request.headers.get("accept")):
+            day = md_alt[len("/news/") : -len(".md")] if md_alt != "/news.md" else None
+            d = _news_date(day)
+            r = _render_news(d, resolve_lang(request.query_params.get("lang")), _public_base_url(request))
+            return markdown_response(plain_news.render_markdown(r), md_path=md_alt)
         if md_alt is not None and prefers_markdown(request.headers.get("accept")):
             rendered = render_markdown_for_path(desk, _public_base_url(request), "/" + norm_path)
             if rendered is not None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -441,3 +441,151 @@ def test_custody_records_without_a_person_do_not_claim_one() -> None:
         card = explain_finding(rec, code)
         assert card and card["head"] != explain_finding({**rec, "anomaly_metrics": {**rec["anomaly_metrics"], "overrun_mechanism": "bail_or_release_order_contempt"}}, code)["head"]
     assert "stayed in jail" not in explain_finding(rec, "en")["head"]
+
+
+def test_single_bid_wording_needs_the_bid_count() -> None:
+    base = SAMPLES[12]
+    assert "only one bid" in explain_finding(base, "en")["head"]
+    unknown = {**base, "anomaly_metrics": {k: v for k, v in base["anomaly_metrics"].items() if k not in ("bids_received", "effective_bids")}}
+    assert explain_finding(unknown, "en")["kind"] == "generic"
+    many = {**base, "anomaly_metrics": {**base["anomaly_metrics"], "bids_received": 4, "effective_bids": 2}}
+    assert explain_finding(many, "en")["kind"] == "generic"
+    repeat = SAMPLES[14]
+    for code in CODES:
+        c, single = explain_finding(repeat, code), explain_finding(base, code)
+        assert c["ask"] != single["ask"] and c["why"] != single["why"]
+        assert explain_finding(SAMPLES[15], code)["ask"] not in (c["ask"], single["ask"])
+
+
+def test_number_check_reads_units_and_kinds() -> None:
+    f = SAMPLES[3]
+    allowed = checks.allowed_numbers(writer.finding_facts(f), explain_finding(f, "en")["what"])
+    ok = explain_finding(f, "en")["what"]
+    assert checks.bad_numbers(ok, "en", allowed) == []
+    crore = next(v for k, v, inr in checks.typed_numbers(ok) if k == "money" and inr >= 1e9)
+    assert checks.bad_numbers(f"Only ₹{crore:g} lakh was spent.", "en", allowed) == [crore]
+    assert checks.bad_numbers(f"Only ₹{crore:g} crore was spent.", "en", allowed) == []
+    hi = explain_finding(f, "hi")["what"]
+    assert checks.bad_numbers(hi, "hi", allowed) == []
+    assert checks.bad_numbers(hi.replace("करोड़", "लाख"), "hi", allowed)
+    pct = next(v for k, v, _ in checks.typed_numbers(ok) if k == "pct") if any(k == "pct" for k, _, _ in checks.typed_numbers(ok)) else 49.1
+    assert checks.bad_numbers(f"{crore:g}% of it", "en", allowed) == [crore]
+    assert checks.bad_numbers(f"{pct:g}% of it", "en", allowed) == []
+    assert checks.typed_numbers("7 કરાર", "gu")[0][0] == "num"
+
+
+def test_multi_word_lint_entries_match() -> None:
+    lint = json.loads((PACK_DIR.parent / "lint.json").read_text(encoding="utf-8"))
+    phrases = [(lang, w) for lang, words in lint.items() for w in words if " " in w.strip()]
+    assert phrases
+    for lang, w in phrases:
+        assert w.lower() in [h.lower() for h in checks.lint_hits(f"x {w} y", lang)], (lang, w)
+    assert checks.lint_hits("یہ دھوکہ دہی ہے", "ur")
+    assert not checks.lint_hits("یہ دھوکہ ہے", "ur") or "دھوکہ" in lint.get("ur", [])
+
+
+def _correct(app, fid: str, prev: str, new: str, when: str) -> None:
+    with app.state.db.transaction() as conn:
+        conn.execute("UPDATE findings SET status = ? WHERE id = ?", (new, fid))
+        conn.execute(
+            "INSERT INTO finding_corrections (finding_id, correction_type, previous_status, new_status, summary, details, "
+            "source_evidence_url, reviewed_by, created_at) VALUES (?, 'status', ?, ?, 's', 'd', '', 'editor', ?)",
+            (fid, prev, new, when),
+        )
+
+
+def test_clearings_are_dated_by_when_they_happened(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        today = news.today_ist()
+        old_day = today - timedelta(days=5)
+        old_start, _ = news.window(old_day)
+        start, _ = news.window(today)
+        _add(app, "f-old", "peer_review", old_start)
+        _correct(app, "f-old", "peer_review", "cleared", start)
+        ed = news.get_edition(app.state.db, today)
+        assert [x["id"] for x in ed["cleared"]] == ["f-old"] and ed["stats"]["cleared"] == 1
+        past = news.get_edition(app.state.db, old_day)
+        assert past["stats"]["cleared"] == 0 and past["cleared"] == []
+
+
+def test_past_editions_use_the_state_on_their_day(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        today = news.today_ist()
+        two_ago, yesterday = today - timedelta(days=2), today - timedelta(days=1)
+        _add(app, "f-late", "verified", news.window(two_ago)[0], news.window(today)[0])
+        ed = news.get_edition(app.state.db, yesterday)
+        assert ed["totals"]["confirmed"] == 0 and ed["totals"]["review"] >= 1
+        assert all(p["largest"] is None or p["largest"]["id"] != "f-late" for p in ed["projects"])
+        assert news.get_edition(app.state.db, today)["stats"]["confirmed"] == 1
+
+
+def test_withdrawn_stories_leave_final_editions(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app) as client:
+        day = date(2026, 11, 3)
+        start, _ = news.window(day)
+        _add(app, "f-gone", "verified", start, start, amount=5e9)
+        _add(app, "f-stay", "verified", start, start, amount=1e9)
+        first = news.get_edition(app.state.db, day)
+        assert {x["id"] for x in first["top"]} == {"f-gone", "f-stay"}
+        _correct(app, "f-gone", "verified", "retracted", news.window(day + timedelta(days=1))[0])
+        again = news.get_edition(app.state.db, day)
+        assert {x["id"] for x in again["top"]} == {"f-stay"} and again["withdrawn"] == 1
+        assert "f-gone" not in client.get(f"/news/{day.isoformat()}.md").text
+
+
+def test_lede_hash_covers_project_examples() -> None:
+    ed = {"date": "2026-11-01", "top": [], "recent": [], "cleared": [], "corrections": [], "stats": {},
+          "projects": [{"slug": "p", "largest": {"id": "f-x"}}]}
+    assert news.lede_hash(ed) != news.lede_hash({**ed, "projects": [{"slug": "p", "largest": None}]})
+
+
+def test_final_editions_keep_the_text_they_were_frozen_with(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app) as client:
+        day = date(2026, 11, 4)
+        start, _ = news.window(day)
+        _add(app, "f-frozen", "verified", start, start, amount=5.895e9)
+        before = client.get("/api/news", params={"date": day.isoformat()}).json()
+        top = next(s for s in before["sections"] if s["id"] == "top")["stories"][0]
+        assert top["source"] == "template"
+        with app.state.db.read() as conn:
+            row = dict(conn.execute("SELECT * FROM findings WHERE id = 'f-frozen'").fetchone())
+        row["anomaly_metrics"] = json.loads(row["anomaly_metrics_json"])
+        card = {"head": "A new head", "what": "Only ₹610 crore of ₹1,200 crore was spent.", "why": "w", "ask": "a"}
+        writer._save(app.state.db, "finding:f-frozen", writer.source_hash(row), writer.Config("anthropic", "m", "low", 1, "", ["en"]),
+                     "m", {"en": card}, {}, 0.0, ["en"])
+        after = client.get("/api/news", params={"date": day.isoformat()}).json()
+        assert next(s for s in after["sections"] if s["id"] == "top")["stories"][0]["head"] == top["head"]
+
+
+def test_news_page_negotiates_markdown(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app) as client:
+        for route in ("/news", f"/news/{news.today_ist().isoformat()}"):
+            r = client.get(route, headers={"Accept": "text/markdown"})
+            assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown"), route
+
+
+def test_card_hash_changes_when_metrics_are_corrected() -> None:
+    f = SAMPLES[3]
+    fixed = {**f, "anomaly_metrics": {**f["anomaly_metrics"], "actual": 1.0}}
+    assert writer.source_hash(f) != writer.source_hash(fixed)
+
+
+def test_failed_calls_release_the_hold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        db = app.state.db
+        cfg = writer.Config("anthropic", "claude-opus-5-5", "low", 5.0, "", ["en"])
+
+        def stopped(*a, **k):
+            raise writer.CallFailed("model stopped: max_tokens", 0.002)
+
+        monkeypatch.setattr(writer, "_call_anthropic", stopped)
+        for _ in range(30):
+            with pytest.raises(writer.CallFailed):
+                writer.call_model(cfg, "s", "p", {"type": "object"}, max_tokens=4000, db=db)
+        assert abs(writer.spent_today(db) - 0.06) < 1e-6

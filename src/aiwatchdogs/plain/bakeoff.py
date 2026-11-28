@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from .checks import allowed_numbers, check_entry, grade_level, numbers_in, number_ok
+from .checks import allowed_numbers, bad_numbers, check_entry, grade_level, numbers_in
 from .explain import explain_finding
 from .writer import CARD_FIELDS, Config, call_model, finding_facts, load_config, write_card
 
@@ -86,8 +86,8 @@ def grade(f: dict[str, Any], card: dict[str, Any], quiz: dict[str, Any] | None, 
         parts.append(max(0.0, min(1.0, (14.0 - g) / 6.0)))
     if quiz:
         who = _who_ok(str(quiz.get("who", "")), f)
-        nums = numbers_in(str(quiz.get("how_much", "")))
-        how = any(number_ok(n, allowed) for n in nums) if has_numbers else True
+        said = str(quiz.get("how_much", ""))
+        how = bool(numbers_in(said)) and not bad_numbers(said, "en", allowed) if has_numbers else True
         fair = str(quiz.get("proven_wrongdoing", "")) in ("no", "unclear")
         hard = [w for w in quiz.get("hard_words") or [] if str(w).strip()]
         row.update({"who_ok": who, "number_ok": how, "fair_ok": fair, "hard_words": hard})

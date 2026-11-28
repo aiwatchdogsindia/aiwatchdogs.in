@@ -17,11 +17,6 @@ FIRST_DATE = date(2025, 1, 1)
 MAX_ARCHIVE = 60
 SITE = "https://aiwatchdogs.in"
 _VISIBLE = "COALESCE(quarantined, 0) = 0 AND status != 'quarantined' AND COALESCE(is_demo_sample, 0) = 0"
-_SNAP_COLS = (
-    "id, mission_slug, methodology_code, title, summary, entity_name, jurisdiction, fiscal_year, "
-    "monetary_exposure_inr, anomaly_metrics_json, rule_triggered, status, confirm_count, "
-    "required_quorum, source_url, verified_at, created_at"
-)
 EXPLAINERS = ("budget_words", "tenders", "cag", "rti", "quorum", "assurance", "release")
 SPOTLIGHT = tuple(k for k in KINDS if k != "generic")
 
@@ -84,60 +79,105 @@ def _fingerprint(edition: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+_CONFIRMED = ("verified", "rti_filed")
+_CLEARED = ("cleared", "resolved_explained")
+_LAST_CORRECTION = (
+    "(SELECT c.new_status FROM finding_corrections c WHERE c.finding_id = f.id AND c.created_at < ? "
+    "ORDER BY c.created_at DESC, c.id DESC LIMIT 1)"
+)
+_NEXT_CORRECTION = (
+    "(SELECT c.previous_status FROM finding_corrections c WHERE c.finding_id = f.id AND c.created_at >= ? "
+    "ORDER BY c.created_at ASC, c.id ASC LIMIT 1)"
+)
+_STATUS_ASOF = (
+    "CASE WHEN f.verified_at IS NOT NULL AND f.verified_at >= ? THEN 'peer_review' "
+    f"WHEN {_NEXT_CORRECTION} IS NOT NULL THEN {_NEXT_CORRECTION} "
+    f"WHEN {_LAST_CORRECTION} IS NOT NULL THEN {_LAST_CORRECTION} "
+    "WHEN f.verified_at IS NOT NULL AND f.verified_at < ? THEN 'verified' "
+    "WHEN f.status IN ('verified', 'rti_filed', 'peer_review') THEN f.status "
+    "WHEN EXISTS (SELECT 1 FROM peer_verifications p WHERE p.finding_id = f.id AND p.created_at >= ?) THEN 'peer_review' "
+    "ELSE f.status END"
+)
+_STATUS_AT = (
+    "COALESCE((SELECT MAX(c.created_at) FROM finding_corrections c WHERE c.finding_id = f.id AND c.created_at < ?), "
+    "CASE WHEN f.verified_at IS NOT NULL AND f.verified_at < ? THEN f.verified_at END, "
+    "(SELECT MAX(p.created_at) FROM peer_verifications p WHERE p.finding_id = f.id AND p.created_at < ?), "
+    "f.created_at)"
+)
+_BASE_COLS = (
+    "f.id, f.mission_slug, f.methodology_code, f.title, f.summary, f.entity_name, f.jurisdiction, f.fiscal_year, "
+    "f.monetary_exposure_inr, f.anomaly_metrics_json, f.rule_triggered, f.confirm_count, f.required_quorum, "
+    "f.source_url, f.verified_at, f.created_at"
+)
+
+
+def _asof(end: str, live: bool, with_at: bool = False, mission: str | None = None) -> tuple[str, list[Any]]:
+    params: list[Any] = []
+    if live:
+        status = "f.status"
+    else:
+        status = _STATUS_ASOF
+        params += [end] * _STATUS_ASOF.count("?")
+    cols = f"{_BASE_COLS}, {status} AS status"
+    if with_at:
+        cols += f", {_STATUS_AT} AS status_at"
+        params += [end] * _STATUS_AT.count("?")
+    where = (
+        "COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined' AND COALESCE(f.is_demo_sample, 0) = 0 "
+        "AND f.created_at < ?"
+    )
+    params.append(end)
+    if mission is not None:
+        where += " AND f.mission_slug = ?"
+        params.append(mission)
+    return f"(SELECT {cols} FROM findings f WHERE {where}) x", params
+
+
+def _in(values: tuple[str, ...]) -> str:
+    return ",".join(f"'{v}'" for v in values)
+
+
 def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, Any]:
     start, end = window(d)
+    live = d >= today_ist(now)
     q = conn.execute
+    timed, timed_p = _asof(end, live, with_at=True)
+    plain, plain_p = _asof(end, live)
 
-    top = [
-        _snap(r)
-        for r in q(
-            f"SELECT {_SNAP_COLS} FROM findings WHERE status IN ('verified', 'rti_filed') AND {_VISIBLE} "
-            "AND COALESCE(verified_at, created_at) >= ? AND COALESCE(verified_at, created_at) < ? "
-            "ORDER BY monetary_exposure_inr DESC, id ASC LIMIT 6",
-            (start, end),
-        ).fetchall()
-    ]
-    recent: list[dict[str, Any]] = []
-    if not top:
-        week = _iso(datetime.fromisoformat(start.replace("Z", "+00:00")) - timedelta(days=7))
-        recent = [
+    def stories(statuses: tuple[str, ...], lo: str, hi: str, limit: int, order: str) -> list[dict[str, Any]]:
+        return [
             _snap(r)
             for r in q(
-                f"SELECT {_SNAP_COLS} FROM findings WHERE status IN ('verified', 'rti_filed') AND {_VISIBLE} "
-                "AND COALESCE(verified_at, created_at) >= ? AND COALESCE(verified_at, created_at) < ? "
-                "ORDER BY COALESCE(verified_at, created_at) DESC, id ASC LIMIT 3",
-                (week, start),
+                f"SELECT * FROM {timed} WHERE x.status IN ({_in(statuses)}) AND x.status_at >= ? AND x.status_at < ? "
+                f"ORDER BY {order}, x.id ASC LIMIT {int(limit)}",
+                (*timed_p, lo, hi),
             ).fetchall()
         ]
-    cleared = [
-        _snap(r)
-        for r in q(
-            f"SELECT {_SNAP_COLS} FROM findings WHERE status IN ('cleared', 'resolved_explained') AND {_VISIBLE} "
-            "AND COALESCE(verified_at, created_at) >= ? AND COALESCE(verified_at, created_at) < ? "
-            "ORDER BY COALESCE(verified_at, created_at) DESC, id ASC LIMIT 3",
-            (start, end),
-        ).fetchall()
-    ]
-    corrections = [
-        _snap(r)
-        for r in q(
-            f"SELECT {_SNAP_COLS} FROM findings WHERE {_VISIBLE} AND id IN ("
-            "SELECT finding_id FROM finding_corrections WHERE created_at >= ? AND created_at < ?) "
-            "ORDER BY id ASC LIMIT 3",
-            (start, end),
-        ).fetchall()
-    ]
-    def _count(statuses: tuple[str, ...]) -> int:
-        ph = ",".join("?" for _ in statuses)
+
+    def count(statuses: tuple[str, ...]) -> int:
         r = q(
-            f"SELECT COUNT(*) AS c FROM findings WHERE status IN ({ph}) AND {_VISIBLE} "
-            "AND COALESCE(verified_at, created_at) >= ? AND COALESCE(verified_at, created_at) < ?",
-            (*statuses, start, end),
+            f"SELECT COUNT(*) AS c FROM {timed} WHERE x.status IN ({_in(statuses)}) AND x.status_at >= ? AND x.status_at < ?",
+            (*timed_p, start, end),
         ).fetchone()
         return int(r["c"] or 0) if r is not None else 0
 
-    confirmed_today = _count(("verified", "rti_filed"))
-    cleared_today = _count(("cleared", "resolved_explained"))
+    top = stories(_CONFIRMED, start, end, 6, "x.monetary_exposure_inr DESC")
+    recent: list[dict[str, Any]] = []
+    if not top:
+        week = _iso(datetime.fromisoformat(start.replace("Z", "+00:00")) - timedelta(days=7))
+        recent = stories(_CONFIRMED, week, start, 3, "x.status_at DESC")
+    cleared = stories(_CLEARED, start, end, 3, "x.status_at DESC")
+    corrections = [
+        _snap(r)
+        for r in q(
+            f"SELECT * FROM {plain} WHERE x.id IN ("
+            "SELECT finding_id FROM finding_corrections WHERE created_at >= ? AND created_at < ?) "
+            "ORDER BY x.id ASC LIMIT 3",
+            (*plain_p, start, end),
+        ).fetchall()
+    ]
+    confirmed_today = count(_CONFIRMED)
+    cleared_today = count(_CLEARED)
     r = q(
         f"SELECT COUNT(DISTINCT c.finding_id) AS c FROM finding_corrections c JOIN findings f ON f.id = c.finding_id "
         f"WHERE c.created_at >= ? AND c.created_at < ? AND COALESCE(f.quarantined, 0) = 0 "
@@ -160,16 +200,26 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
     desk = [{"kind": k, "count": c} for k, c in sorted(desk_counts.items(), key=lambda kv: (-kv[1], kv[0]))][:6]
 
     totals = {"confirmed": 0, "cleared": 0, "review": 0, "checks": 0}
+    per_mission: dict[str, dict[str, Any]] = {}
     for r in q(
-        f"SELECT status, COUNT(*) AS c FROM findings WHERE {_VISIBLE} AND created_at < ? GROUP BY status", (end,)
+        f"SELECT x.mission_slug AS slug, x.status AS st, COUNT(*) AS c, SUM(x.monetary_exposure_inr) AS s "
+        f"FROM {plain} GROUP BY x.mission_slug, x.status",
+        tuple(plain_p),
     ).fetchall():
-        st, c = str(r["status"] or ""), int(r["c"] or 0)
-        if st in ("verified", "rti_filed"):
-            totals["confirmed"] += c
-        elif st in ("cleared", "resolved_explained"):
-            totals["cleared"] += c
+        st, n_ = str(r["st"] or ""), int(r["c"] or 0)
+        c = per_mission.setdefault(str(r["slug"] or ""), {"flagged": 0, "verified": 0, "cleared": 0, "disputed": 0, "verified_sum": 0.0})
+        c["flagged"] += n_
+        if st in _CONFIRMED:
+            totals["confirmed"] += n_
+            c["verified"] += n_
+            c["verified_sum"] += float(r["s"] or 0.0)
+        elif st in _CLEARED:
+            totals["cleared"] += n_
+            c["cleared"] += n_
+        elif st in ("disputed", "retracted", "retracted_false_positive"):
+            c["disputed"] += n_
         elif st == "peer_review":
-            totals["review"] += c
+            totals["review"] += n_
     row = q("SELECT COUNT(*) AS c FROM peer_verifications WHERE created_at < ?", (end,)).fetchone()
     totals["checks"] = int(row["c"] or 0) if row is not None else 0
 
@@ -179,29 +229,17 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
         "WHERE status != 'archived' ORDER BY priority ASC, slug ASC"
     ).fetchall():
         slug = str(m["slug"])
-        c = {"flagged": 0, "verified": 0, "cleared": 0, "disputed": 0, "verified_sum": 0.0}
-        for r in q(
-            f"SELECT status, COUNT(*) AS c, SUM(monetary_exposure_inr) AS s FROM findings "
-            f"WHERE mission_slug = ? AND {_VISIBLE} AND created_at < ? GROUP BY status",
-            (slug, end),
-        ).fetchall():
-            st, n_ = str(r["status"] or ""), int(r["c"] or 0)
-            c["flagged"] += n_
-            if st in ("verified", "rti_filed"):
-                c["verified"] += n_
-                c["verified_sum"] += float(r["s"] or 0.0)
-            elif st in ("cleared", "resolved_explained"):
-                c["cleared"] += n_
-            elif st in ("disputed", "retracted", "retracted_false_positive"):
-                c["disputed"] += n_
+        c = per_mission.get(slug) or {"flagged": 0, "verified": 0, "cleared": 0, "disputed": 0, "verified_sum": 0.0}
         total, done = int(m["total_tasks"] or 0), int(m["completed_tasks"] or 0)
         if not total and not c["flagged"]:
             continue
-        big = q(
-            f"SELECT {_SNAP_COLS} FROM findings WHERE mission_slug = ? AND status IN ('verified', 'rti_filed') "
-            f"AND {_VISIBLE} AND created_at < ? ORDER BY monetary_exposure_inr DESC, id ASC LIMIT 1",
-            (slug, end),
-        ).fetchone()
+        big = None
+        if c["verified"]:
+            mq, mp = _asof(end, live, mission=slug)
+            big = q(
+                f"SELECT * FROM {mq} WHERE x.status IN ({_in(_CONFIRMED)}) ORDER BY x.monetary_exposure_inr DESC, x.id ASC LIMIT 1",
+                tuple(mp),
+            ).fetchone()
         projects.append({
             "slug": slug,
             "title": str(m["title"] or slug),
@@ -247,7 +285,7 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
 
 
 def lede_hash(edition: dict[str, Any]) -> str:
-    ids = sorted(s["id"] for k in ("top", "recent", "cleared", "corrections") for s in edition.get(k) or [])
+    ids = sorted(_edition_ids(edition))
     stats = edition.get("stats") or {}
     raw = json.dumps([edition.get("date"), ids, stats.get("confirmed"), stats.get("cleared")], default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
@@ -259,28 +297,42 @@ def _edition_ids(edition: dict[str, Any]) -> set[str]:
     return ids
 
 
+def text_keys(edition: dict[str, Any]) -> list[str]:
+    keys = [f"finding:{i}" for i in sorted(_edition_ids(edition))]
+    keys.append(f"news:{edition.get('date')}")
+    return keys
+
+
 def _drop_hidden(conn: Any, edition: dict[str, Any]) -> dict[str, Any]:
     ids = sorted(_edition_ids(edition))
     if not ids:
         return edition
     ph = ",".join("?" for _ in ids)
-    visible = {
-        str(r["id"])
-        for r in conn.execute(f"SELECT id FROM findings WHERE id IN ({ph}) AND {_VISIBLE}", ids).fetchall()
+    current = {
+        str(r["id"]): str(r["status"] or "")
+        for r in conn.execute(f"SELECT id, status FROM findings WHERE id IN ({ph}) AND {_VISIBLE}", ids).fetchall()
     }
-    hidden = set(ids) - visible
-    if not hidden:
+    hidden = {i for i in ids if i not in current}
+    confirmed_ids = {str(x["id"]) for k in ("top", "recent") for x in edition.get(k) or []}
+    confirmed_ids |= {str(p["largest"]["id"]) for p in edition.get("projects") or [] if p.get("largest")}
+    cleared_ids = {str(x["id"]) for x in edition.get("cleared") or []}
+    withdrawn = {i for i in confirmed_ids if i in current and current[i] not in _CONFIRMED}
+    withdrawn |= {i for i in cleared_ids if i in current and current[i] not in _CLEARED}
+    gone = hidden | withdrawn
+    if not gone:
         return edition
     out = dict(edition)
-    for k in ("top", "recent", "cleared", "corrections"):
-        out[k] = [x for x in edition.get(k) or [] if str(x["id"]) not in hidden]
+    for k in ("top", "recent", "cleared"):
+        out[k] = [x for x in edition.get(k) or [] if str(x["id"]) not in gone]
+    out["corrections"] = [x for x in edition.get("corrections") or [] if str(x["id"]) not in hidden]
     out["projects"] = [
-        {**p, "largest": None} if p.get("largest") and str(p["largest"]["id"]) in hidden else p
+        {**p, "largest": None} if p.get("largest") and str(p["largest"]["id"]) in gone else p
         for p in edition.get("projects") or []
     ]
-    if out.get("number") in hidden:
+    if out.get("number") in gone:
         out["number"] = None
     out["withheld"] = len(hidden)
+    out["withdrawn"] = len(withdrawn)
     return out
 
 
@@ -298,7 +350,12 @@ def get_edition(db: Any, d: date, now: datetime | None = None) -> dict[str, Any]
                 except (TypeError, ValueError):
                     pass
         edition = build_edition(conn, d, now)
-    if not live and not getattr(db, "read_only", False):
+    if live:
+        return {**edition, "state": "live"}
+    from .writer import load_texts
+
+    edition["written"] = load_texts(db, text_keys(edition))
+    if not getattr(db, "read_only", False):
         try:
             with db.transaction() as wconn:
                 wconn.execute(
@@ -308,7 +365,7 @@ def get_edition(db: Any, d: date, now: datetime | None = None) -> dict[str, Any]
                 )
         except Exception:
             pass
-    return {**edition, "state": "live" if live else "final"}
+    return {**edition, "state": "final"}
 
 
 def list_dates(db: Any, now: datetime | None = None) -> list[str]:

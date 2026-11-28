@@ -132,7 +132,11 @@
       "what_repeat": "Public purchase records show the same company won {wins} contracts from this office, including \"{title}\".",
       "what_window": "Public purchase records show that \"{title}\" was open for bids for only {days} days. A short window can leave too little time for companies to apply.",
       "why": "Public money gets the best value when many companies compete. The rules (GFR 2017) ask officials to record why a single bid was accepted.",
-      "ask": "Why did only one company bid, and was the reason written down as the rules require?"
+      "ask": "Why did only one company bid, and was the reason written down as the rules require?",
+      "why_repeat": "When one company keeps winning work from the same office, it is worth checking that others had a fair chance to compete.",
+      "ask_repeat": "How were these contracts advertised, and how many companies bid for each?",
+      "why_window": "A short bidding window can leave too few companies time to apply, which weakens competition on price.",
+      "ask_window": "Why was the bidding window this short, and did the rules allow it?"
     },
     "promise_changed": {
       "name": "Promises and later changes",

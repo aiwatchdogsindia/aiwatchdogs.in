@@ -195,21 +195,30 @@ def _promise_pending(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame |
     return "promise_pending", "head", "what", slots, []
 
 
+def _single_bid(m: dict[str, Any]) -> bool:
+    for key in ("effective_bids", "technically_qualified_bids", "qualified_bid_count", "bids_received", "number_of_bids"):
+        n = _num(m.get(key))
+        if n is not None:
+            return n == 1
+    return False
+
+
 def _one_bid(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
     sig = str(m.get("signal_category") or "")
     entity = _entity(f, m.get("authority"))
     title = _clip(m.get("tender_title") or f.get("title"), 110)
     slots: dict[str, Any] = {"entity": entity, "title": title}
-    if sig in ("single_bidder_repeat_winner", "repeat_winner_concentration"):
-        wins = _num(m.get("winner_total_wins"))
-        if wins and wins > 1:
-            slots["wins"] = fmt.number(wins, lang)
-            return "one_bid", "head_repeat", "what_repeat" if sig == "repeat_winner_concentration" else "what", slots, []
-    if sig == "short_window_or_process_gap":
-        days = _num(m.get("bid_window_days"))
-        if days is not None and days >= 0:
-            slots["days"] = fmt.number(days, lang)
-            return "one_bid", "head_window", "what_window", slots, []
+    single = _single_bid(m)
+    wins = _num(m.get("winner_total_wins"))
+    if sig in ("single_bidder_repeat_winner", "repeat_winner_concentration") and wins and wins > 1:
+        slots["wins"] = fmt.number(wins, lang)
+        return "one_bid", "head_repeat", "what" if single else "what_repeat", slots, []
+    days = _num(m.get("bid_window_days"))
+    if sig == "short_window_or_process_gap" and days is not None and days >= 0:
+        slots["days"] = fmt.number(days, lang)
+        return "one_bid", "head_window", "what_window", slots, []
+    if not single:
+        return None
     amount = _num(f.get("monetary_exposure_inr")) or _num(m.get("award_value_inr"))
     if amount and amount > 0:
         slots["amount"] = fmt.money(amount, lang)
@@ -294,11 +303,12 @@ def _render(frame: Frame, lang: str) -> dict[str, str]:
     what = fill(tpl[what_key], slots)
     for key, extra_slots in extra:
         what = f"{what} {fill(tpl[key], extra_slots)}"
+    variant = head_key[len("head"):] if head_key.startswith("head_") else ""
     return {
         "head": fill(tpl[head_key], slots),
         "what": what,
-        "why": tpl["why"],
-        "ask": tpl["ask"],
+        "why": tpl.get(f"why{variant}") or tpl["why"],
+        "ask": tpl.get(f"ask{variant}") or tpl["ask"],
         "project": tpl["name"],
     }
 

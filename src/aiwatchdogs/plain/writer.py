@@ -97,10 +97,18 @@ def load_config(provider: str | None = None, model: str | None = None) -> Config
 
 
 def source_hash(f: dict[str, Any]) -> str:
+    metrics = f.get("anomaly_metrics")
+    if isinstance(metrics, str):
+        try:
+            metrics = json.loads(metrics)
+        except ValueError:
+            metrics = {}
     body = "|".join(
         str(f.get(k) or "")
         for k in ("title", "summary", "entity_name", "fiscal_year", "methodology_code")
-    ) + f"|{round(float(f.get('monetary_exposure_inr') or 0.0))}"
+    ) + f"|{round(float(f.get('monetary_exposure_inr') or 0.0))}|" + json.dumps(
+        metrics if isinstance(metrics, dict) else {}, sort_keys=True, separators=(",", ":"), default=str
+    )
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:20]
 
 
@@ -142,6 +150,12 @@ def _cost(model: str, usage: Any) -> float:
 
 class BudgetExhausted(RuntimeError):
     pass
+
+
+class CallFailed(RuntimeError):
+    def __init__(self, message: str, cost_usd: float) -> None:
+        super().__init__(message)
+        self.cost_usd = cost_usd
 
 
 MIN_CALL_S = 15.0
@@ -197,10 +211,15 @@ def _call_anthropic(cfg: Config, system: str, prompt: str, schema: dict[str, Any
         msg = client.beta.messages.create(**kwargs)
     else:
         msg = client.messages.create(**kwargs)
+    cost = _cost(cfg.model, msg.usage)
     if msg.stop_reason in ("refusal", "max_tokens"):
-        raise RuntimeError(f"model stopped: {msg.stop_reason}")
+        raise CallFailed(f"model stopped: {msg.stop_reason}", cost)
     text = next((b.text for b in msg.content if getattr(b, "type", "") == "text"), "")
-    return Result(json.loads(text), _cost(cfg.model, msg.usage), str(getattr(msg, "model", cfg.model)))
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        raise CallFailed("model returned bad JSON", cost) from exc
+    return Result(data, cost, str(getattr(msg, "model", cfg.model)))
 
 
 def _call_ollama(cfg: Config, system: str, prompt: str, schema: dict[str, Any], timeout_s: float) -> Result:
@@ -245,13 +264,22 @@ def call_model(
     held = worst_case_usd(cfg, system, prompt, schema, max_tokens)
     if not _reserve(db, day, held, cfg.budget_usd):
         raise BudgetExhausted("daily budget reached")
+    spent = held
+    calls = 1
     try:
         res = _call_anthropic(cfg, system, prompt, schema, max_tokens, timeout_s)
-    except anthropic.APIStatusError:
-        _settle(db, day, held, 0.0, calls=0)
+        spent = res.cost_usd
+        return res
+    except CallFailed as exc:
+        spent = exc.cost_usd
         raise
-    _settle(db, day, held, res.cost_usd)
-    return res
+    except anthropic.APITimeoutError:
+        raise
+    except (anthropic.APIStatusError, anthropic.APIConnectionError):
+        spent, calls = 0.0, 0
+        raise
+    finally:
+        _settle(db, day, held, min(spent, held), calls=calls)
 
 
 def finding_facts(f: dict[str, Any]) -> dict[str, Any]:

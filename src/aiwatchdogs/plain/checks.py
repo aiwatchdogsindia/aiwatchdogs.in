@@ -4,6 +4,7 @@ import json
 import math
 import re
 import unicodedata
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,6 @@ from .packs import pack
 
 LINT_FILE = Path(__file__).resolve().parent / "lint.json"
 _NUM_RE = re.compile(r"\d+(?:[.,  '’]\d+)*")
-_DISPLAY = (1.0, 1e7, 1e5, 1e6, 1e9, 1e8, 1e4, 1e3)
 ALWAYS_OK = {2005.0, 2017.0, 3.0, 10.0, 30.0}
 
 
@@ -59,26 +59,94 @@ _MONEY_KEY = re.compile(
     r"(budget|revised|actual|unspent|cut|amount|value|inr|crore|lakh|exposure|cost|fund|compensation|^be$|^re$|^be_next$)",
     re.IGNORECASE,
 )
+_PCT_KEY = re.compile(r"(pct|percent|share|rate)", re.IGNORECASE)
 _UNIT = {"crore": 1e7, "lakh": 1e5, "thousand": 1e3, "rupee": 1.0, "inr": 1.0}
+_PCT_SIGNS = ("%", "٪", "％")
+_CURRENCY = re.compile(r"(₹|rs\.?|inr)\s*$", re.IGNORECASE)
 
 
-def _money_forms(inr: float, out: set[float]) -> None:
-    for div in _DISPLAY:
-        out.add(abs(inr) / div)
+@dataclass
+class Allowed:
+    plain: set[float] = field(default_factory=set)
+    money: set[float] = field(default_factory=set)
+    pct: set[float] = field(default_factory=set)
 
 
-def _walk_numbers(obj: Any, out: set[float], key: str = "", unit: float = 1e7, depth: int = 0) -> None:
+def _stem(word: str) -> str:
+    w = unicodedata.normalize("NFC", word).lower()
+    return w[: max(3, len(w) - 2)]
+
+
+@lru_cache(maxsize=1)
+def _unit_stems() -> tuple[tuple[str, float], ...]:
+    from .packs import _all_packs
+
+    stems: dict[str, float] = {"crore": 1e7, "cr": 1e7, "lakh": 1e5, "lac": 1e5, "million": 1e6, "billion": 1e9}
+    for data in _all_packs().values():
+        money = data.get("money") or {}
+        for key, mult in (("crore", 1e7), ("lakh", 1e5)):
+            word = str(money.get(key) or "").strip()
+            if word:
+                stems.setdefault(_stem(word), mult)
+    return tuple(sorted(stems.items(), key=lambda kv: -len(kv[0])))
+
+
+def _unit_after(rest: str) -> float | None:
+    tail = unicodedata.normalize("NFC", rest.lstrip(" \u00a0\u202f")).lower()
+    for stem, mult in _unit_stems():
+        if tail.startswith(stem):
+            nxt = tail[len(stem) : len(stem) + 1]
+            if nxt.isalpha() and (len(stem) < 3 or (stem.isascii() and len(stem) <= 3)):
+                continue
+            return mult
+    return None
+
+
+def typed_numbers(text: str, lang: str = "en") -> list[tuple[str, float, float]]:
+    src = ascii_digits(text or "")
+    out: list[tuple[str, float, float]] = []
+    for m in _NUM_RE.finditer(src):
+        vals = numbers_in(m.group(0), lang)
+        if not vals:
+            continue
+        v = vals[0]
+        before, after = src[max(0, m.start() - 5) : m.start()], src[m.end() : m.end() + 24]
+        if after.lstrip(" \u00a0\u202f")[:1] in _PCT_SIGNS or before.rstrip()[-1:] in _PCT_SIGNS:
+            out.append(("pct", v, v))
+            continue
+        unit = _unit_after(after)
+        currency = bool(_CURRENCY.search(before))
+        if unit is None and currency and after.lstrip(" \u00a0\u202f")[:1].lower() == "l" and not after.lstrip(" \u00a0\u202f")[1:2].isalpha():
+            unit = 1e5
+        if unit is not None:
+            out.append(("money", v, v * unit))
+        elif currency:
+            out.append(("money", v, v))
+        else:
+            out.append(("num", v, v))
+    return out
+
+
+def _walk_numbers(obj: Any, out: Allowed, key: str = "", unit: float = 1e7, depth: int = 0) -> None:
     if depth > 8 or isinstance(obj, bool):
         return
     if isinstance(obj, (int, float)):
-        v = float(obj)
+        v = abs(float(obj))
         if not math.isfinite(v):
             return
-        out.add(abs(v))
-        if key and _MONEY_KEY.search(key):
-            _money_forms(v if abs(v) >= 1e5 or "inr" in key.lower() or "rupee" in key.lower() else v * unit, out)
+        out.plain.add(v)
+        if key and _PCT_KEY.search(key):
+            out.pct.add(v)
+        elif key and _MONEY_KEY.search(key):
+            low = key.lower()
+            out.money.add(v if v >= 1e5 or "inr" in low or "rupee" in low else v * unit)
     elif isinstance(obj, str):
-        out.update(numbers_in(obj))
+        for kind, v, inr in typed_numbers(obj):
+            out.plain.add(v)
+            if kind == "money":
+                out.money.add(inr)
+            elif kind == "pct":
+                out.pct.add(v)
     elif isinstance(obj, dict):
         u = _UNIT.get(str(obj.get("unit") or "").lower(), unit)
         for k, v in obj.items():
@@ -88,16 +156,17 @@ def _walk_numbers(obj: Any, out: set[float], key: str = "", unit: float = 1e7, d
             _walk_numbers(v, out, key, unit, depth + 1)
 
 
-def allowed_numbers(*sources: Any) -> set[float]:
-    out = set(ALWAYS_OK)
+def allowed_numbers(*sources: Any) -> Allowed:
+    out = Allowed(plain=set(ALWAYS_OK))
     for s in sources:
         _walk_numbers(s, out)
     return out
 
 
-def number_ok(n: float, allowed: set[float]) -> bool:
+def number_ok(n: float, allowed: set[float] | Allowed) -> bool:
+    values = allowed.plain | allowed.pct if isinstance(allowed, Allowed) else allowed
     n = abs(n)
-    for a in allowed:
+    for a in values:
         if a == 0:
             if n == 0:
                 return True
@@ -112,8 +181,33 @@ def number_ok(n: float, allowed: set[float]) -> bool:
     return False
 
 
-def bad_numbers(text: str, lang: str, allowed: set[float]) -> list[float]:
-    return [n for n in numbers_in(text, lang) if not number_ok(n, allowed)]
+def money_ok(shown: float, inr: float, allowed: Allowed) -> bool:
+    unit = inr / shown if shown else 1.0
+    for a in allowed.money:
+        if a <= 0:
+            continue
+        if abs(inr - a) / a <= 0.006:
+            return True
+        scaled = a / unit
+        if any(abs(round(scaled, d) - shown) <= 1e-9 for d in (0, 1, 2)):
+            return True
+    return False
+
+
+def bad_numbers(text: str, lang: str, allowed: set[float] | Allowed) -> list[float]:
+    if not isinstance(allowed, Allowed):
+        allowed = Allowed(plain=set(allowed))
+    bad: list[float] = []
+    for kind, v, inr in typed_numbers(text, lang):
+        if kind == "money":
+            ok = money_ok(v, inr, allowed)
+        elif kind == "pct":
+            ok = number_ok(v, allowed.pct)
+        else:
+            ok = number_ok(v, allowed.plain)
+        if not ok:
+            bad.append(v)
+    return bad
 
 
 _SPLIT = re.compile(r"[\s.,;:!?\"'“”‘’()\[\]{}«»„।॥،؟、。，！？：；…/\-]+")
@@ -123,13 +217,27 @@ _SUBSTRING_LANGS = {"zh", "ja"}
 def lint_hits(text: str, lang: str) -> list[str]:
     hits = list(scan_forbidden_terms(text or ""))
     low = unicodedata.normalize("NFKC", text or "").lower()
-    words = [w for w in _lint_words().get(lang, []) if w]
+    words = [unicodedata.normalize("NFKC", w) for w in _lint_words().get(lang, []) if w]
     if lang in _SUBSTRING_LANGS:
         hits.extend(w for w in words if w in low)
     else:
         tokens = [t for t in _SPLIT.split(low) if t]
-        hits.extend(w for w in words if any(t.startswith(w) for t in tokens))
+        for w in words:
+            parts = [t for t in _SPLIT.split(w) if t]
+            if len(parts) <= 1:
+                if any(t.startswith(w) for t in tokens):
+                    hits.append(w)
+            elif _has_phrase(tokens, parts):
+                hits.append(w)
     return hits
+
+
+def _has_phrase(tokens: list[str], parts: list[str]) -> bool:
+    n = len(parts)
+    for i in range(len(tokens) - n + 1):
+        if tokens[i : i + n - 1] == parts[:-1] and tokens[i + n - 1].startswith(parts[-1]):
+            return True
+    return False
 
 
 def _syllables(word: str) -> int:
