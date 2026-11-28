@@ -250,7 +250,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           overflowWrap: 'break-word',
         }}
       >
-        {finding.title}
+        {finding.headline || finding.title}
       </h3>
 
       {!compact && (

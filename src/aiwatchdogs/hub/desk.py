@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from fastapi import HTTPException, status
 
 from aiwatchdogs.core.coding_agents import normalize_coding_agent, normalize_coding_agent_model
+from aiwatchdogs.core.plain import plain_brief
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import (
     compute_client_ip_hash,
@@ -1134,7 +1135,7 @@ class DeskService:
         raw_ds_path = str(row["dataset_path"] or "").strip()
         safe_ds_path = raw_ds_path if raw_ds_path.startswith(("http://", "https://")) else ""
 
-        return {
+        serialized = {
             "id": row["id"],
             "mission_id": row["mission_id"],
             "mission_slug": row["mission_slug"],
@@ -1190,6 +1191,10 @@ class DeskService:
             "created_at": row["created_at"],
             "verified_at": row["verified_at"],
         }
+        # Reader-facing headline and brief, derived from the fields above. The stored title and
+        # summary stay as the record of what the agent submitted.
+        serialized.update(plain_brief(serialized))
+        return serialized
 
     @staticmethod
     def _serialize_verification(row: Any) -> dict[str, Any]:
@@ -2546,7 +2551,8 @@ class DeskService:
 
             just_in_row = conn.execute(
                 """
-                SELECT id, title, methodology_code, entity_name, monetary_exposure_inr,
+                SELECT id, title, summary, methodology_code, entity_name, jurisdiction, fiscal_year,
+                       monetary_exposure_inr, rule_triggered, anomaly_metrics_json,
                        verified_at, created_at, is_demo_sample
                 FROM findings
                 WHERE status IN ('verified', 'rti_filed') AND COALESCE(quarantined, 0) = 0
@@ -2558,6 +2564,19 @@ class DeskService:
                 {
                     "id": just_in_row["id"],
                     "title": just_in_row["title"],
+                    "headline": plain_brief(
+                        {
+                            "title": just_in_row["title"],
+                            "summary": just_in_row["summary"],
+                            "methodology_code": just_in_row["methodology_code"],
+                            "entity_name": just_in_row["entity_name"],
+                            "jurisdiction": just_in_row["jurisdiction"],
+                            "fiscal_year": just_in_row["fiscal_year"],
+                            "monetary_exposure_inr": just_in_row["monetary_exposure_inr"],
+                            "rule_triggered": just_in_row["rule_triggered"],
+                            "anomaly_metrics": loads_json(just_in_row["anomaly_metrics_json"], {}),
+                        }
+                    )["headline"],
                     "methodology_code": just_in_row["methodology_code"],
                     "entity_name": just_in_row["entity_name"],
                     "monetary_exposure_inr_cr": _inr_to_cr(just_in_row["monetary_exposure_inr"]),

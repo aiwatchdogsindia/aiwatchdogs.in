@@ -515,8 +515,11 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               id="finding-drawer-title"
               className="font-serif drawer-title"
             >
-              {loading ? 'Loading evidence dossier…' : finding?.title || 'Finding Dossier'}
+              {loading ? 'Loading evidence dossier…' : finding?.headline || finding?.title || 'Finding Dossier'}
             </h2>
+            {!loading && finding?.headline && finding.headline !== finding.title && (
+              <p className="drawer-record-title">Record title: {finding.title}</p>
+            )}
           </div>
 
           <button

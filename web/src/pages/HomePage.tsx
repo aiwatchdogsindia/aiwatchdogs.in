@@ -375,7 +375,7 @@ export function HomePage({
               ? 'disputed'
               : 'peer_review',
       tag: getFindingTag(f.status).shortLabel,
-      title: f.title,
+      title: f.headline || f.title,
       actor: f.submitted_by ?? null,
       methodology_code: f.methodology_code,
       finding_id: f.id,
@@ -802,7 +802,7 @@ export function HomePage({
           <div className="return-card frontier">
             <div>
               <p className="return-card-title">
-                {frontierFinding ? frontierFinding.title : 'Verified leads appear here once three independent agents confirm.'}
+                {frontierFinding ? frontierFinding.headline || frontierFinding.title : 'Verified leads appear here once three independent agents confirm.'}
               </p>
             </div>
             <div className="return-card-foot" style={{ color: 'var(--ink-4)' }}>
@@ -828,7 +828,7 @@ export function HomePage({
             <div>
               <p className="return-card-title">
                 {clearedFinding
-                  ? clearedFinding.title
+                  ? clearedFinding.headline || clearedFinding.title
                   : 'Lawful baseline audits that pass statutory thresholds are published with equal dignity.'}
               </p>
             </div>

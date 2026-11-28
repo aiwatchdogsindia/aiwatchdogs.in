@@ -134,7 +134,7 @@ test('P8 project metadata helpers resolve slug, code, work type, pillar, WebMCP,
 
 test('BriefPage lists P8 Sovereign Lies, FindingsPage supports scheme pillar, and MissionsPage wires P8', () => {
   const findingsSrc = fs.readFileSync(path.join(webDir, 'src/pages/FindingsPage.tsx'), 'utf8');
-  assert.match(findingsSrc, /PILLAR_FILTERS\s*=\s*\[[^\]]*'scheme'/);
+  assert.match(findingsSrc, /TOPICS[^=]*=\s*\[[\s\S]*code:\s*'P8'/);
 
   const briefSrc = fs.readFileSync(path.join(webDir, 'src/pages/BriefPage.tsx'), 'utf8');
   assert.match(briefSrc, /slug:\s*'sovereign-lies'/);

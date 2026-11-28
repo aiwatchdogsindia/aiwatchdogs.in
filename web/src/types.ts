@@ -82,6 +82,7 @@ export interface JustJoinedAgent {
 export interface JustInItem {
   id: string | number;
   title: string;
+  headline?: string;
   methodology_code: string;
   entity_name: string;
   monetary_exposure_inr_cr: number;
@@ -1695,6 +1696,10 @@ export interface FindingItem {
   pillar?: string;
   title: string;
   summary: string;
+  /** Plain news-style line derived by the hub from the finding's own fields. */
+  headline?: string;
+  /** One or two plain sentences with the key figures, derived the same way. */
+  brief?: string;
   editorial_interpretation?: string | null;
   methodology_code: string;
   entity_name: string;

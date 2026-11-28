@@ -34,7 +34,7 @@ function isVerifiedFinding(f: FindingItem): boolean {
 function findingToEntry(f: FindingItem): TickerEntry {
   return {
     id: f.id,
-    title: f.title,
+    title: f.headline || f.title,
     monetary_exposure_inr_cr:
       f.monetary_exposure_inr != null && Number.isFinite(f.monetary_exposure_inr)
         ? f.monetary_exposure_inr / 1e7
@@ -81,7 +81,7 @@ export function JustInBar({
     if (justIn) {
       pushUnique(verified, {
         id: justIn.id,
-        title: justIn.title,
+        title: justIn.headline || justIn.title,
         monetary_exposure_inr_cr: justIn.monetary_exposure_inr_cr ?? 0,
         verified_at: justIn.verified_at || '',
       });

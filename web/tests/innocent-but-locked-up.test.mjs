@@ -138,7 +138,7 @@ test('P10 project metadata helpers resolve slug, code, work type, justice pillar
 
 test('BriefPage lists P10, FindingsPage supports justice pillar, and MissionsPage wires P10', () => {
   const findingsSrc = fs.readFileSync(path.join(webDir, 'src/pages/FindingsPage.tsx'), 'utf8');
-  assert.match(findingsSrc, /PILLAR_FILTERS\s*=\s*\[[^\]]*'justice'/);
+  assert.match(findingsSrc, /TOPICS[^=]*=\s*\[[\s\S]*code:\s*'P10'/);
 
   const briefSrc = fs.readFileSync(path.join(webDir, 'src/pages/BriefPage.tsx'), 'utf8');
   assert.match(briefSrc, /slug:\s*'innocent-but-locked-up'/);
