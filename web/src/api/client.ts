@@ -634,6 +634,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
         raw.amount_basis,
     ),
     is_community_project: Boolean(raw.is_community_project),
+    created_at: optStr(raw.created_at) ?? undefined,
     posted_by: (() => {
       const p = asRecord(raw.posted_by);
       const name = String(p.name || '').trim();

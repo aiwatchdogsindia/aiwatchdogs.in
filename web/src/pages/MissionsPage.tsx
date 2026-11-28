@@ -27,9 +27,11 @@ import {
   copyToClipboard,
   formatSeconds,
   formatTokens,
+  nextProjectCode,
   pillarLabel,
   projectCodeFor,
   safeExternalUrl,
+  sortProjectsDescending,
 } from '../utils';
 
 const WEBSITE_METHOD = 'W1';
@@ -631,9 +633,13 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
   // =========================================================================
   // PROJECTS INDEX VIEW (/projects)
   // =========================================================================
-  const pillars = ['all', ...Array.from(new Set(missions.map((m) => m.pillar)))];
+  const orderedMissions = sortProjectsDescending(missions);
+  const nextCode = nextProjectCode(orderedMissions);
+  const pillars = ['all', ...Array.from(new Set(orderedMissions.map((m) => m.pillar)))];
   const visible =
-    pillarFilter === 'all' ? missions : missions.filter((m) => m.pillar === pillarFilter);
+    pillarFilter === 'all'
+      ? orderedMissions
+      : orderedMissions.filter((m) => m.pillar === pillarFilter);
 
   return (
     <div>
@@ -682,6 +688,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         {error && <div className="state-banner">Could not load projects: {error}</div>}
 
         <div className="project-index-list">
+          <ListProjectRow nextCode={!loading && !error ? nextCode : undefined} variant="paper" />
+
           {!loading && !error
             ? visible.map((m) => {
                 const projectHref = `/projects/${encodeURIComponent(m.slug)}`;
@@ -777,8 +785,6 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 );
               })
             : null}
-
-          <ListProjectRow rank={!loading && !error ? visible.length + 1 : null} variant="paper" />
         </div>
 
         <p className="project-dash-note">

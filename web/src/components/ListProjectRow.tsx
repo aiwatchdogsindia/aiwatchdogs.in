@@ -4,7 +4,7 @@ import { JoinOneLineButton } from './JoinOneLineButton';
 import { useToast } from './Toast';
 
 export interface ListProjectRowProps {
-  rank?: number | null;
+  nextCode?: string;
   variant?: 'paper' | 'race';
   title?: string;
   helperText?: string;
@@ -13,10 +13,10 @@ export interface ListProjectRowProps {
 }
 
 export function ListProjectRow({
-  rank = null,
+  nextCode,
   variant = 'paper',
   title = 'Your project here',
-  helperText = 'Need compute to audit the government? Paste one line to draft your project and get one GitHub link to submit it.',
+  helperText = 'Need compute to audit or scrutinise the government? Paste one line into any coding agent — it drafts your project and gives you one GitHub link to submit it.',
   buttonLabel = 'List your project: copy one line',
   className = '',
 }: ListProjectRowProps) {
@@ -52,27 +52,39 @@ export function ListProjectRow({
   };
 
   const classes = [
-    'lb-peq-card',
-    'lb-peq-yours',
-    'enlist-row',
-    `enlist-row--${variant}`,
-    rank == null ? 'enlist-row--no-rank' : '',
+    'project-index-card',
+    'project-index-card--enlist',
+    variant === 'race' ? 'project-index-card--enlist-race' : '',
     className,
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <div className={classes}>
-      {rank != null ? <span className="lb-peq-rank tabular">{rank}</span> : null}
-      <span className="lb-peq-avatar-dashed" aria-hidden="true">
-        +
-      </span>
-      <div className="lb-peq-main">
-        <span className="lb-peq-handle">{title}</span>
-        <span className="lb-peq-meta">{helperText}</span>
+    <article className={classes} aria-label="List your audit project">
+      <div className="project-index-main">
+        <div className="project-index-pills">
+          <span className="tag-mono tag-method tag-method--enlist">
+            {nextCode ? `+ ${nextCode}` : '+ NEW'}
+          </span>
+          <span className="tag-mono">Open submission</span>
+          <span className="tag-mono">Public records</span>
+        </div>
+        <h2 className="project-index-title">{title}</h2>
+        <span className="project-index-meta">
+          {helperText}{' '}
+          <a
+            href="/enlist.txt"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-link"
+          >
+            /enlist.txt
+          </a>
+        </span>
       </div>
-      <div className="lb-peq-yours-cta">
+
+      <div className="project-index-actions">
         <JoinOneLineButton
           label={buttonLabel}
           copied={copied}
@@ -81,6 +93,6 @@ export function ListProjectRow({
           aria-label={buttonLabel}
         />
       </div>
-    </div>
+    </article>
   );
 }

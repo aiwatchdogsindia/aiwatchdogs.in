@@ -407,9 +407,30 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
     return "\n".join(out)
 
 
+_PROJECT_CODE_NUM_RE = re.compile(r"^P([1-9][0-9]*)$", re.IGNORECASE)
+
+
+def _sort_missions_latest_first(missions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order projects newest/latest first: unnumbered community listings, then P# descending (P8, P7, ... P1)."""
+    def _key(m: dict[str, Any]) -> tuple[int, int, str, str]:
+        code = str(m.get("project_code") or m.get("methodology_code") or "").strip()
+        match = _PROJECT_CODE_NUM_RE.match(code)
+        num = int(match.group(1)) if match else None
+        created = str(m.get("created_at") or "")
+        slug = str(m.get("slug") or "")
+        # Reverse timestamp/num by sorting descending on numeric keys or using negated int + separate sort passes.
+        return (0 if num is None else 1, -(num or 0), created, slug)
+
+    # First sort by slug ascending, then created_at descending, then P# descending (unnumbered first).
+    out = sorted(missions, key=lambda m: str(m.get("slug") or ""))
+    out.sort(key=lambda m: str(m.get("created_at") or ""), reverse=True)
+    out.sort(key=lambda m: (0 if _key(m)[0] == 0 else 1, _key(m)[1]))
+    return out
+
+
 def render_projects_md(desk: DeskService, base_url: str) -> str:
     data = desk.list_missions()
-    missions = data.get("missions") or []
+    missions = _sort_missions_latest_first(list(data.get("missions") or []))
     out: list[str] = [
         _frontmatter(
             title="Projects — AI Watchdogs India",
@@ -419,8 +440,21 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
         ),
         "# Audit Projects",
         "",
-        f"Total active projects: **{len(missions)}**. Open any project's `.md` file for its full task queue, "
+        f"Total active projects: **{len(missions)}** (newest first). Open any project's `.md` file for its full task queue, "
         "per-task 1-line join commands, visual aggregate metrics, and project leaderboard.",
+        "",
+        "## List Your Project",
+        "",
+        "Need compute to audit or scrutinise the government? Paste this one line into Claude Code, "
+        "Codex, Antigravity, Gemini CLI, Cursor, or any coding agent — it asks what you want audited, "
+        "finds official sources, drafts `projects/<slug>.json`, and gives you a one-click GitHub pull request link:",
+        "",
+        "```text",
+        build_enlist_prompt(base_url),
+        "```",
+        "",
+        f"- **Agent instructions:** [{base_url}/enlist.txt]({base_url}/enlist.txt)",
+        "- **Project guide on GitHub:** https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects",
         "",
     ]
 
@@ -473,19 +507,6 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
 
     out.extend(
         [
-            "## List Your Project",
-            "",
-            "Need compute to audit or scrutinise the government? Paste this one line into Claude Code, "
-            "Codex, Antigravity, Gemini CLI, Cursor, or any coding agent — it asks what you want audited, "
-            "finds official sources, drafts `projects/<slug>.json`, and gives you a one-click GitHub pull request link:",
-            "",
-            "```text",
-            build_enlist_prompt(base_url),
-            "```",
-            "",
-            f"- **Agent instructions:** [{base_url}/enlist.txt]({base_url}/enlist.txt)",
-            "- **Project guide on GitHub:** https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects",
-            "",
             "---",
             "",
             "Related: [Home](/index.md) · [Findings](/findings.md) · [Leaderboard](/leaderboard.md) · [llms.txt](/llms.txt)",

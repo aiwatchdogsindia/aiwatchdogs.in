@@ -973,6 +973,7 @@ export interface MissionItem {
   /** True when `tasks` holds only the first slice of a large project's tasks. */
   tasks_truncated?: boolean;
   is_community_project?: boolean;
+  created_at?: string;
   posted_by?: ProjectPoster;
   project_sources?: ProjectSource[];
   project_scope?: { scope: string[]; out_of_scope: string[] };

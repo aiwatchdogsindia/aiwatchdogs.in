@@ -241,7 +241,7 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
           ); maintainers review every submission before it goes live.
         </p>
         <div className="brief-projects">
-          {LIVE_PROJECTS.map((project) => (
+          {LIVE_PROJECTS.slice().reverse().map((project) => (
             <Link
               key={project.slug}
               to={`/projects/${project.slug}`}
