@@ -1,8 +1,8 @@
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { FINDING_FILTER_OPTIONS, getFindingTag } from '../lib/tags';
-import type { FindingItem } from '../types';
+import type { FindingItem, MissionItem } from '../types';
 import { formatRelativeTime, safeExternalUrl } from '../utils';
 
 interface FindingsPageProps {
@@ -12,20 +12,21 @@ interface FindingsPageProps {
 
 const PAGE_SIZE = 30;
 
-// One chip per kind of check, named the way a reader would say it. `code` is the check's
-// methodology code, which is what the findings API filters on.
+// Each live project, by the methodology code the findings API filters on, with the short name it
+// goes by on the Projects page. The order is the fallback when the projects API cannot be reached.
 const TOPICS: Array<{ code: string; label: string }> = [
-  { code: '', label: 'All' },
-  { code: 'UB1', label: 'Unspent budget' },
-  { code: 'P7', label: 'Tenders' },
-  { code: 'P9', label: 'Exams' },
-  { code: 'P10', label: 'Custody' },
-  { code: 'P8', label: 'Scheme promises' },
-  { code: 'P6', label: 'Parliament promises' },
-  { code: 'P1', label: 'Police budgets' },
-  { code: 'P5', label: 'Schools' },
-  { code: 'OR1', label: 'Duplicate billing' },
+  { code: 'P7', label: 'Only One Bid' },
+  { code: 'UB1', label: 'Unspent Union Budget' },
+  { code: 'P6', label: "Parliament's To-Do List" },
+  { code: 'P10', label: 'Innocent But Locked Up' },
+  { code: 'P8', label: 'Sovereign Lies' },
+  { code: 'P9', label: 'Auditing Government Exams' },
+  { code: 'P1', label: 'Police Finances' },
+  { code: 'P5', label: 'One Teacher, Five Grades' },
+  { code: 'OR1', label: 'One Road, Two Bills' },
 ];
+
+const TOPIC_LABELS: Record<string, string> = Object.fromEntries(TOPICS.map((t) => [t.code, t.label]));
 
 function clip(text: string, max: number): string {
   const clean = text.replace(/\s+/g, ' ').trim();
@@ -43,69 +44,67 @@ function shortEntity(name: string): string {
   return clip(clean, 48);
 }
 
-// Words that say nothing on their own, left out of the trending line.
-const STOPWORDS = new Set(
-  (
-    'a an and are as at be been but by for from had has have in into is it its of on or over than that the ' +
-    'their them then there these this those to under up was were which while with within without per each ' +
-    'all any also after before between both did does during more most no not only other same some such ' +
-    'very about against below above out off one two three four five six seven eight nine ten its own ' +
-    'listed shows show recorded records record name named lists list issued gave given set held who ' +
-    'down struck high covers ruled order person directed plea had has partial'
-  ).split(' '),
-);
-
-interface TrendTerm {
-  word: string;
+interface ProjectTrend {
+  code: string;
+  label: string;
   count: number;
 }
 
-/**
- * The most repeated words across recent headlines, the way Pulse builds its trending line. Search
- * runs on each finding's stored text, so a word counts only if that text contains it too; otherwise
- * clicking it could return nothing.
- */
-function trendingTerms(findings: FindingItem[], max = 42): TrendTerm[] {
-  const counts = new Map<string, number>();
-  for (const f of findings) {
-    const text = (f.headline || f.title || '').toLowerCase();
-    const searchable = `${f.title} ${f.summary} ${f.entity_name} ${f.jurisdiction}`.toLowerCase();
-    const seen = new Set<string>();
-    for (const raw of text.split(/[^a-z\u0900-\u097f&'-]+/)) {
-      const word = raw.replace(/^['-]+|['-]+$/g, '').replace(/'s$/, '');
-      if (word.length < 3 || STOPWORDS.has(word) || seen.has(word) || !searchable.includes(word)) continue;
-      seen.add(word);
-      counts.set(word, (counts.get(word) || 0) + 1);
-    }
+/** Live projects with published findings, named the way the Projects page names them. */
+function projectTrends(missions: MissionItem[]): ProjectTrend[] {
+  const out: ProjectTrend[] = [];
+  for (const m of missions) {
+    const code = (m.methodology_code || '').toUpperCase();
+    const count = Number(m.verified_findings_count || 0);
+    if (!code || count <= 0 || m.status === 'archived') continue;
+    const label = TOPIC_LABELS[code] || (m.title || code).split(':')[0].trim();
+    out.push({ code, label, count });
   }
-  return [...counts.entries()]
-    .filter(([, n]) => n >= 2)
-    .sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))
-    .slice(0, max)
-    .map(([word, count]) => ({ word, count }));
+  return out;
 }
 
-function Trending({ terms, onPick }: { terms: TrendTerm[]; onPick: (word: string) => void }) {
-  if (terms.length === 0) return null;
-  const top = terms[0].count;
-  // Mix big and small words as Pulse does, in an order that stays the same between renders.
+function Trending({
+  projects,
+  active,
+  onPick,
+}: {
+  projects: ProjectTrend[];
+  active: string;
+  onPick: (code: string) => void;
+}) {
+  if (projects.length === 0) return null;
+  // Sizes follow finding counts on a log scale, since projects range from a handful to thousands.
+  const counts = projects.map((p) => Math.log(p.count + 1));
+  const lo = Math.min(...counts);
+  const hi = Math.max(...counts);
+  // Mix big and small names as Pulse does, in an order that stays the same between visits.
   const mixKey = (w: string) => [...w].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 7);
-  const ordered = [...terms].sort((x, y) => mixKey(x.word) - mixKey(y.word));
+  const ordered = [...projects].sort((x, y) => mixKey(x.label) - mixKey(y.label));
   return (
-    <nav className="pulse-trending" aria-label="Trending words in recent findings">
+    <nav className="pulse-trending" aria-label="Filter findings by project">
       <span className="pulse-trending-label">Trending</span>
-      {ordered.map((t) => {
-        const scale = Math.sqrt(t.count / top);
+      <button
+        type="button"
+        className={active ? 'pulse-trend pulse-trend-all' : 'pulse-trend pulse-trend-all is-active'}
+        aria-pressed={!active}
+        onClick={() => onPick('')}
+      >
+        All projects
+      </button>
+      {ordered.map((p) => {
+        const scale = hi > lo ? (Math.log(p.count + 1) - lo) / (hi - lo) : 1;
+        const isActive = p.code === active;
         return (
           <button
-            key={t.word}
+            key={p.code}
             type="button"
-            className="pulse-trend"
-            style={{ fontSize: `${(13 + scale * 17).toFixed(1)}px` }}
-            title={`${t.count} of the latest verified findings mention “${t.word}”`}
-            onClick={() => onPick(t.word)}
+            className={isActive ? 'pulse-trend is-active' : 'pulse-trend'}
+            style={{ '--trend-scale': scale.toFixed(3) } as CSSProperties}
+            aria-pressed={isActive}
+            title={`${p.count.toLocaleString('en-IN')} verified findings`}
+            onClick={() => onPick(isActive ? '' : p.code)}
           >
-            {t.word}
+            {p.label}
           </button>
         );
       })}
@@ -176,24 +175,22 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [trending, setTrending] = useState<TrendTerm[]>([]);
+  const [projects, setProjects] = useState<ProjectTrend[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    // Drop the previous topic's words at once, so none of them can be clicked against the new topic.
-    setTrending([]);
     api
-      .getFindings({ status: 'verified', methodology: topic || undefined, limit: 100, offset: 0 })
-      .then((res) => {
-        if (!cancelled) setTrending(trendingTerms(res.items));
+      .getMissions()
+      .then((missions) => {
+        if (!cancelled) setProjects(projectTrends(missions));
       })
       .catch(() => {
-        if (!cancelled) setTrending([]);
+        if (!cancelled) setProjects(TOPICS.map((t) => ({ ...t, count: 1 })));
       });
     return () => {
       cancelled = true;
     };
-  }, [topic, refreshTick]);
+  }, [refreshTick]);
 
   useEffect(() => {
     setPage(0);
@@ -273,21 +270,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         </div>
       </header>
 
-      <Trending terms={trending} onPick={setSearch} />
-
-      <nav className="pulse-topics" aria-label="Filter findings by topic">
-        {TOPICS.map((t) => (
-          <button
-            key={t.code || 'all'}
-            type="button"
-            className={t.code === topic ? 'pulse-topic is-active' : 'pulse-topic'}
-            aria-pressed={t.code === topic}
-            onClick={() => setTopic(t.code)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
+      <Trending projects={projects} active={topic} onPick={setTopic} />
 
       <p className="pulse-count" aria-live="polite">
         {loading
