@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from typing import Any, Callable
@@ -297,6 +298,22 @@ def status_line(f: dict[str, Any], lang: str) -> str:
     return fill(text(lang, "status", key), {"need": fmt.number(need, lang), "done": fmt.number(done, lang) or "0"})
 
 
+def source_hash(f: dict[str, Any]) -> str:
+    metrics = f.get("anomaly_metrics")
+    if isinstance(metrics, str):
+        try:
+            metrics = json.loads(metrics)
+        except ValueError:
+            metrics = {}
+    body = "|".join(
+        str(f.get(k) or "")
+        for k in ("title", "summary", "entity_name", "fiscal_year", "methodology_code")
+    ) + f"|{round(float(f.get('monetary_exposure_inr') or 0.0))}|" + json.dumps(
+        metrics if isinstance(metrics, dict) else {}, sort_keys=True, separators=(",", ":"), default=str
+    )
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:20]
+
+
 def _render(frame: Frame, lang: str) -> dict[str, str]:
     kind, head_key, what_key, slots, extra = frame
     tpl = section(lang, "kinds", kind)
@@ -336,8 +353,6 @@ def explain_finding(f: dict[str, Any], lang: str = "en", written: dict[str, Any]
     p = pack(lang)
     source, model = "template", ""
     if written and isinstance(written.get("langs"), dict):
-        from .writer import source_hash
-
         entry = written["langs"].get(p["code"])
         if isinstance(entry, dict) and written.get("hash") == source_hash(f) and all(
             isinstance(entry.get(k), str) and entry[k].strip() for k in ("head", "what", "why", "ask")

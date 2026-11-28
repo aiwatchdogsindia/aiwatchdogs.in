@@ -73,6 +73,7 @@ from aiwatchdogs.plain import available_languages, explain_finding, labels, reso
 from aiwatchdogs.plain import news as plain_news
 from aiwatchdogs.plain import writer as plain_writer
 from aiwatchdogs.plain.answers import project_answers
+from aiwatchdogs.plain.store import load_texts
 from aiwatchdogs.hub.templates import (
     DEFAULT_PUBLIC_HUB_URL,
     normalize_base_url,
@@ -635,7 +636,7 @@ def _attach_plain(items: Any, lang: str, db: Any = None) -> None:
     if not isinstance(items, list):
         return
     rows = [i for i in items if isinstance(i, dict) and "methodology_code" in i]
-    written = plain_writer.load_texts(db, [f"finding:{i.get('id')}" for i in rows]) if db is not None else {}
+    written = load_texts(db, [f"finding:{i.get('id')}" for i in rows]) if db is not None else {}
     for item in rows:
         item["plain"] = explain_finding(item, lang, written.get(f"finding:{item.get('id')}"))
 
@@ -1340,7 +1341,7 @@ def create_app(
     def _render_news(d: Any, code: str, base: str) -> dict[str, Any]:
         edition = plain_news.get_edition(db, d)
         frozen = edition.get("written")
-        written = frozen if isinstance(frozen, dict) else plain_writer.load_texts(db, plain_news.text_keys(edition))
+        written = frozen if isinstance(frozen, dict) else load_texts(db, plain_news.text_keys(edition))
         return plain_news.render(edition, code, base, written=written, lede=written.get(f"news:{d.isoformat()}"))
 
     def _news_date(raw: str | None) -> Any:

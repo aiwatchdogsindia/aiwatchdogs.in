@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -53,3 +54,27 @@ SAMPLES: list[dict[str, Any]] = [
     _f("ZZ9", "peer_review", {}, entity_name="Unknown Office", rule_triggered="ZZ9-RULE-X"),
     _f("P1", "peer_review", {"compare": "re_vs_be"}, entity_name="Broken Metrics Police"),
 ]
+
+
+def add_finding(app, fid: str, status: str, created: str, verified: str | None = None, quarantined: int = 0, amount: float = 0.0) -> None:
+    metrics = json.dumps(SAMPLES[3]["anomaly_metrics"])
+    with app.state.db.transaction() as conn:
+        m = conn.execute("SELECT id, slug FROM missions WHERE status != 'archived' ORDER BY id LIMIT 1").fetchone()
+        conn.execute(
+            "INSERT INTO findings (id, mission_id, mission_slug, pillar, title, summary, methodology_code, entity_name, "
+            "jurisdiction, fiscal_year, submitted_by, status, quarantined, is_demo_sample, created_at, verified_at, "
+            "anomaly_metrics_json, monetary_exposure_inr, confirm_count) "
+            "VALUES (?, ?, ?, 'budget', ?, 's', 'UB1', 'Ministry of Rural Development', 'Union of India', 'FY2024-25', "
+            "'node', ?, ?, 0, ?, ?, ?, ?, 3)",
+            (fid, m["id"], m["slug"], f"Raw title {fid}", status, quarantined, created, verified, metrics, amount),
+        )
+
+
+def correct_finding(app, fid: str, prev: str, new: str, when: str) -> None:
+    with app.state.db.transaction() as conn:
+        conn.execute("UPDATE findings SET status = ? WHERE id = ?", (new, fid))
+        conn.execute(
+            "INSERT INTO finding_corrections (finding_id, correction_type, previous_status, new_status, summary, details, "
+            "source_evidence_url, reviewed_by, created_at) VALUES (?, 'status', ?, ?, 's', 'd', '', 'editor', ?)",
+            (fid, prev, new, when),
+        )

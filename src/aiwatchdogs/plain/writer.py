@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -12,8 +11,9 @@ from typing import Any
 
 from ..core.safety import scrub_pii_in_obj
 from .checks import allowed_numbers, check_entry
-from .explain import explain_finding
+from .explain import explain_finding, source_hash
 from .packs import available_languages
+from .store import load_texts
 
 log = logging.getLogger("aiwatchdogs.plain")
 
@@ -94,22 +94,6 @@ def load_config(provider: str | None = None, model: str | None = None) -> Config
         ollama_url=os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/"),
         languages=langs,
     )
-
-
-def source_hash(f: dict[str, Any]) -> str:
-    metrics = f.get("anomaly_metrics")
-    if isinstance(metrics, str):
-        try:
-            metrics = json.loads(metrics)
-        except ValueError:
-            metrics = {}
-    body = "|".join(
-        str(f.get(k) or "")
-        for k in ("title", "summary", "entity_name", "fiscal_year", "methodology_code")
-    ) + f"|{round(float(f.get('monetary_exposure_inr') or 0.0))}|" + json.dumps(
-        metrics if isinstance(metrics, dict) else {}, sort_keys=True, separators=(",", ":"), default=str
-    )
-    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:20]
 
 
 def _schema(langs: list[str], fields: tuple[str, ...]) -> dict[str, Any]:
@@ -368,29 +352,6 @@ def spent_today(db: Any) -> float:
     with db.read() as conn:
         row = conn.execute("SELECT cost_usd FROM plain_spend WHERE day = ?", (_today(),)).fetchone()
     return float(row["cost_usd"] or 0.0) if row is not None else 0.0
-
-
-def load_texts(db: Any, keys: list[str]) -> dict[str, dict[str, Any]]:
-    keys = [k for k in dict.fromkeys(keys) if k]
-    if not keys:
-        return {}
-    out: dict[str, dict[str, Any]] = {}
-    try:
-        with db.read() as conn:
-            for i in range(0, len(keys), 200):
-                chunk = keys[i : i + 200]
-                ph = ",".join("?" for _ in chunk)
-                for r in conn.execute(
-                    f"SELECT key, source_hash, model, payload_json FROM plain_texts WHERE key IN ({ph})", chunk
-                ).fetchall():
-                    try:
-                        payload = json.loads(r["payload_json"] or "{}")
-                    except ValueError:
-                        payload = {}
-                    out[str(r["key"])] = {"hash": str(r["source_hash"]), "model": str(r["model"]), "langs": payload}
-    except Exception:
-        return {}
-    return out
 
 
 def _save(db: Any, key: str, h: str, cfg: Config, model: str, good: dict[str, Any], bad: dict[str, Any], cost: float, langs_all: list[str]) -> None:

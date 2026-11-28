@@ -9,6 +9,7 @@ from ..core.safety import scrub_pii_in_obj
 from . import fmt
 from .explain import KINDS, explain_finding, kind_for, labels
 from .packs import fill, pack, section, text
+from .store import load_texts
 
 IST = timezone(timedelta(hours=5, minutes=30))
 EDITION_VERSION = 1
@@ -352,8 +353,6 @@ def get_edition(db: Any, d: date, now: datetime | None = None) -> dict[str, Any]
         edition = build_edition(conn, d, now)
     if live:
         return {**edition, "state": "live"}
-    from .writer import load_texts
-
     edition["written"] = load_texts(db, text_keys(edition))
     if not getattr(db, "read_only", False):
         try:
