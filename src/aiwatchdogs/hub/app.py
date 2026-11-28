@@ -31,6 +31,7 @@ from aiwatchdogs.hub.agent_access import (
     build_link_header,
     estimate_markdown_tokens,
     handle_mcp_post,
+    is_mcp_enabled,
     markdown_response,
     prefers_markdown,
     render_api_catalog,
@@ -1503,6 +1504,8 @@ def create_app(
     @application.get("/.well-known/mcp/server-card.json")
     @application.head("/.well-known/mcp/server-card.json", include_in_schema=False)
     def well_known_mcp(request: Request) -> JSONResponse:
+        if not is_mcp_enabled():
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": "Not found"})
         return JSONResponse(
             content=render_mcp_discovery(_public_base_url(request)),
             headers={
@@ -1511,9 +1514,20 @@ def create_app(
             },
         )
 
+    def _mcp_disabled_response() -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_410_GONE,
+            content={
+                "detail": "Streamable HTTP MCP is disabled on serverless deployments; use /llms.txt or cached /api/* endpoints."
+            },
+            headers={"Cache-Control": "public, max-age=60, s-maxage=300"},
+        )
+
     @application.get("/mcp", response_model=None)
     @application.head("/mcp", response_model=None, include_in_schema=False)
     def mcp_get(request: Request) -> Response:
+        if not is_mcp_enabled():
+            return _mcp_disabled_response()
         base_url = _public_base_url(request)
         if prefers_markdown(request.headers.get("accept")):
             return markdown_response(render_mcp_markdown(base_url), md_path="/mcp")
@@ -1528,14 +1542,8 @@ def create_app(
 
     @application.post("/mcp", response_model=None)
     async def mcp_post(request: Request) -> Response:
-        if os.environ.get("VERCEL") and os.environ.get("AIWATCHDOGS_ENABLE_MCP", "").strip().lower() not in {"1", "true", "yes"}:
-            return JSONResponse(
-                status_code=status.HTTP_410_GONE,
-                content={
-                    "detail": "Streamable HTTP MCP is disabled on serverless deployments; use /llms.txt or cached /api/* endpoints."
-                },
-                headers={"Cache-Control": "public, max-age=60, s-maxage=300"},
-            )
+        if not is_mcp_enabled():
+            return _mcp_disabled_response()
         desk.check_rate_limit(
             bucket_key=f"mcp:{_extract_client_ip(request)}",
             limit=120,
