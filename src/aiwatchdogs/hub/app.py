@@ -311,6 +311,7 @@ class GitHubDevicePollRequest(BaseModel):
 
 class DeskNextRequest(BaseModel):
     website_observations: bool = False
+    document_reading: bool = False
     handle: str | None = Field(default=None, max_length=64)
     mode: str | None = Field(default=None, max_length=32)
     preferred_mission: str | None = Field(default=None, max_length=120)
@@ -334,8 +335,9 @@ class DeskReleaseRequest(BaseModel):
 
 class DeskSubmitRequest(BaseModel):
     lease_id: str = Field(..., min_length=1, max_length=128)
-    outcome: Literal["finding", "cleared", "verification", "observations"]
+    outcome: Literal["finding", "cleared", "verification", "observations", "reading_extraction"]
     observations: list[dict[str, Any]] | None = Field(default=None, max_length=126)
+    extraction: dict[str, Any] | None = None
     whisper: str | None = Field(default=None, max_length=1500)
     finding: dict[str, Any] | None = None
     findings: list[dict[str, Any]] | None = Field(default=None, max_length=25)
@@ -976,6 +978,12 @@ def create_app(
         response.headers["Cache-Control"] = _OBSERVATIONS_CACHE
         return desk.website_observations(slug, task_id)
 
+    @application.get("/api/missions/{slug}/readings/{task_id}")
+    def mission_reading_extraction(slug: str, task_id: str, response: Response) -> dict[str, Any]:
+        """Return the deterministically verified AI document-reading extraction for a completed R1 task."""
+        response.headers["Cache-Control"] = _OBSERVATIONS_CACHE
+        return desk.mission_reading_extraction(slug, task_id)
+
     @application.get("/api/missions/{slug}/matrix")
     def api_mission_matrix(slug: str, response: Response) -> dict[str, Any]:
         response.headers["Cache-Control"] = _MATRIX_CACHE
@@ -1312,6 +1320,7 @@ def create_app(
             "count": len(items),
             "total_estimated_tokens": total_est_tokens,
             "items": items,
+            "live_reading_tasks": desk.list_live_reading_tasks(),
         }
 
     @application.post("/api/reading/verify")
@@ -1488,6 +1497,7 @@ def create_app(
             preferred_mission=body.preferred_mission,
             max_estimated_tokens=body.max_estimated_tokens,
             website_observations=body.website_observations,
+            document_reading=body.document_reading,
             task_id=body.task_id,
             request_id=idempotency_key or body.request_id,
             supported_methodologies=body.supported_methodologies,

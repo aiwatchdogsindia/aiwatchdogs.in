@@ -155,7 +155,7 @@ def _register(client: TestClient, handle: str, *, coding_agent: str, model: str,
 
 def test_min_cli_version_blocks_v07_and_allows_v08(tmp_path: Path) -> None:
     assert MIN_OFFICIAL_CLI_VERSION == (0, 8)
-    assert CLI_USER_AGENT == "AIWatchdogs-India-AgentCLI/0.8"
+    assert CLI_USER_AGENT == "AIWatchdogs-India-AgentCLI/0.9"
 
     app = create_app(db_path=tmp_path / "ver.db", seed=True)
     with TestClient(app, base_url="http://testserver") as client:

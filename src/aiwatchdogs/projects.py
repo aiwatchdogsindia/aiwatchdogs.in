@@ -110,6 +110,7 @@ _COLUMN_NAME_RE = re.compile(r"[a-z_][a-z0-9_]*")
 MAX_PART_WINDOW_LINES = 12
 UNION_BUDGET_PROJECT_SLUG = "union-budget-unspent-funds"
 UNION_BUDGET_METHODOLOGY = "UB1"
+READING_EXTRACTION_METHODOLOGY = "R1"
 ONE_ROAD_TWO_BILLS_PROJECT_SLUG = "one-road-two-bills"
 ONE_ROAD_TWO_BILLS_METHODOLOGY = "OR1"
 ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG = "one-teacher-five-grades"
@@ -163,7 +164,7 @@ def default_projects_dir() -> Path:
 def _known_methodologies() -> set[str]:
     from aiwatchdogs.engines.registry import _ENGINE_DISPATCH
 
-    return set(_ENGINE_DISPATCH) | {"W1"}
+    return set(_ENGINE_DISPATCH) | {"W1", READING_EXTRACTION_METHODOLOGY}
 
 
 # Every accusatory-term pattern needs one of these letter runs to match. Plain printable ASCII is
@@ -320,6 +321,40 @@ def _validate_p1_context(ctx: dict[str, Any], where: str, errors: list[str]) -> 
                 ref_url = ref.get("source_url")
                 if ref_url not in (None, "") and not _is_https(ref_url):
                     errors.append(f"{bwhere}.references.{rname}.source_url must be a public https:// link.")
+
+
+def _validate_r1_context(ctx: Any, where: str, errors: list[str]) -> None:
+    if not isinstance(ctx, dict) or not isinstance(ctx.get("reading"), dict):
+        errors.append(f"{where}.payload.context.reading is required for {READING_EXTRACTION_METHODOLOGY} tasks.")
+        return
+    reading = ctx["reading"]
+    doc_type = str(reading.get("document_type") or "").strip()
+    if not doc_type or len(doc_type) > 64:
+        errors.append(f"{where}.payload.context.reading.document_type must be a short non-empty string.")
+    page_count = reading.get("page_count")
+    if page_count is not None and (isinstance(page_count, bool) or not isinstance(page_count, int) or page_count < 1):
+        errors.append(f"{where}.payload.context.reading.page_count must be a positive integer.")
+    table_pages = reading.get("table_pages")
+    if table_pages is not None:
+        if (
+            not isinstance(table_pages, list)
+            or len(table_pages) != 2
+            or any(isinstance(p, bool) or not isinstance(p, int) or p < 1 for p in table_pages)
+            or table_pages[0] > table_pages[1]
+        ):
+            errors.append(f"{where}.payload.context.reading.table_pages must be [start_page, end_page].")
+    exp_gt = reading.get("expected_grand_total")
+    if doc_type == "union_budget_sbe" and (not isinstance(exp_gt, dict) or not exp_gt):
+        errors.append(f"{where}.payload.context.reading.expected_grand_total is required for union_budget_sbe tasks.")
+    if exp_gt is not None:
+        if not isinstance(exp_gt, dict) or not exp_gt:
+            errors.append(f"{where}.payload.context.reading.expected_grand_total must be a non-empty object.")
+        else:
+            for col, val in exp_gt.items():
+                if not isinstance(col, str) or not col.strip():
+                    errors.append(f"{where}.payload.context.reading.expected_grand_total keys must be strings.")
+                if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(float(val)):
+                    errors.append(f"{where}.payload.context.reading.expected_grand_total['{col}'] must be finite.")
 
 
 def _validate_estimate(item: dict[str, Any], where: str, errors: list[str]) -> None:
@@ -632,6 +667,8 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             spec = ctx.get("union_budget") if isinstance(ctx, dict) else None
             if isinstance(spec, dict) and (spec.get("actuals_document") is not None) != (sec_url not in (None, "")):
                 errors.append(f"{where} must pin the actuals statement as payload.secondary_url exactly when it names one.")
+        if code == READING_EXTRACTION_METHODOLOGY:
+            _validate_r1_context(ctx, where, errors)
         if code == ONE_ROAD_TWO_BILLS_METHODOLOGY:
             from aiwatchdogs.engines.one_road_two_bills import validate_context as validate_or1_context
 
