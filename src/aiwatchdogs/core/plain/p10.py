@@ -33,6 +33,24 @@ _LIBERTY = re.compile(
     r"set at liberty|released forthwith|shall be released|be released from|directed to be released",
     re.IGNORECASE,
 )
+# A release phrase only counts as a court direction when nothing in the words just before it negates
+# it or marks it as a request: "could not be released from jail" records a failure to release, and
+# "is sought to be quashed and the detenu set at liberty" is the petitioner's prayer, not an order.
+_NEGATION = re.compile(
+    r"\b(?:not|no|never|cannot|unable|without|neither|nor|refused|denied|sought|seeks?|seeking|prays?|prayed|prayer)\b|n't\b",
+    re.IGNORECASE,
+)
+
+
+def _directs_release(direction: str) -> bool:
+    for match in _LIBERTY.finditer(direction):
+        before = direction[max(0, match.start() - 40) : match.start()]
+        clause = re.split(r"[.;:]", before)[-1]
+        if not _NEGATION.search(clause):
+            return True
+    return False
+
+
 _PRISON_DEBRIS = re.compile(
     r"\s+(?:page|respondent|advocate|and|to|through|who|is|where|vide|dated|th)\b.*$|(?<=\w)[,\s-]+district\b.*$",
     re.IGNORECASE,
@@ -270,7 +288,7 @@ def _order(
     if state == "Union government":
         state = ""
     direction = _text(m.get("judicial_direction_summary"))
-    liberty = bool(_LIBERTY.search(direction))
+    liberty = _directs_release(direction)
     other_case = bool(_OTHER_CASE.search(direction))
     contempt = m.get("stage_3_contempt_verified") is True or bool(_text(m.get("contempt_court")))
     case_number = _text(m.get("acquittal_case_number")) or _text(m.get("contempt_case_number"))

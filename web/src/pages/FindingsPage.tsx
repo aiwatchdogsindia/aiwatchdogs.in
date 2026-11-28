@@ -229,7 +229,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
                 onClick={() => goToPage(Math.max(0, page - 1))}
               >
                 <ChevronLeft size={14} aria-hidden="true" />
-                <span>Newer</span>
+                <span>Previous</span>
               </button>
               <span className="tabular" style={{ fontSize: 13, color: 'var(--ink-3)' }}>
                 Page {page + 1} of {totalPages.toLocaleString('en-IN')}
@@ -240,7 +240,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
                 disabled={!hasMore && page + 1 >= totalPages}
                 onClick={() => goToPage(page + 1)}
               >
-                <span>Older</span>
+                <span>Next</span>
                 <ChevronRight size={14} aria-hidden="true" />
               </button>
             </nav>

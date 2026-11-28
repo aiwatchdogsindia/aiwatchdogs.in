@@ -380,3 +380,29 @@ def test_long_court_name_is_shortened_to_keep_the_closing_line() -> None:
         "and directed that the detainee, held at Central Jail, Kot Bhalwal, be freed unless wanted in another case. "
         "No extra days in custody are on record."
     )
+
+
+@pytest.mark.parametrize(
+    ("direction", "directs"),
+    [
+        ("Due to the nationality issue, the accused could not be released from jail.", False),
+        ("The detention order is sought to be quashed and the detenu set at liberty on the grounds made out.", False),
+        ("The petitioner shall not be released from custody till further orders.", False),
+        ("The detenue is directed to be set at liberty forthwith, if not required in any other case.", True),
+        ("The petitioner is directed to be released forthwith by the Superintendent.", True),
+    ],
+)
+def test_release_wording_needs_a_clear_court_direction(direction: str, directs: bool) -> None:
+    finding = {
+        "methodology_code": "P10",
+        "jurisdiction": "State:Manipur",
+        "anomaly_metrics": {
+            "acquittal_court": "High Court of Manipur",
+            "prison_name": "Central Jail, Sajiwa",
+            "stage_1_acquittal_verified": True,
+            "judicial_direction_summary": direction,
+            "document_date": "2026-02-10",
+        },
+    }
+    headline, brief = render(finding)
+    assert ("directed" in f"{headline} {brief}") is directs, (headline, brief)
