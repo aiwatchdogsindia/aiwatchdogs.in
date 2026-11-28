@@ -11,7 +11,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import subprocess
+import tempfile
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -274,11 +278,59 @@ def run_llm_budget_extraction(
     raise ReadingExtractionError(f"AI document reading failed verification after {attempts} attempt(s): {err_detail}")
 
 
+def render_pdf_pages_to_pngs(
+    pdf_bytes: bytes,
+    *,
+    pages: list[int],
+    out_dir: Path,
+    dpi: int = 180,
+) -> dict[int, str]:
+    """Render selected PDF pages to PNG files via Poppler's ``pdftoppm`` for vision-model reading of scans.
+
+    Returns ``{page_no: png_path_str}`` (empty dict if ``pdftoppm`` is unavailable on the host).
+    """
+    if not pages or not pdf_bytes or not shutil.which("pdftoppm"):
+        return {}
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rendered: dict[int, str] = {}
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as tmp_pdf:
+        tmp_pdf.write(pdf_bytes)
+        tmp_pdf.flush()
+        for pno in sorted({int(p) for p in pages if isinstance(p, int) and p >= 1}):
+            prefix = out_dir / f"page-{pno:03d}"
+            try:
+                proc = subprocess.run(
+                    [
+                        "pdftoppm",
+                        "-png",
+                        "-r",
+                        str(max(72, min(int(dpi), 300))),
+                        "-f",
+                        str(pno),
+                        "-l",
+                        str(pno),
+                        "-singlefile",
+                        tmp_pdf.name,
+                        str(prefix),
+                    ],
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                continue
+            png_path = prefix.with_suffix(".png")
+            if proc.returncode == 0 and png_path.is_file():
+                rendered[pno] = str(png_path)
+    return rendered
+
+
 def build_coding_agent_reading_bundle(
     lease: dict[str, Any],
     *,
     page_texts: dict[int, str],
     sha256: str,
+    page_images: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     """Create a self-contained JSON bundle for interactive coding-agent extraction (`read-claim` -> `read-submit`)."""
     task = lease.get("task") if isinstance(lease.get("task"), dict) else {}
@@ -290,6 +342,7 @@ def build_coding_agent_reading_bundle(
     col_keys = list(exp_gt.keys()) if exp_gt else ["revenue", "capital", "total"]
     periods = reading_ctx.get("periods") or []
     subcolumns = reading_ctx.get("subcolumns") or []
+    image_only_pages = [p for p in page_nums if len(str(page_texts.get(p) or "").strip()) < 20]
 
     return {
         "lease_id": lease.get("lease_id"),
@@ -300,6 +353,8 @@ def build_coding_agent_reading_bundle(
         "instructions": task.get("instructions"),
         "source_url": payload.get("retrieval_url"),
         "document_sha256": sha256,
+        "has_image_only_pages": bool(image_only_pages),
+        "image_only_pages": image_only_pages,
         "reading_context": reading_ctx,
         "extraction_template": {
             "document_sha256": sha256,
@@ -318,4 +373,5 @@ def build_coding_agent_reading_bundle(
             ],
         },
         "page_texts": {str(k): v for k, v in page_texts.items()},
+        "page_images": {str(k): v for k, v in sorted((page_images or {}).items())},
     }

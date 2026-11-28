@@ -1,14 +1,37 @@
 name: Deterministic Release Verification
 
 on:
+  pull_request:
+    paths:
+      - "src/aiwatchdogs/engines/**"
+      - "src/aiwatchdogs/projects.py"
+      - "src/aiwatchdogs/cli/main.py"
+      - "projects/**"
+      - ".github/workflows/deterministic-verify.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/aiwatchdogs/engines/**"
+      - "src/aiwatchdogs/projects.py"
+      - "src/aiwatchdogs/cli/main.py"
+      - "projects/**"
+      - ".github/workflows/deterministic-verify.yml"
   workflow_dispatch:
     inputs:
       project:
         description: "Optional project slug (blank = all active projects)"
         required: false
         default: ""
+      execute_live:
+        description: "Download & execute live pinned official datasets (true/false)"
+        required: false
+        default: "false"
+      live_limit:
+        description: "Max live tasks per project when execute_live=true"
+        required: false
+        default: "2"
   schedule:
-    # Weekly reproducible verification of all pinned project manifests & engine hashes
+    # Weekly reproducible verification of all pinned project manifests & deterministic engine outputs
     - cron: "30 2 * * 0"
 
 permissions:
@@ -16,7 +39,7 @@ permissions:
 
 jobs:
   deterministic-manifest:
-    name: Verify Project Manifests & Publish Release Fingerprint
+    name: Execute Deterministic Engines & Publish Release Fingerprint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -36,13 +59,20 @@ jobs:
       - name: Validate all project manifests
         run: uv run aiwatchdogs project validate
 
-      - name: Compute deterministic release verification hash
+      - name: Execute deterministic engine suite & verify repeatable outputs
         run: |
+          ARGS=()
           if [ -n "${{ inputs.project }}" ]; then
-            uv run aiwatchdogs reproduce --project "${{ inputs.project }}" --json-out release-verification-hash.json
-          else
-            uv run aiwatchdogs reproduce --json-out release-verification-hash.json
+            ARGS+=(--project "${{ inputs.project }}")
           fi
+          if [ "${{ inputs.execute_live }}" = "true" ]; then
+            ARGS+=(--execute-live --live-limit "${{ inputs.live_limit || '2' }}")
+          fi
+          uv run aiwatchdogs reproduce "${ARGS[@]}" --json-out release-verification-hash-1.json
+          uv run aiwatchdogs reproduce "${ARGS[@]}" --json-out release-verification-hash-2.json
+          diff -u release-verification-hash-1.json release-verification-hash-2.json
+          mv release-verification-hash-1.json release-verification-hash.json
+          rm -f release-verification-hash-2.json
           cat release-verification-hash.json
 
       - name: Upload release verification fingerprint
