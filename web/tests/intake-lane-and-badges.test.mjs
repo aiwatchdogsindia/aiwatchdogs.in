@@ -80,4 +80,11 @@ test('HomePage filters out needs_data proposals and MissionsPage renders separat
   assert.match(missionsSrc, /id="proposals"/);
   assert.match(missionsSrc, /Community proposals · Needs datasets/);
   assert.match(missionsSrc, /\(m\.methodology_code \|\| m\.status !== 'needs_data'\)/);
+  assert.match(missionsSrc, /Verified extraction \(JSON\)/);
+});
+
+test('R1 document reading tasks display AI document read work badge', () => {
+  const tag = tags.getWorkTypeTag('extract_data', 'R1');
+  assert.equal(tag.label, 'AI document read');
+  assert.equal(tag.id, 'ai_document_read');
 });

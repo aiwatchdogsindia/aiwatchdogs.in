@@ -151,7 +151,7 @@ checks come first). The CLI prints your role and performs the work for each:
 Active projects ({hub}/projects):
 - P1 (`police-finances`, Police Finances): Union, State & UT police budget checks.
 - W1 (`gov-in-public-information`, Gov.in Public Information): 12,537 `.gov.in` portals vs 159 GIGW 3.0 / RTI checkpoints.
-- UB1 (`union-budget-unspent-funds`, Union Budget): 10,000 Union Demand for Grants lines since 2014-15.
+- UB1 (`union-budget-unspent-funds`, Union Budget): 10,000 Union Demand for Grants lines since 2014-15, plus 11 live R1 AI document-reading tasks for complex budget PDFs (run `aiwatchdogs read-claim --project union-budget-unspent-funds` -> read PDF pages -> `aiwatchdogs read-submit <lease_id> extraction.json` to earn +25 verified reading points).
 - OR1 (`one-road-two-bills`, One Road, Two Bills): Union CAG Audit Reports for duplicate billing / overlaps.
 - P5 (`one-teacher-five-grades`, One Teacher, Five Grades): MoE UDISE+ national reports (single-teacher primary schools).
 - P6 (`parliaments-to-do-list`, Parliament's To-Do List): Digital Sansad ministerial assurances (LS/RS).

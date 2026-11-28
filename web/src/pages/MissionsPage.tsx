@@ -1277,7 +1277,8 @@ function TaskRow({
   const canCopy = t.status === 'queued';
   const isRowCopied = copiedTaskId === String(t.id);
   const statusTag = getTaskTag(t.status);
-  const workTag = getWorkTypeTag(t.work_type || t.task_type, detail.methodology_code);
+  const taskMethod = (t.methodology_code || detail.methodology_code || '').toUpperCase();
+  const workTag = getWorkTypeTag(t.work_type || t.task_type, taskMethod);
   const retrievalUrl = safeExternalUrl(t.retrieval_url);
 
   return (
@@ -1296,6 +1297,25 @@ function TaskRow({
                   href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(String(t.id))}`}
                 >
                   Volunteer observations (JSON)
+                </a>
+              </>
+            )}
+          </div>
+        )}
+        {taskMethod === 'R1' && (
+          <div className="project-task-links">
+            {retrievalUrl && (
+              <a href={retrievalUrl} target="_blank" rel="noopener noreferrer">
+                Official PDF
+              </a>
+            )}
+            {t.status === 'completed' && (
+              <>
+                {retrievalUrl && <span aria-hidden="true">·</span>}
+                <a
+                  href={`/api/missions/${encodeURIComponent(detail.slug)}/readings/${encodeURIComponent(String(t.id))}`}
+                >
+                  Verified extraction (JSON)
                 </a>
               </>
             )}
