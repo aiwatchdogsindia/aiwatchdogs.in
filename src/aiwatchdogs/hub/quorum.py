@@ -130,6 +130,24 @@ def build_attr_conflict_sql(col_expr: str, candidate_norm: str) -> tuple[str, li
     return (f"TRIM(COALESCE({col_expr}, '')) != ''", [])
 
 
+def _same_ip_sybil_conflict(
+    *,
+    cand_verified: bool,
+    cand_gh_uid: str,
+    cand_ip_hash: str,
+    other_verified: bool,
+    other_gh_uid: str,
+    other_ip_hash: str,
+) -> bool:
+    """Return True when two participants share a registration IP hash without distinct verified GitHub IDs."""
+    if not cand_ip_hash or not other_ip_hash or cand_ip_hash != other_ip_hash:
+        return False
+    # Two distinct GitHub-verified contributors on the same office/campus NAT are genuinely independent.
+    if cand_verified and other_verified and cand_gh_uid and other_gh_uid and cand_gh_uid != other_gh_uid:
+        return False
+    return True
+
+
 def check_pairwise_verifier_independence(
     *,
     finding_id: str,
@@ -139,14 +157,21 @@ def check_pairwise_verifier_independence(
     author_handle: Any,
     author_harness: Any,
     author_model: Any,
-    existing_participants: Iterable[tuple[str, Any, Any, Any]] = (),
+    existing_participants: Iterable[tuple[Any, ...]] = (),
+    candidate_github_verified: bool = False,
+    candidate_github_user_id: Any = None,
+    candidate_ip_hash: Any = None,
+    author_github_verified: bool = False,
+    author_github_user_id: Any = None,
+    author_ip_hash: Any = None,
 ) -> str | None:
-    """Validate pairwise independence of ``(handle, coding_agent, coding_agent_model)`` across all participants.
+    """Validate pairwise independence of ``(handle, coding_agent, coding_agent_model, identity)`` across all participants.
 
     Compares the candidate verifier against the finding's author PLUS every existing entry in
     ``peer_verifications`` AND every other active ``claimed`` ``peer_verify`` lease on the same
     finding. Strictly uses ``coding_agent`` (harness) and ``coding_agent_model`` (model) — NEVER
-    falling back to ``provider`` / ``model``.
+    falling back to ``provider`` / ``model``. Also blocks same-GitHub-user-ID reuse and same-IP
+    unverified Sybil sockpuppets from verifying the same finding.
 
     Returns a descriptive conflict message if violated, or ``None`` if eligible.
     """
@@ -156,11 +181,35 @@ def check_pairwise_verifier_independence(
     cand_harness = norm_attr(cand_harness_raw)
     cand_model_raw = str(candidate_model or "").strip()
     cand_model = norm_attr(cand_model_raw)
+    cand_gh_verified = bool(candidate_github_verified)
+    cand_gh_uid = norm_attr(candidate_github_user_id)
+    cand_ip = norm_attr(candidate_ip_hash)
+
+    a_gh_verified = bool(author_github_verified)
+    a_gh_uid = norm_attr(author_github_user_id)
+    a_ip = norm_attr(author_ip_hash)
 
     if cand_handle and cand_handle == norm_attr(author_handle):
         return (
             f"Self-verification prohibited: agent '{cand_handle_raw}' cannot verify "
             f"its own finding '{finding_id}'."
+        )
+    if cand_gh_uid and a_gh_uid and cand_gh_uid == a_gh_uid:
+        return (
+            f"Self-verification prohibited: agent '{cand_handle_raw}' shares a verified GitHub "
+            f"account with the author of finding '{finding_id}'."
+        )
+    if _same_ip_sybil_conflict(
+        cand_verified=cand_gh_verified,
+        cand_gh_uid=cand_gh_uid,
+        cand_ip_hash=cand_ip,
+        other_verified=a_gh_verified,
+        other_gh_uid=a_gh_uid,
+        other_ip_hash=a_ip,
+    ):
+        return (
+            f"Sybil independence guard: unverified accounts from the same network cannot peer-verify "
+            f"finding '{finding_id}'. Run `aiwatchdogs verify-github` to prove distinct GitHub identities."
         )
 
     used_harnesses: set[str] = set()
@@ -173,7 +222,15 @@ def check_pairwise_verifier_independence(
     if a_model:
         used_models.add(a_model)
 
-    for source_label, p_handle, p_harness, p_model in existing_participants:
+    for entry in existing_participants:
+        source_label = entry[0]
+        p_handle = entry[1]
+        p_harness = entry[2]
+        p_model = entry[3]
+        p_gh_verified = bool(entry[4]) if len(entry) > 4 else False
+        p_gh_uid = norm_attr(entry[5]) if len(entry) > 5 else ""
+        p_ip = norm_attr(entry[6]) if len(entry) > 6 else ""
+
         if cand_handle and norm_attr(p_handle) == cand_handle:
             if source_label == "active_lease":
                 return (
@@ -183,6 +240,23 @@ def check_pairwise_verifier_independence(
             return (
                 f"Duplicate verification prohibited: agent '{cand_handle_raw}' has already "
                 f"verified finding '{finding_id}'."
+            )
+        if cand_gh_uid and p_gh_uid and cand_gh_uid == p_gh_uid:
+            return (
+                f"Duplicate verification prohibited: agent '{cand_handle_raw}' shares a verified "
+                f"GitHub account with another reviewer on finding '{finding_id}'."
+            )
+        if _same_ip_sybil_conflict(
+            cand_verified=cand_gh_verified,
+            cand_gh_uid=cand_gh_uid,
+            cand_ip_hash=cand_ip,
+            other_verified=p_gh_verified,
+            other_gh_uid=p_gh_uid,
+            other_ip_hash=p_ip,
+        ):
+            return (
+                f"Sybil independence guard: unverified accounts from the same network cannot both "
+                f"peer-verify finding '{finding_id}'. Run `aiwatchdogs verify-github` to prove distinct GitHub identities."
             )
         nh = norm_attr(p_harness)
         nm = norm_attr(p_model)
@@ -229,6 +303,10 @@ def evaluate_pairwise_quorum(
     author_model: Any,
     votes: Iterable[Any],
     loads_json_fn: Callable[[str | None, Any], Any],
+    author_github_verified: bool = False,
+    author_github_user_id: Any = None,
+    author_ip_hash: Any = None,
+    require_github_verified: bool = False,
 ) -> dict[str, Any]:
     """Compute pairwise-independent quorum counts over ``peer_verifications`` ordered ``created_at ASC, id ASC``.
 
@@ -239,6 +317,9 @@ def evaluate_pairwise_quorum(
        vote has a non-empty ``coding_agent`` distinct from all of them.
     4. Whenever the author or any previously counted confirm declared ``coding_agent_model``, this
        vote has a non-empty ``coding_agent_model`` distinct from all of them.
+    5. Its verified ``github_user_id`` (if present) is distinct, and it does not share a
+       registration IP hash with the author or an already-counted confirm unless both hold
+       distinct verified GitHub accounts.
 
     ``consensus`` is computed over ``effective_votes = qualified_confirms + dispute_count`` so that
     legacy non-independent confirms retained in the audit trail never permanently poison consensus
@@ -248,10 +329,14 @@ def evaluate_pairwise_quorum(
     author_h = norm_attr(author_h_raw)
     author_har = norm_attr(author_harness)
     author_mod = norm_attr(author_model)
+    author_gh_verified = bool(author_github_verified)
+    author_gh_uid = norm_attr(author_github_user_id)
+    author_ip = norm_attr(author_ip_hash)
 
     seen_handles: set[str] = {author_h} if author_h else set()
     seen_harnesses: set[str] = {author_har} if author_har else set()
     seen_models: set[str] = {author_mod} if author_mod else set()
+    seen_identities: list[tuple[bool, str, str]] = [(author_gh_verified, author_gh_uid, author_ip)]
 
     qualified_confirms = 0
     dispute_count = 0
@@ -269,12 +354,17 @@ def evaluate_pairwise_quorum(
         v_harness = norm_attr(_get(v, "coding_agent"))
         v_model = norm_attr(_get(v, "coding_agent_model"))
         v_verdict = str(_get(v, "verdict") or "").strip().lower()
+        v_gh_verified = bool(int(_get(v, "github_verified", 0) or 0))
+        v_gh_uid = norm_attr(_get(v, "github_user_id"))
+        v_ip = norm_attr(_get(v, "registered_ip_hash"))
 
         if v_verdict == "flag_pii_or_legal":
             has_pii_or_legal_flag = True
             dispute_count += 1
             counted_verdicts.append(v_verdict)
         elif v_verdict == "confirm":
+            if require_github_verified and not v_gh_verified:
+                continue
             v_checks = normalize_checks(loads_json_fn(_get(v, "checks_json"), {}), strict=False)
             v_metrics = loads_json_fn(_get(v, "reproduced_metrics_json"), {})
             if not (all_checks_passed(v_checks) and isinstance(v_metrics, dict) and len(v_metrics) > 0):
@@ -285,12 +375,30 @@ def evaluate_pairwise_quorum(
                 continue
             if seen_models and (not v_model or v_model in seen_models):
                 continue
+            identity_conflict = False
+            for o_verified, o_uid, o_ip in seen_identities:
+                if v_gh_uid and o_uid and v_gh_uid == o_uid:
+                    identity_conflict = True
+                    break
+                if _same_ip_sybil_conflict(
+                    cand_verified=v_gh_verified,
+                    cand_gh_uid=v_gh_uid,
+                    cand_ip_hash=v_ip,
+                    other_verified=o_verified,
+                    other_gh_uid=o_uid,
+                    other_ip_hash=o_ip,
+                ):
+                    identity_conflict = True
+                    break
+            if identity_conflict:
+                continue
             qualified_confirms += 1
             seen_handles.add(v_handle)
             if v_harness:
                 seen_harnesses.add(v_harness)
             if v_model:
                 seen_models.add(v_model)
+            seen_identities.append((v_gh_verified, v_gh_uid, v_ip))
             counted_verdicts.append(v_verdict)
         else:
             dispute_count += 1

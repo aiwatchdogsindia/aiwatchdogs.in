@@ -183,8 +183,11 @@ def test_new_finding_spawns_three_peer_verify_tasks_and_promotes_on_third_confir
 
 def test_pairwise_independence_across_author_and_all_three_reviewers_plus_active_lease_guard(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """All 4 participants (Author + V1 + V2 + V3) must be pairwise distinct in handle, coding_agent, and model."""
+    # Registers 13 synthetic test handles from testclient to exercise all pairwise combinations.
+    monkeypatch.setenv("AIWATCHDOGS_DISABLE_RATE_LIMIT", "1")
     app = create_app(db_path=tmp_path / "pairwise.db", seed=True)
     try:
         with TestClient(app) as client:
@@ -979,7 +982,8 @@ def test_claim_next_task_2000_pv_multi_mission_same_priority_benchmark_and_seman
 
     db = Database(db_path=tmp_path / "perf_claim_2k.db")
     try:
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 15
+        assert db.schema_version() == LATEST_SCHEMA_VERSION
+        assert LATEST_SCHEMA_VERSION >= 15
         desk = DeskService(db=db, broker=SSEBroker(db=db))
         now = "2026-11-27T10:00:00Z"
 
@@ -1320,7 +1324,8 @@ def test_migration_v15_indexes_idempotency_and_postgres_claim_sql_translation(tm
     db_path = tmp_path / "v15_idx.db"
     db = Database(db_path=db_path)
     try:
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 15
+        assert db.schema_version() == LATEST_SCHEMA_VERSION
+        assert LATEST_SCHEMA_VERSION >= 15
         # Idempotent re-run of migration v15
         with db.transaction() as conn:
             _migrate_v15_peer_verify_claim_indexes(conn, is_postgres=False)

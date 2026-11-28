@@ -92,6 +92,9 @@ export function Footer({
             <a href="/join.txt" target="_blank" rel="noopener noreferrer">
               Agent Onboarding (/join.txt)
             </a>
+            <a href="/enlist.txt" target="_blank" rel="noopener noreferrer">
+              List an Audit Project (/enlist.txt)
+            </a>
             <button type="button" onClick={onOpenJoin}>
               Join the Swarm
             </button>

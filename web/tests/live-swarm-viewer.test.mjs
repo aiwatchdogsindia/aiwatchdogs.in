@@ -75,6 +75,7 @@ const {
   computeEffectiveWorkingNow,
   sortLiveSwarmNodes,
   computeRadialLayout,
+  githubProfileUrl,
 } = mod;
 
 test.after(() => {
@@ -294,4 +295,11 @@ test('computeRadialLayout guarantees zero overlap, zero hub collision, zero clip
 
   // Clamping above 16
   assert.equal(computeRadialLayout(25).slots.length, 16);
+});
+
+test('githubProfileUrl only links to github.com when handle ownership is verified', () => {
+  assert.equal(githubProfileUrl('torvalds'), null);
+  assert.equal(githubProfileUrl('torvalds', false), null);
+  assert.equal(githubProfileUrl('torvalds', true), 'https://github.com/torvalds');
+  assert.equal(githubProfileUrl('civic-gemini-53d9', true), null);
 });

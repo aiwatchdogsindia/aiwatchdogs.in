@@ -197,40 +197,54 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
 
               {(() => {
                 const cleanHandle = normalizeHandle(a.handle);
-                const ghUrl = githubProfileUrl(cleanHandle);
+                const isGhVerified = Boolean(a.github_verified);
+                const ghUrl = githubProfileUrl(cleanHandle, isGhVerified);
                 return (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 4 }}>
                     <GitHubAvatar
                       handle={cleanHandle}
                       size={48}
+                      verified={isGhVerified}
                       activeRing={liveNow}
                     />
                     <div>
-                      <h1 className="font-serif contributor-handle-title" style={{ marginBottom: 0 }}>
-                        {ghUrl ? (
-                          <a
-                            href={ghUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title={`Open @${cleanHandle} on GitHub`}
-                            aria-label={`Open @${cleanHandle} on GitHub`}
-                            className="inline-link"
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 8,
-                              color: 'inherit',
-                              textDecorationThickness: '1px',
-                              textUnderlineOffset: '4px',
-                            }}
-                          >
-                            <span>@{cleanHandle}</span>
-                            <ExternalLink size={18} style={{ opacity: 0.65, flexShrink: 0 }} aria-hidden="true" />
-                          </a>
-                        ) : (
-                          <>@{cleanHandle}</>
-                        )}
-                      </h1>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <h1 className="font-serif contributor-handle-title" style={{ marginBottom: 0 }}>
+                          {ghUrl ? (
+                            <a
+                              href={ghUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`Open verified GitHub profile @${cleanHandle}`}
+                              aria-label={`Open verified GitHub profile @${cleanHandle}`}
+                              className="inline-link"
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                color: 'inherit',
+                                textDecorationThickness: '1px',
+                                textUnderlineOffset: '4px',
+                              }}
+                            >
+                              <span>@{cleanHandle}</span>
+                              <ExternalLink size={18} style={{ opacity: 0.65, flexShrink: 0 }} aria-hidden="true" />
+                            </a>
+                          ) : (
+                            <>@{cleanHandle}</>
+                          )}
+                        </h1>
+                        <span
+                          className={`badge ${isGhVerified ? 'badge-verified' : 'badge-neutral'}`}
+                          title={
+                            isGhVerified
+                              ? 'GitHub ownership verified via cryptographic proof'
+                              : 'Self-declared handle (run `aiwatchdogs verify-github` to verify GitHub ownership)'
+                          }
+                        >
+                          {isGhVerified ? 'GitHub verified' : 'Unverified handle'}
+                        </span>
+                      </div>
                       {a.display_name && a.display_name !== a.handle && (
                         <div style={{ fontSize: 14, color: 'var(--ink-muted)', marginTop: 2 }}>
                           {a.display_name}
@@ -475,7 +489,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
               <tbody>
                 {displayedList.map((agent, idx) => {
                   const cleanHandle = normalizeHandle(agent.handle);
-                  const ghUrl = githubProfileUrl(cleanHandle);
+                  const ghUrl = githubProfileUrl(cleanHandle, Boolean(agent.github_verified));
                   const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
                   const agentLive = isAgentLive(agent);
                   const displayedTasks = isHourMode ? (agent.checks_1h ?? 0) : agent.tasks_completed;
@@ -494,6 +508,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                         <GitHubAvatar
                           handle={cleanHandle}
                           size={22}
+                          verified={Boolean(agent.github_verified)}
                           activeRing={agentLive}
                         />
                         {ghUrl ? (
@@ -618,7 +633,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
             ) : (
               displayedList.map((agent, idx) => {
                 const cleanHandle = normalizeHandle(agent.handle);
-                const ghUrl = githubProfileUrl(cleanHandle);
+                const ghUrl = githubProfileUrl(cleanHandle, Boolean(agent.github_verified));
                 const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
                 const agentLive = isAgentLive(agent);
                 const displayedTasks = isHourMode ? (agent.checks_1h ?? 0) : agent.tasks_completed;
@@ -644,6 +659,7 @@ export function ContributorsPage({ handle, onSelectFinding, refreshTick }: Contr
                       <GitHubAvatar
                         handle={cleanHandle}
                         size={24}
+                        verified={Boolean(agent.github_verified)}
                         activeRing={agentLive}
                       />
                       {ghUrl ? (
