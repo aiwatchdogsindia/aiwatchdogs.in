@@ -370,9 +370,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           <ol className="fc-p10-stages" aria-label="Four-stage custody timeline">
             <li
               className={`fc-p10-stage fc-p10-stage--s1${
-                p10Record.stage1AcquittalVerified || p10Record.acquittalOrderDate || p10Record.acquittalCourt
-                  ? ' is-verified'
-                  : ''
+                p10Record.stage1AcquittalVerified ? ' is-verified' : ''
               }`}
             >
               <span className="fc-p10-stage-kicker">1 · Acquitted</span>
@@ -387,9 +385,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
             </li>
             <li
               className={`fc-p10-stage fc-p10-stage--s2${
-                p10Record.stage2ContinuedDetentionVerified || p10Record.prisonName || (p10Record.overrunDays ?? 0) > 0
-                  ? ' is-verified'
-                  : ''
+                p10Record.stage2ContinuedDetentionVerified ? ' is-verified' : ''
               }`}
             >
               <span className="fc-p10-stage-kicker">2 · Held in Prison</span>
@@ -402,14 +398,12 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
                     .filter(Boolean)
                     .join(' · '),
                   compact ? 42 : 68,
-                ) || 'Detention overrun'}
+                ) || (p10Mechanism?.isCleared ? 'Timely release' : 'Detention overrun')}
               </span>
             </li>
             <li
               className={`fc-p10-stage fc-p10-stage--s3${
-                p10Record.stage3ContemptVerified || p10Record.contemptCaseNumber || p10Record.contemptCourt
-                  ? ' is-verified'
-                  : ''
+                p10Record.stage3ContemptVerified ? ' is-verified' : ''
               }`}
             >
               <span className="fc-p10-stage-kicker">3 · Contempt</span>
@@ -427,9 +421,7 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
             </li>
             <li
               className={`fc-p10-stage fc-p10-stage--s4${
-                p10Record.stage4ReleaseVerified || p10Record.releaseVerified || p10Record.releaseDate
-                  ? ' is-verified'
-                  : ''
+                p10Record.stage4ReleaseVerified ? ' is-verified' : ''
               }`}
             >
               <span className="fc-p10-stage-kicker">4 · Released</span>

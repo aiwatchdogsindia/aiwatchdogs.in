@@ -1759,14 +1759,37 @@ export function extractInnocentButLockedUpMetrics(
     return null;
   }
 
-  const stage1 = metricBool(metrics, 'stage_1_acquittal_verified');
-  const stage2 = metricBool(metrics, 'stage_2_continued_detention_verified');
-  const stage3 = metricBool(metrics, 'stage_3_contempt_verified');
+  const isCompliant =
+    formatCustodyOverrunMechanism(overrunMechanism || signalCategory).isCleared ||
+    (chainStatus || '').trim().toLowerCase() === 'compliant_control';
+  const acquittalOrderDate = metricStr(metrics, 'acquittal_order_date');
+  const acquittalQuote = metricStr(metrics, 'acquittal_quote');
+  const nonReleaseReason = metricStr(metrics, 'non_release_reason');
+  const contemptCourt = metricStr(metrics, 'contempt_court');
+  const contemptFilingDate = metricStr(metrics, 'contempt_filing_date');
+  const contemptOrderDate = metricStr(metrics, 'contempt_order_date');
+  const contemptQuote = metricStr(metrics, 'contempt_quote');
+  const releaseDate = metricStr(metrics, 'release_date');
+
+  const stage1 =
+    metrics.stage_1_acquittal_verified !== undefined
+      ? metricBool(metrics, 'stage_1_acquittal_verified')
+      : Boolean(acquittalOrderDate || acquittalCaseNumber || acquittalQuote);
+  const stage2 =
+    metrics.stage_2_continued_detention_verified !== undefined
+      ? metricBool(metrics, 'stage_2_continued_detention_verified')
+      : isCompliant && (overrunDays == null || overrunDays === 0)
+        ? false
+        : Boolean((overrunDays != null && overrunDays > 0) || (nonReleaseReason && !isCompliant));
+  const stage3 =
+    metrics.stage_3_contempt_verified !== undefined
+      ? metricBool(metrics, 'stage_3_contempt_verified')
+      : Boolean(contemptCaseNumber || contemptCourt || contemptFilingDate || contemptOrderDate || contemptQuote);
   const releaseVerified = metricBool(metrics, 'release_verified');
   const stage4 =
     metrics.stage_4_release_verified !== undefined
       ? metricBool(metrics, 'stage_4_release_verified')
-      : releaseVerified;
+      : Boolean(releaseVerified || releaseDate);
   const computedStages = [stage1, stage2, stage3, stage4].filter(Boolean).length;
   const rawStagesCount = metricNum(metrics, 'stages_verified_count');
 
@@ -1787,25 +1810,25 @@ export function extractInnocentButLockedUpMetrics(
     stagesVerifiedCount: rawStagesCount ?? (computedStages > 0 ? computedStages : null),
     chainStatus,
     stage1AcquittalVerified: stage1,
-    acquittalOrderDate: metricStr(metrics, 'acquittal_order_date'),
+    acquittalOrderDate,
     acquittalCourt,
     acquittalCaseNumber,
     acquittalOrderType: metricStr(metrics, 'acquittal_order_type'),
-    acquittalQuote: metricStr(metrics, 'acquittal_quote'),
+    acquittalQuote,
     stage2ContinuedDetentionVerified: stage2,
     prisonName,
     custodyAuthority: metricStr(metrics, 'custody_authority'),
-    nonReleaseReason: metricStr(metrics, 'non_release_reason'),
+    nonReleaseReason,
     overrunDays,
     overrunWindow: metricStr(metrics, 'overrun_window'),
     stage3ContemptVerified: stage3,
     contemptCaseNumber,
-    contemptCourt: metricStr(metrics, 'contempt_court'),
-    contemptFilingDate: metricStr(metrics, 'contempt_filing_date'),
-    contemptOrderDate: metricStr(metrics, 'contempt_order_date'),
-    contemptQuote: metricStr(metrics, 'contempt_quote'),
+    contemptCourt,
+    contemptFilingDate,
+    contemptOrderDate,
+    contemptQuote,
     stage4ReleaseVerified: stage4,
-    releaseDate: metricStr(metrics, 'release_date'),
+    releaseDate,
     releaseVerified: releaseVerified || stage4,
     compensationInr: metricNum(metrics, 'compensation_inr'),
     judicialDirectionSummary: metricStr(metrics, 'judicial_direction_summary'),

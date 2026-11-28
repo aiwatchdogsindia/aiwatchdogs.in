@@ -7780,7 +7780,10 @@ export function p10FilterLeads(
       const leadState = (l.state_ut || '').trim().toLowerCase();
       const leadJur = p10StateFilterQuery(l.state_ut, l.jurisdiction).toLowerCase();
       if (st === 'union of india') {
-        if (leadState && leadState !== 'union of india' && leadJur !== 'union of india') {
+        if (
+          (leadState && leadState !== 'union of india') ||
+          (leadJur && leadJur !== 'union of india')
+        ) {
           return false;
         }
       } else if (leadState !== st && leadJur !== st) {
@@ -7814,6 +7817,13 @@ export function p10FilterLeads(
 }
 
 export function p10BuildFourStageChain(rec: {
+  overrun_mechanism?: string | null;
+  chain_status?: string | null;
+  stages_verified_count?: number | null;
+  stage_1_acquittal_verified?: boolean;
+  stage_2_continued_detention_verified?: boolean;
+  stage_3_contempt_verified?: boolean;
+  stage_4_release_verified?: boolean;
   acquittal_order_date?: string | null;
   acquittal_court?: string | null;
   acquittal_case_number?: string | null;
@@ -7834,24 +7844,40 @@ export function p10BuildFourStageChain(rec: {
   compensation_inr?: number | null;
   judicial_direction_summary?: string | null;
 }): P10StageStep[] {
-  const s1Verified = Boolean(
-    rec.acquittal_order_date || rec.acquittal_court || rec.acquittal_case_number || rec.acquittal_quote,
-  );
-  const s2Verified = Boolean(
-    rec.prison_name ||
-      rec.custody_authority ||
-      rec.non_release_reason ||
-      (rec.overrun_days != null && rec.overrun_days > 0) ||
-      rec.overrun_window,
-  );
-  const s3Verified = Boolean(
-    rec.contempt_case_number ||
-      rec.contempt_court ||
-      rec.contempt_filing_date ||
-      rec.contempt_order_date ||
-      rec.contempt_quote,
-  );
-  const s4Verified = Boolean(rec.release_verified || rec.release_date);
+  const isCompliant =
+    formatCustodyOverrunMechanism(rec.overrun_mechanism).isCleared ||
+    (rec.chain_status || '').trim().toLowerCase() === 'compliant_control';
+  const isFull4Stage =
+    !isCompliant &&
+    ((rec.chain_status || '').trim().toLowerCase() === 'full_4_stage_chain' ||
+      (rec.stages_verified_count != null && rec.stages_verified_count >= 4));
+
+  const s1Verified =
+    typeof rec.stage_1_acquittal_verified === 'boolean'
+      ? rec.stage_1_acquittal_verified
+      : isFull4Stage ||
+        Boolean(rec.acquittal_order_date || rec.acquittal_case_number || rec.acquittal_quote);
+  const s2Verified =
+    typeof rec.stage_2_continued_detention_verified === 'boolean'
+      ? rec.stage_2_continued_detention_verified
+      : isCompliant && (rec.overrun_days == null || rec.overrun_days === 0)
+        ? false
+        : isFull4Stage || Boolean(rec.overrun_days != null && rec.overrun_days > 0);
+  const s3Verified =
+    typeof rec.stage_3_contempt_verified === 'boolean'
+      ? rec.stage_3_contempt_verified
+      : isFull4Stage ||
+        Boolean(
+          rec.contempt_case_number ||
+            rec.contempt_court ||
+            rec.contempt_filing_date ||
+            rec.contempt_order_date ||
+            rec.contempt_quote,
+        );
+  const s4Verified =
+    typeof rec.stage_4_release_verified === 'boolean'
+      ? rec.stage_4_release_verified
+      : isFull4Stage || Boolean(rec.release_verified || rec.release_date);
 
   const overrunBadge =
     rec.overrun_days != null && rec.overrun_days > 0
@@ -8134,7 +8160,7 @@ export function InnocentButLockedUpVisualiser({
           ) : null}
           {statesCovered > 0 ? (
             <span className="tag-mono">
-              {fmtCount(statesCovered)} States &amp; UTs
+              {fmtCount(statesCovered)} {statesCovered === 1 ? 'State / UT' : 'States & UTs'}
             </span>
           ) : null}
           <span className="tag-mono">
@@ -8165,10 +8191,10 @@ export function InnocentButLockedUpVisualiser({
             <span className="pv-overview-kicker">Audited tasks (2021–2026)</span>
             <span className="pv-overview-num tabular">{fmtCount(totalTasks)}</span>
             <span className="pv-overview-sub tabular">
-              {uniqueDocs > 0 ? `${fmtCount(uniqueDocs)} official docs · ` : ''}
-              {courtsCovered > 0 ? `${fmtCount(courtsCovered)} courts · ` : ''}
+              {uniqueDocs > 0 ? `${fmtCount(uniqueDocs)} official ${uniqueDocs === 1 ? 'doc' : 'docs'} · ` : ''}
+              {courtsCovered > 0 ? `${fmtCount(courtsCovered)} ${courtsCovered === 1 ? 'court' : 'courts'} · ` : ''}
               {statesCovered > 0
-                ? `${fmtCount(statesCovered)} States/UTs`
+                ? `${fmtCount(statesCovered)} ${statesCovered === 1 ? 'State/UT' : 'States/UTs'}`
                 : 'Supreme Court, High Courts & official portals'}
             </span>
           </div>
@@ -8177,8 +8203,11 @@ export function InnocentButLockedUpVisualiser({
             <span className="pv-overview-kicker">4-stage chains &amp; contempt</span>
             <span className="pv-overview-num tabular">{fmtCount(full4StageTasks)}</span>
             <span className="pv-overview-sub tabular">
-              {fmtCount(contemptTasks)} contempt filed · {fmtCount(verifiedReleaseTasks)} verified releases
-              {prisonsNamed > 0 ? ` · ${fmtCount(prisonsNamed)} prisons named` : ''}
+              {fmtCount(contemptTasks)} contempt filed · {fmtCount(verifiedReleaseTasks)} verified{' '}
+              {verifiedReleaseTasks === 1 ? 'release' : 'releases'}
+              {prisonsNamed > 0
+                ? ` · ${fmtCount(prisonsNamed)} ${prisonsNamed === 1 ? 'prison' : 'prisons'} named`
+                : ''}
             </span>
           </div>
 
@@ -8204,7 +8233,9 @@ export function InnocentButLockedUpVisualiser({
             </span>
             <span className="pv-overview-sub tabular">
               {fmtCount(verified)} verified · {fmtCount(inReview)} in review · {fmtCount(clearedTasks)} cleared
-              {clearedEmbedded > 0 ? ` (${fmtCount(clearedEmbedded)} compliant controls)` : ''}
+              {clearedEmbedded > 0
+                ? ` (${fmtCount(clearedEmbedded)} compliant ${clearedEmbedded === 1 ? 'control' : 'controls'})`
+                : ''}
             </span>
           </div>
         </div>
@@ -8347,9 +8378,17 @@ export function InnocentButLockedUpVisualiser({
             <div className="pv-p7-cohort-head">
               <h3>Source portal categories (select any portal to filter explorer)</h3>
               <div className="pv-mini-legend">
-                <span className="pv-chart-note tabular">
-                  {fmtCount(portals.items.filter((p) => p.tasks > 0 || p.leads > 0).length)} active official portal categories
-                </span>
+                {(() => {
+                  const activePortalsCount = portals.items.filter(
+                    (p) => p.tasks > 0 || p.leads > 0,
+                  ).length;
+                  return (
+                    <span className="pv-chart-note tabular">
+                      {fmtCount(activePortalsCount)} active official portal{' '}
+                      {activePortalsCount === 1 ? 'category' : 'categories'}
+                    </span>
+                  );
+                })()}
                 {selectedPortal !== 'all' ? (
                   <button
                     type="button"
@@ -9037,8 +9076,13 @@ export function InnocentButLockedUpVisualiser({
                       </td>
                       <td className="tabular pv-ub-lead-year" data-label="Year, State & portal">
                         <span>
-                          {lead.year ? String(lead.year) : '—'}
-                          {lead.state_ut ? ` · ${lead.state_ut}` : ''}
+                          {[
+                            lead.year ? String(lead.year) : null,
+                            lead.state_ut ||
+                              (lead.jurisdiction ? formatJurisdictionLabel(lead.jurisdiction) : null),
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
                         </span>
                         <span className="pv-ub-sub">
                           <span
@@ -9067,9 +9111,15 @@ export function InnocentButLockedUpVisualiser({
                           </span>
                         </div>
                         <span className="pv-ub-sub tabular">
-                          {lead.acquittal_order_date ? `Acq ${lead.acquittal_order_date}` : ''}
-                          {overrunText ? ` · +${overrunText}` : ''}
-                          {lead.release_date ? ` · Rel ${lead.release_date}` : ''}
+                          {[
+                            lead.acquittal_order_date ? `Acq ${lead.acquittal_order_date}` : null,
+                            overrunText && lead.overrun_days != null && lead.overrun_days > 0
+                              ? `+${overrunText}`
+                              : null,
+                            lead.release_date ? `Rel ${lead.release_date}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'Documented in official record'}
                         </span>
                       </td>
                       <td data-label="Mechanism & outcome">

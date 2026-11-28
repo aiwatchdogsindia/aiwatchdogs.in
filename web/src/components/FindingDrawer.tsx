@@ -1416,7 +1416,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                       >
                         <li
                           className={`p10-stage p10-stage--s1${
-                            p10Record.stage1AcquittalVerified || p10Record.acquittalOrderDate || p10Record.acquittalCourt
+                            p10Record.stage1AcquittalVerified
                               ? ' p10-stage--verified'
                               : ' p10-stage--unrecorded'
                           }`}
@@ -1448,7 +1448,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
                         <li
                           className={`p10-stage p10-stage--s2${
-                            p10Record.stage2ContinuedDetentionVerified || p10Record.prisonName || (p10Record.overrunDays ?? 0) > 0
+                            p10Record.stage2ContinuedDetentionVerified
                               ? ' p10-stage--verified'
                               : ' p10-stage--unrecorded'
                           }`}
@@ -1465,7 +1465,10 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           <p className="p10-stage-primary">
                             {[p10Record.prisonName, p10Record.custodyAuthority]
                               .filter(Boolean)
-                              .join(' · ') || 'Continued custody following judicial release order.'}
+                              .join(' · ') ||
+                              (p10Mechanism?.isCleared
+                                ? 'Timely release verified without post-acquittal custody overrun.'
+                                : 'Continued custody following judicial release order.')}
                           </p>
                           {p10Record.nonReleaseReason && (
                             <p className="p10-stage-sub">
@@ -1476,7 +1479,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
                         <li
                           className={`p10-stage p10-stage--s3${
-                            p10Record.stage3ContemptVerified || p10Record.contemptCaseNumber || p10Record.contemptCourt
+                            p10Record.stage3ContemptVerified
                               ? ' p10-stage--verified'
                               : ' p10-stage--unrecorded'
                           }`}
@@ -1509,7 +1512,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
                         <li
                           className={`p10-stage p10-stage--s4${
-                            p10Record.stage4ReleaseVerified || p10Record.releaseVerified || p10Record.releaseDate
+                            p10Record.stage4ReleaseVerified
                               ? ' p10-stage--verified'
                               : ' p10-stage--unrecorded'
                           }`}

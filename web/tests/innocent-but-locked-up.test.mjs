@@ -540,6 +540,49 @@ test('InnocentButLockedUpVisualiser helpers normalize portals, years, tiers, mec
   assert.equal(visualsMod.p10FilterCourts(courts, '', 'all', 'Union of India').length, 1);
   assert.equal(visualsMod.p10FilterCourts(courts, 'allahabad', 'all', 'Uttar Pradesh').length, 1);
 
+  // 4-stage timeline builder — respects explicit stage flags and does NOT false-verify Stage 2 on compliant controls
+  const compliantStages = visualsMod.p10BuildFourStageChain({
+    overrun_mechanism: 'timely_release_or_compliant',
+    chain_status: 'compliant_control',
+    acquittal_order_date: '2025-05-01',
+    acquittal_court: 'Delhi High Court',
+    prison_name: 'Central Jail Tihar',
+    custody_authority: 'Superintendent, Central Jail Tihar',
+    non_release_reason: 'None — timely same-day release via FASTER.',
+    overrun_days: 0,
+    release_date: '2025-05-01',
+    release_verified: true,
+  });
+  assert.equal(compliantStages[0].verified, true);
+  assert.equal(compliantStages[1].verified, false);
+  assert.equal(compliantStages[2].verified, false);
+  assert.equal(compliantStages[3].verified, true);
+
+  // Institutional record with required non-empty court/prison fields but explicit stage_1/2: false
+  const instExtracted = utilsMod.extractInnocentButLockedUpMetrics({
+    overrun_mechanism: 'institutional_compliance_gap',
+    portal_category: 'parliament',
+    acquittal_court: 'Parliament of India (Lok Sabha)',
+    prison_name: 'All-India Prisons',
+    stage_1_acquittal_verified: false,
+    stage_2_continued_detention_verified: false,
+    stage_3_contempt_verified: false,
+    stage_4_release_verified: false,
+    overrun_days: null,
+  });
+  assert.ok(instExtracted);
+  assert.equal(instExtracted.stage1AcquittalVerified, false);
+  assert.equal(instExtracted.stage2ContinuedDetentionVerified, false);
+  assert.equal(instExtracted.stage3ContemptVerified, false);
+  assert.equal(instExtracted.stage4ReleaseVerified, false);
+
+  // Union of India filter must reject a lead with state_ut: null and jurisdiction: 'State:Bihar'
+  const biharNullStateLead = {
+    ...sampleLeads[1],
+    finding_id: 'f-p10-bihar-null-state',
+    state_ut: null,
+    jurisdiction: 'State:Bihar',
+  };
   const unionLead = {
     ...sampleLeads[0],
     finding_id: 'f-p10-union',
@@ -548,9 +591,25 @@ test('InnocentButLockedUpVisualiser helpers normalize portals, years, tiers, mec
     court_tier: 'supreme_court',
   };
   assert.equal(
-    visualsMod.p10FilterLeads([...sampleLeads, unionLead], 'all', 'Union of India').length,
+    visualsMod.p10FilterLeads([...sampleLeads, biharNullStateLead, unionLead], 'all', 'Union of India').length,
     1,
   );
+  assert.equal(
+    visualsMod.p10FilterLeads([...sampleLeads, biharNullStateLead, unionLead], 'all', 'Union of India')[0].finding_id,
+    'f-p10-union',
+  );
+
+  // Regression guards for stage verification, Dossiers timeline joining (no leading dot / +0d), Union location, and pluralization
+  const cardSrcCheck = fs.readFileSync(path.join(webDir, 'src/components/FindingCard.tsx'), 'utf8');
+  assert.doesNotMatch(cardSrcCheck, /stage2ContinuedDetentionVerified\s*\|\|\s*p10Record\.prisonName/);
+  const drawerSrcCheck = fs.readFileSync(path.join(webDir, 'src/components/FindingDrawer.tsx'), 'utf8');
+  assert.doesNotMatch(drawerSrcCheck, /stage2ContinuedDetentionVerified\s*\|\|\s*p10Record\.prisonName/);
+  const visualsSrcCheck = fs.readFileSync(path.join(webDir, 'src/components/ProjectVisuals.tsx'), 'utf8');
+  assert.match(visualsSrcCheck, /uniqueDocs === 1 \? 'doc' : 'docs'/);
+  assert.match(visualsSrcCheck, /prisonsNamed === 1 \? 'prison' : 'prisons'/);
+  assert.match(visualsSrcCheck, /clearedEmbedded === 1 \? 'control' : 'controls'/);
+  assert.match(visualsSrcCheck, /activePortalsCount === 1 \? 'category' : 'categories'/);
+  assert.match(visualsSrcCheck, /lead\.overrun_days != null && lead\.overrun_days > 0/);
 });
 
 test('API client normalizes P10 mission fallback code and 3 structured citation roles + secondary provenance', () => {
