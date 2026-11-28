@@ -224,6 +224,16 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
     row = q("SELECT COUNT(*) AS c FROM peer_verifications WHERE created_at < ?", (end,)).fetchone()
     totals["checks"] = int(row["c"] or 0) if row is not None else 0
 
+    task_counts: dict[str, tuple[int, int]] = {}
+    if not live:
+        for r in q(
+            "SELECT mission_slug AS slug, COUNT(*) AS total, "
+            "SUM(CASE WHEN status = 'completed' AND completed_at IS NOT NULL AND completed_at < ? THEN 1 ELSE 0 END) AS done "
+            "FROM tasks WHERE task_type != 'peer_verify' AND status != 'retired' AND created_at < ? GROUP BY mission_slug",
+            (end, end),
+        ).fetchall():
+            task_counts[str(r["slug"] or "")] = (int(r["total"] or 0), int(r["done"] or 0))
+
     projects: list[dict[str, Any]] = []
     for m in q(
         "SELECT slug, title, methodology_code, total_tasks, completed_tasks FROM missions "
@@ -231,7 +241,10 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
     ).fetchall():
         slug = str(m["slug"])
         c = per_mission.get(slug) or {"flagged": 0, "verified": 0, "cleared": 0, "disputed": 0, "verified_sum": 0.0}
-        total, done = int(m["total_tasks"] or 0), int(m["completed_tasks"] or 0)
+        if live:
+            total, done = int(m["total_tasks"] or 0), int(m["completed_tasks"] or 0)
+        else:
+            total, done = task_counts.get(slug, (0, 0))
         if not total and not c["flagged"]:
             continue
         big = None
@@ -286,9 +299,32 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
 
 
 def lede_hash(edition: dict[str, Any]) -> str:
-    ids = sorted(_edition_ids(edition))
-    stats = edition.get("stats") or {}
-    raw = json.dumps([edition.get("date"), ids, stats.get("confirmed"), stats.get("cleared")], default=str)
+    def fact(x: dict[str, Any]) -> list[Any]:
+        return [
+            str(x.get("id")),
+            x.get("status"),
+            round(float(x.get("monetary_exposure_inr") or 0.0)),
+            x.get("title"),
+            x.get("summary"),
+            json.dumps(x.get("anomaly_metrics") or {}, sort_keys=True, default=str),
+        ]
+
+    stories = sorted(fact(x) for k in ("top", "recent", "cleared", "corrections") for x in edition.get(k) or [] if x)
+    projects = sorted(
+        [
+            p.get("slug"),
+            p.get("flagged"),
+            p.get("verified"),
+            p.get("cleared"),
+            p.get("disputed"),
+            round(float(p.get("verified_sum") or 0.0)),
+            p.get("total_tasks"),
+            p.get("completed_tasks"),
+            fact(p["largest"]) if p.get("largest") else None,
+        ]
+        for p in edition.get("projects") or []
+    )
+    raw = json.dumps([edition.get("date"), edition.get("stats"), stories, projects], sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 
@@ -362,6 +398,12 @@ def get_edition(db: Any, d: date, now: datetime | None = None) -> dict[str, Any]
                     "VALUES (?, ?, 'edition', '', ?, 1, ?, ?) ON CONFLICT(key) DO NOTHING",
                     (key, edition["fingerprint"], json.dumps(edition, default=str), edition["generated_at"], edition["generated_at"]),
                 )
+            with db.read() as conn:
+                row = conn.execute("SELECT payload_json FROM plain_texts WHERE key = ?", (key,)).fetchone()
+                if row is not None:
+                    saved = json.loads(row["payload_json"])
+                    if isinstance(saved, dict) and saved.get("v") == EDITION_VERSION:
+                        return {**_drop_hidden(conn, saved), "state": "final"}
         except Exception:
             pass
     return {**edition, "state": "final"}
