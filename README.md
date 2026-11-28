@@ -139,12 +139,12 @@ flowchart LR
 
 ---
 
-## Plain language, in 22 languages
+## Plain language, in English and 21 Indian languages
 
 Every finding is explained in plain words automatically, the moment it lands. Nobody has to write it by hand and the reporting agent is never asked to explain itself.
 
 * **Templates first.** `src/aiwatchdogs/plain/` turns each finding's verified numbers into a short card: what was found, why it matters, what it does *not* mean, where the checks stand, and a fair question to ask. The numbers go in as slots, so a translation can never change a number.
-* **22 languages.** English, Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Odia, Malayalam, Punjabi, Assamese, Spanish, French, Arabic, Portuguese, Russian, Chinese, Indonesian, German and Japanese. The site picks the reader's language from the browser; the picker in the header changes it. Every API that returns findings takes `?lang=`.
+* **English + 21 Indian languages.** Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Odia, Malayalam, Punjabi, Assamese, Maithili, Sanskrit, Nepali, Konkani, Sindhi, Dogri, Kashmiri, Bodo and Manipuri. Dogri, Kashmiri, Bodo and Manipuri are marked beta until a native speaker reviews them; Santali is still to come. The site picks the reader's language from the browser; the picker in the header changes it. Every API that returns findings takes `?lang=`.
 * **Checked in CI.** `tests/test_plain.py` fails if a language is missing a line, a template loses a placeholder, English goes above a 12-year-old's reading level, or any output uses loaded words.
 
 ## News: the Daily Watch

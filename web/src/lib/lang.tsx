@@ -17,15 +17,15 @@ export const FALLBACK_LANGUAGES: PlainLanguage[] = [
   { code: 'ml', name: 'Malayalam', native: 'മലയാളം', dir: 'ltr', bcp47: 'ml-IN' },
   { code: 'pa', name: 'Punjabi', native: 'ਪੰਜਾਬੀ', dir: 'ltr', bcp47: 'pa-IN' },
   { code: 'as', name: 'Assamese', native: 'অসমীয়া', dir: 'ltr', bcp47: 'as-IN' },
-  { code: 'es', name: 'Spanish', native: 'Español', dir: 'ltr', bcp47: 'es-ES' },
-  { code: 'fr', name: 'French', native: 'Français', dir: 'ltr', bcp47: 'fr-FR' },
-  { code: 'ar', name: 'Arabic', native: 'العربية', dir: 'rtl', bcp47: 'ar-SA' },
-  { code: 'pt', name: 'Portuguese', native: 'Português', dir: 'ltr', bcp47: 'pt-BR' },
-  { code: 'ru', name: 'Russian', native: 'Русский', dir: 'ltr', bcp47: 'ru-RU' },
-  { code: 'zh', name: 'Chinese', native: '中文', dir: 'ltr', bcp47: 'zh-CN' },
-  { code: 'id', name: 'Indonesian', native: 'Bahasa Indonesia', dir: 'ltr', bcp47: 'id-ID' },
-  { code: 'de', name: 'German', native: 'Deutsch', dir: 'ltr', bcp47: 'de-DE' },
-  { code: 'ja', name: 'Japanese', native: '日本語', dir: 'ltr', bcp47: 'ja-JP' },
+  { code: 'mai', name: 'Maithili', native: 'मैथिली', dir: 'ltr', bcp47: 'mai-IN' },
+  { code: 'sa', name: 'Sanskrit', native: 'संस्कृतम्', dir: 'ltr', bcp47: 'sa-IN' },
+  { code: 'ne', name: 'Nepali', native: 'नेपाली', dir: 'ltr', bcp47: 'ne-NP' },
+  { code: 'kok', name: 'Konkani', native: 'कोंकणी', dir: 'ltr', bcp47: 'kok-IN' },
+  { code: 'sd', name: 'Sindhi', native: 'سنڌي', dir: 'rtl', bcp47: 'sd-IN' },
+  { code: 'doi', name: 'Dogri', native: 'डोगरी', dir: 'ltr', bcp47: 'doi-IN', beta: true },
+  { code: 'ks', name: 'Kashmiri', native: 'کٲشُر', dir: 'rtl', bcp47: 'ks-IN', beta: true },
+  { code: 'brx', name: 'Bodo', native: 'बड़ो', dir: 'ltr', bcp47: 'brx-IN', beta: true },
+  { code: 'mni', name: 'Manipuri', native: 'মৈতৈলোন্', dir: 'ltr', bcp47: 'mni-IN', beta: true },
 ];
 
 export const EN_LABELS: Record<string, string> = {
@@ -204,7 +204,7 @@ export function LanguagePicker({ compact = false }: { compact?: boolean }) {
       >
         {languages.map((l) => (
           <option key={l.code} value={l.code}>
-            {l.native}
+            {l.beta ? `${l.native} (beta)` : l.native}
           </option>
         ))}
       </select>

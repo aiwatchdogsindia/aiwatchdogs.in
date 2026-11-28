@@ -10,7 +10,7 @@ PACK_DIR = Path(__file__).resolve().parent / "packs"
 DEFAULT_LANG = "en"
 LANG_ORDER = (
     "en", "hi", "bn", "mr", "te", "ta", "gu", "ur", "kn", "or", "ml", "pa", "as",
-    "es", "fr", "ar", "pt", "ru", "zh", "id", "de", "ja",
+    "mai", "sa", "ne", "kok", "sd", "doi", "ks", "brx", "mni",
 )
 _PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 _LANG_RE = re.compile(r"^[a-z]{2,3}$")
@@ -25,7 +25,7 @@ def _all_packs() -> dict[str, dict[str, Any]]:
     return packs
 
 
-def available_languages() -> list[dict[str, str]]:
+def available_languages() -> list[dict[str, Any]]:
     packs = _all_packs()
     order = [c for c in LANG_ORDER if c in packs] + sorted(c for c in packs if c not in LANG_ORDER)
     return [
@@ -35,6 +35,7 @@ def available_languages() -> list[dict[str, str]]:
             "native": str(packs[c]["native"]),
             "dir": str(packs[c].get("dir", "ltr")),
             "bcp47": str(packs[c].get("bcp47", c)),
+            "beta": bool(packs[c].get("beta", False)),
         }
         for c in order
     ]

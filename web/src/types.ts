@@ -1758,6 +1758,7 @@ export interface PlainLanguage {
   native: string;
   dir: string;
   bcp47: string;
+  beta?: boolean;
 }
 
 export interface NewsStory {

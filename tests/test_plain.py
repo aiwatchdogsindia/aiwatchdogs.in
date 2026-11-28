@@ -25,10 +25,13 @@ def _pack(code: str) -> dict:
     return json.loads((PACK_DIR / f"{code}.json").read_text(encoding="utf-8"))
 
 
-def test_at_least_twenty_languages_including_indian_ones() -> None:
-    assert len(CODES) >= 20
-    for code in ("en", "hi", "bn", "mr", "te", "ta", "gu", "ur", "kn", "ml", "pa", "or", "es", "fr", "ar", "zh"):
-        assert code in CODES
+def test_english_plus_21_indian_languages() -> None:
+    indian = {"hi", "bn", "mr", "te", "ta", "gu", "ur", "kn", "or", "ml", "pa", "as",
+              "mai", "sa", "ne", "kok", "sd", "doi", "ks", "brx", "mni"}
+    assert set(CODES) == {"en"} | indian
+    assert CODES[0] == "en"
+    rtl = {x["code"] for x in available_languages() if x["dir"] == "rtl"}
+    assert rtl == {"ur", "sd", "ks"}
 
 
 @pytest.mark.parametrize("code", CODES)
@@ -72,8 +75,8 @@ def test_numbers_come_from_the_record() -> None:
     assert "₹616 crore" in card["what"] and "₹447 crore" in card["what"]
     hi = explain_finding(SAMPLES[0], "hi")
     assert "करोड़" in hi["what"] and "37.7%" in hi["head"]
-    zh = explain_finding(SAMPLES[3], "zh")
-    assert "亿" in zh["what"]
+    ur = explain_finding(SAMPLES[3], "ur")
+    assert "کروڑ" in ur["what"]
 
 
 @pytest.mark.parametrize("code", CODES)
@@ -99,10 +102,10 @@ def test_quarantined_findings_are_not_explained() -> None:
 
 def test_formatting() -> None:
     assert fmt.number(1234567, "en") == "12,34,567"
-    assert fmt.number(1234567, "fr") != "12,34,567"
+    assert fmt.number(1234567, "ta") == "12,34,567"
     assert fmt.money(6.16e9, "en") == "₹616 crore"
-    assert "milliard" in fmt.money(6.16e9, "fr")
-    assert "亿" in fmt.money(6.16e9, "zh")
+    assert fmt.money(6.16e9, "ne") == "₹616 करोड"
+    assert fmt.money(4.5e6, "bn") == "₹45 লাখ"
     assert fmt.percent(-49.68, "en") == "49.7%"
 
 
@@ -125,7 +128,7 @@ def test_checks_catch_made_up_numbers_and_loaded_words() -> None:
     hindi = {**good, "why": "यह घोटाला है।"}
     assert any("loaded" in p for p in checks.check_entry(hindi, "hi", allowed, writer.CARD_FIELDS))
     assert checks.numbers_in("६१६ करोड़", "hi") == [616.0]
-    assert checks.numbers_in("6,16 milliards", "fr") == [6.16]
+    assert checks.numbers_in("۶۱۶ کروڑ", "ur") == [616.0]
 
 
 def test_model_text_is_used_only_when_it_matches_the_record() -> None:
@@ -262,15 +265,15 @@ def test_writer_saves_checked_text_with_a_fake_model(tmp_path: Path, monkeypatch
             return writer.Result(data, 0.02, "fake")
 
         monkeypatch.setattr(writer, "call_model", fake)
-        cfg = writer.Config("anthropic", "fake", "low", 5.0, "", ["en", "hi", "ta", "fr"])
+        cfg = writer.Config("anthropic", "fake", "low", 5.0, "", ["en", "hi", "ta", "sa"])
         report = writer.run_once(app.state.db, cfg, time_budget_s=600)
         assert report["calls"] >= 2 and report["rejected"] >= 1
         texts = writer.load_texts(app.state.db, ["finding:f-w"])["finding:f-w"]
         assert set(texts["langs"]) == {"en", "hi", "ta"}
         card = client.get("/api/findings/f-w", params={"lang": "en"}).json()["plain"]
         assert card["source"] == "model" and card["head"].startswith("Rural Development")
-        fr = client.get("/api/findings/f-w", params={"lang": "fr"}).json()["plain"]
-        assert fr["source"] == "template"
+        sa = client.get("/api/findings/f-w", params={"lang": "sa"}).json()["plain"]
+        assert sa["source"] == "template"
         assert writer.spent_today(app.state.db) > 0
         lede = client.get("/api/news").json()["lede"]
         assert lede == "Today one finding was confirmed."
