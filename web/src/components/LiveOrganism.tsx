@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
 import type { AgentRecord, MissionItem, PeerVerification, WhisperItem } from '../types';
+import { themed, themedTriplet, useTheme } from '../lib/theme';
 import { formatRelativeTime, formatShortRel, pillarTint, projectCodeFor } from '../utils';
 import { ProviderModelBadge } from './AgentLogos';
 
@@ -35,6 +36,7 @@ export function LiveOrganism({
   recentVerifications = [],
   onSelectFinding,
 }: LiveOrganismProps) {
+  const theme = useTheme();
   const [selectedHandle, setSelectedHandle] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState(true);
@@ -172,7 +174,7 @@ export function LiveOrganism({
       arcs.push({
         id: `arc-${i}`,
         d: `M ${fromSeat.x} ${fromSeat.y} Q ${mx} ${my} ${toSeat.x} ${toSeat.y}`,
-        color: v.verdict === 'confirm' ? '#138808' : '#C2412D',
+        color: v.verdict === 'confirm' ? 'var(--green)' : 'var(--mid)',
       });
     }
     return arcs;
@@ -204,14 +206,14 @@ export function LiveOrganism({
         <defs>
           {seats.map((s, idx) => (
             <radialGradient key={`wash-${idx}`} id={`org-wash-${idx}`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={`rgba(${s.tint.rgb}, 0.28)`} />
-              <stop offset="100%" stopColor={`rgba(${s.tint.rgb}, 0)`} />
+              <stop offset="0%" stopColor={`rgba(${themedTriplet(s.tint.rgb, theme)}, 0.28)`} />
+              <stop offset="100%" stopColor={`rgba(${themedTriplet(s.tint.rgb, theme)}, 0)`} />
             </radialGradient>
           ))}
           {openMissionSlots.map((slot, idx) => (
             <radialGradient key={`open-wash-${idx}`} id={`org-open-wash-${idx}`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={`rgba(${slot.tint.rgb}, 0.16)`} />
-              <stop offset="100%" stopColor={`rgba(${slot.tint.rgb}, 0)`} />
+              <stop offset="0%" stopColor={`rgba(${themedTriplet(slot.tint.rgb, theme)}, 0.16)`} />
+              <stop offset="100%" stopColor={`rgba(${themedTriplet(slot.tint.rgb, theme)}, 0)`} />
             </radialGradient>
           ))}
         </defs>
@@ -223,7 +225,7 @@ export function LiveOrganism({
           rx={RX}
           ry={RY}
           fill="none"
-          stroke="#E3A99C"
+          stroke={themed('#E3A99C', theme)}
           strokeWidth="1.25"
           strokeDasharray="4 7"
           opacity="0.7"
@@ -256,7 +258,7 @@ export function LiveOrganism({
             key={`open-spoke-${idx}`}
             d={`M ${slot.x.toFixed(1)} ${slot.y.toFixed(1)} L ${CX} ${CY}`}
             fill="none"
-            stroke="#D3CFC5"
+            stroke={themed('#D3CFC5', theme)}
             strokeWidth="1"
             strokeDasharray="3 5"
             opacity="0.7"
@@ -274,17 +276,17 @@ export function LiveOrganism({
                 id={pathId}
                 d={spokeD}
                 fill="none"
-                stroke="#D3CFC5"
+                stroke={themed('#D3CFC5', theme)}
                 strokeWidth="1.15"
                 opacity="0.9"
               />
               {/* Outbound finding / verification packet toward Quorum (paused offscreen/hidden/reduced-motion) */}
               {animateActive && (
                 <>
-                  <circle r="3.4" fill={s.tint.hex} opacity="0.9">
+                  <circle r="3.4" fill={themed(s.tint.hex, theme)} opacity="0.9">
                     <animateMotion dur={`${s.durSec.toFixed(2)}s`} repeatCount="indefinite" path={spokeD} />
                   </circle>
-                  <circle r="2.3" fill="#138808" opacity="0.65">
+                  <circle r="2.3" fill={themed('#138808', theme)} opacity="0.65">
                     <animateMotion
                       dur={`${(s.durSec * 1.35).toFixed(2)}s`}
                       begin={`${(idx * 0.55).toFixed(2)}s`}
@@ -338,7 +340,7 @@ export function LiveOrganism({
         >
           <div className="org-seat-top">
             <span className="org-seat-id">
-              <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
+              <span className="org-seat-dot" style={{ background: themed(slot.tint.hex, theme) }} />
               <span>{projectCodeFor(slot.mission)}, Open slot</span>
             </span>
             <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
@@ -367,7 +369,7 @@ export function LiveOrganism({
           >
             <div className="org-seat-top">
               <span className="org-seat-id">
-                <span className="org-seat-dot" style={{ background: s.tint.hex }} />
+                <span className="org-seat-dot" style={{ background: themed(s.tint.hex, theme) }} />
                 <span>@{s.agent.handle}</span>
               </span>
               <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
@@ -407,7 +409,7 @@ export function LiveOrganism({
           >
             <div className="org-seat-top">
               <span className="org-seat-id">
-                <span className="org-seat-dot" style={{ background: s.tint.hex }} />
+                <span className="org-seat-dot" style={{ background: themed(s.tint.hex, theme) }} />
                 <span>@{s.agent.handle}</span>
               </span>
               <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
@@ -437,7 +439,7 @@ export function LiveOrganism({
           >
             <div className="org-seat-top">
               <span className="org-seat-id">
-                <span className="org-seat-dot" style={{ background: slot.tint.hex }} />
+                <span className="org-seat-dot" style={{ background: themed(slot.tint.hex, theme) }} />
                 <span>{projectCodeFor(slot.mission)}, Open slot</span>
               </span>
               <span className="font-mono tabular" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>
@@ -459,7 +461,7 @@ export function LiveOrganism({
         <div className="org-pop" role="dialog" aria-label={`Details for @${selectedSeat.agent.handle}`}>
           <div className="org-pop-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-              <span className="org-seat-dot" style={{ background: selectedSeat.tint.hex }} />
+              <span className="org-seat-dot" style={{ background: themed(selectedSeat.tint.hex, theme) }} />
               <strong className="font-mono" style={{ fontSize: 13 }}>
                 @{selectedSeat.agent.handle}
               </strong>

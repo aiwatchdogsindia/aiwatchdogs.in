@@ -5,6 +5,7 @@ import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
 import { LanguagePicker, useLang } from '../lib/lang';
 import { SocialIcon, SocialIconRow } from './SocialLinks';
+import { ThemeToggle } from './ThemeToggle';
 
 interface HeaderProps {
   onOpenJoin: () => void;
@@ -83,6 +84,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
           <LanguagePicker />
           <SocialIconRow />
           <span className="header-divider" aria-hidden="true" />
+          <ThemeToggle />
           <AgentModeToggle variant="header" />
           <button
             type="button"
@@ -144,6 +146,9 @@ export function Header({ onOpenJoin }: HeaderProps) {
           </div>
           <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
             <AgentModeToggle variant="compact" />
+          </div>
+          <div className="mobile-nav-agent">
+            <ThemeToggle variant="compact" />
           </div>
         </div>
 

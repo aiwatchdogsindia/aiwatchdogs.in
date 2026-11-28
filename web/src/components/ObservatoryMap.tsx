@@ -2,6 +2,7 @@ import { ArrowUpRight, ChevronLeft, ChevronRight, ExternalLink, Minus, Plus, Rot
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../router';
 import type { GraphData, GraphNode } from '../types';
+import { getTheme, themed, useTheme } from '../lib/theme';
 import { formatInrCr, isUnverifiedStatus, pillarLabel, pillarTint, projectCodeFor, safeExternalUrl, statusMeta } from '../utils';
 
 interface ObservatoryMapProps {
@@ -74,6 +75,7 @@ export function ObservatoryMap({
   refreshTick = 0,
   onSelectFinding,
 }: ObservatoryMapProps) {
+  const theme = useTheme();
   const { navigate } = useRouter();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -528,6 +530,8 @@ export function ObservatoryMap({
       !disposed && inViewRef.current && tabVisibleRef.current && !reducedMotionRef.current;
 
     const draw = (now: number) => {
+      const theme = getTheme();
+      const c = (color: string) => themed(color, theme);
       rafId = 0;
       if (disposed) return;
 
@@ -569,7 +573,7 @@ export function ObservatoryMap({
       for (const cl of world.clusters) {
         ctx.save();
         ctx.setLineDash([3 / cam.zoom, 5 / cam.zoom]);
-        ctx.strokeStyle = `rgba(${cl.tint.rgb}, 0.24)`;
+        ctx.strokeStyle = c(`rgba(${cl.tint.rgb}, 0.24)`);
         ctx.lineWidth = 1 / cam.zoom;
         ctx.beginPath();
         ctx.arc(cl.cx, cl.cy, cl.radius, 0, Math.PI * 2);
@@ -587,13 +591,13 @@ export function ObservatoryMap({
           : Math.max(9.5, 11 / Math.sqrt(cam.zoom));
         const maxLabelChars = isNarrowCanvas ? 18 : 26;
         ctx.font = `400 ${titleWorldPx}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(27, 26, 23, 0.88)';
+        ctx.fillStyle = c('rgba(27, 26, 23, 0.88)');
         ctx.textAlign = 'center';
         const shortLabel = `${cl.shortCode}, ${cl.label.length > maxLabelChars ? `${cl.label.slice(0, maxLabelChars - 1)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + (isNarrowCanvas ? 14 / cam.zoom : 16 / Math.sqrt(cam.zoom)));
 
         ctx.font = `400 ${subWorldPx}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(27, 26, 23, 0.68)';
+        ctx.fillStyle = c('rgba(27, 26, 23, 0.68)');
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
             ? `${cl.verifiedCount} verified, ${cl.reviewCount} in review`
@@ -624,18 +628,18 @@ export function ObservatoryMap({
         ctx.quadraticCurveTo(cx, cy, t.x, t.y);
 
         if (isInc) {
-          ctx.strokeStyle = 'rgba(27, 26, 23, 0.72)';
+          ctx.strokeStyle = c('rgba(27, 26, 23, 0.72)');
           ctx.lineWidth = 1.9 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'disputed' || t.kind === 'disputed') {
-          ctx.strokeStyle = '#4A2622';
+          ctx.strokeStyle = c('#4A2622');
           ctx.setLineDash([3, 4]);
           ctx.lineWidth = 1.1 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'review' || t.kind === 'review') {
-          ctx.strokeStyle = 'rgba(27, 26, 23, 0.22)';
+          ctx.strokeStyle = c('rgba(27, 26, 23, 0.22)');
           ctx.setLineDash([2, 5]);
           ctx.lineWidth = 1 / Math.sqrt(cam.zoom);
         } else {
-          ctx.strokeStyle = crossCluster ? 'rgba(27,26,23,0.12)' : 'rgba(27,26,23,0.38)';
+          ctx.strokeStyle = crossCluster ? c('rgba(27,26,23,0.12)') : c('rgba(27,26,23,0.38)');
           ctx.lineWidth = (crossCluster ? 1 : 1.25) / Math.sqrt(cam.zoom);
         }
         ctx.stroke();
@@ -657,7 +661,7 @@ export function ObservatoryMap({
             if (rp > 0 && rp < 1) {
               ctx.beginPath();
               ctx.arc(wn.x, wn.y, r + rp * 44, 0, Math.PI * 2);
-              ctx.strokeStyle = `rgba(27, 26, 23, ${(1 - rp) * 0.6})`;
+              ctx.strokeStyle = c(`rgba(27, 26, 23, ${(1 - rp) * 0.6})`);
               ctx.lineWidth = 1.6 / cam.zoom;
               ctx.stroke();
             }
@@ -668,7 +672,7 @@ export function ObservatoryMap({
         if (wn.isCommunity) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 3.6, 0, Math.PI * 2);
-          ctx.strokeStyle = '#1B1A17';
+          ctx.strokeStyle = c('#1B1A17');
           ctx.lineWidth = 2.4 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
@@ -677,17 +681,17 @@ export function ObservatoryMap({
         if (wn.kind === 'verified') {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#138808';
+          ctx.fillStyle = c('#138808');
           ctx.fill();
         } else if (wn.kind === 'review') {
           // In Peer Review / Unverified: hollow dashed ring + orbiting saffron agent comet
           ctx.save();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.fillStyle = c('#FFFFFF');
           ctx.fill();
           ctx.setLineDash([2.2, 2.2]);
-          ctx.strokeStyle = '#575249';
+          ctx.strokeStyle = c('#575249');
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.restore();
@@ -699,20 +703,20 @@ export function ObservatoryMap({
           const cy = wn.y + Math.sin(phase) * orbR;
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, orbR, phase - 1.15, phase);
-          ctx.strokeStyle = 'rgba(255, 153, 51, 0.7)';
+          ctx.strokeStyle = c('rgba(255, 153, 51, 0.7)');
           ctx.lineWidth = 1.4;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(cx, cy, 1.9, 0, Math.PI * 2);
-          ctx.fillStyle = '#FF9933';
+          ctx.fillStyle = c('#FF9933');
           ctx.fill();
         } else if (wn.kind === 'disputed') {
           // Disputed: white fill + red ring + internal × cross
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.fillStyle = c('#FFFFFF');
           ctx.fill();
-          ctx.strokeStyle = '#8A1C0C';
+          ctx.strokeStyle = c('#8A1C0C');
           ctx.lineWidth = 1.6;
           ctx.stroke();
           const d = r * 0.48;
@@ -721,44 +725,44 @@ export function ObservatoryMap({
           ctx.lineTo(wn.x + d, wn.y + d);
           ctx.moveTo(wn.x + d, wn.y - d);
           ctx.lineTo(wn.x - d, wn.y + d);
-          ctx.strokeStyle = '#8A1C0C';
+          ctx.strokeStyle = c('#8A1C0C');
           ctx.lineWidth = 1.4;
           ctx.stroke();
         } else if (wn.kind === 'cleared') {
           // Cleared & Explained: white fill + green ring + horizontal stop bar −
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.fillStyle = c('#FFFFFF');
           ctx.fill();
-          ctx.strokeStyle = '#0F7306';
+          ctx.strokeStyle = c('#0F7306');
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(wn.x - r * 0.52, wn.y);
           ctx.lineTo(wn.x + r * 0.52, wn.y);
-          ctx.strokeStyle = '#575249';
+          ctx.strokeStyle = c('#575249');
           ctx.lineWidth = 1.5;
           ctx.stroke();
         } else if (wn.kind === 'mission') {
           // Mission core node: Ashoka-navy dot
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#000080';
+          ctx.fillStyle = c('#000080');
           ctx.fill();
-          ctx.strokeStyle = '#FFFFFF';
+          ctx.strokeStyle = c('#FFFFFF');
           ctx.lineWidth = 1.8;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, 2.4, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFFFFF';
+          ctx.fillStyle = c('#FFFFFF');
           ctx.fill();
         } else if (wn.kind === 'source') {
           // Official .gov.in source: quiet navy-outlined diamond
           ctx.save();
           ctx.translate(wn.x, wn.y);
           ctx.rotate(Math.PI / 4);
-          ctx.fillStyle = '#FFFFFF';
-          ctx.strokeStyle = '#000080';
+          ctx.fillStyle = c('#FFFFFF');
+          ctx.strokeStyle = c('#000080');
           ctx.lineWidth = 1.3;
           ctx.fillRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
           ctx.strokeRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
@@ -767,9 +771,9 @@ export function ObservatoryMap({
           // Ministry / jurisdiction anchor
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#F4F4F4';
+          ctx.fillStyle = c('#F4F4F4');
           ctx.fill();
-          ctx.strokeStyle = '#1B1A17';
+          ctx.strokeStyle = c('#1B1A17');
           ctx.lineWidth = 1.25;
           ctx.stroke();
         }
@@ -778,7 +782,7 @@ export function ObservatoryMap({
         if (isPinned || isHov) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 5.5, 0, Math.PI * 2);
-          ctx.strokeStyle = isPinned ? '#1B1A17' : 'rgba(27,26,23,0.45)';
+          ctx.strokeStyle = isPinned ? c('#1B1A17') : c('rgba(27,26,23,0.45)');
           ctx.lineWidth = 1.5 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
@@ -787,7 +791,7 @@ export function ObservatoryMap({
         if (cam.zoom >= 1.32 || isPinned || isHov) {
           ctx.save();
           ctx.font = `400 ${12.5 / Math.sqrt(cam.zoom)}px "Geist Serif", Georgia, serif`;
-          ctx.fillStyle = isPinned || isHov ? '#1B1A17' : 'rgba(27,26,23,0.82)';
+          ctx.fillStyle = isPinned || isHov ? c('#1B1A17') : c('rgba(27,26,23,0.82)');
           ctx.textAlign = 'left';
           const lbl = wn.node.label.length > 28 ? `${wn.node.label.slice(0, 27)}…` : wn.node.label;
           ctx.fillText(lbl, wn.x + r + 7, wn.y + 3.5 / Math.sqrt(cam.zoom));
@@ -821,12 +825,12 @@ export function ObservatoryMap({
           for (const wn of world.worldNodes) {
             mctx.fillStyle =
               wn.kind === 'verified'
-                ? '#138808'
+                ? c('#138808')
                 : wn.kind === 'mission'
-                  ? '#000080'
+                  ? c('#000080')
                   : wn.kind === 'disputed'
-                    ? '#8A1C0C'
-                    : '#9E988B';
+                    ? c('#8A1C0C')
+                    : c('#9E988B');
             mctx.fillRect(toMx(wn.x) - 1, toMy(wn.y) - 1, 2.2, 2.2);
           }
 
@@ -835,8 +839,8 @@ export function ObservatoryMap({
           const vy1 = toMy(cam.y - h / (2 * cam.zoom));
           const vx2 = toMx(cam.x + w / (2 * cam.zoom));
           const vy2 = toMy(cam.y + h / (2 * cam.zoom));
-          mctx.strokeStyle = 'rgba(27, 26, 23, 0.8)';
-          mctx.fillStyle = 'rgba(27, 26, 23, 0.08)';
+          mctx.strokeStyle = c('rgba(27, 26, 23, 0.8)');
+          mctx.fillStyle = c('rgba(27, 26, 23, 0.08)');
           mctx.lineWidth = 1;
           mctx.fillRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
           mctx.strokeRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
@@ -1125,7 +1129,7 @@ export function ObservatoryMap({
                   className={`map-program ${activeClusterKey === cl.key ? 'active' : ''}`}
                   onClick={() => focusCluster(cl)}
                 >
-                  <span className="map-program-dot" style={{ background: cl.tint.hex }} />
+                  <span className="map-program-dot" style={{ background: themed(cl.tint.hex, theme) }} />
                   <span>{cl.shortCode}</span>
                   <span style={{ opacity: 0.7 }}>{cl.totalCount}</span>
                 </button>
@@ -1296,10 +1300,10 @@ export function ObservatoryMap({
                       textTransform: 'uppercase',
                       color:
                         wn.kind === 'verified'
-                          ? '#0F7306'
+                          ? 'var(--flag-green-deep)'
                           : wn.kind === 'mission'
-                            ? '#000080'
-                            : '#635E54',
+                            ? 'var(--flag-navy)'
+                            : 'var(--ink-4)',
                       flexShrink: 0,
                     }}
                   >
@@ -1333,7 +1337,7 @@ export function ObservatoryMap({
           </div>
           <div className="map-card-title">{hoveredNode.wn.node.label}</div>
           {hoveredNode.wn.node.value_inr_cr != null && hoveredNode.wn.node.value_inr_cr > 0 && (
-            <div className="font-mono tabular" style={{ fontSize: 11, color: '#0F7306', marginTop: 4 }}>
+            <div className="font-mono tabular" style={{ fontSize: 11, color: 'var(--flag-green-deep)', marginTop: 4 }}>
               {formatInrCr(hoveredNode.wn.node.value_inr_cr)}
             </div>
           )}
@@ -1539,7 +1543,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: '#138808',
+                background: 'var(--green)',
               }}
             />
             <span>verified</span>
@@ -1550,7 +1554,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.25px dashed #575249',
+                border: '1.25px dashed var(--ink-3)',
               }}
             />
             <span>in review</span>
@@ -1565,7 +1569,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #8A1C0C',
+                border: '1.4px solid var(--obs-terracotta)',
               }}
             />
             <span>disputed ×</span>
@@ -1576,7 +1580,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #0F7306',
+                border: '1.4px solid var(--flag-green-deep)',
               }}
             />
             <span>cleared −</span>
@@ -1587,7 +1591,7 @@ export function ObservatoryMap({
                 width: 9,
                 height: 9,
                 borderRadius: '50%',
-                border: '2px solid #1B1A17',
+                border: '2px solid var(--ink)',
               }}
             />
             <span>community node</span>
