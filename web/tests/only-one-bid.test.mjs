@@ -128,7 +128,7 @@ test('P7 project metadata helpers resolve slug, code, work type, pillar, WebMCP,
 
 test('FindingsPage PILLAR_FILTERS includes procurement and BriefPage lists P7 Only One Bid', () => {
   const findingsSrc = fs.readFileSync(path.join(webDir, 'src/pages/FindingsPage.tsx'), 'utf8');
-  assert.match(findingsSrc, /PILLAR_FILTERS\s*=\s*\[[^\]]*'procurement'/);
+  assert.match(findingsSrc, /TOPICS[^=]*=\s*\[[\s\S]*code:\s*'P7'/);
 
   const briefSrc = fs.readFileSync(path.join(webDir, 'src/pages/BriefPage.tsx'), 'utf8');
   assert.match(briefSrc, /slug:\s*'only-one-bid'/);

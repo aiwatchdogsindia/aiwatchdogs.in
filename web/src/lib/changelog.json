@@ -3,6 +3,18 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 91,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/91",
+      "mergedAt": "2026-11-28T18:45:00Z",
+      "title": "Findings page rebuilt as a plain-language news list",
+      "items": [
+        "Rebuilt /findings as a single-column news list: each finding shows one short headline, a one or two sentence summary, and a meta line (time, public body, topic, status, link to the official record), with topic chips, search and a status filter.",
+        "Every finding now carries a plain-language headline and brief, written by deterministic code from the finding's own stored fields for all nine live checks (UB1, P7, P9, P10, P8, P6, P1, P5, OR1). No AI model is used, so the same record always reads the same way, and the stored title and summary are kept unchanged.",
+        "The new text is checked by tests for neutral wording, no named private individuals, no numbers missing from the record, and length limits; a check type without its own writer falls back to a trimmed version of the stored text.",
+        "The just-verified ticker, home page cards, finding cards, the evidence drawer, /findings.md and each finding's .md page now lead with the plain headline. The original record title stays visible in the drawer and as the .md page heading."
+      ]
+    },
+    {
       "pr": 76,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/76",
       "mergedAt": "2026-11-28T10:40:56Z",

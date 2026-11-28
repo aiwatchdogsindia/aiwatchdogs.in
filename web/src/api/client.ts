@@ -492,6 +492,8 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
     pillar: raw.pillar ? String(raw.pillar) : undefined,
     title: String(raw.title || 'Public Record Audit Lead'),
     summary: String(raw.summary || ''),
+    headline: optStr(raw.headline) ?? undefined,
+    brief: optStr(raw.brief) ?? undefined,
     editorial_interpretation: optStr(raw.editorial_interpretation),
     methodology_code: String(raw.methodology_code || 'P1'),
     entity_name: String(raw.entity_name || 'Public Authority'),
@@ -767,6 +769,7 @@ function normalizeJustIn(raw: unknown): JustInItem | null {
   return {
     id: (r.id ?? '') as string | number,
     title: String(r.title || ''),
+    headline: optStr(r.headline) ?? undefined,
     methodology_code: String(r.methodology_code || 'P1'),
     entity_name: String(r.entity_name || ''),
     monetary_exposure_inr_cr: Number(r.monetary_exposure_inr_cr ?? 0),

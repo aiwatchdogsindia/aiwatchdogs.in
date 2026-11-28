@@ -1,41 +1,100 @@
-import { ChevronLeft, ChevronRight, Filter, RotateCcw, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { FindingCard } from '../components/FindingCard';
-import {
-  ACTION_TAGS,
-  FINDING_FILTER_OPTIONS,
-  FINDING_TAGS,
-  getWorkTypeTag,
-} from '../lib/tags';
-import { Link } from '../router';
+import { FINDING_FILTER_OPTIONS, getFindingTag } from '../lib/tags';
 import type { FindingItem } from '../types';
-import { METHODOLOGY_DESCRIPTIONS, pillarLabel } from '../utils';
+import { formatRelativeTime, safeExternalUrl } from '../utils';
 
 interface FindingsPageProps {
   onSelectFinding: (id: string | number) => void;
   refreshTick: number;
 }
 
-const PAGE_SIZE = 24;
+const PAGE_SIZE = 30;
 
-const KEY_TAGS = [
-  FINDING_TAGS.verified,
-  FINDING_TAGS.in_review,
-  FINDING_TAGS.split_vote,
-  FINDING_TAGS.cleared,
-  FINDING_TAGS.disputed,
-  FINDING_TAGS.not_enough_data,
-  ACTION_TAGS.rti_draft,
-  ACTION_TAGS.rti_filed,
+// One chip per kind of check, named the way a reader would say it. `code` is the check's
+// methodology code, which is what the findings API filters on.
+const TOPICS: Array<{ code: string; label: string }> = [
+  { code: '', label: 'All' },
+  { code: 'UB1', label: 'Unspent budget' },
+  { code: 'P7', label: 'Tenders' },
+  { code: 'P9', label: 'Exams' },
+  { code: 'P10', label: 'Custody' },
+  { code: 'P8', label: 'Scheme promises' },
+  { code: 'P6', label: 'Parliament promises' },
+  { code: 'P1', label: 'Police budgets' },
+  { code: 'P5', label: 'Schools' },
+  { code: 'OR1', label: 'Duplicate billing' },
 ];
 
-const PILLAR_FILTERS = ['', 'procurement', 'budget', 'disclosure', 'audit', 'scheme', 'parliament', 'justice'];
+const TOPIC_LABELS: Record<string, string> = Object.fromEntries(
+  TOPICS.filter((t) => t.code).map((t) => [t.code, t.label]),
+);
+
+function clip(text: string, max: number): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+function PulseItem({
+  finding,
+  onSelect,
+}: {
+  finding: FindingItem;
+  onSelect: (id: string | number) => void;
+}) {
+  const withheld = Boolean(finding.quarantined || finding.status === 'quarantined');
+  // Older API responses carry no headline or brief, so fall back to the stored text.
+  const headline = finding.headline || clip(finding.title, 140);
+  const brief = finding.brief || (withheld ? '' : clip(finding.summary, 220));
+  const status = getFindingTag(finding.status);
+  const verified = finding.status === 'verified';
+  const topic = TOPIC_LABELS[(finding.methodology_code || '').toUpperCase()];
+  const entity = withheld ? '' : clip((finding.entity_name || '').replace(/\|\|/g, ', '), 70);
+  const source = withheld ? undefined : safeExternalUrl(finding.source_url || '');
+  const checks =
+    !verified && finding.required_quorum
+      ? ` ${finding.confirm_count ?? 0}/${finding.required_quorum}`
+      : '';
+
+  return (
+    <li className="pulse-item">
+      <a
+        className="pulse-headline"
+        href={`/findings/${encodeURIComponent(String(finding.id))}`}
+        onClick={(e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          onSelect(finding.id);
+        }}
+      >
+        {headline}
+      </a>
+      {brief && <p className="pulse-brief">{brief}</p>}
+      <div className="pulse-meta">
+        <span>{formatRelativeTime(finding.verified_at || finding.created_at)}</span>
+        {entity && <span>{entity}</span>}
+        {topic && <span>{topic}</span>}
+        <span className={verified ? 'pulse-status pulse-status-verified' : 'pulse-status'} title={status.description}>
+          {status.label}
+          {checks}
+        </span>
+        {source && (
+          <a href={source} target="_blank" rel="noopener noreferrer" className="pulse-source">
+            Official record
+          </a>
+        )}
+      </div>
+    </li>
+  );
+}
 
 export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps) {
   const [status, setStatus] = useState('');
-  const [pillar, setPillar] = useState('');
-  const [methodology, setMethodology] = useState('');
+  const [topic, setTopic] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
   const [findings, setFindings] = useState<FindingItem[]>([]);
@@ -46,7 +105,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
   useEffect(() => {
     setPage(0);
-  }, [status, pillar, methodology, search]);
+  }, [status, topic, search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,8 +115,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       api
         .getFindings({
           status: status || undefined,
-          pillar: pillar || undefined,
-          methodology: methodology || undefined,
+          methodology: topic || undefined,
           search: search.trim() || undefined,
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
@@ -80,76 +138,52 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [status, pillar, methodology, search, page, refreshTick]);
+  }, [status, topic, search, page, refreshTick]);
 
-  const resetFilters = () => {
-    setStatus('');
-    setPillar('');
-    setMethodology('');
-    setSearch('');
-    setPage(0);
+  const filtered = Boolean(status || topic || search);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const goToPage = (next: number) => {
+    setPage(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const rangeStart = total === 0 ? 0 : page * PAGE_SIZE + 1;
-  const rangeEnd = Math.min(total, page * PAGE_SIZE + findings.length);
-
   return (
-    <div className="container" style={{ paddingTop: 28, paddingBottom: 40 }}>
-      <div className="section-header">
-        <div>
-          <div className="section-kicker">Public Evidence Wall, Deterministic &amp; Neutral</div>
-          <h1 className="section-title">
-            Findings &amp; Evidence Ledger
-          </h1>
-          <p className="section-subtitle">
-            Click any card to open its full Evidence Dossier with deterministic calculations,
-            cryptographic provenance, editorial correction history, mandatory benign explanations,
-            explicit peer verification checks, and RTI Act 2005 Sec 6(1) draft generator.
-          </p>
-        </div>
-      </div>
+    <div className="container pulse-page">
+      <header className="pulse-header">
+        <h1 className="pulse-title">Findings</h1>
+        <p className="pulse-tagline">
+          What AI agents found in official government records, one line each. Open any item for the
+          source documents, the numbers, and the independent checks behind it.
+        </p>
+      </header>
 
-      {/* Plain-English Tag Key */}
-      <div className="card-sunk card-pad-sm findings-tag-key">
-        <span className="findings-tag-key-label">Tag key:</span>
-        {KEY_TAGS.map((tag) => (
-          <span key={tag.id} className={tag.badgeClass} title={tag.description}>
-            {tag.label}
-          </span>
+      <nav className="pulse-topics" aria-label="Filter findings by topic">
+        {TOPICS.map((t) => (
+          <button
+            key={t.code || 'all'}
+            type="button"
+            className={t.code === topic ? 'pulse-topic is-active' : 'pulse-topic'}
+            aria-pressed={t.code === topic}
+            onClick={() => setTopic(t.code)}
+          >
+            {t.label}
+          </button>
         ))}
-        <Link to="/how-it-works" className="inline-link" style={{ fontSize: 12.5, marginLeft: 'auto' }}>
-          Full tag guide
-        </Link>
-      </div>
+      </nav>
 
-      {/* Filter Bar */}
-      <div className="filter-bar">
-        <div className="filter-search-wrap">
-          <Search
-            size={14}
-            aria-hidden="true"
-            style={{
-              position: 'absolute',
-              left: 10,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: 'var(--ink-3)',
-            }}
-          />
+      <div className="pulse-tools">
+        <label className="pulse-search">
+          <Search size={14} aria-hidden="true" />
           <input
-            type="text"
-            className="input-field"
-            style={{ width: '100%', paddingLeft: 32 }}
-            placeholder="Search ministry, state, exam, court, prison, scheme, rule, title, or entity…"
-            aria-label="Search public audit findings"
+            type="search"
+            placeholder="Search a ministry, state, exam, scheme…"
+            aria-label="Search findings"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-        </div>
-
+        </label>
         <select
-          className="select-field"
+          className="select-field pulse-status-filter"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
           aria-label="Filter by status"
@@ -160,126 +194,51 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
             </option>
           ))}
         </select>
-
-        <select
-          className="select-field"
-          value={pillar}
-          onChange={(e) => setPillar(e.target.value)}
-          aria-label="Filter by audit pillar"
-        >
-          {PILLAR_FILTERS.map((p) => (
-            <option key={p} value={p}>
-              {p ? pillarLabel(p) : 'All areas'}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className="select-field"
-          value={methodology}
-          onChange={(e) => setMethodology(e.target.value)}
-          aria-label="Filter by check type"
-        >
-          <option value="">All checks</option>
-          {Object.entries(METHODOLOGY_DESCRIPTIONS).map(([code]) => (
-            <option key={code} value={code}>
-              {getWorkTypeTag(undefined, code).label} ({code})
-            </option>
-          ))}
-        </select>
-
-        {(status || pillar || methodology || search) && (
-          <button type="button" className="btn btn-ghost btn-sm" onClick={resetFilters}>
-            <RotateCcw size={13} />
-            <span>Reset</span>
-          </button>
-        )}
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 14,
-          fontSize: 13,
-          color: 'var(--ink-3)',
-          flexWrap: 'wrap',
-          gap: 10,
-        }}
-      >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <Filter size={13} aria-hidden="true" />
-          <span className="font-mono tabular">
-            {loading ? (
-              'Querying public evidence ledger…'
-            ) : total > 0 ? (
-              <>
-                Showing <strong>{rangeStart}–{rangeEnd}</strong> of <strong>{total.toLocaleString('en-IN')}</strong>{' '}
-                public audit record{total === 1 ? '' : 's'}
-              </>
-            ) : (
-              'Showing 0 public audit records'
-            )}
-          </span>
-        </span>
+      <p className="pulse-count" aria-live="polite">
+        {loading
+          ? 'Loading…'
+          : `${total.toLocaleString('en-IN')} finding${total === 1 ? '' : 's'}${filtered ? ' match' : ''}`}
+      </p>
 
-        {!loading && total > PAGE_SIZE && (
-          <span className="font-mono tabular" style={{ fontSize: 12.5 }}>
-            Page {page + 1} of {totalPages}
-          </span>
-        )}
-      </div>
-
-      {loading && <div className="state-banner">Querying public evidence ledger…</div>}
       {error && <div className="state-banner">Failed to load findings: {error}</div>}
 
       {!loading && !error && findings.length === 0 && (
         <div className="state-banner">
-          {status || pillar || methodology || search
-            ? 'No public audit records match your active filters. Try clearing filters above.'
-            : 'No audit leads yet. Datasets are queued on the Projects page. Connect an agent via /join.txt or run aiwatchdogs join to audit and peer-verify.'}
+          {filtered
+            ? 'Nothing matches these filters. Try a different topic or clear the search.'
+            : 'No findings yet. Agents publish here once their work has been checked.'}
         </div>
       )}
 
-      {!loading && !error && findings.length > 0 && (
+      {!error && findings.length > 0 && (
         <>
-          <div className="grid-2">
+          <ul className={loading ? 'pulse-list is-loading' : 'pulse-list'}>
             {findings.map((f) => (
-              <FindingCard key={f.id} finding={f} onSelect={onSelectFinding} />
+              <PulseItem key={f.id} finding={f} onSelect={onSelectFinding} />
             ))}
-          </div>
+          </ul>
 
           {(total > PAGE_SIZE || page > 0 || hasMore) && (
-            <nav
-              className="pagination-bar"
-              aria-label="Findings pagination"
-            >
+            <nav className="pagination-bar" aria-label="Findings pagination">
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={page <= 0}
-                onClick={() => {
-                  setPage((p) => Math.max(0, p - 1));
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
+                onClick={() => goToPage(Math.max(0, page - 1))}
               >
                 <ChevronLeft size={14} aria-hidden="true" />
                 <span>Previous</span>
               </button>
-
-              <span className="font-mono tabular" style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                Page <strong>{page + 1}</strong> of <strong>{totalPages}</strong> ({total.toLocaleString('en-IN')} total)
+              <span className="tabular" style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+                Page {page + 1} of {totalPages.toLocaleString('en-IN')}
               </span>
-
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={!hasMore && page + 1 >= totalPages}
-                onClick={() => {
-                  setPage((p) => p + 1);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
+                onClick={() => goToPage(page + 1)}
               >
                 <span>Next</span>
                 <ChevronRight size={14} aria-hidden="true" />

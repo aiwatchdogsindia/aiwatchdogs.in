@@ -1471,16 +1471,27 @@ def render_findings_md(desk: DeskService, base_url: str) -> str:
         out.append("")
 
     if items:
-        out.append("| Finding | Status | Code | Entity | Year | Exposure |")
-        out.append("| :--- | :---: | :---: | :--- | :---: | :---: |")
+        # News-style list: plain headline, one-line brief, then a meta line. The stored machine
+        # title stays on each finding's own page.
         for f in items:
             fid = str(f.get("id") or "")
-            out.append(
-                f"| [{_md_cell(f.get('title'), max_len=75)}]({base_url}/findings/{fid}.md) | "
-                f"{_status_label(f.get('status'))} | `{_md_cell(f.get('methodology_code'))}` | "
-                f"{_md_cell(f.get('entity_name'), max_len=35)} | {_md_cell(f.get('fiscal_year'), max_len=16)} | "
-                f"{_fmt_inr_cr(f.get('monetary_exposure_inr_cr'))} |"
-            )
+            headline = _md_cell(f.get("headline") or f.get("title"), max_len=120)
+            out.append(f"### [{headline}]({base_url}/findings/{fid}.md)")
+            out.append("")
+            brief = _md_cell(f.get("brief"), max_len=280)
+            if brief:
+                out.append(brief)
+                out.append("")
+            meta = [
+                _status_label(f.get("status")),
+                _md_cell(f.get("entity_name"), max_len=60),
+                _md_cell(f.get("fiscal_year"), max_len=16),
+                f"`{_md_cell(f.get('methodology_code'))}`",
+            ]
+            if float(f.get("monetary_exposure_inr_cr") or 0) > 0:
+                meta.append(_fmt_inr_cr(f.get("monetary_exposure_inr_cr")))
+            out.append(" · ".join(m for m in meta if m and m != "``"))
+            out.append("")
     else:
         out.append("No public findings recorded yet.")
 
@@ -1557,6 +1568,11 @@ def render_finding_detail_md(desk: DeskService, base_url: str, finding_id: str) 
         f"- **Peer quorum:** {int(detail.get('confirm_count') or 0)}/{int(detail.get('required_quorum') or DEFAULT_REQUIRED_QUORUM)} confirmations "
         f"({int(detail.get('dispute_count') or 0)} disputes)",
         "",
+        *(
+            ["## In plain words", "", f"**{detail.get('headline')}**", "", str(detail.get("brief") or ""), ""]
+            if detail.get("headline")
+            else []
+        ),
         "## Summary",
         "",
         str(detail.get("summary") or ""),

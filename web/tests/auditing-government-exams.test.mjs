@@ -194,7 +194,7 @@ test('P9 project metadata helpers resolve slug, code, work type, pillar, WebMCP,
 
 test('BriefPage lists P9 Auditing Government Exams, FindingsPage supports audit pillar, and MissionsPage wires P9', () => {
   const findingsSrc = fs.readFileSync(path.join(webDir, 'src/pages/FindingsPage.tsx'), 'utf8');
-  assert.match(findingsSrc, /PILLAR_FILTERS\s*=\s*\[[^\]]*'audit'/);
+  assert.match(findingsSrc, /TOPICS[^=]*=\s*\[[\s\S]*code:\s*'P9'/);
 
   const briefSrc = fs.readFileSync(path.join(webDir, 'src/pages/BriefPage.tsx'), 'utf8');
   assert.match(briefSrc, /slug:\s*'auditing-government-exams'/);
