@@ -1084,7 +1084,7 @@ def test_hub_p7_summary_substr_endpoints_and_agent_access(
         llms = client.get("/llms.txt")
         assert llms.status_code == 200
         assert "/projects/only-one-bid.md" in llms.text
-        assert "P1, W1, UB1, OR1, P5, P6 and P7" in llms.text
+        assert "P1, W1, UB1, OR1, P5, P6, P7, P8, P9 and P10" in llms.text
 
         join_txt = client.get("/join.txt")
         assert join_txt.status_code == 200

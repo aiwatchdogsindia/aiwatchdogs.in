@@ -3,6 +3,20 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 63,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/63",
+      "mergedAt": "2026-11-28T05:33:52Z",
+      "title": "White site: saffron, green and navy now appear only as small marks",
+      "items": [
+        "Every page band is white: the saffron band (live viewer, projects, map, numbers), the green record band and the navy footer are replaced by white paper separated by hairline rules.",
+        "Project rows and the observatory map use the flag colours as small marks: green for verified, saffron for in progress, navy for project codes, sources and end markers.",
+        "The header and footer flag band is a 3px tricolour hairline, and the ticker stripes are plain hairlines.",
+        "Warm tints are removed from the live swarm viewer, the leaderboard and the How it works call-to-action box.",
+        "Text and controls that were light-on-colour are dark enough to read on white.",
+        "The font stays Geist Serif."
+      ]
+    },
+    {
       "pr": 46,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/46",
       "mergedAt": "2026-11-27T09:12:50Z",

@@ -1,3 +1,4 @@
+import { pick } from '../lib/theme';
 import {
   ArrowRight,
   Check,
@@ -50,6 +51,8 @@ export interface LiveSwarmNode {
   verifications_done?: number;
   findings_submitted?: number;
   score?: number;
+  github_verified?: boolean;
+  github_verified_at?: string | null;
   last_seen_at?: string | null;
   created_at?: string | null;
 }
@@ -61,6 +64,7 @@ export interface LiveRecentJoin {
   coding_agent_model?: string | null;
   provider?: string | null;
   model?: string | null;
+  github_verified?: boolean;
   created_at: string;
   last_seen_at?: string | null;
   is_working?: boolean;
@@ -339,36 +343,56 @@ const ROLE_VISUALS: Record<RoleVisual['key'], RoleVisual> = {
   auditor: {
     key: 'auditor',
     label: 'Auditor',
-    color: '#C9A27E',
-    rgb: '201, 162, 126',
+    get color() {
+      return pick('#C85A32','#C9A27E');
+    },
+    get rgb() {
+      return pick('200, 90, 50','201, 162, 126');
+    },
     spokeOpacity: 0.78,
   },
   peer_verifier: {
     key: 'peer_verifier',
     label: 'Peer Verifier',
-    color: '#8DB89A',
-    rgb: '141, 184, 154',
+    get color() {
+      return pick('#138808','#30D158');
+    },
+    get rgb() {
+      return pick('19, 136, 8','48, 209, 88');
+    },
     spokeOpacity: 0.76,
   },
   adjudicator: {
     key: 'adjudicator',
     label: 'Adjudicator',
-    color: '#8FA3BF',
-    rgb: '143, 163, 191',
+    get color() {
+      return pick('#A18324','#0A84FF');
+    },
+    get rgb() {
+      return pick('161, 131, 36','10, 132, 255');
+    },
     spokeOpacity: 0.76,
   },
   live_ready: {
     key: 'live_ready',
     label: 'Live · Ready',
-    color: '#A7B58A',
-    rgb: '167, 181, 138',
+    get color() {
+      return pick('#2A8C55','#64D2FF');
+    },
+    get rgb() {
+      return pick('42, 140, 85','100, 210, 255');
+    },
     spokeOpacity: 0.62,
   },
   idle: {
     key: 'idle',
     label: 'Contributor',
-    color: '#66635D',
-    rgb: '158, 151, 139',
+    get color() {
+      return pick('#9E978B','#636366');
+    },
+    get rgb() {
+      return pick('158, 151, 139','99, 99, 102');
+    },
     spokeOpacity: 0.44,
   },
 };
@@ -543,10 +567,14 @@ const SYNTHETIC_NON_GITHUB_HANDLES = new Set([
 ]);
 
 /**
- * Return the canonical GitHub profile URL for a real GitHub username, or null
- * for synthetic / `civic-*` sandbox fallback handles.
+ * Return the canonical GitHub profile URL ONLY for cryptographically verified
+ * GitHub usernames, or null for unverified / synthetic / `civic-*` handles.
  */
-export function githubProfileUrl(rawHandle: string | null | undefined): string | null {
+export function githubProfileUrl(
+  rawHandle: string | null | undefined,
+  githubVerified?: boolean,
+): string | null {
+  if (!githubVerified) return null;
   const clean = normalizeHandle(rawHandle || '');
   if (!clean) return null;
   if (NON_GITHUB_FALLBACK_RE.test(clean)) return null;
@@ -1278,8 +1306,8 @@ export function LiveSwarmViewer({
                 selectedHandle != null &&
                 normalizeHandle(item.node!.handle).toLowerCase() === selectedHandle.toLowerCase();
               const strokeColor = isNode
-                ? item.visual?.color ?? '#66635D'
-                : '#34383F';
+                ? item.visual?.color ?? pick('#9E978B', '#636366')
+                : pick('#C9C2B6', '#3A3A3C');
               const strokeWidth = selected
                 ? 2.7
                 : leased
@@ -1335,7 +1363,7 @@ export function LiveSwarmViewer({
                         />
                       </circle>
                       {leased && (
-                        <circle r="2.1" fill="#8DB89A" opacity="0.72">
+                        <circle r="2.1" fill={pick('#1FA319', '#30D158')} opacity="0.72">
                           <animateMotion
                             dur={`${(durSec * 1.35).toFixed(2)}s`}
                             begin={`-${(item.slotIndex * 0.75 + 0.9).toFixed(2)}s`}
@@ -1359,7 +1387,7 @@ export function LiveSwarmViewer({
                 {workingNow > 0 ? (
                   <span className="lsv-hub-count tabular">{workingNow} live</span>
                 ) : (
-                  <span className="lsv-hub-count tabular" style={{ color: '#8A867D' }}>
+                  <span className="lsv-hub-count tabular" style={{ color: pick('#A39D92', '#8E8E93') }}>
                     standby
                   </span>
                 )}
@@ -1504,7 +1532,11 @@ export function LiveSwarmViewer({
                       style={{ background: visual.color }}
                       aria-hidden="true"
                     />
-                    <GitHubAvatar handle={cleanHandle} size={cardAvatarSize} />
+                    <GitHubAvatar
+                      handle={cleanHandle}
+                      size={cardAvatarSize}
+                      verified={Boolean(node.github_verified)}
+                    />
                     <span className="lsv-card-handle" title={`@${cleanHandle}`}>
                       @{cleanHandle}
                     </span>
@@ -1604,7 +1636,11 @@ export function LiveSwarmViewer({
                     style={{ background: visual.color }}
                     aria-hidden="true"
                   />
-                  <GitHubAvatar handle={cleanHandle} size={22} />
+                  <GitHubAvatar
+                    handle={cleanHandle}
+                    size={22}
+                    verified={Boolean(node.github_verified)}
+                  />
                   <span className="lsv-card-handle">@{cleanHandle}</span>
                 </div>
                 <div className="lsv-card-sub">
@@ -1734,7 +1770,11 @@ export function LiveSwarmViewer({
                       style={{ background: visual.color }}
                       aria-hidden="true"
                     />
-                    <GitHubAvatar handle={cleanHandle} size={18} />
+                    <GitHubAvatar
+                      handle={cleanHandle}
+                      size={18}
+                      verified={Boolean(node.github_verified)}
+                    />
                     <span className="lsv-card-handle" title={`@${cleanHandle}`}>
                       @{cleanHandle}
                     </span>
@@ -1787,6 +1827,7 @@ export function LiveSwarmViewer({
             <GitHubAvatar
               handle={selectedNode.handle}
               size={38}
+              verified={Boolean(selectedNode.github_verified)}
               activeRing={isNodeActivelyWorking(selectedNode)}
               statusDot={
                 selectedNode.status === 'verifying'
@@ -1800,7 +1841,7 @@ export function LiveSwarmViewer({
               <div className="lsv-inspector-top">
                 {(() => {
                   const selClean = normalizeHandle(selectedNode.handle);
-                  const selGhUrl = githubProfileUrl(selClean);
+                  const selGhUrl = githubProfileUrl(selClean, Boolean(selectedNode.github_verified));
                   return selGhUrl ? (
                     <a
                       href={selGhUrl}
@@ -1944,7 +1985,11 @@ export function LiveSwarmViewer({
                         className={`lsv-role-dot${active ? ' is-pulsing' : ''}`}
                         style={{ background: visual.color }}
                       />
-                      <GitHubAvatar handle={cleanHandle} size={24} />
+                      <GitHubAvatar
+                        handle={cleanHandle}
+                        size={24}
+                        verified={Boolean(node.github_verified)}
+                      />
                       <span className="lsv-card-handle">@{cleanHandle}</span>
                     </div>
                     <span className="lsv-roster-seen tabular">

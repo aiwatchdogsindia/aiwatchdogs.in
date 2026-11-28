@@ -1,3 +1,4 @@
+import { themed, themedCss } from '../lib/theme';
 import { ArrowUpRight, ChevronLeft, ChevronRight, ExternalLink, Minus, Plus, RotateCcw, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from '../router';
@@ -587,13 +588,13 @@ export function ObservatoryMap({
           : Math.max(9.5, 11 / Math.sqrt(cam.zoom));
         const maxLabelChars = isNarrowCanvas ? 18 : 26;
         ctx.font = `400 ${titleWorldPx}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(236, 232, 223, 0.88)';
+        ctx.fillStyle = themed('rgba(27, 26, 23, 0.88)');
         ctx.textAlign = 'center';
         const shortLabel = `${cl.shortCode}, ${cl.label.length > maxLabelChars ? `${cl.label.slice(0, maxLabelChars - 1)}…` : cl.label}`.toUpperCase();
         ctx.fillText(shortLabel, cl.cx, cl.cy + cl.radius + (isNarrowCanvas ? 14 / cam.zoom : 16 / Math.sqrt(cam.zoom)));
 
         ctx.font = `400 ${subWorldPx}px "Geist Serif", Georgia, serif`;
-        ctx.fillStyle = 'rgba(236, 232, 223, 0.68)';
+        ctx.fillStyle = themed('rgba(27, 26, 23, 0.68)');
         const clSub =
           cl.verifiedCount > 0 || cl.reviewCount > 0
             ? `${cl.verifiedCount} verified, ${cl.reviewCount} in review`
@@ -624,18 +625,18 @@ export function ObservatoryMap({
         ctx.quadraticCurveTo(cx, cy, t.x, t.y);
 
         if (isInc) {
-          ctx.strokeStyle = 'rgba(236, 232, 223, 0.72)';
+          ctx.strokeStyle = themed('rgba(27, 26, 23, 0.72)');
           ctx.lineWidth = 1.9 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'disputed' || t.kind === 'disputed') {
-          ctx.strokeStyle = '#4A2E29';
+          ctx.strokeStyle = themed('#4A2622');
           ctx.setLineDash([3, 4]);
           ctx.lineWidth = 1.1 / Math.sqrt(cam.zoom);
         } else if (s.kind === 'review' || t.kind === 'review') {
-          ctx.strokeStyle = 'rgba(236, 232, 223, 0.22)';
+          ctx.strokeStyle = themed('rgba(27, 26, 23, 0.22)');
           ctx.setLineDash([2, 5]);
           ctx.lineWidth = 1 / Math.sqrt(cam.zoom);
         } else {
-          ctx.strokeStyle = crossCluster ? 'rgba(236,232,223,0.12)' : 'rgba(236,232,223,0.38)';
+          ctx.strokeStyle = crossCluster ? themed('rgba(27,26,23,0.12)') : themed('rgba(27,26,23,0.38)');
           ctx.lineWidth = (crossCluster ? 1 : 1.25) / Math.sqrt(cam.zoom);
         }
         ctx.stroke();
@@ -657,7 +658,7 @@ export function ObservatoryMap({
             if (rp > 0 && rp < 1) {
               ctx.beginPath();
               ctx.arc(wn.x, wn.y, r + rp * 44, 0, Math.PI * 2);
-              ctx.strokeStyle = `rgba(236, 232, 223, ${(1 - rp) * 0.6})`;
+              ctx.strokeStyle = `rgba(27, 26, 23, ${(1 - rp) * 0.6})`;
               ctx.lineWidth = 1.6 / cam.zoom;
               ctx.stroke();
             }
@@ -668,51 +669,51 @@ export function ObservatoryMap({
         if (wn.isCommunity) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 3.6, 0, Math.PI * 2);
-          ctx.strokeStyle = '#ECE8DF';
+          ctx.strokeStyle = themed('#1B1A17');
           ctx.lineWidth = 2.4 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
 
-        // Verified node: warm-cream  solid dot + pre-rendered radial glow (ONLY resting glow!)
+        // Verified node: solid India-green dot (the only filled green mark on the white field)
         if (wn.kind === 'verified') {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#ECE8DF';
+          ctx.fillStyle = themed('#138808');
           ctx.fill();
         } else if (wn.kind === 'review') {
-          // In Peer Review / Unverified: HOLLOW dashed  + orbiting cyan agent comet!
+          // In Peer Review / Unverified: hollow dashed ring + orbiting saffron agent comet
           ctx.save();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#0F1013';
+          ctx.fillStyle = themed('#FFFFFF');
           ctx.fill();
           ctx.setLineDash([2.2, 2.2]);
-          ctx.strokeStyle = '#A39E94';
+          ctx.strokeStyle = themed('#575249');
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.restore();
 
-          // Orbiting cyan agent-at-work comet ( core + #FFB866 tail)
+          // Orbiting saffron agent-at-work comet
           const phase = tSec * 1.45 + fnv1a(wn.node.id) * Math.PI * 2;
           const orbR = r + 5.2;
           const cx = wn.x + Math.cos(phase) * orbR;
           const cy = wn.y + Math.sin(phase) * orbR;
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, orbR, phase - 1.15, phase);
-          ctx.strokeStyle = 'rgba(236, 232, 223, 0.5)';
+          ctx.strokeStyle = themed('rgba(255, 153, 51, 0.7)');
           ctx.lineWidth = 1.4;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(cx, cy, 1.9, 0, Math.PI * 2);
-          ctx.fillStyle = '#ECE8DF';
+          ctx.fillStyle = themed('#FF9933');
           ctx.fill();
         } else if (wn.kind === 'disputed') {
-          // Disputed: ring + internal × cross
+          // Disputed: white fill + red ring + internal × cross
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#0F1013';
+          ctx.fillStyle = themed('#FFFFFF');
           ctx.fill();
-          ctx.strokeStyle = '#D08A7C';
+          ctx.strokeStyle = themed('#8A1C0C');
           ctx.lineWidth = 1.6;
           ctx.stroke();
           const d = r * 0.48;
@@ -721,44 +722,44 @@ export function ObservatoryMap({
           ctx.lineTo(wn.x + d, wn.y + d);
           ctx.moveTo(wn.x + d, wn.y - d);
           ctx.lineTo(wn.x - d, wn.y + d);
-          ctx.strokeStyle = '#D08A7C';
+          ctx.strokeStyle = themed('#8A1C0C');
           ctx.lineWidth = 1.4;
           ctx.stroke();
         } else if (wn.kind === 'cleared') {
-          // Cleared & Explained:  fill + #8FC287 ring + horizontal stop bar −
+          // Cleared & Explained: white fill + green ring + horizontal stop bar −
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#0F1013';
+          ctx.fillStyle = themed('#FFFFFF');
           ctx.fill();
-          ctx.strokeStyle = '#8DB89A';
+          ctx.strokeStyle = themed('#0F7306');
           ctx.lineWidth = 1.5;
           ctx.stroke();
           ctx.beginPath();
           ctx.moveTo(wn.x - r * 0.52, wn.y);
           ctx.lineTo(wn.x + r * 0.52, wn.y);
-          ctx.strokeStyle = '#A39E94';
+          ctx.strokeStyle = themed('#575249');
           ctx.lineWidth = 1.5;
           ctx.stroke();
         } else if (wn.kind === 'mission') {
-          // Mission core node: warm amber outline
+          // Mission core node: Ashoka-navy dot
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#ECE8DF';
+          ctx.fillStyle = themed('#000080');
           ctx.fill();
-          ctx.strokeStyle = '#ECE8DF';
+          ctx.strokeStyle = themed('#FFFFFF');
           ctx.lineWidth = 1.8;
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, 2.4, 0, Math.PI * 2);
-          ctx.fillStyle = '#0F1013';
+          ctx.fillStyle = themed('#FFFFFF');
           ctx.fill();
         } else if (wn.kind === 'source') {
-          // Official .gov.in source: quiet cobalt diamond
+          // Official .gov.in source: quiet navy-outlined diamond
           ctx.save();
           ctx.translate(wn.x, wn.y);
           ctx.rotate(Math.PI / 4);
-          ctx.fillStyle = '#0F1013';
-          ctx.strokeStyle = '#A39E94';
+          ctx.fillStyle = themed('#FFFFFF');
+          ctx.strokeStyle = themed('#000080');
           ctx.lineWidth = 1.3;
           ctx.fillRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
           ctx.strokeRect(-r * 0.72, -r * 0.72, r * 1.44, r * 1.44);
@@ -767,9 +768,9 @@ export function ObservatoryMap({
           // Ministry / jurisdiction anchor
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r, 0, Math.PI * 2);
-          ctx.fillStyle = '#16181C';
+          ctx.fillStyle = themed('#F4F4F4');
           ctx.fill();
-          ctx.strokeStyle = '#ECE8DF';
+          ctx.strokeStyle = themed('#1B1A17');
           ctx.lineWidth = 1.25;
           ctx.stroke();
         }
@@ -778,7 +779,7 @@ export function ObservatoryMap({
         if (isPinned || isHov) {
           ctx.beginPath();
           ctx.arc(wn.x, wn.y, r + 5.5, 0, Math.PI * 2);
-          ctx.strokeStyle = isPinned ? '#ECE8DF' : 'rgba(255,255,255,0.75)';
+          ctx.strokeStyle = isPinned ? themed('#1B1A17') : themed('rgba(27,26,23,0.45)');
           ctx.lineWidth = 1.5 / Math.sqrt(cam.zoom);
           ctx.stroke();
         }
@@ -787,7 +788,7 @@ export function ObservatoryMap({
         if (cam.zoom >= 1.32 || isPinned || isHov) {
           ctx.save();
           ctx.font = `400 ${12.5 / Math.sqrt(cam.zoom)}px "Geist Serif", Georgia, serif`;
-          ctx.fillStyle = isPinned || isHov ? '#ECE8DF' : 'rgba(236,232,223,0.82)';
+          ctx.fillStyle = isPinned || isHov ? themed('#1B1A17') : themed('rgba(27,26,23,0.82)');
           ctx.textAlign = 'left';
           const lbl = wn.node.label.length > 28 ? `${wn.node.label.slice(0, 27)}…` : wn.node.label;
           ctx.fillText(lbl, wn.x + r + 7, wn.y + 3.5 / Math.sqrt(cam.zoom));
@@ -821,12 +822,12 @@ export function ObservatoryMap({
           for (const wn of world.worldNodes) {
             mctx.fillStyle =
               wn.kind === 'verified'
-                ? '#8DB89A'
+                ? themed('#138808')
                 : wn.kind === 'mission'
-                  ? '#C9A27E'
+                  ? themed('#000080')
                   : wn.kind === 'disputed'
-                    ? '#D08A7C'
-                    : '#66635D';
+                    ? themed('#8A1C0C')
+                    : themed('#9E988B');
             mctx.fillRect(toMx(wn.x) - 1, toMy(wn.y) - 1, 2.2, 2.2);
           }
 
@@ -835,8 +836,8 @@ export function ObservatoryMap({
           const vy1 = toMy(cam.y - h / (2 * cam.zoom));
           const vx2 = toMx(cam.x + w / (2 * cam.zoom));
           const vy2 = toMy(cam.y + h / (2 * cam.zoom));
-          mctx.strokeStyle = 'rgba(236, 232, 223, 0.8)';
-          mctx.fillStyle = 'rgba(236, 232, 223, 0.08)';
+          mctx.strokeStyle = themed('rgba(27, 26, 23, 0.8)');
+          mctx.fillStyle = themed('rgba(27, 26, 23, 0.08)');
           mctx.lineWidth = 1;
           mctx.fillRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
           mctx.strokeRect(vx1, vy1, Math.max(8, vx2 - vx1), Math.max(6, vy2 - vy1));
@@ -1295,10 +1296,10 @@ export function ObservatoryMap({
                       textTransform: 'uppercase',
                       color:
                         wn.kind === 'verified'
-                          ? '#8DB89A'
+                          ? themed('#0F7306')
                           : wn.kind === 'mission'
-                            ? '#C9A27E'
-                            : '#8A867D',
+                            ? themed('#000080')
+                            : themed('#635E54'),
                       flexShrink: 0,
                     }}
                   >
@@ -1332,7 +1333,7 @@ export function ObservatoryMap({
           </div>
           <div className="map-card-title">{hoveredNode.wn.node.label}</div>
           {hoveredNode.wn.node.value_inr_cr != null && hoveredNode.wn.node.value_inr_cr > 0 && (
-            <div className="font-mono tabular" style={{ fontSize: 11, color: '#8DB89A', marginTop: 4 }}>
+            <div className="font-mono tabular" style={{ fontSize: 11, color: themed('#0F7306'), marginTop: 4 }}>
               {formatInrCr(hoveredNode.wn.node.value_inr_cr)}
             </div>
           )}
@@ -1538,8 +1539,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: '#ECE8DF',
-                boxShadow: '0 0 7px rgba(255,255,255,0.8)',
+                background: themed('#138808'),
               }}
             />
             <span>verified</span>
@@ -1550,13 +1550,13 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.25px dashed #A39E94',
+                border: themedCss('1.25px dashed #575249'),
               }}
             />
             <span>in review</span>
           </span>
           <span className="map-leg-item">
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ECE8DF' }} />
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: themed('#FF9933') }} />
             <span>agent comet</span>
           </span>
           <span className="map-leg-item">
@@ -1565,7 +1565,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #D08A7C',
+                border: themedCss('1.4px solid #8A1C0C'),
               }}
             />
             <span>disputed ×</span>
@@ -1576,7 +1576,7 @@ export function ObservatoryMap({
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                border: '1.4px solid #8DB89A',
+                border: themedCss('1.4px solid #0F7306'),
               }}
             />
             <span>cleared −</span>
@@ -1587,7 +1587,7 @@ export function ObservatoryMap({
                 width: 9,
                 height: 9,
                 borderRadius: '50%',
-                border: '2px solid #ECE8DF',
+                border: themedCss('2px solid #1B1A17'),
               }}
             />
             <span>community node</span>

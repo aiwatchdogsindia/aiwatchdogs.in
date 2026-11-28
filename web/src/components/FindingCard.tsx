@@ -3,16 +3,38 @@ import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from '
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
 import {
+  extractAuditingGovernmentExamsMetrics,
+  extractInnocentButLockedUpMetrics,
   extractOnlyOneBidMetrics,
+  extractSovereignLiesMetrics,
+  formatCandidateCountCompact,
+  formatChainStatus,
+  formatCourtTier,
+  formatCustodyOverrunMechanism,
+  formatExamCategory,
+  formatExamDisruption,
+  formatExamDisruptionReason,
   formatInr,
+  formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
+  formatOverrunDays,
+  formatPortalCategory,
   formatProcurementAmountType,
   formatProcurementSignal,
   formatRelativeTime,
+  formatRetroactiveImpact,
+  formatSchemeCategory,
   formatSingleBidMechanism,
+  formatWalkbackMechanism,
   isUnverifiedStatus,
   resolveFindingCardMetric,
 } from '../utils';
+
+function clipCardText(text?: string | null, maxLen = 135): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
 
 interface FindingCardProps {
   finding: FindingItem;
@@ -47,6 +69,60 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
       ? finding.monetary_exposure_inr
       : p7Record?.targetTenderValueInr ?? null;
+
+  const p8Record =
+    finding.methodology_code === 'P8' && !isQuarantined
+      ? extractSovereignLiesMetrics(finding.anomaly_metrics)
+      : null;
+  const p8Mechanism = p8Record?.walkbackMechanism || p8Record?.signalCategory
+    ? formatWalkbackMechanism(p8Record.walkbackMechanism || p8Record.signalCategory)
+    : null;
+  const p8Impact = p8Record?.retroactiveImpact
+    ? formatRetroactiveImpact(p8Record.retroactiveImpact)
+    : null;
+  const p8Category = p8Record?.schemeCategory
+    ? formatSchemeCategory(p8Record.schemeCategory)
+    : null;
+  const p8Jurisdiction = p8Record
+    ? formatJurisdictionLabel(p8Record.jurisdiction, p8Record.stateOrUt, p8Record.jurisdictionLevel)
+    : null;
+
+  const p9Record =
+    finding.methodology_code === 'P9' && !isQuarantined
+      ? extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics)
+      : null;
+  const p9Disruption =
+    p9Record && (p9Record.disruptionType || p9Record.signalCategory)
+      ? formatExamDisruption(p9Record.disruptionType || p9Record.signalCategory)
+      : null;
+  const p9Reason =
+    p9Record?.disruptionReasonCategory && p9Record.disruptionReasonCategory !== 'none_flawless'
+      ? formatExamDisruptionReason(p9Record.disruptionReasonCategory)
+      : null;
+  const p9Category = p9Record?.examCategory ? formatExamCategory(p9Record.examCategory) : null;
+  const p9Jurisdiction = p9Record
+    ? formatJurisdictionLabel(p9Record.jurisdiction, p9Record.stateOrUt, p9Record.jurisdictionLevel)
+    : null;
+  const p9CandidatesCompact = p9Record
+    ? formatCandidateCountCompact(p9Record.affectedCandidatesCount)
+    : null;
+
+  const p10Record =
+    finding.methodology_code === 'P10' && !isQuarantined
+      ? extractInnocentButLockedUpMetrics(finding.anomaly_metrics)
+      : null;
+  const p10Mechanism =
+    p10Record && (p10Record.overrunMechanism || p10Record.signalCategory)
+      ? formatCustodyOverrunMechanism(p10Record.overrunMechanism || p10Record.signalCategory)
+      : null;
+  const p10Portal = p10Record?.portalCategory
+    ? formatPortalCategory(p10Record.portalCategory)
+    : null;
+  const p10Tier = p10Record?.courtTier ? formatCourtTier(p10Record.courtTier) : null;
+  const p10Chain = p10Record
+    ? formatChainStatus(p10Record.chainStatus, p10Record.stagesVerifiedCount)
+    : null;
+  const p10OverrunText = p10Record ? formatOverrunDays(p10Record.overrunDays) : null;
 
   return (
     <article
@@ -89,6 +165,51 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           {p7Signal && (
             <span className={p7Signal.chipClass} title={`Procurement signal: ${p7Signal.label}`}>
               {p7Signal.shortLabel}
+            </span>
+          )}
+          {p8Mechanism && (
+            <span className={p8Mechanism.chipClass} title={`Walk-back mechanism: ${p8Mechanism.label}`}>
+              {p8Mechanism.shortLabel}
+            </span>
+          )}
+          {p8Impact?.isRetroactive && (
+            <span className={p8Impact.chipClass} title={p8Impact.label}>
+              {p8Impact.shortLabel}
+            </span>
+          )}
+          {p8Record?.isSgbAnchor && (
+            <span className="p8-sgb-chip" title="Flagship Sovereign Gold Bond anchor case">
+              SGB Anchor
+            </span>
+          )}
+          {p9Disruption && (
+            <span className={p9Disruption.chipClass} title={`Conduct outcome: ${p9Disruption.label}`}>
+              {p9Disruption.shortLabel}
+            </span>
+          )}
+          {p9Record?.studentsTookExamBeforeCancellation && (
+            <span className="p9-sat-chip" title="Students sat for the exam before it was cancelled">
+              Sat, then cancelled
+            </span>
+          )}
+          {p9Record?.isAnchorCase && (
+            <span className="p9-anchor-chip" title="Flagship audited examination anchor case">
+              Anchor Case
+            </span>
+          )}
+          {p10Mechanism && (
+            <span className={p10Mechanism.chipClass} title={`Custody mechanism: ${p10Mechanism.label}`}>
+              {p10Mechanism.shortLabel}
+            </span>
+          )}
+          {p10Chain && (
+            <span className={p10Chain.chipClass} title={p10Chain.label}>
+              {p10Chain.shortLabel}
+            </span>
+          )}
+          {p10Record?.isAnchorCase && (
+            <span className="p10-anchor-chip" title="Flagship 4-stage post-acquittal custody anchor case">
+              Anchor Case
             </span>
           )}
           {hasCorrections && sm.id !== 'corrected' && (
@@ -206,6 +327,226 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {p8Record && (
+        <div className="fc-p8-strip" aria-label="Original promise versus subsequent revision">
+          <div className="fc-p8-meta-row">
+            {p8Jurisdiction && <span className="tag-mono">{p8Jurisdiction}</span>}
+            {p8Category && <span className="tag-mono">{p8Category.shortLabel}</span>}
+            {p8Record.promiseDate && (
+              <span className="tag-mono tabular">
+                {p8Record.promiseDate}
+                {p8Record.walkbackDate ? ` → ${p8Record.walkbackDate}` : ''}
+                {p8Record.daysFromPromiseToWalkback != null
+                  ? ` (${p8Record.daysFromPromiseToWalkback.toLocaleString('en-IN')}d)`
+                  : ''}
+              </span>
+            )}
+            {p8Record.promisedMetric && p8Record.revisedMetric && (
+              <span
+                className="fc-p8-delta-pill tabular"
+                title={`${p8Record.promisedMetric} → ${p8Record.revisedMetric}`}
+              >
+                {clipCardText(p8Record.promisedMetric, compact ? 28 : 42)} →{' '}
+                {clipCardText(p8Record.revisedMetric, compact ? 28 : 42)}
+              </span>
+            )}
+          </div>
+
+          {(p8Record.promiseSummary || p8Record.walkbackSummary) && (
+            <div className="fc-p8-compare-grid">
+              <div className="fc-p8-col fc-p8-col--promise">
+                <span className="fc-p8-col-kicker">Original Promise</span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p8Record.promiseSummary, compact ? 95 : 135) ||
+                    'Launch promise documented in primary official notice.'}
+                </p>
+                {p8Record.promiseDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p8Record.promiseDocumentRef}</span>
+                )}
+              </div>
+              <div
+                className={`fc-p8-col ${
+                  p8Mechanism?.isCleared ? 'fc-p8-col--honored' : 'fc-p8-col--walkback'
+                }`}
+              >
+                <span className="fc-p8-col-kicker">
+                  {p8Mechanism?.isCleared ? 'Honored / Current Record' : 'Subsequent Walk-Back'}
+                </span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p8Record.walkbackSummary, compact ? 95 : 135) ||
+                    'Subsequent amendment documented in official revision record.'}
+                </p>
+                {p8Record.walkbackDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p8Record.walkbackDocumentRef}</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {p9Record && (
+        <div className="fc-p9-strip" aria-label="Original exam schedule versus actual conduct outcome">
+          <div className="fc-p8-meta-row">
+            {p9Jurisdiction && <span className="tag-mono">{p9Jurisdiction}</span>}
+            {p9Record.examYear != null && (
+              <span className="tag-mono tabular">{String(p9Record.examYear)}</span>
+            )}
+            {p9Category && <span className="tag-mono">{p9Category.shortLabel}</span>}
+            {p9Record.scheduledDate && (
+              <span className="tag-mono tabular">
+                {p9Record.scheduledDate}
+                {p9Record.actualOrEventDate && p9Record.actualOrEventDate !== p9Record.scheduledDate
+                  ? ` → ${p9Record.actualOrEventDate}`
+                  : ''}
+                {!p9Disruption?.isCleared && p9Record.delayDays != null && p9Record.delayDays > 0
+                  ? ` (+${p9Record.delayDays.toLocaleString('en-IN')}d)`
+                  : ''}
+              </span>
+            )}
+            {p9Reason && !compact && (
+              <span className={p9Reason.chipClass} title={p9Reason.label}>
+                {p9Reason.shortLabel}
+              </span>
+            )}
+            {p9CandidatesCompact && (
+              <span
+                className="fc-p8-delta-pill tabular"
+                title={p9Record.affectedCandidatesBasis || 'Documented affected candidates'}
+              >
+                {p9CandidatesCompact} candidates
+              </span>
+            )}
+          </div>
+
+          {(p9Record.scheduleSummary || p9Record.outcomeSummary) && (
+            <div className="fc-p8-compare-grid">
+              <div className="fc-p8-col fc-p8-col--promise">
+                <span className="fc-p8-col-kicker">Original Schedule</span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p9Record.scheduleSummary, compact ? 95 : 135) ||
+                    'Original exam date documented in primary official schedule.'}
+                </p>
+                {p9Record.scheduleDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p9Record.scheduleDocumentRef}</span>
+                )}
+              </div>
+              <div
+                className={`fc-p8-col ${
+                  p9Disruption?.isCleared ? 'fc-p8-col--honored' : 'fc-p8-col--walkback'
+                }`}
+              >
+                <span className="fc-p8-col-kicker">
+                  {p9Disruption?.isCleared ? 'Conducted Flawlessly' : 'What Actually Happened'}
+                </span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p9Record.outcomeSummary, compact ? 95 : 135) ||
+                    'Subsequent conduct outcome documented in official public notice.'}
+                </p>
+                {p9Record.outcomeDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p9Record.outcomeDocumentRef}</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {p10Record && (
+        <div className="fc-p10-strip" aria-label="4-stage post-acquittal custody chain summary">
+          <div className="fc-p8-meta-row">
+            {p10Portal && <span className={p10Portal.chipClass}>{p10Portal.shortLabel}</span>}
+            {p10Tier && <span className={p10Tier.chipClass}>{p10Tier.shortLabel}</span>}
+            {(p10Record.stateUt || p10Record.jurisdiction) && (
+              <span className="tag-mono">
+                {p10Record.stateUt || formatJurisdictionLabel(p10Record.jurisdiction)}
+              </span>
+            )}
+            {p10Record.year != null && <span className="tag-mono tabular">{String(p10Record.year)}</span>}
+            {p10OverrunText && p10Record.overrunDays != null && p10Record.overrunDays > 0 && (
+              <span className="p10-overrun-pill tabular">+{p10OverrunText} overrun</span>
+            )}
+            {p10Record.compensationInr != null && p10Record.compensationInr > 0 && (
+              <span className="tag-mono tabular">{formatInr(p10Record.compensationInr)} comp.</span>
+            )}
+          </div>
+
+          <ol className="fc-p10-stages" aria-label="Four-stage custody timeline">
+            <li
+              className={`fc-p10-stage fc-p10-stage--s1${
+                p10Record.stage1AcquittalVerified ? ' is-verified' : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">1 · Acquitted</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [p10Record.acquittalOrderDate, p10Record.acquittalCourt || p10Record.acquittalCaseNumber]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || 'Release order'}
+              </span>
+            </li>
+            <li
+              className={`fc-p10-stage fc-p10-stage--s2${
+                p10Record.stage2ContinuedDetentionVerified ? ' is-verified' : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">2 · Held in Prison</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [
+                    p10Record.prisonName || p10Record.custodyAuthority,
+                    p10OverrunText && (p10Record.overrunDays ?? 0) > 0 ? `+${p10OverrunText}` : p10Record.overrunWindow,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || (p10Mechanism?.isCleared ? 'Timely release' : 'Detention overrun')}
+              </span>
+            </li>
+            <li
+              className={`fc-p10-stage fc-p10-stage--s3${
+                p10Record.stage3ContemptVerified ? ' is-verified' : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">3 · Contempt</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [
+                    p10Record.contemptCaseNumber || p10Record.contemptCourt,
+                    p10Record.contemptFilingDate || p10Record.contemptOrderDate,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || (p10Mechanism?.isCleared ? 'Not required' : 'Proceeding logged')}
+              </span>
+            </li>
+            <li
+              className={`fc-p10-stage fc-p10-stage--s4${
+                p10Record.stage4ReleaseVerified ? ' is-verified' : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">4 · Released</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [
+                    p10Record.releaseDate || (p10Record.releaseVerified ? 'Release verified' : null),
+                    p10Record.compensationInr != null && p10Record.compensationInr > 0
+                      ? formatInr(p10Record.compensationInr)
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || 'Compliance recorded'}
+              </span>
+            </li>
+          </ol>
         </div>
       )}
 

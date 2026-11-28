@@ -75,6 +75,7 @@ export interface JustJoinedAgent {
   display_name?: string;
   provider: string;
   model: string;
+  github_verified?: boolean;
   joined_at: string;
 }
 
@@ -143,6 +144,8 @@ export interface AgentRecord {
   hourly_points_36h?: number[];
   /** Length 36, index 0 = 35h ago, index 35 = current hour */
   hourly_checks_36h?: number[];
+  github_verified?: boolean;
+  github_verified_at?: string | null;
   current_task?: string | null;
 }
 
@@ -735,6 +738,685 @@ export interface VisualOnlyOneBid {
   coverage_url?: string;
 }
 
+export type SovereignLiesJurisdictionLevel = 'union' | 'state' | 'ut';
+
+export type SovereignLiesSchemeCategory =
+  | 'sovereign_bonds_small_savings'
+  | 'pensions_retirement'
+  | 'tax_exempt_instruments'
+  | 'cash_transfers_guarantees'
+  | 'ev_housing_farm_subsidies'
+  | 'scholarships_education'
+  | 'industrial_export_incentives'
+  | 'welfare_health_public_services';
+
+export type SovereignLiesWalkbackMechanism =
+  | 'retroactive_tax_reversal'
+  | 'midstream_benefit_cut'
+  | 'premature_discontinuation'
+  | 'eligibility_narrowing'
+  | 'lockin_or_exit_restriction'
+  | 'arrears_or_unfunded_promise'
+  | 'grandfathered_or_honored';
+
+export type SovereignLiesRetroactiveImpact =
+  | 'retroactive_existing_holders'
+  | 'mid_stream_active_scheme'
+  | 'prospective_discontinuation'
+  | 'eligibility_narrowing'
+  | 'unfulfilled_arrears'
+  | 'grandfathered_or_honored';
+
+export interface VisualSovereignLiesTierCounts {
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads?: number;
+  cleared?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualSovereignLiesMechanismCounts {
+  tasks: number;
+  leads: number;
+  done?: number;
+  cleared?: number;
+}
+
+export interface VisualSovereignLiesCategory {
+  category: SovereignLiesSchemeCategory | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualSovereignLiesJurisdiction {
+  jurisdiction: string;
+  jurisdiction_level: SovereignLiesJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  leads: number;
+  cleared?: number;
+  flagged_inr_cr?: number;
+}
+
+export interface VisualSovereignLiesScheme {
+  scheme_name: string;
+  scheme_slug: string;
+  jurisdiction: string;
+  jurisdiction_level: SovereignLiesJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  scheme_category: SovereignLiesSchemeCategory | string;
+  walkback_mechanism: SovereignLiesWalkbackMechanism | string;
+  retroactive_impact: SovereignLiesRetroactiveImpact | string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  is_sgb_anchor?: boolean;
+}
+
+export interface VisualSovereignLiesSgbAnchor {
+  task_id?: string;
+  finding_id?: string | null;
+  scheme_name: string;
+  tranche_or_phase?: string;
+  jurisdiction: string;
+  authority: string;
+  promise_date?: string;
+  promise_summary: string;
+  promise_document_ref?: string;
+  walkback_date?: string | null;
+  walkback_summary: string;
+  walkback_document_ref?: string;
+  walkback_mechanism?: SovereignLiesWalkbackMechanism | string;
+  retroactive_impact?: SovereignLiesRetroactiveImpact | string;
+  promised_metric?: string;
+  revised_metric?: string;
+  metric_unit?: string;
+  affected_group?: string;
+  days_from_promise_to_walkback?: number | null;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  source_sha256?: string | null;
+  secondary_sha256?: string | null;
+}
+
+export interface VisualSovereignLiesLead {
+  finding_id: string;
+  title: string;
+  scheme_name: string;
+  scheme_slug?: string;
+  tranche_or_phase?: string;
+  entity_name?: string;
+  jurisdiction: string;
+  jurisdiction_level?: SovereignLiesJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  scheme_category?: SovereignLiesSchemeCategory | string;
+  walkback_mechanism: SovereignLiesWalkbackMechanism | string;
+  retroactive_impact?: SovereignLiesRetroactiveImpact | string;
+  signal_category: string;
+  promise_date?: string;
+  walkback_date?: string | null;
+  days_from_promise_to_walkback?: number | null;
+  promised_metric?: string;
+  revised_metric?: string;
+  metric_unit?: string;
+  promise_summary?: string;
+  walkback_summary?: string;
+  affected_group?: string;
+  is_sgb_anchor?: boolean;
+  monetary_exposure_inr?: number | null;
+  flagged_inr_cr?: number | null;
+  severity?: string;
+  status: string;
+}
+
+export interface VisualSovereignLies {
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  total_tasks: number;
+  unique_schemes_covered?: number;
+  states_and_uts_covered?: number;
+  sgb_tasks_count?: number;
+  cleared_control_tasks_embedded?: number;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_total_inr_cr: number;
+  by_jurisdiction_level?: Record<string, VisualSovereignLiesTierCounts | number>;
+  by_mechanism?: Record<string, VisualSovereignLiesMechanismCounts | number>;
+  by_signal?: Record<string, number>;
+  by_retroactive_impact?: Record<string, number>;
+  by_category?: VisualSovereignLiesCategory[];
+  jurisdictions?: VisualSovereignLiesJurisdiction[];
+  top_schemes?: VisualSovereignLiesScheme[];
+  sgb_anchor_case?: VisualSovereignLiesSgbAnchor | null;
+  top_leads?: VisualSovereignLiesLead[];
+  documents_url?: string;
+  coverage_url?: string;
+}
+
+export type ExamJurisdictionLevel = 'union' | 'state' | 'ut';
+
+export type ExamDisruptionType =
+  | 'cancelled_after_conduct'
+  | 'postponed'
+  | 'rescheduled'
+  | 'delayed'
+  | 'cancelled_before_conduct'
+  | 'partial_reexam_or_glitch'
+  | 'flawless_conduct';
+
+export type ExamAuthorityType =
+  | 'central_testing_agency'
+  | 'union_psc_or_recruitment'
+  | 'railway_banking_psu'
+  | 'defence_medical_technical'
+  | 'state_psc'
+  | 'state_police_or_subordinate'
+  | 'state_teacher_or_entrance'
+  | 'ut_recruitment_or_board';
+
+export type ExamCategory =
+  | 'civil_services_and_psc'
+  | 'police_and_defence'
+  | 'teaching_and_faculty'
+  | 'medical_and_health'
+  | 'engineering_and_higher_ed'
+  | 'banking_railways_ssc'
+  | 'clerical_and_subordinate'
+  | 'board_and_other_public';
+
+export type ExamDisruptionReasonCategory =
+  | 'paper_integrity_compromise'
+  | 'administrative_or_logistical'
+  | 'technical_or_cbt_glitch'
+  | 'election_or_calendar_clash'
+  | 'weather_or_disaster'
+  | 'judicial_or_policy_review'
+  | 'none_flawless';
+
+export interface VisualExamAuditWindow {
+  start_date: string;
+  end_date: string;
+  years: number[];
+  label: string;
+}
+
+export interface VisualExamHeadlineCounts {
+  total_audited: number;
+  not_flawless_count: number;
+  flawless_count: number;
+  not_flawless_rate_pct: number;
+  flawless_rate_pct: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+  documented_affected_candidates_total: number;
+}
+
+export interface VisualExamDisruptionBucket {
+  disruption_type: ExamDisruptionType | string;
+  label?: string;
+  rule?: string | null;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  pct?: number;
+  documented_affected_candidates?: number;
+}
+
+export interface VisualExamTierCounts {
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads?: number;
+  cleared?: number;
+  not_flawless?: number;
+  flawless?: number;
+  cancelled_after_conduct?: number;
+}
+
+export interface VisualExamAuthorityType {
+  authority_type: ExamAuthorityType | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+}
+
+export interface VisualExamCategory {
+  exam_category: ExamCategory | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+}
+
+export interface VisualExamYear {
+  year: number | string;
+  tasks: number;
+  done?: number;
+  leads?: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+}
+
+export interface VisualExamReasonCategory {
+  reason_category: ExamDisruptionReasonCategory | string;
+  label?: string;
+  tasks: number;
+  leads: number;
+}
+
+export interface VisualExamJurisdiction {
+  jurisdiction: string;
+  jurisdiction_level: ExamJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+  not_flawless_rate_pct?: number;
+  documented_affected_candidates?: number;
+}
+
+export interface VisualExamAuthority {
+  authority: string;
+  authority_key: string;
+  authority_type: ExamAuthorityType | string;
+  jurisdiction: string;
+  jurisdiction_level: ExamJurisdictionLevel | string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+  not_flawless_rate_pct?: number;
+  documented_affected_candidates?: number;
+}
+
+export interface VisualExamAnchorCase {
+  task_id?: string;
+  case_key: string;
+  finding_id?: string | null;
+  exam_name: string;
+  exam_slug?: string;
+  cycle_or_stage?: string;
+  exam_year: number;
+  jurisdiction: string;
+  jurisdiction_level: ExamJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  authority: string;
+  authority_key?: string;
+  authority_type?: ExamAuthorityType | string;
+  exam_category?: ExamCategory | string;
+  scheduled_date?: string;
+  actual_or_event_date?: string;
+  delay_days?: number | null;
+  disruption_type: ExamDisruptionType | string;
+  disruption_reason_category?: ExamDisruptionReasonCategory | string;
+  students_took_exam_before_cancellation?: boolean;
+  schedule_summary: string;
+  schedule_document_ref?: string;
+  outcome_summary: string;
+  outcome_document_ref?: string;
+  affected_candidates_count?: number | null;
+  affected_candidates_basis?: string;
+  statutory_anchor?: string;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  severity?: string;
+}
+
+export interface VisualExamLead {
+  finding_id?: string | null;
+  task_id?: string;
+  case_key: string;
+  title: string;
+  exam_name: string;
+  exam_slug?: string;
+  cycle_or_stage?: string;
+  exam_year: number;
+  jurisdiction: string;
+  jurisdiction_level?: ExamJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  authority: string;
+  authority_key?: string;
+  authority_type?: ExamAuthorityType | string;
+  exam_category?: ExamCategory | string;
+  scheduled_date?: string;
+  actual_or_event_date?: string;
+  delay_days?: number | null;
+  disruption_type: ExamDisruptionType | string;
+  disruption_reason_category?: ExamDisruptionReasonCategory | string;
+  signal_category?: string;
+  rule_triggered?: string;
+  students_took_exam_before_cancellation?: boolean;
+  schedule_summary?: string;
+  schedule_document_ref?: string;
+  outcome_summary?: string;
+  outcome_document_ref?: string;
+  affected_candidates_count?: number | null;
+  affected_candidates_basis?: string;
+  statutory_anchor?: string;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  is_anchor_case?: boolean;
+  severity?: string;
+  status: string;
+}
+
+export interface VisualExamDryRunSummary {
+  status: string;
+  evaluated_tasks: number;
+  flagged_leads: number;
+  cleared_flawless: number;
+  unevaluable: number;
+  verified_documents: number;
+  as_of_date?: string;
+}
+
+export interface VisualAuditingGovernmentExams {
+  project_slug?: string;
+  project_code?: string;
+  methodology_code?: string;
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  audit_window?: VisualExamAuditWindow;
+  total_tasks: number;
+  completed_tasks?: number;
+  published_leads?: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  unevaluable_tasks?: number;
+  unique_exams_covered?: number;
+  unique_authorities_covered?: number;
+  unique_documents_count?: number;
+  states_and_uts_covered?: number;
+  leads_source?: 'live' | 'corpus_fallback' | string;
+  documents_url?: string;
+  coverage_url?: string;
+  headline_counts?: VisualExamHeadlineCounts;
+  by_disruption_type?: Record<string, VisualExamDisruptionBucket | number>;
+  by_jurisdiction_level?: Record<string, VisualExamTierCounts | number>;
+  by_authority_type?: VisualExamAuthorityType[];
+  by_exam_category?: VisualExamCategory[];
+  by_year?: VisualExamYear[];
+  by_reason_category?: VisualExamReasonCategory[];
+  jurisdictions?: VisualExamJurisdiction[];
+  top_authorities?: VisualExamAuthority[];
+  anchor_cases?: VisualExamAnchorCase[];
+  leads?: VisualExamLead[];
+  dry_run_summary?: VisualExamDryRunSummary | null;
+}
+
+export type InnocentButLockedUpPortalCategory =
+  | 'court_portal'
+  | 'prison_portal'
+  | 'police_portal'
+  | 'nhrc_shrc'
+  | 'nalsa_slsa'
+  | 'parliament'
+  | 'govt_ministry'
+  | 'cag_audit';
+
+export type InnocentButLockedUpCourtTier =
+  | 'supreme_court'
+  | 'high_court'
+  | 'district_court'
+  | 'statutory_body';
+
+export type InnocentButLockedUpMechanism =
+  | 'post_acquittal_contempt_overrun'
+  | 'bail_or_release_order_contempt'
+  | 'warrant_or_faster_transmission_delay'
+  | 'statutory_commission_detention_finding'
+  | 'institutional_compliance_gap'
+  | 'timely_release_or_compliant';
+
+export type InnocentButLockedUpChainStatus =
+  | 'full_4_stage_chain'
+  | 'partial_3_stage'
+  | 'institutional_record'
+  | 'compliant_control';
+
+export interface VisualInnocentButLockedUpPortal {
+  portal_category: InnocentButLockedUpPortalCategory | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  leads?: number;
+  cleared?: number;
+}
+
+export interface VisualInnocentButLockedUpYear {
+  year: number | string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  leads?: number;
+  cleared?: number;
+  full_4_stage?: number;
+  overrun_days?: number;
+}
+
+export interface VisualInnocentButLockedUpCourtTierCounts {
+  tasks: number;
+  done?: number;
+  leads?: number;
+  cleared?: number;
+}
+
+export interface VisualInnocentButLockedUpMechanismCounts {
+  tasks: number;
+  leads: number;
+  done?: number;
+  cleared?: number;
+}
+
+export interface VisualInnocentButLockedUpState {
+  state_ut?: string | null;
+  jurisdiction?: string | null;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  full_4_stage?: number;
+  total_overrun_days?: number;
+  compensation_inr?: number;
+}
+
+export interface VisualInnocentButLockedUpCourt {
+  court_name: string;
+  court_tier: InnocentButLockedUpCourtTier | string;
+  state_ut?: string | null;
+  tasks: number;
+  leads: number;
+  full_4_stage?: number;
+}
+
+export interface VisualInnocentButLockedUpPrison {
+  prison_name: string;
+  state_ut?: string | null;
+  tasks: number;
+  leads: number;
+  total_overrun_days?: number;
+}
+
+export interface VisualInnocentButLockedUpAnchor {
+  task_id?: string;
+  finding_id?: string | null;
+  case_title: string;
+  portal_category: InnocentButLockedUpPortalCategory | string;
+  court_tier?: InnocentButLockedUpCourtTier | string;
+  state_ut?: string | null;
+  jurisdiction?: string | null;
+  year?: number | string | null;
+  document_ref?: string | null;
+  overrun_mechanism?: InnocentButLockedUpMechanism | string;
+  stages_verified_count?: number | null;
+  chain_status?: InnocentButLockedUpChainStatus | string;
+  acquittal_order_date?: string | null;
+  acquittal_court?: string | null;
+  acquittal_case_number?: string | null;
+  acquittal_order_type?: string | null;
+  acquittal_quote?: string | null;
+  prison_name?: string | null;
+  custody_authority?: string | null;
+  non_release_reason?: string | null;
+  overrun_days?: number | null;
+  overrun_window?: string | null;
+  contempt_case_number?: string | null;
+  contempt_court?: string | null;
+  contempt_filing_date?: string | null;
+  contempt_order_date?: string | null;
+  contempt_quote?: string | null;
+  release_date?: string | null;
+  release_verified?: boolean;
+  compensation_inr?: number | null;
+  judicial_direction_summary?: string | null;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  source_sha256?: string | null;
+  secondary_sha256?: string | null;
+}
+
+export interface VisualInnocentButLockedUpLead {
+  finding_id: string;
+  title: string;
+  case_key?: string;
+  case_title: string;
+  entity_name?: string;
+  portal_category: InnocentButLockedUpPortalCategory | string;
+  court_tier?: InnocentButLockedUpCourtTier | string;
+  state_ut?: string | null;
+  jurisdiction?: string | null;
+  year?: number | string | null;
+  document_ref?: string | null;
+  overrun_mechanism: InnocentButLockedUpMechanism | string;
+  signal_category: string;
+  stages_verified_count?: number | null;
+  chain_status?: InnocentButLockedUpChainStatus | string;
+  acquittal_order_date?: string | null;
+  acquittal_court?: string | null;
+  acquittal_case_number?: string | null;
+  acquittal_order_type?: string | null;
+  acquittal_quote?: string | null;
+  prison_name?: string | null;
+  custody_authority?: string | null;
+  non_release_reason?: string | null;
+  overrun_days?: number | null;
+  overrun_window?: string | null;
+  contempt_case_number?: string | null;
+  contempt_court?: string | null;
+  contempt_filing_date?: string | null;
+  contempt_order_date?: string | null;
+  contempt_quote?: string | null;
+  release_date?: string | null;
+  release_verified?: boolean;
+  compensation_inr?: number | null;
+  judicial_direction_summary?: string | null;
+  is_anchor_case?: boolean;
+  severity?: string;
+  status: string;
+}
+
+export interface VisualInnocentButLockedUp {
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  year_range?: [number, number] | number[] | string;
+  total_tasks: number;
+  unique_documents_covered?: number;
+  states_and_uts_covered?: number;
+  courts_covered?: number;
+  prisons_named?: number;
+  full_4_stage_tasks?: number;
+  contempt_tasks?: number;
+  verified_release_tasks?: number;
+  cleared_control_tasks_embedded?: number;
+  total_overrun_days_documented?: number;
+  median_overrun_days?: number | null;
+  max_overrun_days?: number | null;
+  total_compensation_ordered_inr?: number;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_compensation_inr_cr?: number;
+  by_portal_category?:
+    | VisualInnocentButLockedUpPortal[]
+    | Record<string, VisualInnocentButLockedUpPortal | number>;
+  by_year?: VisualInnocentButLockedUpYear[];
+  by_court_tier?: Record<string, VisualInnocentButLockedUpCourtTierCounts | number>;
+  by_mechanism?: Record<string, VisualInnocentButLockedUpMechanismCounts | number>;
+  by_signal?: Record<string, number>;
+  by_chain_status?: Record<string, number>;
+  states?: VisualInnocentButLockedUpState[];
+  top_courts?: VisualInnocentButLockedUpCourt[];
+  top_prisons?: VisualInnocentButLockedUpPrison[];
+  anchor_case?: VisualInnocentButLockedUpAnchor | null;
+  top_leads?: VisualInnocentButLockedUpLead[];
+  documents_url?: string;
+  coverage_url?: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -745,6 +1427,9 @@ export interface ProjectVisualSummary {
   one_teacher_five_grades?: VisualOneTeacherFiveGrades;
   parliaments_to_do_list?: VisualParliamentsToDoList;
   only_one_bid?: VisualOnlyOneBid;
+  sovereign_lies?: VisualSovereignLies;
+  auditing_government_exams?: VisualAuditingGovernmentExams;
+  innocent_but_locked_up?: VisualInnocentButLockedUp;
 }
 
 export interface MissionItem {
@@ -798,6 +1483,7 @@ export interface MissionItem {
   /** True when `tasks` holds only the first slice of a large project's tasks. */
   tasks_truncated?: boolean;
   is_community_project?: boolean;
+  created_at?: string;
   posted_by?: ProjectPoster;
   project_sources?: ProjectSource[];
   project_scope?: { scope: string[]; out_of_scope: string[] };
@@ -1194,6 +1880,8 @@ export interface LiveSwarmNode {
   tasks_completed: number;
   verifications_done: number;
   findings_submitted: number;
+  github_verified?: boolean;
+  github_verified_at?: string | null;
   last_seen_at?: string;
   created_at?: string;
 }
@@ -1203,6 +1891,7 @@ export interface LiveRecentJoin {
   display_name?: string;
   coding_agent?: string | null;
   coding_agent_model?: string | null;
+  github_verified?: boolean;
   created_at: string;
   last_seen_at?: string;
   is_working?: boolean;

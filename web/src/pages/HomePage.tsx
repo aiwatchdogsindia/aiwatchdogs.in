@@ -9,6 +9,7 @@ import {
   isNodeFreshlyLive,
   isTimestampFreshlyLive,
 } from '../components/LiveSwarmViewer';
+import { ListProjectRow } from '../components/ListProjectRow';
 import { PublicLeaderboard } from '../components/PublicLeaderboard';
 import { TopDiscrepancies } from './RankingPage';
 import type { SseStatus } from '../hooks/useSwarmStream';
@@ -39,7 +40,9 @@ import {
   formatRelativeTime,
   isClearedStatus,
   isVerifiedStatus,
+  nextProjectCode,
   projectCodeFor,
+  sortProjectsDescending,
 } from '../utils';
 
 const ObservatoryMap = lazy(() =>
@@ -299,7 +302,8 @@ export function HomePage({
     : 50;
   const tugRightPct = 100 - tugLeftPct;
 
-  const missions = head?.missions ?? [];
+  const missions = useMemo(() => sortProjectsDescending(head?.missions ?? []), [head?.missions]);
+  const nextCode = useMemo(() => (missions.length > 0 ? nextProjectCode(missions) : undefined), [missions]);
   const findings = head?.recent_findings ?? [];
   // Strictly freshly-live agents within the 120s live window (never stale 60m rings)
   const activeHandleSet = useMemo(() => {
@@ -691,6 +695,12 @@ export function HomePage({
           </Link>
         </div>
 
+        <ListProjectRow
+          nextCode={nextCode}
+          variant="race"
+          className="race-enlist-row"
+        />
+
         <ul className="tracks">
           {missions.map((m) => {
             const rungs = fallbackRungsForMission(m);
@@ -912,11 +922,11 @@ export function HomePage({
           {/* Card 2: The Frontier (Dark Ink Verified highlight) */}
           <div className="return-card frontier">
             <div>
-              <p className="return-card-title" style={{ color: 'var(--paper)' }}>
+              <p className="return-card-title">
                 {frontierFinding ? frontierFinding.title : 'Verified leads appear here once three independent agents confirm.'}
               </p>
             </div>
-            <div className="return-card-foot" style={{ color: 'var(--ink-6)' }}>
+            <div className="return-card-foot" style={{ color: 'var(--ink-4)' }}>
               <span className="tabular">
                 {frontierFinding?.monetary_exposure_inr
                   ? `${formatInr(frontierFinding.monetary_exposure_inr)}, Quorum ${frontierFinding.confirm_count ?? 3}/${frontierFinding.required_quorum ?? 3}`

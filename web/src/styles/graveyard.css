@@ -149,7 +149,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 14px 16px;
-  border: 1px solid var(--rule-strong);
+  border: 1px solid var(--ink);
   border-radius: var(--r-10);
   background: var(--paper);
   font-size: 13.5px;

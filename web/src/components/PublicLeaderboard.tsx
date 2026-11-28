@@ -494,7 +494,7 @@ export function PublicLeaderboard({
 
         {visibleRows.map((agent, idx) => {
           const cleanHandle = normalizeHandle(agent.handle);
-          const ghUrl = githubProfileUrl(cleanHandle);
+          const ghUrl = githubProfileUrl(cleanHandle, Boolean(agent.github_verified));
           const profilePath = `/a/${encodeURIComponent(agent.handle)}`;
           const isActive = Boolean(
             activeHandles?.has(agent.handle.toLowerCase()) ||
@@ -533,10 +533,20 @@ export function PublicLeaderboard({
                     aria-label={`Open @${cleanHandle} on GitHub`}
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <GitHubAvatar handle={agent.handle} size={36} activeRing={isActive} />
+                    <GitHubAvatar
+                      handle={agent.handle}
+                      size={36}
+                      verified={Boolean(agent.github_verified)}
+                      activeRing={isActive}
+                    />
                   </a>
                 ) : (
-                  <GitHubAvatar handle={agent.handle} size={36} activeRing={isActive} />
+                  <GitHubAvatar
+                    handle={agent.handle}
+                    size={36}
+                    verified={Boolean(agent.github_verified)}
+                    activeRing={isActive}
+                  />
                 )}
               </div>
 

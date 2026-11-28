@@ -515,6 +515,7 @@ def test_cli_non_interactive_join_uses_github_handle_reuses_profile_and_auto_res
 ) -> None:
     monkeypatch.delenv(ENV_CONFIG_PATH, raising=False)
     monkeypatch.delenv(ENV_HANDLE, raising=False)
+    monkeypatch.setenv("AIWATCHDOGS_DISABLE_RATE_LIMIT", "1")
     legacy_cfg = tmp_path / "aiwatchdogs" / "config.json"
     monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", legacy_cfg)
 
@@ -664,6 +665,7 @@ def test_hub_and_cli_block_generic_agent_handles_and_prevent_identity_fragmentat
 
     monkeypatch.delenv(ENV_CONFIG_PATH, raising=False)
     monkeypatch.delenv(ENV_HANDLE, raising=False)
+    monkeypatch.setenv("AIWATCHDOGS_DISABLE_RATE_LIMIT", "1")
     legacy_cfg = tmp_path / "aiwatchdogs" / "config.json"
     monkeypatch.setattr(cfg_mod, "DEFAULT_CONFIG_PATH", legacy_cfg)
 

@@ -1,3 +1,4 @@
+import { pick } from '../lib/theme';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '../router';
@@ -172,7 +173,7 @@ export function LiveOrganism({
       arcs.push({
         id: `arc-${i}`,
         d: `M ${fromSeat.x} ${fromSeat.y} Q ${mx} ${my} ${toSeat.x} ${toSeat.y}`,
-        color: v.verdict === 'confirm' ? '#8DB89A' : '#D08A7C',
+        color: v.verdict === 'confirm' ? pick('#138808', '#30D158') : pick('#C2412D', '#FF453A'),
       });
     }
     return arcs;
@@ -223,7 +224,7 @@ export function LiveOrganism({
           rx={RX}
           ry={RY}
           fill="none"
-          stroke="#6E4A44"
+          stroke={pick('#E3A99C', '#5C221D')}
           strokeWidth="1.25"
           strokeDasharray="4 7"
           opacity="0.7"
@@ -256,7 +257,7 @@ export function LiveOrganism({
             key={`open-spoke-${idx}`}
             d={`M ${slot.x.toFixed(1)} ${slot.y.toFixed(1)} L ${CX} ${CY}`}
             fill="none"
-            stroke="#34383F"
+            stroke={pick('#D3CFC5', '#3A3A3C')}
             strokeWidth="1"
             strokeDasharray="3 5"
             opacity="0.7"
@@ -274,7 +275,7 @@ export function LiveOrganism({
                 id={pathId}
                 d={spokeD}
                 fill="none"
-                stroke="#34383F"
+                stroke={pick('#D3CFC5', '#3A3A3C')}
                 strokeWidth="1.15"
                 opacity="0.9"
               />
@@ -284,7 +285,7 @@ export function LiveOrganism({
                   <circle r="3.4" fill={s.tint.hex} opacity="0.9">
                     <animateMotion dur={`${s.durSec.toFixed(2)}s`} repeatCount="indefinite" path={spokeD} />
                   </circle>
-                  <circle r="2.3" fill="#8DB89A" opacity="0.65">
+                  <circle r="2.3" fill={pick('#138808', '#30D158')} opacity="0.65">
                     <animateMotion
                       dur={`${(s.durSec * 1.35).toFixed(2)}s`}
                       begin={`${(idx * 0.55).toFixed(2)}s`}

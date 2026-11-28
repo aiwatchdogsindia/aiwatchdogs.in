@@ -40,7 +40,7 @@
   flex-shrink: 0;
 }
 
-/* Header variant (pure var(--raised) light header) */
+/* Header variant (pure #FFFFFF light header) */
 .av-toggle--header {
   width: 32px;
   height: 32px;
@@ -62,19 +62,20 @@
   outline-offset: 2px;
 }
 
+/* Footer variant (white footer) */
 .av-toggle--footer {
   width: 32px;
   height: 30px;
-  color: var(--ink-3);
+  color: var(--ink-2);
   border-color: var(--rule-strong);
-  background: transparent;
+  background: var(--paper);
 }
 
 .av-toggle--footer:hover,
 .av-toggle--footer:focus-visible {
   color: var(--ink);
   background: var(--sunk);
-  border-color: var(--ink-3);
+  border-color: var(--ink);
   outline: none;
 }
 
@@ -136,22 +137,23 @@
 /* Header tooltip opens BELOW button (dark pill on white header) */
 .av-toggle-tip--header {
   top: calc(100% + 8px);
-  background: var(--ink);
-  color: var(--raised);
+  background: #1B1A17;
+  color: #FFFFFF;
 }
 
 .av-toggle-tip--header::after {
   bottom: 100%;
-  border-bottom-color: var(--ink);
+  border-bottom-color: #1B1A17;
 }
 
+/* Footer tooltip opens ABOVE button (crisp white pill with explicit dark ink on navy footer) */
 .av-toggle-tip--footer {
   bottom: calc(100% + 8px);
   left: auto;
   right: 0;
   transform: translateY(-4px);
-  background: var(--raised);
-  color: var(--ink);
+  background: #FFFFFF;
+  color: #1B1A17;
 }
 
 .av-toggle-tip--footer::after {
@@ -159,7 +161,7 @@
   left: auto;
   right: 11px;
   transform: none;
-  border-top-color: var(--raised);
+  border-top-color: #FFFFFF;
 }
 
 .av-toggle-wrap:hover .av-toggle-tip,
@@ -242,8 +244,8 @@
   position: relative;
   min-height: 100vh;
   width: 100%;
-  background: var(--raised);
-  color: var(--ink);
+  background: #FFFFFF;
+  color: #000000;
 }
 
 .av-raw-md {
@@ -268,10 +270,10 @@
   right: 10px;
   z-index: 20;
   padding: 2px 7px;
-  border: 1px solid var(--rule);
+  border: 1px solid rgba(0, 0, 0, 0.16);
   border-radius: 3px;
-  background: rgba(12, 13, 15, 0.92);
-  color: var(--ink-3);
+  background: rgba(255, 255, 255, 0.92);
+  color: #444444;
   font-family: monospace;
   font-size: 11.5px;
   line-height: 1.35;
@@ -280,9 +282,28 @@
 
 .av-raw-exit:hover,
 .av-raw-exit:focus-visible {
-  color: var(--ink);
-  border-color: var(--ink-3);
+  color: #000000;
+  border-color: #000000;
   outline: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .av-raw-shell {
+    background: #121212;
+    color: #E5E5E5;
+  }
+
+  .av-raw-exit {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(18, 18, 18, 0.9);
+    color: #BDBDBD;
+  }
+
+  .av-raw-exit:hover,
+  .av-raw-exit:focus-visible {
+    color: #FFFFFF;
+    border-color: #FFFFFF;
+  }
 }
 
 @media print {

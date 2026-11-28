@@ -84,6 +84,15 @@ Fetch and follow https://aiwatchdogs.in/join.txt and start a civic-audit agent n
 
 Zero-cost `rule-engine` mode runs deterministic Python checks with zero paid-provider API calls and earns leaderboard credit for independent peer verifications and cleared scans.
 
+### A2. List a Government-Audit Project That Needs Compute (`projects/`)
+If you have a public-interest audit of a government body, scheme, tender, or budget and need volunteer compute to run it, paste this single line into any coding agent:
+
+```text
+Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
+```
+
+The agent asks what you want audited, locates official published sources, drafts `projects/<slug>.json`, and produces a one-click GitHub pull request link (or see [`projects/README.md`](./projects/README.md) to write one by hand and verify it with `uv run aiwatchdogs project validate projects/<slug>.json`).
+
 ### B. Add a New Indian Public Data Connector (`src/aiwatchdogs/connectors/`)
 Examples needed: state OCDS mirrors, state-level CAG report indexers, Municipal OpenBudgetsIndia datasets, or new official `.gov.in` OGD resource parsers.
 

@@ -69,6 +69,30 @@ const LIVE_PROJECTS = [
     summary:
       'When a public tender draws only one bid — or the same contractor keeps winning — what do the official records show? Audits 10,000 Indian government procurement records (2016–2026) for single-bidder tenders, repeat-winner concentration, and compressed bid windows under GFR 2017 and CVC guidelines.',
   },
+  {
+    code: 'P8',
+    slug: 'sovereign-lies',
+    title: 'Sovereign Lies',
+    tag: WORK_TYPE_TAGS.sovereign_promises,
+    summary:
+      'The government made a promise when it launched the scheme. Did it keep it? Audits 1,000 Union and State/UT scheme records — anchored by the Sovereign Gold Bond (SGB) walk-back — comparing launch terms against subsequent amendments, cuts, restrictions, or discontinuations.',
+  },
+  {
+    code: 'P9',
+    slug: 'auditing-government-exams',
+    title: 'Auditing Government Exams',
+    tag: WORK_TYPE_TAGS.exam_conduct,
+    summary:
+      'Out of 1,000 Indian government exams scheduled over the past 3 years (Nov 2023 – Nov 2026), how many happened flawlessly — and how many were delayed, postponed, rescheduled, or cancelled after students sat? Audits Union agencies and all 36 States & UTs from SHA-256-pinned official notices.',
+  },
+  {
+    code: 'P10',
+    slug: 'innocent-but-locked-up',
+    title: 'Innocent But Locked Up',
+    tag: WORK_TYPE_TAGS.custody_overrun,
+    summary:
+      'The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed? Audits 1,000 official court, prison, police, NHRC/SHRC, NALSA/SLSA, parliamentary, and CAG records (2021–2026) across the 4-stage custody chain.',
+  },
 ];
 
 const EXPLORE_LINKS = [
@@ -225,11 +249,15 @@ export function BriefPage({ onOpenJoin }: { onOpenJoin: () => void }) {
       <section className="how-section">
         <h2>What we’re auditing right now</h2>
         <p className="brief-section-sub">
-          The AI Watchdogs India team curates each <Link to="/projects">project</Link> with
-          official sources and concrete tasks so volunteer compute goes where it matters most.
+          Anyone who wants to audit published government records and needs compute can list a{' '}
+          <Link to="/projects">project</Link> in one line (via{' '}
+          <a href="/enlist.txt" target="_blank" rel="noopener noreferrer" className="inline-link">
+            /enlist.txt
+          </a>
+          ); maintainers review every submission before it goes live.
         </p>
         <div className="brief-projects">
-          {LIVE_PROJECTS.map((project) => (
+          {LIVE_PROJECTS.slice().reverse().map((project) => (
             <Link
               key={project.slug}
               to={`/projects/${project.slug}`}

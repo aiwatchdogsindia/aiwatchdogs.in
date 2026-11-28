@@ -1,30 +1,46 @@
 # Projects
 
-Every audit the swarm works on is a **project**, chosen and added by the AI Watchdogs
-India team. Each project is one JSON file in this folder. Outside project submissions are
-not accepted; pull requests that add a project will be closed.
+Every audit the swarm works on is a **project** listed by a person, newsroom,
+civil-society group, or the AI Watchdogs India team that wants to audit or
+scrutinise the government and needs compute to do it. Each project is one JSON
+file in this folder. To list a project, add a file and open a pull request.
 
-## Adding a project (maintainers)
+## The one-shot way: ask your AI agent
+
+Paste this into Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or any coding agent:
+
+```text
+Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
+```
+
+The agent asks what you want audited, finds official sources, and drafts
+`projects/<slug>.json`. Once you approve it, you get one GitHub link with the
+file filled in. Open it and follow GitHub's prompts to create the pull request.
+You only need a free GitHub account.
+
+## By hand
 
 1. Copy `_template.json` to `<slug>.json` (the file name must equal the `slug`).
-2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` until exact datasets are
-   verified; list the work in `planned_tasks`.
+2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` if you only know
+   what should be audited; list the work in `planned_tasks` so maintainers and
+   contributors can attach verified datasets later. Leave `project_code` unset
+   (maintainers assign the next sequential `P#` code on review).
 3. Check it: `uv run aiwatchdogs project validate projects/<slug>.json`
 4. Open a pull request titled `project: <title>`.
 
-It appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects) on the next deploy.
-Projects with tasks start receiving agents immediately.
+When the PR is merged, the project appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects)
+on the next deploy, credited to you. Projects with tasks start receiving agents immediately.
 
 ## Fields
 
 | Field | Required | Notes |
 |---|---|---|
 | `slug` | yes | Lowercase words joined by hyphens. Same as the file name. |
-| `project_code` | no | Public sequential project identifier (`P1`, `P2`, `P3`, `P4`, ...), unique across projects. |
+| `project_code` | no | Public sequential project identifier (`P1`, `P2`, `P3`, `P4`, ...), assigned on review so PRs never collide. |
 | `priority` | no | 1 (first) to 10 (last), default 5. Agents get tasks from the lowest number first. |
 | `title` | yes | One line, 10–120 characters. |
 | `summary` | yes | 10–600 characters. Plain language. |
-| `posted_by` | yes | `name` (required), `handle`, `url` (https). Kept on file, not shown on the site. |
+| `posted_by` | yes | `name` (required), `handle`, `url` (https). Shown on the project card and detail page. |
 | `pillar` | yes | `budget`, `procurement`, `audit`, `infra`, `scheme`, `disclosure` or `parliament`. |
 | `status` | no | `active` (has tasks), `needs_data` (no tasks yet) or `paused`. |
 | `jurisdiction`, `authority` | yes | Whose records are checked. |
@@ -131,6 +147,36 @@ uv run python scripts/build_only_one_bid_project.py
 ```
 
 The script fetches, caches, and SHA-256 pins immutable/byte-stable shards (all `<= 30.03 MiB`, strictly India-only: OCP Data Registry #77 HP OCDS & #131 Assam OCDS `.jsonl.gz`, CivicDataLab Assam OCDS v3 `.json.zip`, CivicDataLab IDS-DRR `Accepted-AOC` CSVs for Assam/HP/Odisha/UP, and **Indian Government (World Bank–assisted projects)** closed project shards + 2024–2026 immutable single-notice JSON records strictly filtered to `project_ctry_code=IN`), enforces forensic bid-count and `Accepted-AOC` hygiene, scrubs PII and verifies BNS Sec 356 neutrality, keeps the JSON header `< 10 KiB` and total file `<= 20 MiB`, and writes `only-one-bid/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
+### Sovereign Lies (`P8`)
+
+`projects/sovereign-lies.json` is generated from live-verified, double-fetch byte-stable official Union and State/UT primary records across **1,000 tasks** (`500` Union + `419` State + `81` UT covering **all 28 States and all 8 Union Territories**, `322` unique schemes, `668` unique SHA-256-pinned documents across 11 verified domains), anchored by Task #1 `p8-union-sgb-anchor-0001` (**Sovereign Gold Bond Scheme**, Finance Bill 2016 Clause 28 Sec 47(viic) redemption capital-gains tax exemption vs. Union Budget 2026-27 / Finance Bill 2026 Clause 35 Sec 70(1)(x) original-issue-subscriber-only walk-back, followed by all 67/67 SGB tranches):
+
+```
+uv run python scripts/build_sovereign_lies_project.py
+```
+
+The script fetches and SHA-256 verifies all 668 unique official URLs (Union Budget Finance Bills & Memoranda on `indiabudget.gov.in`, Digital Sansad Lok Sabha & Rajya Sabha Q&A PDFs on `sansad.in` / `bucketapi.rajyasabha.digital`, NSE SGB listing circulars on `nsearchives.nseindia.com`, CAG Union & State Audit Reports on `cag.gov.in` / `d1jmc0u14z2tmp.cloudfront.net`, static PIB factsheets on `static.pib.gov.in`, State Gazettes/Finance GOs on `transport.delhi.gov.in`, `wcd.delhi.gov.in`, `apfinance.gov.in`, and PRS State Budget Analyses on `prsindia.org`), dry-runs all 1,000 tasks through `P8` (`881` leads, `119` cleared grandfathered/honored benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `sovereign-lies/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
+### Auditing Government Exams (`P9`)
+
+`projects/auditing-government-exams.json` is generated from live-verified, double-fetch byte-stable official Union and State/UT examination notices across **1,000 tasks** spanning the **past 3 years (`2023-11-28` to `2026-11-28`, exam years 2023–2026)** (`347` Union + `586` State + `67` UT covering **all 28 States and all 8 Union Territories**, `716` unique examinations, `163` authorities, `858` unique SHA-256-pinned official documents across `28` verified domains), anchored by Task #1 `p9-union-ugc-net-june-2024-0001` (**UGC-NET June 2024**, conducted on 18 June 2024 for 9,08,580 appeared candidates and cancelled post-conduct prior to CBT re-conduct):
+
+```
+uv run python scripts/build_auditing_government_exams_project.py
+```
+
+The script fetches and SHA-256 verifies all 858 unique official URLs (`ssc.gov.in`, `nta.ac.in`, `ugcnet.nta.ac.in`, `csirnet.nta.ac.in`, `sansad.in`, `www.upsc.gov.in`, `www.cbse.gov.in`, `www.ibps.in`, `hpsc.gov.in`, `hssc.gov.in`, `www.tnpsc.gov.in`, `nssb.nagaland.gov.in`, `apssb.nic.in`, `appsc.gov.in`, `gpsc.goa.gov.in`, `gpsc.gujarat.gov.in`, `rpsc.rajasthan.gov.in`, `mpsc.mizoram.gov.in`, `apsc.nic.in`, `bceceboard.bihar.gov.in`, `websitenew.tgpsc.gov.in`, `dsssb.delhi.gov.in`, `spsc.sikkim.gov.in`, `mppsc.mp.gov.in`, `www.keralapsc.gov.in`, and additional State/UT portals), dry-runs all 1,000 tasks through `P9` (`738` leads across 6 disruption categories — `10` cancelled after conduct, `32` postponed, `120` rescheduled, `478` delayed, `35` cancelled before conduct, `63` technical glitch / partial re-exam — plus `262` cleared `flawless_conduct` benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `auditing-government-exams/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
+### Innocent But Locked Up (`P10`)
+
+`projects/innocent-but-locked-up.json` is generated from live-verified, double-fetch byte-stable official Indian judicial, prison, police, human-rights, legal-aid, parliamentary, ministry, and CAG records spanning the past five years (**2021–2026**) across **1,000 tasks** (`1,002` unique SHA-256-pinned PDFs across `19` verified official/open-data domains, all `26` constitutional courts — Supreme Court + all `25` High Courts — `29` States/UTs + Union of India, `280` explicitly named prisons, and all `8` official portal categories), anchored by Task #1 `p10-court-2024-anchor-bashir-ahmad-koka-v-chandraker-bh-0001` (*Bashir Ahmad Koka v. Chandraker Bharti & Ors.*, J&K & Ladakh High Court, paired `WP(Crl) 498/2022` detention-quashment PDF + `CCP(S) 123/2024` Article 215 contempt PDF documenting 98 days of post-quashment custody overrun before release):
+
+```
+uv run python scripts/build_innocent_but_locked_up_project.py
+```
+
+The script verifies every primary and secondary SHA-256 digest (caching outside git in `/tmp/p10-cache`), parses every PDF via canonical `load_dataset()`, dry-runs all 1,000 tasks through `P10` (`866` leads, `134` cleared compliant/timely-release benchmarks, `0` unevaluable), enforces BNS Sec 356 neutrality, DPDP Act 2023 PII scrubbing, header `< 10 KiB`, and total JSON `<= 20 MiB`, validates via `aiwatchdogs project validate`, and writes `innocent-but-locked-up/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
 ## Renaming a project
 

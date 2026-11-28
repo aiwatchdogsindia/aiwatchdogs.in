@@ -28,22 +28,61 @@ import type {
   MissionItem,
   MissionTask,
   ProjectVisualSummary,
+  VisualAuditingGovernmentExams,
+  VisualExamAnchorCase,
+  VisualExamAuthority,
+  VisualExamDisruptionBucket,
+  VisualExamHeadlineCounts,
+  VisualExamJurisdiction,
+  VisualExamLead,
+  VisualExamTierCounts,
+  VisualExamYear,
+  VisualInnocentButLockedUpCourt,
+  VisualInnocentButLockedUpCourtTierCounts,
+  VisualInnocentButLockedUpLead,
+  VisualInnocentButLockedUpMechanismCounts,
+  VisualInnocentButLockedUpPortal,
+  VisualInnocentButLockedUpState,
+  VisualInnocentButLockedUpYear,
   VisualOnlyOneBidAuthority,
   VisualOnlyOneBidCohortCounts,
   VisualOnlyOneBidRepeatWinner,
   VisualParliamentHouseCounts,
   VisualParliamentMinistry,
+  VisualSovereignLiesCategory,
+  VisualSovereignLiesJurisdiction,
+  VisualSovereignLiesLead,
+  VisualSovereignLiesMechanismCounts,
+  VisualSovereignLiesScheme,
+  VisualSovereignLiesTierCounts,
   VisualWebsiteCheckpoint,
   VisualWebsiteMatrixItem,
   WebsiteVerificationMode,
 } from '../types';
 import {
+  formatAcquittalOrderType,
   formatAssuranceStatus,
+  formatChainStatus,
+  formatCourtTier,
+  formatCustodyOverrunMechanism,
+  formatCandidateCountCompact,
+  formatElapsedPromiseSpan,
+  formatExamAuthorityType,
+  formatExamCategory,
+  formatExamDelaySpan,
+  formatExamDisruption,
+  formatExamDisruptionReason,
   formatInr,
   formatInrCr,
+  formatJurisdictionLabel,
+  formatOverrunDays,
+  formatPortalCategory,
   formatProcurementAmountType,
   formatProcurementSignal,
+  formatRetroactiveImpact,
+  formatSchemeCategory,
   formatSingleBidMechanism,
+  formatWalkbackMechanism,
   safeExternalUrl,
 } from '../utils';
 
@@ -1164,6 +1203,36 @@ export function ProjectResultsVisualizer({
   if (code === 'P7') {
     return (
       <OnlyOneBidVisualiser
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P8') {
+    return (
+      <SovereignLiesVisualiser
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P9') {
+    return (
+      <AuditingGovernmentExamsVisualiser
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P10') {
+    return (
+      <InnocentButLockedUpVisualiser
         mission={mission}
         visualSummary={visualSummary}
         onSelectFinding={onSelectFinding}
@@ -5654,6 +5723,5797 @@ export function OnlyOneBidVisualiser({
             Procurement pattern leads appear here as contributor agents verify tasks. Every entry
             cites the official tender record, repeat-winner cohort (where applicable), and
             jurisdiction-matched statutory benchmark with SHA-256 provenance.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3H. P8 Sovereign Lies: launch promises vs. subsequent revisions across Union & State/UT schemes ---------- */
+
+const P8_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/sovereign-lies/METHODOLOGY.md';
+export const P8_DEFAULT_HOOK =
+  'The government made a promise when it launched the scheme. Did it keep it?';
+const P8_INITIAL_JURISDICTIONS = 12;
+const P8_INITIAL_SCHEMES = 12;
+
+export type P8TierKey = 'union' | 'state' | 'ut';
+
+export type P8MechanismKey =
+  | 'retroactive_tax_reversal'
+  | 'midstream_benefit_cut'
+  | 'premature_discontinuation'
+  | 'eligibility_narrowing'
+  | 'lockin_or_exit_restriction'
+  | 'arrears_or_unfunded_promise'
+  | 'grandfathered_or_honored';
+
+export interface P8NormalizedTier {
+  key: P8TierKey;
+  label: string;
+  shortLabel: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  flagged_inr_cr: number;
+}
+
+export interface P8NormalizedMechanism {
+  key: P8MechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  fillClass: string;
+  isCleared: boolean;
+  tasks: number;
+  leads: number;
+  sharePct: number;
+}
+
+export interface P8NormalizedCategory {
+  category: string;
+  label: string;
+  shortLabel: string;
+  tasks: number;
+  done: number;
+  leads: number;
+  cleared: number;
+  flagged_inr_cr: number;
+}
+
+export interface P8NormalizedImpact {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  count: number;
+  sharePct: number;
+}
+
+export function p8TierLabel(tier: string): string {
+  const k = (tier || '').trim().toLowerCase();
+  if (k === 'union' || k === 'central') return 'Union of India';
+  if (k === 'state' || k === 'states') return 'States';
+  if (k === 'ut' || k === 'uts' || k === 'union_territory') return 'Union Territories';
+  return tier || 'Jurisdiction';
+}
+
+export function p8MechanismLabel(mechanism: string): string {
+  return formatWalkbackMechanism(mechanism).label;
+}
+
+export function p8CategoryLabel(category: string): string {
+  return formatSchemeCategory(category).label;
+}
+
+export function p8ImpactLabel(impact: string): string {
+  return formatRetroactiveImpact(impact).label;
+}
+
+/** Clean search token to jump to a scheme's tasks in the project task queue. */
+export function p8SchemeFilterQuery(schemeName?: string | null): string {
+  return (schemeName || '').trim();
+}
+
+/** Exact jurisdiction prefix token matching every P8 task title (`"${jur_short} · ..."`). */
+export function p8JurisdictionFilterQuery(
+  jurisdiction?: string | null,
+  stateOrUt?: string | null,
+): string {
+  const cleanState = (stateOrUt || '').trim();
+  if (cleanState) return `${cleanState} ·`;
+  const cleanJur = (jurisdiction || '').trim();
+  if (!cleanJur) return '';
+  if (/^state:/i.test(cleanJur)) {
+    const name = cleanJur.slice(6).trim();
+    return name ? `${name} ·` : '';
+  }
+  if (/^ut:/i.test(cleanJur)) {
+    const name = cleanJur.slice(3).trim();
+    return name ? `${name} ·` : '';
+  }
+  return `${cleanJur} ·`;
+}
+
+/** Clear active jurisdiction filter if switching to a tier that excludes it. */
+export function p8ReconcileJurisdictionForTier(
+  selectedJurisdiction: string,
+  nextTier: 'all' | P8TierKey,
+  jurisdictions: VisualSovereignLiesJurisdiction[],
+): string {
+  if (!selectedJurisdiction || selectedJurisdiction === 'all' || nextTier === 'all') {
+    return selectedJurisdiction;
+  }
+  const matched = jurisdictions.find((j) => j.jurisdiction === selectedJurisdiction);
+  if (matched) {
+    return (matched.jurisdiction_level || '').trim().toLowerCase() === nextTier
+      ? selectedJurisdiction
+      : 'all';
+  }
+  const lower = selectedJurisdiction.trim().toLowerCase();
+  const inferredTier: P8TierKey = lower.startsWith('state:')
+    ? 'state'
+    : lower.startsWith('ut:')
+      ? 'ut'
+      : 'union';
+  return inferredTier === nextTier ? selectedJurisdiction : 'all';
+}
+
+export function p8NormalizeTiers(
+  byTier?: Record<string, VisualSovereignLiesTierCounts | number> | null,
+): {
+  union: P8NormalizedTier;
+  state: P8NormalizedTier;
+  ut: P8NormalizedTier;
+  totalTasks: number;
+  totalDone: number;
+  totalLeads: number;
+  totalCleared: number;
+} {
+  const readTier = (
+    key: P8TierKey,
+    shortLabel: string,
+    aliases: string[],
+  ): P8NormalizedTier => {
+    let raw: VisualSovereignLiesTierCounts | number | undefined;
+    for (const [k, v] of Object.entries(byTier || {})) {
+      const norm = k.trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (aliases.includes(norm)) {
+        raw = v;
+        break;
+      }
+    }
+    if (typeof raw === 'number') {
+      const tasks = Math.max(0, raw);
+      return {
+        key,
+        label: p8TierLabel(key),
+        shortLabel,
+        tasks,
+        done: 0,
+        claimed: 0,
+        open: tasks,
+        pct: 0,
+        leads: 0,
+        cleared: 0,
+        flagged_inr_cr: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    const tasks = Math.max(0, Number(obj?.tasks) || 0);
+    const done = Math.max(0, Number(obj?.done) || 0);
+    const claimed = Math.max(0, Number(obj?.claimed) || 0);
+    const open =
+      obj?.open != null ? Math.max(0, Number(obj.open) || 0) : Math.max(0, tasks - done - claimed);
+    const pct =
+      obj?.pct != null && Number.isFinite(Number(obj.pct))
+        ? Math.max(0, Number(obj.pct))
+        : calcPct(done, tasks);
+    return {
+      key,
+      label: p8TierLabel(key),
+      shortLabel,
+      tasks,
+      done,
+      claimed,
+      open,
+      pct,
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+      flagged_inr_cr: Math.max(0, Number(obj?.flagged_inr_cr) || 0),
+    };
+  };
+
+  const union = readTier('union', 'Union', ['union', 'central', 'union_of_india']);
+  const state = readTier('state', 'States', ['state', 'states']);
+  const ut = readTier('ut', 'UTs', ['ut', 'uts', 'union_territory', 'union_territories']);
+
+  return {
+    union,
+    state,
+    ut,
+    totalTasks: union.tasks + state.tasks + ut.tasks,
+    totalDone: union.done + state.done + ut.done,
+    totalLeads: union.leads + state.leads + ut.leads,
+    totalCleared: union.cleared + state.cleared + ut.cleared,
+  };
+}
+
+export function p8NormalizeMechanisms(
+  byMechanism?: Record<string, VisualSovereignLiesMechanismCounts | number> | null,
+  bySignal?: Record<string, number> | null,
+): {
+  items: P8NormalizedMechanism[];
+  totalTasks: number;
+  totalLeads: number;
+} {
+  const ordered: Array<{
+    key: P8MechanismKey;
+    ruleKey: string;
+    fillClass: string;
+  }> = [
+    {
+      key: 'retroactive_tax_reversal',
+      ruleKey: 'P8-RETROACTIVE-TAX-REVERSAL',
+      fillClass: 'pv-p8-mech-fill--retro-tax',
+    },
+    {
+      key: 'midstream_benefit_cut',
+      ruleKey: 'P8-MIDSTREAM-BENEFIT-CUT',
+      fillClass: 'pv-p8-mech-fill--cut',
+    },
+    {
+      key: 'premature_discontinuation',
+      ruleKey: 'P8-PREMATURE-DISCONTINUATION',
+      fillClass: 'pv-p8-mech-fill--discontinued',
+    },
+    {
+      key: 'eligibility_narrowing',
+      ruleKey: 'P8-ELIGIBILITY-NARROWING',
+      fillClass: 'pv-p8-mech-fill--eligibility',
+    },
+    {
+      key: 'lockin_or_exit_restriction',
+      ruleKey: 'P8-LOCKIN-OR-EXIT-RESTRICTION',
+      fillClass: 'pv-p8-mech-fill--lockin',
+    },
+    {
+      key: 'arrears_or_unfunded_promise',
+      ruleKey: 'P8-ARREARS-OR-UNFUNDED-PROMISE',
+      fillClass: 'pv-p8-mech-fill--arrears',
+    },
+    {
+      key: 'grandfathered_or_honored',
+      ruleKey: 'CLEARED',
+      fillClass: 'pv-p8-mech-fill--honored',
+    },
+  ];
+
+  const rows = ordered.map(({ key, ruleKey, fillClass }) => {
+    const rawMech = byMechanism?.[key];
+    let tasks = 0;
+    let leads = 0;
+    if (typeof rawMech === 'number') {
+      tasks = Math.max(0, rawMech);
+    } else if (rawMech && typeof rawMech === 'object') {
+      tasks = Math.max(0, Number(rawMech.tasks) || 0);
+      leads = Math.max(0, Number(rawMech.leads) || 0);
+    }
+    if (leads === 0 && bySignal) {
+      const sigVal = bySignal[key] ?? bySignal[ruleKey] ?? bySignal[ruleKey.toLowerCase()];
+      if (sigVal != null) {
+        leads = Math.max(0, Number(sigVal) || 0);
+      }
+    }
+    const meta = formatWalkbackMechanism(key);
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      fillClass,
+      isCleared: meta.isCleared,
+      tasks,
+      leads,
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P8NormalizedMechanism[] = rows.map((r) => ({
+    ...r,
+    sharePct: calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+  }));
+
+  return { items, totalTasks, totalLeads };
+}
+
+export function p8NormalizeCategories(
+  byCategory?: VisualSovereignLiesCategory[] | null,
+): P8NormalizedCategory[] {
+  if (!Array.isArray(byCategory)) return [];
+  return byCategory
+    .map((c) => {
+      const meta = formatSchemeCategory(c.category);
+      return {
+        category: meta.key,
+        label: c.label?.trim() || meta.label,
+        shortLabel: meta.shortLabel,
+        tasks: Math.max(0, Number(c.tasks) || 0),
+        done: Math.max(0, Number(c.done) || 0),
+        leads: Math.max(0, Number(c.leads) || 0),
+        cleared: Math.max(0, Number(c.cleared) || 0),
+        flagged_inr_cr: Math.max(0, Number(c.flagged_inr_cr) || 0),
+      };
+    })
+    .sort((a, b) => b.tasks - a.tasks || a.label.localeCompare(b.label));
+}
+
+export function p8NormalizeRetroactiveImpacts(
+  byImpact?: Record<string, number> | null,
+): {
+  items: P8NormalizedImpact[];
+  total: number;
+} {
+  const keys = [
+    'retroactive_existing_holders',
+    'mid_stream_active_scheme',
+    'prospective_discontinuation',
+    'eligibility_narrowing',
+    'unfulfilled_arrears',
+    'grandfathered_or_honored',
+  ] as const;
+
+  const counts = keys.map((k) => Math.max(0, Number(byImpact?.[k]) || 0));
+  const total = counts.reduce((acc, n) => acc + n, 0);
+
+  const items: P8NormalizedImpact[] = keys.map((k, idx) => {
+    const meta = formatRetroactiveImpact(k);
+    const count = counts[idx];
+    return {
+      key: k,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      count,
+      sharePct: calcPct(count, total),
+    };
+  });
+
+  return { items, total };
+}
+
+export function p8FilterJurisdictions(
+  jurisdictions: VisualSovereignLiesJurisdiction[],
+  query: string,
+  tierFilter: 'all' | P8TierKey = 'all',
+): VisualSovereignLiesJurisdiction[] {
+  const q = query.trim().toLowerCase();
+  return jurisdictions.filter((j) => {
+    const lvl = (j.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl !== tierFilter) return false;
+    if (!q) return true;
+    const display = formatJurisdictionLabel(j.jurisdiction, j.state_or_ut, j.jurisdiction_level);
+    return (
+      j.jurisdiction.toLowerCase().includes(q) ||
+      (j.state_or_ut || '').toLowerCase().includes(q) ||
+      display.toLowerCase().includes(q) ||
+      lvl.includes(q)
+    );
+  });
+}
+
+export function p8FilterSchemes(
+  schemes: VisualSovereignLiesScheme[],
+  query: string,
+  tierFilter: 'all' | P8TierKey = 'all',
+  categoryFilter = 'all',
+  mechanismFilter = 'all',
+  jurisdictionFilter = 'all',
+): VisualSovereignLiesScheme[] {
+  const q = query.trim().toLowerCase();
+  const cat = categoryFilter.trim().toLowerCase();
+  const mech = mechanismFilter.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+
+  return schemes.filter((s) => {
+    const lvl = (s.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl !== tierFilter) return false;
+    if (cat && cat !== 'all' && (s.scheme_category || '').trim().toLowerCase() !== cat) {
+      return false;
+    }
+    if (mech && mech !== 'all' && formatWalkbackMechanism(s.walkback_mechanism).key !== mech) {
+      return false;
+    }
+    if (jur && jur !== 'all' && (s.jurisdiction || '').trim().toLowerCase() !== jur) {
+      return false;
+    }
+    if (!q) return true;
+    const jurDisplay = formatJurisdictionLabel(s.jurisdiction, s.state_or_ut, s.jurisdiction_level);
+    return (
+      s.scheme_name.toLowerCase().includes(q) ||
+      (s.scheme_slug || '').toLowerCase().includes(q) ||
+      s.jurisdiction.toLowerCase().includes(q) ||
+      jurDisplay.toLowerCase().includes(q) ||
+      formatSchemeCategory(s.scheme_category).label.toLowerCase().includes(q) ||
+      formatWalkbackMechanism(s.walkback_mechanism).label.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p8FilterLeads(
+  leads: VisualSovereignLiesLead[],
+  tierFilter: 'all' | P8TierKey = 'all',
+  categoryFilter = 'all',
+  mechanismFilter = 'all',
+  jurisdictionFilter = 'all',
+): VisualSovereignLiesLead[] {
+  const cat = categoryFilter.trim().toLowerCase();
+  const mech = mechanismFilter.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+
+  return leads.filter((l) => {
+    const lvl = (l.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl && lvl !== tierFilter) return false;
+    if (cat && cat !== 'all' && (l.scheme_category || '').trim().toLowerCase() !== cat) {
+      return false;
+    }
+    if (
+      mech &&
+      mech !== 'all' &&
+      formatWalkbackMechanism(l.walkback_mechanism || l.signal_category).key !== mech
+    ) {
+      return false;
+    }
+    if (jur && jur !== 'all' && (l.jurisdiction || '').trim().toLowerCase() !== jur) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function p8ShortText(text?: string | null, maxLen = 140): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+export function SovereignLiesVisualiser({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p8 = visualSummary?.sovereign_lies;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [selectedTier, setSelectedTier] = useState<'all' | P8TierKey>('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [selectedMechanism, setSelectedMechanism] = useState('all');
+  const [selectedJurisdiction, setSelectedJurisdiction] = useState('all');
+  const [jurisdictionQuery, setJurisdictionQuery] = useState('');
+  const [showAllJurisdictions, setShowAllJurisdictions] = useState(false);
+  const [schemeQuery, setSchemeQuery] = useState('');
+  const [showAllSchemes, setShowAllSchemes] = useState(false);
+
+  const hook = p8?.hook?.trim() || P8_DEFAULT_HOOK;
+  const totalTasks = p8?.total_tasks ?? mission.total_tasks ?? 0;
+  const uniqueSchemesCovered = p8?.unique_schemes_covered ?? p8?.top_schemes?.length ?? 0;
+  const jurisdictions = p8?.jurisdictions ?? [];
+  const statesAndUtsCovered =
+    p8?.states_and_uts_covered ??
+    jurisdictions.filter((j) => (j.jurisdiction_level || '').toLowerCase() !== 'union').length;
+  const sgbTasksCount = p8?.sgb_tasks_count ?? 0;
+  const clearedEmbedded = p8?.cleared_control_tasks_embedded ?? 0;
+  const leads = p8?.leads ?? 0;
+  const verified = p8?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p8?.peer_review ?? mission.peer_review_count ?? 0;
+  const clearedTasks = p8?.cleared_tasks ?? mission.cleared_tasks_count ?? 0;
+  const flaggedTotalCr = p8?.flagged_total_inr_cr ?? 0;
+
+  const topSchemes = p8?.top_schemes ?? [];
+  const topLeads = p8?.top_leads ?? [];
+  const sgbAnchor = p8?.sgb_anchor_case ?? null;
+  const documentsUrl = p8?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p8?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const tiers = useMemo(
+    () => p8NormalizeTiers(p8?.by_jurisdiction_level),
+    [p8?.by_jurisdiction_level],
+  );
+  const mechanisms = useMemo(
+    () => p8NormalizeMechanisms(p8?.by_mechanism, p8?.by_signal),
+    [p8?.by_mechanism, p8?.by_signal],
+  );
+  const categories = useMemo(
+    () => p8NormalizeCategories(p8?.by_category),
+    [p8?.by_category],
+  );
+  const impacts = useMemo(
+    () => p8NormalizeRetroactiveImpacts(p8?.by_retroactive_impact),
+    [p8?.by_retroactive_impact],
+  );
+
+  const filteredJurisdictions = useMemo(
+    () => p8FilterJurisdictions(jurisdictions, jurisdictionQuery, selectedTier),
+    [jurisdictions, jurisdictionQuery, selectedTier],
+  );
+  const visibleJurisdictions =
+    showAllJurisdictions || jurisdictionQuery.trim().length > 0 || selectedTier !== 'all'
+      ? filteredJurisdictions
+      : filteredJurisdictions.slice(0, P8_INITIAL_JURISDICTIONS);
+
+  const filteredSchemes = useMemo(
+    () =>
+      p8FilterSchemes(
+        topSchemes,
+        schemeQuery,
+        selectedTier,
+        selectedCategory,
+        selectedMechanism,
+        selectedJurisdiction,
+      ),
+    [
+      topSchemes,
+      schemeQuery,
+      selectedTier,
+      selectedCategory,
+      selectedMechanism,
+      selectedJurisdiction,
+    ],
+  );
+  const visibleSchemes =
+    showAllSchemes ||
+    schemeQuery.trim().length > 0 ||
+    selectedTier !== 'all' ||
+    selectedCategory !== 'all' ||
+    selectedMechanism !== 'all' ||
+    selectedJurisdiction !== 'all'
+      ? filteredSchemes
+      : filteredSchemes.slice(0, P8_INITIAL_SCHEMES);
+
+  const filteredLeads = useMemo(
+    () =>
+      p8FilterLeads(
+        topLeads,
+        selectedTier,
+        selectedCategory,
+        selectedMechanism,
+        selectedJurisdiction,
+      ),
+    [topLeads, selectedTier, selectedCategory, selectedMechanism, selectedJurisdiction],
+  );
+
+  const hasActiveFilters =
+    selectedTier !== 'all' ||
+    selectedCategory !== 'all' ||
+    selectedMechanism !== 'all' ||
+    selectedJurisdiction !== 'all';
+
+  const handleSelectTier = (nextTier: 'all' | P8TierKey) => {
+    setSelectedTier(nextTier);
+    setSelectedJurisdiction((prev) =>
+      p8ReconcileJurisdictionForTier(prev, nextTier, jurisdictions),
+    );
+  };
+
+  const resetAllFilters = () => {
+    setSelectedTier('all');
+    setSelectedCategory('all');
+    setSelectedMechanism('all');
+    setSelectedJurisdiction('all');
+  };
+
+  const tierDenominator = tiers.totalTasks || totalTasks;
+  const unionPct = calcPct(tiers.union.tasks, tierDenominator);
+  const statePct = calcPct(tiers.state.tasks, tierDenominator);
+  const utPct = calcPct(tiers.ut.tasks, tierDenominator);
+
+  const anchorMechanism = sgbAnchor?.walkback_mechanism
+    ? formatWalkbackMechanism(sgbAnchor.walkback_mechanism)
+    : null;
+  const anchorImpact = sgbAnchor?.retroactive_impact
+    ? formatRetroactiveImpact(sgbAnchor.retroactive_impact)
+    : null;
+  const anchorElapsed = formatElapsedPromiseSpan(sgbAnchor?.days_from_promise_to_walkback);
+  const anchorPrimaryUrl = safeExternalUrl(sgbAnchor?.source_url);
+  const anchorSecondaryUrl = safeExternalUrl(sgbAnchor?.secondary_url);
+  const anchorPortalUrl = safeExternalUrl(sgbAnchor?.portal_url);
+
+  const tierCards: Array<{
+    bucket: P8NormalizedTier;
+    pct: number;
+    btnClass: string;
+    desc: string;
+  }> = [
+    {
+      bucket: tiers.union,
+      pct: unionPct,
+      btnClass: 'pv-p8-tier-btn--union',
+      desc: 'Central acts, RBI bonds, FinMin & Union Ministries',
+    },
+    {
+      bucket: tiers.state,
+      pct: statePct,
+      btnClass: 'pv-p8-tier-btn--state',
+      desc: 'State budgets, GOs, guarantees, subsidies & CAG audits',
+    },
+    {
+      bucket: tiers.ut,
+      pct: utPct,
+      btnClass: 'pv-p8-tier-btn--ut',
+      desc: 'NCT of Delhi, J&K, Puducherry, Chandigarh & UTs',
+    },
+  ];
+
+  return (
+    <section className="card card-pad pv-results" aria-label="Sovereign Lies scheme promise audit results">
+      {/* Header + Summary Pills */}
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">Sovereign Lies: Promise vs. Walk-Back Ledger</h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">
+            {fmtCount(totalTasks)} {totalTasks === 1 ? 'scheme task' : 'scheme tasks'}
+          </span>
+          {uniqueSchemesCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(uniqueSchemesCovered)} {uniqueSchemesCovered === 1 ? 'scheme' : 'schemes'}
+            </span>
+          ) : null}
+          {statesAndUtsCovered > 0 ? (
+            <span className="tag-mono">Union + {fmtCount(statesAndUtsCovered)} States &amp; UTs</span>
+          ) : null}
+          {sgbTasksCount > 0 ? (
+            <span className="p8-sgb-chip">
+              {fmtCount(sgbTasksCount)} {sgbTasksCount === 1 ? 'SGB task' : 'SGB tasks'}
+            </span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'divergence lead' : 'divergence leads'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+          {clearedTasks > 0 ? (
+            <span className={FINDING_TAGS.cleared.badgeClass}>
+              {fmtCount(clearedTasks)} {FINDING_TAGS.cleared.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Headline KPIs */}
+      <div className="pv-p8-overview">
+        <div className="pv-p8-kpi-grid">
+          <div className="pv-overview-tile pv-p8-kpi--tasks">
+            <span className="pv-overview-kicker">Tracked scheme tasks</span>
+            <span className="pv-overview-num tabular">{fmtCount(totalTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {uniqueSchemesCovered > 0 ? `${fmtCount(uniqueSchemesCovered)} schemes · ` : ''}
+              {statesAndUtsCovered > 0
+                ? `Union + ${fmtCount(statesAndUtsCovered)} States/UTs`
+                : 'Union & State/UT coverage'}
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p8-kpi--sgb">
+            <span className="pv-overview-kicker">Sovereign Gold Bond cohort</span>
+            <span className="pv-overview-num tabular">{fmtCount(sgbTasksCount)}</span>
+            <span className="pv-overview-sub">
+              Flagship anchor · Sec 47(viic) &amp; Finance Act 2026
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p8-kpi--leads">
+            <span className="pv-overview-kicker">Documented leads &amp; cleared</span>
+            <span className="pv-overview-num tabular">{fmtCount(leads)}</span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(verified)} verified · {fmtCount(inReview)} in review · {fmtCount(clearedTasks)} cleared
+              {clearedEmbedded > 0 ? ` (${fmtCount(clearedEmbedded)} honored controls)` : ''}
+            </span>
+          </div>
+          <div className="pv-overview-tile pv-p8-kpi--value">
+            <span className="pv-overview-kicker">Published scheme exposure</span>
+            <span className="pv-overview-num tabular">
+              {flaggedTotalCr > 0 ? formatInrCr(flaggedTotalCr) : 'Documentary'}
+            </span>
+            <span className="pv-overview-sub">
+              Officially published amounts only; statutory changes tracked verbatim
+            </span>
+          </div>
+        </div>
+
+        {/* Flagship Sovereign Gold Bond (SGB) Anchor Spotlight */}
+        {sgbAnchor ? (
+          <article
+            className="pv-p8-sgb-anchor"
+            aria-label="Sovereign Gold Bond flagship anchor comparison"
+          >
+            <div className="pv-p6-anchor-head">
+              <div className="pv-p6-anchor-meta">
+                <span className="p8-sgb-chip">Flagship Anchor · Sovereign Gold Bond (SGB)</span>
+                <span className="p8-tier-chip p8-tier-chip--union">
+                  {formatJurisdictionLabel(sgbAnchor.jurisdiction, null, 'union')}
+                </span>
+                {sgbAnchor.authority ? (
+                  <span className="tag-mono">{sgbAnchor.authority}</span>
+                ) : null}
+                {sgbAnchor.tranche_or_phase ? (
+                  <span className="tag-mono">{sgbAnchor.tranche_or_phase}</span>
+                ) : null}
+                {anchorImpact ? (
+                  <span className={anchorImpact.chipClass}>{anchorImpact.label}</span>
+                ) : null}
+              </div>
+              {anchorMechanism ? (
+                <span className={anchorMechanism.chipClass}>{anchorMechanism.label}</span>
+              ) : null}
+            </div>
+
+            <h3 className="pv-p6-anchor-title">{sgbAnchor.scheme_name}</h3>
+
+            {sgbAnchor.affected_group ? (
+              <p className="pv-p6-anchor-people">
+                <strong>Affected group:</strong> {sgbAnchor.affected_group}
+              </p>
+            ) : null}
+
+            {(sgbAnchor.promised_metric || sgbAnchor.revised_metric) ? (
+              <div className="pv-p8-sgb-delta tabular">
+                <span>
+                  <strong>Original terms:</strong> {sgbAnchor.promised_metric || 'Documented at launch'}
+                </span>
+                <span aria-hidden="true">→</span>
+                <span>
+                  <strong>Revised terms:</strong> {sgbAnchor.revised_metric || 'Amended subsequently'}
+                </span>
+                {anchorElapsed ? (
+                  <span className="tag-mono">{anchorElapsed}</span>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="pv-p8-sgb-grid">
+              <div className="pv-p8-sgb-col pv-p8-sgb-col--promise">
+                <div className="pv-p8-sgb-col-head">
+                  <span className="pv-p6-anchor-label" style={{ marginBottom: 0 }}>
+                    01 · Original Launch Promise
+                  </span>
+                  {sgbAnchor.promise_date ? (
+                    <span className="pv-p8-sgb-date font-mono tabular">{sgbAnchor.promise_date}</span>
+                  ) : null}
+                </div>
+                <p className="pv-p6-anchor-text">{sgbAnchor.promise_summary}</p>
+                {sgbAnchor.promise_document_ref ? (
+                  <span className="pv-p8-sgb-ref font-mono">{sgbAnchor.promise_document_ref}</span>
+                ) : null}
+              </div>
+
+              <div className="pv-p8-sgb-col pv-p8-sgb-col--walkback">
+                <div className="pv-p8-sgb-col-head">
+                  <span className="pv-p6-anchor-label" style={{ marginBottom: 0 }}>
+                    02 · Subsequent Walk-Back
+                  </span>
+                  {sgbAnchor.walkback_date ? (
+                    <span className="pv-p8-sgb-date font-mono tabular">{sgbAnchor.walkback_date}</span>
+                  ) : null}
+                </div>
+                <p className="pv-p6-anchor-text">{sgbAnchor.walkback_summary}</p>
+                {sgbAnchor.walkback_document_ref ? (
+                  <span className="pv-p8-sgb-ref font-mono">{sgbAnchor.walkback_document_ref}</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="pv-p6-anchor-actions">
+              {sgbAnchor.finding_id && onSelectFinding ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onSelectFinding(sgbAnchor.finding_id!)}
+                >
+                  Inspect SGB dossier
+                </button>
+              ) : onFilterTasks ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onFilterTasks('Sovereign Gold Bond')}
+                >
+                  Find SGB tasks in queue
+                </button>
+              ) : null}
+              {anchorPrimaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPrimaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Launch notification <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorSecondaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Finance Act / Walk-back record <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorPortalUrl &&
+              anchorPortalUrl !== anchorPrimaryUrl &&
+              anchorPortalUrl !== anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPortalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Official portal <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {sgbAnchor.source_sha256 ? (
+                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                  sha256:{sgbAnchor.source_sha256.slice(0, 10)}
+                </span>
+              ) : null}
+            </div>
+          </article>
+        ) : (
+          <div className="pv-empty-box">
+            Sovereign Gold Bond (SGB) flagship anchor comparison loads automatically from the hub summary index.
+          </div>
+        )}
+
+        {/* Interactive Jurisdiction Tier Selector (Union vs States vs UTs) */}
+        {tiers.totalTasks > 0 ? (
+          <div className="pv-p7-cohort-panel">
+            <div className="pv-p7-cohort-head">
+              <h3>Jurisdiction tier (Union vs. States &amp; UTs — select to filter explorer)</h3>
+              <div className="pv-mini-legend">
+                <span>
+                  <i className="pv-dot pv-p8-dot--union" aria-hidden="true" /> Union
+                </span>
+                <span>
+                  <i className="pv-dot pv-p8-dot--state" aria-hidden="true" /> States
+                </span>
+                <span>
+                  <i className="pv-dot pv-p8-dot--ut" aria-hidden="true" /> UTs
+                </span>
+                {selectedTier !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => handleSelectTier('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All tiers</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              className="pv-p8-tier-bar"
+              role="img"
+              aria-label={`Jurisdiction split across ${fmtCount(tiers.totalTasks)} tasks: ${fmtCount(tiers.union.tasks)} Union (${fmtPct(unionPct)}), ${fmtCount(tiers.state.tasks)} States (${fmtPct(statePct)}), ${fmtCount(tiers.ut.tasks)} Union Territories (${fmtPct(utPct)})`}
+            >
+              {unionPct > 0 ? (
+                <span
+                  className="pv-p8-seg pv-p8-seg--union"
+                  style={{ width: `${unionPct}%` }}
+                  title={`Union of India: ${fmtCount(tiers.union.tasks)} (${fmtPct(unionPct)})`}
+                />
+              ) : null}
+              {statePct > 0 ? (
+                <span
+                  className="pv-p8-seg pv-p8-seg--state"
+                  style={{ width: `${statePct}%` }}
+                  title={`States: ${fmtCount(tiers.state.tasks)} (${fmtPct(statePct)})`}
+                />
+              ) : null}
+              {utPct > 0 ? (
+                <span
+                  className="pv-p8-seg pv-p8-seg--ut"
+                  style={{ width: `${utPct}%` }}
+                  title={`Union Territories: ${fmtCount(tiers.ut.tasks)} (${fmtPct(utPct)})`}
+                />
+              ) : null}
+            </div>
+
+            <div className="pv-p8-tier-cards" role="group" aria-label="Filter by jurisdiction tier">
+              {tierCards.map(({ bucket, pct, btnClass, desc }) => {
+                const isSelected = selectedTier === bucket.key;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    className={`pv-p7-cohort-btn ${btnClass}`}
+                    onClick={() =>
+                      handleSelectTier(selectedTier === bucket.key ? 'all' : bucket.key)
+                    }
+                  >
+                    <span className="pv-p7-cohort-btn-top">
+                      <span className="pv-p7-cohort-name">{bucket.label}</span>
+                      <span className="pv-p7-cohort-share tabular">{fmtPct(pct)}</span>
+                    </span>
+                    <span className="pv-p7-cohort-num tabular">
+                      {fmtCount(bucket.tasks)} {bucket.tasks === 1 ? 'task' : 'tasks'}
+                    </span>
+                    <span className="pv-p7-cohort-sub tabular">
+                      {fmtCount(bucket.done)}/{fmtCount(bucket.tasks)} checked ({fmtPct(bucket.pct)})
+                      {bucket.leads > 0
+                        ? ` · ${fmtCount(bucket.leads)} ${bucket.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
+                      {bucket.cleared > 0 ? ` · ${fmtCount(bucket.cleared)} cleared` : ''}
+                    </span>
+                    <span className="pv-p7-cohort-sub">{desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Interactive Walk-Back Mechanism & Scheme Category Explorer */}
+        <div className="pv-p7-cohort-panel">
+          <div className="pv-p7-cohort-head">
+            <h3>Walk-back mechanisms (7 deterministic categories — select to filter)</h3>
+            <span className="pv-chart-note tabular">
+              {mechanisms.totalTasks > 0
+                ? `${fmtCount(mechanisms.totalTasks)} tasks across 6 walk-back mechanisms + honored controls`
+                : 'Counts populate from the hub summary index'}
+            </span>
+          </div>
+
+          <div className="pv-p8-mech-grid" role="group" aria-label="Filter by walk-back mechanism">
+            {mechanisms.items.map((m) => {
+              const isSelected = selectedMechanism === m.key;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className={`pv-p8-mech-btn${m.isCleared ? ' pv-p8-mech-btn--cleared' : ''}`}
+                  onClick={() =>
+                    setSelectedMechanism((prev) => (prev === m.key ? 'all' : m.key))
+                  }
+                >
+                  <div className="pv-p7-signal-top">
+                    <span className={m.chipClass}>{m.label}</span>
+                    <span className="pv-p7-signal-count tabular">
+                      <strong>{fmtCount(m.tasks)}</strong> {m.tasks === 1 ? 'task' : 'tasks'}
+                      {m.leads > 0
+                        ? ` · ${fmtCount(m.leads)} ${m.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
+                    </span>
+                  </div>
+                  <span className="pv-p7-signal-track" aria-hidden="true">
+                    <span
+                      className={`pv-p7-signal-fill ${m.fillClass}`}
+                      style={{ width: `${m.sharePct > 0 ? Math.max(3, m.sharePct) : 0}%` }}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Scheme Categories Filter Pills */}
+          {categories.length > 0 ? (
+            <div className="pv-p8-cat-pills" role="group" aria-label="Filter by scheme category">
+              <span className="pv-p7-jur-label">Scheme categories:</span>
+              <button
+                type="button"
+                aria-pressed={selectedCategory === 'all'}
+                className={`btn btn-xs ${selectedCategory === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setSelectedCategory('all')}
+              >
+                All ({fmtCount(categories.length)})
+              </button>
+              {categories.map((cat) => {
+                const active = selectedCategory === cat.category;
+                return (
+                  <button
+                    key={cat.category}
+                    type="button"
+                    aria-pressed={active}
+                    className={`btn btn-xs ${active ? 'btn-primary' : 'btn-ghost'}`}
+                    onClick={() =>
+                      setSelectedCategory((prev) => (prev === cat.category ? 'all' : cat.category))
+                    }
+                  >
+                    {cat.shortLabel} ({fmtCount(cat.tasks)})
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {/* Retroactive Impact Distribution Strip */}
+          {impacts.total > 0 ? (
+            <div className="pv-p8-impact-strip" aria-label="Retroactive impact distribution">
+              <span className="pv-p7-jur-label">Impact scope:</span>
+              {impacts.items
+                .filter((imp) => imp.count > 0)
+                .map((imp) => (
+                  <span key={imp.key} className={imp.chipClass}>
+                    {imp.shortLabel}: <strong className="tabular">{fmtCount(imp.count)}</strong>
+                  </span>
+                ))}
+            </div>
+          ) : null}
+
+          {hasActiveFilters ? (
+            <div className="pv-p8-active-filters">
+              <span>
+                Active filters:{' '}
+                {[
+                  selectedTier !== 'all' ? p8TierLabel(selectedTier) : null,
+                  selectedJurisdiction !== 'all'
+                    ? formatJurisdictionLabel(selectedJurisdiction)
+                    : null,
+                  selectedCategory !== 'all' ? p8CategoryLabel(selectedCategory) : null,
+                  selectedMechanism !== 'all' ? p8MechanismLabel(selectedMechanism) : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={resetAllFilters}>
+                <RotateCcw size={11} aria-hidden="true" />
+                <span>Reset all filters</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Two-Column Split: Union + State/UT Breakdown + How to Read This */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Union, States &amp; UTs ({fmtCount(jurisdictions.length)})</h3>
+            <span className="pv-chart-note">
+              Click a jurisdiction to filter schemes &amp; leads below
+            </span>
+          </div>
+
+          {jurisdictions.length > 0 ? (
+            <>
+              <div className="pv-p6-ministry-controls">
+                <div className="pv-p6-search-wrap">
+                  <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                  <input
+                    type="search"
+                    className="input-field pv-p6-search"
+                    value={jurisdictionQuery}
+                    onChange={(e) => setJurisdictionQuery(e.target.value)}
+                    placeholder={`Filter ${fmtCount(jurisdictions.length)} jurisdictions (Union, States, UTs)…`}
+                    aria-label="Filter Union, State, and UT jurisdictions"
+                  />
+                </div>
+                <div className="pv-p6-filter-pills" role="group" aria-label="Filter jurisdictions by tier">
+                  {(['all', 'union', 'state', 'ut'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={selectedTier === t}
+                      className={`btn btn-xs ${selectedTier === t ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => handleSelectTier(t)}
+                    >
+                      {t === 'all' ? 'All' : t === 'union' ? 'Union' : t === 'state' ? 'States' : 'UTs'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {visibleJurisdictions.length > 0 ? (
+                <div className="pv-ub-years-wrap">
+                  <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                    <caption className="pv-ub-caption">
+                      Scheme promise-vs-walk-back coverage across Union of India, States, and Union Territories.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Jurisdiction</th>
+                        <th scope="col">Tasks &amp; progress</th>
+                        <th scope="col" className="num">
+                          Leads / Cleared
+                        </th>
+                        <th scope="col" className="num">
+                          Queue
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleJurisdictions.map((j) => {
+                        const display = formatJurisdictionLabel(
+                          j.jurisdiction,
+                          j.state_or_ut,
+                          j.jurisdiction_level,
+                        );
+                        const lvl = (j.jurisdiction_level || 'union').toLowerCase();
+                        const total = Math.max(0, j.tasks);
+                        const done = Math.max(0, j.done ?? 0);
+                        const donePct = calcPct(done, total);
+                        const isSelected = selectedJurisdiction === j.jurisdiction;
+                        const queueToken = p8JurisdictionFilterQuery(j.jurisdiction, j.state_or_ut);
+                        const tierClass =
+                          lvl === 'state'
+                            ? 'p8-tier-chip--state'
+                            : lvl === 'ut'
+                              ? 'p8-tier-chip--ut'
+                              : 'p8-tier-chip--union';
+                        const segClass =
+                          lvl === 'state'
+                            ? 'pv-p8-seg--state'
+                            : lvl === 'ut'
+                              ? 'pv-p8-seg--ut'
+                              : 'pv-p8-seg--union';
+
+                        return (
+                          <tr
+                            key={j.jurisdiction}
+                            className="pv-p6-ministry-row--interactive"
+                            style={isSelected ? { background: 'var(--sunk)' } : undefined}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement | null;
+                              if (target?.closest('a, button')) return;
+                              setSelectedJurisdiction((prev) =>
+                                prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                              );
+                            }}
+                          >
+                            <th scope="row" className="pv-ub-year pv-p8-jur-name">
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  setSelectedJurisdiction((prev) =>
+                                    prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                                  )
+                                }
+                              >
+                                {display}
+                              </button>
+                              <span className="pv-ub-sub">
+                                <span className={`p8-tier-chip ${tierClass}`} style={{ fontSize: 10.5, padding: '0 6px' }}>
+                                  {lvl === 'union' ? 'Union' : lvl === 'ut' ? 'UT' : 'State'}
+                                </span>
+                              </span>
+                            </th>
+                            <td className="pv-ub-years-checked">
+                              <span
+                                className="pv-ub-bar"
+                                role="img"
+                                aria-label={`${display}: ${fmtCount(done)} of ${fmtCount(total)} tasks checked`}
+                              >
+                                {donePct > 0 ? (
+                                  <span
+                                    className={`pv-ub-bar-seg ${segClass}`}
+                                    style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                                  />
+                                ) : null}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                {fmtCount(total)} {total === 1 ? 'task' : 'tasks'} · {fmtCount(done)} checked ({fmtPct(donePct)})
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-lines" data-label="Leads / Cleared">
+                              <span className="pv-ub-cell-val">
+                                {fmtCount(j.leads)} {j.leads === 1 ? 'lead' : 'leads'}
+                              </span>
+                              <span className="pv-ub-sub">
+                                {(j.cleared ?? 0) > 0
+                                  ? `${fmtCount(j.cleared)} cleared`
+                                  : j.flagged_inr_cr && j.flagged_inr_cr > 0
+                                    ? formatInrCr(j.flagged_inr_cr)
+                                    : 'Documentary'}
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-below" data-label="Queue">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(queueToken)}
+                                  aria-label={`Filter task queue for ${display}`}
+                                >
+                                  Tasks →
+                                </button>
+                              ) : (
+                                <span className="pv-ub-sub">{fmtCount(total)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="pv-empty-box">
+                  No jurisdictions match &ldquo;{jurisdictionQuery || p8TierLabel(selectedTier)}&rdquo;.
+                </div>
+              )}
+
+              {jurisdictionQuery.trim().length === 0 &&
+              selectedTier === 'all' &&
+              filteredJurisdictions.length > P8_INITIAL_JURISDICTIONS ? (
+                <div className="pv-list-more">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllJurisdictions((v) => !v)}
+                  >
+                    {showAllJurisdictions
+                      ? `Show top ${P8_INITIAL_JURISDICTIONS} jurisdictions`
+                      : `Show all ${fmtCount(filteredJurisdictions.length)} jurisdictions`}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="pv-empty-box">
+              Union, State, and UT scheme coverage appears here once the hub loads the Sovereign Lies index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Every task downloads and SHA-256-verifies both the <strong>original launch notification,
+            statute, or scheme guideline</strong> and the <strong>subsequent amendment, circular,
+            Finance Act, or CAG/Parliamentary record</strong>. If any official file fails hash verification
+            or lacks the required verbatim evidence tokens, the check fails closed as{' '}
+            {FINDING_TAGS.not_enough_data.label}.
+          </p>
+          <p>
+            Schemes whose launch commitments were honored or where existing subscribers were explicitly
+            grandfathered intact are published as {FINDING_TAGS.cleared.label} with equal standing
+            alongside documented walk-back leads.
+          </p>
+          <p>
+            Every record uses strictly neutral documentary framing under <strong>BNS Sec 356</strong>,
+            recording concrete lawful explanations (statutory parliamentary authority, fiscal
+            sustainability, arbitrage prevention, or budgetary reprioritisation), and requires three
+            independent peer verifications before reaching {FINDING_TAGS.verified.label}.
+          </p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Scheme sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P8_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p8?.generated_on ? (
+            <p className="pv-chart-note">
+              Sovereign Lies index built {p8.generated_on}
+              {p8.as_of_date && p8.as_of_date !== p8.generated_on ? ` · as of ${p8.as_of_date}` : ''}.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Interactive Tracked Schemes Explorer */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>
+            Tracked schemes ({fmtCount(filteredSchemes.length)}
+            {filteredSchemes.length !== topSchemes.length
+              ? ` of ${fmtCount(topSchemes.length)}`
+              : ''}
+            )
+          </h3>
+          <span className="pv-chart-note">
+            Filter by jurisdiction, category, or mechanism — click any scheme to view its tasks
+          </span>
+        </div>
+
+        {topSchemes.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={schemeQuery}
+                  onChange={(e) => setSchemeQuery(e.target.value)}
+                  placeholder={`Search ${fmtCount(topSchemes.length)} schemes (e.g. Sovereign Gold Bond, FAME-II, Ladki Bahin, OPS)…`}
+                  aria-label="Search tracked Union and State schemes"
+                />
+              </div>
+              {hasActiveFilters || schemeQuery.trim().length > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => {
+                    resetAllFilters();
+                    setSchemeQuery('');
+                  }}
+                >
+                  <RotateCcw size={11} aria-hidden="true" />
+                  <span>Reset</span>
+                </button>
+              ) : null}
+            </div>
+
+            {visibleSchemes.length > 0 ? (
+              <div className="table-wrap pv-ub-leads-wrap">
+                <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                  <caption className="pv-ub-caption">
+                    Indian Union and State/UT government schemes indexed in Project 8 with launch-promise vs. walk-back classification.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Scheme &amp; Jurisdiction</th>
+                      <th scope="col">Category</th>
+                      <th scope="col">Mechanism &amp; Impact</th>
+                      <th scope="col" className="num">
+                        Tasks / Leads
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleSchemes.map((s) => {
+                      const mech = formatWalkbackMechanism(s.walkback_mechanism);
+                      const imp = formatRetroactiveImpact(s.retroactive_impact);
+                      const cat = formatSchemeCategory(s.scheme_category);
+                      const jur = formatJurisdictionLabel(
+                        s.jurisdiction,
+                        s.state_or_ut,
+                        s.jurisdiction_level,
+                      );
+                      const filterQ = p8SchemeFilterQuery(s.scheme_name);
+
+                      return (
+                        <tr key={`${s.scheme_slug}-${s.jurisdiction}`}>
+                          <td className="pv-ub-line pv-p8-scheme-col">
+                            {onFilterTasks ? (
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                onClick={() => onFilterTasks(filterQ)}
+                              >
+                                {s.scheme_name}
+                              </button>
+                            ) : (
+                              <span>{s.scheme_name}</span>
+                            )}
+                            <span className="pv-ub-sub">
+                              {jur}
+                              {s.is_sgb_anchor ? (
+                                <>
+                                  {' · '}
+                                  <span className="p8-sgb-chip" style={{ fontSize: 10.5, padding: '0 6px' }}>
+                                    SGB Anchor
+                                  </span>
+                                </>
+                              ) : null}
+                            </span>
+                          </td>
+                          <td data-label="Category">
+                            <span className="tag-mono">{cat.label}</span>
+                          </td>
+                          <td data-label="Mechanism & impact">
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              <span className={mech.chipClass}>{mech.label}</span>
+                              <span className={imp.chipClass}>{imp.shortLabel}</span>
+                            </div>
+                          </td>
+                          <td className="num tabular" data-label="Tasks / Leads">
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(s.tasks)} {s.tasks === 1 ? 'task' : 'tasks'}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(s.leads)} {s.leads === 1 ? 'lead' : 'leads'}
+                              {(s.cleared ?? 0) > 0 ? ` · ${fmtCount(s.cleared)} cleared` : ''}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No tracked schemes match the current filter combination.
+              </div>
+            )}
+
+            {schemeQuery.trim().length === 0 &&
+            !hasActiveFilters &&
+            filteredSchemes.length > P8_INITIAL_SCHEMES ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllSchemes((v) => !v)}
+                >
+                  {showAllSchemes
+                    ? `Show top ${P8_INITIAL_SCHEMES} schemes`
+                    : `Show all ${fmtCount(filteredSchemes.length)} schemes`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Scheme-by-scheme coverage appears here once the hub loads the Sovereign Lies corpus index.
+          </div>
+        )}
+      </div>
+
+      {/* Reported Promise-vs-Walk-Back Leads Table */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>
+            Promise-vs-walk-back leads reported so far
+            {hasActiveFilters && topLeads.length > 0
+              ? ` (${fmtCount(filteredLeads.length)} matching filters)`
+              : ''}
+          </h3>
+          {filteredLeads.length > 0 ? (
+            <span className="pv-chart-note">
+              Original launch promise vs. subsequent statutory revision with SHA-256 provenance
+            </span>
+          ) : null}
+        </div>
+        {filteredLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                Verified and in-review scheme promise-vs-walk-back dossiers.
+                {onSelectFinding
+                  ? ' Open any row to read the full two-column documentary dossier, citations, and lawful benign explanations.'
+                  : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Scheme &amp; Authority</th>
+                  <th scope="col">Jurisdiction &amp; Timeline</th>
+                  <th scope="col">Mechanism &amp; Metric Delta</th>
+                  <th scope="col">Promise vs. Walk-Back</th>
+                  <th scope="col">Audit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const mech = formatWalkbackMechanism(lead.walkback_mechanism || lead.signal_category);
+                  const imp = lead.retroactive_impact
+                    ? formatRetroactiveImpact(lead.retroactive_impact)
+                    : null;
+                  const jur = formatJurisdictionLabel(
+                    lead.jurisdiction,
+                    lead.state_or_ut,
+                    lead.jurisdiction_level,
+                  );
+
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line pv-p8-lead-scheme">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.scheme_name}
+                            {lead.tranche_or_phase ? ` · ${lead.tranche_or_phase}` : ''}
+                          </button>
+                        ) : (
+                          <span>
+                            {lead.scheme_name}
+                            {lead.tranche_or_phase ? ` · ${lead.tranche_or_phase}` : ''}
+                          </span>
+                        )}
+                        <span className="pv-ub-sub">
+                          {lead.is_sgb_anchor ? (
+                            <>
+                              <span className="p8-sgb-chip" style={{ fontSize: 10.5, padding: '0 6px' }}>
+                                SGB Anchor
+                              </span>{' '}
+                            </>
+                          ) : null}
+                          {lead.entity_name || lead.title}
+                        </span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="Jurisdiction & timeline">
+                        <span>{jur}</span>
+                        <span className="pv-ub-sub">
+                          {lead.promise_date || '—'}
+                          {lead.walkback_date ? ` → ${lead.walkback_date}` : ''}
+                          {lead.days_from_promise_to_walkback != null
+                            ? ` (${fmtCount(lead.days_from_promise_to_walkback)}d)`
+                            : ''}
+                        </span>
+                      </td>
+                      <td data-label="Mechanism & delta">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <span className={mech.chipClass}>{mech.shortLabel}</span>
+                          {imp?.isRetroactive ? (
+                            <span className={imp.chipClass}>{imp.shortLabel}</span>
+                          ) : null}
+                        </div>
+                        {lead.promised_metric || lead.revised_metric ? (
+                          <span className="pv-ub-sub tabular">
+                            {lead.promised_metric || 'Launch'} → {lead.revised_metric || 'Revised'}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="pv-p8-lead-compare" data-label="Promise vs. walk-back">
+                        <div className="pv-p6-excerpt">
+                          <strong>Promise:</strong> {p8ShortText(lead.promise_summary, 110)}
+                        </div>
+                        <div className="pv-p6-excerpt pv-p6-excerpt--followup">
+                          <strong>{mech.isCleared ? 'Status:' : 'Walk-back:'}</strong>{' '}
+                          {p8ShortText(lead.walkback_summary, 110)}
+                        </div>
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            {hasActiveFilters && topLeads.length > 0
+              ? 'No reported leads match the active explorer filters. Reset filters above to view all leads.'
+              : 'Scheme promise-vs-walk-back leads appear here as contributor agents verify tasks. Every entry cites the official launch notification, subsequent amendment, SHA-256 digests, and lawful benign explanations.'}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3I. P9 Auditing Government Exams: 3-year schedule vs. conduct audit across Union & State/UT exams ---------- */
+
+const P9_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/auditing-government-exams/METHODOLOGY.md';
+export const P9_DEFAULT_HOOK =
+  'Out of 1,000 Indian government exams scheduled over the past 3 years, how many happened flawlessly — and how many were delayed, postponed, rescheduled, or cancelled after students sat?';
+const P9_INITIAL_ANCHORS = 4;
+const P9_INITIAL_JURISDICTIONS = 12;
+const P9_INITIAL_AUTHORITIES = 12;
+const P9_INITIAL_LEADS = 15;
+
+export type P9TierKey = 'union' | 'state' | 'ut';
+
+export type P9DisruptionKey =
+  | 'cancelled_after_conduct'
+  | 'postponed'
+  | 'rescheduled'
+  | 'delayed'
+  | 'cancelled_before_conduct'
+  | 'partial_reexam_or_glitch'
+  | 'flawless_conduct';
+
+export type P9JurisdictionSortKey = 'not_flawless' | 'rate' | 'cancelled_after' | 'tasks' | 'name';
+
+export interface P9NormalizedHeadline {
+  totalAudited: number;
+  notFlawlessCount: number;
+  flawlessCount: number;
+  notFlawlessRatePct: number;
+  flawlessRatePct: number;
+  cancelledAfterConduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelledBeforeConduct: number;
+  partialReexamOrGlitch: number;
+  documentedAffectedCandidatesTotal: number;
+}
+
+export interface P9NormalizedDisruption {
+  key: P9DisruptionKey;
+  label: string;
+  shortLabel: string;
+  ruleCode: string;
+  chipClass: string;
+  fillClass: string;
+  isCleared: boolean;
+  tasks: number;
+  done: number;
+  leads: number;
+  cleared: number;
+  sharePct: number;
+  documentedAffectedCandidates: number;
+}
+
+export interface P9NormalizedTier {
+  key: P9TierKey;
+  label: string;
+  shortLabel: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  notFlawless: number;
+  flawless: number;
+  cancelledAfterConduct: number;
+}
+
+export interface P9NormalizedYear {
+  year: string;
+  yearNum: number;
+  tasks: number;
+  done: number;
+  leads: number;
+  notFlawless: number;
+  flawless: number;
+  notFlawlessPct: number;
+  flawlessPct: number;
+  cancelledAfterConduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelledBeforeConduct: number;
+  partialReexamOrGlitch: number;
+}
+
+export function p9Plural(n: number, singular: string, plural?: string): string {
+  const word = n === 1 ? singular : (plural ?? `${singular}s`);
+  return `${fmtCount(n)} ${word}`;
+}
+
+export function p9TierLabel(tier: string): string {
+  const k = (tier || '').trim().toLowerCase();
+  if (k === 'union' || k === 'central') return 'Union of India';
+  if (k === 'state' || k === 'states') return 'States';
+  if (k === 'ut' || k === 'uts' || k === 'union_territory') return 'Union Territories';
+  return tier || 'Jurisdiction';
+}
+
+export function p9DisruptionLabel(disruption: string): string {
+  if ((disruption || '').trim().toLowerCase() === 'not_flawless') {
+    return 'Did Not Happen Flawlessly';
+  }
+  return formatExamDisruption(disruption).label;
+}
+
+export function p9AuthorityTypeLabel(authorityType: string): string {
+  return formatExamAuthorityType(authorityType).label;
+}
+
+export function p9ExamCategoryLabel(category: string): string {
+  return formatExamCategory(category).label;
+}
+
+export function p9ReasonLabel(reason: string): string {
+  return formatExamDisruptionReason(reason).label;
+}
+
+/** Exact jurisdiction prefix token matching P9 task titles without substring collisions (e.g. Goa vs Goal). */
+export function p9JurisdictionFilterQuery(
+  jurisdiction?: string | null,
+  stateOrUt?: string | null,
+): string {
+  const cleanState = (stateOrUt || '').trim();
+  if (cleanState) return `${cleanState} ·`;
+  const cleanJur = (jurisdiction || '').trim();
+  if (!cleanJur) return '';
+  if (/^state:/i.test(cleanJur)) {
+    const name = cleanJur.slice(6).trim();
+    return name ? `${name} ·` : '';
+  }
+  if (/^ut:/i.test(cleanJur)) {
+    const name = cleanJur.slice(3).trim();
+    return name ? `${name} ·` : '';
+  }
+  return `${cleanJur} ·`;
+}
+
+/** Clear active jurisdiction filter if switching to a tier that excludes it. */
+export function p9ReconcileJurisdictionForTier(
+  selectedJurisdiction: string,
+  nextTier: 'all' | P9TierKey,
+  jurisdictions: VisualExamJurisdiction[],
+): string {
+  if (!selectedJurisdiction || selectedJurisdiction === 'all' || nextTier === 'all') {
+    return selectedJurisdiction;
+  }
+  const matched = jurisdictions.find((j) => j.jurisdiction === selectedJurisdiction);
+  if (matched) {
+    return (matched.jurisdiction_level || '').trim().toLowerCase() === nextTier
+      ? selectedJurisdiction
+      : 'all';
+  }
+  const lower = selectedJurisdiction.trim().toLowerCase();
+  const inferredTier: P9TierKey = lower.startsWith('state:')
+    ? 'state'
+    : lower.startsWith('ut:')
+      ? 'ut'
+      : 'union';
+  return inferredTier === nextTier ? selectedJurisdiction : 'all';
+}
+
+export function p9NormalizeDisruptions(
+  byDisruptionType?: Record<string, VisualExamDisruptionBucket | number> | null,
+  headlineCounts?: VisualExamHeadlineCounts | null,
+): {
+  items: P9NormalizedDisruption[];
+  totalTasks: number;
+  totalLeads: number;
+  notFlawlessTasks: number;
+  flawlessTasks: number;
+} {
+  const ordered: Array<{
+    key: P9DisruptionKey;
+    fillClass: string;
+    headlineFallback: number;
+  }> = [
+    {
+      key: 'cancelled_after_conduct',
+      fillClass: 'pv-p9-fill--cancelled-after',
+      headlineFallback: Math.max(0, Number(headlineCounts?.cancelled_after_conduct) || 0),
+    },
+    {
+      key: 'postponed',
+      fillClass: 'pv-p9-fill--postponed',
+      headlineFallback: Math.max(0, Number(headlineCounts?.postponed) || 0),
+    },
+    {
+      key: 'rescheduled',
+      fillClass: 'pv-p9-fill--rescheduled',
+      headlineFallback: Math.max(0, Number(headlineCounts?.rescheduled) || 0),
+    },
+    {
+      key: 'delayed',
+      fillClass: 'pv-p9-fill--delayed',
+      headlineFallback: Math.max(0, Number(headlineCounts?.delayed) || 0),
+    },
+    {
+      key: 'cancelled_before_conduct',
+      fillClass: 'pv-p9-fill--cancelled-before',
+      headlineFallback: Math.max(0, Number(headlineCounts?.cancelled_before_conduct) || 0),
+    },
+    {
+      key: 'partial_reexam_or_glitch',
+      fillClass: 'pv-p9-fill--glitch',
+      headlineFallback: Math.max(0, Number(headlineCounts?.partial_reexam_or_glitch) || 0),
+    },
+    {
+      key: 'flawless_conduct',
+      fillClass: 'pv-p9-fill--flawless',
+      headlineFallback: Math.max(0, Number(headlineCounts?.flawless_count) || 0),
+    },
+  ];
+
+  const rows = ordered.map(({ key, fillClass, headlineFallback }) => {
+    const raw = byDisruptionType?.[key];
+    let tasks = 0;
+    let done = 0;
+    let leads = 0;
+    let cleared = 0;
+    let explicitPct: number | null = null;
+    let documentedAffectedCandidates = 0;
+
+    if (typeof raw === 'number') {
+      tasks = Math.max(0, raw);
+    } else if (raw && typeof raw === 'object') {
+      tasks = Math.max(0, Number(raw.tasks) || 0);
+      done = Math.max(0, Number(raw.done) || 0);
+      leads = Math.max(0, Number(raw.leads) || 0);
+      cleared = Math.max(0, Number(raw.cleared) || 0);
+      if (raw.pct != null && Number.isFinite(Number(raw.pct))) {
+        explicitPct = Math.max(0, Number(raw.pct));
+      }
+      documentedAffectedCandidates = Math.max(
+        0,
+        Number(raw.documented_affected_candidates) || 0,
+      );
+    }
+
+    if (tasks === 0 && headlineFallback > 0) {
+      tasks = headlineFallback;
+    }
+
+    const meta = formatExamDisruption(key);
+    return {
+      key,
+      label:
+        raw && typeof raw === 'object' && raw.label?.trim() ? raw.label.trim() : meta.label,
+      shortLabel: meta.shortLabel,
+      ruleCode:
+        raw && typeof raw === 'object' && raw.rule?.trim() ? raw.rule.trim() : meta.ruleCode,
+      chipClass: meta.chipClass,
+      fillClass,
+      isCleared: meta.isCleared,
+      tasks,
+      done,
+      leads,
+      cleared,
+      explicitPct,
+      documentedAffectedCandidates,
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P9NormalizedDisruption[] = rows.map((r) => ({
+    key: r.key,
+    label: r.label,
+    shortLabel: r.shortLabel,
+    ruleCode: r.ruleCode,
+    chipClass: r.chipClass,
+    fillClass: r.fillClass,
+    isCleared: r.isCleared,
+    tasks: r.tasks,
+    done: r.done,
+    leads: r.leads,
+    cleared: r.cleared,
+    sharePct:
+      r.explicitPct != null && (r.tasks > 0 || r.leads > 0)
+        ? r.explicitPct
+        : calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+    documentedAffectedCandidates: r.documentedAffectedCandidates,
+  }));
+
+  const flawlessTasks = items.find((i) => i.key === 'flawless_conduct')?.tasks ?? 0;
+  const notFlawlessTasks = Math.max(0, totalTasks - flawlessTasks);
+
+  return { items, totalTasks, totalLeads, notFlawlessTasks, flawlessTasks };
+}
+
+export function p9NormalizeHeadline(
+  p9?: VisualAuditingGovernmentExams | null,
+  fallbackTotalTasks = 0,
+): P9NormalizedHeadline {
+  const hc = p9?.headline_counts;
+  const disruptions = p9NormalizeDisruptions(p9?.by_disruption_type, hc);
+  const byKey = new Map(disruptions.items.map((item) => [item.key, item.tasks]));
+
+  const cancelledAfterConduct = Math.max(
+    0,
+    Number(hc?.cancelled_after_conduct ?? byKey.get('cancelled_after_conduct') ?? 0),
+  );
+  const postponed = Math.max(0, Number(hc?.postponed ?? byKey.get('postponed') ?? 0));
+  const rescheduled = Math.max(0, Number(hc?.rescheduled ?? byKey.get('rescheduled') ?? 0));
+  const delayed = Math.max(0, Number(hc?.delayed ?? byKey.get('delayed') ?? 0));
+  const cancelledBeforeConduct = Math.max(
+    0,
+    Number(hc?.cancelled_before_conduct ?? byKey.get('cancelled_before_conduct') ?? 0),
+  );
+  const partialReexamOrGlitch = Math.max(
+    0,
+    Number(hc?.partial_reexam_or_glitch ?? byKey.get('partial_reexam_or_glitch') ?? 0),
+  );
+  const flawlessCount = Math.max(
+    0,
+    Number(hc?.flawless_count ?? byKey.get('flawless_conduct') ?? 0),
+  );
+
+  const summedDisrupted =
+    cancelledAfterConduct +
+    postponed +
+    rescheduled +
+    delayed +
+    cancelledBeforeConduct +
+    partialReexamOrGlitch;
+  const notFlawlessCount = Math.max(0, Number(hc?.not_flawless_count ?? summedDisrupted));
+  const totalAudited = Math.max(
+    0,
+    Number(
+      hc?.total_audited ??
+        (notFlawlessCount + flawlessCount > 0
+          ? notFlawlessCount + flawlessCount
+          : (p9?.total_tasks ?? fallbackTotalTasks)),
+    ),
+  );
+
+  const notFlawlessRatePct =
+    hc?.not_flawless_rate_pct != null && Number.isFinite(Number(hc.not_flawless_rate_pct))
+      ? Math.max(0, Number(hc.not_flawless_rate_pct))
+      : calcPct(notFlawlessCount, totalAudited);
+  const flawlessRatePct =
+    hc?.flawless_rate_pct != null && Number.isFinite(Number(hc.flawless_rate_pct))
+      ? Math.max(0, Number(hc.flawless_rate_pct))
+      : calcPct(flawlessCount, totalAudited);
+
+  const documentedAffectedCandidatesTotal = Math.max(
+    0,
+    Number(hc?.documented_affected_candidates_total) || 0,
+  );
+
+  return {
+    totalAudited,
+    notFlawlessCount,
+    flawlessCount,
+    notFlawlessRatePct,
+    flawlessRatePct,
+    cancelledAfterConduct,
+    postponed,
+    rescheduled,
+    delayed,
+    cancelledBeforeConduct,
+    partialReexamOrGlitch,
+    documentedAffectedCandidatesTotal,
+  };
+}
+
+export function p9NormalizeTiers(
+  byTier?: Record<string, VisualExamTierCounts | number> | null,
+): {
+  union: P9NormalizedTier;
+  state: P9NormalizedTier;
+  ut: P9NormalizedTier;
+  totalTasks: number;
+  totalDone: number;
+  totalLeads: number;
+  totalCleared: number;
+  totalNotFlawless: number;
+  totalFlawless: number;
+} {
+  const readTier = (key: P9TierKey, shortLabel: string, aliases: string[]): P9NormalizedTier => {
+    let raw: VisualExamTierCounts | number | undefined;
+    for (const [k, v] of Object.entries(byTier || {})) {
+      const norm = k.trim().toLowerCase().replace(/[\s-]+/g, '_');
+      if (aliases.includes(norm)) {
+        raw = v;
+        break;
+      }
+    }
+    if (typeof raw === 'number') {
+      const tasks = Math.max(0, raw);
+      return {
+        key,
+        label: p9TierLabel(key),
+        shortLabel,
+        tasks,
+        done: 0,
+        claimed: 0,
+        open: tasks,
+        pct: 0,
+        leads: 0,
+        cleared: 0,
+        notFlawless: 0,
+        flawless: 0,
+        cancelledAfterConduct: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    const tasks = Math.max(0, Number(obj?.tasks) || 0);
+    const done = Math.max(0, Number(obj?.done) || 0);
+    const claimed = Math.max(0, Number(obj?.claimed) || 0);
+    const open =
+      obj?.open != null ? Math.max(0, Number(obj.open) || 0) : Math.max(0, tasks - done - claimed);
+    const pct =
+      obj?.pct != null && Number.isFinite(Number(obj.pct))
+        ? Math.max(0, Number(obj.pct))
+        : calcPct(done, tasks);
+    return {
+      key,
+      label: p9TierLabel(key),
+      shortLabel,
+      tasks,
+      done,
+      claimed,
+      open,
+      pct,
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+      notFlawless: Math.max(0, Number(obj?.not_flawless) || 0),
+      flawless: Math.max(0, Number(obj?.flawless) || 0),
+      cancelledAfterConduct: Math.max(0, Number(obj?.cancelled_after_conduct) || 0),
+    };
+  };
+
+  const union = readTier('union', 'Union', ['union', 'central', 'union_of_india']);
+  const state = readTier('state', 'States', ['state', 'states']);
+  const ut = readTier('ut', 'UTs', ['ut', 'uts', 'union_territory', 'union_territories']);
+
+  return {
+    union,
+    state,
+    ut,
+    totalTasks: union.tasks + state.tasks + ut.tasks,
+    totalDone: union.done + state.done + ut.done,
+    totalLeads: union.leads + state.leads + ut.leads,
+    totalCleared: union.cleared + state.cleared + ut.cleared,
+    totalNotFlawless: union.notFlawless + state.notFlawless + ut.notFlawless,
+    totalFlawless: union.flawless + state.flawless + ut.flawless,
+  };
+}
+
+export function p9NormalizeYears(byYear?: VisualExamYear[] | null): P9NormalizedYear[] {
+  if (!Array.isArray(byYear)) return [];
+  return byYear
+    .map((row) => {
+      const yearNum = Number(row.year) || 0;
+      const tasks = Math.max(0, Number(row.tasks) || 0);
+      const notFlawless = Math.max(0, Number(row.not_flawless) || 0);
+      const flawless = Math.max(0, Number(row.flawless) || 0);
+      const denom = tasks > 0 ? tasks : notFlawless + flawless;
+      return {
+        year: String(row.year),
+        yearNum,
+        tasks: denom,
+        done: Math.max(0, Number(row.done) || 0),
+        leads: Math.max(0, Number(row.leads) || 0),
+        notFlawless,
+        flawless,
+        notFlawlessPct: calcPct(notFlawless, denom),
+        flawlessPct: calcPct(flawless, denom),
+        cancelledAfterConduct: Math.max(0, Number(row.cancelled_after_conduct) || 0),
+        postponed: Math.max(0, Number(row.postponed) || 0),
+        rescheduled: Math.max(0, Number(row.rescheduled) || 0),
+        delayed: Math.max(0, Number(row.delayed) || 0),
+        cancelledBeforeConduct: Math.max(0, Number(row.cancelled_before_conduct) || 0),
+        partialReexamOrGlitch: Math.max(0, Number(row.partial_reexam_or_glitch) || 0),
+      };
+    })
+    .sort((a, b) => a.yearNum - b.yearNum || a.year.localeCompare(b.year));
+}
+
+export function p9FilterAndSortJurisdictions(
+  jurisdictions: VisualExamJurisdiction[],
+  query: string,
+  tierFilter: 'all' | P9TierKey = 'all',
+  sortBy: P9JurisdictionSortKey = 'not_flawless',
+): VisualExamJurisdiction[] {
+  const q = query.trim().toLowerCase();
+  const filtered = jurisdictions.filter((j) => {
+    const lvl = (j.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl !== tierFilter) return false;
+    if (!q) return true;
+    const display = formatJurisdictionLabel(j.jurisdiction, j.state_or_ut, j.jurisdiction_level);
+    return (
+      j.jurisdiction.toLowerCase().includes(q) ||
+      (j.state_or_ut || '').toLowerCase().includes(q) ||
+      display.toLowerCase().includes(q) ||
+      lvl.includes(q)
+    );
+  });
+
+  const rateOf = (j: VisualExamJurisdiction) =>
+    j.not_flawless_rate_pct != null && Number.isFinite(j.not_flawless_rate_pct)
+      ? j.not_flawless_rate_pct
+      : calcPct(j.not_flawless, j.tasks);
+
+  return [...filtered].sort((a, b) => {
+    if (sortBy === 'rate') {
+      return (
+        rateOf(b) - rateOf(a) ||
+        b.not_flawless - a.not_flawless ||
+        b.tasks - a.tasks ||
+        a.jurisdiction.localeCompare(b.jurisdiction)
+      );
+    }
+    if (sortBy === 'cancelled_after') {
+      return (
+        b.cancelled_after_conduct - a.cancelled_after_conduct ||
+        b.not_flawless - a.not_flawless ||
+        b.tasks - a.tasks ||
+        a.jurisdiction.localeCompare(b.jurisdiction)
+      );
+    }
+    if (sortBy === 'tasks') {
+      return (
+        b.tasks - a.tasks ||
+        b.not_flawless - a.not_flawless ||
+        a.jurisdiction.localeCompare(b.jurisdiction)
+      );
+    }
+    if (sortBy === 'name') {
+      const la = formatJurisdictionLabel(a.jurisdiction, a.state_or_ut, a.jurisdiction_level);
+      const lb = formatJurisdictionLabel(b.jurisdiction, b.state_or_ut, b.jurisdiction_level);
+      return la.localeCompare(lb);
+    }
+    return (
+      b.not_flawless - a.not_flawless ||
+      b.tasks - a.tasks ||
+      a.jurisdiction.localeCompare(b.jurisdiction)
+    );
+  });
+}
+
+export function p9FilterAuthorities(
+  authorities: VisualExamAuthority[],
+  query: string,
+  tierFilter: 'all' | P9TierKey = 'all',
+  authorityTypeFilter = 'all',
+  jurisdictionFilter = 'all',
+): VisualExamAuthority[] {
+  const q = query.trim().toLowerCase();
+  const at = authorityTypeFilter.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+
+  return authorities.filter((a) => {
+    const lvl = (a.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl !== tierFilter) return false;
+    if (at && at !== 'all' && (a.authority_type || '').trim().toLowerCase() !== at) return false;
+    if (jur && jur !== 'all' && (a.jurisdiction || '').trim().toLowerCase() !== jur) return false;
+    if (!q) return true;
+    const jurDisplay = formatJurisdictionLabel(a.jurisdiction, null, a.jurisdiction_level);
+    return (
+      a.authority.toLowerCase().includes(q) ||
+      (a.authority_key || '').toLowerCase().includes(q) ||
+      a.jurisdiction.toLowerCase().includes(q) ||
+      jurDisplay.toLowerCase().includes(q) ||
+      formatExamAuthorityType(a.authority_type).label.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p9FilterLeads(
+  leads: VisualExamLead[],
+  query: string,
+  disruptionFilter = 'all',
+  tierFilter: 'all' | P9TierKey = 'all',
+  jurisdictionFilter = 'all',
+  authorityTypeFilter = 'all',
+  yearFilter = 'all',
+): VisualExamLead[] {
+  const q = query.trim().toLowerCase();
+  const dis = disruptionFilter.trim().toLowerCase();
+  const jur = jurisdictionFilter.trim().toLowerCase();
+  const at = authorityTypeFilter.trim().toLowerCase();
+  const yr = yearFilter.trim();
+
+  return leads.filter((l) => {
+    const disruptionKey = formatExamDisruption(l.disruption_type || l.signal_category).key;
+    if (dis === 'not_flawless') {
+      if (disruptionKey === 'flawless_conduct') return false;
+    } else if (dis && dis !== 'all' && disruptionKey !== dis) {
+      return false;
+    }
+
+    const lvl = (l.jurisdiction_level || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && lvl && lvl !== tierFilter) return false;
+
+    if (jur && jur !== 'all' && (l.jurisdiction || '').trim().toLowerCase() !== jur) return false;
+
+    if (at && at !== 'all' && (l.authority_type || '').trim().toLowerCase() !== at) return false;
+
+    if (yr && yr !== 'all' && String(l.exam_year) !== yr) return false;
+
+    if (!q) return true;
+    const jurDisplay = formatJurisdictionLabel(l.jurisdiction, l.state_or_ut, l.jurisdiction_level);
+    return (
+      l.exam_name.toLowerCase().includes(q) ||
+      (l.title || '').toLowerCase().includes(q) ||
+      (l.authority || '').toLowerCase().includes(q) ||
+      (l.cycle_or_stage || '').toLowerCase().includes(q) ||
+      (l.case_key || '').toLowerCase().includes(q) ||
+      l.jurisdiction.toLowerCase().includes(q) ||
+      jurDisplay.toLowerCase().includes(q) ||
+      (l.schedule_summary || '').toLowerCase().includes(q) ||
+      (l.outcome_summary || '').toLowerCase().includes(q) ||
+      (l.schedule_document_ref || '').toLowerCase().includes(q) ||
+      (l.outcome_document_ref || '').toLowerCase().includes(q) ||
+      formatExamDisruption(l.disruption_type).label.toLowerCase().includes(q) ||
+      formatExamDisruptionReason(l.disruption_reason_category).label.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p9LeadStatusMeta(status?: string | null): {
+  label: string;
+  badgeClass: string;
+  description: string;
+} {
+  const s = (status || '').trim().toLowerCase();
+  if (s === 'corpus_queued' || s === 'queued') {
+    return {
+      label: 'Queued in corpus',
+      badgeClass: TASK_TAGS.open.badgeClass,
+      description:
+        'Indexed in the SHA-256-pinned P9 exam corpus and open for deterministic agent execution & 3-agent peer verification.',
+    };
+  }
+  const tag = getFindingTag(status);
+  return {
+    label: tag.label,
+    badgeClass: tag.badgeClass,
+    description: tag.description,
+  };
+}
+
+function p9ShortText(text?: string | null, maxLen = 135): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+export function AuditingGovernmentExamsVisualiser({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p9 = visualSummary?.auditing_government_exams;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [selectedDisruption, setSelectedDisruption] = useState<string>('all');
+  const [selectedTier, setSelectedTier] = useState<'all' | P9TierKey>('all');
+  const [selectedJurisdiction, setSelectedJurisdiction] = useState<string>('all');
+  const [selectedAuthorityType, setSelectedAuthorityType] = useState<string>('all');
+  const [selectedYear, setSelectedYear] = useState<string>('all');
+  const [jurisdictionQuery, setJurisdictionQuery] = useState('');
+  const [jurisdictionSort, setJurisdictionSort] = useState<P9JurisdictionSortKey>('not_flawless');
+  const [showAllJurisdictions, setShowAllJurisdictions] = useState(false);
+  const [authorityQuery, setAuthorityQuery] = useState('');
+  const [showAllAuthorities, setShowAllAuthorities] = useState(false);
+  const [showAllAnchors, setShowAllAnchors] = useState(false);
+  const [ledgerQuery, setLedgerQuery] = useState('');
+  const [showAllLeads, setShowAllLeads] = useState(false);
+
+  const hook = p9?.hook?.trim() || P9_DEFAULT_HOOK;
+  const totalTasks = p9?.total_tasks ?? mission.total_tasks ?? 0;
+  const auditWindowLabel = p9?.audit_window?.label || 'Nov 2023 – Nov 2026 (3 years)';
+  const uniqueExamsCovered = p9?.unique_exams_covered ?? 0;
+  const uniqueAuthoritiesCovered =
+    p9?.unique_authorities_covered ?? p9?.top_authorities?.length ?? 0;
+  const uniqueDocumentsCount = p9?.unique_documents_count ?? 0;
+  const jurisdictions = p9?.jurisdictions ?? [];
+  const statesAndUtsCovered =
+    p9?.states_and_uts_covered ??
+    jurisdictions.filter((j) => (j.jurisdiction_level || '').toLowerCase() !== 'union').length;
+
+  const publishedLeads = p9?.published_leads ?? 0;
+  const verified = p9?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p9?.peer_review ?? mission.peer_review_count ?? 0;
+  const clearedTasks = p9?.cleared_tasks ?? mission.cleared_tasks_count ?? 0;
+  const leadsSource = p9?.leads_source ?? (publishedLeads > 0 ? 'live' : 'corpus_fallback');
+  const isCorpusFallback = leadsSource === 'corpus_fallback';
+
+  const topAuthorities = p9?.top_authorities ?? [];
+  const authorityTypes = p9?.by_authority_type ?? [];
+  const activeAuthorityTypes = authorityTypes.filter((at) => at.tasks > 0);
+  const examCategories = p9?.by_exam_category ?? [];
+  const reasonCategories = p9?.by_reason_category ?? [];
+  const anchorCases: VisualExamAnchorCase[] = p9?.anchor_cases ?? [];
+  const allLeads = p9?.leads ?? [];
+  const dryRun = p9?.dry_run_summary ?? null;
+
+  const documentsUrl = p9?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p9?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const headline = useMemo(() => p9NormalizeHeadline(p9, totalTasks), [p9, totalTasks]);
+  const disruptions = useMemo(
+    () => p9NormalizeDisruptions(p9?.by_disruption_type, p9?.headline_counts),
+    [p9?.by_disruption_type, p9?.headline_counts],
+  );
+  const tiers = useMemo(
+    () => p9NormalizeTiers(p9?.by_jurisdiction_level),
+    [p9?.by_jurisdiction_level],
+  );
+  const years = useMemo(() => p9NormalizeYears(p9?.by_year), [p9?.by_year]);
+
+  const filteredJurisdictions = useMemo(
+    () =>
+      p9FilterAndSortJurisdictions(jurisdictions, jurisdictionQuery, selectedTier, jurisdictionSort),
+    [jurisdictions, jurisdictionQuery, selectedTier, jurisdictionSort],
+  );
+  const visibleJurisdictions =
+    showAllJurisdictions || jurisdictionQuery.trim().length > 0 || selectedTier !== 'all'
+      ? filteredJurisdictions
+      : filteredJurisdictions.slice(0, P9_INITIAL_JURISDICTIONS);
+
+  const filteredAuthorities = useMemo(
+    () =>
+      p9FilterAuthorities(
+        topAuthorities,
+        authorityQuery,
+        selectedTier,
+        selectedAuthorityType,
+        selectedJurisdiction,
+      ),
+    [
+      topAuthorities,
+      authorityQuery,
+      selectedTier,
+      selectedAuthorityType,
+      selectedJurisdiction,
+    ],
+  );
+  const visibleAuthorities =
+    showAllAuthorities ||
+    authorityQuery.trim().length > 0 ||
+    selectedTier !== 'all' ||
+    selectedAuthorityType !== 'all' ||
+    selectedJurisdiction !== 'all'
+      ? filteredAuthorities
+      : filteredAuthorities.slice(0, P9_INITIAL_AUTHORITIES);
+
+  const visibleAnchors = showAllAnchors
+    ? anchorCases
+    : anchorCases.slice(0, P9_INITIAL_ANCHORS);
+
+  const filteredLeads = useMemo(
+    () =>
+      p9FilterLeads(
+        allLeads,
+        ledgerQuery,
+        selectedDisruption,
+        selectedTier,
+        selectedJurisdiction,
+        selectedAuthorityType,
+        selectedYear,
+      ),
+    [
+      allLeads,
+      ledgerQuery,
+      selectedDisruption,
+      selectedTier,
+      selectedJurisdiction,
+      selectedAuthorityType,
+      selectedYear,
+    ],
+  );
+  const visibleLeads = showAllLeads
+    ? filteredLeads
+    : filteredLeads.slice(0, P9_INITIAL_LEADS);
+
+  const hasActiveFilters =
+    selectedDisruption !== 'all' ||
+    selectedTier !== 'all' ||
+    selectedJurisdiction !== 'all' ||
+    selectedAuthorityType !== 'all' ||
+    selectedYear !== 'all' ||
+    ledgerQuery.trim().length > 0;
+
+  const handleSelectTier = (nextTier: 'all' | P9TierKey) => {
+    setSelectedTier(nextTier);
+    setSelectedJurisdiction((prev) =>
+      p9ReconcileJurisdictionForTier(prev, nextTier, jurisdictions),
+    );
+  };
+
+  const resetAllFilters = () => {
+    setSelectedDisruption('all');
+    setSelectedTier('all');
+    setSelectedJurisdiction('all');
+    setSelectedAuthorityType('all');
+    setSelectedYear('all');
+    setLedgerQuery('');
+  };
+
+  const tierDenominator = tiers.totalTasks || totalTasks;
+  const unionPct = calcPct(tiers.union.tasks, tierDenominator);
+  const statePct = calcPct(tiers.state.tasks, tierDenominator);
+  const utPct = calcPct(tiers.ut.tasks, tierDenominator);
+
+  const candidatesCompactTotal = formatCandidateCountCompact(
+    headline.documentedAffectedCandidatesTotal,
+  );
+
+  const calloutCounters: Array<{
+    key: P9DisruptionKey;
+    label: string;
+    sub: string;
+    count: number;
+    cardClass: string;
+  }> = [
+    {
+      key: 'cancelled_after_conduct',
+      label: 'Took Exam, Then Cancelled',
+      sub: 'Students sat, then cancelled',
+      count: headline.cancelledAfterConduct,
+      cardClass: 'pv-p9-counter--cancelled-after',
+    },
+    {
+      key: 'postponed',
+      label: 'Postponed',
+      sub: 'Deferred before conduct',
+      count: headline.postponed,
+      cardClass: 'pv-p9-counter--postponed',
+    },
+    {
+      key: 'rescheduled',
+      label: 'Rescheduled',
+      sub: 'Moved to revised dates',
+      count: headline.rescheduled,
+      cardClass: 'pv-p9-counter--rescheduled',
+    },
+    {
+      key: 'delayed',
+      label: 'Delayed',
+      sub: 'Cycle or schedule slip',
+      count: headline.delayed,
+      cardClass: 'pv-p9-counter--delayed',
+    },
+    {
+      key: 'cancelled_before_conduct',
+      label: 'Cancelled Before Conduct',
+      sub: 'Withdrawn pre-exam',
+      count: headline.cancelledBeforeConduct,
+      cardClass: 'pv-p9-counter--cancelled-before',
+    },
+    {
+      key: 'partial_reexam_or_glitch',
+      label: 'Glitch / Partial Re-Exam',
+      sub: 'CBT glitch or center re-test',
+      count: headline.partialReexamOrGlitch,
+      cardClass: 'pv-p9-counter--glitch',
+    },
+    {
+      key: 'flawless_conduct',
+      label: 'Conducted Flawlessly (Cleared)',
+      sub: 'Held on schedule as notified',
+      count: headline.flawlessCount,
+      cardClass: 'pv-p9-counter--flawless',
+    },
+  ];
+
+  const tierCards: Array<{
+    bucket: P9NormalizedTier;
+    pct: number;
+    btnClass: string;
+    desc: string;
+  }> = [
+    {
+      bucket: tiers.union,
+      pct: unionPct,
+      btnClass: 'pv-p8-tier-btn--union',
+      desc: 'NTA, UPSC, SSC, RRB, NBEMS, IBPS, Defence & IITs',
+    },
+    {
+      bucket: tiers.state,
+      pct: statePct,
+      btnClass: 'pv-p8-tier-btn--state',
+      desc: 'All 28 States — State PSCs, Police, Teacher & Entrance Boards',
+    },
+    {
+      bucket: tiers.ut,
+      pct: utPct,
+      btnClass: 'pv-p8-tier-btn--ut',
+      desc: 'All 8 Union Territories — DSSSB, JKPSC, JKSSB & UT Boards',
+    },
+  ];
+
+  return (
+    <section
+      className="card card-pad pv-results"
+      aria-label="Auditing Government Exams 3-year reliability scorecard"
+    >
+      {/* Header + Summary Pills */}
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label} · {auditWindowLabel}
+          </span>
+          <h2 className="pv-results-title">
+            Auditing Government Exams: 3-Year Reliability Scorecard
+          </h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">{p9Plural(totalTasks, 'exam task')}</span>
+          {uniqueExamsCovered > 0 ? (
+            <span className="tag-mono">{p9Plural(uniqueExamsCovered, 'unique exam')}</span>
+          ) : null}
+          {uniqueAuthoritiesCovered > 0 ? (
+            <span className="tag-mono">
+              {p9Plural(uniqueAuthoritiesCovered, 'authority', 'authorities')}
+            </span>
+          ) : null}
+          {statesAndUtsCovered > 0 ? (
+            <span className="tag-mono">
+              Union + {fmtCount(statesAndUtsCovered)} States &amp; UTs
+            </span>
+          ) : null}
+          {uniqueDocumentsCount > 0 ? (
+            <span className="tag-mono">{p9Plural(uniqueDocumentsCount, 'pinned document')}</span>
+          ) : null}
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+          {clearedTasks > 0 ? (
+            <span className={FINDING_TAGS.cleared.badgeClass}>
+              {fmtCount(clearedTasks)} {FINDING_TAGS.cleared.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 1. 3-YEAR EXAM RELIABILITY SCORECARD (HEADLINE HERO) */}
+      <div className="pv-p9-scorecard">
+        <div className="pv-p9-hero-split">
+          <button
+            type="button"
+            aria-pressed={selectedDisruption === 'not_flawless'}
+            className="pv-p9-hero-tile pv-p9-hero-tile--disrupted"
+            onClick={() =>
+              setSelectedDisruption((prev) =>
+                prev === 'not_flawless' ? 'all' : 'not_flawless',
+              )
+            }
+          >
+            <div className="pv-p9-hero-top">
+              <span className="pv-overview-kicker">Did Not Happen Flawlessly</span>
+              <span className="pv-p9-hero-rate pv-p9-hero-rate--disrupted tabular">
+                {fmtPct(headline.notFlawlessRatePct)}
+              </span>
+            </div>
+            <div className="pv-p9-hero-num tabular">
+              {fmtCount(headline.notFlawlessCount)}
+              <span className="pv-p9-hero-denom">
+                {' '}
+                / {p9Plural(headline.totalAudited, 'exam')}
+              </span>
+            </div>
+            <p className="pv-overview-sub tabular">
+              Postponed, rescheduled, delayed, glitch/re-exam, or cancelled (before or after conduct)
+              {candidatesCompactTotal
+                ? ` · ${candidatesCompactTotal} affected candidates documented in official notices`
+                : ''}
+            </p>
+          </button>
+
+          <button
+            type="button"
+            aria-pressed={selectedDisruption === 'flawless_conduct'}
+            className="pv-p9-hero-tile pv-p9-hero-tile--flawless"
+            onClick={() =>
+              setSelectedDisruption((prev) =>
+                prev === 'flawless_conduct' ? 'all' : 'flawless_conduct',
+              )
+            }
+          >
+            <div className="pv-p9-hero-top">
+              <span className="pv-overview-kicker">Happened Flawlessly (Cleared)</span>
+              <span className="pv-p9-hero-rate pv-p9-hero-rate--flawless tabular">
+                {fmtPct(headline.flawlessRatePct)}
+              </span>
+            </div>
+            <div className="pv-p9-hero-num tabular">
+              {fmtCount(headline.flawlessCount)}
+              <span className="pv-p9-hero-denom">
+                {' '}
+                / {p9Plural(headline.totalAudited, 'exam')}
+              </span>
+            </div>
+            <p className="pv-overview-sub tabular">
+              Verified benchmark cohort conducted on schedule without documented cancellation, postponement, or re-exam
+            </p>
+          </button>
+        </div>
+
+        {/* Full-Width Disrupted vs. Flawless Progress Bar */}
+        {headline.totalAudited > 0 ? (
+          <div className="pv-p9-reliability-wrap">
+            <div
+              className="pv-p9-reliability-bar"
+              role="img"
+              aria-label={`Out of ${fmtCount(headline.totalAudited)} audited government exams: ${fmtCount(headline.notFlawlessCount)} did not happen flawlessly (${fmtPct(headline.notFlawlessRatePct)}) and ${fmtCount(headline.flawlessCount)} happened flawlessly (${fmtPct(headline.flawlessRatePct)}).`}
+            >
+              {headline.notFlawlessRatePct > 0 ? (
+                <span
+                  className="pv-p9-rel-seg pv-p9-rel-seg--disrupted"
+                  style={{ width: `${Math.min(100, headline.notFlawlessRatePct)}%` }}
+                  title={`Did not happen flawlessly: ${fmtCount(headline.notFlawlessCount)} (${fmtPct(headline.notFlawlessRatePct)})`}
+                />
+              ) : null}
+              {headline.flawlessRatePct > 0 ? (
+                <span
+                  className="pv-p9-rel-seg pv-p9-rel-seg--flawless"
+                  style={{ width: `${Math.min(100, headline.flawlessRatePct)}%` }}
+                  title={`Happened flawlessly (Cleared): ${fmtCount(headline.flawlessCount)} (${fmtPct(headline.flawlessRatePct)})`}
+                />
+              ) : null}
+            </div>
+            <div className="pv-p9-reliability-legend tabular">
+              <span>
+                <i className="pv-dot pv-p9-dot--disrupted" aria-hidden="true" /> Disrupted:{' '}
+                <strong>{fmtCount(headline.notFlawlessCount)}</strong> (
+                {fmtPct(headline.notFlawlessRatePct)})
+              </span>
+              <span>
+                <i className="pv-dot pv-p9-dot--flawless" aria-hidden="true" /> Flawless (Cleared):{' '}
+                <strong>{fmtCount(headline.flawlessCount)}</strong> (
+                {fmtPct(headline.flawlessRatePct)})
+              </span>
+              {headline.documentedAffectedCandidatesTotal > 0 ? (
+                <span className="pv-p9-candidates-note">
+                  Documented candidates affected:{' '}
+                  <strong>
+                    {headline.documentedAffectedCandidatesTotal.toLocaleString('en-IN')}
+                  </strong>{' '}
+                  (officially cited notices only)
+                </span>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/* 7 Dedicated First-Class Callout Counters (Click to Filter Ledger) */}
+        <div
+          className="pv-p9-counter-grid"
+          role="group"
+          aria-label="Filter exam audit ledger by disruption category"
+        >
+          {calloutCounters.map((c) => {
+            const active = selectedDisruption === c.key;
+            const pct = calcPct(c.count, headline.totalAudited);
+            return (
+              <button
+                key={c.key}
+                type="button"
+                aria-pressed={active}
+                className={`pv-p9-counter-btn ${c.cardClass}`}
+                onClick={() =>
+                  setSelectedDisruption((prev) => (prev === c.key ? 'all' : c.key))
+                }
+              >
+                <span className="pv-p9-counter-label">{c.label}</span>
+                <span className="pv-p9-counter-num tabular">{fmtCount(c.count)}</span>
+                <span className="pv-p9-counter-sub tabular">
+                  {fmtPct(pct)} · {c.sub}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 2. FLAGSHIP ANCHOR CASES STRIP */}
+      {anchorCases.length > 0 ? (
+        <div className="pv-chart-card pv-p7-section-card">
+          <div className="pv-chart-subhead">
+            <h3>Flagship Anchor Exam Cases ({fmtCount(anchorCases.length)})</h3>
+            <span className="pv-chart-note">
+              Major documented post-exam cancellations, last-minute postponements &amp; reschedules with SHA-256-pinned official notices
+            </span>
+          </div>
+
+          <div className="pv-p9-anchor-grid">
+            {visibleAnchors.map((ac) => {
+              const disrupt = formatExamDisruption(ac.disruption_type);
+              const reason = ac.disruption_reason_category
+                ? formatExamDisruptionReason(ac.disruption_reason_category)
+                : null;
+              const jur = formatJurisdictionLabel(
+                ac.jurisdiction,
+                ac.state_or_ut,
+                ac.jurisdiction_level,
+              );
+              const delayLabel = formatExamDelaySpan(ac.delay_days);
+              const candCompact = formatCandidateCountCompact(ac.affected_candidates_count);
+              const primaryUrl = safeExternalUrl(ac.source_url);
+              const secondaryUrl = safeExternalUrl(ac.secondary_url);
+              const tierCls =
+                (ac.jurisdiction_level || 'union').toLowerCase() === 'state'
+                  ? 'p8-tier-chip--state'
+                  : (ac.jurisdiction_level || 'union').toLowerCase() === 'ut'
+                    ? 'p8-tier-chip--ut'
+                    : 'p8-tier-chip--union';
+
+              return (
+                <article key={ac.case_key} className="pv-p9-anchor-card">
+                  <div className="pv-p6-anchor-head">
+                    <div className="pv-p6-anchor-meta">
+                      <span className={disrupt.chipClass}>{disrupt.shortLabel}</span>
+                      {ac.students_took_exam_before_cancellation ? (
+                        <span className="p9-sat-chip">Sat, then cancelled</span>
+                      ) : null}
+                      <span className={`p8-tier-chip ${tierCls}`}>{jur}</span>
+                      <span className="tag-mono tabular">{String(ac.exam_year)}</span>
+                      {reason && reason.key !== 'none_flawless' ? (
+                        <span className={reason.chipClass}>{reason.shortLabel}</span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <h4 className="pv-p9-anchor-title">
+                    {ac.exam_name}
+                    {ac.cycle_or_stage ? ` · ${ac.cycle_or_stage}` : ''}
+                  </h4>
+                  <p className="pv-p9-anchor-meta-line">
+                    <strong>{ac.authority}</strong>
+                    {ac.scheduled_date ? (
+                      <>
+                        {' · '}
+                        <span className="font-mono tabular">
+                          {ac.scheduled_date}
+                          {ac.actual_or_event_date && ac.actual_or_event_date !== ac.scheduled_date
+                            ? ` → ${ac.actual_or_event_date}`
+                            : ''}
+                          {!disrupt.isCleared && delayLabel && (ac.delay_days ?? 0) > 0
+                            ? ` (+${delayLabel})`
+                            : ''}
+                        </span>
+                      </>
+                    ) : null}
+                    {candCompact ? (
+                      <>
+                        {' · '}
+                        <span
+                          className="tabular"
+                          title={ac.affected_candidates_basis || 'Officially documented candidates'}
+                        >
+                          {candCompact} candidates
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
+
+                  <div className="pv-p9-anchor-compare">
+                    <div className="pv-p9-anchor-col pv-p9-anchor-col--schedule">
+                      <span className="fc-p8-col-kicker">Original Schedule</span>
+                      <p className="fc-p8-col-text">{p9ShortText(ac.schedule_summary, 115)}</p>
+                    </div>
+                    <div
+                      className={`pv-p9-anchor-col ${
+                        disrupt.isCleared
+                          ? 'pv-p9-anchor-col--flawless'
+                          : 'pv-p9-anchor-col--outcome'
+                      }`}
+                    >
+                      <span className="fc-p8-col-kicker">
+                        {disrupt.isCleared ? 'Conducted Flawlessly' : 'What Actually Happened'}
+                      </span>
+                      <p className="fc-p8-col-text">{p9ShortText(ac.outcome_summary, 115)}</p>
+                    </div>
+                  </div>
+
+                  <div className="pv-p6-anchor-actions">
+                    {ac.finding_id && onSelectFinding ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => onSelectFinding(ac.finding_id!)}
+                      >
+                        Inspect exam dossier
+                      </button>
+                    ) : onFilterTasks ? (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-xs"
+                        onClick={() => onFilterTasks(ac.exam_name)}
+                      >
+                        Find in task queue
+                      </button>
+                    ) : null}
+                    {primaryUrl ? (
+                      <a
+                        className="inline-link"
+                        href={primaryUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Official notice{' '}
+                        <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                      </a>
+                    ) : null}
+                    {secondaryUrl && secondaryUrl !== primaryUrl ? (
+                      <a
+                        className="inline-link"
+                        href={secondaryUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Secondary notice{' '}
+                        <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                      </a>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {anchorCases.length > P9_INITIAL_ANCHORS ? (
+            <div className="pv-list-more">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowAllAnchors((v) => !v)}
+              >
+                {showAllAnchors
+                  ? `Show top ${P9_INITIAL_ANCHORS} anchor cases`
+                  : `Show all ${fmtCount(anchorCases.length)} anchor cases`}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* 3. INTERACTIVE DISRUPTION DISTRIBUTION + YEAR-OVER-YEAR (2023–2026) */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Disruption Type Distribution (7 Canonical Categories)</h3>
+            <span className="pv-chart-note">Click any bar to filter the exam ledger below</span>
+          </div>
+
+          <div className="pv-p8-mech-grid" role="group" aria-label="Disruption type distribution">
+            {disruptions.items.map((d) => {
+              const isSelected = selectedDisruption === d.key;
+              const candCompact = formatCandidateCountCompact(d.documentedAffectedCandidates);
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className={`pv-p8-mech-btn${d.isCleared ? ' pv-p8-mech-btn--cleared' : ''}`}
+                  onClick={() =>
+                    setSelectedDisruption((prev) => (prev === d.key ? 'all' : d.key))
+                  }
+                >
+                  <div className="pv-p7-signal-top">
+                    <span className={d.chipClass}>{d.label}</span>
+                    <span className="pv-p7-signal-count tabular">
+                      <strong>{p9Plural(d.tasks, 'exam')}</strong> ({fmtPct(d.sharePct)})
+                      {d.leads > 0 ? ` · ${p9Plural(d.leads, 'lead')}` : ''}
+                    </span>
+                  </div>
+                  <span className="pv-p7-signal-track" aria-hidden="true">
+                    <span
+                      className={`pv-p7-signal-fill ${d.fillClass}`}
+                      style={{ width: `${d.sharePct > 0 ? Math.max(3, d.sharePct) : 0}%` }}
+                    />
+                  </span>
+                  {candCompact ? (
+                    <span className="pv-ub-sub tabular">
+                      {candCompact} documented affected candidates
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          {reasonCategories.length > 0 ? (
+            <div className="pv-p8-impact-strip" aria-label="Documented disruption reason categories">
+              <span className="pv-p7-jur-label">Documented reasons:</span>
+              {reasonCategories
+                .filter((rc) => rc.tasks > 0)
+                .map((rc) => {
+                  const meta = formatExamDisruptionReason(rc.reason_category);
+                  return (
+                    <span key={rc.reason_category} className={meta.chipClass}>
+                      {rc.label || meta.shortLabel}:{' '}
+                      <strong className="tabular">{fmtCount(rc.tasks)}</strong>
+                    </span>
+                  );
+                })}
+            </div>
+          ) : null}
+
+          {examCategories.length > 0 ? (
+            <div className="pv-p8-impact-strip" aria-label="Audited exam categories">
+              <span className="pv-p7-jur-label">Exam sectors:</span>
+              {examCategories
+                .filter((ec) => ec.tasks > 0)
+                .map((ec) => {
+                  const meta = formatExamCategory(ec.exam_category);
+                  return (
+                    <span key={ec.exam_category} className="tag-mono tabular">
+                      {ec.label || meta.shortLabel}: <strong>{fmtCount(ec.tasks)}</strong> (
+                      {fmtCount(ec.not_flawless)} disrupted)
+                    </span>
+                  );
+                })}
+            </div>
+          ) : null}
+        </div>
+
+        {/* Year-over-Year Breakdown (2023–2026) */}
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>Year-over-Year Breakdown (2023 – 2026)</h3>
+            <span className="pv-chart-note">Click any year to filter the ledger</span>
+          </div>
+
+          {years.length > 0 ? (
+            <div className="pv-p9-years-list" role="group" aria-label="Filter by exam year">
+              {years.map((y) => {
+                const active = selectedYear === y.year;
+                return (
+                  <button
+                    key={y.year}
+                    type="button"
+                    aria-pressed={active}
+                    className="pv-p9-year-card"
+                    onClick={() =>
+                      setSelectedYear((prev) => (prev === y.year ? 'all' : y.year))
+                    }
+                  >
+                    <div className="pv-p9-year-top tabular">
+                      <span className="pv-p9-year-label font-mono">{y.year}</span>
+                      <span className="pv-p9-year-totals">
+                        <strong>{fmtCount(y.notFlawless)}</strong> disrupted ({fmtPct(y.notFlawlessPct)})
+                        {' · '}
+                        <span style={{ color: 'var(--ep-verified-fg)' }}>
+                          {fmtCount(y.flawless)} flawless
+                        </span>
+                        {' · '}
+                        {p9Plural(y.tasks, 'exam')}
+                      </span>
+                    </div>
+
+                    <div
+                      className="pv-p9-year-bar"
+                      role="img"
+                      aria-label={`${y.year}: ${fmtCount(y.notFlawless)} disrupted (${fmtPct(y.notFlawlessPct)}), ${fmtCount(y.flawless)} flawless (${fmtPct(y.flawlessPct)})`}
+                    >
+                      {y.notFlawlessPct > 0 ? (
+                        <span
+                          className="pv-p9-rel-seg pv-p9-rel-seg--disrupted"
+                          style={{ width: `${Math.min(100, y.notFlawlessPct)}%` }}
+                        />
+                      ) : null}
+                      {y.flawlessPct > 0 ? (
+                        <span
+                          className="pv-p9-rel-seg pv-p9-rel-seg--flawless"
+                          style={{ width: `${Math.min(100, y.flawlessPct)}%` }}
+                        />
+                      ) : null}
+                    </div>
+
+                    <div className="pv-p9-year-sub tabular">
+                      <span>Sat &amp; cancelled: {fmtCount(y.cancelledAfterConduct)}</span>
+                      <span>Postponed: {fmtCount(y.postponed)}</span>
+                      <span>Rescheduled: {fmtCount(y.rescheduled)}</span>
+                      <span>Delayed: {fmtCount(y.delayed)}</span>
+                      {y.cancelledBeforeConduct > 0 ? (
+                        <span>Pre-cancelled: {fmtCount(y.cancelledBeforeConduct)}</span>
+                      ) : null}
+                      {y.partialReexamOrGlitch > 0 ? (
+                        <span>Glitch/Re-exam: {fmtCount(y.partialReexamOrGlitch)}</span>
+                      ) : null}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="pv-empty-box">
+              Year-by-year exam reliability counts (2023–2026) appear here once the hub loads the P9 summary index.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 4. UNION vs. STATES vs. UTs COVERAGE TIER TOGGLE */}
+      {tiers.totalTasks > 0 ? (
+        <div className="pv-p7-cohort-panel">
+          <div className="pv-p7-cohort-head">
+            <h3>Jurisdiction Tier (Union vs. 28 States vs. 8 UTs — select to filter)</h3>
+            <div className="pv-mini-legend">
+              <span>
+                <i className="pv-dot pv-p8-dot--union" aria-hidden="true" /> Union
+              </span>
+              <span>
+                <i className="pv-dot pv-p8-dot--state" aria-hidden="true" /> States
+              </span>
+              <span>
+                <i className="pv-dot pv-p8-dot--ut" aria-hidden="true" /> UTs
+              </span>
+              {selectedTier !== 'all' ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => handleSelectTier('all')}
+                >
+                  <RotateCcw size={11} aria-hidden="true" />
+                  <span>All tiers</span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div
+            className="pv-p8-tier-bar"
+            role="img"
+            aria-label={`Jurisdiction split across ${fmtCount(tiers.totalTasks)} exam tasks: ${fmtCount(tiers.union.tasks)} Union (${fmtPct(unionPct)}), ${fmtCount(tiers.state.tasks)} States (${fmtPct(statePct)}), ${fmtCount(tiers.ut.tasks)} Union Territories (${fmtPct(utPct)})`}
+          >
+            {unionPct > 0 ? (
+              <span
+                className="pv-p8-seg pv-p8-seg--union"
+                style={{ width: `${unionPct}%` }}
+                title={`Union of India: ${p9Plural(tiers.union.tasks, 'exam')} (${fmtPct(unionPct)})`}
+              />
+            ) : null}
+            {statePct > 0 ? (
+              <span
+                className="pv-p8-seg pv-p8-seg--state"
+                style={{ width: `${statePct}%` }}
+                title={`States: ${p9Plural(tiers.state.tasks, 'exam')} (${fmtPct(statePct)})`}
+              />
+            ) : null}
+            {utPct > 0 ? (
+              <span
+                className="pv-p8-seg pv-p8-seg--ut"
+                style={{ width: `${utPct}%` }}
+                title={`Union Territories: ${p9Plural(tiers.ut.tasks, 'exam')} (${fmtPct(utPct)})`}
+              />
+            ) : null}
+          </div>
+
+          <div className="pv-p8-tier-cards" role="group" aria-label="Filter by jurisdiction tier">
+            {tierCards.map(({ bucket, pct, btnClass, desc }) => {
+              const isSelected = selectedTier === bucket.key;
+              return (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className={`pv-p7-cohort-btn ${btnClass}`}
+                  onClick={() =>
+                    handleSelectTier(selectedTier === bucket.key ? 'all' : bucket.key)
+                  }
+                >
+                  <span className="pv-p7-cohort-btn-top">
+                    <span className="pv-p7-cohort-name">{bucket.label}</span>
+                    <span className="pv-p7-cohort-share tabular">{fmtPct(pct)}</span>
+                  </span>
+                  <span className="pv-p7-cohort-num tabular">
+                    {p9Plural(bucket.tasks, 'exam')}
+                  </span>
+                  <span className="pv-p7-cohort-sub tabular">
+                    {fmtCount(bucket.notFlawless)} disrupted · {fmtCount(bucket.flawless)} flawless
+                    {bucket.cancelledAfterConduct > 0
+                      ? ` · ${fmtCount(bucket.cancelledAfterConduct)} sat & cancelled`
+                      : ''}
+                  </span>
+                  <span className="pv-p7-cohort-sub">{desc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* 5. ALL-INDIA 37-JURISDICTION BREAKDOWN + HOW TO READ THIS */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>
+              All-India Jurisdiction Breakdown ({fmtCount(filteredJurisdictions.length)}
+              {filteredJurisdictions.length !== jurisdictions.length
+                ? ` of ${fmtCount(jurisdictions.length)}`
+                : ''}
+              )
+            </h3>
+            <span className="pv-chart-note">
+              Union of India + 28 States + 8 UTs — click any row to filter authorities &amp; ledger
+            </span>
+          </div>
+
+          {jurisdictions.length > 0 ? (
+            <>
+              <div className="pv-p6-ministry-controls">
+                <div className="pv-p6-search-wrap">
+                  <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                  <input
+                    type="search"
+                    className="input-field pv-p6-search"
+                    value={jurisdictionQuery}
+                    onChange={(e) => setJurisdictionQuery(e.target.value)}
+                    placeholder={`Search ${fmtCount(jurisdictions.length)} jurisdictions (Union, States, UTs)…`}
+                    aria-label="Search Union, State, and UT exam jurisdictions"
+                  />
+                </div>
+                <select
+                  className="select-field pv-p9-sort-select"
+                  value={jurisdictionSort}
+                  onChange={(e) => setJurisdictionSort(e.target.value as P9JurisdictionSortKey)}
+                  aria-label="Sort jurisdictions"
+                >
+                  <option value="not_flawless">Sort: Most disrupted</option>
+                  <option value="rate">Sort: Disruption rate %</option>
+                  <option value="cancelled_after">Sort: Sat &amp; cancelled</option>
+                  <option value="tasks">Sort: Total exams</option>
+                  <option value="name">Sort: A–Z</option>
+                </select>
+                <div className="pv-p6-filter-pills" role="group" aria-label="Filter jurisdictions by tier">
+                  {(['all', 'union', 'state', 'ut'] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={selectedTier === t}
+                      className={`btn btn-xs ${selectedTier === t ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() => handleSelectTier(t)}
+                    >
+                      {t === 'all' ? 'All' : t === 'union' ? 'Union' : t === 'state' ? 'States' : 'UTs'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {visibleJurisdictions.length > 0 ? (
+                <div className="pv-ub-years-wrap">
+                  <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                    <caption className="pv-ub-caption">
+                      Government exam reliability across Union of India, 28 States, and 8 Union Territories (Nov 2023 – Nov 2026).
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Jurisdiction</th>
+                        <th scope="col">Disrupted vs. Flawless</th>
+                        <th scope="col" className="num">
+                          Breakdown
+                        </th>
+                        <th scope="col" className="num">
+                          Queue
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleJurisdictions.map((j) => {
+                        const display = formatJurisdictionLabel(
+                          j.jurisdiction,
+                          j.state_or_ut,
+                          j.jurisdiction_level,
+                        );
+                        const lvl = (j.jurisdiction_level || 'union').toLowerCase();
+                        const total = Math.max(0, j.tasks);
+                        const notFlawlessPct =
+                          j.not_flawless_rate_pct != null && Number.isFinite(j.not_flawless_rate_pct)
+                            ? j.not_flawless_rate_pct
+                            : calcPct(j.not_flawless, total);
+                        const flawlessPct = calcPct(j.flawless, total);
+                        const isSelected = selectedJurisdiction === j.jurisdiction;
+                        const queueToken = p9JurisdictionFilterQuery(
+                          j.jurisdiction,
+                          j.state_or_ut,
+                        );
+                        const tierClass =
+                          lvl === 'state'
+                            ? 'p8-tier-chip--state'
+                            : lvl === 'ut'
+                              ? 'p8-tier-chip--ut'
+                              : 'p8-tier-chip--union';
+
+                        return (
+                          <tr
+                            key={j.jurisdiction}
+                            className="pv-p6-ministry-row--interactive"
+                            style={isSelected ? { background: 'var(--sunk)' } : undefined}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement | null;
+                              if (target?.closest('a, button')) return;
+                              setSelectedJurisdiction((prev) =>
+                                prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                              );
+                            }}
+                          >
+                            <th scope="row" className="pv-ub-year pv-p8-jur-name">
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  setSelectedJurisdiction((prev) =>
+                                    prev === j.jurisdiction ? 'all' : j.jurisdiction,
+                                  )
+                                }
+                              >
+                                {display}
+                              </button>
+                              <span className="pv-ub-sub">
+                                <span
+                                  className={`p8-tier-chip ${tierClass}`}
+                                  style={{ fontSize: 10.5, padding: '0 6px' }}
+                                >
+                                  {lvl === 'union' ? 'Union' : lvl === 'ut' ? 'UT' : 'State'}
+                                </span>
+                                {' · '}
+                                {p9Plural(total, 'exam')}
+                              </span>
+                            </th>
+                            <td className="pv-ub-years-checked">
+                              <span
+                                className="pv-ub-bar pv-p9-dual-bar"
+                                role="img"
+                                aria-label={`${display}: ${fmtCount(j.not_flawless)} disrupted (${fmtPct(notFlawlessPct)}), ${fmtCount(j.flawless)} flawless (${fmtPct(flawlessPct)})`}
+                              >
+                                {notFlawlessPct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p9-rel-seg--disrupted"
+                                    style={{ width: `${Math.min(100, notFlawlessPct)}%` }}
+                                  />
+                                ) : null}
+                                {flawlessPct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p9-rel-seg--flawless"
+                                    style={{ width: `${Math.min(100, flawlessPct)}%` }}
+                                  />
+                                ) : null}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                <strong>{fmtCount(j.not_flawless)}</strong> disrupted (
+                                {fmtPct(notFlawlessPct)}) · {fmtCount(j.flawless)} flawless
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-lines" data-label="Breakdown">
+                              <span className="pv-ub-cell-val tabular">
+                                {j.cancelled_after_conduct > 0
+                                  ? `${fmtCount(j.cancelled_after_conduct)} sat & cancelled`
+                                  : j.not_flawless > 0
+                                    ? `${fmtCount(j.not_flawless)} disrupted`
+                                    : '0 disrupted'}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                {[
+                                  j.postponed > 0 ? `${fmtCount(j.postponed)} postp.` : null,
+                                  j.rescheduled > 0 ? `${fmtCount(j.rescheduled)} resch.` : null,
+                                  j.delayed > 0 ? `${fmtCount(j.delayed)} delayed` : null,
+                                  j.cancelled_before_conduct > 0
+                                    ? `${fmtCount(j.cancelled_before_conduct)} pre-cancel`
+                                    : null,
+                                  j.partial_reexam_or_glitch > 0
+                                    ? `${fmtCount(j.partial_reexam_or_glitch)} glitch`
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ') ||
+                                  (j.not_flawless === 0
+                                    ? 'No disruptions'
+                                    : 'Post-exam cancellation')}
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-below" data-label="Queue">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(queueToken)}
+                                  aria-label={`Filter task queue for ${display}`}
+                                >
+                                  Tasks →
+                                </button>
+                              ) : (
+                                <span className="pv-ub-sub">{fmtCount(total)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="pv-empty-box">
+                  No jurisdictions match &ldquo;{jurisdictionQuery || p9TierLabel(selectedTier)}&rdquo;.
+                </div>
+              )}
+
+              {jurisdictionQuery.trim().length === 0 &&
+              selectedTier === 'all' &&
+              filteredJurisdictions.length > P9_INITIAL_JURISDICTIONS ? (
+                <div className="pv-list-more">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllJurisdictions((v) => !v)}
+                  >
+                    {showAllJurisdictions
+                      ? `Show top ${P9_INITIAL_JURISDICTIONS} jurisdictions`
+                      : `Show all ${fmtCount(filteredJurisdictions.length)} jurisdictions`}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="pv-empty-box">
+              All-India Union, State, and UT examination breakdown appears here once the hub loads the P9 index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this audit</h3>
+          </div>
+          <p>
+            Every task downloads and SHA-256-verifies official examination schedules, calendars, and
+            subsequent public notices or parliamentary replies within the <strong>3-year window
+            ({auditWindowLabel})</strong>. If any official file fails hash checks or lacks verbatim
+            evidence tokens, the deterministic engine fails closed as{' '}
+            {FINDING_TAGS.not_enough_data.label}.
+          </p>
+          <p>
+            Examinations confirmed conducted on schedule without cancellation, postponement, or
+            partial re-exam are published as {FINDING_TAGS.cleared.label} with equal standing alongside
+            documented disruption leads.
+          </p>
+          <p>
+            All dossiers strictly follow <strong>BNS Sec 356</strong> factual neutrality and{' '}
+            <strong>DPDP Act 2023</strong> privacy rules — citing the{' '}
+            <strong>Public Examinations (Prevention of Unfair Means) Act, 2024</strong> and lawful
+            operational explanations (preventive integrity safeguards, Election Model Code of
+            Conduct, weather/disaster safety, CBT vendor incidents, or judicial stays). Candidate
+            counts are shown only when disclosed in cited official notices.
+          </p>
+          {dryRun ? (
+            <div className="pv-p9-dryrun-box tabular">
+              <strong>Deterministic Corpus Verification:</strong>{' '}
+              {p9Plural(dryRun.evaluated_tasks, 'task')} evaluated ·{' '}
+              {p9Plural(dryRun.flagged_leads, 'disruption lead')} ·{' '}
+              {fmtCount(dryRun.cleared_flawless)} flawless cleared ·{' '}
+              {fmtCount(dryRun.unevaluable)} unevaluable ·{' '}
+              {p9Plural(dryRun.verified_documents, 'verified document')}
+            </div>
+          ) : null}
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Exam sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P9_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p9?.generated_on ? (
+            <p className="pv-chart-note">
+              P9 exam corpus index built {p9.generated_on}
+              {p9.as_of_date && p9.as_of_date !== p9.generated_on
+                ? ` · as of ${p9.as_of_date}`
+                : ''}
+              .
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* 6. CONDUCTING AUTHORITY / AGENCY LEADERBOARD */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>
+            Conducting Authority &amp; Agency Leaderboard ({fmtCount(filteredAuthorities.length)}
+            {filteredAuthorities.length !== topAuthorities.length
+              ? ` of ${fmtCount(topAuthorities.length)}`
+              : ''}
+            )
+          </h3>
+          <span className="pv-chart-note">
+            NTA, UPSC, SSC, RRB, NBEMS, State PSCs &amp; Police Boards ranked by non-flawless exams
+          </span>
+        </div>
+
+        {activeAuthorityTypes.length > 0 ? (
+          <div
+            className="pv-p8-cat-pills"
+            style={{ marginBottom: 12 }}
+            role="group"
+            aria-label="Filter by conducting authority type"
+          >
+            <span className="pv-p7-jur-label">Authority type:</span>
+            <button
+              type="button"
+              aria-pressed={selectedAuthorityType === 'all'}
+              className={`btn btn-xs ${selectedAuthorityType === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setSelectedAuthorityType('all')}
+            >
+              All ({fmtCount(activeAuthorityTypes.length)})
+            </button>
+            {activeAuthorityTypes.map((at) => {
+              const active = selectedAuthorityType === at.authority_type;
+              const meta = formatExamAuthorityType(at.authority_type);
+              return (
+                <button
+                  key={at.authority_type}
+                  type="button"
+                  aria-pressed={active}
+                  className={`btn btn-xs ${active ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() =>
+                    setSelectedAuthorityType((prev) =>
+                      prev === at.authority_type ? 'all' : at.authority_type,
+                    )
+                  }
+                >
+                  {meta.shortLabel} ({fmtCount(at.tasks)})
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {topAuthorities.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={authorityQuery}
+                  onChange={(e) => setAuthorityQuery(e.target.value)}
+                  placeholder={`Search ${fmtCount(topAuthorities.length)} agencies (e.g. NTA, UPSC, SSC, RRB, UPPSC, BPSC)…`}
+                  aria-label="Search conducting authorities and exam boards"
+                />
+              </div>
+              {authorityQuery.trim().length > 0 || selectedAuthorityType !== 'all' ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => {
+                    setAuthorityQuery('');
+                    setSelectedAuthorityType('all');
+                  }}
+                >
+                  <RotateCcw size={11} aria-hidden="true" />
+                  <span>Reset agency filter</span>
+                </button>
+              ) : null}
+            </div>
+
+            {visibleAuthorities.length > 0 ? (
+              <div className="table-wrap pv-ub-leads-wrap">
+                <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                  <caption className="pv-ub-caption">
+                    Indian government exam conducting agencies ranked by non-flawless exam count over the past 3 years.
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Conducting Authority</th>
+                      <th scope="col">Jurisdiction &amp; Type</th>
+                      <th scope="col" className="num">
+                        Disrupted / Total
+                      </th>
+                      <th scope="col" className="num">
+                        Sat &amp; Cancelled
+                      </th>
+                      <th scope="col" className="num">
+                        Postp. / Resch. / Delay
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleAuthorities.map((a) => {
+                      const jur = formatJurisdictionLabel(
+                        a.jurisdiction,
+                        null,
+                        a.jurisdiction_level,
+                      );
+                      const atMeta = formatExamAuthorityType(a.authority_type);
+                      const rate =
+                        a.not_flawless_rate_pct != null && Number.isFinite(a.not_flawless_rate_pct)
+                          ? a.not_flawless_rate_pct
+                          : calcPct(a.not_flawless, a.tasks);
+                      return (
+                        <tr key={`${a.authority_key}-${a.jurisdiction}`}>
+                          <td className="pv-ub-line pv-p8-scheme-col">
+                            {onFilterTasks ? (
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                onClick={() => onFilterTasks(a.authority)}
+                              >
+                                {a.authority}
+                              </button>
+                            ) : (
+                              <span>{a.authority}</span>
+                            )}
+                            {a.documented_affected_candidates &&
+                            a.documented_affected_candidates > 0 ? (
+                              <span className="pv-ub-sub tabular">
+                                {formatCandidateCountCompact(a.documented_affected_candidates)}{' '}
+                                candidates documented
+                              </span>
+                            ) : null}
+                          </td>
+                          <td data-label="Jurisdiction & type">
+                            <span>{jur}</span>
+                            <span className="pv-ub-sub">{atMeta.shortLabel}</span>
+                          </td>
+                          <td className="num tabular" data-label="Disrupted / Total">
+                            <span className="pv-ub-cell-val">
+                              <strong>{fmtCount(a.not_flawless)}</strong> / {fmtCount(a.tasks)} (
+                              {fmtPct(rate)})
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(a.flawless)} flawless
+                              {a.leads > 0 ? ` · ${p9Plural(a.leads, 'lead')}` : ''}
+                            </span>
+                          </td>
+                          <td className="num tabular" data-label="Sat & cancelled">
+                            <span
+                              className={
+                                a.cancelled_after_conduct > 0
+                                  ? 'p9-disrupt p9-disrupt--cancelled-after'
+                                  : 'pv-ub-sub'
+                              }
+                            >
+                              {fmtCount(a.cancelled_after_conduct)}
+                            </span>
+                          </td>
+                          <td className="num tabular" data-label="Postp. / Resch. / Delay">
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(a.postponed)} / {fmtCount(a.rescheduled)} /{' '}
+                              {fmtCount(a.delayed)}
+                            </span>
+                            {a.cancelled_before_conduct > 0 || a.partial_reexam_or_glitch > 0 ? (
+                              <span className="pv-ub-sub">
+                                {[
+                                  a.cancelled_before_conduct > 0
+                                    ? `${fmtCount(a.cancelled_before_conduct)} pre-cancel`
+                                    : null,
+                                  a.partial_reexam_or_glitch > 0
+                                    ? `${fmtCount(a.partial_reexam_or_glitch)} glitch`
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </span>
+                            ) : null}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No conducting authorities match the active filter combination.
+              </div>
+            )}
+
+            {authorityQuery.trim().length === 0 &&
+            selectedTier === 'all' &&
+            selectedAuthorityType === 'all' &&
+            selectedJurisdiction === 'all' &&
+            filteredAuthorities.length > P9_INITIAL_AUTHORITIES ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllAuthorities((v) => !v)}
+                >
+                  {showAllAuthorities
+                    ? `Show top ${P9_INITIAL_AUTHORITIES} agencies`
+                    : `Show all ${fmtCount(filteredAuthorities.length)} agencies`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Agency-by-agency exam reliability leaderboard appears here once the hub loads the P9 index.
+          </div>
+        )}
+      </div>
+
+      {/* 7. FILTERABLE EXAM AUDIT LEDGER (LIVE LEADS + CORPUS FALLBACK) */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>
+            Exam Audit Ledger ({fmtCount(filteredLeads.length)}
+            {filteredLeads.length !== allLeads.length ? ` of ${fmtCount(allLeads.length)}` : ''})
+          </h3>
+          <span className="pv-chart-note">
+            {isCorpusFallback
+              ? 'Indexed corpus records (awaiting live swarm execution) — original schedule vs. conduct notice'
+              : 'Verified and in-review exam conduct dossiers with SHA-256 provenance'}
+          </span>
+        </div>
+
+        {isCorpusFallback && allLeads.length > 0 ? (
+          <div className="pv-p9-fallback-banner" role="status">
+            <strong>Corpus preview ledger:</strong> Live volunteer submissions have not been logged
+            for these tasks yet. Showing SHA-256-pinned non-flawless exam records from the indexed
+            1,000-exam corpus so citizens can inspect schedules, notices, and sources immediately.
+          </div>
+        ) : null}
+
+        {/* Multi-Axis Ledger Filter Bar */}
+        <div className="pv-p9-ledger-controls">
+          <div className="pv-p6-search-wrap">
+            <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+            <input
+              type="search"
+              className="input-field pv-p6-search"
+              value={ledgerQuery}
+              onChange={(e) => setLedgerQuery(e.target.value)}
+              placeholder="Search exam name, NTA/UPSC/SSC/PSC, State/UT, notice ref…"
+              aria-label="Search exam audit ledger"
+            />
+          </div>
+
+          <select
+            className="select-field pv-p9-filter-select"
+            value={selectedDisruption}
+            onChange={(e) => setSelectedDisruption(e.target.value)}
+            aria-label="Filter ledger by disruption type"
+          >
+            <option value="all">All outcomes</option>
+            <option value="not_flawless">Did Not Happen Flawlessly</option>
+            <option value="cancelled_after_conduct">Took Exam, Then Cancelled</option>
+            <option value="postponed">Postponed</option>
+            <option value="rescheduled">Rescheduled</option>
+            <option value="delayed">Delayed</option>
+            <option value="cancelled_before_conduct">Cancelled Before Conduct</option>
+            <option value="partial_reexam_or_glitch">Technical Glitch / Partial Re-Exam</option>
+            <option value="flawless_conduct">Conducted Flawlessly (Cleared)</option>
+          </select>
+
+          <select
+            className="select-field pv-p9-filter-select"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            aria-label="Filter ledger by exam year"
+          >
+            <option value="all">All years (2023–2026)</option>
+            {(years.length > 0 ? years.map((y) => y.year) : ['2023', '2024', '2025', '2026']).map(
+              (yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ),
+            )}
+          </select>
+
+          <select
+            className="select-field pv-p9-filter-select"
+            value={selectedAuthorityType}
+            onChange={(e) => setSelectedAuthorityType(e.target.value)}
+            aria-label="Filter ledger by authority type"
+          >
+            <option value="all">All authority types</option>
+            <option value="central_testing_agency">Central Testing Agency</option>
+            <option value="union_psc_or_recruitment">Union PSC / SSC</option>
+            <option value="railway_banking_psu">Railways, Banking &amp; PSU</option>
+            <option value="defence_medical_technical">Defence, Medical &amp; Tech</option>
+            <option value="state_psc">State PSC</option>
+            <option value="state_police_or_subordinate">State Police &amp; Subordinate</option>
+            <option value="state_teacher_or_entrance">State Teacher &amp; Entrance</option>
+            <option value="ut_recruitment_or_board">UT Recruitment Board</option>
+          </select>
+
+          {hasActiveFilters ? (
+            <button type="button" className="btn btn-ghost btn-xs" onClick={resetAllFilters}>
+              <RotateCcw size={11} aria-hidden="true" />
+              <span>Reset all</span>
+            </button>
+          ) : null}
+        </div>
+
+        {hasActiveFilters ? (
+          <div className="pv-p8-active-filters" style={{ marginBottom: 10 }}>
+            <span>
+              Active filters:{' '}
+              {[
+                selectedDisruption !== 'all' ? p9DisruptionLabel(selectedDisruption) : null,
+                selectedYear !== 'all' ? `Year ${selectedYear}` : null,
+                selectedTier !== 'all' ? p9TierLabel(selectedTier) : null,
+                selectedJurisdiction !== 'all'
+                  ? formatJurisdictionLabel(selectedJurisdiction)
+                  : null,
+                selectedAuthorityType !== 'all'
+                  ? p9AuthorityTypeLabel(selectedAuthorityType)
+                  : null,
+                ledgerQuery.trim() ? `“${ledgerQuery.trim()}”` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <button type="button" className="btn btn-ghost btn-xs" onClick={resetAllFilters}>
+              <RotateCcw size={11} aria-hidden="true" />
+              <span>Reset filters</span>
+            </button>
+          </div>
+        ) : null}
+
+        {visibleLeads.length > 0 ? (
+          <>
+            <div className="table-wrap pv-ub-leads-wrap">
+              <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                <caption className="pv-ub-caption">
+                  Government examination conduct ledger comparing original schedule against actual outcome with SHA-256-verified official notices.
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Exam &amp; Authority</th>
+                    <th scope="col">Jurisdiction &amp; Timeline</th>
+                    <th scope="col">Disruption &amp; Reason</th>
+                    <th scope="col">Schedule vs. Outcome</th>
+                    <th scope="col">Status &amp; Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleLeads.map((lead) => {
+                    const disrupt = formatExamDisruption(
+                      lead.disruption_type || lead.signal_category,
+                    );
+                    const reason =
+                      lead.disruption_reason_category &&
+                      lead.disruption_reason_category !== 'none_flawless'
+                        ? formatExamDisruptionReason(lead.disruption_reason_category)
+                        : null;
+                    const statusMeta = p9LeadStatusMeta(lead.status);
+                    const jur = formatJurisdictionLabel(
+                      lead.jurisdiction,
+                      lead.state_or_ut,
+                      lead.jurisdiction_level,
+                    );
+                    const candCompact = formatCandidateCountCompact(
+                      lead.affected_candidates_count,
+                    );
+                    const leadUrl = safeExternalUrl(lead.source_url);
+                    const leadSecUrl = safeExternalUrl(lead.secondary_url);
+                    const rowKey = lead.finding_id || lead.task_id || lead.case_key;
+
+                    return (
+                      <tr key={String(rowKey)}>
+                        <td className="pv-ub-line pv-p8-lead-scheme">
+                          {lead.finding_id && onSelectFinding ? (
+                            <button
+                              type="button"
+                              className="pv-ub-link"
+                              onClick={() => onSelectFinding(lead.finding_id!)}
+                            >
+                              {lead.exam_name}
+                              {lead.cycle_or_stage ? ` · ${lead.cycle_or_stage}` : ''}
+                            </button>
+                          ) : onFilterTasks ? (
+                            <button
+                              type="button"
+                              className="pv-ub-link"
+                              onClick={() => onFilterTasks(lead.exam_name)}
+                            >
+                              {lead.exam_name}
+                              {lead.cycle_or_stage ? ` · ${lead.cycle_or_stage}` : ''}
+                            </button>
+                          ) : (
+                            <span>
+                              {lead.exam_name}
+                              {lead.cycle_or_stage ? ` · ${lead.cycle_or_stage}` : ''}
+                            </span>
+                          )}
+                          <span className="pv-ub-sub">
+                            {lead.is_anchor_case ? (
+                              <>
+                                <span
+                                  className="p9-anchor-chip"
+                                  style={{ fontSize: 10.5, padding: '0 6px' }}
+                                >
+                                  Anchor
+                                </span>{' '}
+                              </>
+                            ) : null}
+                            {lead.authority}
+                          </span>
+                        </td>
+                        <td className="tabular pv-ub-lead-year" data-label="Jurisdiction & timeline">
+                          <span>
+                            {jur} · <span className="font-mono">{String(lead.exam_year)}</span>
+                          </span>
+                          <span className="pv-ub-sub">
+                            {lead.scheduled_date || '—'}
+                            {lead.actual_or_event_date &&
+                            lead.actual_or_event_date !== lead.scheduled_date
+                              ? ` → ${lead.actual_or_event_date}`
+                              : ''}
+                            {!disrupt.isCleared && lead.delay_days != null && lead.delay_days > 0
+                              ? ` (+${fmtCount(lead.delay_days)}d)`
+                              : ''}
+                          </span>
+                          {candCompact ? (
+                            <span
+                              className="pv-ub-sub"
+                              title={lead.affected_candidates_basis || 'Documented candidates'}
+                            >
+                              {candCompact} candidates
+                            </span>
+                          ) : null}
+                        </td>
+                        <td data-label="Disruption & reason">
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            <span className={disrupt.chipClass}>{disrupt.shortLabel}</span>
+                            {lead.students_took_exam_before_cancellation ? (
+                              <span className="p9-sat-chip">Sat, then cancelled</span>
+                            ) : null}
+                            {reason ? (
+                              <span className={reason.chipClass}>{reason.shortLabel}</span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="pv-p8-lead-compare" data-label="Schedule vs. outcome">
+                          <div className="pv-p6-excerpt">
+                            <strong>Scheduled:</strong> {p9ShortText(lead.schedule_summary, 105)}
+                          </div>
+                          <div className="pv-p6-excerpt pv-p6-excerpt--followup">
+                            <strong>{disrupt.isCleared ? 'Verified:' : 'Outcome:'}</strong>{' '}
+                            {p9ShortText(lead.outcome_summary, 105)}
+                          </div>
+                        </td>
+                        <td className="pv-ub-lead-status" data-label="Status & source">
+                          <span className={statusMeta.badgeClass} title={statusMeta.description}>
+                            {statusMeta.label}
+                          </span>
+                          {leadUrl || leadSecUrl ? (
+                            <div className="pv-ub-sub" style={{ marginTop: 4 }}>
+                              {leadUrl ? (
+                                <a
+                                  href={leadUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-link"
+                                >
+                                  Notice <ExternalLink size={10} aria-hidden="true" />
+                                </a>
+                              ) : null}
+                              {leadUrl && leadSecUrl && leadSecUrl !== leadUrl ? ' · ' : null}
+                              {leadSecUrl && leadSecUrl !== leadUrl ? (
+                                <a
+                                  href={leadSecUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-link"
+                                >
+                                  Notice 2 <ExternalLink size={10} aria-hidden="true" />
+                                </a>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredLeads.length > P9_INITIAL_LEADS ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllLeads((v) => !v)}
+                >
+                  {showAllLeads
+                    ? `Show first ${P9_INITIAL_LEADS} exams`
+                    : `Show all ${fmtCount(filteredLeads.length)} matching exams`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            {selectedDisruption === 'flawless_conduct' && headline.flawlessCount > 0
+              ? `${p9Plural(headline.flawlessCount, 'audited exam')} in the 3-year corpus passed as Conducted Flawlessly (Cleared). This ledger lists non-flawless disruption notices; reset filters above to view disruption records or browse the full task queue below.`
+              : hasActiveFilters && allLeads.length > 0
+                ? 'No audited exams match your active filter combination. Reset filters above to view all records.'
+                : 'Audited Indian government exam records appear here once the hub loads the P9 corpus or contributor agents submit verified results.'}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3I. P10 Innocent But Locked Up: post-acquittal custody overruns & contempt compliance ---------- */
+
+const P10_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/innocent-but-locked-up/METHODOLOGY.md';
+export const P10_DEFAULT_HOOK =
+  'The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed?';
+const P10_INITIAL_STATES = 12;
+const P10_INITIAL_COURTS = 12;
+const P10_INITIAL_PRISONS = 10;
+
+export type P10PortalCategoryKey =
+  | 'court_portal'
+  | 'prison_portal'
+  | 'police_portal'
+  | 'nhrc_shrc'
+  | 'nalsa_slsa'
+  | 'parliament'
+  | 'govt_ministry'
+  | 'cag_audit';
+
+export type P10CourtTierKey =
+  | 'supreme_court'
+  | 'high_court'
+  | 'district_court'
+  | 'statutory_body';
+
+export type P10ChainStatusKey =
+  | 'full_4_stage_chain'
+  | 'partial_3_stage'
+  | 'institutional_record'
+  | 'compliant_control';
+
+export type P10OverrunMechanismKey =
+  | 'post_acquittal_contempt_overrun'
+  | 'bail_or_release_order_contempt'
+  | 'warrant_or_faster_transmission_delay'
+  | 'statutory_commission_detention_finding'
+  | 'institutional_compliance_gap'
+  | 'timely_release_or_compliant';
+
+export interface P10NormalizedPortal {
+  portal_category: P10PortalCategoryKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  segClass: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  sharePct: number;
+}
+
+export interface P10NormalizedYear {
+  year: number;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  full_4_stage: number;
+  overrun_days: number;
+}
+
+export interface P10NormalizedCourtTier {
+  key: P10CourtTierKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  tasks: number;
+  done: number;
+  leads: number;
+  cleared: number;
+  sharePct: number;
+}
+
+export interface P10NormalizedMechanism {
+  key: P10OverrunMechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  fillClass: string;
+  isCleared: boolean;
+  tasks: number;
+  leads: number;
+  sharePct: number;
+}
+
+export interface P10NormalizedChainStatus {
+  key: P10ChainStatusKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  count: number;
+  sharePct: number;
+}
+
+export interface P10StageStep {
+  stage: 1 | 2 | 3 | 4;
+  kicker: string;
+  title: string;
+  verified: boolean;
+  date: string | null;
+  primary: string;
+  secondary: string | null;
+  badge: string | null;
+  quote: string | null;
+}
+
+export function p10PortalLabel(portal: string): string {
+  return formatPortalCategory(portal).label;
+}
+
+export function p10MechanismLabel(mechanism: string): string {
+  return formatCustodyOverrunMechanism(mechanism).label;
+}
+
+export function p10CourtTierLabel(tier: string): string {
+  return formatCourtTier(tier).label;
+}
+
+export function p10ChainStatusLabel(status: string): string {
+  return formatChainStatus(status).label;
+}
+
+export function p10StateFilterQuery(
+  stateUt?: string | null,
+  jurisdiction?: string | null,
+): string {
+  const cleanState = (stateUt || '').trim();
+  if (cleanState) return cleanState;
+  const cleanJur = (jurisdiction || '').trim();
+  if (!cleanJur) return '';
+  if (/^state:/i.test(cleanJur)) return cleanJur.slice(6).trim();
+  if (/^ut:/i.test(cleanJur)) return cleanJur.slice(3).trim();
+  return cleanJur;
+}
+
+export function p10NormalizePortals(
+  byPortal?:
+    | VisualInnocentButLockedUpPortal[]
+    | Record<string, VisualInnocentButLockedUpPortal | number>
+    | null,
+): {
+  items: P10NormalizedPortal[];
+  totalTasks: number;
+  totalLeads: number;
+} {
+  const ordered: Array<{ key: P10PortalCategoryKey; segClass: string }> = [
+    { key: 'court_portal', segClass: 'pv-p10-seg--court' },
+    { key: 'prison_portal', segClass: 'pv-p10-seg--prison' },
+    { key: 'police_portal', segClass: 'pv-p10-seg--police' },
+    { key: 'nhrc_shrc', segClass: 'pv-p10-seg--nhrc' },
+    { key: 'nalsa_slsa', segClass: 'pv-p10-seg--nalsa' },
+    { key: 'parliament', segClass: 'pv-p10-seg--parliament' },
+    { key: 'govt_ministry', segClass: 'pv-p10-seg--govt' },
+    { key: 'cag_audit', segClass: 'pv-p10-seg--cag' },
+  ];
+
+  const lookup = new Map<string, VisualInnocentButLockedUpPortal | number>();
+  if (Array.isArray(byPortal)) {
+    for (const item of byPortal) {
+      if (item && item.portal_category) {
+        lookup.set(item.portal_category.trim().toLowerCase().replace(/[\s-]+/g, '_'), item);
+      }
+    }
+  } else if (byPortal && typeof byPortal === 'object') {
+    for (const [k, v] of Object.entries(byPortal)) {
+      lookup.set(k.trim().toLowerCase().replace(/[\s-]+/g, '_'), v);
+    }
+  }
+
+  const rows = ordered.map(({ key, segClass }) => {
+    const raw = lookup.get(key);
+    const meta = formatPortalCategory(key);
+    if (typeof raw === 'number') {
+      const tasks = Math.max(0, raw);
+      return {
+        portal_category: key,
+        label: meta.label,
+        shortLabel: meta.shortLabel,
+        chipClass: meta.chipClass,
+        segClass,
+        tasks,
+        done: 0,
+        claimed: 0,
+        open: tasks,
+        pct: 0,
+        leads: 0,
+        cleared: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    const tasks = Math.max(0, Number(obj?.tasks) || 0);
+    const done = Math.max(0, Number(obj?.done) || 0);
+    const claimed = Math.max(0, Number(obj?.claimed) || 0);
+    const open =
+      obj?.open != null ? Math.max(0, Number(obj.open) || 0) : Math.max(0, tasks - done - claimed);
+    const pct =
+      obj?.pct != null && Number.isFinite(Number(obj.pct))
+        ? Math.max(0, Number(obj.pct))
+        : calcPct(done, tasks);
+    return {
+      portal_category: key,
+      label: obj?.label?.trim() || meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      segClass,
+      tasks,
+      done,
+      claimed,
+      open,
+      pct,
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P10NormalizedPortal[] = rows
+    .map((r) => ({
+      ...r,
+      sharePct: calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+    }))
+    .sort((a, b) => b.tasks - a.tasks || b.leads - a.leads);
+
+  return { items, totalTasks, totalLeads };
+}
+
+export function p10NormalizeYears(
+  byYear?: VisualInnocentButLockedUpYear[] | null,
+): P10NormalizedYear[] {
+  if (!Array.isArray(byYear)) return [];
+  return byYear
+    .map((y) => {
+      const yr = Number(y.year);
+      if (!Number.isFinite(yr) || yr < 2000) return null;
+      const tasks = Math.max(0, Number(y.tasks) || 0);
+      const done = Math.max(0, Number(y.done) || 0);
+      const claimed = Math.max(0, Number(y.claimed) || 0);
+      const open =
+        y.open != null ? Math.max(0, Number(y.open) || 0) : Math.max(0, tasks - done - claimed);
+      const pct =
+        y.pct != null && Number.isFinite(Number(y.pct))
+          ? Math.max(0, Number(y.pct))
+          : calcPct(done, tasks);
+      return {
+        year: yr,
+        tasks,
+        done,
+        claimed,
+        open,
+        pct,
+        leads: Math.max(0, Number(y.leads) || 0),
+        cleared: Math.max(0, Number(y.cleared) || 0),
+        full_4_stage: Math.max(0, Number(y.full_4_stage) || 0),
+        overrun_days: Math.max(0, Number(y.overrun_days) || 0),
+      };
+    })
+    .filter((item): item is P10NormalizedYear => item !== null)
+    .sort((a, b) => a.year - b.year);
+}
+
+export function p10NormalizeCourtTiers(
+  byTier?: Record<string, VisualInnocentButLockedUpCourtTierCounts | number> | null,
+): {
+  items: P10NormalizedCourtTier[];
+  totalTasks: number;
+} {
+  const keys: P10CourtTierKey[] = [
+    'supreme_court',
+    'high_court',
+    'district_court',
+    'statutory_body',
+  ];
+  const rows = keys.map((key) => {
+    const raw = byTier?.[key];
+    const meta = formatCourtTier(key);
+    if (typeof raw === 'number') {
+      return {
+        key,
+        label: meta.label,
+        shortLabel: meta.shortLabel,
+        chipClass: meta.chipClass,
+        tasks: Math.max(0, raw),
+        done: 0,
+        leads: 0,
+        cleared: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      tasks: Math.max(0, Number(obj?.tasks) || 0),
+      done: Math.max(0, Number(obj?.done) || 0),
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+    };
+  });
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const items: P10NormalizedCourtTier[] = rows.map((r) => ({
+    ...r,
+    sharePct: calcPct(r.tasks, totalTasks),
+  }));
+  return { items, totalTasks };
+}
+
+export function p10NormalizeMechanisms(
+  byMechanism?: Record<string, VisualInnocentButLockedUpMechanismCounts | number> | null,
+  bySignal?: Record<string, number> | null,
+): {
+  items: P10NormalizedMechanism[];
+  totalTasks: number;
+  totalLeads: number;
+} {
+  const ordered: Array<{
+    key: P10OverrunMechanismKey;
+    ruleKey: string;
+    fillClass: string;
+  }> = [
+    {
+      key: 'post_acquittal_contempt_overrun',
+      ruleKey: 'P10-POST-ACQUITTAL-CONTEMPT-OVERRUN',
+      fillClass: 'pv-p10-mech-fill--acquittal-contempt',
+    },
+    {
+      key: 'bail_or_release_order_contempt',
+      ruleKey: 'P10-RELEASE-ORDER-CONTEMPT-OVERRUN',
+      fillClass: 'pv-p10-mech-fill--release-contempt',
+    },
+    {
+      key: 'warrant_or_faster_transmission_delay',
+      ruleKey: 'P10-WARRANT-TRANSMISSION-DELAY',
+      fillClass: 'pv-p10-mech-fill--transmission',
+    },
+    {
+      key: 'statutory_commission_detention_finding',
+      ruleKey: 'P10-STATUTORY-UNLAWFUL-DETENTION',
+      fillClass: 'pv-p10-mech-fill--commission',
+    },
+    {
+      key: 'institutional_compliance_gap',
+      ruleKey: 'P10-INSTITUTIONAL-COMPLIANCE-GAP',
+      fillClass: 'pv-p10-mech-fill--compliance',
+    },
+    {
+      key: 'timely_release_or_compliant',
+      ruleKey: 'CLEARED',
+      fillClass: 'pv-p10-mech-fill--compliant',
+    },
+  ];
+
+  const rows = ordered.map(({ key, ruleKey, fillClass }) => {
+    const rawMech = byMechanism?.[key];
+    let tasks = 0;
+    let leads = 0;
+    if (typeof rawMech === 'number') {
+      tasks = Math.max(0, rawMech);
+    } else if (rawMech && typeof rawMech === 'object') {
+      tasks = Math.max(0, Number(rawMech.tasks) || 0);
+      leads = Math.max(0, Number(rawMech.leads) || 0);
+    }
+    if (leads === 0 && bySignal) {
+      const sigVal = bySignal[key] ?? bySignal[ruleKey] ?? bySignal[ruleKey.toLowerCase()];
+      if (sigVal != null) {
+        leads = Math.max(0, Number(sigVal) || 0);
+      }
+    }
+    const meta = formatCustodyOverrunMechanism(key);
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      fillClass,
+      isCleared: meta.isCleared,
+      tasks,
+      leads,
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P10NormalizedMechanism[] = rows.map((r) => ({
+    ...r,
+    sharePct: calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+  }));
+
+  return { items, totalTasks, totalLeads };
+}
+
+export function p10NormalizeChainStatuses(
+  byChain?: Record<string, number> | null,
+): {
+  items: P10NormalizedChainStatus[];
+  total: number;
+} {
+  const keys: P10ChainStatusKey[] = [
+    'full_4_stage_chain',
+    'partial_3_stage',
+    'institutional_record',
+    'compliant_control',
+  ];
+  const counts = keys.map((k) => Math.max(0, Number(byChain?.[k]) || 0));
+  const total = counts.reduce((acc, n) => acc + n, 0);
+  const items: P10NormalizedChainStatus[] = keys.map((k, idx) => {
+    const meta = formatChainStatus(k);
+    const count = counts[idx];
+    return {
+      key: k,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      count,
+      sharePct: calcPct(count, total),
+    };
+  });
+  return { items, total };
+}
+
+export function p10FilterStates(
+  states: VisualInnocentButLockedUpState[],
+  query: string,
+): VisualInnocentButLockedUpState[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return states;
+  return states.filter(
+    (s) =>
+      (s.state_ut || '').toLowerCase().includes(q) ||
+      (s.jurisdiction || '').toLowerCase().includes(q),
+  );
+}
+
+export function p10FilterCourts(
+  courts: VisualInnocentButLockedUpCourt[],
+  query: string,
+  tierFilter: 'all' | P10CourtTierKey = 'all',
+  stateFilter = 'all',
+): VisualInnocentButLockedUpCourt[] {
+  const q = query.trim().toLowerCase();
+  const st = stateFilter.trim().toLowerCase();
+  return courts.filter((c) => {
+    const tier = (c.court_tier || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && tier !== tierFilter) return false;
+    if (st && st !== 'all') {
+      const courtState = (c.state_ut || '').trim().toLowerCase();
+      if (st === 'union of india') {
+        if (courtState && courtState !== 'union of india') return false;
+      } else if (courtState !== st) {
+        return false;
+      }
+    }
+    if (!q) return true;
+    return (
+      c.court_name.toLowerCase().includes(q) ||
+      (c.state_ut || 'Union of India').toLowerCase().includes(q) ||
+      formatCourtTier(c.court_tier).label.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p10FilterLeads(
+  leads: VisualInnocentButLockedUpLead[],
+  yearFilter: 'all' | number = 'all',
+  stateFilter = 'all',
+  portalFilter: 'all' | P10PortalCategoryKey = 'all',
+  chainFilter: 'all' | P10ChainStatusKey = 'all',
+  mechanismFilter: 'all' | P10OverrunMechanismKey = 'all',
+  courtTierFilter: 'all' | P10CourtTierKey = 'all',
+): VisualInnocentButLockedUpLead[] {
+  const st = stateFilter.trim().toLowerCase();
+  return leads.filter((l) => {
+    if (yearFilter !== 'all' && Number(l.year) !== yearFilter) return false;
+    if (st && st !== 'all') {
+      const leadState = (l.state_ut || '').trim().toLowerCase();
+      const leadJur = p10StateFilterQuery(l.state_ut, l.jurisdiction).toLowerCase();
+      if (st === 'union of india') {
+        if (
+          (leadState && leadState !== 'union of india') ||
+          (leadJur && leadJur !== 'union of india')
+        ) {
+          return false;
+        }
+      } else if (leadState !== st && leadJur !== st) {
+        return false;
+      }
+    }
+    if (
+      portalFilter !== 'all' &&
+      (l.portal_category || '').trim().toLowerCase().replace(/[\s-]+/g, '_') !== portalFilter
+    ) {
+      return false;
+    }
+    if (chainFilter !== 'all') {
+      const cStatus = formatChainStatus(l.chain_status, l.stages_verified_count).key;
+      if (cStatus !== chainFilter) return false;
+    }
+    if (
+      mechanismFilter !== 'all' &&
+      formatCustodyOverrunMechanism(l.overrun_mechanism || l.signal_category).key !== mechanismFilter
+    ) {
+      return false;
+    }
+    if (
+      courtTierFilter !== 'all' &&
+      (l.court_tier || '').trim().toLowerCase().replace(/[\s-]+/g, '_') !== courtTierFilter
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export function p10BuildFourStageChain(rec: {
+  overrun_mechanism?: string | null;
+  chain_status?: string | null;
+  stages_verified_count?: number | null;
+  stage_1_acquittal_verified?: boolean;
+  stage_2_continued_detention_verified?: boolean;
+  stage_3_contempt_verified?: boolean;
+  stage_4_release_verified?: boolean;
+  acquittal_order_date?: string | null;
+  acquittal_court?: string | null;
+  acquittal_case_number?: string | null;
+  acquittal_order_type?: string | null;
+  acquittal_quote?: string | null;
+  prison_name?: string | null;
+  custody_authority?: string | null;
+  non_release_reason?: string | null;
+  overrun_days?: number | null;
+  overrun_window?: string | null;
+  contempt_case_number?: string | null;
+  contempt_court?: string | null;
+  contempt_filing_date?: string | null;
+  contempt_order_date?: string | null;
+  contempt_quote?: string | null;
+  release_date?: string | null;
+  release_verified?: boolean;
+  compensation_inr?: number | null;
+  judicial_direction_summary?: string | null;
+}): P10StageStep[] {
+  const isCompliant =
+    formatCustodyOverrunMechanism(rec.overrun_mechanism).isCleared ||
+    (rec.chain_status || '').trim().toLowerCase() === 'compliant_control';
+  const isFull4Stage =
+    !isCompliant &&
+    ((rec.chain_status || '').trim().toLowerCase() === 'full_4_stage_chain' ||
+      (rec.stages_verified_count != null && rec.stages_verified_count >= 4));
+
+  const s1Verified =
+    typeof rec.stage_1_acquittal_verified === 'boolean'
+      ? rec.stage_1_acquittal_verified
+      : isFull4Stage ||
+        Boolean(rec.acquittal_order_date || rec.acquittal_case_number || rec.acquittal_quote);
+  const s2Verified =
+    typeof rec.stage_2_continued_detention_verified === 'boolean'
+      ? rec.stage_2_continued_detention_verified
+      : isCompliant && (rec.overrun_days == null || rec.overrun_days === 0)
+        ? false
+        : isFull4Stage || Boolean(rec.overrun_days != null && rec.overrun_days > 0);
+  const s3Verified =
+    typeof rec.stage_3_contempt_verified === 'boolean'
+      ? rec.stage_3_contempt_verified
+      : isFull4Stage ||
+        Boolean(
+          rec.contempt_case_number ||
+            rec.contempt_court ||
+            rec.contempt_filing_date ||
+            rec.contempt_order_date ||
+            rec.contempt_quote,
+        );
+  const s4Verified =
+    typeof rec.stage_4_release_verified === 'boolean'
+      ? rec.stage_4_release_verified
+      : isFull4Stage || Boolean(rec.release_verified || rec.release_date);
+
+  const overrunBadge =
+    rec.overrun_days != null && rec.overrun_days > 0
+      ? `+${rec.overrun_days.toLocaleString('en-IN')} ${rec.overrun_days === 1 ? 'day' : 'days'} overrun`
+      : rec.overrun_days === 0
+        ? '0 days overrun'
+        : null;
+  const compBadge =
+    rec.compensation_inr != null && rec.compensation_inr > 0
+      ? `${formatInr(rec.compensation_inr)} compensation`
+      : null;
+
+  return [
+    {
+      stage: 1,
+      kicker: 'Stage 1',
+      title: rec.acquittal_order_type
+        ? formatAcquittalOrderType(rec.acquittal_order_type)
+        : 'Acquitted / Release Ordered',
+      verified: s1Verified,
+      date: rec.acquittal_order_date || null,
+      primary:
+        [rec.acquittal_court, rec.acquittal_case_number].filter(Boolean).join(' · ') ||
+        'Judicial acquittal or release order verified in primary record',
+      secondary: null,
+      badge: rec.acquittal_order_date ? rec.acquittal_order_date : null,
+      quote: rec.acquittal_quote || null,
+    },
+    {
+      stage: 2,
+      kicker: 'Stage 2',
+      title: 'Held in Prison',
+      verified: s2Verified,
+      date: rec.overrun_window || null,
+      primary:
+        [rec.prison_name, rec.custody_authority].filter(Boolean).join(' · ') ||
+        'Continued custody after judicial release order',
+      secondary: rec.non_release_reason || null,
+      badge: overrunBadge,
+      quote: null,
+    },
+    {
+      stage: 3,
+      kicker: 'Stage 3',
+      title: 'Contempt Filed',
+      verified: s3Verified,
+      date: rec.contempt_order_date || rec.contempt_filing_date || null,
+      primary:
+        [rec.contempt_court, rec.contempt_case_number].filter(Boolean).join(' · ') ||
+        (s3Verified ? 'Contempt / habeas corpus proceedings initiated' : 'No separate contempt docket recorded'),
+      secondary:
+        rec.contempt_filing_date && rec.contempt_order_date
+          ? `Filed ${rec.contempt_filing_date} · Order ${rec.contempt_order_date}`
+          : rec.contempt_filing_date
+            ? `Filed ${rec.contempt_filing_date}`
+            : rec.contempt_order_date
+              ? `Order ${rec.contempt_order_date}`
+              : null,
+      badge: rec.contempt_case_number || null,
+      quote: rec.contempt_quote || null,
+    },
+    {
+      stage: 4,
+      kicker: 'Stage 4',
+      title: 'Released & Directions',
+      verified: s4Verified,
+      date: rec.release_date || null,
+      primary: s4Verified
+        ? rec.release_date
+          ? `Release verified (${rec.release_date})`
+          : 'Release verified in official record'
+        : 'Release status pending documentary confirmation',
+      secondary: rec.judicial_direction_summary || null,
+      badge: compBadge,
+      quote: null,
+    },
+  ];
+}
+
+function p10ShortText(text?: string | null, maxLen = 135): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+export function InnocentButLockedUpVisualiser({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p10 = visualSummary?.innocent_but_locked_up;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [selectedYear, setSelectedYear] = useState<'all' | number>('all');
+  const [selectedState, setSelectedState] = useState('all');
+  const [selectedPortal, setSelectedPortal] = useState<'all' | P10PortalCategoryKey>('all');
+  const [selectedChain, setSelectedChain] = useState<'all' | P10ChainStatusKey>('all');
+  const [selectedMechanism, setSelectedMechanism] = useState<'all' | P10OverrunMechanismKey>('all');
+  const [selectedCourtTier, setSelectedCourtTier] = useState<'all' | P10CourtTierKey>('all');
+
+  const [stateQuery, setStateQuery] = useState('');
+  const [showAllStates, setShowAllStates] = useState(false);
+  const [courtQuery, setCourtQuery] = useState('');
+  const [showAllCourts, setShowAllCourts] = useState(false);
+
+  const hook = p10?.hook?.trim() || P10_DEFAULT_HOOK;
+  const totalTasks = p10?.total_tasks ?? mission.total_tasks ?? 0;
+  const uniqueDocs = p10?.unique_documents_covered ?? 0;
+  const statesCovered = p10?.states_and_uts_covered ?? p10?.states?.length ?? 0;
+  const courtsCovered = p10?.courts_covered ?? p10?.top_courts?.length ?? 0;
+  const prisonsNamed = p10?.prisons_named ?? p10?.top_prisons?.length ?? 0;
+  const full4StageTasks = p10?.full_4_stage_tasks ?? 0;
+  const contemptTasks = p10?.contempt_tasks ?? 0;
+  const verifiedReleaseTasks = p10?.verified_release_tasks ?? 0;
+  const clearedEmbedded = p10?.cleared_control_tasks_embedded ?? 0;
+  const totalOverrunDays = p10?.total_overrun_days_documented ?? 0;
+  const medianOverrunDays = p10?.median_overrun_days ?? null;
+  const maxOverrunDays = p10?.max_overrun_days ?? null;
+  const totalCompensationInr = p10?.total_compensation_ordered_inr ?? 0;
+
+  const leads = p10?.leads ?? 0;
+  const verified = p10?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p10?.peer_review ?? mission.peer_review_count ?? 0;
+  const clearedTasks = p10?.cleared_tasks ?? mission.cleared_tasks_count ?? 0;
+
+  const states = p10?.states ?? [];
+  const topCourts = p10?.top_courts ?? [];
+  const topPrisons = p10?.top_prisons ?? [];
+  const topLeads = p10?.top_leads ?? [];
+  const anchorCase = p10?.anchor_case ?? null;
+  const documentsUrl = p10?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p10?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const portals = useMemo(
+    () => p10NormalizePortals(p10?.by_portal_category),
+    [p10?.by_portal_category],
+  );
+  const years = useMemo(() => p10NormalizeYears(p10?.by_year), [p10?.by_year]);
+  const courtTiers = useMemo(
+    () => p10NormalizeCourtTiers(p10?.by_court_tier),
+    [p10?.by_court_tier],
+  );
+  const mechanisms = useMemo(
+    () => p10NormalizeMechanisms(p10?.by_mechanism, p10?.by_signal),
+    [p10?.by_mechanism, p10?.by_signal],
+  );
+  const chainStatuses = useMemo(
+    () => p10NormalizeChainStatuses(p10?.by_chain_status),
+    [p10?.by_chain_status],
+  );
+
+  const filteredStates = useMemo(
+    () => p10FilterStates(states, stateQuery),
+    [states, stateQuery],
+  );
+  const visibleStates =
+    showAllStates || stateQuery.trim().length > 0
+      ? filteredStates
+      : filteredStates.slice(0, P10_INITIAL_STATES);
+
+  const filteredCourts = useMemo(
+    () => p10FilterCourts(topCourts, courtQuery, selectedCourtTier, selectedState),
+    [topCourts, courtQuery, selectedCourtTier, selectedState],
+  );
+  const visibleCourts =
+    showAllCourts ||
+    courtQuery.trim().length > 0 ||
+    selectedCourtTier !== 'all' ||
+    selectedState !== 'all'
+      ? filteredCourts
+      : filteredCourts.slice(0, P10_INITIAL_COURTS);
+
+  const filteredLeads = useMemo(
+    () =>
+      p10FilterLeads(
+        topLeads,
+        selectedYear,
+        selectedState,
+        selectedPortal,
+        selectedChain,
+        selectedMechanism,
+        selectedCourtTier,
+      ),
+    [
+      topLeads,
+      selectedYear,
+      selectedState,
+      selectedPortal,
+      selectedChain,
+      selectedMechanism,
+      selectedCourtTier,
+    ],
+  );
+
+  const hasActiveFilters =
+    selectedYear !== 'all' ||
+    selectedState !== 'all' ||
+    selectedPortal !== 'all' ||
+    selectedChain !== 'all' ||
+    selectedMechanism !== 'all' ||
+    selectedCourtTier !== 'all';
+
+  const resetAllFilters = () => {
+    setSelectedYear('all');
+    setSelectedState('all');
+    setSelectedPortal('all');
+    setSelectedChain('all');
+    setSelectedMechanism('all');
+    setSelectedCourtTier('all');
+  };
+
+  const anchorStages = useMemo(
+    () => (anchorCase ? p10BuildFourStageChain(anchorCase) : []),
+    [anchorCase],
+  );
+  const anchorMechanism = anchorCase?.overrun_mechanism
+    ? formatCustodyOverrunMechanism(anchorCase.overrun_mechanism)
+    : null;
+  const anchorPortal = anchorCase?.portal_category
+    ? formatPortalCategory(anchorCase.portal_category)
+    : null;
+  const anchorTier = anchorCase?.court_tier ? formatCourtTier(anchorCase.court_tier) : null;
+  const anchorChain = anchorCase
+    ? formatChainStatus(anchorCase.chain_status, anchorCase.stages_verified_count)
+    : null;
+  const anchorPrimaryUrl = safeExternalUrl(anchorCase?.source_url);
+  const anchorSecondaryUrl = safeExternalUrl(anchorCase?.secondary_url);
+  const anchorPortalUrl = safeExternalUrl(anchorCase?.portal_url);
+
+  const maxYearTasks = years.reduce((m, y) => Math.max(m, y.tasks), 0);
+
+  return (
+    <section
+      className="card card-pad pv-results"
+      aria-label="Innocent But Locked Up post-acquittal custody and contempt audit results"
+    >
+      {/* Header + Summary Pills */}
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">
+            Innocent But Locked Up: Post-Acquittal Custody &amp; Contempt Ledger
+          </h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">
+            {fmtCount(totalTasks)} {totalTasks === 1 ? 'case task' : 'case tasks'}
+          </span>
+          {full4StageTasks > 0 ? (
+            <span className="p10-chain p10-chain--full">
+              {fmtCount(full4StageTasks)} 4-stage {full4StageTasks === 1 ? 'chain' : 'chains'}
+            </span>
+          ) : null}
+          {contemptTasks > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(contemptTasks)} contempt {contemptTasks === 1 ? 'record' : 'records'}
+            </span>
+          ) : null}
+          {verifiedReleaseTasks > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(verifiedReleaseTasks)} verified {verifiedReleaseTasks === 1 ? 'release' : 'releases'}
+            </span>
+          ) : null}
+          {courtsCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(courtsCovered)} {courtsCovered === 1 ? 'court' : 'courts'}
+            </span>
+          ) : null}
+          {statesCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(statesCovered)} {statesCovered === 1 ? 'State / UT' : 'States & UTs'}
+            </span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'overrun lead' : 'overrun leads'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+          {clearedTasks > 0 ? (
+            <span className={FINDING_TAGS.cleared.badgeClass}>
+              {fmtCount(clearedTasks)} {FINDING_TAGS.cleared.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Headline KPIs */}
+      <div className="pv-p10-overview">
+        <div className="pv-p10-kpi-grid">
+          <div className="pv-overview-tile pv-p10-kpi--tasks">
+            <span className="pv-overview-kicker">Audited tasks (2021–2026)</span>
+            <span className="pv-overview-num tabular">{fmtCount(totalTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {uniqueDocs > 0 ? `${fmtCount(uniqueDocs)} official ${uniqueDocs === 1 ? 'doc' : 'docs'} · ` : ''}
+              {courtsCovered > 0 ? `${fmtCount(courtsCovered)} ${courtsCovered === 1 ? 'court' : 'courts'} · ` : ''}
+              {statesCovered > 0
+                ? `${fmtCount(statesCovered)} ${statesCovered === 1 ? 'State/UT' : 'States/UTs'}`
+                : 'Supreme Court, High Courts & official portals'}
+            </span>
+          </div>
+
+          <div className="pv-overview-tile pv-p10-kpi--chain">
+            <span className="pv-overview-kicker">4-stage chains &amp; contempt</span>
+            <span className="pv-overview-num tabular">{fmtCount(full4StageTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(contemptTasks)} contempt filed · {fmtCount(verifiedReleaseTasks)} verified{' '}
+              {verifiedReleaseTasks === 1 ? 'release' : 'releases'}
+              {prisonsNamed > 0
+                ? ` · ${fmtCount(prisonsNamed)} ${prisonsNamed === 1 ? 'prison' : 'prisons'} named`
+                : ''}
+            </span>
+          </div>
+
+          <div className="pv-overview-tile pv-p10-kpi--overrun">
+            <span className="pv-overview-kicker">Documented overrun days</span>
+            <span className="pv-overview-num tabular">
+              {totalOverrunDays > 0 ? fmtCount(totalOverrunDays) : 'Documentary'}
+            </span>
+            <span className="pv-overview-sub tabular">
+              {medianOverrunDays != null && medianOverrunDays > 0
+                ? `Median ${medianOverrunDays.toLocaleString('en-IN', { maximumFractionDigits: 1 })}d`
+                : 'Verified dates across court orders'}
+              {maxOverrunDays != null && maxOverrunDays > 0
+                ? ` · Max ${fmtCount(maxOverrunDays)}d`
+                : ''}
+            </span>
+          </div>
+
+          <div className="pv-overview-tile pv-p10-kpi--outcomes">
+            <span className="pv-overview-kicker">Leads, cleared &amp; compensation</span>
+            <span className="pv-overview-num tabular">
+              {totalCompensationInr > 0 ? formatInr(totalCompensationInr) : fmtCount(leads)}
+            </span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(verified)} verified · {fmtCount(inReview)} in review · {fmtCount(clearedTasks)} cleared
+              {clearedEmbedded > 0
+                ? ` (${fmtCount(clearedEmbedded)} compliant ${clearedEmbedded === 1 ? 'control' : 'controls'})`
+                : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Flagship 4-Stage Anchor Case Spotlight */}
+        {anchorCase ? (
+          <article
+            className="pv-p10-anchor"
+            aria-label="Flagship 4-stage post-acquittal custody overrun anchor case"
+          >
+            <div className="pv-p6-anchor-head">
+              <div className="pv-p6-anchor-meta">
+                <span className="p10-anchor-chip">Flagship Anchor · 4-Stage Custody Chain</span>
+                {anchorTier ? <span className={anchorTier.chipClass}>{anchorTier.shortLabel}</span> : null}
+                {anchorPortal ? (
+                  <span className={anchorPortal.chipClass}>{anchorPortal.shortLabel}</span>
+                ) : null}
+                {anchorCase.state_ut || anchorCase.jurisdiction ? (
+                  <span className="tag-mono">
+                    {anchorCase.state_ut || formatJurisdictionLabel(anchorCase.jurisdiction)}
+                  </span>
+                ) : null}
+                {anchorCase.year ? (
+                  <span className="tag-mono tabular">{String(anchorCase.year)}</span>
+                ) : null}
+                {anchorChain ? (
+                  <span className={anchorChain.chipClass}>{anchorChain.shortLabel}</span>
+                ) : null}
+              </div>
+              {anchorMechanism ? (
+                <span className={anchorMechanism.chipClass}>{anchorMechanism.label}</span>
+              ) : null}
+            </div>
+
+            <h3 className="pv-p6-anchor-title">{anchorCase.case_title}</h3>
+
+            {/* 4-Stage Visual Custody Timeline */}
+            <ol
+              className="p10-timeline"
+              aria-label="4-stage custody overrun timeline from acquittal to release"
+            >
+              {anchorStages.map((step) => (
+                <li
+                  key={step.stage}
+                  className={`p10-stage p10-stage--s${step.stage}${
+                    step.verified ? ' p10-stage--verified' : ' p10-stage--unrecorded'
+                  }`}
+                >
+                  <div className="p10-stage-head">
+                    <span className="p10-stage-num font-mono" aria-hidden="true">
+                      {step.stage}
+                    </span>
+                    <span className="p10-stage-title">{step.title}</span>
+                  </div>
+                  {step.badge ? (
+                    <span className={`p10-stage-badge p10-stage-badge--s${step.stage} tabular`}>
+                      {step.badge}
+                    </span>
+                  ) : null}
+                  <p className="p10-stage-primary">{step.primary}</p>
+                  {step.secondary ? (
+                    <p className="p10-stage-sub">{p10ShortText(step.secondary, 130)}</p>
+                  ) : null}
+                  {step.quote ? (
+                    <blockquote className="p10-stage-quote">
+                      &ldquo;{p10ShortText(step.quote, 150)}&rdquo;
+                    </blockquote>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+
+            <div className="pv-p6-anchor-actions">
+              {anchorCase.finding_id && onSelectFinding ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onSelectFinding(anchorCase.finding_id!)}
+                >
+                  Inspect anchor dossier
+                </button>
+              ) : onFilterTasks && anchorCase.task_id ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onFilterTasks(anchorCase.task_id!)}
+                >
+                  Find anchor task in queue
+                </button>
+              ) : null}
+              {anchorPrimaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPrimaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Primary official order <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorSecondaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Contempt / release record{' '}
+                  <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorPortalUrl &&
+              anchorPortalUrl !== anchorPrimaryUrl &&
+              anchorPortalUrl !== anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPortalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Official portal <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorCase.source_sha256 ? (
+                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                  sha256:{anchorCase.source_sha256.slice(0, 10)}
+                </span>
+              ) : null}
+            </div>
+          </article>
+        ) : (
+          <div className="pv-empty-box">
+            Flagship 4-stage post-acquittal custody anchor dossier loads automatically from the hub summary index.
+          </div>
+        )}
+
+        {/* Interactive Source Portal Category Breakdown (8 Official Portals) */}
+        {portals.totalTasks > 0 || portals.totalLeads > 0 ? (
+          <div className="pv-p7-cohort-panel">
+            <div className="pv-p7-cohort-head">
+              <h3>Source portal categories (select any portal to filter explorer)</h3>
+              <div className="pv-mini-legend">
+                {(() => {
+                  const activePortalsCount = portals.items.filter(
+                    (p) => p.tasks > 0 || p.leads > 0,
+                  ).length;
+                  return (
+                    <span className="pv-chart-note tabular">
+                      {fmtCount(activePortalsCount)} active official portal{' '}
+                      {activePortalsCount === 1 ? 'category' : 'categories'}
+                    </span>
+                  );
+                })()}
+                {selectedPortal !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedPortal('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All portals</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              className="pv-p10-portal-bar"
+              role="img"
+              aria-label={`Portal distribution across ${fmtCount(portals.totalTasks)} tasks`}
+            >
+              {portals.items
+                .filter((p) => p.sharePct > 0)
+                .map((p) => (
+                  <span
+                    key={p.portal_category}
+                    className={`pv-p10-seg ${p.segClass}`}
+                    style={{ width: `${p.sharePct}%` }}
+                    title={`${p.label}: ${fmtCount(p.tasks)} (${fmtPct(p.sharePct)})`}
+                  />
+                ))}
+            </div>
+
+            <div className="pv-p10-portal-grid" role="group" aria-label="Filter by official source portal category">
+              {portals.items.map((p) => {
+                const isSelected = selectedPortal === p.portal_category;
+                return (
+                  <button
+                    key={p.portal_category}
+                    type="button"
+                    aria-pressed={isSelected}
+                    className={`pv-p10-portal-btn${isSelected ? ' pv-p10-portal-btn--active' : ''}`}
+                    onClick={() =>
+                      setSelectedPortal((prev) =>
+                        prev === p.portal_category ? 'all' : p.portal_category,
+                      )
+                    }
+                  >
+                    <span className="pv-p7-cohort-btn-top">
+                      <span className={p.chipClass}>{p.shortLabel}</span>
+                      <span className="pv-p7-cohort-share tabular">{fmtPct(p.sharePct)}</span>
+                    </span>
+                    <span className="pv-p10-portal-num tabular">
+                      {fmtCount(p.tasks)} {p.tasks === 1 ? 'task' : 'tasks'}
+                    </span>
+                    <span className="pv-p7-cohort-sub tabular">
+                      {fmtCount(p.done)} checked
+                      {p.leads > 0 ? ` · ${fmtCount(p.leads)} ${p.leads === 1 ? 'lead' : 'leads'}` : ''}
+                      {p.cleared > 0 ? ` · ${fmtCount(p.cleared)} cleared` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Interactive 5-Year Timeline (2021–2026) + 4-Stage Chain & Mechanisms Filter Deck */}
+        <div className="pv-p7-cohort-panel">
+          {years.length > 0 ? (
+            <div className="pv-p10-year-block">
+              <div className="pv-p7-cohort-head">
+                <h3>5-year audit window (2021–2026 — select a year to filter)</h3>
+                {selectedYear !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedYear('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All years</span>
+                  </button>
+                ) : (
+                  <span className="pv-chart-note">Official orders, releases &amp; audit disclosures</span>
+                )}
+              </div>
+
+              <div className="pv-p10-year-grid" role="group" aria-label="Filter by year 2021 to 2026">
+                {years.map((y) => {
+                  const isSelected = selectedYear === y.year;
+                  const relPct = maxYearTasks > 0 ? calcPct(y.tasks, maxYearTasks) : 0;
+                  return (
+                    <button
+                      key={y.year}
+                      type="button"
+                      aria-pressed={isSelected}
+                      className={`pv-p10-year-btn${isSelected ? ' pv-p10-year-btn--active' : ''}`}
+                      onClick={() => setSelectedYear((prev) => (prev === y.year ? 'all' : y.year))}
+                    >
+                      <span className="pv-p10-year-top">
+                        <strong className="font-mono tabular">{y.year}</strong>
+                        <span className="pv-p7-cohort-share tabular">
+                          {fmtCount(y.tasks)}
+                        </span>
+                      </span>
+                      <span className="pv-p7-signal-track" aria-hidden="true">
+                        <span
+                          className="pv-p7-signal-fill pv-p10-year-fill"
+                          style={{ width: `${relPct > 0 ? Math.max(4, relPct) : 0}%` }}
+                        />
+                      </span>
+                      <span className="pv-p7-cohort-sub tabular">
+                        {y.full_4_stage > 0 ? `${fmtCount(y.full_4_stage)} 4-stage` : `${fmtCount(y.done)} checked`}
+                        {y.overrun_days > 0 ? ` · ${fmtCount(y.overrun_days)}d` : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="pv-p7-cohort-head" style={{ marginTop: years.length > 0 ? 6 : 0 }}>
+            <h3>Custody overrun mechanisms (6 deterministic categories — select to filter)</h3>
+            <span className="pv-chart-note tabular">
+              {mechanisms.totalTasks > 0
+                ? `${fmtCount(mechanisms.totalTasks)} tasks across 5 overrun patterns + timely-release benchmarks`
+                : 'Counts populate from the hub summary index'}
+            </span>
+          </div>
+
+          <div className="pv-p10-mech-grid" role="group" aria-label="Filter by custody overrun mechanism">
+            {mechanisms.items.map((m) => {
+              const isSelected = selectedMechanism === m.key;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className={`pv-p8-mech-btn${m.isCleared ? ' pv-p8-mech-btn--cleared' : ''}`}
+                  onClick={() =>
+                    setSelectedMechanism((prev) => (prev === m.key ? 'all' : m.key))
+                  }
+                >
+                  <div className="pv-p7-signal-top">
+                    <span className={m.chipClass}>{m.label}</span>
+                    <span className="pv-p7-signal-count tabular">
+                      <strong>{fmtCount(m.tasks)}</strong> {m.tasks === 1 ? 'task' : 'tasks'}
+                      {m.leads > 0
+                        ? ` · ${fmtCount(m.leads)} ${m.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
+                    </span>
+                  </div>
+                  <span className="pv-p7-signal-track" aria-hidden="true">
+                    <span
+                      className={`pv-p7-signal-fill ${m.fillClass}`}
+                      style={{ width: `${m.sharePct > 0 ? Math.max(3, m.sharePct) : 0}%` }}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 4-Stage Chain Completeness Filter Pills */}
+          {chainStatuses.total > 0 ? (
+            <div className="pv-p8-cat-pills" role="group" aria-label="Filter by 4-stage chain completeness">
+              <span className="pv-p7-jur-label">4-stage chain completeness:</span>
+              <button
+                type="button"
+                aria-pressed={selectedChain === 'all'}
+                className={`btn btn-xs ${selectedChain === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setSelectedChain('all')}
+              >
+                All ({fmtCount(chainStatuses.total)})
+              </button>
+              {chainStatuses.items
+                .filter((cs) => cs.count > 0)
+                .map((cs) => {
+                  const active = selectedChain === cs.key;
+                  return (
+                    <button
+                      key={cs.key}
+                      type="button"
+                      aria-pressed={active}
+                      className={`btn btn-xs ${active ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() =>
+                        setSelectedChain((prev) => (prev === cs.key ? 'all' : cs.key))
+                      }
+                    >
+                      {cs.shortLabel} ({fmtCount(cs.count)})
+                    </button>
+                  );
+                })}
+            </div>
+          ) : null}
+
+          {hasActiveFilters ? (
+            <div className="pv-p8-active-filters">
+              <span>
+                Active filters:{' '}
+                {[
+                  selectedYear !== 'all' ? String(selectedYear) : null,
+                  selectedState !== 'all' ? selectedState : null,
+                  selectedPortal !== 'all' ? p10PortalLabel(selectedPortal) : null,
+                  selectedChain !== 'all' ? p10ChainStatusLabel(selectedChain) : null,
+                  selectedMechanism !== 'all' ? p10MechanismLabel(selectedMechanism) : null,
+                  selectedCourtTier !== 'all' ? p10CourtTierLabel(selectedCourtTier) : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={resetAllFilters}>
+                <RotateCcw size={11} aria-hidden="true" />
+                <span>Reset all filters</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Two-Column Split: States & UTs Breakdown + How to Read This */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>States &amp; UTs covered ({fmtCount(states.length)})</h3>
+            <span className="pv-chart-note">
+              Click a State/UT to filter courts &amp; case dossiers below
+            </span>
+          </div>
+
+          {states.length > 0 ? (
+            <>
+              <div className="pv-p6-ministry-controls">
+                <div className="pv-p6-search-wrap">
+                  <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                  <input
+                    type="search"
+                    className="input-field pv-p6-search"
+                    value={stateQuery}
+                    onChange={(e) => setStateQuery(e.target.value)}
+                    placeholder={`Filter ${fmtCount(states.length)} States & UTs (e.g. Uttar Pradesh, Delhi, Maharashtra)…`}
+                    aria-label="Filter States and Union Territories"
+                  />
+                </div>
+                {selectedState !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedState('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All States/UTs</span>
+                  </button>
+                ) : null}
+              </div>
+
+              {visibleStates.length > 0 ? (
+                <div className="pv-ub-years-wrap">
+                  <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                    <caption className="pv-ub-caption">
+                      Post-acquittal custody overrun and contempt compliance coverage across Indian States and Union Territories.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">State / UT</th>
+                        <th scope="col">Tasks &amp; progress</th>
+                        <th scope="col" className="num">
+                          Overruns / Leads
+                        </th>
+                        <th scope="col" className="num">
+                          Queue
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleStates.map((st) => {
+                        const display = st.state_ut || formatJurisdictionLabel(st.jurisdiction);
+                        const stateKey = st.state_ut || st.jurisdiction || 'Union of India';
+                        const total = Math.max(0, st.tasks);
+                        const done = Math.max(0, st.done ?? 0);
+                        const donePct = calcPct(done, total);
+                        const isSelected = selectedState === stateKey;
+                        const queueToken = p10StateFilterQuery(st.state_ut, st.jurisdiction);
+
+                        return (
+                          <tr
+                            key={stateKey}
+                            className="pv-p6-ministry-row--interactive"
+                            style={isSelected ? { background: 'var(--sunk)' } : undefined}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement | null;
+                              if (target?.closest('a, button')) return;
+                              setSelectedState((prev) => (prev === stateKey ? 'all' : stateKey));
+                            }}
+                          >
+                            <th scope="row" className="pv-ub-year pv-p8-jur-name">
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  setSelectedState((prev) => (prev === stateKey ? 'all' : stateKey))
+                                }
+                              >
+                                {display}
+                              </button>
+                              {(st.full_4_stage ?? 0) > 0 ? (
+                                <span className="pv-ub-sub tabular">
+                                  {fmtCount(st.full_4_stage)} 4-stage{' '}
+                                  {st.full_4_stage === 1 ? 'case' : 'cases'}
+                                </span>
+                              ) : null}
+                            </th>
+                            <td className="pv-ub-years-checked">
+                              <span
+                                className="pv-ub-bar"
+                                role="img"
+                                aria-label={`${display}: ${fmtCount(done)} of ${fmtCount(total)} tasks checked`}
+                              >
+                                {donePct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p10-seg--court"
+                                    style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                                  />
+                                ) : null}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                {fmtCount(total)} {total === 1 ? 'task' : 'tasks'} · {fmtCount(done)} checked ({fmtPct(donePct)})
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-lines" data-label="Overruns / Leads">
+                              <span className="pv-ub-cell-val">
+                                {(st.total_overrun_days ?? 0) > 0
+                                  ? `+${fmtCount(st.total_overrun_days)}d`
+                                  : `${fmtCount(st.leads)} ${st.leads === 1 ? 'lead' : 'leads'}`}
+                              </span>
+                              <span className="pv-ub-sub">
+                                {(st.compensation_inr ?? 0) > 0
+                                  ? formatInr(st.compensation_inr)
+                                  : (st.cleared ?? 0) > 0
+                                    ? `${fmtCount(st.cleared)} cleared`
+                                    : `${fmtCount(st.leads)} ${st.leads === 1 ? 'lead' : 'leads'}`}
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-below" data-label="Queue">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(queueToken)}
+                                  aria-label={`Filter task queue for ${display}`}
+                                >
+                                  Tasks →
+                                </button>
+                              ) : (
+                                <span className="pv-ub-sub">{fmtCount(total)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="pv-empty-box">
+                  No States or UTs match &ldquo;{stateQuery}&rdquo;.
+                </div>
+              )}
+
+              {stateQuery.trim().length === 0 && filteredStates.length > P10_INITIAL_STATES ? (
+                <div className="pv-list-more">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllStates((v) => !v)}
+                  >
+                    {showAllStates
+                      ? `Show top ${P10_INITIAL_STATES} States & UTs`
+                      : `Show all ${fmtCount(filteredStates.length)} States & UTs`}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="pv-empty-box">
+              State and UT custody coverage appears here once the hub loads the P10 summary index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Every task fetches and SHA-256-verifies official court orders, prison release records,
+            police circulars, NHRC/SHRC proceedings, NALSA/SLSA release reports, Digital Sansad
+            answers, or CAG audit chapters from <strong>2021–2026</strong>. If a pinned file fails
+            byte-digest verification or lacks required verbatim anchors, the check fails closed as{' '}
+            {FINDING_TAGS.not_enough_data.label}.
+          </p>
+          <p>
+            Full 4-stage cases document all four verifiable milestones in official primary records:
+            <strong> [1] Acquitted / Release Order</strong> → <strong>[2] Held in Prison</strong> →{' '}
+            <strong>[3] Contempt Filed</strong> → <strong>[4] Released</strong>. Timely-release
+            and FASTER compliance benchmarks without custody overrun are published as{' '}
+            {FINDING_TAGS.cleared.label} with equal standing.
+          </p>
+          <p>
+            Every dossier uses strictly factual institutional audit framing under{' '}
+            <strong>BNS Sec 356</strong>, scrubs personal identifiers under the{' '}
+            <strong>DPDP Act 2023</strong>, records lawful procedural explanations (pending
+            warrant verification, other active custody cases, or clerical docket transit), and
+            requires three pairwise-independent peer verifications before reaching{' '}
+            {FINDING_TAGS.verified.label}.
+          </p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Official sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P10_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p10?.generated_on ? (
+            <p className="pv-chart-note">
+              P10 custody audit index built {p10.generated_on}
+              {p10.as_of_date && p10.as_of_date !== p10.generated_on
+                ? ` · as of ${p10.as_of_date}`
+                : ''}
+              .
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Interactive Courts & Named Prisons Explorer */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>
+            Courts &amp; statutory bodies covered ({fmtCount(filteredCourts.length)}
+            {filteredCourts.length !== topCourts.length
+              ? ` of ${fmtCount(topCourts.length)}`
+              : ''}
+            )
+          </h3>
+          <span className="pv-chart-note">
+            Filter by court tier or State/UT — click any court to view its tasks in the queue
+          </span>
+        </div>
+
+        {topCourts.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={courtQuery}
+                  onChange={(e) => setCourtQuery(e.target.value)}
+                  placeholder={`Search ${fmtCount(topCourts.length)} courts & bodies (e.g. Supreme Court, Allahabad, Delhi, NHRC)…`}
+                  aria-label="Search courts and statutory bodies"
+                />
+              </div>
+              <div className="pv-p6-filter-pills" role="group" aria-label="Filter courts by tier">
+                <button
+                  type="button"
+                  aria-pressed={selectedCourtTier === 'all'}
+                  className={`btn btn-xs ${selectedCourtTier === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setSelectedCourtTier('all')}
+                >
+                  All
+                </button>
+                {courtTiers.items
+                  .filter((t) => t.tasks > 0 || topCourts.some((c) => c.court_tier === t.key))
+                  .map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      aria-pressed={selectedCourtTier === t.key}
+                      className={`btn btn-xs ${selectedCourtTier === t.key ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() =>
+                        setSelectedCourtTier((prev) => (prev === t.key ? 'all' : t.key))
+                      }
+                    >
+                      {t.shortLabel}
+                      {t.tasks > 0 ? ` (${fmtCount(t.tasks)})` : ''}
+                    </button>
+                  ))}
+              </div>
+            </div>
+
+            {visibleCourts.length > 0 ? (
+              <div className="table-wrap pv-ub-leads-wrap">
+                <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                  <caption className="pv-ub-caption">
+                    Indian courts and statutory bodies indexed in Project P10 (2021–2026).
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Court / Statutory Body</th>
+                      <th scope="col">Tier</th>
+                      <th scope="col">State / UT</th>
+                      <th scope="col" className="num">
+                        4-Stage Chains
+                      </th>
+                      <th scope="col" className="num">
+                        Tasks / Leads
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleCourts.map((c) => {
+                      const tier = formatCourtTier(c.court_tier);
+                      return (
+                        <tr key={`${c.court_name}-${c.state_ut || ''}`}>
+                          <td className="pv-ub-line pv-p8-scheme-col">
+                            {onFilterTasks ? (
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                onClick={() => onFilterTasks(c.court_name)}
+                              >
+                                {c.court_name}
+                              </button>
+                            ) : (
+                              <span>{c.court_name}</span>
+                            )}
+                          </td>
+                          <td data-label="Tier">
+                            <span className={tier.chipClass}>{tier.shortLabel}</span>
+                          </td>
+                          <td data-label="State / UT">{c.state_ut || 'All-India / Union'}</td>
+                          <td className="num tabular" data-label="4-Stage Chains">
+                            {fmtCount(c.full_4_stage ?? 0)}
+                          </td>
+                          <td className="num tabular" data-label="Tasks / Leads">
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(c.tasks)} {c.tasks === 1 ? 'task' : 'tasks'}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(c.leads)} {c.leads === 1 ? 'lead' : 'leads'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No courts or statutory bodies match the current filter combination.
+              </div>
+            )}
+
+            {courtQuery.trim().length === 0 &&
+            selectedCourtTier === 'all' &&
+            selectedState === 'all' &&
+            filteredCourts.length > P10_INITIAL_COURTS ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllCourts((v) => !v)}
+                >
+                  {showAllCourts
+                    ? `Show top ${P10_INITIAL_COURTS} courts`
+                    : `Show all ${fmtCount(filteredCourts.length)} courts`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Court-by-court coverage appears here once the hub loads the P10 corpus index.
+          </div>
+        )}
+
+        {/* Named Prisons / Custody Facilities Strip */}
+        {topPrisons.length > 0 ? (
+          <div className="pv-p10-prisons-strip" aria-label="Named prisons and custody facilities">
+            <span className="pv-p7-jur-label">Named prisons &amp; custody facilities:</span>
+            {topPrisons.slice(0, P10_INITIAL_PRISONS).map((pr) => (
+              <button
+                key={`${pr.prison_name}-${pr.state_ut || ''}`}
+                type="button"
+                className="btn btn-ghost btn-xs pv-p10-prison-pill"
+                onClick={() => onFilterTasks?.(pr.prison_name)}
+                disabled={!onFilterTasks}
+                title={
+                  pr.state_ut
+                    ? `${pr.prison_name} (${pr.state_ut}) — click to filter tasks`
+                    : `${pr.prison_name} — click to filter tasks`
+                }
+              >
+                <span>{pr.prison_name}</span>
+                {pr.state_ut ? <span className="pv-p10-prison-state">{pr.state_ut}</span> : null}
+                <span className="tabular font-mono">
+                  {fmtCount(pr.tasks)}
+                  {(pr.total_overrun_days ?? 0) > 0 ? ` · +${fmtCount(pr.total_overrun_days)}d` : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Reported Custody-Overrun Case Dossiers Table */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>
+            Custody-overrun &amp; contempt case dossiers reported so far
+            {hasActiveFilters && topLeads.length > 0
+              ? ` (${fmtCount(filteredLeads.length)} matching filters)`
+              : ''}
+          </h3>
+          {filteredLeads.length > 0 ? (
+            <span className="pv-chart-note">
+              4-stage documentary chain: Acquitted → Held in Prison → Contempt Filed → Released
+            </span>
+          ) : null}
+        </div>
+        {filteredLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                Verified and in-review post-acquittal custody overrun and contempt compliance dossiers.
+                {onSelectFinding
+                  ? ' Open any row to read the full 4-stage custody timeline, official citations, SHA-256 hashes, and RTI draft.'
+                  : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Case &amp; Court / Authority</th>
+                  <th scope="col">Year, State &amp; Portal</th>
+                  <th scope="col">4-Stage Custody Chain</th>
+                  <th scope="col">Mechanism &amp; Outcome</th>
+                  <th scope="col">Audit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const mech = formatCustodyOverrunMechanism(
+                    lead.overrun_mechanism || lead.signal_category,
+                  );
+                  const portal = formatPortalCategory(lead.portal_category);
+                  const chain = formatChainStatus(lead.chain_status, lead.stages_verified_count);
+                  const stages = p10BuildFourStageChain(lead);
+                  const overrunText = formatOverrunDays(lead.overrun_days);
+
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line pv-p8-lead-scheme">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.case_title || lead.title}
+                          </button>
+                        ) : (
+                          <span>{lead.case_title || lead.title}</span>
+                        )}
+                        <span className="pv-ub-sub">
+                          {lead.is_anchor_case ? (
+                            <>
+                              <span
+                                className="p10-anchor-chip"
+                                style={{ fontSize: 10.5, padding: '0 6px' }}
+                              >
+                                Anchor
+                              </span>{' '}
+                            </>
+                          ) : null}
+                          {[lead.acquittal_court || lead.entity_name, lead.prison_name]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="Year, State & portal">
+                        <span>
+                          {[
+                            lead.year ? String(lead.year) : null,
+                            lead.state_ut ||
+                              (lead.jurisdiction ? formatJurisdictionLabel(lead.jurisdiction) : null),
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
+                        </span>
+                        <span className="pv-ub-sub">
+                          <span
+                            className={portal.chipClass}
+                            style={{ fontSize: 10.5, padding: '0 6px' }}
+                          >
+                            {portal.shortLabel}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="pv-p10-lead-chain" data-label="4-Stage custody chain">
+                        <div className="p10-mini-chain" aria-label={chain.label}>
+                          {stages.map((st) => (
+                            <span
+                              key={st.stage}
+                              className={`p10-mini-node p10-mini-node--s${st.stage}${
+                                st.verified ? ' is-done' : ''
+                              }`}
+                              title={`${st.kicker}: ${st.title}${st.date ? ` (${st.date})` : ''}`}
+                            >
+                              {st.stage}
+                            </span>
+                          ))}
+                          <span className={chain.chipClass} style={{ fontSize: 10.5, padding: '0 6px' }}>
+                            {chain.shortLabel}
+                          </span>
+                        </div>
+                        <span className="pv-ub-sub tabular">
+                          {[
+                            lead.acquittal_order_date ? `Acq ${lead.acquittal_order_date}` : null,
+                            overrunText && lead.overrun_days != null && lead.overrun_days > 0
+                              ? `+${overrunText}`
+                              : null,
+                            lead.release_date ? `Rel ${lead.release_date}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'Documented in official record'}
+                        </span>
+                      </td>
+                      <td data-label="Mechanism & outcome">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <span className={mech.chipClass}>{mech.shortLabel}</span>
+                          {lead.compensation_inr != null && lead.compensation_inr > 0 ? (
+                            <span className="tag-mono tabular">
+                              {formatInr(lead.compensation_inr)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {lead.judicial_direction_summary || lead.contempt_case_number ? (
+                          <span className="pv-ub-sub">
+                            {p10ShortText(
+                              lead.judicial_direction_summary || lead.contempt_case_number,
+                              95,
+                            )}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            {hasActiveFilters && topLeads.length > 0
+              ? 'No reported case dossiers match the active explorer filters. Reset filters above to view all dossiers.'
+              : 'Post-acquittal custody overrun and contempt dossiers appear here as contributor agents verify tasks. Every record cites official court/portal documents, SHA-256 digests, verbatim excerpts, and lawful procedural context.'}
           </div>
         )}
       </div>

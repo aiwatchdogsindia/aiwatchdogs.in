@@ -20,6 +20,7 @@ from fastapi import HTTPException, status
 from aiwatchdogs.core.coding_agents import normalize_coding_agent, normalize_coding_agent_model
 from aiwatchdogs.core.rti import generate_rti_draft
 from aiwatchdogs.core.safety import (
+    compute_client_ip_hash,
     compute_sha256,
     compute_token_digest,
     escape_like,
@@ -31,6 +32,7 @@ from aiwatchdogs.core.safety import (
     scrub_pii,
     scrub_pii_in_obj,
     validate_safe_http_url,
+    validate_safe_single_line_text,
     verify_token_digest,
 )
 from aiwatchdogs.core.usage import PEER_ESTIMATE_BASIS, UsageReport, public_usage, summarise_tokens, tokens_used
@@ -63,7 +65,11 @@ from aiwatchdogs.hub.quorum import (
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
 from aiwatchdogs.projects import (
+    AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
+    AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
     CANONICAL_PROJECT_CODES,
+    INNOCENT_BUT_LOCKED_UP_METHODOLOGY,
+    INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG,
     ONE_ROAD_TWO_BILLS_METHODOLOGY,
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_METHODOLOGY,
@@ -72,9 +78,18 @@ from aiwatchdogs.projects import (
     ONLY_ONE_BID_PROJECT_SLUG,
     PARLIAMENTS_TO_DO_LIST_METHODOLOGY,
     PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
+    SOVEREIGN_LIES_METHODOLOGY,
+    SOVEREIGN_LIES_PROJECT_SLUG,
     UNION_BUDGET_METHODOLOGY,
     UNION_BUDGET_PROJECT_SLUG,
 )
+
+_FINANCIAL_QUANTITY_LABELS: dict[str, str] = {
+    **FINANCIAL_QUANTITY_LABELS,
+    "scheme_promises_and_revisions": "Scheme launch promises, amendments, & published outlays",
+    "public_examination_conduct": "Public examination conduct, schedule disruptions, & candidate impact",
+    "custody_overrun_and_contempt": "Post-acquittal detention overrun days, court contempt orders & compensation",
+}
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
 RESERVED_HANDLES: frozenset[str] = frozenset(
@@ -156,6 +171,9 @@ OPEN_CHOICE_PROJECTS = frozenset(
         ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
         PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
         ONLY_ONE_BID_PROJECT_SLUG,
+        SOVEREIGN_LIES_PROJECT_SLUG,
+        AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
+        INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG,
     }
 )
 
@@ -606,19 +624,54 @@ def _normalize_checks(raw_checks: Any, *, strict: bool = False) -> dict[str, str
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _require_github_verified_quorum() -> bool:
+    """Optional strict mode requiring GitHub-verified agents for peer-verification quorum."""
+    return os.environ.get("AIWATCHDOGS_REQUIRE_GITHUB_VERIFIED_QUORUM", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _load_author_identity(conn: Any, finding_row: Any) -> tuple[bool, str, str]:
+    """Return ``(github_verified, github_user_id, registered_ip_hash)`` for a finding's author."""
+    agent_id = str(_row_get(finding_row, "submitted_by_agent_id", "") or "").strip()
+    handle = str(_row_get(finding_row, "submitted_by", "") or "").strip().lower()
+    row = None
+    if agent_id:
+        row = conn.execute(
+            "SELECT github_verified, github_user_id, registered_ip_hash FROM agents WHERE id = ?",
+            (agent_id,),
+        ).fetchone()
+    if row is None and handle:
+        row = conn.execute(
+            "SELECT github_verified, github_user_id, registered_ip_hash FROM agents WHERE handle = ?",
+            (handle,),
+        ).fetchone()
+    if row is None:
+        return (False, "", "")
+    return (
+        bool(int(_row_get(row, "github_verified", 0) or 0)),
+        str(_row_get(row, "github_user_id", "") or "").strip(),
+        str(_row_get(row, "registered_ip_hash", "") or "").strip(),
+    )
+
+
 def _load_finding_participants(
     conn: Any,
     finding_id: str,
     *,
     exclude_task_id: str | None = None,
-) -> list[tuple[str, Any, Any, Any]]:
-    """Return ``(source_label, handle, coding_agent, coding_agent_model)`` for all verifiers & active leases."""
-    participants: list[tuple[str, Any, Any, Any]] = []
+) -> list[tuple[str, Any, Any, Any, bool, str, str]]:
+    """Return participant tuples ``(source_label, handle, harness, model, gh_verified, gh_uid, ip_hash)``."""
+    participants: list[tuple[str, Any, Any, Any, bool, str, str]] = []
     for pv in conn.execute(
         """
-        SELECT contributor_id, verifier_handle, coding_agent, coding_agent_model
-        FROM peer_verifications
-        WHERE finding_id = ?
+        SELECT pv.contributor_id, pv.verifier_handle, pv.coding_agent, pv.coding_agent_model,
+               a.github_verified, a.github_user_id, a.registered_ip_hash
+        FROM peer_verifications pv
+        LEFT JOIN agents a ON a.id = pv.verifier_node_id
+        WHERE pv.finding_id = ?
         """,
         (finding_id,),
     ).fetchall():
@@ -628,12 +681,16 @@ def _load_finding_participants(
                 pv["contributor_id"] or pv["verifier_handle"],
                 _row_get(pv, "coding_agent", ""),
                 _row_get(pv, "coding_agent_model", ""),
+                bool(int(_row_get(pv, "github_verified", 0) or 0)),
+                str(_row_get(pv, "github_user_id", "") or "").strip(),
+                str(_row_get(pv, "registered_ip_hash", "") or "").strip(),
             )
         )
     if exclude_task_id:
         lease_rows = conn.execute(
             """
-            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model
+            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model,
+                   a.github_verified, a.github_user_id, a.registered_ip_hash
             FROM tasks t
             LEFT JOIN agents a ON a.id = t.claimed_by_agent_id
             WHERE t.status = 'claimed'
@@ -645,7 +702,8 @@ def _load_finding_participants(
     else:
         lease_rows = conn.execute(
             """
-            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model
+            SELECT t.claimed_by_handle, a.coding_agent, a.coding_agent_model,
+                   a.github_verified, a.github_user_id, a.registered_ip_hash
             FROM tasks t
             LEFT JOIN agents a ON a.id = t.claimed_by_agent_id
             WHERE t.status = 'claimed'
@@ -660,6 +718,9 @@ def _load_finding_participants(
                 lr["claimed_by_handle"],
                 _row_get(lr, "coding_agent", ""),
                 _row_get(lr, "coding_agent_model", ""),
+                bool(int(_row_get(lr, "github_verified", 0) or 0)),
+                str(_row_get(lr, "github_user_id", "") or "").strip(),
+                str(_row_get(lr, "registered_ip_hash", "") or "").strip(),
             )
         )
     return participants
@@ -799,7 +860,7 @@ class DeskService:
         workload_inr = float(row["monetary_audited_inr"] or 0.0)
         uniq_inr = float(unique_coverage_inr if unique_coverage_inr is not None else workload_inr)
         qty_type = str(_row_get(row, "financial_quantity_type", "") or "")
-        qty_label = FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported project figure")
+        qty_label = _FINANCIAL_QUANTITY_LABELS.get(qty_type, qty_type or "Reported project figure")
         cleared_scans = int(row["cleared_count"] or 0)
         cleared_findings = int(
             cleared_findings_count
@@ -969,6 +1030,8 @@ class DeskService:
             "joined_at": row["joined_at"],
             "last_heartbeat_at": row["last_heartbeat_at"],
             "last_check_at": resolved_last_check,
+            "github_verified": bool(int(_row_get(row, "github_verified", 0) or 0)),
+            "github_verified_at": _row_get(row, "github_verified_at", None),
             "profile_url": f"/a/{row['handle']}",
         }
 
@@ -2184,7 +2247,7 @@ class DeskService:
             breakdown.append(
                 {
                     "quantity_type": qtype,
-                    "label": FINANCIAL_QUANTITY_LABELS.get(qtype, qtype),
+                    "label": _FINANCIAL_QUANTITY_LABELS.get(qtype, qtype),
                     "unique_datasets": len(dmap),
                     "deduplicated_inr": dedup_inr,
                     "deduplicated_inr_cr": _inr_to_cr(dedup_inr),
@@ -2460,7 +2523,8 @@ class DeskService:
             )
 
             just_joined_rows = conn.execute(
-                "SELECT handle, display_name, provider, model, coding_agent, coding_agent_model, joined_at "
+                "SELECT handle, display_name, provider, model, coding_agent, coding_agent_model, "
+                "github_verified, joined_at "
                 "FROM agents WHERE revoked_at IS NULL AND status != 'revoked' "
                 "ORDER BY joined_at DESC LIMIT 6"
             ).fetchall()
@@ -2472,6 +2536,7 @@ class DeskService:
                     "model": r["model"],
                     "coding_agent": str(_row_get(r, "coding_agent", "") or "").strip() or None,
                     "coding_agent_model": str(_row_get(r, "coding_agent_model", "") or "").strip() or None,
+                    "github_verified": bool(int(_row_get(r, "github_verified", 0) or 0)),
                     "joined_at": r["joined_at"],
                 }
                 for r in just_joined_rows
@@ -3745,6 +3810,18 @@ class DeskService:
             summary["only_one_bid"] = self._only_one_bid_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == SOVEREIGN_LIES_METHODOLOGY:
+            summary["sovereign_lies"] = self._sovereign_lies_summary(conn, mission_row=mission_row)
+            return summary
+
+        if methodology_code == AUDITING_GOVERNMENT_EXAMS_METHODOLOGY:
+            summary["auditing_government_exams"] = self._auditing_government_exams_summary(conn, mission_row=mission_row)
+            return summary
+
+        if methodology_code == INNOCENT_BUT_LOCKED_UP_METHODOLOGY:
+            summary["innocent_but_locked_up"] = self._innocent_but_locked_up_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -3959,6 +4036,9 @@ class DeskService:
                         UNION_BUDGET_METHODOLOGY,
                         ONE_ROAD_TWO_BILLS_METHODOLOGY,
                         ONLY_ONE_BID_METHODOLOGY,
+                        SOVEREIGN_LIES_METHODOLOGY,
+                        AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
+                        INNOCENT_BUT_LOCKED_UP_METHODOLOGY,
                     )
                 )
                 else _TASK_LIST_COLUMNS
@@ -5222,6 +5302,2535 @@ class DeskService:
             "top_repeat_winners": top_repeat_winners[:30],
             "anchor_case": anchor_case,
             "top_leads": top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def get_sovereign_lies_summary(self) -> dict[str, Any]:
+        """Public summary endpoint payload for Project 8 (Sovereign Lies)."""
+        slug = self.resolve_slug(SOVEREIGN_LIES_PROJECT_SLUG)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT * FROM missions WHERE slug = ? OR methodology_code = ? LIMIT 1",
+                (slug, SOVEREIGN_LIES_METHODOLOGY),
+            ).fetchone()
+            if row is not None:
+                return self._sovereign_lies_summary(conn, mission_row=row)
+        coverage = _project_coverage(slug)
+        if not coverage:
+            raise HTTPException(status_code=404, detail="Project 'sovereign-lies' not found")
+        return self._sovereign_lies_summary(None, mission_row=None)
+
+    def _sovereign_lies_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fallback-safe Union & State/UT summary, mechanism breakdown, SGB anchor, and top leads for P8."""
+        from aiwatchdogs.engines.sovereign_lies import (
+            P8_DEFAULT_HOOK,
+            SCHEME_CATEGORY_LABELS,
+            SIGNAL_CATEGORIES,
+            VALID_RETROACTIVE_IMPACTS,
+            VALID_WALKBACK_MECHANISMS,
+            WALKBACK_MECHANISM_RULES,
+            canonical_key,
+        )
+
+        mid = str(mission_row["id"]) if mission_row is not None else None
+        slug = str(mission_row["slug"]) if mission_row is not None else SOVEREIGN_LIES_PROJECT_SLUG
+        coverage = _project_coverage(slug)
+
+        def _opt_int(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            if isinstance(val, str):
+                cleaned = val.strip()
+                if cleaned.isdigit() or (cleaned.startswith("-") and cleaned[1:].isdigit()):
+                    return int(cleaned)
+            return None
+
+        by_jurisdiction_level: dict[str, dict[str, Any]] = {
+            lvl: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "pct": 0.0, "leads": 0, "cleared": 0}
+            for lvl in ("union", "state", "ut")
+        }
+        raw_jlevels = (
+            coverage.get("by_jurisdiction_level")
+            if isinstance(coverage.get("by_jurisdiction_level"), dict)
+            else {}
+        )
+        for lvl in ("union", "state", "ut"):
+            item = raw_jlevels.get(lvl)
+            if isinstance(item, dict):
+                by_jurisdiction_level[lvl]["tasks"] = int(item.get("tasks") or 0)
+
+        by_mechanism: dict[str, dict[str, int]] = {
+            m: {"tasks": 0, "leads": 0}
+            for m in (*SIGNAL_CATEGORIES, "grandfathered_or_honored")
+        }
+        raw_mechs = coverage.get("by_mechanism") if isinstance(coverage.get("by_mechanism"), dict) else {}
+        for m in VALID_WALKBACK_MECHANISMS:
+            val = raw_mechs.get(m)
+            if isinstance(val, dict):
+                by_mechanism[m]["tasks"] = int(val.get("tasks") or 0)
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_mechanism[m]["tasks"] = int(val)
+
+        by_signal: dict[str, int] = {sig: 0 for sig in SIGNAL_CATEGORIES}
+        rule_to_signal = {rule: mech for mech, rule in WALKBACK_MECHANISM_RULES.items()}
+
+        by_retroactive_impact: dict[str, int] = {imp: 0 for imp in sorted(VALID_RETROACTIVE_IMPACTS)}
+        raw_impacts = (
+            coverage.get("by_retroactive_impact")
+            if isinstance(coverage.get("by_retroactive_impact"), dict)
+            else {}
+        )
+        for imp in by_retroactive_impact:
+            val = raw_impacts.get(imp)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_retroactive_impact[imp] = int(val)
+
+        categories_map: dict[str, dict[str, Any]] = {
+            cat: {
+                "category": cat,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "flagged_inr_cr": 0.0,
+            }
+            for cat, label in SCHEME_CATEGORY_LABELS.items()
+        }
+        raw_cats = coverage.get("by_category")
+        if isinstance(raw_cats, list):
+            for citem in raw_cats:
+                if not isinstance(citem, dict):
+                    continue
+                ckey = str(citem.get("category") or "").strip().lower()
+                if ckey in categories_map:
+                    categories_map[ckey]["tasks"] = int(citem.get("tasks") or 0)
+        elif isinstance(raw_cats, dict):
+            for ckey, cval in raw_cats.items():
+                if ckey in categories_map:
+                    if isinstance(cval, dict):
+                        categories_map[ckey]["tasks"] = int(cval.get("tasks") or 0)
+                    elif isinstance(cval, (int, float)) and not isinstance(cval, bool):
+                        categories_map[ckey]["tasks"] = int(cval)
+
+        jurisdictions_map: dict[str, dict[str, Any]] = {}
+        for jitem in coverage.get("jurisdictions") if isinstance(coverage.get("jurisdictions"), list) else []:
+            if not isinstance(jitem, dict):
+                continue
+            jname = str(jitem.get("jurisdiction") or "").strip()
+            if not jname:
+                continue
+            jlvl = str(
+                jitem.get("jurisdiction_level")
+                or ("union" if jname == "Union of India" else ("ut" if jname.startswith("UT:") else "state"))
+            ).strip().lower()
+            s_ut = jitem.get("state_or_ut")
+            jurisdictions_map[jname] = {
+                "jurisdiction": jname,
+                "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                "tasks": int(jitem.get("tasks") or 0),
+                "done": 0,
+                "leads": 0,
+                "cleared": 0,
+                "flagged_inr_cr": 0.0,
+            }
+
+        schemes_map: dict[str, dict[str, Any]] = {}
+        for sitem in coverage.get("top_schemes") if isinstance(coverage.get("top_schemes"), list) else []:
+            if not isinstance(sitem, dict):
+                continue
+            sname = str(sitem.get("scheme_name") or "").strip()
+            if not sname:
+                continue
+            sslug = str(sitem.get("scheme_slug") or canonical_key(sname)).strip().lower()
+            schemes_map[sslug] = {
+                "scheme_name": sname,
+                "scheme_slug": sslug,
+                "jurisdiction": str(sitem.get("jurisdiction") or "Union of India"),
+                "jurisdiction_level": str(sitem.get("jurisdiction_level") or "union"),
+                "scheme_category": str(sitem.get("scheme_category") or "welfare_health_public_services"),
+                "walkback_mechanism": str(sitem.get("walkback_mechanism") or ""),
+                "retroactive_impact": str(sitem.get("retroactive_impact") or ""),
+                "tasks": int(sitem.get("tasks") or 0),
+                "leads": 0,
+                "is_sgb_anchor": bool(sitem.get("is_sgb_anchor")),
+            }
+
+        anchor_raw = coverage.get("sgb_anchor_case") or coverage.get("anchor_case")
+        sgb_anchor_case: dict[str, Any] | None = dict(anchor_raw) if isinstance(anchor_raw, dict) else None
+        if sgb_anchor_case is not None:
+            sgb_anchor_case.setdefault("finding_id", None)
+
+        db_total_tasks = 0
+        db_sgb_tasks = 0
+        db_cleared_controls = 0
+        has_coverage = bool(coverage)
+
+        if conn is not None and mid is not None:
+            lvl_counts_from_db: dict[str, dict[str, int]] = {
+                lvl: {"tasks": 0, "done": 0, "claimed": 0, "open": 0}
+                for lvl in ("union", "state", "ut")
+            }
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN id LIKE 'prj-p8-union-%' OR id LIKE 'p8-union-%' THEN 'union' "
+                "WHEN id LIKE 'prj-p8-ut-%' OR id LIKE 'p8-ut-%' THEN 'ut' "
+                "WHEN id LIKE 'prj-p8-state-%' OR id LIKE 'p8-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, status, COUNT(*) AS c "
+                "FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status != 'retired' "
+                "GROUP BY jlvl, status",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                st = str(r["status"] or "")
+                n = int(r["c"] or 0)
+                db_total_tasks += n
+                bucket = lvl_counts_from_db[jlvl]
+                bucket["tasks"] += n
+                if st == "completed":
+                    bucket["done"] += n
+                elif st == "claimed":
+                    bucket["claimed"] += n
+                elif st == "queued":
+                    bucket["open"] += n
+
+            for lvl in ("union", "state", "ut"):
+                if lvl_counts_from_db[lvl]["tasks"] > 0:
+                    by_jurisdiction_level[lvl]["tasks"] = lvl_counts_from_db[lvl]["tasks"]
+                    by_jurisdiction_level[lvl]["done"] = lvl_counts_from_db[lvl]["done"]
+                    by_jurisdiction_level[lvl]["claimed"] = lvl_counts_from_db[lvl]["claimed"]
+                    by_jurisdiction_level[lvl]["open"] = lvl_counts_from_db[lvl]["open"]
+                else:
+                    by_jurisdiction_level[lvl]["open"] = max(
+                        0,
+                        by_jurisdiction_level[lvl]["tasks"]
+                        - by_jurisdiction_level[lvl]["done"]
+                        - by_jurisdiction_level[lvl]["claimed"],
+                    )
+
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN t.id LIKE 'prj-p8-union-%' OR t.id LIKE 'p8-union-%' THEN 'union' "
+                "WHEN t.id LIKE 'prj-p8-ut-%' OR t.id LIKE 'p8-ut-%' THEN 'ut' "
+                "WHEN t.id LIKE 'prj-p8-state-%' OR t.id LIKE 'p8-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, COUNT(*) AS c "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "AND NOT EXISTS (SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id) "
+                "GROUP BY jlvl",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                by_jurisdiction_level[jlvl]["cleared"] = int(r["c"] or 0)
+
+            if not has_coverage and db_total_tasks > 0:
+                for tr in conn.execute(
+                    "SELECT id, status, payload_json FROM tasks WHERE mission_id = ? "
+                    "AND task_type != 'peer_verify' AND status != 'retired' LIMIT 1500",
+                    (mid,),
+                ).fetchall():
+                    t_payload = loads_json(tr["payload_json"], {})
+                    t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                    t_spec = t_ctx.get("sovereign_lies") if isinstance(t_ctx.get("sovereign_lies"), dict) else {}
+                    if not t_spec:
+                        continue
+                    mech = str(t_spec.get("walkback_mechanism") or "").strip().lower()
+                    imp = str(t_spec.get("retroactive_impact") or "").strip().lower()
+                    cat = str(t_spec.get("scheme_category") or "").strip().lower()
+                    jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                    jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                    s_ut = t_spec.get("state_or_ut")
+                    sname = str(t_spec.get("scheme_name") or "").strip()
+                    sslug = str(t_spec.get("scheme_slug") or canonical_key(sname)).strip().lower()
+
+                    if mech in by_mechanism:
+                        by_mechanism[mech]["tasks"] += 1
+                    if mech == "grandfathered_or_honored":
+                        db_cleared_controls += 1
+                    if imp in by_retroactive_impact:
+                        by_retroactive_impact[imp] += 1
+                    if cat in categories_map:
+                        categories_map[cat]["tasks"] += 1
+                    j_entry = jurisdictions_map.setdefault(
+                        jur,
+                        {
+                            "jurisdiction": jur,
+                            "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                            "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                            "tasks": 0,
+                            "done": 0,
+                            "leads": 0,
+                            "cleared": 0,
+                            "flagged_inr_cr": 0.0,
+                        },
+                    )
+                    j_entry["tasks"] += 1
+                    if sslug == "sovereign-gold-bond" or bool(t_spec.get("is_sgb_anchor")):
+                        db_sgb_tasks += 1
+                    if sname and sslug:
+                        s_entry = schemes_map.setdefault(
+                            sslug,
+                            {
+                                "scheme_name": sname,
+                                "scheme_slug": sslug,
+                                "jurisdiction": jur,
+                                "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                                "scheme_category": cat if cat in categories_map else "welfare_health_public_services",
+                                "walkback_mechanism": mech,
+                                "retroactive_impact": imp,
+                                "tasks": 0,
+                                "leads": 0,
+                                "is_sgb_anchor": bool(t_spec.get("is_sgb_anchor")),
+                            },
+                        )
+                        s_entry["tasks"] += 1
+                        if bool(t_spec.get("is_sgb_anchor")):
+                            s_entry["is_sgb_anchor"] = True
+                    if sgb_anchor_case is None and bool(t_spec.get("is_sgb_anchor")):
+                        sgb_anchor_case = {
+                            "task_id": str(tr["id"]).removeprefix("prj-"),
+                            "finding_id": None,
+                            "scheme_name": sname,
+                            "tranche_or_phase": str(t_spec.get("tranche_or_phase") or ""),
+                            "jurisdiction": jur,
+                            "authority": str(t_spec.get("authority") or ""),
+                            "promise_date": str(t_spec.get("promise_date") or ""),
+                            "promise_summary": str(t_spec.get("promise_summary") or ""),
+                            "promise_document_ref": str(t_spec.get("promise_document_ref") or ""),
+                            "walkback_date": t_spec.get("walkback_date"),
+                            "walkback_summary": str(t_spec.get("walkback_summary") or ""),
+                            "walkback_document_ref": str(t_spec.get("walkback_document_ref") or ""),
+                            "walkback_mechanism": mech,
+                            "retroactive_impact": imp,
+                            "promised_metric": str(t_spec.get("promised_metric") or ""),
+                            "revised_metric": str(t_spec.get("revised_metric") or ""),
+                            "affected_group": str(t_spec.get("affected_group") or ""),
+                            "days_from_promise_to_walkback": None,
+                            "source_url": str(t_payload.get("retrieval_url") or ""),
+                            "secondary_url": str(t_payload.get("secondary_url") or "") or None,
+                            "portal_url": str(t_payload.get("source_landing_page") or ""),
+                        }
+
+            # Always aggregate live completed-task progress (`done` and `cleared`) into categories & jurisdictions
+            # regardless of whether coverage.json is present (never rely on stale coverage.json execution counts).
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 1500",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = t_ctx.get("sovereign_lies") if isinstance(t_ctx.get("sovereign_lies"), dict) else {}
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                cat = str(t_spec.get("scheme_category") or "").strip().lower()
+                if cat in categories_map:
+                    categories_map[cat]["done"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                s_ut = t_spec.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(
+                    jur,
+                    {
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "state",
+                        "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                j_entry["done"] += 1
+                if is_cleared_task:
+                    j_entry["cleared"] += 1
+        else:
+            for lvl in ("union", "state", "ut"):
+                by_jurisdiction_level[lvl]["open"] = by_jurisdiction_level[lvl]["tasks"]
+
+        for entry in by_jurisdiction_level.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        leads = verified = peer_review = 0
+        flagged_total_cr = 0.0
+        top_leads: list[dict[str, Any]] = []
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        if conn is not None and mid is not None:
+            live = (
+                "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+                "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+            )
+            for r in conn.execute(
+                f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
+                f"monetary_exposure_inr, anomaly_metrics_json, source_url, task_id "
+                f"FROM findings WHERE {live} ORDER BY id ASC",
+                (mid,),
+            ).fetchall():
+                leads += 1
+                st = str(r["status"] or "")
+                if st == "verified":
+                    verified += 1
+                elif st in ("peer_review", "raw_lead"):
+                    peer_review += 1
+
+                exposure_inr = _safe_finite_float(r["monetary_exposure_inr"], 0.0)
+                crore = exposure_inr / 1e7
+                flagged_total_cr += crore
+
+                metrics = loads_json(r["anomaly_metrics_json"], {})
+                metrics = metrics if isinstance(metrics, dict) else {}
+
+                rule = str(r["rule_triggered"] or "").strip()
+                sig = str(metrics.get("signal_category") or rule_to_signal.get(rule) or "").strip()
+                mech = str(metrics.get("walkback_mechanism") or sig).strip()
+                imp = str(metrics.get("retroactive_impact") or "").strip()
+                if sig in by_signal:
+                    by_signal[sig] += 1
+                if mech in by_mechanism:
+                    by_mechanism[mech]["leads"] += 1
+
+                jlvl = str(metrics.get("jurisdiction_level") or "").strip().lower()
+                jur = str(metrics.get("jurisdiction") or r["jurisdiction"] or "Union of India").strip()
+                if jlvl not in {"union", "state", "ut"}:
+                    if jur.startswith("State:"):
+                        jlvl = "state"
+                    elif jur.startswith("UT:"):
+                        jlvl = "ut"
+                    else:
+                        jlvl = "union"
+                by_jurisdiction_level[jlvl]["leads"] += 1
+
+                cat = str(metrics.get("scheme_category") or "").strip().lower()
+                if cat in categories_map:
+                    categories_map[cat]["leads"] += 1
+                    categories_map[cat]["flagged_inr_cr"] = round(categories_map[cat]["flagged_inr_cr"] + crore, 4)
+
+                s_ut_val = metrics.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(
+                    jur,
+                    {
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl,
+                        "state_or_ut": str(s_ut_val).strip() if isinstance(s_ut_val, str) and s_ut_val.strip() else None,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "flagged_inr_cr": 0.0,
+                    },
+                )
+                j_entry["leads"] += 1
+                j_entry["flagged_inr_cr"] = round(j_entry["flagged_inr_cr"] + crore, 4)
+
+                sname = str(metrics.get("scheme_name") or "").strip()
+                sslug = str(metrics.get("scheme_slug") or canonical_key(sname)).strip().lower()
+                is_sgb = bool(metrics.get("is_sgb_anchor"))
+                if sslug:
+                    s_entry = schemes_map.setdefault(
+                        sslug,
+                        {
+                            "scheme_name": sname or sslug,
+                            "scheme_slug": sslug,
+                            "jurisdiction": jur,
+                            "jurisdiction_level": jlvl,
+                            "scheme_category": cat if cat in categories_map else "welfare_health_public_services",
+                            "walkback_mechanism": mech,
+                            "retroactive_impact": imp,
+                            "tasks": 0,
+                            "leads": 0,
+                            "is_sgb_anchor": is_sgb,
+                        },
+                    )
+                    s_entry["leads"] += 1
+                    if is_sgb:
+                        s_entry["is_sgb_anchor"] = True
+
+                if is_sgb:
+                    if sgb_anchor_case is None:
+                        sgb_anchor_case = {
+                            "task_id": str(r["task_id"] or "").removeprefix("prj-") or None,
+                            "finding_id": str(r["id"]),
+                            "scheme_name": sname,
+                            "tranche_or_phase": str(metrics.get("tranche_or_phase") or ""),
+                            "jurisdiction": jur,
+                            "authority": str(metrics.get("authority") or r["entity_name"] or ""),
+                            "promise_date": str(metrics.get("promise_date") or ""),
+                            "promise_summary": str(metrics.get("promise_summary") or ""),
+                            "promise_document_ref": str(metrics.get("promise_document_ref") or ""),
+                            "walkback_date": metrics.get("walkback_date"),
+                            "walkback_summary": str(metrics.get("walkback_summary") or ""),
+                            "walkback_document_ref": str(metrics.get("walkback_document_ref") or ""),
+                            "walkback_mechanism": mech,
+                            "retroactive_impact": imp,
+                            "promised_metric": str(metrics.get("promised_metric") or ""),
+                            "revised_metric": str(metrics.get("revised_metric") or ""),
+                            "affected_group": str(metrics.get("affected_group") or ""),
+                            "days_from_promise_to_walkback": _opt_int(metrics.get("days_from_promise_to_walkback")),
+                            "source_url": str(r["source_url"] or ""),
+                            "secondary_url": None,
+                            "portal_url": str(r["source_url"] or ""),
+                        }
+                    elif not sgb_anchor_case.get("finding_id"):
+                        sgb_anchor_case["finding_id"] = str(r["id"])
+
+                top_leads.append(
+                    {
+                        "finding_id": str(r["id"]),
+                        "title": str(r["title"] or ""),
+                        "scheme_name": sname or str(r["entity_name"] or ""),
+                        "scheme_slug": sslug,
+                        "tranche_or_phase": str(metrics.get("tranche_or_phase") or ""),
+                        "entity_name": str(r["entity_name"] or ""),
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl,
+                        "state_or_ut": str(s_ut_val).strip() if isinstance(s_ut_val, str) and s_ut_val.strip() else None,
+                        "scheme_category": cat,
+                        "walkback_mechanism": mech,
+                        "retroactive_impact": imp,
+                        "signal_category": sig,
+                        "promise_date": str(metrics.get("promise_date") or ""),
+                        "walkback_date": metrics.get("walkback_date"),
+                        "days_from_promise_to_walkback": _opt_int(metrics.get("days_from_promise_to_walkback")),
+                        "promised_metric": str(metrics.get("promised_metric") or ""),
+                        "revised_metric": str(metrics.get("revised_metric") or ""),
+                        "promise_summary": str(metrics.get("promise_summary") or ""),
+                        "walkback_summary": str(metrics.get("walkback_summary") or ""),
+                        "affected_group": str(metrics.get("affected_group") or ""),
+                        "is_sgb_anchor": is_sgb,
+                        "monetary_exposure_inr": round(exposure_inr, 2),
+                        "flagged_inr_cr": round(crore, 4),
+                        "severity": str(r["severity"] or "medium"),
+                        "status": st,
+                        "_sort_anchor": 1 if is_sgb else 0,
+                        "_sort_sev": sev_rank.get(str(r["severity"] or "").lower(), 0),
+                    }
+                )
+
+            if sgb_anchor_case is not None and not sgb_anchor_case.get("finding_id") and sgb_anchor_case.get("task_id"):
+                raw_tid = str(sgb_anchor_case.get("task_id") or "").strip()
+                pref_tid = raw_tid if raw_tid.startswith("prj-") else f"prj-{raw_tid}"
+                arow = conn.execute(
+                    f"SELECT id FROM findings WHERE {live} AND task_id IN (?, ?) ORDER BY id ASC LIMIT 1",
+                    (mid, raw_tid, pref_tid),
+                ).fetchone()
+                if arow is not None:
+                    sgb_anchor_case["finding_id"] = str(arow["id"])
+
+        top_leads.sort(
+            key=lambda x: (
+                -int(x["_sort_anchor"]),
+                -int(x["_sort_sev"]),
+                -float(x["monetary_exposure_inr"]),
+                str(x["finding_id"]),
+            )
+        )
+        cleaned_top_leads = [
+            {k: v for k, v in item.items() if not k.startswith("_sort_")}
+            for item in top_leads[:20]
+        ]
+
+        by_category_list = sorted(
+            categories_map.values(),
+            key=lambda c: (-int(c["tasks"]), -int(c["leads"]), str(c["category"])),
+        )
+        jurisdictions_list = sorted(
+            jurisdictions_map.values(),
+            key=lambda j: (
+                0 if j["jurisdiction_level"] == "union" else 1,
+                -int(j["tasks"]),
+                -int(j["leads"]),
+                str(j["jurisdiction"]).lower(),
+            ),
+        )
+        top_schemes_list = sorted(
+            schemes_map.values(),
+            key=lambda s: (
+                0 if s.get("is_sgb_anchor") else 1,
+                -int(s["tasks"]),
+                -int(s["leads"]),
+                str(s["scheme_name"]).lower(),
+            ),
+        )[:40]
+
+        states_uts_count = sum(
+            1
+            for j in jurisdictions_list
+            if j["jurisdiction_level"] in {"state", "ut"} and (j["tasks"] > 0 or j["leads"] > 0)
+        )
+        total_tasks_resolved = int(
+            coverage.get("total_tasks")
+            or db_total_tasks
+            or (mission_row["total_tasks"] if mission_row is not None else 0)
+            or 0
+        )
+
+        return {
+            "hook": str(coverage.get("hook") or P8_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": str(coverage.get("as_of_date") or ""),
+            "total_tasks": total_tasks_resolved,
+            "unique_schemes_covered": int(coverage.get("unique_schemes_covered") or len(schemes_map)),
+            "states_and_uts_covered": int(coverage.get("states_and_uts_covered") or states_uts_count),
+            "sgb_tasks_count": int(coverage.get("sgb_tasks_count") or db_sgb_tasks),
+            "cleared_control_tasks_embedded": int(
+                coverage.get("cleared_control_tasks_embedded")
+                or by_mechanism["grandfathered_or_honored"]["tasks"]
+                or db_cleared_controls
+            ),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
+            "flagged_total_inr_cr": round(flagged_total_cr, 2),
+            "by_jurisdiction_level": by_jurisdiction_level,
+            "by_mechanism": by_mechanism,
+            "by_signal": by_signal,
+            "by_retroactive_impact": by_retroactive_impact,
+            "by_category": by_category_list,
+            "jurisdictions": jurisdictions_list,
+            "top_schemes": top_schemes_list,
+            "sgb_anchor_case": sgb_anchor_case,
+            "top_leads": cleaned_top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def get_auditing_government_exams_summary(self) -> dict[str, Any]:
+        """Public summary endpoint payload for Project 9 (Auditing Government Exams)."""
+        slug = self.resolve_slug(AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT * FROM missions WHERE slug = ? OR methodology_code = ? LIMIT 1",
+                (slug, AUDITING_GOVERNMENT_EXAMS_METHODOLOGY),
+            ).fetchone()
+            if row is not None:
+                return self._auditing_government_exams_summary(conn, mission_row=row)
+        coverage = _project_coverage(slug)
+        if not coverage:
+            raise HTTPException(status_code=404, detail="Project 'auditing-government-exams' not found")
+        return self._auditing_government_exams_summary(None, mission_row=None)
+
+    def _auditing_government_exams_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fallback-safe 3-year public examination audit summary, breakdowns, anchors, and leads for P9."""
+        from aiwatchdogs.engines.auditing_government_exams import (
+            AUTHORITY_TYPE_LABELS,
+            DISRUPTION_TYPE_LABELS,
+            DISRUPTION_TYPE_RULES,
+            EXAM_CATEGORY_LABELS,
+            P9_AUDIT_WINDOW_END,
+            P9_AUDIT_WINDOW_LABEL,
+            P9_AUDIT_WINDOW_START,
+            P9_AUDIT_WINDOW_YEARS,
+            P9_DEFAULT_HOOK,
+            REASON_CATEGORY_LABELS,
+            SIGNAL_CATEGORIES,
+            VALID_DISRUPTION_TYPES,
+            canonical_key,
+            evaluate_exam_disruption_rule,
+        )
+
+        mid = str(mission_row["id"]) if mission_row is not None else None
+        slug = str(mission_row["slug"]) if mission_row is not None else AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG
+        coverage = _project_coverage(slug)
+
+        def _opt_int(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            return None
+
+        def _make_jurisdiction_row(jur: str, jlvl: str, s_ut: Any) -> dict[str, Any]:
+            clean_lvl = jlvl if jlvl in {"union", "state", "ut"} else "state"
+            clean_sut = str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None
+            if clean_lvl == "union":
+                clean_sut = None
+            return {
+                "jurisdiction": jur,
+                "jurisdiction_level": clean_lvl,
+                "state_or_ut": clean_sut,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "cleared": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+                "postponed": 0,
+                "rescheduled": 0,
+                "delayed": 0,
+                "cancelled_before_conduct": 0,
+                "partial_reexam_or_glitch": 0,
+                "not_flawless_rate_pct": 0.0,
+                "documented_affected_candidates": 0,
+            }
+
+        def _make_authority_row(
+            authority: str,
+            akey: str,
+            atype: str,
+            jur: str,
+            jlvl: str,
+        ) -> dict[str, Any]:
+            return {
+                "authority": authority,
+                "authority_key": akey,
+                "authority_type": atype if atype in AUTHORITY_TYPE_LABELS else "central_testing_agency",
+                "jurisdiction": jur,
+                "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "union",
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+                "postponed": 0,
+                "rescheduled": 0,
+                "delayed": 0,
+                "cancelled_before_conduct": 0,
+                "partial_reexam_or_glitch": 0,
+                "not_flawless_rate_pct": 0.0,
+                "documented_affected_candidates": 0,
+            }
+
+        by_disruption_type: dict[str, dict[str, Any]] = {
+            d: {
+                "disruption_type": d,
+                "label": DISRUPTION_TYPE_LABELS[d],
+                "rule": DISRUPTION_TYPE_RULES.get(d),
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "cleared": 0,
+                "pct": 0.0,
+                "documented_affected_candidates": 0,
+            }
+            for d in (*SIGNAL_CATEGORIES, "flawless_conduct")
+        }
+        raw_dis = coverage.get("by_disruption_type") if isinstance(coverage.get("by_disruption_type"), dict) else {}
+        for d in VALID_DISRUPTION_TYPES:
+            val = raw_dis.get(d)
+            if isinstance(val, dict):
+                by_disruption_type[d]["tasks"] = int(val.get("tasks") or 0)
+                by_disruption_type[d]["documented_affected_candidates"] = int(
+                    val.get("documented_affected_candidates") or 0
+                )
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_disruption_type[d]["tasks"] = int(val)
+
+        by_jurisdiction_level: dict[str, dict[str, Any]] = {
+            lvl: {
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "leads": 0,
+                "cleared": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+            }
+            for lvl in ("union", "state", "ut")
+        }
+        raw_jlevels = (
+            coverage.get("by_jurisdiction_level")
+            if isinstance(coverage.get("by_jurisdiction_level"), dict)
+            else {}
+        )
+        for lvl in ("union", "state", "ut"):
+            item = raw_jlevels.get(lvl)
+            if isinstance(item, dict):
+                by_jurisdiction_level[lvl]["tasks"] = int(item.get("tasks") or 0)
+                by_jurisdiction_level[lvl]["not_flawless"] = int(item.get("not_flawless") or 0)
+                by_jurisdiction_level[lvl]["flawless"] = int(item.get("flawless") or 0)
+                by_jurisdiction_level[lvl]["cancelled_after_conduct"] = int(item.get("cancelled_after_conduct") or 0)
+
+        authority_types_map: dict[str, dict[str, Any]] = {
+            at: {
+                "authority_type": at,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+            }
+            for at, label in AUTHORITY_TYPE_LABELS.items()
+        }
+        raw_atypes = coverage.get("by_authority_type")
+        if isinstance(raw_atypes, list):
+            for item in raw_atypes:
+                if not isinstance(item, dict):
+                    continue
+                akey = str(item.get("authority_type") or "").strip().lower()
+                if akey in authority_types_map:
+                    authority_types_map[akey]["tasks"] = int(item.get("tasks") or 0)
+                    authority_types_map[akey]["not_flawless"] = int(item.get("not_flawless") or 0)
+                    authority_types_map[akey]["flawless"] = int(item.get("flawless") or 0)
+                    authority_types_map[akey]["cancelled_after_conduct"] = int(
+                        item.get("cancelled_after_conduct") or 0
+                    )
+        elif isinstance(raw_atypes, dict):
+            for akey, val in raw_atypes.items():
+                if akey in authority_types_map:
+                    if isinstance(val, dict):
+                        authority_types_map[akey]["tasks"] = int(val.get("tasks") or 0)
+                        authority_types_map[akey]["not_flawless"] = int(val.get("not_flawless") or 0)
+                        authority_types_map[akey]["flawless"] = int(val.get("flawless") or 0)
+                        authority_types_map[akey]["cancelled_after_conduct"] = int(
+                            val.get("cancelled_after_conduct") or 0
+                        )
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        authority_types_map[akey]["tasks"] = int(val)
+
+        exam_categories_map: dict[str, dict[str, Any]] = {
+            ec: {
+                "exam_category": ec,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+            }
+            for ec, label in EXAM_CATEGORY_LABELS.items()
+        }
+        raw_ecats = coverage.get("by_exam_category")
+        if isinstance(raw_ecats, list):
+            for item in raw_ecats:
+                if not isinstance(item, dict):
+                    continue
+                ekey = str(item.get("exam_category") or "").strip().lower()
+                if ekey in exam_categories_map:
+                    exam_categories_map[ekey]["tasks"] = int(item.get("tasks") or 0)
+                    exam_categories_map[ekey]["not_flawless"] = int(item.get("not_flawless") or 0)
+                    exam_categories_map[ekey]["flawless"] = int(item.get("flawless") or 0)
+                    exam_categories_map[ekey]["cancelled_after_conduct"] = int(
+                        item.get("cancelled_after_conduct") or 0
+                    )
+        elif isinstance(raw_ecats, dict):
+            for ekey, val in raw_ecats.items():
+                if ekey in exam_categories_map:
+                    if isinstance(val, dict):
+                        exam_categories_map[ekey]["tasks"] = int(val.get("tasks") or 0)
+                        exam_categories_map[ekey]["not_flawless"] = int(val.get("not_flawless") or 0)
+                        exam_categories_map[ekey]["flawless"] = int(val.get("flawless") or 0)
+                        exam_categories_map[ekey]["cancelled_after_conduct"] = int(
+                            val.get("cancelled_after_conduct") or 0
+                        )
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        exam_categories_map[ekey]["tasks"] = int(val)
+
+        years_map: dict[int, dict[str, Any]] = {
+            yr: {
+                "year": yr,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+                "postponed": 0,
+                "rescheduled": 0,
+                "delayed": 0,
+                "cancelled_before_conduct": 0,
+                "partial_reexam_or_glitch": 0,
+            }
+            for yr in P9_AUDIT_WINDOW_YEARS
+        }
+        raw_years = coverage.get("by_year")
+        if isinstance(raw_years, list):
+            for item in raw_years:
+                if not isinstance(item, dict):
+                    continue
+                yr = _opt_int(item.get("year"))
+                if yr in years_map:
+                    yrow = years_map[yr]
+                    yrow["tasks"] = int(item.get("tasks") or 0)
+                    yrow["not_flawless"] = int(item.get("not_flawless") or 0)
+                    yrow["flawless"] = int(item.get("flawless") or 0)
+                    for sig in SIGNAL_CATEGORIES:
+                        yrow[sig] = int(item.get(sig) or 0)
+        elif isinstance(raw_years, dict):
+            for yr_k, val in raw_years.items():
+                yr = _opt_int(yr_k)
+                if yr in years_map and isinstance(val, dict):
+                    yrow = years_map[yr]
+                    yrow["tasks"] = int(val.get("tasks") or 0)
+                    yrow["not_flawless"] = int(val.get("not_flawless") or 0)
+                    yrow["flawless"] = int(val.get("flawless") or 0)
+                    for sig in SIGNAL_CATEGORIES:
+                        yrow[sig] = int(val.get(sig) or 0)
+
+        reasons_map: dict[str, dict[str, Any]] = {
+            rc: {"reason_category": rc, "label": label, "tasks": 0, "leads": 0}
+            for rc, label in REASON_CATEGORY_LABELS.items()
+        }
+        raw_reasons = coverage.get("by_reason_category")
+        if isinstance(raw_reasons, list):
+            for item in raw_reasons:
+                if not isinstance(item, dict):
+                    continue
+                rkey = str(item.get("reason_category") or "").strip().lower()
+                if rkey in reasons_map:
+                    reasons_map[rkey]["tasks"] = int(item.get("tasks") or 0)
+        elif isinstance(raw_reasons, dict):
+            for rkey, val in raw_reasons.items():
+                if rkey in reasons_map:
+                    if isinstance(val, dict):
+                        reasons_map[rkey]["tasks"] = int(val.get("tasks") or 0)
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        reasons_map[rkey]["tasks"] = int(val)
+
+        jurisdictions_map: dict[str, dict[str, Any]] = {}
+        for jitem in coverage.get("jurisdictions") if isinstance(coverage.get("jurisdictions"), list) else []:
+            if not isinstance(jitem, dict):
+                continue
+            jname = str(jitem.get("jurisdiction") or "").strip()
+            if not jname:
+                continue
+            jlvl = str(
+                jitem.get("jurisdiction_level")
+                or ("union" if jname == "Union of India" else ("ut" if jname.startswith("UT:") else "state"))
+            ).strip().lower()
+            jrow = _make_jurisdiction_row(jname, jlvl, jitem.get("state_or_ut"))
+            jrow["tasks"] = int(jitem.get("tasks") or 0)
+            jrow["not_flawless"] = int(jitem.get("not_flawless") or 0)
+            jrow["flawless"] = int(jitem.get("flawless") or 0)
+            for sig in SIGNAL_CATEGORIES:
+                jrow[sig] = int(jitem.get(sig) or 0)
+            jrow["documented_affected_candidates"] = int(jitem.get("documented_affected_candidates") or 0)
+            jurisdictions_map[jname] = jrow
+
+        authorities_map: dict[str, dict[str, Any]] = {}
+        for aitem in coverage.get("top_authorities") if isinstance(coverage.get("top_authorities"), list) else []:
+            if not isinstance(aitem, dict):
+                continue
+            aname = str(aitem.get("authority") or "").strip()
+            if not aname:
+                continue
+            akey = str(aitem.get("authority_key") or canonical_key(aname)).strip().lower()
+            atype = str(aitem.get("authority_type") or "central_testing_agency").strip().lower()
+            jur = str(aitem.get("jurisdiction") or "Union of India").strip()
+            jlvl = str(aitem.get("jurisdiction_level") or "union").strip().lower()
+            arow = _make_authority_row(aname, akey, atype, jur, jlvl)
+            arow["tasks"] = int(aitem.get("tasks") or 0)
+            arow["not_flawless"] = int(aitem.get("not_flawless") or 0)
+            arow["flawless"] = int(aitem.get("flawless") or 0)
+            for sig in SIGNAL_CATEGORIES:
+                arow[sig] = int(aitem.get(sig) or 0)
+            arow["documented_affected_candidates"] = int(aitem.get("documented_affected_candidates") or 0)
+            authorities_map[akey] = arow
+
+        anchor_cases: list[dict[str, Any]] = []
+        raw_anchors = coverage.get("anchor_cases") if isinstance(coverage.get("anchor_cases"), list) else []
+        for ac in raw_anchors:
+            if isinstance(ac, dict) and ac.get("exam_name"):
+                entry = dict(ac)
+                entry.setdefault("finding_id", None)
+                anchor_cases.append(entry)
+
+        coverage_sample_leads: list[dict[str, Any]] = []
+        raw_sample = coverage.get("sample_leads") if isinstance(coverage.get("sample_leads"), list) else (
+            coverage.get("leads") if isinstance(coverage.get("leads"), list) else []
+        )
+        for sl in raw_sample:
+            if isinstance(sl, dict) and sl.get("exam_name"):
+                item = dict(sl)
+                item.setdefault("finding_id", None)
+                item.setdefault("status", "corpus_queued")
+                coverage_sample_leads.append(item)
+
+        db_total_tasks = 0
+        db_completed_tasks = 0
+        db_unevaluable_tasks = 0
+        db_unique_exams: set[str] = set()
+        db_unique_docs: set[str] = set()
+        db_documented_candidates_total = 0
+        db_corpus_leads: list[dict[str, Any]] = []
+        has_coverage = bool(coverage)
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        def _build_corpus_lead(task_id_raw: str, title: str, t_payload: dict[str, Any], t_spec: dict[str, Any]) -> dict[str, Any]:
+            dtype = str(t_spec.get("disruption_type") or "").strip().lower()
+            rcat = str(t_spec.get("disruption_reason_category") or "").strip().lower()
+            sat = bool(t_spec.get("students_took_exam_before_cancellation"))
+            delay = _opt_int(t_spec.get("delay_days"))
+            cands = _opt_int(t_spec.get("affected_candidates_count"))
+            is_anchor = bool(t_spec.get("is_anchor_case"))
+            _, rule_tr, sig_cat, _, sev = evaluate_exam_disruption_rule(
+                disruption_type=dtype,
+                disruption_reason_category=rcat,
+                students_took_exam_before_cancellation=sat,
+                delay_days=delay,
+                affected_candidates_count=cands,
+                is_anchor_case=is_anchor,
+            )
+            t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+            sec_url = str(t_payload.get("secondary_url") or t_ctx.get("secondary_url") or "").strip() or None
+            exam_name = str(t_spec.get("exam_name") or "").strip()
+            authority = str(t_spec.get("authority") or "").strip()
+            s_ut = t_spec.get("state_or_ut")
+            return {
+                "finding_id": None,
+                "task_id": task_id_raw.removeprefix("prj-"),
+                "case_key": str(t_spec.get("case_key") or task_id_raw.removeprefix("prj-")),
+                "title": title or f"{exam_name} — {t_spec.get('cycle_or_stage') or ''}",
+                "exam_name": exam_name,
+                "exam_slug": str(t_spec.get("exam_slug") or canonical_key(exam_name)),
+                "cycle_or_stage": str(t_spec.get("cycle_or_stage") or ""),
+                "exam_year": _opt_int(t_spec.get("exam_year")),
+                "jurisdiction": str(t_spec.get("jurisdiction") or "Union of India"),
+                "jurisdiction_level": str(t_spec.get("jurisdiction_level") or "union"),
+                "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                "authority": authority,
+                "authority_key": str(t_spec.get("authority_key") or canonical_key(authority)),
+                "authority_type": str(t_spec.get("authority_type") or ""),
+                "exam_category": str(t_spec.get("exam_category") or ""),
+                "scheduled_date": str(t_spec.get("scheduled_date") or ""),
+                "actual_or_event_date": str(t_spec.get("actual_or_event_date") or ""),
+                "delay_days": delay,
+                "disruption_type": dtype,
+                "disruption_reason_category": rcat,
+                "signal_category": sig_cat or dtype,
+                "rule_triggered": rule_tr or DISRUPTION_TYPE_RULES.get(dtype, ""),
+                "students_took_exam_before_cancellation": sat,
+                "schedule_summary": str(t_spec.get("schedule_summary") or ""),
+                "schedule_document_ref": str(t_spec.get("schedule_document_ref") or ""),
+                "outcome_summary": str(t_spec.get("outcome_summary") or ""),
+                "outcome_document_ref": str(t_spec.get("outcome_document_ref") or ""),
+                "affected_candidates_count": cands,
+                "affected_candidates_basis": str(t_spec.get("affected_candidates_basis") or ""),
+                "statutory_anchor": str(t_spec.get("statutory_anchor") or ""),
+                "source_url": str(t_payload.get("retrieval_url") or ""),
+                "secondary_url": sec_url,
+                "portal_url": str(t_payload.get("source_landing_page") or ""),
+                "is_anchor_case": is_anchor,
+                "severity": sev,
+                "status": "corpus_queued",
+                "_sort_anchor": 1 if is_anchor else 0,
+                "_sort_cac": 1 if dtype == "cancelled_after_conduct" else 0,
+                "_sort_sev": sev_rank.get(sev, 0),
+                "_sort_cands": cands or 0,
+            }
+
+        if conn is not None and mid is not None:
+            lvl_counts_from_db: dict[str, dict[str, int]] = {
+                lvl: {"tasks": 0, "done": 0, "claimed": 0, "open": 0}
+                for lvl in ("union", "state", "ut")
+            }
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN id LIKE 'prj-p9-union-%' OR id LIKE 'p9-union-%' THEN 'union' "
+                "WHEN id LIKE 'prj-p9-ut-%' OR id LIKE 'p9-ut-%' THEN 'ut' "
+                "WHEN id LIKE 'prj-p9-state-%' OR id LIKE 'p9-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, status, COUNT(*) AS c "
+                "FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status != 'retired' "
+                "GROUP BY jlvl, status",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                st = str(r["status"] or "")
+                n = int(r["c"] or 0)
+                db_total_tasks += n
+                bucket = lvl_counts_from_db[jlvl]
+                bucket["tasks"] += n
+                if st == "completed":
+                    bucket["done"] += n
+                    db_completed_tasks += n
+                elif st == "claimed":
+                    bucket["claimed"] += n
+                elif st == "queued":
+                    bucket["open"] += n
+                elif st in {"failed", "unevaluable"}:
+                    db_unevaluable_tasks += n
+
+            for lvl in ("union", "state", "ut"):
+                if lvl_counts_from_db[lvl]["tasks"] > 0:
+                    by_jurisdiction_level[lvl]["tasks"] = lvl_counts_from_db[lvl]["tasks"]
+                    by_jurisdiction_level[lvl]["done"] = lvl_counts_from_db[lvl]["done"]
+                    by_jurisdiction_level[lvl]["claimed"] = lvl_counts_from_db[lvl]["claimed"]
+                    by_jurisdiction_level[lvl]["open"] = lvl_counts_from_db[lvl]["open"]
+                else:
+                    by_jurisdiction_level[lvl]["open"] = max(
+                        0,
+                        by_jurisdiction_level[lvl]["tasks"]
+                        - by_jurisdiction_level[lvl]["done"]
+                        - by_jurisdiction_level[lvl]["claimed"],
+                    )
+
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN t.id LIKE 'prj-p9-union-%' OR t.id LIKE 'p9-union-%' THEN 'union' "
+                "WHEN t.id LIKE 'prj-p9-ut-%' OR t.id LIKE 'p9-ut-%' THEN 'ut' "
+                "WHEN t.id LIKE 'prj-p9-state-%' OR t.id LIKE 'p9-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, COUNT(*) AS c "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "AND NOT EXISTS (SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id) "
+                "GROUP BY jlvl",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                by_jurisdiction_level[jlvl]["cleared"] = int(r["c"] or 0)
+
+            # Populate full corpus breakdowns from DB tasks when coverage.json is absent,
+            # OR collect corpus_fallback leads if coverage.json lacks sample_leads.
+            need_full_db_scan = not has_coverage and db_total_tasks > 0
+            need_corpus_leads_scan = not coverage_sample_leads and db_total_tasks > 0
+            if need_full_db_scan or need_corpus_leads_scan:
+                for tr in conn.execute(
+                    "SELECT id, title, status, payload_json FROM tasks WHERE mission_id = ? "
+                    "AND task_type != 'peer_verify' AND status != 'retired' LIMIT 2000",
+                    (mid,),
+                ).fetchall():
+                    t_payload = loads_json(tr["payload_json"], {})
+                    t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                    t_spec = (
+                        t_ctx.get("auditing_government_exams")
+                        if isinstance(t_ctx.get("auditing_government_exams"), dict)
+                        else {}
+                    )
+                    if not t_spec:
+                        continue
+
+                    dtype = str(t_spec.get("disruption_type") or "").strip().lower()
+                    rcat = str(t_spec.get("disruption_reason_category") or "").strip().lower()
+                    atype = str(t_spec.get("authority_type") or "").strip().lower()
+                    ecat = str(t_spec.get("exam_category") or "").strip().lower()
+                    eyear = _opt_int(t_spec.get("exam_year"))
+                    jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                    jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                    if jlvl not in {"union", "state", "ut"}:
+                        jlvl = "union"
+                    s_ut = t_spec.get("state_or_ut")
+                    ename = str(t_spec.get("exam_name") or "").strip()
+                    eslug = str(t_spec.get("exam_slug") or canonical_key(ename)).strip().lower()
+                    aname = str(t_spec.get("authority") or "").strip()
+                    akey = str(t_spec.get("authority_key") or canonical_key(aname)).strip().lower()
+                    cands = _opt_int(t_spec.get("affected_candidates_count"))
+                    is_flawless = dtype == "flawless_conduct"
+                    is_cac = dtype == "cancelled_after_conduct"
+
+                    if need_corpus_leads_scan and not is_flawless:
+                        db_corpus_leads.append(
+                            _build_corpus_lead(str(tr["id"]), str(tr["title"] or ""), t_payload, t_spec)
+                        )
+
+                    if not need_full_db_scan:
+                        continue
+
+                    if eslug:
+                        db_unique_exams.add(eslug)
+                    r_url = str(t_payload.get("retrieval_url") or "").strip()
+                    if r_url:
+                        db_unique_docs.add(r_url)
+                    s_url = str(t_payload.get("secondary_url") or t_ctx.get("secondary_url") or "").strip()
+                    if s_url:
+                        db_unique_docs.add(s_url)
+                    if cands is not None and cands > 0:
+                        db_documented_candidates_total += cands
+
+                    if dtype in by_disruption_type:
+                        by_disruption_type[dtype]["tasks"] += 1
+                        if cands is not None and cands > 0:
+                            by_disruption_type[dtype]["documented_affected_candidates"] += cands
+
+                    by_jurisdiction_level[jlvl]["flawless" if is_flawless else "not_flawless"] += 1
+                    if is_cac:
+                        by_jurisdiction_level[jlvl]["cancelled_after_conduct"] += 1
+
+                    if atype in authority_types_map:
+                        authority_types_map[atype]["tasks"] += 1
+                        authority_types_map[atype]["flawless" if is_flawless else "not_flawless"] += 1
+                        if is_cac:
+                            authority_types_map[atype]["cancelled_after_conduct"] += 1
+
+                    if ecat in exam_categories_map:
+                        exam_categories_map[ecat]["tasks"] += 1
+                        exam_categories_map[ecat]["flawless" if is_flawless else "not_flawless"] += 1
+                        if is_cac:
+                            exam_categories_map[ecat]["cancelled_after_conduct"] += 1
+
+                    if eyear in years_map:
+                        yrow = years_map[eyear]
+                        yrow["tasks"] += 1
+                        yrow["flawless" if is_flawless else "not_flawless"] += 1
+                        if dtype in SIGNAL_CATEGORIES:
+                            yrow[dtype] += 1
+
+                    if rcat in reasons_map:
+                        reasons_map[rcat]["tasks"] += 1
+
+                    j_entry = jurisdictions_map.setdefault(jur, _make_jurisdiction_row(jur, jlvl, s_ut))
+                    j_entry["tasks"] += 1
+                    j_entry["flawless" if is_flawless else "not_flawless"] += 1
+                    if dtype in SIGNAL_CATEGORIES:
+                        j_entry[dtype] += 1
+                    if cands is not None and cands > 0:
+                        j_entry["documented_affected_candidates"] += cands
+
+                    if aname and akey:
+                        a_entry = authorities_map.setdefault(
+                            akey, _make_authority_row(aname, akey, atype, jur, jlvl)
+                        )
+                        a_entry["tasks"] += 1
+                        a_entry["flawless" if is_flawless else "not_flawless"] += 1
+                        if dtype in SIGNAL_CATEGORIES:
+                            a_entry[dtype] += 1
+                        if cands is not None and cands > 0:
+                            a_entry["documented_affected_candidates"] += cands
+
+                    if bool(t_spec.get("is_anchor_case")):
+                        _, _, _, _, sev = evaluate_exam_disruption_rule(
+                            disruption_type=dtype,
+                            disruption_reason_category=rcat,
+                            students_took_exam_before_cancellation=bool(
+                                t_spec.get("students_took_exam_before_cancellation")
+                            ),
+                            delay_days=_opt_int(t_spec.get("delay_days")),
+                            affected_candidates_count=cands,
+                            is_anchor_case=True,
+                        )
+                        anchor_cases.append(
+                            {
+                                "task_id": str(tr["id"]).removeprefix("prj-"),
+                                "case_key": str(t_spec.get("case_key") or ""),
+                                "finding_id": None,
+                                "exam_name": ename,
+                                "exam_slug": eslug,
+                                "cycle_or_stage": str(t_spec.get("cycle_or_stage") or ""),
+                                "exam_year": eyear,
+                                "jurisdiction": jur,
+                                "jurisdiction_level": jlvl,
+                                "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                                "authority": aname,
+                                "authority_key": akey,
+                                "authority_type": atype,
+                                "exam_category": ecat,
+                                "scheduled_date": str(t_spec.get("scheduled_date") or ""),
+                                "actual_or_event_date": str(t_spec.get("actual_or_event_date") or ""),
+                                "delay_days": _opt_int(t_spec.get("delay_days")),
+                                "disruption_type": dtype,
+                                "disruption_reason_category": rcat,
+                                "students_took_exam_before_cancellation": bool(
+                                    t_spec.get("students_took_exam_before_cancellation")
+                                ),
+                                "schedule_summary": str(t_spec.get("schedule_summary") or ""),
+                                "schedule_document_ref": str(t_spec.get("schedule_document_ref") or ""),
+                                "outcome_summary": str(t_spec.get("outcome_summary") or ""),
+                                "outcome_document_ref": str(t_spec.get("outcome_document_ref") or ""),
+                                "affected_candidates_count": cands,
+                                "affected_candidates_basis": str(t_spec.get("affected_candidates_basis") or ""),
+                                "statutory_anchor": str(t_spec.get("statutory_anchor") or ""),
+                                "source_url": r_url,
+                                "secondary_url": s_url or None,
+                                "portal_url": str(t_payload.get("source_landing_page") or ""),
+                                "severity": sev,
+                            }
+                        )
+
+            # Always aggregate live completed-task progress (`done` and `cleared`) from DB even with coverage.json.
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 2000",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = (
+                    t_ctx.get("auditing_government_exams")
+                    if isinstance(t_ctx.get("auditing_government_exams"), dict)
+                    else {}
+                )
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                dtype = str(t_spec.get("disruption_type") or "").strip().lower()
+                if dtype in by_disruption_type:
+                    by_disruption_type[dtype]["done"] += 1
+                    if is_cleared_task:
+                        by_disruption_type[dtype]["cleared"] += 1
+                atype = str(t_spec.get("authority_type") or "").strip().lower()
+                if atype in authority_types_map:
+                    authority_types_map[atype]["done"] += 1
+                ecat = str(t_spec.get("exam_category") or "").strip().lower()
+                if ecat in exam_categories_map:
+                    exam_categories_map[ecat]["done"] += 1
+                eyear = _opt_int(t_spec.get("exam_year"))
+                if eyear in years_map:
+                    years_map[eyear]["done"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                s_ut = t_spec.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(jur, _make_jurisdiction_row(jur, jlvl, s_ut))
+                j_entry["done"] += 1
+                if is_cleared_task:
+                    j_entry["cleared"] += 1
+                aname = str(t_spec.get("authority") or "").strip()
+                akey = str(t_spec.get("authority_key") or canonical_key(aname)).strip().lower()
+                if akey and akey in authorities_map:
+                    authorities_map[akey]["done"] += 1
+        else:
+            for lvl in ("union", "state", "ut"):
+                by_jurisdiction_level[lvl]["open"] = by_jurisdiction_level[lvl]["tasks"]
+
+        for entry in by_jurisdiction_level.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        published_leads = verified = peer_review = 0
+        live_leads: list[dict[str, Any]] = []
+        task_to_finding_id: dict[str, str] = {}
+        case_to_finding_id: dict[str, str] = {}
+        rule_to_disruption = {rule: dtype for dtype, rule in DISRUPTION_TYPE_RULES.items()}
+
+        if conn is not None and mid is not None:
+            live_sql = (
+                "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+                "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+            )
+            for r in conn.execute(
+                f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
+                f"anomaly_metrics_json, provenance_json, source_url, task_id "
+                f"FROM findings WHERE {live_sql} ORDER BY id ASC",
+                (mid,),
+            ).fetchall():
+                published_leads += 1
+                st = str(r["status"] or "")
+                if st == "verified":
+                    verified += 1
+                elif st in ("peer_review", "raw_lead"):
+                    peer_review += 1
+
+                metrics = loads_json(r["anomaly_metrics_json"], {})
+                metrics = metrics if isinstance(metrics, dict) else {}
+                prov = loads_json(r["provenance_json"], {})
+                prov = prov if isinstance(prov, dict) else {}
+
+                rule = str(r["rule_triggered"] or "").strip()
+                dtype = str(
+                    metrics.get("disruption_type")
+                    or metrics.get("signal_category")
+                    or rule_to_disruption.get(rule)
+                    or ""
+                ).strip().lower()
+                rcat = str(metrics.get("disruption_reason_category") or "").strip().lower()
+                if dtype in by_disruption_type:
+                    by_disruption_type[dtype]["leads"] += 1
+                if rcat in reasons_map:
+                    reasons_map[rcat]["leads"] += 1
+
+                jlvl = str(metrics.get("jurisdiction_level") or "").strip().lower()
+                jur = str(metrics.get("jurisdiction") or r["jurisdiction"] or "Union of India").strip()
+                if jlvl not in {"union", "state", "ut"}:
+                    if jur.startswith("State:"):
+                        jlvl = "state"
+                    elif jur.startswith("UT:"):
+                        jlvl = "ut"
+                    else:
+                        jlvl = "union"
+                by_jurisdiction_level[jlvl]["leads"] += 1
+
+                atype = str(metrics.get("authority_type") or "").strip().lower()
+                if atype in authority_types_map:
+                    authority_types_map[atype]["leads"] += 1
+
+                ecat = str(metrics.get("exam_category") or "").strip().lower()
+                if ecat in exam_categories_map:
+                    exam_categories_map[ecat]["leads"] += 1
+
+                eyear = _opt_int(metrics.get("exam_year"))
+                if eyear in years_map:
+                    years_map[eyear]["leads"] += 1
+
+                s_ut_val = metrics.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(jur, _make_jurisdiction_row(jur, jlvl, s_ut_val))
+                j_entry["leads"] += 1
+
+                aname = str(metrics.get("authority") or r["entity_name"] or "").strip()
+                akey = str(metrics.get("authority_key") or canonical_key(aname)).strip().lower()
+                if aname and akey:
+                    a_entry = authorities_map.setdefault(
+                        akey, _make_authority_row(aname, akey, atype, jur, jlvl)
+                    )
+                    a_entry["leads"] += 1
+
+                raw_tid = str(r["task_id"] or "").removeprefix("prj-")
+                ckey = str(metrics.get("case_key") or raw_tid)
+                fid = str(r["id"])
+                if raw_tid:
+                    task_to_finding_id.setdefault(raw_tid, fid)
+                if ckey:
+                    case_to_finding_id.setdefault(ckey, fid)
+
+                ename = str(metrics.get("exam_name") or "").strip()
+                eslug = str(metrics.get("exam_slug") or canonical_key(ename)).strip().lower()
+                cands = _opt_int(metrics.get("affected_candidates_count"))
+                is_anchor = bool(metrics.get("is_anchor_case"))
+                sev = str(r["severity"] or "medium").lower()
+                live_leads.append(
+                    {
+                        "finding_id": fid,
+                        "task_id": raw_tid or None,
+                        "case_key": ckey,
+                        "title": str(r["title"] or ""),
+                        "exam_name": ename or str(r["entity_name"] or ""),
+                        "exam_slug": eslug,
+                        "cycle_or_stage": str(metrics.get("cycle_or_stage") or ""),
+                        "exam_year": eyear,
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl,
+                        "state_or_ut": str(s_ut_val).strip() if isinstance(s_ut_val, str) and s_ut_val.strip() else None,
+                        "authority": aname,
+                        "authority_key": akey,
+                        "authority_type": atype,
+                        "exam_category": ecat,
+                        "scheduled_date": str(metrics.get("scheduled_date") or ""),
+                        "actual_or_event_date": str(metrics.get("actual_or_event_date") or ""),
+                        "delay_days": _opt_int(metrics.get("delay_days")),
+                        "disruption_type": dtype,
+                        "disruption_reason_category": rcat,
+                        "signal_category": str(metrics.get("signal_category") or dtype),
+                        "rule_triggered": rule or DISRUPTION_TYPE_RULES.get(dtype, ""),
+                        "students_took_exam_before_cancellation": bool(
+                            metrics.get("students_took_exam_before_cancellation")
+                        ),
+                        "schedule_summary": str(metrics.get("schedule_summary") or ""),
+                        "schedule_document_ref": str(metrics.get("schedule_document_ref") or ""),
+                        "outcome_summary": str(metrics.get("outcome_summary") or ""),
+                        "outcome_document_ref": str(metrics.get("outcome_document_ref") or ""),
+                        "affected_candidates_count": cands,
+                        "affected_candidates_basis": str(metrics.get("affected_candidates_basis") or ""),
+                        "statutory_anchor": str(metrics.get("statutory_anchor") or ""),
+                        "source_url": str(r["source_url"] or ""),
+                        "secondary_url": str(prov.get("secondary_url") or "").strip() or None,
+                        "portal_url": str(prov.get("source_landing_page") or r["source_url"] or "").strip(),
+                        "is_anchor_case": is_anchor,
+                        "severity": sev,
+                        "status": st,
+                        "_sort_anchor": 1 if is_anchor else 0,
+                        "_sort_cac": 1 if dtype == "cancelled_after_conduct" else 0,
+                        "_sort_sev": sev_rank.get(sev, 0),
+                        "_sort_cands": cands or 0,
+                    }
+                )
+
+            for ac in anchor_cases:
+                if not ac.get("finding_id"):
+                    ac_tid = str(ac.get("task_id") or "").removeprefix("prj-")
+                    ac_ckey = str(ac.get("case_key") or "")
+                    ac["finding_id"] = task_to_finding_id.get(ac_tid) or case_to_finding_id.get(ac_ckey)
+
+        # Headline counts (prefer coverage.json headline_counts when present, else derive identically from corpus counts)
+        raw_headline = coverage.get("headline_counts") if isinstance(coverage.get("headline_counts"), dict) else {}
+        sum_dis_tasks = sum(int(v["tasks"]) for v in by_disruption_type.values())
+        total_tasks_resolved = int(
+            coverage.get("total_tasks")
+            or db_total_tasks
+            or (mission_row["total_tasks"] if mission_row is not None else 0)
+            or sum_dis_tasks
+            or 0
+        )
+        total_audited = int(raw_headline.get("total_audited") or sum_dis_tasks or total_tasks_resolved)
+        flawless_count = int(
+            raw_headline.get("flawless_count")
+            if raw_headline.get("flawless_count") is not None
+            else by_disruption_type["flawless_conduct"]["tasks"]
+        )
+        not_flawless_count = int(
+            raw_headline.get("not_flawless_count")
+            if raw_headline.get("not_flawless_count") is not None
+            else sum(by_disruption_type[sig]["tasks"] for sig in SIGNAL_CATEGORIES)
+        )
+        not_flawless_rate_pct = (
+            round(not_flawless_count / total_audited * 100.0, 2) if total_audited else 0.0
+        )
+        flawless_rate_pct = round(flawless_count / total_audited * 100.0, 2) if total_audited else 0.0
+        doc_cands_total = int(
+            raw_headline.get("documented_affected_candidates_total")
+            if raw_headline.get("documented_affected_candidates_total") is not None
+            else (
+                sum(int(v["documented_affected_candidates"]) for v in by_disruption_type.values())
+                or db_documented_candidates_total
+            )
+        )
+        headline_counts: dict[str, Any] = {
+            "total_audited": total_audited,
+            "not_flawless_count": not_flawless_count,
+            "flawless_count": flawless_count,
+            "not_flawless_rate_pct": not_flawless_rate_pct,
+            "flawless_rate_pct": flawless_rate_pct,
+            "cancelled_after_conduct": int(
+                raw_headline.get("cancelled_after_conduct")
+                if raw_headline.get("cancelled_after_conduct") is not None
+                else by_disruption_type["cancelled_after_conduct"]["tasks"]
+            ),
+            "postponed": int(
+                raw_headline.get("postponed")
+                if raw_headline.get("postponed") is not None
+                else by_disruption_type["postponed"]["tasks"]
+            ),
+            "rescheduled": int(
+                raw_headline.get("rescheduled")
+                if raw_headline.get("rescheduled") is not None
+                else by_disruption_type["rescheduled"]["tasks"]
+            ),
+            "delayed": int(
+                raw_headline.get("delayed")
+                if raw_headline.get("delayed") is not None
+                else by_disruption_type["delayed"]["tasks"]
+            ),
+            "cancelled_before_conduct": int(
+                raw_headline.get("cancelled_before_conduct")
+                if raw_headline.get("cancelled_before_conduct") is not None
+                else by_disruption_type["cancelled_before_conduct"]["tasks"]
+            ),
+            "partial_reexam_or_glitch": int(
+                raw_headline.get("partial_reexam_or_glitch")
+                if raw_headline.get("partial_reexam_or_glitch") is not None
+                else by_disruption_type["partial_reexam_or_glitch"]["tasks"]
+            ),
+            "documented_affected_candidates_total": doc_cands_total,
+        }
+
+        for drow in by_disruption_type.values():
+            drow["pct"] = round(drow["tasks"] / total_audited * 100.0, 2) if total_audited else 0.0
+
+        for jrow in jurisdictions_map.values():
+            jrow["not_flawless_rate_pct"] = (
+                round(jrow["not_flawless"] / jrow["tasks"] * 100.0, 2) if jrow["tasks"] else 0.0
+            )
+        for arow in authorities_map.values():
+            arow["not_flawless_rate_pct"] = (
+                round(arow["not_flawless"] / arow["tasks"] * 100.0, 2) if arow["tasks"] else 0.0
+            )
+
+        by_authority_type_list = sorted(
+            authority_types_map.values(),
+            key=lambda x: (-int(x["tasks"]), str(x["authority_type"])),
+        )
+        by_exam_category_list = sorted(
+            exam_categories_map.values(),
+            key=lambda x: (-int(x["tasks"]), str(x["exam_category"])),
+        )
+        by_year_list = [years_map[yr] for yr in P9_AUDIT_WINDOW_YEARS]
+        by_reason_category_list = sorted(
+            reasons_map.values(),
+            key=lambda x: (-int(x["tasks"]), str(x["reason_category"])),
+        )
+        jurisdictions_list = sorted(
+            jurisdictions_map.values(),
+            key=lambda j: (
+                0 if j["jurisdiction_level"] == "union" else 1,
+                -int(j["not_flawless"]),
+                -int(j["tasks"]),
+                str(j["jurisdiction"]).lower(),
+            ),
+        )
+        top_authorities_list = sorted(
+            authorities_map.values(),
+            key=lambda a: (
+                -int(a["not_flawless"]),
+                -int(a["tasks"]),
+                str(a["authority"]).lower(),
+            ),
+        )[:40]
+
+        anchor_cases.sort(
+            key=lambda a: (
+                0 if str(a.get("disruption_type") or "") == "cancelled_after_conduct" else 1,
+                -(int(a.get("affected_candidates_count") or 0)),
+                str(a.get("task_id") or a.get("case_key") or ""),
+            )
+        )
+        anchor_cases_out = anchor_cases[:15]
+
+        if live_leads:
+            live_leads.sort(
+                key=lambda x: (
+                    -int(x["_sort_anchor"]),
+                    -int(x["_sort_cac"]),
+                    -int(x["_sort_sev"]),
+                    -int(x["_sort_cands"]),
+                    str(x.get("finding_id") or ""),
+                )
+            )
+            leads_out = [
+                {k: v for k, v in item.items() if not k.startswith("_sort_")}
+                for item in live_leads[:200]
+            ]
+            leads_source = "live"
+        elif coverage_sample_leads:
+            leads_out = coverage_sample_leads[:120]
+            leads_source = "corpus_fallback"
+        else:
+            db_corpus_leads.sort(
+                key=lambda x: (
+                    -int(x["_sort_anchor"]),
+                    -int(x["_sort_cac"]),
+                    -int(x["_sort_sev"]),
+                    -int(x["_sort_cands"]),
+                    str(x.get("task_id") or ""),
+                )
+            )
+            leads_out = [
+                {k: v for k, v in item.items() if not k.startswith("_sort_")}
+                for item in db_corpus_leads[:120]
+            ]
+            leads_source = "corpus_fallback"
+
+        states_uts_count = sum(
+            1
+            for j in jurisdictions_list
+            if j["jurisdiction_level"] in {"state", "ut"} and (j["tasks"] > 0 or j["leads"] > 0)
+        )
+        unique_docs_count = int(
+            coverage.get("unique_documents_count")
+            or coverage.get("documents_count")
+            or len(db_unique_docs)
+        )
+
+        raw_aw = coverage.get("audit_window") if isinstance(coverage.get("audit_window"), dict) else {}
+        audit_window = {
+            "start_date": str(raw_aw.get("start_date") or P9_AUDIT_WINDOW_START.isoformat()),
+            "end_date": str(raw_aw.get("end_date") or P9_AUDIT_WINDOW_END.isoformat()),
+            "years": list(raw_aw.get("years") or P9_AUDIT_WINDOW_YEARS),
+            "label": str(raw_aw.get("label") or P9_AUDIT_WINDOW_LABEL),
+        }
+
+        resolved_unevaluable_tasks = max(
+            db_unevaluable_tasks,
+            int(_row_get(mission_row, "unevaluable_count", 0) or 0) if mission_row is not None else 0,
+        )
+
+        raw_dry = coverage.get("dry_run_summary") if isinstance(coverage.get("dry_run_summary"), dict) else {}
+        as_of_resolved = str(coverage.get("as_of_date") or P9_AUDIT_WINDOW_END.isoformat())
+        dry_run_summary = {
+            "status": str(raw_dry.get("status") or ("verified" if raw_dry else "corpus_ready")),
+            "evaluated_tasks": int(
+                raw_dry.get("evaluated_tasks") if raw_dry.get("evaluated_tasks") is not None else total_audited
+            ),
+            "flagged_leads": int(
+                raw_dry.get("flagged_leads") if raw_dry.get("flagged_leads") is not None else not_flawless_count
+            ),
+            "cleared_flawless": int(
+                raw_dry.get("cleared_flawless") if raw_dry.get("cleared_flawless") is not None else flawless_count
+            ),
+            "unevaluable": int(
+                raw_dry.get("unevaluable") if raw_dry.get("unevaluable") is not None else resolved_unevaluable_tasks
+            ),
+            "verified_documents": int(
+                raw_dry.get("verified_documents")
+                if raw_dry.get("verified_documents") is not None
+                else unique_docs_count
+            ),
+            "as_of_date": str(raw_dry.get("as_of_date") or as_of_resolved),
+        }
+
+        return {
+            "project_slug": slug,
+            "project_code": "P9",
+            "methodology_code": AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
+            "hook": str(coverage.get("hook") or P9_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": as_of_resolved,
+            "audit_window": audit_window,
+            "total_tasks": total_tasks_resolved,
+            "completed_tasks": db_completed_tasks,
+            "published_leads": published_leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
+            "unevaluable_tasks": resolved_unevaluable_tasks,
+            "unique_exams_covered": int(coverage.get("unique_exams_covered") or len(db_unique_exams)),
+            "unique_authorities_covered": int(
+                coverage.get("unique_authorities_covered") or len(authorities_map)
+            ),
+            "unique_documents_count": unique_docs_count,
+            "states_and_uts_covered": int(coverage.get("states_and_uts_covered") or states_uts_count),
+            "leads_source": leads_source,
+            "headline_counts": headline_counts,
+            "by_disruption_type": by_disruption_type,
+            "by_jurisdiction_level": by_jurisdiction_level,
+            "by_authority_type": by_authority_type_list,
+            "by_exam_category": by_exam_category_list,
+            "by_year": by_year_list,
+            "by_reason_category": by_reason_category_list,
+            "jurisdictions": jurisdictions_list,
+            "top_authorities": top_authorities_list,
+            "anchor_cases": anchor_cases_out,
+            "leads": leads_out,
+            "dry_run_summary": dry_run_summary,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def get_innocent_but_locked_up_summary(self) -> dict[str, Any]:
+        """Public summary endpoint payload for Project 10 (Innocent But Locked Up)."""
+        slug = self.resolve_slug(INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT * FROM missions WHERE slug = ? OR methodology_code = ? LIMIT 1",
+                (slug, INNOCENT_BUT_LOCKED_UP_METHODOLOGY),
+            ).fetchone()
+            if row is not None:
+                return self._innocent_but_locked_up_summary(conn, mission_row=row)
+        coverage = _project_coverage(slug)
+        if not coverage:
+            raise HTTPException(status_code=404, detail="Project 'innocent-but-locked-up' not found")
+        return self._innocent_but_locked_up_summary(None, mission_row=None)
+
+    def _innocent_but_locked_up_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fallback-safe multi-portal 4-stage custody-overrun & contempt summary for P10."""
+        from aiwatchdogs.engines.innocent_but_locked_up import (
+            ID_CODE_TO_PORTAL_CATEGORY,
+            MAX_YEAR,
+            MIN_YEAR,
+            OVERRUN_MECHANISM_RULES,
+            P10_DEFAULT_HOOK,
+            PORTAL_CATEGORY_LABELS,
+            SIGNAL_CATEGORIES,
+            VALID_CHAIN_STATUSES,
+            VALID_COURT_TIERS,
+            VALID_OVERRUN_MECHANISMS,
+            VALID_PORTAL_CATEGORIES,
+        )
+
+        mid = str(mission_row["id"]) if mission_row is not None else None
+        slug = str(mission_row["slug"]) if mission_row is not None else INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG
+        coverage = _project_coverage(slug)
+
+        def _opt_int(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            if isinstance(val, str):
+                cleaned = val.strip()
+                if cleaned.isdigit() or (cleaned.startswith("-") and cleaned[1:].isdigit()):
+                    return int(cleaned)
+            return None
+
+        def _opt_float(val: Any) -> float | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return round(float(val), 2)
+            return None
+
+        portal_map: dict[str, dict[str, Any]] = {
+            pcat: {
+                "portal_category": pcat,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "leads": 0,
+                "cleared": 0,
+            }
+            for pcat, label in PORTAL_CATEGORY_LABELS.items()
+        }
+        raw_portals = coverage.get("by_portal_category")
+        if isinstance(raw_portals, list):
+            for pitem in raw_portals:
+                if not isinstance(pitem, dict):
+                    continue
+                pcat = str(pitem.get("portal_category") or "").strip().lower()
+                if pcat in portal_map:
+                    portal_map[pcat]["tasks"] = int(pitem.get("tasks") or 0)
+        elif isinstance(raw_portals, dict):
+            for pcat, pval in raw_portals.items():
+                pk = str(pcat).strip().lower()
+                if pk in portal_map:
+                    if isinstance(pval, dict):
+                        portal_map[pk]["tasks"] = int(pval.get("tasks") or 0)
+                    elif isinstance(pval, (int, float)) and not isinstance(pval, bool):
+                        portal_map[pk]["tasks"] = int(pval)
+
+        year_map: dict[int, dict[str, Any]] = {
+            yr: {
+                "year": yr,
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "leads": 0,
+                "cleared": 0,
+                "full_4_stage": 0,
+                "overrun_days": 0,
+            }
+            for yr in range(MIN_YEAR, MAX_YEAR + 1)
+        }
+        raw_years = coverage.get("by_year")
+        if isinstance(raw_years, list):
+            for yitem in raw_years:
+                if not isinstance(yitem, dict):
+                    continue
+                yr = _opt_int(yitem.get("year"))
+                if yr in year_map:
+                    year_map[yr]["tasks"] = int(yitem.get("tasks") or 0)
+                    year_map[yr]["full_4_stage"] = int(yitem.get("full_4_stage") or yitem.get("four_stage_cases") or 0)
+                    year_map[yr]["overrun_days"] = int(yitem.get("overrun_days") or 0)
+        elif isinstance(raw_years, dict):
+            for yk, yval in raw_years.items():
+                yr = _opt_int(yk)
+                if yr in year_map:
+                    if isinstance(yval, dict):
+                        year_map[yr]["tasks"] = int(yval.get("tasks") or 0)
+                        year_map[yr]["full_4_stage"] = int(yval.get("full_4_stage") or yval.get("four_stage_cases") or 0)
+                        year_map[yr]["overrun_days"] = int(yval.get("overrun_days") or 0)
+                    elif isinstance(yval, (int, float)) and not isinstance(yval, bool):
+                        year_map[yr]["tasks"] = int(yval)
+
+        by_court_tier: dict[str, dict[str, int]] = {
+            tier: {"tasks": 0, "done": 0, "leads": 0, "cleared": 0}
+            for tier in ("supreme_court", "high_court", "district_court", "statutory_body")
+        }
+        raw_tiers = coverage.get("by_court_tier") if isinstance(coverage.get("by_court_tier"), dict) else {}
+        for tier in by_court_tier:
+            val = raw_tiers.get(tier)
+            if isinstance(val, dict):
+                by_court_tier[tier]["tasks"] = int(val.get("tasks") or 0)
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_court_tier[tier]["tasks"] = int(val)
+
+        by_mechanism: dict[str, dict[str, int]] = {
+            m: {"tasks": 0, "leads": 0}
+            for m in (*SIGNAL_CATEGORIES, "timely_release_or_compliant")
+        }
+        raw_mechs = coverage.get("by_mechanism") or coverage.get("by_signal_category")
+        if isinstance(raw_mechs, dict):
+            for m in VALID_OVERRUN_MECHANISMS:
+                val = raw_mechs.get(m)
+                if isinstance(val, dict):
+                    by_mechanism[m]["tasks"] = int(val.get("tasks") or 0)
+                elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                    by_mechanism[m]["tasks"] = int(val)
+
+        by_signal: dict[str, int] = {sig: 0 for sig in SIGNAL_CATEGORIES}
+        rule_to_signal = {rule: mech for mech, rule in OVERRUN_MECHANISM_RULES.items()}
+
+        by_chain_status: dict[str, int] = {
+            "full_4_stage_chain": 0,
+            "partial_3_stage": 0,
+            "institutional_record": 0,
+            "compliant_control": 0,
+        }
+        raw_chain = coverage.get("by_chain_status") or coverage.get("by_stage_completeness")
+        if isinstance(raw_chain, dict):
+            for cs in by_chain_status:
+                val = raw_chain.get(cs)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    by_chain_status[cs] = int(val)
+
+        states_map: dict[str, dict[str, Any]] = {}
+        raw_states = coverage.get("states") if isinstance(coverage.get("states"), list) else coverage.get("by_state_ut")
+        if isinstance(raw_states, list):
+            for sitem in raw_states:
+                if not isinstance(sitem, dict):
+                    continue
+                sname = str(sitem.get("state_ut") or sitem.get("jurisdiction") or "").strip()
+                if not sname:
+                    continue
+                jur = str(sitem.get("jurisdiction") or (sname if sname.startswith(("State:", "UT:", "Union")) else f"State:{sname}")).strip()
+                states_map[jur] = {
+                    "state_ut": str(sitem.get("state_ut")).strip() if isinstance(sitem.get("state_ut"), str) and sitem.get("state_ut").strip() else None,
+                    "jurisdiction": jur,
+                    "tasks": int(sitem.get("tasks") or 0),
+                    "done": 0,
+                    "leads": 0,
+                    "cleared": 0,
+                    "full_4_stage": int(sitem.get("full_4_stage") or 0),
+                    "total_overrun_days": int(sitem.get("total_overrun_days") or 0),
+                    "compensation_inr": round(_safe_finite_float(sitem.get("compensation_inr"), 0.0), 2),
+                }
+
+        courts_map: dict[str, dict[str, Any]] = {}
+        raw_courts = coverage.get("top_courts") if isinstance(coverage.get("top_courts"), list) else coverage.get("by_court")
+        if isinstance(raw_courts, list):
+            for citem in raw_courts:
+                if not isinstance(citem, dict):
+                    continue
+                cname = str(citem.get("court_name") or citem.get("court") or "").strip()
+                if not cname:
+                    continue
+                courts_map[cname] = {
+                    "court_name": cname,
+                    "court_tier": str(citem.get("court_tier") or "high_court"),
+                    "state_ut": str(citem.get("state_ut")).strip() if isinstance(citem.get("state_ut"), str) and citem.get("state_ut").strip() else None,
+                    "tasks": int(citem.get("tasks") or 0),
+                    "leads": 0,
+                    "full_4_stage": int(citem.get("full_4_stage") or 0),
+                }
+
+        prisons_map: dict[str, dict[str, Any]] = {}
+        raw_prisons = coverage.get("top_prisons") if isinstance(coverage.get("top_prisons"), list) else []
+        for pritem in raw_prisons:
+            if not isinstance(pritem, dict):
+                continue
+            pname = str(pritem.get("prison_name") or "").strip()
+            if not pname:
+                continue
+            prisons_map[pname] = {
+                "prison_name": pname,
+                "state_ut": str(pritem.get("state_ut")).strip() if isinstance(pritem.get("state_ut"), str) and pritem.get("state_ut").strip() else None,
+                "tasks": int(pritem.get("tasks") or 0),
+                "leads": 0,
+                "total_overrun_days": int(pritem.get("total_overrun_days") or 0),
+            }
+
+        anchor_raw = coverage.get("anchor_case")
+        anchor_case: dict[str, Any] | None = dict(anchor_raw) if isinstance(anchor_raw, dict) else None
+        if anchor_case is not None:
+            anchor_case.setdefault("finding_id", None)
+
+        db_total_tasks = 0
+        db_unique_docs: set[str] = set()
+        db_full_4_stage = 0
+        db_contempt_tasks = 0
+        db_verified_releases = 0
+        db_cleared_controls = 0
+        db_overrun_days_list: list[int] = []
+        db_total_comp_inr = 0.0
+        has_coverage = bool(coverage)
+
+        if conn is not None and mid is not None:
+            portal_db_counts: dict[str, dict[str, int]] = {
+                pcat: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "cleared": 0}
+                for pcat in VALID_PORTAL_CATEGORIES
+            }
+            year_db_counts: dict[int, dict[str, int]] = {
+                yr: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "cleared": 0}
+                for yr in range(MIN_YEAR, MAX_YEAR + 1)
+            }
+
+            for r in conn.execute(
+                "SELECT id, status, "
+                "CASE WHEN status = 'completed' AND NOT EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS is_cleared "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status != 'retired'",
+                (mid,),
+            ).fetchall():
+                raw_tid = str(r["id"] or "").removeprefix("prj-")
+                st = str(r["status"] or "")
+                is_cl = int(r["is_cleared"] or 0) == 1
+                db_total_tasks += 1
+                parts = raw_tid.split("-")
+                pcat = ID_CODE_TO_PORTAL_CATEGORY.get(parts[1], "court_portal") if len(parts) >= 3 and parts[0] == "p10" else "court_portal"
+                yr_parsed = _opt_int(parts[2]) if len(parts) >= 3 and parts[0] == "p10" else None
+
+                pb = portal_db_counts[pcat]
+                pb["tasks"] += 1
+                if st == "completed":
+                    pb["done"] += 1
+                    if is_cl:
+                        pb["cleared"] += 1
+                elif st == "claimed":
+                    pb["claimed"] += 1
+                elif st == "queued":
+                    pb["open"] += 1
+
+                if yr_parsed in year_db_counts:
+                    yb = year_db_counts[yr_parsed]
+                    yb["tasks"] += 1
+                    if st == "completed":
+                        yb["done"] += 1
+                        if is_cl:
+                            yb["cleared"] += 1
+                    elif st == "claimed":
+                        yb["claimed"] += 1
+                    elif st == "queued":
+                        yb["open"] += 1
+
+            for pcat, pentry in portal_map.items():
+                dbc = portal_db_counts[pcat]
+                if dbc["tasks"] > 0:
+                    pentry["tasks"] = dbc["tasks"]
+                    pentry["done"] = dbc["done"]
+                    pentry["claimed"] = dbc["claimed"]
+                    pentry["open"] = dbc["open"]
+                    pentry["cleared"] = dbc["cleared"]
+                else:
+                    pentry["open"] = max(0, pentry["tasks"] - pentry["done"] - pentry["claimed"])
+
+            for yr, yentry in year_map.items():
+                dbc = year_db_counts[yr]
+                if dbc["tasks"] > 0:
+                    yentry["tasks"] = dbc["tasks"]
+                    yentry["done"] = dbc["done"]
+                    yentry["claimed"] = dbc["claimed"]
+                    yentry["open"] = dbc["open"]
+                    yentry["cleared"] = dbc["cleared"]
+                else:
+                    yentry["open"] = max(0, yentry["tasks"] - yentry["done"] - yentry["claimed"])
+
+            if not has_coverage and db_total_tasks > 0:
+                for tr in conn.execute(
+                    "SELECT id, status, payload_json FROM tasks WHERE mission_id = ? "
+                    "AND task_type != 'peer_verify' AND status != 'retired' LIMIT 1500",
+                    (mid,),
+                ).fetchall():
+                    t_payload = loads_json(tr["payload_json"], {})
+                    t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                    t_spec = t_ctx.get("innocent_but_locked_up") if isinstance(t_ctx.get("innocent_but_locked_up"), dict) else {}
+                    if not t_spec:
+                        continue
+                    rurl = str(t_payload.get("retrieval_url") or "").strip()
+                    if rurl:
+                        db_unique_docs.add(rurl)
+                    surl = str(t_payload.get("secondary_url") or "").strip()
+                    if surl:
+                        db_unique_docs.add(surl)
+
+                    mech = str(t_spec.get("overrun_mechanism") or "").strip().lower()
+                    ctier = str(t_spec.get("court_tier") or "high_court").strip().lower()
+                    yr_val = _opt_int(t_spec.get("year"))
+                    jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                    sut = t_spec.get("state_ut")
+                    sut_clean = str(sut).strip() if isinstance(sut, str) and sut.strip() else None
+
+                    s1 = bool(t_spec.get("stage_1_acquittal_verified"))
+                    s2 = bool(t_spec.get("stage_2_continued_detention_verified"))
+                    s3 = bool(t_spec.get("stage_3_contempt_verified"))
+                    s4 = bool(t_spec.get("stage_4_release_verified"))
+                    scount = sum(1 for f in (s1, s2, s3, s4) if f)
+                    ov_days = _opt_int(t_spec.get("overrun_days"))
+                    comp = _safe_finite_float(t_spec.get("compensation_inr"), 0.0)
+
+                    if mech in by_mechanism:
+                        by_mechanism[mech]["tasks"] += 1
+                    if mech == "timely_release_or_compliant":
+                        db_cleared_controls += 1
+                        by_chain_status["compliant_control"] += 1
+                    elif scount == 4:
+                        by_chain_status["full_4_stage_chain"] += 1
+                        db_full_4_stage += 1
+                    elif scount == 3:
+                        by_chain_status["partial_3_stage"] += 1
+                    else:
+                        by_chain_status["institutional_record"] += 1
+
+                    if s3:
+                        db_contempt_tasks += 1
+                    if s4 or bool(t_spec.get("release_verified")):
+                        db_verified_releases += 1
+                    if ov_days is not None and ov_days > 0:
+                        db_overrun_days_list.append(ov_days)
+                    if comp > 0:
+                        db_total_comp_inr += comp
+
+                    if ctier in by_court_tier:
+                        by_court_tier[ctier]["tasks"] += 1
+
+                    if yr_val in year_map:
+                        if scount == 4 and mech != "timely_release_or_compliant":
+                            year_map[yr_val]["full_4_stage"] += 1
+                        if ov_days is not None and ov_days > 0:
+                            year_map[yr_val]["overrun_days"] += ov_days
+
+                    st_entry = states_map.setdefault(
+                        jur,
+                        {
+                            "state_ut": sut_clean,
+                            "jurisdiction": jur,
+                            "tasks": 0,
+                            "done": 0,
+                            "leads": 0,
+                            "cleared": 0,
+                            "full_4_stage": 0,
+                            "total_overrun_days": 0,
+                            "compensation_inr": 0.0,
+                        },
+                    )
+                    st_entry["tasks"] += 1
+                    if scount == 4 and mech != "timely_release_or_compliant":
+                        st_entry["full_4_stage"] += 1
+                    if ov_days is not None and ov_days > 0:
+                        st_entry["total_overrun_days"] += ov_days
+                    if comp > 0:
+                        st_entry["compensation_inr"] = round(st_entry["compensation_inr"] + comp, 2)
+
+                    cname = str(t_spec.get("contempt_court") or t_spec.get("acquittal_court") or "").strip()
+                    if cname:
+                        c_entry = courts_map.setdefault(
+                            cname,
+                            {
+                                "court_name": cname,
+                                "court_tier": ctier if ctier in VALID_COURT_TIERS else "high_court",
+                                "state_ut": sut_clean,
+                                "tasks": 0,
+                                "leads": 0,
+                                "full_4_stage": 0,
+                            },
+                        )
+                        c_entry["tasks"] += 1
+                        if scount == 4 and mech != "timely_release_or_compliant":
+                            c_entry["full_4_stage"] += 1
+
+                    pname = str(t_spec.get("prison_name") or "").strip()
+                    if pname:
+                        pr_entry = prisons_map.setdefault(
+                            pname,
+                            {
+                                "prison_name": pname,
+                                "state_ut": sut_clean,
+                                "tasks": 0,
+                                "leads": 0,
+                                "total_overrun_days": 0,
+                            },
+                        )
+                        pr_entry["tasks"] += 1
+                        if ov_days is not None and ov_days > 0:
+                            pr_entry["total_overrun_days"] += ov_days
+
+                    if anchor_case is None and bool(t_spec.get("is_anchor_case")):
+                        anchor_case = {
+                            "task_id": str(tr["id"]).removeprefix("prj-"),
+                            "finding_id": None,
+                            "case_title": str(t_spec.get("case_title") or ""),
+                            "portal_category": str(t_spec.get("portal_category") or "court_portal"),
+                            "court_tier": ctier,
+                            "state_ut": sut_clean,
+                            "jurisdiction": jur,
+                            "year": yr_val or MAX_YEAR,
+                            "overrun_mechanism": mech,
+                            "stages_verified_count": scount,
+                            "chain_status": (
+                                "compliant_control"
+                                if mech == "timely_release_or_compliant"
+                                else ("full_4_stage_chain" if scount == 4 else ("partial_3_stage" if scount == 3 else "institutional_record"))
+                            ),
+                            "acquittal_order_date": t_spec.get("acquittal_order_date"),
+                            "acquittal_court": str(t_spec.get("acquittal_court") or ""),
+                            "acquittal_case_number": str(t_spec.get("acquittal_case_number") or ""),
+                            "acquittal_quote": str(t_spec.get("acquittal_quote") or ""),
+                            "prison_name": pname,
+                            "custody_authority": str(t_spec.get("custody_authority") or ""),
+                            "non_release_reason": str(t_spec.get("non_release_reason") or ""),
+                            "overrun_days": ov_days,
+                            "overrun_window": str(t_spec.get("overrun_window") or ""),
+                            "contempt_case_number": t_spec.get("contempt_case_number"),
+                            "contempt_court": t_spec.get("contempt_court"),
+                            "contempt_filing_date": t_spec.get("contempt_filing_date"),
+                            "contempt_order_date": t_spec.get("contempt_order_date"),
+                            "contempt_quote": t_spec.get("contempt_quote"),
+                            "release_date": t_spec.get("release_date"),
+                            "release_verified": bool(t_spec.get("release_verified")),
+                            "compensation_inr": _opt_float(t_spec.get("compensation_inr")),
+                            "judicial_direction_summary": str(t_spec.get("judicial_direction_summary") or ""),
+                            "source_url": rurl,
+                            "secondary_url": surl or None,
+                            "portal_url": str(t_payload.get("source_landing_page") or ""),
+                        }
+
+            # Always overlay live completed-task progress (`done`, `cleared`) into by_court_tier & states_map
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 1500",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = t_ctx.get("innocent_but_locked_up") if isinstance(t_ctx.get("innocent_but_locked_up"), dict) else {}
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                ctier = str(t_spec.get("court_tier") or "high_court").strip().lower()
+                if ctier in by_court_tier:
+                    by_court_tier[ctier]["done"] += 1
+                    if is_cleared_task:
+                        by_court_tier[ctier]["cleared"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                sut = t_spec.get("state_ut")
+                sut_clean = str(sut).strip() if isinstance(sut, str) and sut.strip() else None
+                st_entry = states_map.setdefault(
+                    jur,
+                    {
+                        "state_ut": sut_clean,
+                        "jurisdiction": jur,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "full_4_stage": 0,
+                        "total_overrun_days": 0,
+                        "compensation_inr": 0.0,
+                    },
+                )
+                st_entry["done"] += 1
+                if is_cleared_task:
+                    st_entry["cleared"] += 1
+        else:
+            for pentry in portal_map.values():
+                pentry["open"] = pentry["tasks"]
+            for yentry in year_map.values():
+                yentry["open"] = yentry["tasks"]
+
+        for pentry in portal_map.values():
+            pentry["pct"] = round(pentry["done"] / pentry["tasks"] * 100.0, 2) if pentry["tasks"] else 0.0
+        for yentry in year_map.values():
+            yentry["pct"] = round(yentry["done"] / yentry["tasks"] * 100.0, 2) if yentry["tasks"] else 0.0
+
+        leads = verified = peer_review = 0
+        flagged_comp_cr = 0.0
+        top_leads: list[dict[str, Any]] = []
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        if conn is not None and mid is not None:
+            live = (
+                "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+                "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+            )
+            for r in conn.execute(
+                f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
+                f"monetary_exposure_inr, anomaly_metrics_json, source_url, task_id "
+                f"FROM findings WHERE {live} ORDER BY id ASC",
+                (mid,),
+            ).fetchall():
+                leads += 1
+                st = str(r["status"] or "")
+                if st == "verified":
+                    verified += 1
+                elif st in ("peer_review", "raw_lead"):
+                    peer_review += 1
+
+                comp_inr = _safe_finite_float(r["monetary_exposure_inr"], 0.0)
+                flagged_comp_cr += comp_inr / 1e7
+
+                metrics = loads_json(r["anomaly_metrics_json"], {})
+                metrics = metrics if isinstance(metrics, dict) else {}
+
+                rule = str(r["rule_triggered"] or "").strip()
+                sig = str(metrics.get("signal_category") or rule_to_signal.get(rule) or "").strip()
+                mech = str(metrics.get("overrun_mechanism") or sig).strip()
+                if sig in by_signal:
+                    by_signal[sig] += 1
+                if mech in by_mechanism:
+                    by_mechanism[mech]["leads"] += 1
+
+                pcat = str(metrics.get("portal_category") or "court_portal").strip().lower()
+                if pcat in portal_map:
+                    portal_map[pcat]["leads"] += 1
+
+                yr_val = _opt_int(metrics.get("year"))
+                if yr_val in year_map:
+                    year_map[yr_val]["leads"] += 1
+
+                ctier = str(metrics.get("court_tier") or "high_court").strip().lower()
+                if ctier in by_court_tier:
+                    by_court_tier[ctier]["leads"] += 1
+
+                jur = str(metrics.get("jurisdiction") or r["jurisdiction"] or "Union of India").strip()
+                sut_val = metrics.get("state_ut")
+                sut_clean = str(sut_val).strip() if isinstance(sut_val, str) and sut_val.strip() else None
+                st_entry = states_map.setdefault(
+                    jur,
+                    {
+                        "state_ut": sut_clean,
+                        "jurisdiction": jur,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "full_4_stage": 0,
+                        "total_overrun_days": 0,
+                        "compensation_inr": 0.0,
+                    },
+                )
+                st_entry["leads"] += 1
+
+                cname = str(metrics.get("contempt_court") or metrics.get("acquittal_court") or "").strip()
+                if cname:
+                    c_entry = courts_map.setdefault(
+                        cname,
+                        {
+                            "court_name": cname,
+                            "court_tier": ctier if ctier in VALID_COURT_TIERS else "high_court",
+                            "state_ut": sut_clean,
+                            "tasks": 0,
+                            "leads": 0,
+                            "full_4_stage": 0,
+                        },
+                    )
+                    c_entry["leads"] += 1
+
+                pname = str(metrics.get("prison_name") or "").strip()
+                if pname:
+                    pr_entry = prisons_map.setdefault(
+                        pname,
+                        {
+                            "prison_name": pname,
+                            "state_ut": sut_clean,
+                            "tasks": 0,
+                            "leads": 0,
+                            "total_overrun_days": 0,
+                        },
+                    )
+                    pr_entry["leads"] += 1
+
+                is_anchor = bool(metrics.get("is_anchor_case"))
+                scount = _opt_int(metrics.get("stages_verified_count")) or 0
+                cstatus = str(metrics.get("chain_status") or "institutional_record")
+                if cstatus not in VALID_CHAIN_STATUSES:
+                    cstatus = "institutional_record"
+                ov_days = _opt_int(metrics.get("overrun_days"))
+                comp_opt = _opt_float(metrics.get("compensation_inr"))
+
+                if is_anchor:
+                    if anchor_case is None:
+                        anchor_case = {
+                            "task_id": str(r["task_id"] or "").removeprefix("prj-") or None,
+                            "finding_id": str(r["id"]),
+                            "case_title": str(metrics.get("case_title") or r["title"] or ""),
+                            "portal_category": pcat,
+                            "court_tier": ctier,
+                            "state_ut": sut_clean,
+                            "jurisdiction": jur,
+                            "year": yr_val or MAX_YEAR,
+                            "overrun_mechanism": mech,
+                            "stages_verified_count": scount,
+                            "chain_status": cstatus,
+                            "acquittal_order_date": metrics.get("acquittal_order_date"),
+                            "acquittal_court": str(metrics.get("acquittal_court") or ""),
+                            "acquittal_case_number": str(metrics.get("acquittal_case_number") or ""),
+                            "acquittal_quote": str(metrics.get("acquittal_quote") or ""),
+                            "prison_name": pname,
+                            "custody_authority": str(metrics.get("custody_authority") or r["entity_name"] or ""),
+                            "non_release_reason": str(metrics.get("non_release_reason") or ""),
+                            "overrun_days": ov_days,
+                            "overrun_window": str(metrics.get("overrun_window") or ""),
+                            "contempt_case_number": metrics.get("contempt_case_number"),
+                            "contempt_court": metrics.get("contempt_court"),
+                            "contempt_filing_date": metrics.get("contempt_filing_date"),
+                            "contempt_order_date": metrics.get("contempt_order_date"),
+                            "contempt_quote": metrics.get("contempt_quote"),
+                            "release_date": metrics.get("release_date"),
+                            "release_verified": bool(metrics.get("release_verified")),
+                            "compensation_inr": comp_opt,
+                            "judicial_direction_summary": str(metrics.get("judicial_direction_summary") or ""),
+                            "source_url": str(r["source_url"] or ""),
+                            "secondary_url": None,
+                            "portal_url": str(r["source_url"] or ""),
+                        }
+                    elif not anchor_case.get("finding_id"):
+                        anchor_case["finding_id"] = str(r["id"])
+
+                top_leads.append(
+                    {
+                        "finding_id": str(r["id"]),
+                        "title": str(r["title"] or ""),
+                        "case_key": str(metrics.get("case_key") or ""),
+                        "case_title": str(metrics.get("case_title") or r["title"] or ""),
+                        "entity_name": str(r["entity_name"] or ""),
+                        "portal_category": pcat,
+                        "court_tier": ctier,
+                        "state_ut": sut_clean,
+                        "jurisdiction": jur,
+                        "year": yr_val or MAX_YEAR,
+                        "overrun_mechanism": mech,
+                        "signal_category": sig,
+                        "stages_verified_count": scount,
+                        "chain_status": cstatus,
+                        "acquittal_order_date": metrics.get("acquittal_order_date"),
+                        "acquittal_court": str(metrics.get("acquittal_court") or ""),
+                        "acquittal_case_number": str(metrics.get("acquittal_case_number") or ""),
+                        "acquittal_quote": str(metrics.get("acquittal_quote") or ""),
+                        "prison_name": pname,
+                        "custody_authority": str(metrics.get("custody_authority") or r["entity_name"] or ""),
+                        "non_release_reason": str(metrics.get("non_release_reason") or ""),
+                        "overrun_days": ov_days,
+                        "overrun_window": str(metrics.get("overrun_window") or ""),
+                        "contempt_case_number": metrics.get("contempt_case_number"),
+                        "contempt_court": metrics.get("contempt_court"),
+                        "contempt_filing_date": metrics.get("contempt_filing_date"),
+                        "contempt_order_date": metrics.get("contempt_order_date"),
+                        "contempt_quote": metrics.get("contempt_quote"),
+                        "release_date": metrics.get("release_date"),
+                        "release_verified": bool(metrics.get("release_verified")),
+                        "compensation_inr": comp_opt,
+                        "judicial_direction_summary": str(metrics.get("judicial_direction_summary") or ""),
+                        "is_anchor_case": is_anchor,
+                        "severity": str(r["severity"] or "medium"),
+                        "status": st,
+                        "_sort_anchor": 1 if is_anchor else 0,
+                        "_sort_sev": sev_rank.get(str(r["severity"] or "").lower(), 0),
+                        "_sort_stages": scount,
+                        "_sort_days": ov_days if ov_days is not None else -1,
+                        "_sort_comp": comp_inr,
+                    }
+                )
+
+            if anchor_case is not None and not anchor_case.get("finding_id") and anchor_case.get("task_id"):
+                raw_tid = str(anchor_case.get("task_id") or "").strip()
+                pref_tid = raw_tid if raw_tid.startswith("prj-") else f"prj-{raw_tid}"
+                arow = conn.execute(
+                    f"SELECT id FROM findings WHERE {live} AND task_id IN (?, ?) ORDER BY id ASC LIMIT 1",
+                    (mid, raw_tid, pref_tid),
+                ).fetchone()
+                if arow is not None:
+                    anchor_case["finding_id"] = str(arow["id"])
+
+        top_leads.sort(
+            key=lambda x: (
+                -int(x["_sort_anchor"]),
+                -int(x["_sort_sev"]),
+                -int(x["_sort_stages"]),
+                -int(x["_sort_days"]),
+                -float(x["_sort_comp"]),
+                str(x["finding_id"]),
+            )
+        )
+        cleaned_top_leads = [
+            {k: v for k, v in item.items() if not k.startswith("_sort_")}
+            for item in top_leads[:20]
+        ]
+
+        by_portal_list = sorted(
+            portal_map.values(),
+            key=lambda p: (-int(p["tasks"]), -int(p["leads"]), str(p["portal_category"])),
+        )
+        by_year_list = [year_map[yr] for yr in range(MIN_YEAR, MAX_YEAR + 1)]
+        states_list = sorted(
+            states_map.values(),
+            key=lambda s: (
+                0 if s["jurisdiction"] == "Union of India" else 1,
+                -int(s["tasks"]),
+                -int(s["leads"]),
+                str(s["jurisdiction"]).lower(),
+            ),
+        )
+        top_courts_list = sorted(
+            courts_map.values(),
+            key=lambda c: (-int(c["tasks"]), -int(c["leads"]), str(c["court_name"]).lower()),
+        )[:30]
+        top_prisons_list = sorted(
+            prisons_map.values(),
+            key=lambda p: (-int(p["tasks"]), -int(p["total_overrun_days"]), str(p["prison_name"]).lower()),
+        )[:30]
+
+        states_uts_count = sum(
+            1
+            for s in states_list
+            if s["jurisdiction"] != "Union of India" and (s["tasks"] > 0 or s["leads"] > 0)
+        )
+        total_tasks_resolved = int(
+            coverage.get("total_tasks")
+            or db_total_tasks
+            or (mission_row["total_tasks"] if mission_row is not None else 0)
+            or 0
+        )
+
+        computed_median: float | None = None
+        computed_max: int | None = None
+        if db_overrun_days_list:
+            sorted_days = sorted(db_overrun_days_list)
+            mid_idx = len(sorted_days) // 2
+            if len(sorted_days) % 2 == 1:
+                computed_median = float(sorted_days[mid_idx])
+            else:
+                computed_median = round((sorted_days[mid_idx - 1] + sorted_days[mid_idx]) / 2.0, 1)
+            computed_max = sorted_days[-1]
+
+        cov_median = coverage.get("median_overrun_days")
+        median_overrun = (
+            round(float(cov_median), 1)
+            if isinstance(cov_median, (int, float)) and not isinstance(cov_median, bool) and math.isfinite(float(cov_median))
+            else computed_median
+        )
+        max_overrun = _opt_int(coverage.get("max_overrun_days"))
+        if max_overrun is None:
+            max_overrun = computed_max
+
+        return {
+            "hook": str(coverage.get("hook") or P10_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": str(coverage.get("as_of_date") or ""),
+            "year_range": [MIN_YEAR, MAX_YEAR],
+            "total_tasks": total_tasks_resolved,
+            "unique_documents_covered": int(
+                coverage.get("unique_documents_covered")
+                or coverage.get("documents_count")
+                or len(db_unique_docs)
+            ),
+            "states_and_uts_covered": int(coverage.get("states_and_uts_covered") or states_uts_count),
+            "courts_covered": int(coverage.get("courts_covered") or len(courts_map)),
+            "prisons_named": int(coverage.get("prisons_named") or len(prisons_map)),
+            "full_4_stage_tasks": int(
+                coverage.get("full_4_stage_tasks")
+                or coverage.get("four_stage_cases_count")
+                or by_chain_status["full_4_stage_chain"]
+                or db_full_4_stage
+            ),
+            "contempt_tasks": int(
+                coverage.get("contempt_tasks")
+                or coverage.get("contempt_petitions_count")
+                or db_contempt_tasks
+            ),
+            "verified_release_tasks": int(
+                coverage.get("verified_release_tasks")
+                or coverage.get("verified_releases_count")
+                or db_verified_releases
+            ),
+            "cleared_control_tasks_embedded": int(
+                coverage.get("cleared_control_tasks_embedded")
+                or by_mechanism["timely_release_or_compliant"]["tasks"]
+                or db_cleared_controls
+            ),
+            "total_overrun_days_documented": int(
+                coverage.get("total_overrun_days_documented")
+                or coverage.get("total_verified_overrun_days")
+                or sum(db_overrun_days_list)
+            ),
+            "median_overrun_days": median_overrun,
+            "max_overrun_days": max_overrun,
+            "total_compensation_ordered_inr": round(
+                _safe_finite_float(
+                    coverage.get("total_compensation_ordered_inr")
+                    if coverage.get("total_compensation_ordered_inr") is not None
+                    else coverage.get("total_compensation_inr"),
+                    db_total_comp_inr,
+                ),
+                2,
+            ),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
+            "flagged_compensation_inr_cr": round(flagged_comp_cr, 4),
+            "by_portal_category": by_portal_list,
+            "by_year": by_year_list,
+            "by_court_tier": by_court_tier,
+            "by_mechanism": by_mechanism,
+            "by_signal": by_signal,
+            "by_chain_status": by_chain_status,
+            "states": states_list,
+            "top_courts": top_courts_list,
+            "top_prisons": top_prisons_list,
+            "anchor_case": anchor_case,
+            "top_leads": cleaned_top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }
@@ -6599,6 +9208,8 @@ class DeskService:
                     a.tasks_completed,
                     a.verifications_done,
                     a.findings_submitted,
+                    a.github_verified,
+                    a.github_verified_at,
                     a.joined_at,
                     a.last_heartbeat_at,
                     CASE
@@ -6724,6 +9335,8 @@ class DeskService:
                         "tasks_completed": int(nr["tasks_completed"] or 0),
                         "verifications_done": int(nr["verifications_done"] or 0),
                         "findings_submitted": int(nr["findings_submitted"] or 0),
+                        "github_verified": bool(int(_row_get(nr, "github_verified", 0) or 0)),
+                        "github_verified_at": _row_get(nr, "github_verified_at", None),
                         "last_seen_at": str(nr["last_heartbeat_at"] or nr["joined_at"]),
                         "created_at": str(nr["joined_at"]),
                     }
@@ -6737,6 +9350,7 @@ class DeskService:
                     a.display_name,
                     a.coding_agent,
                     a.coding_agent_model,
+                    a.github_verified,
                     a.joined_at,
                     a.last_heartbeat_at,
                     CASE
@@ -6756,6 +9370,7 @@ class DeskService:
                     "display_name": str(jr["display_name"] or jr["handle"]),
                     "coding_agent": str(_row_get(jr, "coding_agent", "") or "").strip() or None,
                     "coding_agent_model": str(_row_get(jr, "coding_agent_model", "") or "").strip() or None,
+                    "github_verified": bool(int(_row_get(jr, "github_verified", 0) or 0)),
                     "created_at": str(jr["joined_at"]),
                     "last_seen_at": str(jr["last_heartbeat_at"] or jr["joined_at"]),
                     "is_working": bool(int(jr["is_working"] or 0)),
@@ -7366,12 +9981,30 @@ class DeskService:
     # Desk Coordination Plane
     # ------------------------------------------------------------------
 
+    def is_valid_reconnect_token(self, handle: str, token: str | None) -> bool:
+        """Return True iff ``token`` matches the active stored token for ``handle``."""
+        raw_handle = str(handle or "").strip().lower()
+        clean_tok = str(token or "").strip()
+        if not raw_handle or not clean_tok:
+            return False
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT api_token_hash, status, revoked_at FROM agents WHERE handle = ?",
+                (raw_handle,),
+            ).fetchone()
+        if row is None:
+            return False
+        if _row_get(row, "revoked_at", None) or str(_row_get(row, "status", "")) == "revoked":
+            return False
+        return verify_token_digest(clean_tok, str(row["api_token_hash"] or ""))
+
     def register_agent(
         self,
         payload: dict[str, Any],
         base_url: str,
         existing_token: str | None = None,
         registration_key: str | None = None,
+        client_ip: str | None = None,
     ) -> dict[str, Any]:
         raw_handle = str(payload.get("handle") or "").strip().lower()
         if not HANDLE_RE.match(raw_handle):
@@ -7393,21 +10026,54 @@ class DeskService:
                     "and put the tool name in 'coding_agent'."
                 ),
             )
-        display_name, _ = scrub_pii(str(payload.get("display_name") or raw_handle).strip()[:120])
-        provider, _ = scrub_pii(str(payload.get("provider") or "rule-engine").strip().lower()[:64])
-        model, _ = scrub_pii(str(payload.get("model") or "deterministic-cpu-v1").strip()[:120])
+        try:
+            raw_display_name = payload.get("display_name")
+            display_name = (
+                validate_safe_single_line_text(raw_display_name, field="display_name", max_length=120)
+                if raw_display_name is not None and str(raw_display_name) != ""
+                else raw_handle
+            ) or raw_handle
+            provider = (
+                validate_safe_single_line_text(
+                    payload.get("provider") or "rule-engine", field="provider", max_length=64
+                ).lower()
+                or "rule-engine"
+            )
+            model = (
+                validate_safe_single_line_text(
+                    payload.get("model") or "deterministic-cpu-v1", field="model", max_length=120
+                )
+                or "deterministic-cpu-v1"
+            )
+            region = (
+                validate_safe_single_line_text(payload.get("region") or "IN", field="region", max_length=64)
+                or "IN"
+            )
+            raw_coding_agent = payload.get("coding_agent")
+            if raw_coding_agent is not None and str(raw_coding_agent) != "":
+                validate_safe_single_line_text(raw_coding_agent, field="coding_agent", max_length=80)
+            raw_coding_model = payload.get("coding_agent_model")
+            if raw_coding_model is not None and str(raw_coding_model) != "":
+                validate_safe_single_line_text(raw_coding_model, field="coding_agent_model", max_length=120)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         mode = str(payload.get("mode") or "auto").strip().lower()
         if mode not in {"auto", "investigate", "verify"}:
             mode = "auto"
-        region, _ = scrub_pii(str(payload.get("region") or "IN").strip()[:64])
         raw_caps = payload.get("capabilities") or ["deterministic_audit", "peer_verify"]
         if not isinstance(raw_caps, list):
             raw_caps = ["deterministic_audit", "peer_verify"]
-        capabilities = [
-            scrub_pii(str(c).strip()[:64])[0]
-            for c in raw_caps[:20]
-            if isinstance(c, str) and c.strip()
-        ] or ["deterministic_audit", "peer_verify"]
+        capabilities: list[str] = []
+        for c in raw_caps[:20]:
+            if isinstance(c, str) and c.strip():
+                try:
+                    clean_cap = validate_safe_single_line_text(c, field="capabilities", max_length=64)
+                except ValueError as exc:
+                    raise HTTPException(status_code=422, detail=str(exc)) from exc
+                if clean_cap:
+                    capabilities.append(clean_cap)
+        if not capabilities:
+            capabilities = ["deterministic_audit", "peer_verify"]
         coding_agent = normalize_coding_agent(payload.get("coding_agent"))
         coding_agent_model = normalize_coding_agent_model(payload.get("coding_agent_model"))
         if not coding_agent:
@@ -7417,6 +10083,7 @@ class DeskService:
             coding_agent = _CANONICAL.get(provider, "")
             if coding_agent and not coding_agent_model:
                 coding_agent_model = normalize_coding_agent_model(model)
+        ip_hash = compute_client_ip_hash(client_ip)
         clean_reg_key = (registration_key or str(payload.get("registration_key") or "")).strip()[:128]
         # Require >=16 characters before storing a recovery digest so weak/guessable keys cannot recover handles.
         reg_key_hash: str | None = compute_token_digest(clean_reg_key) if len(clean_reg_key) >= 16 else None
@@ -7440,7 +10107,11 @@ class DeskService:
                         capabilities_json = ?, status = 'active', last_heartbeat_at = ?,
                         registration_key_hash = NULL,
                         coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
-                        coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
+                        coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END,
+                        registered_ip_hash = CASE
+                            WHEN COALESCE(TRIM(registered_ip_hash), '') = '' AND ? != '' THEN ?
+                            ELSE registered_ip_hash
+                        END
                     WHERE id = ?
                     """,
                     (
@@ -7455,6 +10126,8 @@ class DeskService:
                         coding_agent,
                         coding_agent_model,
                         coding_agent_model,
+                        ip_hash,
+                        ip_hash,
                         existing["id"],
                     ),
                 )
@@ -7463,6 +10136,7 @@ class DeskService:
                     "handle": raw_handle,
                     "api_token": existing_token.strip(),
                     "profile_url": profile_url,
+                    "github_verified": bool(int(_row_get(existing, "github_verified", 0) or 0)),
                     "status": "reconnected",
                 }
 
@@ -7510,7 +10184,11 @@ class DeskService:
                                 capabilities_json = ?, api_token_hash = ?, status = 'active',
                                 last_heartbeat_at = ?,
                                 coding_agent = CASE WHEN ? != '' THEN ? ELSE coding_agent END,
-                                coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END
+                                coding_agent_model = CASE WHEN ? != '' THEN ? ELSE coding_agent_model END,
+                                registered_ip_hash = CASE
+                                    WHEN COALESCE(TRIM(registered_ip_hash), '') = '' AND ? != '' THEN ?
+                                    ELSE registered_ip_hash
+                                END
                             WHERE id = ?
                             """,
                             (
@@ -7526,6 +10204,8 @@ class DeskService:
                                 coding_agent,
                                 coding_agent_model,
                                 coding_agent_model,
+                                ip_hash,
+                                ip_hash,
                                 existing["id"],
                             ),
                         )
@@ -7534,6 +10214,7 @@ class DeskService:
                             "handle": raw_handle,
                             "api_token": recovered_token,
                             "profile_url": profile_url,
+                            "github_verified": bool(int(_row_get(existing, "github_verified", 0) or 0)),
                             "status": "active",
                         }
 
@@ -7564,8 +10245,8 @@ class DeskService:
                     id, handle, display_name, provider, model, mode, region,
                     capabilities_json, api_token_hash, registration_key_hash,
                     status, joined_at, last_heartbeat_at,
-                    coding_agent, coding_agent_model
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                    coding_agent, coding_agent_model, registered_ip_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)
                 ON CONFLICT(handle) DO NOTHING
                 """,
                 (
@@ -7583,6 +10264,7 @@ class DeskService:
                     now,
                     coding_agent,
                     coding_agent_model,
+                    ip_hash,
                 ),
             )
             if cur.rowcount == 0:
@@ -7616,6 +10298,7 @@ class DeskService:
                     "model": model,
                     "coding_agent": coding_agent or None,
                     "coding_agent_model": coding_agent_model or None,
+                    "github_verified": False,
                     "mode": mode,
                     "profile_url": profile_url,
                 },
@@ -7629,8 +10312,447 @@ class DeskService:
             "handle": raw_handle,
             "api_token": api_token,
             "profile_url": profile_url,
+            "github_verified": False,
             "status": "active",
         }
+
+    # ------------------------------------------------------------------
+    # GitHub Ownership Verification (Zero-Config Gist Proof + Optional Device Flow)
+    # ------------------------------------------------------------------
+
+    _GITHUB_USERNAME_STRICT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){0,38}$")
+    _GITHUB_GIST_ID_RE = re.compile(r"^[0-9a-fA-F]{16,64}$")
+    _GITHUB_CHALLENGE_TTL_SECONDS = 1800
+    _GITHUB_API_MAX_BYTES = 512 * 1024
+
+    @classmethod
+    def _validate_verifiable_github_handle(cls, handle: str) -> str:
+        clean = str(handle or "").strip().lower()
+        if (
+            not clean
+            or clean.startswith("civic-")
+            or "--" in clean
+            or not cls._GITHUB_USERNAME_STRICT_RE.fullmatch(clean)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Handle '@{clean}' is a sandbox fallback or not a valid GitHub username and "
+                    "cannot be verified against GitHub."
+                ),
+            )
+        return clean
+
+    @classmethod
+    def _extract_gist_id(cls, *, gist_id: str | None = None, gist_url: str | None = None) -> str | None:
+        if gist_id and gist_id.strip():
+            cand = gist_id.strip()
+            if not cls._GITHUB_GIST_ID_RE.fullmatch(cand):
+                raise HTTPException(status_code=422, detail="Invalid GitHub Gist ID format.")
+            return cand
+        if gist_url and gist_url.strip():
+            raw = gist_url.strip()
+            parsed = urlparse(raw)
+            if parsed.scheme != "https" or (parsed.hostname or "").lower() not in {"gist.github.com", "api.github.com"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="gist_url must be a public https://gist.github.com/<user>/<gist_id> URL.",
+                )
+            segments = [s for s in parsed.path.split("/") if s]
+            if not segments:
+                raise HTTPException(status_code=422, detail="gist_url does not contain a valid Gist ID.")
+            cand = segments[-1]
+            if not cls._GITHUB_GIST_ID_RE.fullmatch(cand):
+                raise HTTPException(status_code=422, detail="gist_url does not end with a valid Gist ID.")
+            return cand
+        return None
+
+    @classmethod
+    def _github_api_get_json(cls, path: str, *, http_client: Any = None) -> Any:
+        import httpx
+
+        url = f"https://api.github.com{path}"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "AIWatchdogs-India-Hub/1.0",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        gh_token = os.environ.get("AIWATCHDOGS_GITHUB_API_TOKEN", "").strip()
+        if gh_token:
+            headers["Authorization"] = f"Bearer {gh_token}"
+
+        def _fetch(client: Any) -> Any:
+            resp = client.get(url, headers=headers)
+            if resp.status_code == 404:
+                return None
+            if resp.status_code == 403 and resp.headers.get("X-RateLimit-Remaining") == "0":
+                raise HTTPException(
+                    status_code=503,
+                    detail="GitHub public API rate limit temporarily exhausted; please retry shortly.",
+                )
+            if resp.status_code >= 400:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"GitHub API returned HTTP {resp.status_code} during identity verification.",
+                )
+            raw = resp.content or b""
+            if len(raw) > cls._GITHUB_API_MAX_BYTES:
+                raise HTTPException(status_code=502, detail="GitHub API response exceeded safety limit.")
+            return resp.json()
+
+        if http_client is not None:
+            return _fetch(http_client)
+        with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+            return _fetch(client)
+
+    def _finalize_github_verification(
+        self,
+        *,
+        agent_id: str,
+        handle: str,
+        github_user_id: str,
+        method: str,
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.db.transaction() as conn:
+            conflict = conn.execute(
+                """
+                SELECT handle FROM agents
+                WHERE github_user_id = ? AND id != ?
+                  AND revoked_at IS NULL AND status != 'revoked'
+                LIMIT 1
+                """,
+                (github_user_id, agent_id),
+            ).fetchone()
+            if conflict is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"This GitHub account (id={github_user_id}) is already verified on handle "
+                        f"'@{conflict['handle']}'. One GitHub account = one verified profile."
+                    ),
+                )
+            try:
+                conn.execute(
+                    """
+                    UPDATE agents
+                    SET github_verified = 1,
+                        github_user_id = ?,
+                        github_verified_at = ?,
+                        github_verification_method = ?
+                    WHERE id = ?
+                    """,
+                    (github_user_id, now, method, agent_id),
+                )
+            except DB_INTEGRITY_ERRORS as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail="This GitHub account is already verified on another handle.",
+                ) from exc
+            conn.execute("DELETE FROM github_verification_challenges WHERE agent_id = ?", (agent_id,))
+            conn.execute("DELETE FROM summary_cache")
+
+        return {
+            "status": "verified",
+            "handle": handle,
+            "github_verified": True,
+            "github_user_id": github_user_id,
+            "github_verified_at": now,
+            "method": method,
+        }
+
+    def create_github_verification_challenge(
+        self,
+        *,
+        token: str | None,
+        base_url: str,
+    ) -> dict[str, Any]:
+        now_dt = datetime.now(timezone.utc).replace(microsecond=0)
+        now = now_dt.isoformat().replace("+00:00", "Z")
+        expires_at = (now_dt + timedelta(seconds=self._GITHUB_CHALLENGE_TTL_SECONDS)).isoformat().replace("+00:00", "Z")
+        with self.db.transaction() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            if int(_row_get(agent, "github_verified", 0) or 0) == 1:
+                return {
+                    "status": "already_verified",
+                    "handle": handle,
+                    "github_verified": True,
+                    "github_verified_at": _row_get(agent, "github_verified_at", None),
+                    "method": str(_row_get(agent, "github_verification_method", "") or ""),
+                }
+            challenge_token = f"aiwatchdogs-verify:{handle}:{secrets.token_hex(16)}"
+            conn.execute("DELETE FROM github_verification_challenges WHERE expires_at < ?", (now,))
+            conn.execute(
+                """
+                INSERT INTO github_verification_challenges (
+                    agent_id, handle, challenge_token, method, expires_at, created_at
+                ) VALUES (?, ?, ?, 'github_gist', ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    handle = excluded.handle,
+                    challenge_token = excluded.challenge_token,
+                    method = excluded.method,
+                    expires_at = excluded.expires_at,
+                    created_at = excluded.created_at
+                """,
+                (agent["id"], handle, challenge_token, expires_at, now),
+            )
+        return {
+            "status": "challenge_issued",
+            "handle": handle,
+            "challenge_token": challenge_token,
+            "expires_at": expires_at,
+            "gist_filename": "aiwatchdogs-verify.txt",
+            "gist_create_url": "https://gist.github.com/",
+            "confirm_url": f"{base_url.rstrip('/')}/api/agents/verify-github/confirm",
+            "device_flow_enabled": bool(os.environ.get("GITHUB_CLIENT_ID", "").strip()),
+            "instructions": (
+                f"Create a public GitHub Gist as @{handle} (https://gist.github.com/) containing "
+                f"the exact line `{challenge_token}`, then call POST /api/agents/verify-github/confirm "
+                "(or run `aiwatchdogs verify-github`). You may delete the gist after verification succeeds."
+            ),
+        }
+
+    def confirm_github_verification(
+        self,
+        *,
+        token: str | None,
+        gist_url: str | None = None,
+        gist_id: str | None = None,
+        http_client: Any = None,
+    ) -> dict[str, Any]:
+        now = utc_now_iso()
+        with self.db.read() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            if int(_row_get(agent, "github_verified", 0) or 0) == 1:
+                return {
+                    "status": "already_verified",
+                    "handle": handle,
+                    "github_verified": True,
+                    "github_verified_at": _row_get(agent, "github_verified_at", None),
+                    "method": str(_row_get(agent, "github_verification_method", "") or ""),
+                }
+            ch = conn.execute(
+                "SELECT * FROM github_verification_challenges WHERE agent_id = ?",
+                (agent["id"],),
+            ).fetchone()
+            if ch is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No active GitHub verification challenge found. Request /api/agents/verify-github/challenge first.",
+                )
+            if str(ch["expires_at"]) < now:
+                raise HTTPException(
+                    status_code=400,
+                    detail="GitHub verification challenge has expired. Request a new challenge and retry.",
+                )
+            expected_token = str(ch["challenge_token"])
+            agent_id = str(agent["id"])
+
+        explicit_gist_id = self._extract_gist_id(gist_id=gist_id, gist_url=gist_url)
+        candidate_ids: list[str] = []
+        if explicit_gist_id:
+            candidate_ids.append(explicit_gist_id)
+        else:
+            listing = self._github_api_get_json(f"/users/{handle}/gists?per_page=10", http_client=http_client)
+            if not isinstance(listing, list):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Could not find public gists for GitHub user '@{handle}'.",
+                )
+            # Prioritize gists with an aiwatchdogs-related filename.
+            prioritized = sorted(
+                listing,
+                key=lambda g: (
+                    0
+                    if any(
+                        "aiwatchdogs" in str(fn).lower()
+                        for fn in (g.get("files") or {}).keys()
+                    )
+                    else 1
+                ),
+            )
+            for item in prioritized[:5]:
+                if isinstance(item, dict) and item.get("public") is True:
+                    gid = str(item.get("id") or "").strip()
+                    if self._GITHUB_GIST_ID_RE.fullmatch(gid):
+                        candidate_ids.append(gid)
+
+        matched_uid: str | None = None
+        for gid in candidate_ids:
+            detail = self._github_api_get_json(f"/gists/{gid}", http_client=http_client)
+            if not isinstance(detail, dict):
+                continue
+            if detail.get("public") is not True:
+                continue
+            owner = detail.get("owner") or {}
+            owner_login = str(owner.get("login") or "").strip().lower()
+            owner_id = owner.get("id")
+            if owner_login != handle or not isinstance(owner_id, int) or isinstance(owner_id, bool) or owner_id <= 0:
+                if explicit_gist_id:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Gist owner '@{owner_login or 'unknown'}' does not match registered handle '@{handle}'.",
+                    )
+                continue
+            files = detail.get("files") or {}
+            found_token = False
+            if isinstance(files, dict):
+                for fmeta in files.values():
+                    if isinstance(fmeta, dict):
+                        content = str(fmeta.get("content") or "")
+                        if expected_token in content:
+                            found_token = True
+                            break
+            if found_token:
+                matched_uid = str(owner_id)
+                break
+
+        if not matched_uid:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Challenge token not found in a public GitHub Gist owned by '@{handle}'. "
+                    "Make sure the gist is Public (not Secret) and contains the exact challenge token."
+                ),
+            )
+
+        return self._finalize_github_verification(
+            agent_id=agent_id,
+            handle=handle,
+            github_user_id=matched_uid,
+            method="github_gist",
+        )
+
+    def start_github_device_flow(
+        self,
+        *,
+        token: str | None,
+        http_client: Any = None,
+    ) -> dict[str, Any]:
+        import httpx
+
+        client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+        if not client_id:
+            raise HTTPException(
+                status_code=501,
+                detail="GitHub Device Flow is not configured on this hub; use /api/agents/verify-github/challenge (public Gist proof).",
+            )
+        with self.db.read() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            if int(_row_get(agent, "github_verified", 0) or 0) == 1:
+                return {
+                    "status": "already_verified",
+                    "handle": handle,
+                    "github_verified": True,
+                }
+
+        def _post(client: Any) -> Any:
+            resp = client.post(
+                "https://github.com/login/device/code",
+                headers={"Accept": "application/json", "User-Agent": "AIWatchdogs-India-Hub/1.0"},
+                data={"client_id": client_id, "scope": "read:user"},
+            )
+            if resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail="Failed to initiate GitHub Device Flow.")
+            return resp.json()
+
+        if http_client is not None:
+            data = _post(http_client)
+        else:
+            with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+                data = _post(client)
+        return {
+            "status": "pending",
+            "handle": handle,
+            "device_code": data.get("device_code"),
+            "user_code": data.get("user_code"),
+            "verification_uri": data.get("verification_uri", "https://github.com/login/device"),
+            "expires_in": data.get("expires_in", 900),
+            "interval": data.get("interval", 5),
+        }
+
+    def poll_github_device_flow(
+        self,
+        *,
+        token: str | None,
+        device_code: str,
+        http_client: Any = None,
+    ) -> dict[str, Any]:
+        import httpx
+
+        client_id = os.environ.get("GITHUB_CLIENT_ID", "").strip()
+        if not client_id:
+            raise HTTPException(status_code=501, detail="GitHub Device Flow is not configured on this hub.")
+        clean_code = str(device_code or "").strip()
+        if not clean_code or len(clean_code) > 256:
+            raise HTTPException(status_code=422, detail="device_code is required.")
+        with self.db.read() as conn:
+            agent = self._authenticate_agent(conn, token, required=True)
+            assert agent is not None
+            handle = self._validate_verifiable_github_handle(str(agent["handle"]))
+            agent_id = str(agent["id"])
+
+        def _exchange(client: Any) -> dict[str, Any]:
+            tok_resp = client.post(
+                "https://github.com/login/oauth/access_token",
+                headers={"Accept": "application/json", "User-Agent": "AIWatchdogs-India-Hub/1.0"},
+                data={
+                    "client_id": client_id,
+                    "device_code": clean_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+            )
+            if tok_resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail="GitHub OAuth token poll failed.")
+            tok_data = tok_resp.json()
+            if tok_data.get("error"):
+                err = str(tok_data["error"])
+                if err in {"authorization_pending", "slow_down"}:
+                    return {"status": "pending", "error": err}
+                raise HTTPException(status_code=400, detail=f"GitHub authorization error: {err}")
+            access_token = str(tok_data.get("access_token") or "").strip()
+            if not access_token:
+                raise HTTPException(status_code=502, detail="GitHub did not return an access token.")
+            user_resp = client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                    "User-Agent": "AIWatchdogs-India-Hub/1.0",
+                },
+            )
+            # Access token is never persisted and goes out of scope immediately.
+            if user_resp.status_code >= 400:
+                raise HTTPException(status_code=502, detail="Failed to read authenticated GitHub user profile.")
+            return {"status": "ok", "user": user_resp.json()}
+
+        if http_client is not None:
+            result = _exchange(http_client)
+        else:
+            with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=False) as client:
+                result = _exchange(client)
+        if result["status"] == "pending":
+            return {"status": "pending", "handle": handle, "error": result["error"]}
+        user = result["user"]
+        gh_login = str(user.get("login") or "").strip().lower()
+        gh_uid = user.get("id")
+        if gh_login != handle or not isinstance(gh_uid, int) or isinstance(gh_uid, bool) or gh_uid <= 0:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Authenticated GitHub account '@{gh_login or 'unknown'}' does not match handle '@{handle}'.",
+            )
+        return self._finalize_github_verification(
+            agent_id=agent_id,
+            handle=handle,
+            github_user_id=str(gh_uid),
+            method="github_device",
+        )
 
     @staticmethod
     def _build_claim_response(cand: Any, *, lease_id: str, lease_expires: str) -> dict[str, Any]:
@@ -7817,9 +10939,16 @@ class DeskService:
 
                 target_fid = cand["target_finding_id"]
                 if target_fid:
+                    cand_gh_verified = bool(int(_row_get(agent, "github_verified", 0) or 0))
+                    if _require_github_verified_quorum() and not cand_gh_verified:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="GitHub identity verification is required for peer verification. Run `aiwatchdogs verify-github`.",
+                        )
                     finding_lock = " FOR UPDATE" if self.db.is_postgres else ""
                     f_row = conn.execute(
-                        "SELECT submitted_by, status, quarantined, submitted_coding_agent, submitted_coding_agent_model "
+                        "SELECT submitted_by, submitted_by_agent_id, status, quarantined, "
+                        "submitted_coding_agent, submitted_coding_agent_model "
                         f"FROM findings WHERE id = ?{finding_lock}",
                         (target_fid,),
                     ).fetchone()
@@ -7829,6 +10958,7 @@ class DeskService:
                                 status_code=status.HTTP_409_CONFLICT,
                                 detail=f"Task '{resolved_tid}' targets a quarantined finding and cannot be claimed.",
                             )
+                        a_gh_v, a_gh_uid, a_ip_h = _load_author_identity(conn, f_row)
                         participants = _load_finding_participants(conn, str(target_fid))
                         indep_err = check_pairwise_verifier_independence(
                             finding_id=str(target_fid),
@@ -7839,6 +10969,12 @@ class DeskService:
                             author_harness=_row_get(f_row, "submitted_coding_agent", ""),
                             author_model=_row_get(f_row, "submitted_coding_agent_model", ""),
                             existing_participants=participants,
+                            candidate_github_verified=cand_gh_verified,
+                            candidate_github_user_id=_row_get(agent, "github_user_id", ""),
+                            candidate_ip_hash=_row_get(agent, "registered_ip_hash", ""),
+                            author_github_verified=a_gh_v,
+                            author_github_user_id=a_gh_uid,
+                            author_ip_hash=a_ip_h,
                         )
                         if indep_err:
                             raise HTTPException(
@@ -7919,6 +11055,10 @@ class DeskService:
                     else:
                         mission_buckets[-1].append(m_row)
 
+                cand_gh_verified = bool(int(_row_get(agent, "github_verified", 0) or 0))
+                cand_gh_uid = str(_row_get(agent, "github_user_id", "") or "").strip()
+                cand_ip_hash = str(_row_get(agent, "registered_ip_hash", "") or "").strip()
+
                 if eff_mode == "verify":
                     phases: tuple[str, ...] = ("peer_verify",)
                 elif eff_mode == "investigate":
@@ -7926,8 +11066,31 @@ class DeskService:
                 else:
                     phases = ("peer_verify", "scan")
 
+                if _require_github_verified_quorum() and not cand_gh_verified:
+                    phases = tuple(p for p in phases if p != "peer_verify")
+                    if not phases:
+                        return None
+
                 verifier_harness_norm = norm_attr(_row_get(agent, "coding_agent", ""))
                 verifier_model_norm = norm_attr(_row_get(agent, "coding_agent_model", ""))
+
+                def _sybil_conflict_sql(alias: str) -> tuple[list[str], list[Any]]:
+                    parts: list[str] = []
+                    params: list[Any] = []
+                    if cand_gh_uid:
+                        parts.append(f"COALESCE(TRIM({alias}.github_user_id), '') = ?")
+                        params.append(cand_gh_uid)
+                    if cand_ip_hash:
+                        if cand_gh_verified and cand_gh_uid:
+                            # Verified user still cannot share IP with an UNVERIFIED participant on the same finding.
+                            parts.append(
+                                f"(COALESCE(TRIM({alias}.registered_ip_hash), '') = ? "
+                                f"AND (COALESCE({alias}.github_verified, 0) = 0 OR COALESCE(TRIM({alias}.github_user_id), '') = ''))"
+                            )
+                        else:
+                            parts.append(f"COALESCE(TRIM({alias}.registered_ip_hash), '') = ?")
+                        params.append(cand_ip_hash)
+                    return parts, params
 
                 common_clauses: list[str] = [
                     "t.status = 'queued'",
@@ -7977,6 +11140,11 @@ class DeskService:
                     pv_mod_sql, pv_mod_params = build_attr_conflict_sql("pv.coding_agent_model", verifier_model_norm)
                     a2_har_sql, a2_har_params = build_attr_conflict_sql("a2.coding_agent", verifier_harness_norm)
                     a2_mod_sql, a2_mod_params = build_attr_conflict_sql("a2.coding_agent_model", verifier_model_norm)
+                    fa_syb_parts, fa_syb_params = _sybil_conflict_sql("fa")
+                    pva_syb_parts, pva_syb_params = _sybil_conflict_sql("pva")
+                    a2_syb_parts, a2_syb_params = _sybil_conflict_sql("a2")
+                    a2_syb_or = (" OR " + " OR ".join(a2_syb_parts)) if a2_syb_parts else ""
+                    pva_syb_or = (" OR " + " OR ".join(pva_syb_parts)) if pva_syb_parts else ""
 
                     # Pre-fetch active claimed finding conflicts ONCE over the tiny partial index
                     # `idx_tasks_claimed_target_finding` (~0-50 active rows) instead of running a
@@ -7993,9 +11161,10 @@ class DeskService:
                                   t2.claimed_by_handle = ?
                                   OR {a2_har_sql}
                                   OR {a2_mod_sql}
+                                  {a2_syb_or}
                               )
                             """,
-                            [agent_handle, *a2_har_params, *a2_mod_params],
+                            [agent_handle, *a2_har_params, *a2_mod_params, *a2_syb_params],
                         ).fetchall()
                         claimed_conflict_fids = [
                             str(r["target_finding_id"])
@@ -8008,20 +11177,29 @@ class DeskService:
                     # LEFT JOIN findings directly so Postgres/SQLite drive strictly from
                     # `idx_tasks_queued_pv_order` (zero sort) and evaluate author/quarantine/attribution
                     # via PK lookup per candidate row.
-                    pv_join_sql = "LEFT JOIN findings f ON f.id = t.target_finding_id"
+                    pv_join_sql = (
+                        "LEFT JOIN findings f ON f.id = t.target_finding_id "
+                        "LEFT JOIN agents fa ON fa.id = f.submitted_by_agent_id"
+                    )
+                    fa_syb_not = (
+                        "".join(f"\n                            AND NOT ({expr})" for expr in fa_syb_parts)
+                        if fa_syb_parts
+                        else ""
+                    )
                     pv_extra_clauses = [
                         f"""(f.id IS NULL OR (
                             COALESCE(f.submitted_by, '') != ?
                             AND COALESCE(f.quarantined, 0) = 0
                             AND f.status != 'quarantined'
                             AND NOT ({f_har_sql})
-                            AND NOT ({f_mod_sql})
+                            AND NOT ({f_mod_sql}){fa_syb_not}
                         ))""",
                     ]
                     pv_extra_params = [
                         agent_handle,
                         *f_har_params,
                         *f_mod_params,
+                        *fa_syb_params,
                     ]
 
                     pv_target_checks: list[str] = []
@@ -8042,24 +11220,27 @@ class DeskService:
                                           t2.claimed_by_handle = ?
                                           OR {a2_har_sql}
                                           OR {a2_mod_sql}
+                                          {a2_syb_or}
                                       )
                                 )"""
                             )
-                            pv_target_params.extend([agent_handle, *a2_har_params, *a2_mod_params])
+                            pv_target_params.extend([agent_handle, *a2_har_params, *a2_mod_params, *a2_syb_params])
 
                     pv_target_checks.append(
                         f"""NOT EXISTS (
                             SELECT 1 FROM peer_verifications pv
+                            LEFT JOIN agents pva ON pva.id = pv.verifier_node_id
                             WHERE pv.finding_id = t.target_finding_id
                               AND (
                                   pv.contributor_id = ?
                                   OR pv.verifier_handle = ?
                                   OR {pv_har_sql}
                                   OR {pv_mod_sql}
+                                  {pva_syb_or}
                               )
                         )"""
                     )
-                    pv_target_params.extend([agent_handle, agent_handle, *pv_har_params, *pv_mod_params])
+                    pv_target_params.extend([agent_handle, agent_handle, *pv_har_params, *pv_mod_params, *pva_syb_params])
 
                     pv_extra_clauses.append(f"(t.target_finding_id IS NULL OR ({' AND '.join(pv_target_checks)}))")
                     pv_extra_params.extend(pv_target_params)
@@ -9900,8 +13081,15 @@ class DeskService:
         if finding_row is None:
             raise HTTPException(status_code=404, detail=f"Finding '{finding_id}' not found")
 
-        # Strict pairwise independence: handle, coding_agent (harness), and coding_agent_model (model)
-        # must be distinct from the author, all existing reviewers, and any other active lease on this finding.
+        # Strict pairwise independence: handle, coding_agent (harness), coding_agent_model (model),
+        # verified GitHub user ID, and Sybil IP independence across all participants.
+        cand_gh_verified = bool(int(_row_get(agent, "github_verified", 0) or 0))
+        if _require_github_verified_quorum() and not cand_gh_verified:
+            raise HTTPException(
+                status_code=403,
+                detail="GitHub identity verification is required to submit peer verifications. Run `aiwatchdogs verify-github`.",
+            )
+        a_gh_v, a_gh_uid, a_ip_h = _load_author_identity(conn, finding_row)
         participants = _load_finding_participants(
             conn,
             finding_id,
@@ -9916,6 +13104,12 @@ class DeskService:
             author_harness=_row_get(finding_row, "submitted_coding_agent", ""),
             author_model=_row_get(finding_row, "submitted_coding_agent_model", ""),
             existing_participants=participants,
+            candidate_github_verified=cand_gh_verified,
+            candidate_github_user_id=_row_get(agent, "github_user_id", ""),
+            candidate_ip_hash=_row_get(agent, "registered_ip_hash", ""),
+            author_github_verified=a_gh_v,
+            author_github_user_id=a_gh_uid,
+            author_ip_hash=a_ip_h,
         )
         if indep_err:
             raise HTTPException(status_code=409, detail=indep_err)
@@ -10084,11 +13278,14 @@ class DeskService:
         # Recompute pairwise-independent quorum across ALL verifications for this finding under finding lock
         all_votes = conn.execute(
             """
-            SELECT id, contributor_id, verifier_handle, verdict, checks_json,
-                   reproduced_metrics_json, confidence, coding_agent, coding_agent_model, created_at
-            FROM peer_verifications
-            WHERE finding_id = ?
-            ORDER BY created_at ASC, id ASC
+            SELECT pv.id, pv.contributor_id, pv.verifier_handle, pv.verdict, pv.checks_json,
+                   pv.reproduced_metrics_json, pv.confidence, pv.coding_agent, pv.coding_agent_model,
+                   pv.created_at,
+                   pva.github_verified, pva.github_user_id, pva.registered_ip_hash
+            FROM peer_verifications pv
+            LEFT JOIN agents pva ON pva.id = pv.verifier_node_id
+            WHERE pv.finding_id = ?
+            ORDER BY pv.created_at ASC, pv.id ASC
             """,
             (finding_id,),
         ).fetchall()
@@ -10099,6 +13296,10 @@ class DeskService:
             author_model=_row_get(finding_row, "submitted_coding_agent_model", ""),
             votes=all_votes,
             loads_json_fn=loads_json,
+            author_github_verified=a_gh_v,
+            author_github_user_id=a_gh_uid,
+            author_ip_hash=a_ip_h,
+            require_github_verified=_require_github_verified_quorum(),
         )
         qualified_confirms = int(qres["qualified_confirms"])
         dispute_count = int(qres["dispute_count"])

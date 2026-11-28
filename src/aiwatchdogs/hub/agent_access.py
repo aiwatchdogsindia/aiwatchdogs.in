@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape as xml_escape
 from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
+from aiwatchdogs.core.safety import sanitize_markdown_inline
 from aiwatchdogs.hub.database import utc_now_iso
 from aiwatchdogs.hub.desk import DEFAULT_REQUIRED_QUORUM, DeskService
 
@@ -180,6 +181,12 @@ def build_task_join_prompt(base_url: str, slug: str, task_id: str, methodology_c
     return f"Fetch and follow {origin}/join.txt and run task {task_id} on {slug} now"
 
 
+def build_enlist_prompt(base_url: str) -> str:
+    """Return the canonical 1-line coding-agent prompt to list a new audit project."""
+    origin = base_url.rstrip("/")
+    return f"Fetch and follow {origin}/enlist.txt to list my audit project with me"
+
+
 def _yaml_quote(value: str) -> str:
     cleaned = str(value or "").replace("\\", "\\\\").replace('"', '\\"').replace("\r", " ").replace("\n", " ")
     return f'"{cleaned}"'
@@ -213,7 +220,7 @@ def _frontmatter(
 
 
 def _md_cell(val: Any, *, max_len: int = 120) -> str:
-    text = " ".join(str("" if val is None else val).replace("|", "\\|").split())
+    text = sanitize_markdown_inline(val, max_len=max_len).replace("|", "\\|")
     if len(text) > max_len:
         text = text[: max_len - 1] + "…"
     return text
@@ -400,9 +407,30 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
     return "\n".join(out)
 
 
+_PROJECT_CODE_NUM_RE = re.compile(r"^P([1-9][0-9]*)$", re.IGNORECASE)
+
+
+def _sort_missions_latest_first(missions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order projects newest/latest first: unnumbered community listings, then P# descending (P8, P7, ... P1)."""
+    def _key(m: dict[str, Any]) -> tuple[int, int, str, str]:
+        code = str(m.get("project_code") or m.get("methodology_code") or "").strip()
+        match = _PROJECT_CODE_NUM_RE.match(code)
+        num = int(match.group(1)) if match else None
+        created = str(m.get("created_at") or "")
+        slug = str(m.get("slug") or "")
+        # Reverse timestamp/num by sorting descending on numeric keys or using negated int + separate sort passes.
+        return (0 if num is None else 1, -(num or 0), created, slug)
+
+    # First sort by slug ascending, then created_at descending, then P# descending (unnumbered first).
+    out = sorted(missions, key=lambda m: str(m.get("slug") or ""))
+    out.sort(key=lambda m: str(m.get("created_at") or ""), reverse=True)
+    out.sort(key=lambda m: (0 if _key(m)[0] == 0 else 1, _key(m)[1]))
+    return out
+
+
 def render_projects_md(desk: DeskService, base_url: str) -> str:
     data = desk.list_missions()
-    missions = data.get("missions") or []
+    missions = _sort_missions_latest_first(list(data.get("missions") or []))
     out: list[str] = [
         _frontmatter(
             title="Projects — AI Watchdogs India",
@@ -412,8 +440,21 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
         ),
         "# Audit Projects",
         "",
-        f"Total active projects: **{len(missions)}**. Open any project's `.md` file for its full task queue, "
+        f"Total active projects: **{len(missions)}** (newest first). Open any project's `.md` file for its full task queue, "
         "per-task 1-line join commands, visual aggregate metrics, and project leaderboard.",
+        "",
+        "## List Your Project",
+        "",
+        "Need compute to audit or scrutinise the government? Paste this one line into Claude Code, "
+        "Codex, Antigravity, Gemini CLI, Cursor, or any coding agent — it asks what you want audited, "
+        "finds official sources, drafts `projects/<slug>.json`, and gives you a one-click GitHub pull request link:",
+        "",
+        "```text",
+        build_enlist_prompt(base_url),
+        "```",
+        "",
+        f"- **Agent instructions:** [{base_url}/enlist.txt]({base_url}/enlist.txt)",
+        "- **Project guide on GitHub:** https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects",
         "",
     ]
 
@@ -948,6 +989,323 @@ def render_project_detail_md(desk: DeskService, base_url: str, slug: str) -> str
                 )
         out.append("")
 
+    elif "sovereign_lies" in vs:
+        p8 = vs["sovereign_lies"]
+        by_lvl = p8.get("by_jurisdiction_level") or {}
+        by_mech = p8.get("by_mechanism") or {}
+        anchor = p8.get("sgb_anchor_case")
+        top_schemes = p8.get("top_schemes") or []
+        union_b = by_lvl.get("union") or {}
+        state_b = by_lvl.get("state") or {}
+        ut_b = by_lvl.get("ut") or {}
+        out.extend(
+            [
+                "## Sovereign Lies (P8)",
+                "",
+                f"> {p8.get('hook') or 'The government made a promise when it launched the scheme. Did it keep it?'}",
+                "",
+                f"- **Coverage:** {int(p8.get('total_tasks') or 0):,} scheme commitment checks across "
+                f"{int(p8.get('unique_schemes_covered') or 0):,} distinct Union & State/UT schemes "
+                f"({int(p8.get('states_and_uts_covered') or 0):,} States/UTs; {int(p8.get('sgb_tasks_count') or 0):,} SGB tasks; "
+                f"{int(p8.get('cleared_control_tasks_embedded') or 0):,} honored/grandfathered controls)",
+                f"- **Jurisdiction tiers:** Union: {int(union_b.get('done') or 0):,}/{int(union_b.get('tasks') or 0):,} · "
+                f"States: {int(state_b.get('done') or 0):,}/{int(state_b.get('tasks') or 0):,} · "
+                f"UTs: {int(ut_b.get('done') or 0):,}/{int(ut_b.get('tasks') or 0):,}",
+                f"- **Leads so far:** {int(p8.get('leads') or 0):,} ({int(p8.get('verified') or 0):,} verified) · "
+                f"{int(p8.get('cleared_tasks') or 0):,} cleared · Published exposure: {_fmt_inr_cr(p8.get('flagged_total_inr_cr'))}",
+                f"- **Summary API (JSON):** [{base_url}/api/projects/sovereign-lies/summary]({base_url}/api/projects/sovereign-lies/summary)",
+                f"- **Source records indexed, with SHA-256 (CSV):** [{base_url}{p8.get('documents_url')}]({base_url}{p8.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p8.get('coverage_url')}]({base_url}{p8.get('coverage_url')})",
+                "",
+            ]
+        )
+        if isinstance(anchor, dict) and anchor.get("scheme_name"):
+            out.extend(
+                [
+                    "### Sovereign Gold Bond (SGB) Anchor Case",
+                    "",
+                    f"- **Scheme:** **{anchor.get('scheme_name')}** — {_md_cell(anchor.get('tranche_or_phase'), max_len=160)}",
+                    f"- **Original Promise ({anchor.get('promise_date')}):** {_md_cell(anchor.get('promise_summary'), max_len=260)}",
+                    f"- **Subsequent Walk-Back ({anchor.get('walkback_date')}):** {_md_cell(anchor.get('walkback_summary'), max_len=260)}",
+                    f"- **Mechanism & Impact:** `{anchor.get('walkback_mechanism')}` · `{anchor.get('retroactive_impact')}`",
+                    "",
+                ]
+            )
+        if by_mech:
+            out.extend(
+                [
+                    "### Walk-Back Mechanisms",
+                    "",
+                    "| Mechanism | Tasks | Leads |",
+                    "| :--- | ---: | ---: |",
+                ]
+            )
+            for mkey, mval in by_mech.items():
+                if isinstance(mval, dict):
+                    out.append(f"| `{mkey}` | {int(mval.get('tasks') or 0):,} | {int(mval.get('leads') or 0):,} |")
+            out.append("")
+        if top_schemes:
+            out.extend(
+                [
+                    "### Top Schemes Audited",
+                    "",
+                    "| Scheme | Jurisdiction | Mechanism | Tasks | Leads |",
+                    "| :--- | :--- | :--- | ---: | ---: |",
+                ]
+            )
+            for sc in top_schemes[:15]:
+                out.append(
+                    f"| {_md_cell(sc.get('scheme_name'), max_len=55)} | {_md_cell(sc.get('jurisdiction'), max_len=28)} | "
+                    f"`{sc.get('walkback_mechanism')}` | {int(sc.get('tasks') or 0):,} | {int(sc.get('leads') or 0):,} |"
+                )
+            out.append("")
+        top = p8.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "### Flagged Scheme Commitment Divergences So Far",
+                    "",
+                    "| Scheme | Jurisdiction | Mechanism | Promise Date | Walk-Back Date | Status |",
+                    "| :--- | :--- | :--- | :---: | :---: | :--- |",
+                ]
+            )
+            for row in top:
+                out.append(
+                    f"| [{_md_cell(row.get('scheme_name') or row.get('title'), max_len=48)}]({base_url}/findings/{row.get('finding_id')}.md) | "
+                    f"{_md_cell(row.get('jurisdiction'), max_len=26)} | `{row.get('walkback_mechanism')}` | "
+                    f"{row.get('promise_date') or '—'} | {row.get('walkback_date') or '—'} | {_status_label(row.get('status'))} |"
+                )
+        out.append("")
+
+    elif "auditing_government_exams" in vs:
+        p9 = vs["auditing_government_exams"]
+        hc = p9.get("headline_counts") or {}
+        aw = p9.get("audit_window") or {}
+        by_lvl = p9.get("by_jurisdiction_level") or {}
+        by_dis = p9.get("by_disruption_type") or {}
+        by_yr = p9.get("by_year") or []
+        top_auths = p9.get("top_authorities") or []
+        anchors = p9.get("anchor_cases") or []
+        union_b = by_lvl.get("union") or {}
+        state_b = by_lvl.get("state") or {}
+        ut_b = by_lvl.get("ut") or {}
+        out.extend(
+            [
+                "## Auditing Government Exams (P9)",
+                "",
+                f"> {p9.get('hook') or 'Did India’s government exams happen on time and flawlessly — or get delayed, postponed, rescheduled, or cancelled after students sat them?'}",
+                "",
+                f"- **Audit window:** {aw.get('label') or 'Nov 2023 – Nov 2026 (3 years)'} (`{aw.get('start_date') or '2023-11-28'}` to `{aw.get('end_date') or '2026-11-28'}`)",
+                f"- **3-Year Scorecard ({int(hc.get('total_audited') or p9.get('total_tasks') or 0):,} audited exams):** "
+                f"**{int(hc.get('not_flawless_count') or 0):,} did not happen flawlessly** ({float(hc.get('not_flawless_rate_pct') or 0.0):.1f}%) · "
+                f"**{int(hc.get('flawless_count') or 0):,} conducted flawlessly (cleared)** ({float(hc.get('flawless_rate_pct') or 0.0):.1f}%)",
+                f"- **Disruption breakdown:** "
+                f"Took exam, then cancelled: **{int(hc.get('cancelled_after_conduct') or 0):,}** · "
+                f"Postponed: **{int(hc.get('postponed') or 0):,}** · "
+                f"Rescheduled: **{int(hc.get('rescheduled') or 0):,}** · "
+                f"Delayed: **{int(hc.get('delayed') or 0):,}** · "
+                f"Cancelled before conduct: **{int(hc.get('cancelled_before_conduct') or 0):,}** · "
+                f"Glitch / partial re-exam: **{int(hc.get('partial_reexam_or_glitch') or 0):,}**",
+                f"- **Coverage:** {int(p9.get('total_tasks') or 0):,} exam conduct checks across "
+                f"{int(p9.get('unique_authorities_covered') or 0):,} conducting authorities and "
+                f"{int(p9.get('states_and_uts_covered') or 0):,} States/UTs + Union of India "
+                f"({int(p9.get('unique_documents_count') or 0):,} SHA-256-pinned official documents)",
+                f"- **Jurisdiction tiers:** Union: {int(union_b.get('done') or 0):,}/{int(union_b.get('tasks') or 0):,} · "
+                f"States: {int(state_b.get('done') or 0):,}/{int(state_b.get('tasks') or 0):,} · "
+                f"UTs: {int(ut_b.get('done') or 0):,}/{int(ut_b.get('tasks') or 0):,}",
+                f"- **Live submissions:** {int(p9.get('published_leads') or 0):,} leads ({int(p9.get('verified') or 0):,} verified) · "
+                f"{int(p9.get('cleared_tasks') or 0):,} cleared · {int(p9.get('unevaluable_tasks') or 0):,} unevaluable",
+                f"- **Summary API (JSON):** [{base_url}/api/projects/auditing-government-exams/summary]({base_url}/api/projects/auditing-government-exams/summary)",
+                f"- **Source records indexed, with SHA-256 (CSV):** [{base_url}{p9.get('documents_url')}]({base_url}{p9.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p9.get('coverage_url')}]({base_url}{p9.get('coverage_url')})",
+                "",
+            ]
+        )
+        if by_dis:
+            out.extend(
+                [
+                    "### Exam Outcomes & Disruption Types",
+                    "",
+                    "| Outcome / Disruption Type | Tasks | Share | Live Leads |",
+                    "| :--- | ---: | ---: | ---: |",
+                ]
+            )
+            for dkey, dval in by_dis.items():
+                if isinstance(dval, dict):
+                    out.append(
+                        f"| {dval.get('label') or dkey} (`{dkey}`) | {int(dval.get('tasks') or 0):,} | "
+                        f"{float(dval.get('pct') or 0.0):.1f}% | {int(dval.get('leads') or 0):,} |"
+                    )
+            out.append("")
+        if by_yr:
+            out.extend(
+                [
+                    "### Year-over-Year Conduct (2023–2026)",
+                    "",
+                    "| Year | Audited | Not Flawless | Flawless | Took Exam, Then Cancelled | Postponed | Rescheduled | Delayed |",
+                    "| :---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                ]
+            )
+            for yrow in by_yr:
+                if isinstance(yrow, dict):
+                    out.append(
+                        f"| {yrow.get('year')} | {int(yrow.get('tasks') or 0):,} | "
+                        f"{int(yrow.get('not_flawless') or 0):,} | {int(yrow.get('flawless') or 0):,} | "
+                        f"{int(yrow.get('cancelled_after_conduct') or 0):,} | {int(yrow.get('postponed') or 0):,} | "
+                        f"{int(yrow.get('rescheduled') or 0):,} | {int(yrow.get('delayed') or 0):,} |"
+                    )
+            out.append("")
+        if anchors:
+            out.extend(
+                [
+                    "### Flagship Anchor Cases",
+                    "",
+                    "| Exam | Jurisdiction | Outcome | Scheduled | Event Date | Documented Candidates |",
+                    "| :--- | :--- | :--- | :---: | :---: | ---: |",
+                ]
+            )
+            for ac in anchors[:10]:
+                if isinstance(ac, dict):
+                    c_cnt = ac.get("affected_candidates_count")
+                    c_txt = f"{int(c_cnt):,}" if isinstance(c_cnt, int) else "—"
+                    out.append(
+                        f"| {_md_cell(ac.get('exam_name'), max_len=48)} | {_md_cell(ac.get('jurisdiction'), max_len=24)} | "
+                        f"`{ac.get('disruption_type')}` | {ac.get('scheduled_date') or '—'} | "
+                        f"{ac.get('actual_or_event_date') or '—'} | {c_txt} |"
+                    )
+            out.append("")
+        if top_auths:
+            out.extend(
+                [
+                    "### Top Conducting Authorities Audited",
+                    "",
+                    "| Authority | Jurisdiction | Audited | Not Flawless | Cancelled After Conduct |",
+                    "| :--- | :--- | ---: | ---: | ---: |",
+                ]
+            )
+            for au in top_auths[:15]:
+                if isinstance(au, dict):
+                    out.append(
+                        f"| {_md_cell(au.get('authority'), max_len=52)} | {_md_cell(au.get('jurisdiction'), max_len=24)} | "
+                        f"{int(au.get('tasks') or 0):,} | {int(au.get('not_flawless') or 0):,} | "
+                        f"{int(au.get('cancelled_after_conduct') or 0):,} |"
+                    )
+            out.append("")
+
+    elif "innocent_but_locked_up" in vs:
+        p10 = vs["innocent_but_locked_up"]
+        by_portal = p10.get("by_portal_category") or []
+        by_year = p10.get("by_year") or []
+        anchor = p10.get("anchor_case")
+        top_courts = p10.get("top_courts") or []
+        yr_range = p10.get("year_range") or [2021, 2026]
+        med_days = p10.get("median_overrun_days")
+        med_txt = f"{float(med_days):,.1f} days" if isinstance(med_days, (int, float)) else "—"
+        max_days = p10.get("max_overrun_days")
+        max_txt = f"{int(max_days):,} days" if isinstance(max_days, (int, float)) else "—"
+        out.extend(
+            [
+                "## Innocent But Locked Up (P10)",
+                "",
+                f"> {p10.get('hook') or 'The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed?'}",
+                "",
+                f"- **Coverage ({yr_range[0]}–{yr_range[-1]}):** {int(p10.get('total_tasks') or 0):,} official custody-compliance checks across "
+                f"{int(p10.get('unique_documents_covered') or 0):,} pinned documents, "
+                f"{int(p10.get('states_and_uts_covered') or 0):,} States/UTs, and {int(p10.get('courts_covered') or 0):,} courts",
+                f"- **4-Stage Chain Metrics:** {int(p10.get('full_4_stage_tasks') or 0):,} full 4-stage cases · "
+                f"{int(p10.get('contempt_tasks') or 0):,} contempt/habeas actions · "
+                f"{int(p10.get('verified_release_tasks') or 0):,} verified releases · "
+                f"{int(p10.get('cleared_control_tasks_embedded') or 0):,} compliant controls",
+                f"- **Documented Detention Overrun:** {int(p10.get('total_overrun_days_documented') or 0):,} total days · "
+                f"median {med_txt} · max {max_txt}",
+                f"- **Leads so far:** {int(p10.get('leads') or 0):,} ({int(p10.get('verified') or 0):,} verified) · "
+                f"{int(p10.get('cleared_tasks') or 0):,} cleared · Compensation cited: {_fmt_inr_cr(p10.get('flagged_compensation_inr_cr'))}",
+                f"- **Summary API (JSON):** [{base_url}/api/projects/innocent-but-locked-up/summary]({base_url}/api/projects/innocent-but-locked-up/summary)",
+                f"- **Source records indexed, with SHA-256 (CSV):** [{base_url}{p10.get('documents_url')}]({base_url}{p10.get('documents_url')})",
+                f"- **Coverage (JSON):** [{base_url}{p10.get('coverage_url')}]({base_url}{p10.get('coverage_url')})",
+                "",
+            ]
+        )
+        if isinstance(anchor, dict) and anchor.get("case_title"):
+            out.extend(
+                [
+                    "### Flagship 4-Stage Anchor Case",
+                    "",
+                    f"- **Case:** **{anchor.get('case_title')}** ({anchor.get('jurisdiction')}, {anchor.get('year')})",
+                    f"- **Stage 1 (Acquittal / Release Order):** {anchor.get('acquittal_court')} (`{anchor.get('acquittal_case_number')}`, {anchor.get('acquittal_order_date') or '—'}) — {_md_cell(anchor.get('acquittal_quote'), max_len=220)}",
+                    f"- **Stage 2 (Continued Detention):** {anchor.get('prison_name')} ({anchor.get('overrun_window') or '—'}) — {_md_cell(anchor.get('non_release_reason'), max_len=220)}",
+                    f"- **Stage 3 (Contempt / Action):** {anchor.get('contempt_court') or '—'} (`{anchor.get('contempt_case_number') or '—'}`) — {_md_cell(anchor.get('contempt_quote'), max_len=220)}",
+                    f"- **Stage 4 (Release & Direction):** Released {anchor.get('release_date') or '—'} — {_md_cell(anchor.get('judicial_direction_summary'), max_len=240)}",
+                    "",
+                ]
+            )
+        if by_portal:
+            out.extend(
+                [
+                    "### Source Portal Breakdown",
+                    "",
+                    "| Portal Category | Done / Total | Leads | Cleared |",
+                    "| :--- | :---: | ---: | ---: |",
+                ]
+            )
+            for row in by_portal:
+                out.append(
+                    f"| {_md_cell(row.get('label') or row.get('portal_category'), max_len=48)} | "
+                    f"{int(row.get('done') or 0):,}/{int(row.get('tasks') or 0):,} | "
+                    f"{int(row.get('leads') or 0):,} | {int(row.get('cleared') or 0):,} |"
+                )
+            out.append("")
+        if by_year:
+            out.extend(
+                [
+                    "### 5-Year Coverage (2021–2026)",
+                    "",
+                    "| Year | Done / Total | Full 4-Stage | Overrun Days | Leads |",
+                    "| :---: | :---: | ---: | ---: | ---: |",
+                ]
+            )
+            for y in by_year:
+                out.append(
+                    f"| {y.get('year')} | {int(y.get('done') or 0):,}/{int(y.get('tasks') or 0):,} | "
+                    f"{int(y.get('full_4_stage') or 0):,} | {int(y.get('overrun_days') or 0):,} | "
+                    f"{int(y.get('leads') or 0):,} |"
+                )
+            out.append("")
+        if top_courts:
+            out.extend(
+                [
+                    "### Top Courts & Statutory Bodies Covered",
+                    "",
+                    "| Court / Body | Tier | State / UT | Tasks | Leads |",
+                    "| :--- | :--- | :--- | ---: | ---: |",
+                ]
+            )
+            for c in top_courts[:15]:
+                out.append(
+                    f"| {_md_cell(c.get('court_name'), max_len=55)} | `{c.get('court_tier')}` | "
+                    f"{_md_cell(c.get('state_ut') or 'Union / All-India', max_len=28)} | "
+                    f"{int(c.get('tasks') or 0):,} | {int(c.get('leads') or 0):,} |"
+                )
+            out.append("")
+        top = p10.get("top_leads") or []
+        if top:
+            out.extend(
+                [
+                    "### Flagged Custody-Overrun Leads So Far",
+                    "",
+                    "| Case | Jurisdiction | Stages | Overrun (Days) | Mechanism | Status |",
+                    "| :--- | :--- | :---: | ---: | :--- | :--- |",
+                ]
+            )
+            for row in top:
+                ov_txt = str(row["overrun_days"]) if row.get("overrun_days") is not None else "—"
+                out.append(
+                    f"| [{_md_cell(row.get('case_title') or row.get('title'), max_len=48)}]({base_url}/findings/{row.get('finding_id')}.md) | "
+                    f"{_md_cell(row.get('jurisdiction'), max_len=24)} | {int(row.get('stages_verified_count') or 0)}/4 | "
+                    f"{ov_txt} | `{row.get('overrun_mechanism')}` | {_status_label(row.get('status'))} |"
+                )
+        out.append("")
+
     elif "budget_audit" in vs:
         ba = vs["budget_audit"]
         out.extend(
@@ -1402,24 +1760,33 @@ def render_leaderboard_md(desk: DeskService, base_url: str) -> str:
 def render_contributor_md(desk: DeskService, base_url: str, handle: str) -> str:
     prof = desk.get_contributor_profile(handle)
     agent = prof.get("agent") or prof
-    h = str(agent.get("handle") or handle)
+    h = sanitize_markdown_inline(agent.get("handle") or handle, max_len=64)
+    display_name = sanitize_markdown_inline(agent.get("display_name") or h, max_len=120)
+    provider = sanitize_markdown_inline(agent.get("provider") or "", max_len=64)
+    model = sanitize_markdown_inline(agent.get("model") or "", max_len=120)
+    coding_agent = sanitize_markdown_inline(agent.get("coding_agent") or "—", max_len=80) or "—"
+    coding_agent_model = sanitize_markdown_inline(agent.get("coding_agent_model") or "—", max_len=120) or "—"
+    last_hb = sanitize_markdown_inline(agent.get("last_heartbeat_at") or "", max_len=64)
+    gh_verified = bool(agent.get("github_verified"))
+    gh_status = "Yes" if gh_verified else "No (self-declared handle)"
     out: list[str] = [
         _frontmatter(
             title=f"@{h} — Contributor Profile · AI Watchdogs India",
             canonical_url=f"{base_url}/a/{h}",
             markdown_url=f"{base_url}/a/{h}.md",
             base_url=base_url,
-            extra={"handle": h},
+            extra={"handle": h, "github_verified": "true" if gh_verified else "false"},
         ),
         f"# Contributor `@{h}`",
         "",
-        f"- **Display name:** {agent.get('display_name') or h}",
-        f"- **Provider / Model:** `{agent.get('provider')}` / `{agent.get('model')}`",
-        f"- **Coding agent:** {agent.get('coding_agent') or '—'} ({agent.get('coding_agent_model') or '—'})",
+        f"- **Display name:** {display_name}",
+        f"- **GitHub verified:** {gh_status}",
+        f"- **Provider / Model:** `{provider}` / `{model}`",
+        f"- **Coding agent:** {coding_agent} ({coding_agent_model})",
         f"- **Score:** {int(agent.get('score') or 0)} all-time · {int(agent.get('hourly_score') or 0)} last hour",
         f"- **Activity:** {int(agent.get('tasks_completed') or 0)} tasks · {int(agent.get('findings_submitted') or 0)} findings · "
         f"{int(agent.get('verifications_done') or 0)} peer checks · {int(agent.get('cleared_submitted') or 0)} cleared",
-        f"- **Last heartbeat:** `{agent.get('last_heartbeat_at')}`",
+        f"- **Last heartbeat:** `{last_hb}`",
         "",
     ]
     subs = prof.get("submitted_findings") or []
@@ -1460,7 +1827,7 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "## The Swarm",
         "",
         "### Who does the work",
-        "- **Projects:** Curated by the AI Watchdogs India team with pinned official sources and concrete tasks.",
+        f"- **Projects:** Listed by citizens, journalists, researchers, or the AI Watchdogs India team whenever an audit of public records needs compute (list yours in one line via [{base_url}/enlist.txt]({base_url}/enlist.txt)). Each project names official sources and concrete tasks.",
         "- **Contributor agents:** Volunteers point their coding agent at one line; it claims a task, verifies SHA-256 digests, and submits neutral results.",
         "- **Deterministic engines:** Plain Python performs every calculation; AI assists with reading and citations, never deciding a number.",
         "",
@@ -1545,7 +1912,7 @@ def render_brief_md(base_url: str) -> str:
         "4. **Visualise in public & hand off to citizens** — live interactive charts track progress and findings; "
         "every verified discrepancy comes with a draft RTI Act 2005 request for citizens to review and file themselves.",
         "",
-        "## What We're Auditing Right Now (7 Live Projects)",
+        "## What We're Auditing Right Now (10 Live Projects)",
         "",
         f"- **[Police Finances]({base_url}/projects/police-finances.md)** (`P1`) — Budget Estimates vs Revised/Actuals and modernisation spend across Union, State, and UT police forces (100 tasks).",
         f"- **[Gov.in Public Information]({base_url}/projects/gov-in-public-information.md)** (`P2`) — Auditing all 12,537 `.gov.in` portals across 1,000 tasks against a 159-checkpoint GIGW 3.0, RTI Act 2005 & GoI statutory conformity matrix.",
@@ -1554,6 +1921,9 @@ def render_brief_md(base_url: str) -> str:
         f"- **[One Teacher, Five Grades]({base_url}/projects/one-teacher-five-grades.md)** (`P5`) — Official Ministry of Education UDISE+ national reports (2023-24 to 2025-26) audited across 100 State/UT tasks to map single-teacher schools, pupil overcrowding, and under-staffed Government Primary schools.",
         f"- **[Parliament's To-Do List]({base_url}/projects/parliaments-to-do-list.md)** (`P6`) — A minister promised Parliament an answer. Did it ever get one? Auditing 1,000 formal ministerial assurances across Union Ministries on Digital Sansad, citing each original promise, recorded status, and what the follow-up actually answered.",
         f"- **[Only One Bid]({base_url}/projects/only-one-bid.md)** (`P7`) — Which public purchases consistently attract just one bidder — and keep going to the same winner across 10 years of Indian government tenders? Auditing 10,000 real procurement records (2016–2026) while transparently clearing documented PAC/OEM exemptions.",
+        f"- **[Sovereign Lies]({base_url}/projects/sovereign-lies.md)** (`P8`) — The government made a promise when it launched the scheme. Did it keep it? Auditing 1,000 Union and State/UT government scheme commitments (anchored by the Sovereign Gold Bond Scheme) against subsequent tax reversals, benefit cuts, discontinuations, eligibility narrowing, lock-in changes, and arrears while transparently clearing honored or grandfathered schemes.",
+        f"- **[Auditing Government Exams]({base_url}/projects/auditing-government-exams.md)** (`P9`) — Auditing 1,000 Union, State & UT public examinations across India over the past 3 years (Nov 2023 – Nov 2026) to measure how many ran flawlessly versus being delayed, postponed, rescheduled, cancelled before or after students sat them, or disrupted by technical glitches and partial re-exams.",
+        f"- **[Innocent But Locked Up]({base_url}/projects/innocent-but-locked-up.md)** (`P10`) — The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed? Auditing 1,000 official Indian court, prison, police, NHRC/SHRC, NALSA/SLSA, Parliament, and CAG records (2021–2026) tracking post-acquittal detention overruns and contempt-of-court compliance while transparently clearing verified timely-release controls.",
         "",
         "## How to Explore the Site (Humans & AI Agents)",
         "",
@@ -1577,8 +1947,16 @@ def render_brief_md(base_url: str) -> str:
         "",
         "## Join the Effort & Community",
         "",
+        "Contribute compute to an existing project:",
+        "",
         "```text",
         build_canonical_join_prompt(base_url),
+        "```",
+        "",
+        "Or list a new government-audit project that needs compute:",
+        "",
+        "```text",
+        build_enlist_prompt(base_url),
         "```",
         "",
         "- **Discord (Join the AI Watchdogs community):** https://discord.gg/8K33UYGWY4",
@@ -1801,7 +2179,8 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "",
         "## Quickstart (Join the Swarm)",
         "",
-        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6 and P7 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6, P7, P8, P9 and P10 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [List an Audit Project (/enlist.txt)]({base_url}/enlist.txt): One-line coding-agent protocol for anyone who needs compute to audit or scrutinise the government — drafts `projects/<slug>.json` and generates a one-click GitHub pull request link.",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",
@@ -1920,6 +2299,7 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/graveyard.md", "0.7"),
         ("/llms.txt", "0.8"),
         ("/join.txt", "0.8"),
+        ("/enlist.txt", "0.8"),
     ]
     for slug in mission_slugs:
         extra_urls.append((f"/projects/{slug}.md", "0.8"))
@@ -2004,7 +2384,7 @@ def _mcp_tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "slug": {
                         "type": "string",
-                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list', 'only-one-bid').",
+                        "description": "Project slug (e.g. 'police-finances', 'gov-in-public-information', 'union-budget-unspent-funds', 'one-road-two-bills', 'one-teacher-five-grades', 'parliaments-to-do-list', 'only-one-bid', 'sovereign-lies', 'auditing-government-exams', 'innocent-but-locked-up').",
                     }
                 },
                 "required": ["slug"],

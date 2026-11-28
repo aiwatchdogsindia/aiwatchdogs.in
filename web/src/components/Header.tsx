@@ -1,6 +1,7 @@
-import { Menu, X } from 'lucide-react';
+import { Menu, Moon, Sun, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
+import { applyTheme, isDark } from '../lib/theme';
 import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
 import { SocialIcon, SocialIconRow } from './SocialLinks';
@@ -16,6 +17,21 @@ const NAV_ITEMS = [
   { to: '/live', label: 'Live', key: 'live' },
   { to: '/how-it-works', label: 'How it works', key: 'how-it-works' },
 ];
+
+function ThemeToggle({ className }: { className: string }) {
+  const dark = isDark();
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+      title={dark ? 'Light theme' : 'Dark theme'}
+      onClick={() => applyTheme(dark ? 'light' : 'dark')}
+    >
+      {dark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+    </button>
+  );
+}
 
 export function Header({ onOpenJoin }: HeaderProps) {
   const { pathname, hash } = useRouter();
@@ -75,6 +91,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
         <div className="header-right">
           <SocialIconRow />
           <span className="header-divider" aria-hidden="true" />
+          <ThemeToggle className="theme-toggle" />
           <AgentModeToggle variant="header" />
           <button
             type="button"
@@ -131,6 +148,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
           >
             Help out
           </button>
+          <ThemeToggle className="theme-toggle theme-toggle--mobile" />
           <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
             <AgentModeToggle variant="compact" />
           </div>

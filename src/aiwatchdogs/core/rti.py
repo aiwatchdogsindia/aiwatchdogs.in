@@ -255,6 +255,11 @@ _CENTRAL_AUTHORITY_CUES: tuple[str, ...] = (
     "central coalfields",
     "nlc india",
     "union government",
+    "national testing agency",
+    "union public service commission",
+    "staff selection commission",
+    "railway recruitment board",
+    "national board of examinations",
 )
 
 _METHODOLOGY_RECORDS: dict[str, list[str]] = {
@@ -308,6 +313,21 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of the Technical and Financial Bid Evaluation Committee minutes (including reasons recorded for disqualification of any non-responsive bids) and the comparative bid statement.",
         "Certified copy of the Award of Contract (AOC) / work order register for the referenced procuring authority and category covering repeat awards disclosed under Section 4(1)(b) of the RTI Act, 2005.",
     ],
+    "P8": [
+        "Certified copies of the original Gazette notification, Government Order (GO), circular, or scheme guidelines establishing the launch terms (tax treatment, benefit/subsidy rate, eligibility, lock-in, or exit conditions) of the referenced public scheme.",
+        "Certified copies of all subsequent amending notifications, circulars, Finance Department/Cabinet notes, or discontinuance orders modifying, restricting, capping, or suspending those launch terms.",
+        "Certified copies of any published fiscal-impact assessment, grandfathering/transitional relief consideration note, or beneficiary/outlay arrears statement held on record under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
+    "P9": [
+        "Certified copies of the original examination schedule notification, agency/testing-vendor conduct order, and all subsequent postponement, rescheduling, cancellation, or re-examination notices issued for the referenced public examination.",
+        "Certified copies of official committee notes, administrative orders, or technical incident summaries recording the grounds for exam postponement, rescheduling, cancellation, or partial re-examination — including any safeguard action recorded under the Public Examinations (Prevention of Unfair Means) Act, 2024 or applicable State examination rules (with personal PII redacted under Section 8(1)(j)).",
+        "Certified copies of aggregate candidate statistics (registered, appeared, and affected candidates), re-examination timelines, and fee-refund or facilitation circulars proactively disclosed under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
+    "P10": [
+        "Certified copies of the relevant prison admission/release register abstract, receipt log of the court acquittal or release warrant (parwana / FASTER electronic transmission), and actual date/time of physical release under the applicable Prison Manual.",
+        "Certified copies of all official correspondence, verification notings, or administrative memos recording the reasons for any delay between receipt of the court release/acquittal order and release from custody.",
+        "Certified copies of compliance affidavits, departmental action-taken reports, compensation disbursement orders, or FASTER compliance circulars issued pursuant to court contempt/habeas corpus/NHRC/SHRC/UTRC directions under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
@@ -347,7 +367,22 @@ def _format_inr(amount: float) -> str:
 def _extract_reference_ids(finding: dict[str, Any]) -> str:
     refs: list[str] = []
     metrics = finding.get("anomaly_metrics") if isinstance(finding.get("anomaly_metrics"), dict) else {}
-    for mkey in ("assurance_ref", "para_number", "tender_id", "ocid"):
+    for mkey in (
+        "assurance_ref",
+        "para_number",
+        "tender_id",
+        "ocid",
+        "promise_document_ref",
+        "walkback_document_ref",
+        "schedule_document_ref",
+        "outcome_document_ref",
+        "acquittal_case_number",
+        "contempt_case_number",
+        "document_ref",
+        "case_key",
+        "scheme_slug",
+        "exam_slug",
+    ):
         val = metrics.get(mkey)
         cleaned = _clean_single_line(val, max_len=64) if val else ""
         if cleaned and cleaned not in refs:
@@ -416,7 +451,7 @@ def resolve_rti_jurisdiction(
             "union of india ("
         ):
             explicit_central = True
-        elif jur_lower.startswith("state:") and "&" not in jur_lower and "," not in jur_lower:
+        elif (jur_lower.startswith("state:") or jur_lower.startswith("ut:")) and "&" not in jur_lower and "," not in jur_lower:
             raw_state = raw_jurisdiction.split(":", 1)[1].strip()
             state_key = _match_state_key(raw_state) or raw_state.lower()
         else:

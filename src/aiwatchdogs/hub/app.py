@@ -68,12 +68,21 @@ from aiwatchdogs.hub.desk import MAX_TASK_PAGE, DeskService
 from aiwatchdogs.hub.feed import feed_entries, graveyard_feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
-from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
+from aiwatchdogs.hub.templates import (
+    DEFAULT_PUBLIC_HUB_URL,
+    normalize_base_url,
+    render_enlist_txt,
+    render_join_sh,
+    render_join_txt,
+)
 from aiwatchdogs.projects import (
+    AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
+    INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG,
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
     ONLY_ONE_BID_PROJECT_SLUG,
     PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
+    SOVEREIGN_LIES_PROJECT_SLUG,
     UNION_BUDGET_PROJECT_SLUG,
     project_codes_by_slug,
     slug_aliases,
@@ -288,6 +297,15 @@ class RegisterAgentRequest(BaseModel):
     coding_agent_model: str | None = Field(default=None, max_length=120)
     # Optional client-generated high-entropy nonce allowing safe retry if the first registration reply drops.
     registration_key: str | None = Field(default=None, max_length=128)
+
+
+class GitHubVerifyConfirmRequest(BaseModel):
+    gist_url: str | None = Field(default=None, max_length=500)
+    gist_id: str | None = Field(default=None, max_length=80)
+
+
+class GitHubDevicePollRequest(BaseModel):
+    device_code: str = Field(..., min_length=1, max_length=256)
 
 
 class DeskNextRequest(BaseModel):
@@ -844,6 +862,16 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    @application.get("/enlist.txt", response_class=PlainTextResponse)
+    @application.head("/enlist.txt", response_class=PlainTextResponse, include_in_schema=False)
+    def enlist_txt(request: Request) -> PlainTextResponse:
+        content = render_enlist_txt(_public_base_url(request))
+        return PlainTextResponse(
+            content=content,
+            media_type="text/plain; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
+
     # ------------------------------------------------------------------
     # Public Read Plane
     # ------------------------------------------------------------------
@@ -1059,6 +1087,75 @@ def create_app(
             headers={"Cache-Control": "public, max-age=3600"},
         )
 
+    @application.get(f"/api/missions/{SOVEREIGN_LIES_PROJECT_SLUG}/{{filename}}")
+    def api_sovereign_lies_file(filename: str) -> Response:
+        """The official scheme documents audited by P8 (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / SOVEREIGN_LIES_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get(f"/api/projects/{SOVEREIGN_LIES_PROJECT_SLUG}/summary")
+    def api_sovereign_lies_summary(response: Response) -> dict[str, Any]:
+        """Dedicated P8 Sovereign Lies summary endpoint matching visual_summary.sovereign_lies."""
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        return desk.get_sovereign_lies_summary()
+
+    @application.get(f"/api/missions/{AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG}/{{filename}}")
+    def api_auditing_government_exams_file(filename: str) -> Response:
+        """Official examination documents audited by P9 (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get(f"/api/projects/{AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG}/summary")
+    def api_auditing_government_exams_summary(response: Response) -> dict[str, Any]:
+        """Dedicated P9 Auditing Government Exams summary endpoint matching visual_summary.auditing_government_exams."""
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        return desk.get_auditing_government_exams_summary()
+
+    @application.get(f"/api/missions/{INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG}/{{filename}}")
+    def api_innocent_but_locked_up_file(filename: str) -> Response:
+        """The court/prison/govt records audited by P10 (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get(f"/api/projects/{INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG}/summary")
+    def api_innocent_but_locked_up_summary(response: Response) -> dict[str, Any]:
+        """Dedicated P10 Innocent But Locked Up summary endpoint matching visual_summary.innocent_but_locked_up."""
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        return desk.get_innocent_but_locked_up_summary()
+
     @application.get("/api/findings")
     def api_findings(
         response: Response,
@@ -1207,13 +1304,105 @@ def create_app(
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict[str, Any]:
         _require_current_cli(request)
+        client_ip = _extract_client_ip(request)
+        if x_agent_token and desk.is_valid_reconnect_token(body.handle, x_agent_token):
+            desk.check_rate_limit(
+                bucket_key=f"agent_reconnect:{client_ip}",
+                limit=30,
+                window_seconds=60,
+            )
+        else:
+            try:
+                burst_limit = max(1, int(os.environ.get("AIWATCHDOGS_REGISTER_RATE_LIMIT", "5")))
+            except ValueError:
+                burst_limit = 5
+            try:
+                hourly_limit = max(burst_limit, int(os.environ.get("AIWATCHDOGS_REGISTER_HOURLY_LIMIT", "12")))
+            except ValueError:
+                hourly_limit = 12
+            desk.check_rate_limit(
+                bucket_key=f"agent_register_burst:{client_ip}",
+                limit=burst_limit,
+                window_seconds=600,
+            )
+            desk.check_rate_limit(
+                bucket_key=f"agent_register_hour:{client_ip}",
+                limit=hourly_limit,
+                window_seconds=3600,
+            )
         response.headers["Cache-Control"] = "no-store"
         return desk.register_agent(
             body.model_dump(),
             base_url=_public_base_url(request),
             existing_token=x_agent_token,
             registration_key=idempotency_key or body.registration_key,
+            client_ip=client_ip,
         )
+
+    @application.post("/api/agents/verify-github/challenge")
+    def api_agents_verify_github_challenge(
+        request: Request,
+        response: Response,
+        x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+    ) -> dict[str, Any]:
+        desk.check_rate_limit(
+            bucket_key=f"gh_verify_challenge:{_extract_client_ip(request)}",
+            limit=10,
+            window_seconds=600,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return desk.create_github_verification_challenge(
+            token=x_agent_token,
+            base_url=_public_base_url(request),
+        )
+
+    @application.post("/api/agents/verify-github/confirm")
+    def api_agents_verify_github_confirm(
+        request: Request,
+        response: Response,
+        body: GitHubVerifyConfirmRequest | None = None,
+        x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+    ) -> dict[str, Any]:
+        desk.check_rate_limit(
+            bucket_key=f"gh_verify_confirm:{_extract_client_ip(request)}",
+            limit=15,
+            window_seconds=600,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return desk.confirm_github_verification(
+            token=x_agent_token,
+            gist_url=body.gist_url if body is not None else None,
+            gist_id=body.gist_id if body is not None else None,
+        )
+
+    @application.post("/api/agents/verify-github/device-start")
+    def api_agents_verify_github_device_start(
+        request: Request,
+        response: Response,
+        x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+    ) -> dict[str, Any]:
+        desk.check_rate_limit(
+            bucket_key=f"gh_device_start:{_extract_client_ip(request)}",
+            limit=10,
+            window_seconds=600,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return desk.start_github_device_flow(token=x_agent_token)
+
+    @application.post("/api/agents/verify-github/device-poll")
+    def api_agents_verify_github_device_poll(
+        body: GitHubDevicePollRequest,
+        request: Request,
+        response: Response,
+        x_agent_token: str | None = Header(default=None, alias="X-Agent-Token"),
+    ) -> dict[str, Any]:
+        desk.check_rate_limit(
+            bucket_key=f"gh_device_poll:{_extract_client_ip(request)}",
+            limit=30,
+            window_seconds=600,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return desk.poll_github_device_flow(token=x_agent_token, device_code=body.device_code)
 
     @application.post("/api/agents/rotate-token")
     def api_agents_rotate_token(

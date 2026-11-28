@@ -1,3 +1,4 @@
+import { pick } from '../lib/theme';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import '../styles/live-swarm-viewer.css';
 
@@ -23,16 +24,26 @@ const SYNTHETIC_HANDLES = new Set([
 /** Remember 404/errored handles per session so re-renders never flash or retry dead URLs. */
 const FAILED_GITHUB_HANDLES = new Set<string>();
 
-/** Editorial & Tiranga-harmonized palette for deterministic geometric identicons. */
-const IDENTICON_PALETTE: ReadonlyArray<{ fg: string; bg: string }> = [
-  { fg: '#D9B39A', bg: '#2A211C' }, // terracotta
-  { fg: '#9CC4A8', bg: '#18231C' }, // green
-  { fg: '#D2B37E', bg: '#29231A' }, // amber
-  { fg: '#9FB2CC', bg: '#1A2029' }, // civic slate blue
-  { fg: '#CDBB8A', bg: '#26231A' }, // warm brass / gold
-  { fg: '#C9A3B8', bg: '#261C22' }, // muted plum
-  { fg: '#9CC2B8', bg: '#172320' }, // deep teal
-  { fg: '#BDB8AE', bg: '#1E2024' }, // warm charcoal stone
+const IDENTICON_PALETTE_LIGHT: ReadonlyArray<{ fg: string; bg: string }> = [
+  { fg: '#C85A32', bg: '#FBF1EC' },
+  { fg: '#138808', bg: '#EBF6EA' },
+  { fg: '#A84F00', bg: '#FDF3E7' },
+  { fg: '#2D5A88', bg: '#EDF3FA' },
+  { fg: '#8B6D1F', bg: '#FAF5E4' },
+  { fg: '#7A3B5E', bg: '#F7EEF3' },
+  { fg: '#2C6B5C', bg: '#EAF5F2' },
+  { fg: '#4A463E', bg: '#F2F0EB' },
+];
+
+const IDENTICON_PALETTE_DARK: ReadonlyArray<{ fg: string; bg: string }> = [
+  { fg: '#FF9F0A', bg: '#2A1D08' },
+  { fg: '#30D158', bg: '#0F2A17' },
+  { fg: '#FFD60A', bg: '#2A2508' },
+  { fg: '#0A84FF', bg: '#0A2A4D' },
+  { fg: '#AC8E68', bg: '#262017' },
+  { fg: '#BF5AF2', bg: '#2A1736' },
+  { fg: '#64D2FF', bg: '#0B2532' },
+  { fg: '#AEAEB2', bg: '#2C2C2E' },
 ];
 
 export function normalizeHandle(raw: string): string {
@@ -67,7 +78,8 @@ function buildIdenticonCells(seed: string): {
 } {
   const h1 = fnv1a32(seed.toLowerCase());
   const h2 = fnv1a32(`${seed.toLowerCase()}::aw-v1`);
-  const palette = IDENTICON_PALETTE[h1 % IDENTICON_PALETTE.length];
+  const paletteSet = pick(IDENTICON_PALETTE_LIGHT, IDENTICON_PALETTE_DARK);
+  const palette = paletteSet[h1 % paletteSet.length];
   const cells: Array<{ x: number; y: number }> = [];
 
   for (let row = 0; row < 5; row++) {
@@ -104,12 +116,15 @@ export interface GitHubAvatarProps {
   statusDot?: 'working' | 'verifying' | 'recent' | 'idle' | null;
   /** Render a subtle emerald live ring around the avatar when actively working. */
   activeRing?: boolean;
+  /** Only load the live GitHub avatar when handle ownership has been cryptographically verified. */
+  verified?: boolean;
 }
 
 /**
  * Renders a contributor's GitHub avatar (`https://github.com/<handle>.png?size=64`)
- * for valid GitHub-like handles, layered cleanly over a deterministic 5×5 geometric
- * SVG identicon fallback so broken image icons never appear and layout never jumps.
+ * ONLY when `verified === true`, layered cleanly over a deterministic 5×5 geometric
+ * SVG identicon fallback so unverified self-declared handles can never impersonate
+ * another person's GitHub photo.
  */
 export function GitHubAvatar({
   handle,
@@ -118,10 +133,12 @@ export function GitHubAvatar({
   alt = '',
   statusDot = null,
   activeRing = false,
+  verified = false,
 }: GitHubAvatarProps) {
   const cleanHandle = normalizeHandle(handle);
   const cacheKey = cleanHandle.toLowerCase();
-  const canTryGitHub = isValidGitHubHandle(cleanHandle) && !FAILED_GITHUB_HANDLES.has(cacheKey);
+  const canTryGitHub =
+    Boolean(verified) && isValidGitHubHandle(cleanHandle) && !FAILED_GITHUB_HANDLES.has(cacheKey);
 
   const [loadedHandle, setLoadedHandle] = useState<string | null>(null);
   const [failedHandle, setFailedHandle] = useState<string | null>(null);

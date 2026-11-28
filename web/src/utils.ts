@@ -1,3 +1,4 @@
+import { isDark, themed, themedRgb } from './lib/theme';
 import { getFindingTag, getTaskTag, getWorkTypeTag } from './lib/tags';
 import type { EpistemicStatus } from './types';
 
@@ -153,6 +154,7 @@ export function pillarLabel(pillar?: string): string {
     infrastructure: 'Infrastructure & Works',
     corporate_political: 'Disclosures & Governance',
     parliament: 'Parliament & RTI',
+    justice: 'Courts & Custody',
   };
   return map[(pillar || '').toLowerCase()] || pillar || 'Public Audit';
 }
@@ -165,6 +167,9 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'one-teacher-five-grades': 'P5',
   'parliaments-to-do-list': 'P6',
   'only-one-bid': 'P7',
+  'sovereign-lies': 'P8',
+  'auditing-government-exams': 'P9',
+  'innocent-but-locked-up': 'P10',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -175,6 +180,9 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   P5: 'P5',
   P6: 'P6',
   P7: 'P7',
+  P8: 'P8',
+  P9: 'P9',
+  P10: 'P10',
 };
 
 /**
@@ -194,7 +202,70 @@ export function projectCodeFor(
   if (slug && SLUG_PROJECT_CODES[slug]) return SLUG_PROJECT_CODES[slug];
   const method = (mission?.methodology_code || '').trim().toUpperCase();
   if (method && METHODOLOGY_PROJECT_CODES[method]) return METHODOLOGY_PROJECT_CODES[method];
-  return method || 'P1';
+  return method || 'PRJ';
+}
+
+const SEQUENTIAL_PROJECT_CODE_RE = /^P([1-9][0-9]*)$/i;
+
+/** Parse the numeric suffix of a sequential project code like P8 -> 8, or null if unnumbered. */
+export function projectCodeNumber(
+  mission?: {
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+  } | null,
+): number | null {
+  const code = projectCodeFor(mission);
+  const match = SEQUENTIAL_PROJECT_CODE_RE.exec(code);
+  return match ? Number(match[1]) : null;
+}
+
+/** Compute the next sequential project code label (e.g. P9 when P8 is highest). */
+export function nextProjectCode(
+  missions: ReadonlyArray<{
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+  }>,
+): string {
+  let highest = 0;
+  for (const m of missions) {
+    const n = projectCodeNumber(m);
+    if (n !== null && n > highest) highest = n;
+  }
+  return highest > 0 ? `P${highest + 1}` : 'P1';
+}
+
+/**
+ * Sort projects in descending order so the latest listed project appears first:
+ * newly listed unnumbered community projects on top, then highest P# descending (P8, P7, P6, ... P1).
+ */
+export function sortProjectsDescending<
+  T extends {
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+    created_at?: string | null;
+  },
+>(missions: readonly T[]): T[] {
+  return missions.slice().sort((a, b) => {
+    const numA = projectCodeNumber(a);
+    const numB = projectCodeNumber(b);
+
+    // Newly listed community projects without a P# code yet sit at the very top.
+    if (numA === null && numB !== null) return -1;
+    if (numA !== null && numB === null) return 1;
+
+    if (numA !== null && numB !== null && numA !== numB) {
+      return numB - numA;
+    }
+
+    const tsA = Date.parse(a.created_at || '') || 0;
+    const tsB = Date.parse(b.created_at || '') || 0;
+    if (tsA !== tsB) return tsB - tsA;
+
+    return String(a.slug || '').localeCompare(String(b.slug || ''));
+  });
 }
 
 export interface PillarTint {
@@ -205,29 +276,41 @@ export interface PillarTint {
 }
 
 export function pillarTint(pillar?: string): PillarTint {
+  const tint = basePillarTint(pillar);
+  if (!isDark()) return tint;
+  const hex = themed(tint.hex);
+  const rgb = themedRgb(tint.rgb);
+  const alpha = tint.wash.match(/,\s*([\d.]+)\)$/)?.[1] ?? '0.12';
+  return { ...tint, hex, rgb, wash: `rgba(${rgb}, ${alpha})` };
+}
+
+function basePillarTint(pillar?: string): PillarTint {
   const p = (pillar || '').toLowerCase();
   if (p.includes('procure') || p.includes('tender')) {
-    return { hex: '#D2B37E', rgb: '210, 179, 126', wash: 'rgba(210, 179, 126, 0.12)', label: 'Procurement' };
+    return { hex: '#FF9933', rgb: '255, 153, 51', wash: 'rgba(255, 153, 51, 0.14)', label: 'Procurement' };
   }
   if (p.includes('audit') || p.includes('cag')) {
-    return { hex: '#CFCAC0', rgb: '207, 202, 192', wash: 'rgba(207, 202, 192, 0.10)', label: 'CAG & Compliance' };
+    return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: 'CAG & Compliance' };
   }
   if (p.includes('budget') || p.includes('fiscal')) {
-    return { hex: '#8DB89A', rgb: '141, 184, 154', wash: 'rgba(141, 184, 154, 0.12)', label: 'Budgets & Fiscal' };
+    return { hex: '#138808', rgb: '95, 211, 90', wash: 'rgba(19, 136, 8, 0.12)', label: 'Budgets & Fiscal' };
   }
   if (p.includes('infra') || p.includes('work') || p.includes('road')) {
-    return { hex: '#B9937A', rgb: '185, 147, 122', wash: 'rgba(185, 147, 122, 0.12)', label: 'Infrastructure' };
+    return { hex: '#8A4200', rgb: '168, 79, 0', wash: 'rgba(138, 66, 0, 0.12)', label: 'Infrastructure' };
   }
   if (p.includes('scheme') || p.includes('welfare') || p.includes('social')) {
-    return { hex: '#8FA3BF', rgb: '143, 163, 191', wash: 'rgba(143, 163, 191, 0.12)', label: 'Welfare & Schemes' };
+    return { hex: '#E06A10', rgb: '255, 184, 102', wash: 'rgba(224, 106, 16, 0.12)', label: 'Welfare & Schemes' };
   }
   if (p.includes('corp') || p.includes('politic') || p.includes('disclos') || p.includes('gov')) {
-    return { hex: '#A7B58A', rgb: '167, 181, 138', wash: 'rgba(167, 181, 138, 0.12)', label: 'Disclosures' };
+    return { hex: '#4FA83E', rgb: '150, 225, 130', wash: 'rgba(79, 168, 62, 0.12)', label: 'Disclosures' };
   }
   if (p.includes('parl')) {
-    return { hex: '#CB956D', rgb: '203, 149, 109', wash: 'rgba(203, 149, 109, 0.12)', label: 'Parliament & RTI' };
+    return { hex: '#A84F00', rgb: '168, 79, 0', wash: 'rgba(168, 79, 0, 0.11)', label: 'Parliament & RTI' };
   }
-  return { hex: '#CFCAC0', rgb: '207, 202, 192', wash: 'rgba(207, 202, 192, 0.10)', label: pillarLabel(pillar) };
+  if (p.includes('just') || p.includes('court') || p.includes('custody')) {
+    return { hex: '#000080', rgb: '0, 0, 128', wash: 'rgba(0, 0, 128, 0.10)', label: 'Courts & Custody' };
+  }
+  return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: pillarLabel(pillar) };
 }
 
 export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: string }> = {
@@ -251,6 +334,18 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P7: {
     name: 'Only One Bid: single-bidder tenders & repeat-winner patterns (2016–2026)',
     rule: 'Audits official Indian public procurement records (2016–2026) for non-exempt single-bidder awards, repeat-winner concentration, and compressed bid windows against GFR 2017 Rules 166/173(xx), CVC guidelines, and State procurement rules, separating target tender value from cohort totals.',
+  },
+  P8: {
+    name: 'Sovereign Lies: launch promises vs. subsequent revisions across Union & State/UT schemes',
+    rule: 'Cross-checks SHA-256-pinned official launch notifications against subsequent statutory amendments, circulars, and budget records across Indian Union and State/UT schemes — comparing original tax, payout, exit, subsidy, and eligibility commitments against walk-backs while publishing honored or grandfathered schemes as Cleared.',
+  },
+  P9: {
+    name: 'Auditing Government Exams: 3-year schedule vs. conduct audit across Union & State/UT examinations',
+    rule: 'Cross-checks SHA-256-pinned official exam schedules and calendars against subsequent public notices, parliamentary replies, and statutory records (Nov 2023 – Nov 2026) — classifying cancellations after conduct, postponements, reschedules, delays, pre-exam cancellations, and technical glitches while publishing exams conducted flawlessly as Cleared.',
+  },
+  P10: {
+    name: 'Innocent But Locked Up: post-acquittal custody overruns & contempt compliance (2021–2026)',
+    rule: 'Verifies SHA-256-pinned Supreme Court, High Court, prison, police, NHRC/SHRC, NALSA/SLSA, Parliamentary, and CAG records (2021–2026) across the 4-stage custody chain (acquittal/release order → continued prison detention → contempt/habeas intervention → verified release), while publishing timely-release compliance benchmarks as Cleared.',
   },
 };
 
@@ -332,7 +427,13 @@ export function buildTaskJoinPrompt(
   return `Fetch and follow ${base}/join.txt and run task ${taskId} on ${slug} now`;
 }
 
+export function buildEnlistPrompt(origin: string = getCanonicalOrigin()): string {
+  const base = origin.replace(/\/+$/, '');
+  return `Fetch and follow ${base}/enlist.txt to list my audit project with me`;
+}
+
 export const CANONICAL_JOIN_PROMPT = buildCanonicalJoinPrompt();
+export const CANONICAL_ENLIST_PROMPT = buildEnlistPrompt();
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return 'Unrecorded';
@@ -362,7 +463,39 @@ export function isOfficialGovUrl(url?: string | null): boolean {
       host === 'cag.org.in' ||
       host.endsWith('.cag.org.in') ||
       host === 'sansad.in' ||
-      host.endsWith('.sansad.in')
+      host.endsWith('.sansad.in') ||
+      host === 'rajyasabha.digital' ||
+      host.endsWith('.rajyasabha.digital') ||
+      host === 'rbi.org.in' ||
+      host.endsWith('.rbi.org.in') ||
+      host === 'pfrda.org.in' ||
+      host.endsWith('.pfrda.org.in') ||
+      host === 'nta.ac.in' ||
+      host.endsWith('.nta.ac.in') ||
+      host === 'natboard.edu.in' ||
+      host.endsWith('.natboard.edu.in') ||
+      host === 'nbe.edu.in' ||
+      host.endsWith('.nbe.edu.in') ||
+      host === 'aiimsexams.ac.in' ||
+      host.endsWith('.aiimsexams.ac.in') ||
+      host === 'ibps.in' ||
+      host.endsWith('.ibps.in') ||
+      host === 'sbi.co.in' ||
+      host.endsWith('.sbi.co.in') ||
+      host === 'cdac.in' ||
+      host.endsWith('.cdac.in') ||
+      host === 'ugc.ac.in' ||
+      host.endsWith('.ugc.ac.in') ||
+      host === 'csirhrdg.res.in' ||
+      host.endsWith('.csirhrdg.res.in') ||
+      host === 'allahabadhighcourt.in' ||
+      host.endsWith('.allahabadhighcourt.in') ||
+      host === 'dslsa.org' ||
+      host.endsWith('.dslsa.org') ||
+      host === 'jhalsa.org' ||
+      host.endsWith('.jhalsa.org') ||
+      host === 'pshrc.net' ||
+      host.endsWith('.pshrc.net')
     );
   } catch {
     return false;
@@ -707,8 +840,21 @@ export function formatCitationRoleLabel(role?: string | null): string | null {
     repeat_winner_cohort: 'Repeat-Winner Cohort',
     statutory_benchmark: 'Statutory Benchmark',
     original_promise: 'Original Promise',
+    subsequent_walkback: 'Subsequent Walk-Back',
+    promise_document: 'Original Promise Record',
+    walkback_document: 'Subsequent Revision Record',
+    original_schedule: 'Original Exam Schedule',
+    conduct_outcome: 'Conduct / Disruption Notice',
+    schedule_document: 'Original Schedule Document',
+    outcome_document: 'Conduct Outcome Document',
+    corroborating_record: 'Corroborating Record',
     recorded_status: 'Recorded Status',
     followup_answer: 'Follow-Up Answer',
+    acquittal_and_custody_order: 'Acquittal & Custody Order',
+    contempt_and_release_outcome: 'Contempt & Release Outcome',
+    contempt_order_document: 'Contempt Order Record',
+    acquittal_order_document: 'Acquittal Order Record',
+    release_or_compliance_record: 'Release / Compliance Record',
   };
   if (map[r]) return map[r];
   const readable = r.replace(/_/g, ' ');
@@ -896,6 +1042,1348 @@ function formatOnlyOneBidSignalSummary(rec: ParsedOnlyOneBidMetrics): string | n
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
+export type WalkbackMechanismKey =
+  | 'retroactive_tax_reversal'
+  | 'midstream_benefit_cut'
+  | 'premature_discontinuation'
+  | 'eligibility_narrowing'
+  | 'lockin_or_exit_restriction'
+  | 'arrears_or_unfunded_promise'
+  | 'grandfathered_or_honored'
+  | 'other';
+
+export interface WalkbackMechanismMeta {
+  key: WalkbackMechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  isCleared: boolean;
+}
+
+export function formatWalkbackMechanism(raw?: string | null): WalkbackMechanismMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'retroactive_tax_reversal' || s === 'p8_retroactive_tax_reversal') {
+    return {
+      key: 'retroactive_tax_reversal',
+      label: 'Retrospective Tax Reversal',
+      shortLabel: 'Tax reversal',
+      chipClass: 'p8-mech p8-mech--retro-tax',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'midstream_benefit_cut' ||
+    s === 'mid_stream_benefit_cut' ||
+    s === 'p8_midstream_benefit_cut'
+  ) {
+    return {
+      key: 'midstream_benefit_cut',
+      label: 'Mid-Stream Benefit Cut',
+      shortLabel: 'Benefit cut',
+      chipClass: 'p8-mech p8-mech--cut',
+      isCleared: false,
+    };
+  }
+  if (s === 'premature_discontinuation' || s === 'p8_premature_discontinuation') {
+    return {
+      key: 'premature_discontinuation',
+      label: 'Premature Discontinuation',
+      shortLabel: 'Discontinued',
+      chipClass: 'p8-mech p8-mech--discontinued',
+      isCleared: false,
+    };
+  }
+  if (s === 'eligibility_narrowing' || s === 'p8_eligibility_narrowing') {
+    return {
+      key: 'eligibility_narrowing',
+      label: 'Eligibility Narrowing',
+      shortLabel: 'Eligibility narrowed',
+      chipClass: 'p8-mech p8-mech--eligibility',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'lockin_or_exit_restriction' ||
+    s === 'lock_in_or_exit_restriction' ||
+    s === 'p8_lockin_or_exit_restriction'
+  ) {
+    return {
+      key: 'lockin_or_exit_restriction',
+      label: 'Lock-In / Exit Restriction',
+      shortLabel: 'Exit restriction',
+      chipClass: 'p8-mech p8-mech--lockin',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'arrears_or_unfunded_promise' ||
+    s === 'unfunded_arrears' ||
+    s === 'p8_arrears_or_unfunded_promise'
+  ) {
+    return {
+      key: 'arrears_or_unfunded_promise',
+      label: 'Unfunded Arrears',
+      shortLabel: 'Unfunded arrears',
+      chipClass: 'p8-mech p8-mech--arrears',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'grandfathered_or_honored' ||
+    s === 'grandfathered_or_honoured' ||
+    s === 'honored' ||
+    s === 'cleared'
+  ) {
+    return {
+      key: 'grandfathered_or_honored',
+      label: 'Grandfathered / Honored',
+      shortLabel: 'Honored (Cleared)',
+      chipClass: 'p8-mech p8-mech--honored',
+      isCleared: true,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Scheme Terms Revision',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Scheme revision',
+    chipClass: 'p8-mech p8-mech--other',
+    isCleared: false,
+  };
+}
+
+export interface SchemeCategoryMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+}
+
+const SCHEME_CATEGORY_MAP: Record<string, { label: string; shortLabel: string }> = {
+  sovereign_bonds_small_savings: {
+    label: 'Sovereign Bonds & Small Savings',
+    shortLabel: 'Bonds & Savings',
+  },
+  pensions_retirement: {
+    label: 'Pensions & Retirement',
+    shortLabel: 'Pensions',
+  },
+  tax_exempt_instruments: {
+    label: 'Tax-Exempt Instruments',
+    shortLabel: 'Tax Instruments',
+  },
+  cash_transfers_guarantees: {
+    label: 'Cash Transfers & Guarantees',
+    shortLabel: 'Cash & Guarantees',
+  },
+  ev_housing_farm_subsidies: {
+    label: 'EV, Housing & Farm Subsidies',
+    shortLabel: 'EV / Housing / Farm',
+  },
+  scholarships_education: {
+    label: 'Scholarships & Education',
+    shortLabel: 'Scholarships',
+  },
+  industrial_export_incentives: {
+    label: 'Industrial & Export Incentives',
+    shortLabel: 'Industrial & Export',
+  },
+  welfare_health_public_services: {
+    label: 'Welfare, Health & Public Services',
+    shortLabel: 'Welfare & Health',
+  },
+};
+
+export function formatSchemeCategory(raw?: string | null): SchemeCategoryMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (SCHEME_CATEGORY_MAP[s]) {
+    return { key: s, ...SCHEME_CATEGORY_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Public Scheme';
+  return {
+    key: s || 'other',
+    label: readable,
+    shortLabel: readable,
+  };
+}
+
+export interface RetroactiveImpactMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  isRetroactive: boolean;
+}
+
+export function formatRetroactiveImpact(raw?: string | null): RetroactiveImpactMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'retroactive_existing_holders') {
+    return {
+      key: 'retroactive_existing_holders',
+      label: 'Retroactive on existing holders',
+      shortLabel: 'Retroactive',
+      chipClass: 'p8-impact p8-impact--retro',
+      isRetroactive: true,
+    };
+  }
+  if (s === 'mid_stream_active_scheme' || s === 'midstream_active_scheme') {
+    return {
+      key: 'mid_stream_active_scheme',
+      label: 'Mid-stream on active scheme',
+      shortLabel: 'Mid-stream',
+      chipClass: 'p8-impact p8-impact--midstream',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'prospective_discontinuation') {
+    return {
+      key: 'prospective_discontinuation',
+      label: 'Prospective discontinuation',
+      shortLabel: 'Prospective',
+      chipClass: 'p8-impact p8-impact--prospective',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'eligibility_narrowing') {
+    return {
+      key: 'eligibility_narrowing',
+      label: 'Eligibility narrowed',
+      shortLabel: 'Eligibility narrowed',
+      chipClass: 'p8-impact p8-impact--eligibility',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'unfulfilled_arrears') {
+    return {
+      key: 'unfulfilled_arrears',
+      label: 'Unfulfilled arrears',
+      shortLabel: 'Unfulfilled arrears',
+      chipClass: 'p8-impact p8-impact--arrears',
+      isRetroactive: false,
+    };
+  }
+  if (s === 'grandfathered_or_honored' || s === 'grandfathered_or_honoured') {
+    return {
+      key: 'grandfathered_or_honored',
+      label: 'Grandfathered / Honored',
+      shortLabel: 'Grandfathered',
+      chipClass: 'p8-impact p8-impact--honored',
+      isRetroactive: false,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: s || 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Documented revision',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Revision',
+    chipClass: 'p8-impact p8-impact--other',
+    isRetroactive: false,
+  };
+}
+
+export function formatJurisdictionLabel(
+  jurisdiction?: string | null,
+  stateOrUt?: string | null,
+  level?: string | null,
+): string {
+  const lvl = (level || '').trim().toLowerCase();
+  const s = (stateOrUt || '').trim();
+  const j = (jurisdiction || '').trim();
+  if (s) {
+    if (lvl === 'ut' && !/\(ut\)$/i.test(s)) return `${s} (UT)`;
+    return s;
+  }
+  if (/^state:/i.test(j)) return j.slice(6).trim();
+  if (/^ut:/i.test(j)) {
+    const utName = j.slice(3).trim();
+    return /\(ut\)$/i.test(utName) ? utName : `${utName} (UT)`;
+  }
+  return j || 'Union of India';
+}
+
+export function formatElapsedPromiseSpan(days?: number | null): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  const rounded = Math.round(days);
+  if (rounded >= 365) {
+    const yrs = (rounded / 365.25).toFixed(1);
+    return `${rounded.toLocaleString('en-IN')} days (~${yrs} yrs)`;
+  }
+  return `${rounded.toLocaleString('en-IN')} ${rounded === 1 ? 'day' : 'days'}`;
+}
+
+export interface ParsedSovereignLiesMetrics {
+  caseKey: string | null;
+  schemeName: string | null;
+  schemeSlug: string | null;
+  trancheOrPhase: string | null;
+  jurisdiction: string | null;
+  jurisdictionLevel: string | null;
+  stateOrUt: string | null;
+  authority: string | null;
+  authorityKey: string | null;
+  schemeCategory: string | null;
+  governmentEraOrLaunchYear: string | null;
+  launchYear: string | null;
+  walkbackYear: string | null;
+  promiseDate: string | null;
+  promiseSummary: string | null;
+  promiseDocumentRef: string | null;
+  promiseExcerpt: string | null;
+  promiseLocator: string | null;
+  promiseTokensMatched: string[];
+  walkbackDate: string | null;
+  walkbackSummary: string | null;
+  walkbackDocumentRef: string | null;
+  walkbackExcerpt: string | null;
+  walkbackLocator: string | null;
+  walkbackTokensMatched: string[];
+  daysFromPromiseToWalkback: number | null;
+  walkbackMechanism: string | null;
+  retroactiveImpact: string | null;
+  signalCategory: string | null;
+  verdict: string | null;
+  triggeredRules: string[];
+  promisedMetric: string | null;
+  revisedMetric: string | null;
+  metricUnit: string | null;
+  affectedGroup: string | null;
+  estimatedExposureInr: number | null;
+  exposureBasis: string | null;
+  statutoryAnchor: string | null;
+  secondaryRole: string | null;
+  isSgbAnchor: boolean;
+  isAnchorCase: boolean;
+  asOfDate: string | null;
+  sourceLocator: string | null;
+}
+
+const P8_MECHANISM_SET = new Set([
+  'retroactive_tax_reversal',
+  'midstream_benefit_cut',
+  'premature_discontinuation',
+  'eligibility_narrowing',
+  'lockin_or_exit_restriction',
+  'arrears_or_unfunded_promise',
+  'grandfathered_or_honored',
+  'p8_retroactive_tax_reversal',
+  'p8_midstream_benefit_cut',
+  'p8_premature_discontinuation',
+  'p8_eligibility_narrowing',
+  'p8_lockin_or_exit_restriction',
+  'p8_arrears_or_unfunded_promise',
+]);
+
+export function extractSovereignLiesMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedSovereignLiesMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const schemeName = metricStr(metrics, 'scheme_name');
+  const walkbackMechanism = metricStr(metrics, 'walkback_mechanism');
+  const promiseSummary = metricStr(metrics, 'promise_summary');
+  const walkbackSummary = metricStr(metrics, 'walkback_summary');
+  const promisedMetric = metricStr(metrics, 'promised_metric');
+  const revisedMetric = metricStr(metrics, 'revised_metric');
+  const retroactiveImpact = metricStr(metrics, 'retroactive_impact');
+  const signalCategory = metricStr(metrics, 'signal_category');
+
+  const normSignal = (signalCategory || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasP8Signal = Boolean(normSignal && P8_MECHANISM_SET.has(normSignal));
+
+  if (
+    !schemeName &&
+    !walkbackMechanism &&
+    !promiseSummary &&
+    !walkbackSummary &&
+    !promisedMetric &&
+    !revisedMetric &&
+    !retroactiveImpact &&
+    !hasP8Signal
+  ) {
+    return null;
+  }
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    schemeName,
+    schemeSlug: metricStr(metrics, 'scheme_slug'),
+    trancheOrPhase: metricStr(metrics, 'tranche_or_phase'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    jurisdictionLevel: metricStr(metrics, 'jurisdiction_level'),
+    stateOrUt: metricStr(metrics, 'state_or_ut'),
+    authority: metricStr(metrics, 'authority'),
+    authorityKey: metricStr(metrics, 'authority_key'),
+    schemeCategory: metricStr(metrics, 'scheme_category'),
+    governmentEraOrLaunchYear: metricStr(metrics, 'government_era_or_launch_year'),
+    launchYear: metricStr(metrics, 'launch_year'),
+    walkbackYear: metricStr(metrics, 'walkback_year'),
+    promiseDate: metricStr(metrics, 'promise_date'),
+    promiseSummary,
+    promiseDocumentRef: metricStr(metrics, 'promise_document_ref'),
+    promiseExcerpt: metricStr(metrics, 'promise_excerpt'),
+    promiseLocator: metricStr(metrics, 'promise_locator'),
+    promiseTokensMatched: metricStrList(metrics, 'promise_tokens_matched'),
+    walkbackDate: metricStr(metrics, 'walkback_date'),
+    walkbackSummary,
+    walkbackDocumentRef: metricStr(metrics, 'walkback_document_ref'),
+    walkbackExcerpt: metricStr(metrics, 'walkback_excerpt'),
+    walkbackLocator: metricStr(metrics, 'walkback_locator'),
+    walkbackTokensMatched: metricStrList(metrics, 'walkback_tokens_matched'),
+    daysFromPromiseToWalkback: metricNum(metrics, 'days_from_promise_to_walkback'),
+    walkbackMechanism,
+    retroactiveImpact,
+    signalCategory,
+    verdict: metricStr(metrics, 'verdict'),
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    promisedMetric,
+    revisedMetric,
+    metricUnit: metricStr(metrics, 'metric_unit'),
+    affectedGroup: metricStr(metrics, 'affected_group'),
+    estimatedExposureInr: metricNum(metrics, 'estimated_exposure_inr'),
+    exposureBasis: metricStr(metrics, 'exposure_basis'),
+    statutoryAnchor: metricStr(metrics, 'statutory_anchor'),
+    secondaryRole: metricStr(metrics, 'secondary_role'),
+    isSgbAnchor: metricBool(metrics, 'is_sgb_anchor'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+    asOfDate: metricStr(metrics, 'as_of_date'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+  };
+}
+
+export type ExamDisruptionKey =
+  | 'cancelled_after_conduct'
+  | 'postponed'
+  | 'rescheduled'
+  | 'delayed'
+  | 'cancelled_before_conduct'
+  | 'partial_reexam_or_glitch'
+  | 'flawless_conduct'
+  | 'other';
+
+export interface ExamDisruptionMeta {
+  key: ExamDisruptionKey;
+  label: string;
+  shortLabel: string;
+  ruleCode: string;
+  chipClass: string;
+  isCleared: boolean;
+}
+
+export function formatExamDisruption(raw?: string | null): ExamDisruptionMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'cancelled_after_conduct' || s === 'p9_cancelled_after_conduct') {
+    return {
+      key: 'cancelled_after_conduct',
+      label: 'Took Exam, Then Cancelled',
+      shortLabel: 'Cancelled after exam',
+      ruleCode: 'P9-CANCELLED-AFTER-CONDUCT',
+      chipClass: 'p9-disrupt p9-disrupt--cancelled-after',
+      isCleared: false,
+    };
+  }
+  if (s === 'postponed' || s === 'p9_postponed') {
+    return {
+      key: 'postponed',
+      label: 'Postponed',
+      shortLabel: 'Postponed',
+      ruleCode: 'P9-POSTPONED',
+      chipClass: 'p9-disrupt p9-disrupt--postponed',
+      isCleared: false,
+    };
+  }
+  if (s === 'rescheduled' || s === 'p9_rescheduled') {
+    return {
+      key: 'rescheduled',
+      label: 'Rescheduled',
+      shortLabel: 'Rescheduled',
+      ruleCode: 'P9-RESCHEDULED',
+      chipClass: 'p9-disrupt p9-disrupt--rescheduled',
+      isCleared: false,
+    };
+  }
+  if (s === 'delayed' || s === 'p9_delayed') {
+    return {
+      key: 'delayed',
+      label: 'Delayed',
+      shortLabel: 'Delayed',
+      ruleCode: 'P9-DELAYED',
+      chipClass: 'p9-disrupt p9-disrupt--delayed',
+      isCleared: false,
+    };
+  }
+  if (s === 'cancelled_before_conduct' || s === 'p9_cancelled_before_conduct') {
+    return {
+      key: 'cancelled_before_conduct',
+      label: 'Cancelled Before Conduct',
+      shortLabel: 'Cancelled pre-exam',
+      ruleCode: 'P9-CANCELLED-BEFORE-CONDUCT',
+      chipClass: 'p9-disrupt p9-disrupt--cancelled-before',
+      isCleared: false,
+    };
+  }
+  if (s === 'partial_reexam_or_glitch' || s === 'p9_partial_reexam_or_glitch') {
+    return {
+      key: 'partial_reexam_or_glitch',
+      label: 'Technical Glitch / Partial Re-Exam',
+      shortLabel: 'Glitch / Re-exam',
+      ruleCode: 'P9-PARTIAL-REEXAM-OR-GLITCH',
+      chipClass: 'p9-disrupt p9-disrupt--glitch',
+      isCleared: false,
+    };
+  }
+  if (s === 'flawless_conduct' || s === 'flawless' || s === 'cleared') {
+    return {
+      key: 'flawless_conduct',
+      label: 'Conducted Flawlessly (Cleared)',
+      shortLabel: 'Flawless (Cleared)',
+      ruleCode: 'CLEARED',
+      chipClass: 'p9-disrupt p9-disrupt--flawless',
+      isCleared: true,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Schedule Disruption',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Disruption',
+    ruleCode: 'P9-DISRUPTION',
+    chipClass: 'p9-disrupt p9-disrupt--other',
+    isCleared: false,
+  };
+}
+
+export interface ExamAuthorityTypeMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+}
+
+const EXAM_AUTHORITY_TYPE_MAP: Record<string, { label: string; shortLabel: string }> = {
+  central_testing_agency: {
+    label: 'Central Testing Agency (NTA / NBEMS)',
+    shortLabel: 'Central Testing',
+  },
+  union_psc_or_recruitment: {
+    label: 'Union PSC & Staff Recruitment (UPSC / SSC)',
+    shortLabel: 'UPSC / SSC',
+  },
+  railway_banking_psu: {
+    label: 'Railways, Banking & PSU (RRB / IBPS / SBI / RBI)',
+    shortLabel: 'Railways & Banking',
+  },
+  defence_medical_technical: {
+    label: 'Defence, Medical & Technical (IIT / AIIMS / Defence)',
+    shortLabel: 'Defence / Medical / Tech',
+  },
+  state_psc: {
+    label: 'State Public Service Commissions (State PSCs)',
+    shortLabel: 'State PSC',
+  },
+  state_police_or_subordinate: {
+    label: 'State Police & Subordinate Boards',
+    shortLabel: 'State Police / Board',
+  },
+  state_teacher_or_entrance: {
+    label: 'State Teacher & Entrance Boards',
+    shortLabel: 'State Teacher / Entrance',
+  },
+  ut_recruitment_or_board: {
+    label: 'UT Recruitment & Examination Boards',
+    shortLabel: 'UT Board',
+  },
+};
+
+export function formatExamAuthorityType(raw?: string | null): ExamAuthorityTypeMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (EXAM_AUTHORITY_TYPE_MAP[s]) {
+    return { key: s, ...EXAM_AUTHORITY_TYPE_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Conducting Authority';
+  return { key: s || 'other', label: readable, shortLabel: readable };
+}
+
+export interface ExamCategoryMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+}
+
+const EXAM_CATEGORY_MAP: Record<string, { label: string; shortLabel: string }> = {
+  civil_services_and_psc: {
+    label: 'Civil Services & PSC',
+    shortLabel: 'Civil Services / PSC',
+  },
+  police_and_defence: {
+    label: 'Police & Defence Recruitment',
+    shortLabel: 'Police & Defence',
+  },
+  teaching_and_faculty: {
+    label: 'Teaching & Faculty (NET / TET)',
+    shortLabel: 'Teaching / NET / TET',
+  },
+  medical_and_health: {
+    label: 'Medical & Health (NEET / AIIMS)',
+    shortLabel: 'Medical & Health',
+  },
+  engineering_and_higher_ed: {
+    label: 'Engineering & Higher Ed (JEE / CUET / GATE)',
+    shortLabel: 'Higher Ed / Entrance',
+  },
+  banking_railways_ssc: {
+    label: 'Banking, Railways & SSC',
+    shortLabel: 'Banking / RRB / SSC',
+  },
+  clerical_and_subordinate: {
+    label: 'Clerical & Subordinate Services',
+    shortLabel: 'Clerical & Subordinate',
+  },
+  board_and_other_public: {
+    label: 'Board & Other Public Exams',
+    shortLabel: 'Public Boards',
+  },
+};
+
+export function formatExamCategory(raw?: string | null): ExamCategoryMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (EXAM_CATEGORY_MAP[s]) {
+    return { key: s, ...EXAM_CATEGORY_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Public Examination';
+  return { key: s || 'other', label: readable, shortLabel: readable };
+}
+
+export interface ExamDisruptionReasonMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatExamDisruptionReason(raw?: string | null): ExamDisruptionReasonMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'paper_integrity_compromise') {
+    return {
+      key: 'paper_integrity_compromise',
+      label: 'Paper Integrity Safeguard',
+      shortLabel: 'Integrity safeguard',
+      chipClass: 'p9-reason p9-reason--integrity',
+    };
+  }
+  if (s === 'administrative_or_logistical') {
+    return {
+      key: 'administrative_or_logistical',
+      label: 'Administrative / Logistical',
+      shortLabel: 'Administrative',
+      chipClass: 'p9-reason p9-reason--admin',
+    };
+  }
+  if (s === 'technical_or_cbt_glitch') {
+    return {
+      key: 'technical_or_cbt_glitch',
+      label: 'Technical / CBT Glitch',
+      shortLabel: 'Technical / CBT',
+      chipClass: 'p9-reason p9-reason--tech',
+    };
+  }
+  if (s === 'election_or_calendar_clash') {
+    return {
+      key: 'election_or_calendar_clash',
+      label: 'Election / Calendar Clash',
+      shortLabel: 'Calendar clash',
+      chipClass: 'p9-reason p9-reason--calendar',
+    };
+  }
+  if (s === 'weather_or_disaster') {
+    return {
+      key: 'weather_or_disaster',
+      label: 'Weather / Disaster Safety',
+      shortLabel: 'Weather / Disaster',
+      chipClass: 'p9-reason p9-reason--weather',
+    };
+  }
+  if (s === 'judicial_or_policy_review') {
+    return {
+      key: 'judicial_or_policy_review',
+      label: 'Judicial / Policy Review',
+      shortLabel: 'Judicial / Policy',
+      chipClass: 'p9-reason p9-reason--judicial',
+    };
+  }
+  if (s === 'none_flawless') {
+    return {
+      key: 'none_flawless',
+      label: 'No Disruption Recorded',
+      shortLabel: 'No disruption',
+      chipClass: 'p9-reason p9-reason--none',
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: s || 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Documented reason',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Documented',
+    chipClass: 'p9-reason p9-reason--other',
+  };
+}
+
+export function formatExamDelaySpan(days?: number | null): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  const rounded = Math.round(days);
+  if (rounded === 0) return '0 days';
+  if (rounded >= 365) {
+    const yrs = (rounded / 365.25).toFixed(1);
+    return `${rounded.toLocaleString('en-IN')} days (~${yrs} yrs)`;
+  }
+  return `${rounded.toLocaleString('en-IN')} ${rounded === 1 ? 'day' : 'days'}`;
+}
+
+export function formatCandidateCountCompact(count?: number | null): string | null {
+  if (count == null || !Number.isFinite(count) || count <= 0) return null;
+  const rounded = Math.round(count);
+  if (rounded >= 1e7) {
+    return `${(rounded / 1e7).toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
+  }
+  if (rounded >= 1e5) {
+    return `${(rounded / 1e5).toLocaleString('en-IN', { maximumFractionDigits: 2 })} L`;
+  }
+  return rounded.toLocaleString('en-IN');
+}
+
+export interface ParsedAuditingGovernmentExamsMetrics {
+  caseKey: string | null;
+  verdict: string | null;
+  signalCategory: string | null;
+  triggeredRules: string[];
+  examName: string | null;
+  examSlug: string | null;
+  cycleOrStage: string | null;
+  examYear: number | null;
+  jurisdiction: string | null;
+  jurisdictionLevel: string | null;
+  stateOrUt: string | null;
+  authority: string | null;
+  authorityKey: string | null;
+  authorityType: string | null;
+  examCategory: string | null;
+  scheduledDate: string | null;
+  actualOrEventDate: string | null;
+  delayDays: number | null;
+  disruptionType: string | null;
+  disruptionReasonCategory: string | null;
+  studentsTookExamBeforeCancellation: boolean;
+  scheduleSummary: string | null;
+  scheduleDocumentRef: string | null;
+  scheduleExcerpt: string | null;
+  scheduleLocator: string | null;
+  scheduleTokensMatched: string[];
+  outcomeSummary: string | null;
+  outcomeDocumentRef: string | null;
+  outcomeExcerpt: string | null;
+  outcomeLocator: string | null;
+  outcomeTokensMatched: string[];
+  affectedCandidatesCount: number | null;
+  affectedCandidatesBasis: string | null;
+  statutoryAnchor: string | null;
+  secondaryRole: string | null;
+  isAnchorCase: boolean;
+  asOfDate: string | null;
+  sourceLocator: string | null;
+}
+
+const P9_DISRUPTION_SET = new Set([
+  'cancelled_after_conduct',
+  'postponed',
+  'rescheduled',
+  'delayed',
+  'cancelled_before_conduct',
+  'partial_reexam_or_glitch',
+  'flawless_conduct',
+  'p9_cancelled_after_conduct',
+  'p9_postponed',
+  'p9_rescheduled',
+  'p9_delayed',
+  'p9_cancelled_before_conduct',
+  'p9_partial_reexam_or_glitch',
+]);
+
+export function extractAuditingGovernmentExamsMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedAuditingGovernmentExamsMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const examName = metricStr(metrics, 'exam_name');
+  const disruptionType = metricStr(metrics, 'disruption_type');
+  const scheduleSummary = metricStr(metrics, 'schedule_summary');
+  const outcomeSummary = metricStr(metrics, 'outcome_summary');
+  const scheduledDate = metricStr(metrics, 'scheduled_date');
+  const actualOrEventDate = metricStr(metrics, 'actual_or_event_date');
+  const signalCategory = metricStr(metrics, 'signal_category');
+
+  const normSignal = (signalCategory || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasP9Signal = Boolean(normSignal && P9_DISRUPTION_SET.has(normSignal));
+
+  if (
+    !examName &&
+    !disruptionType &&
+    !scheduleSummary &&
+    !outcomeSummary &&
+    !scheduledDate &&
+    !actualOrEventDate &&
+    !hasP9Signal
+  ) {
+    return null;
+  }
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    verdict: metricStr(metrics, 'verdict'),
+    signalCategory,
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    examName,
+    examSlug: metricStr(metrics, 'exam_slug'),
+    cycleOrStage: metricStr(metrics, 'cycle_or_stage'),
+    examYear: metricNum(metrics, 'exam_year'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    jurisdictionLevel: metricStr(metrics, 'jurisdiction_level'),
+    stateOrUt: metricStr(metrics, 'state_or_ut'),
+    authority: metricStr(metrics, 'authority'),
+    authorityKey: metricStr(metrics, 'authority_key'),
+    authorityType: metricStr(metrics, 'authority_type'),
+    examCategory: metricStr(metrics, 'exam_category'),
+    scheduledDate,
+    actualOrEventDate,
+    delayDays: metricNum(metrics, 'delay_days'),
+    disruptionType,
+    disruptionReasonCategory: metricStr(metrics, 'disruption_reason_category'),
+    studentsTookExamBeforeCancellation: metricBool(
+      metrics,
+      'students_took_exam_before_cancellation',
+    ),
+    scheduleSummary,
+    scheduleDocumentRef: metricStr(metrics, 'schedule_document_ref'),
+    scheduleExcerpt: metricStr(metrics, 'schedule_excerpt'),
+    scheduleLocator: metricStr(metrics, 'schedule_locator'),
+    scheduleTokensMatched: metricStrList(metrics, 'schedule_tokens_matched'),
+    outcomeSummary,
+    outcomeDocumentRef: metricStr(metrics, 'outcome_document_ref'),
+    outcomeExcerpt: metricStr(metrics, 'outcome_excerpt'),
+    outcomeLocator: metricStr(metrics, 'outcome_locator'),
+    outcomeTokensMatched: metricStrList(metrics, 'outcome_tokens_matched'),
+    affectedCandidatesCount: metricNum(metrics, 'affected_candidates_count'),
+    affectedCandidatesBasis: metricStr(metrics, 'affected_candidates_basis'),
+    statutoryAnchor: metricStr(metrics, 'statutory_anchor'),
+    secondaryRole: metricStr(metrics, 'secondary_role'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+    asOfDate: metricStr(metrics, 'as_of_date'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+  };
+}
+
+export type P10MechanismKey =
+  | 'post_acquittal_contempt_overrun'
+  | 'bail_or_release_order_contempt'
+  | 'warrant_or_faster_transmission_delay'
+  | 'statutory_commission_detention_finding'
+  | 'institutional_compliance_gap'
+  | 'timely_release_or_compliant'
+  | 'other';
+
+export interface P10MechanismMeta {
+  key: P10MechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  isCleared: boolean;
+}
+
+export function formatCustodyOverrunMechanism(raw?: string | null): P10MechanismMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (
+    s === 'post_acquittal_contempt_overrun' ||
+    s === 'p10_post_acquittal_contempt_overrun'
+  ) {
+    return {
+      key: 'post_acquittal_contempt_overrun',
+      label: 'Post-Acquittal Contempt Overrun',
+      shortLabel: 'Acquittal + contempt',
+      chipClass: 'p10-mech p10-mech--acquittal-contempt',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'bail_or_release_order_contempt' ||
+    s === 'p10_release_order_contempt_overrun' ||
+    s === 'release_order_contempt_overrun'
+  ) {
+    return {
+      key: 'bail_or_release_order_contempt',
+      label: 'Release Order Contempt Overrun',
+      shortLabel: 'Release contempt',
+      chipClass: 'p10-mech p10-mech--release-contempt',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'warrant_or_faster_transmission_delay' ||
+    s === 'p10_warrant_transmission_delay' ||
+    s === 'warrant_transmission_delay'
+  ) {
+    return {
+      key: 'warrant_or_faster_transmission_delay',
+      label: 'Warrant / FASTER Transmission Delay',
+      shortLabel: 'FASTER / warrant delay',
+      chipClass: 'p10-mech p10-mech--transmission',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'statutory_commission_detention_finding' ||
+    s === 'p10_statutory_unlawful_detention' ||
+    s === 'statutory_unlawful_detention'
+  ) {
+    return {
+      key: 'statutory_commission_detention_finding',
+      label: 'NHRC / SHRC Detention Finding',
+      shortLabel: 'Commission finding',
+      chipClass: 'p10-mech p10-mech--commission',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'institutional_compliance_gap' ||
+    s === 'p10_institutional_compliance_gap'
+  ) {
+    return {
+      key: 'institutional_compliance_gap',
+      label: 'Institutional Compliance Gap',
+      shortLabel: 'Compliance gap',
+      chipClass: 'p10-mech p10-mech--compliance',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'timely_release_or_compliant' ||
+    s === 'compliant_control' ||
+    s === 'cleared'
+  ) {
+    return {
+      key: 'timely_release_or_compliant',
+      label: 'Timely Release / Compliant',
+      shortLabel: 'Compliant (Cleared)',
+      chipClass: 'p10-mech p10-mech--compliant',
+      isCleared: true,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Custody Compliance Record',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Custody record',
+    chipClass: 'p10-mech p10-mech--other',
+    isCleared: false,
+  };
+}
+
+export interface P10PortalCategoryMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+const P10_PORTAL_CATEGORY_MAP: Record<
+  string,
+  { label: string; shortLabel: string; chipClass: string }
+> = {
+  court_portal: {
+    label: 'Court Portal',
+    shortLabel: 'Court Portal',
+    chipClass: 'p10-portal p10-portal--court',
+  },
+  prison_portal: {
+    label: 'Prison Portal',
+    shortLabel: 'Prison Portal',
+    chipClass: 'p10-portal p10-portal--prison',
+  },
+  police_portal: {
+    label: 'Police Portal',
+    shortLabel: 'Police Portal',
+    chipClass: 'p10-portal p10-portal--police',
+  },
+  nhrc_shrc: {
+    label: 'NHRC / SHRC',
+    shortLabel: 'NHRC/SHRC',
+    chipClass: 'p10-portal p10-portal--nhrc',
+  },
+  nalsa_slsa: {
+    label: 'NALSA / SLSA',
+    shortLabel: 'NALSA/SLSA',
+    chipClass: 'p10-portal p10-portal--nalsa',
+  },
+  parliament: {
+    label: 'Parliament (Digital Sansad)',
+    shortLabel: 'Parliament',
+    chipClass: 'p10-portal p10-portal--parliament',
+  },
+  govt_ministry: {
+    label: 'Govt Ministry (MHA / DoJ / PIB)',
+    shortLabel: 'Govt Ministry',
+    chipClass: 'p10-portal p10-portal--govt',
+  },
+  cag_audit: {
+    label: 'CAG Audit',
+    shortLabel: 'CAG Audit',
+    chipClass: 'p10-portal p10-portal--cag',
+  },
+};
+
+export function formatPortalCategory(raw?: string | null): P10PortalCategoryMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (P10_PORTAL_CATEGORY_MAP[s]) {
+    return { key: s, ...P10_PORTAL_CATEGORY_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Official Portal';
+  return {
+    key: s || 'other',
+    label: readable,
+    shortLabel: readable,
+    chipClass: 'p10-portal p10-portal--other',
+  };
+}
+
+export interface P10CourtTierMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatCourtTier(raw?: string | null): P10CourtTierMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'supreme_court') {
+    return {
+      key: 'supreme_court',
+      label: 'Supreme Court of India',
+      shortLabel: 'Supreme Court',
+      chipClass: 'p10-tier p10-tier--sc',
+    };
+  }
+  if (s === 'high_court') {
+    return {
+      key: 'high_court',
+      label: 'High Court',
+      shortLabel: 'High Court',
+      chipClass: 'p10-tier p10-tier--hc',
+    };
+  }
+  if (s === 'district_court') {
+    return {
+      key: 'district_court',
+      label: 'District / Sessions Court',
+      shortLabel: 'District Court',
+      chipClass: 'p10-tier p10-tier--dc',
+    };
+  }
+  if (s === 'statutory_body') {
+    return {
+      key: 'statutory_body',
+      label: 'Statutory / Executive Body',
+      shortLabel: 'Statutory Body',
+      chipClass: 'p10-tier p10-tier--stat',
+    };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Judicial / Statutory Body';
+  return {
+    key: s || 'other',
+    label: readable,
+    shortLabel: readable,
+    chipClass: 'p10-tier p10-tier--other',
+  };
+}
+
+export interface P10ChainStatusMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatChainStatus(
+  raw?: string | null,
+  stagesCount?: number | null,
+): P10ChainStatusMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'full_4_stage_chain') {
+    return {
+      key: 'full_4_stage_chain',
+      label: 'Full 4-Stage Chain Verified',
+      shortLabel: '4/4 stages',
+      chipClass: 'p10-chain p10-chain--full',
+    };
+  }
+  if (s === 'partial_3_stage') {
+    return {
+      key: 'partial_3_stage',
+      label: '3-Stage Custody Chain',
+      shortLabel: stagesCount != null ? `${stagesCount}/4 stages` : '3/4 stages',
+      chipClass: 'p10-chain p10-chain--partial',
+    };
+  }
+  if (s === 'institutional_record') {
+    return {
+      key: 'institutional_record',
+      label: 'Institutional Compliance Record',
+      shortLabel: 'Institutional',
+      chipClass: 'p10-chain p10-chain--institutional',
+    };
+  }
+  if (s === 'compliant_control') {
+    return {
+      key: 'compliant_control',
+      label: 'Timely Release Benchmark',
+      shortLabel: 'Compliant',
+      chipClass: 'p10-chain p10-chain--compliant',
+    };
+  }
+  if (stagesCount != null && stagesCount >= 4) {
+    return {
+      key: 'full_4_stage_chain',
+      label: 'Full 4-Stage Chain Verified',
+      shortLabel: '4/4 stages',
+      chipClass: 'p10-chain p10-chain--full',
+    };
+  }
+  if (stagesCount != null && stagesCount === 3) {
+    return {
+      key: 'partial_3_stage',
+      label: '3-Stage Custody Chain',
+      shortLabel: '3/4 stages',
+      chipClass: 'p10-chain p10-chain--partial',
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: s || 'institutional_record',
+    label: clean ? clean.replace(/_/g, ' ') : 'Institutional Record',
+    shortLabel: stagesCount != null ? `${stagesCount}/4 stages` : 'Institutional',
+    chipClass: 'p10-chain p10-chain--institutional',
+  };
+}
+
+export function formatAcquittalOrderType(raw?: string | null): string {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const map: Record<string, string> = {
+    acquittal: 'Acquittal Order',
+    discharge: 'Discharge Order',
+    detention_quashed: 'Detention Quashed',
+    bail_release_order: 'Bail / Release Order',
+    conviction_set_aside: 'Conviction Set Aside',
+    institutional_compliance_review: 'Institutional Compliance Review',
+  };
+  if (map[s]) return map[s];
+  const clean = (raw || '').trim();
+  return clean ? clean.replace(/_/g, ' ') : 'Release Order';
+}
+
+export function formatOverrunDays(days?: number | null): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  const rounded = Math.round(days);
+  if (rounded >= 365) {
+    const yrs = (rounded / 365.25).toFixed(1);
+    return `${rounded.toLocaleString('en-IN')} days (~${yrs} yrs)`;
+  }
+  return `${rounded.toLocaleString('en-IN')} ${rounded === 1 ? 'day' : 'days'}`;
+}
+
+export interface ParsedInnocentButLockedUpMetrics {
+  caseKey: string | null;
+  caseTitle: string | null;
+  portalCategory: string | null;
+  courtTier: string | null;
+  stateUt: string | null;
+  jurisdiction: string | null;
+  year: number | null;
+  documentDate: string | null;
+  documentRef: string | null;
+  overrunMechanism: string | null;
+  signalCategory: string | null;
+  verdict: string | null;
+  triggeredRules: string[];
+  stagesVerifiedCount: number | null;
+  chainStatus: string | null;
+  stage1AcquittalVerified: boolean;
+  acquittalOrderDate: string | null;
+  acquittalCourt: string | null;
+  acquittalCaseNumber: string | null;
+  acquittalOrderType: string | null;
+  acquittalQuote: string | null;
+  stage2ContinuedDetentionVerified: boolean;
+  prisonName: string | null;
+  custodyAuthority: string | null;
+  nonReleaseReason: string | null;
+  overrunDays: number | null;
+  overrunWindow: string | null;
+  stage3ContemptVerified: boolean;
+  contemptCaseNumber: string | null;
+  contemptCourt: string | null;
+  contemptFilingDate: string | null;
+  contemptOrderDate: string | null;
+  contemptQuote: string | null;
+  stage4ReleaseVerified: boolean;
+  releaseDate: string | null;
+  releaseVerified: boolean;
+  compensationInr: number | null;
+  judicialDirectionSummary: string | null;
+  custodyOrderExcerpt: string | null;
+  custodyOrderLocator: string | null;
+  custodyOrderTokensMatched: string[];
+  contemptOrOutcomeExcerpt: string | null;
+  contemptOrOutcomeLocator: string | null;
+  contemptOrOutcomeTokensMatched: string[];
+  statutoryAnchor: string | null;
+  secondaryRole: string | null;
+  isAnchorCase: boolean;
+  asOfDate: string | null;
+  sourceLocator: string | null;
+}
+
+const P10_MECHANISM_SET = new Set([
+  'post_acquittal_contempt_overrun',
+  'bail_or_release_order_contempt',
+  'warrant_or_faster_transmission_delay',
+  'statutory_commission_detention_finding',
+  'institutional_compliance_gap',
+  'timely_release_or_compliant',
+  'p10_post_acquittal_contempt_overrun',
+  'p10_release_order_contempt_overrun',
+  'p10_warrant_transmission_delay',
+  'p10_statutory_unlawful_detention',
+  'p10_institutional_compliance_gap',
+]);
+
+export function extractInnocentButLockedUpMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedInnocentButLockedUpMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const overrunMechanism = metricStr(metrics, 'overrun_mechanism');
+  const portalCategory = metricStr(metrics, 'portal_category');
+  const acquittalCourt = metricStr(metrics, 'acquittal_court');
+  const acquittalCaseNumber = metricStr(metrics, 'acquittal_case_number');
+  const contemptCaseNumber = metricStr(metrics, 'contempt_case_number');
+  const prisonName = metricStr(metrics, 'prison_name');
+  const chainStatus = metricStr(metrics, 'chain_status');
+  const signalCategory = metricStr(metrics, 'signal_category');
+  const overrunDays = metricNum(metrics, 'overrun_days');
+
+  const normSignal = (signalCategory || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasP10Signal = Boolean(normSignal && P10_MECHANISM_SET.has(normSignal));
+
+  if (
+    !overrunMechanism &&
+    !portalCategory &&
+    !acquittalCourt &&
+    !acquittalCaseNumber &&
+    !contemptCaseNumber &&
+    !prisonName &&
+    !chainStatus &&
+    overrunDays === null &&
+    !hasP10Signal
+  ) {
+    return null;
+  }
+
+  const isCompliant =
+    formatCustodyOverrunMechanism(overrunMechanism || signalCategory).isCleared ||
+    (chainStatus || '').trim().toLowerCase() === 'compliant_control';
+  const acquittalOrderDate = metricStr(metrics, 'acquittal_order_date');
+  const acquittalQuote = metricStr(metrics, 'acquittal_quote');
+  const nonReleaseReason = metricStr(metrics, 'non_release_reason');
+  const contemptCourt = metricStr(metrics, 'contempt_court');
+  const contemptFilingDate = metricStr(metrics, 'contempt_filing_date');
+  const contemptOrderDate = metricStr(metrics, 'contempt_order_date');
+  const contemptQuote = metricStr(metrics, 'contempt_quote');
+  const releaseDate = metricStr(metrics, 'release_date');
+
+  const stage1 =
+    metrics.stage_1_acquittal_verified !== undefined
+      ? metricBool(metrics, 'stage_1_acquittal_verified')
+      : Boolean(acquittalOrderDate || acquittalCaseNumber || acquittalQuote);
+  const stage2 =
+    metrics.stage_2_continued_detention_verified !== undefined
+      ? metricBool(metrics, 'stage_2_continued_detention_verified')
+      : isCompliant && (overrunDays == null || overrunDays === 0)
+        ? false
+        : Boolean((overrunDays != null && overrunDays > 0) || (nonReleaseReason && !isCompliant));
+  const stage3 =
+    metrics.stage_3_contempt_verified !== undefined
+      ? metricBool(metrics, 'stage_3_contempt_verified')
+      : Boolean(contemptCaseNumber || contemptCourt || contemptFilingDate || contemptOrderDate || contemptQuote);
+  const releaseVerified = metricBool(metrics, 'release_verified');
+  const stage4 =
+    metrics.stage_4_release_verified !== undefined
+      ? metricBool(metrics, 'stage_4_release_verified')
+      : Boolean(releaseVerified || releaseDate);
+  const computedStages = [stage1, stage2, stage3, stage4].filter(Boolean).length;
+  const rawStagesCount = metricNum(metrics, 'stages_verified_count');
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    caseTitle: metricStr(metrics, 'case_title'),
+    portalCategory,
+    courtTier: metricStr(metrics, 'court_tier'),
+    stateUt: metricStr(metrics, 'state_ut'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    year: metricNum(metrics, 'year'),
+    documentDate: metricStr(metrics, 'document_date'),
+    documentRef: metricStr(metrics, 'document_ref'),
+    overrunMechanism,
+    signalCategory,
+    verdict: metricStr(metrics, 'verdict'),
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    stagesVerifiedCount: rawStagesCount ?? (computedStages > 0 ? computedStages : null),
+    chainStatus,
+    stage1AcquittalVerified: stage1,
+    acquittalOrderDate,
+    acquittalCourt,
+    acquittalCaseNumber,
+    acquittalOrderType: metricStr(metrics, 'acquittal_order_type'),
+    acquittalQuote,
+    stage2ContinuedDetentionVerified: stage2,
+    prisonName,
+    custodyAuthority: metricStr(metrics, 'custody_authority'),
+    nonReleaseReason,
+    overrunDays,
+    overrunWindow: metricStr(metrics, 'overrun_window'),
+    stage3ContemptVerified: stage3,
+    contemptCaseNumber,
+    contemptCourt,
+    contemptFilingDate,
+    contemptOrderDate,
+    contemptQuote,
+    stage4ReleaseVerified: stage4,
+    releaseDate,
+    releaseVerified: releaseVerified || stage4,
+    compensationInr: metricNum(metrics, 'compensation_inr'),
+    judicialDirectionSummary: metricStr(metrics, 'judicial_direction_summary'),
+    custodyOrderExcerpt: metricStr(metrics, 'custody_order_excerpt'),
+    custodyOrderLocator: metricStr(metrics, 'custody_order_locator'),
+    custodyOrderTokensMatched: metricStrList(metrics, 'custody_order_tokens_matched'),
+    contemptOrOutcomeExcerpt: metricStr(metrics, 'contempt_or_outcome_excerpt'),
+    contemptOrOutcomeLocator: metricStr(metrics, 'contempt_or_outcome_locator'),
+    contemptOrOutcomeTokensMatched: metricStrList(metrics, 'contempt_or_outcome_tokens_matched'),
+    statutoryAnchor: metricStr(metrics, 'statutory_anchor'),
+    secondaryRole: metricStr(metrics, 'secondary_role'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+    asOfDate: metricStr(metrics, 'as_of_date'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+  };
+}
+
 export interface FindingDrawerMetric {
   label: string;
   value: string;
@@ -922,7 +2410,9 @@ type FindingMetricSource = {
  * For P7 findings, target tender value (never the repeat-winner cohort total) is labeled
  * with its exact amount type (`Awarded contract value` / `Tender estimate`), or falls back
  * to a factual competition readout when value is unrecorded.
- * Non-P6/P7 findings retain their exact existing behavior.
+ * For P8 findings, officially published scheme exposure takes precedence when > 0, else shows
+ * the walk-back mechanism and elapsed days (never a misleading ₹0 for non-monetary rule changes).
+ * Non-P6/P7/P8 findings retain their exact existing behavior.
  */
 export function resolveFindingDrawerMetric(
   finding: FindingMetricSource,
@@ -966,6 +2456,103 @@ export function resolveFindingDrawerMetric(
     };
   }
 
+  if (finding.methodology_code === 'P8' && !isQuarantined) {
+    const p8Record = extractSovereignLiesMetrics(finding.anomaly_metrics);
+    const publishedVal =
+      finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : p8Record?.estimatedExposureInr != null && p8Record.estimatedExposureInr > 0
+          ? p8Record.estimatedExposureInr
+          : null;
+    if (publishedVal != null && publishedVal > 0) {
+      return {
+        label: 'Published Scheme Exposure',
+        value: formatInr(publishedVal),
+      };
+    }
+    const mechKey = p8Record?.walkbackMechanism || p8Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatWalkbackMechanism(mechKey);
+      return {
+        label: mech.isCleared ? 'Scheme Status' : 'Walk-Back Mechanism',
+        value: `${mech.shortLabel}${
+          p8Record?.daysFromPromiseToWalkback != null
+            ? ` · ${p8Record.daysFromPromiseToWalkback.toLocaleString('en-IN')}d`
+            : ''
+        }`,
+      };
+    }
+    return {
+      label: 'Scheme Terms Check',
+      value: 'Documented',
+    };
+  }
+
+  if (finding.methodology_code === 'P9' && !isQuarantined) {
+    const p9Record = extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics);
+    const disruptKey = p9Record?.disruptionType || p9Record?.signalCategory;
+    if (disruptKey) {
+      const disrupt = formatExamDisruption(disruptKey);
+      return {
+        label: disrupt.isCleared ? 'Exam Conduct' : 'Conduct Outcome',
+        value: `${disrupt.shortLabel}${
+          !disrupt.isCleared && p9Record?.delayDays != null && p9Record.delayDays > 0
+            ? ` · +${p9Record.delayDays.toLocaleString('en-IN')}d`
+            : ''
+        }`,
+      };
+    }
+    return {
+      label: 'Exam Conduct Check',
+      value: 'Documented',
+    };
+  }
+
+  if (finding.methodology_code === 'P10' && !isQuarantined) {
+    const p10Record = extractInnocentButLockedUpMetrics(finding.anomaly_metrics);
+    const compVal =
+      p10Record?.compensationInr != null && p10Record.compensationInr > 0
+        ? p10Record.compensationInr
+        : finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+          ? finding.monetary_exposure_inr
+          : null;
+    if (p10Record?.overrunDays != null && p10Record.overrunDays > 0) {
+      const daysLabel = `+${p10Record.overrunDays.toLocaleString('en-IN')} ${
+        p10Record.overrunDays === 1 ? 'day' : 'days'
+      }`;
+      return {
+        label: 'Custody Overrun',
+        value: compVal != null ? `${daysLabel} · ${formatInr(compVal)}` : daysLabel,
+      };
+    }
+    if (compVal != null && compVal > 0) {
+      return {
+        label: 'Ordered Compensation',
+        value: formatInr(compVal),
+      };
+    }
+    const mechKey = p10Record?.overrunMechanism || p10Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatCustodyOverrunMechanism(mechKey);
+      const chain = p10Record?.chainStatus || p10Record?.stagesVerifiedCount != null
+        ? formatChainStatus(p10Record?.chainStatus, p10Record?.stagesVerifiedCount)
+        : null;
+      return {
+        label: mech.isCleared ? 'Release Compliance' : 'Custody Audit Pattern',
+        value:
+          mech.isCleared
+            ? mech.shortLabel
+            : chain
+              ? `${mech.shortLabel} · ${chain.shortLabel}`
+              : mech.shortLabel,
+      };
+    }
+    return {
+      label: 'Custody Compliance Check',
+      value: 'Documented',
+    };
+  }
+
   return {
     label: finding.amount_label
       ? finding.amount_label.replace(/_/g, ' ')
@@ -982,7 +2569,9 @@ export function resolveFindingDrawerMetric(
  * For P6 findings, recorded assurance status takes precedence over `monetary_exposure_inr`.
  * For P7 findings, target tender value (never cohort total) takes precedence when > 0,
  * falling back to a crisp competition readout (e.g. "1 bid · 6 wins") when unrecorded.
- * Non-P6/P7 findings remain completely unchanged.
+ * For P8 findings, officially published exposure takes precedence when > 0, else shows a
+ * compact metric delta or walk-back mechanism + elapsed days.
+ * Non-P6/P7/P8 findings remain completely unchanged.
  */
 export function resolveFindingCardMetric(
   finding: FindingMetricSource,
@@ -1023,6 +2612,90 @@ export function resolveFindingCardMetric(
       return { value: signalSummary, prominent: true };
     }
     return { value: 'Procurement lead', prominent: false };
+  }
+
+  if (finding.methodology_code === 'P8') {
+    const p8Record = extractSovereignLiesMetrics(finding.anomaly_metrics);
+    const publishedVal =
+      finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : p8Record?.estimatedExposureInr != null && p8Record.estimatedExposureInr > 0
+          ? p8Record.estimatedExposureInr
+          : null;
+    if (publishedVal != null && publishedVal > 0) {
+      return { value: formatInr(publishedVal), prominent: true };
+    }
+    if (p8Record?.promisedMetric && p8Record?.revisedMetric) {
+      const compactDelta = `${p8Record.promisedMetric} → ${p8Record.revisedMetric}`;
+      if (compactDelta.length <= 36) {
+        return { value: compactDelta, prominent: true };
+      }
+    }
+    const mechKey = p8Record?.walkbackMechanism || p8Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatWalkbackMechanism(mechKey);
+      return {
+        value: `${mech.shortLabel}${
+          p8Record?.daysFromPromiseToWalkback != null
+            ? ` · ${p8Record.daysFromPromiseToWalkback.toLocaleString('en-IN')}d`
+            : ''
+        }`,
+        prominent: true,
+      };
+    }
+    return { value: 'Scheme audit lead', prominent: false };
+  }
+
+  if (finding.methodology_code === 'P9') {
+    const p9Record = extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics);
+    const disruptKey = p9Record?.disruptionType || p9Record?.signalCategory;
+    if (disruptKey) {
+      const disrupt = formatExamDisruption(disruptKey);
+      const delayTag =
+        !disrupt.isCleared && p9Record?.delayDays != null && p9Record.delayDays > 0
+          ? ` · +${p9Record.delayDays.toLocaleString('en-IN')}d`
+          : '';
+      return {
+        value: `${disrupt.shortLabel}${delayTag}`,
+        prominent: true,
+      };
+    }
+    return { value: 'Exam audit lead', prominent: false };
+  }
+
+  if (finding.methodology_code === 'P10') {
+    const p10Record = extractInnocentButLockedUpMetrics(finding.anomaly_metrics);
+    const compVal =
+      p10Record?.compensationInr != null && p10Record.compensationInr > 0
+        ? p10Record.compensationInr
+        : finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+          ? finding.monetary_exposure_inr
+          : null;
+    if (p10Record?.overrunDays != null && p10Record.overrunDays > 0) {
+      const base = `+${p10Record.overrunDays.toLocaleString('en-IN')}d overrun`;
+      return {
+        value: compVal != null ? `${base} · ${formatInr(compVal)}` : base,
+        prominent: true,
+      };
+    }
+    if (compVal != null && compVal > 0) {
+      return { value: formatInr(compVal), prominent: true };
+    }
+    const mechKey = p10Record?.overrunMechanism || p10Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatCustodyOverrunMechanism(mechKey);
+      if (mech.isCleared) {
+        return { value: mech.shortLabel, prominent: true };
+      }
+      const chain = p10Record?.chainStatus || p10Record?.stagesVerifiedCount != null
+        ? formatChainStatus(p10Record?.chainStatus, p10Record?.stagesVerifiedCount)
+        : null;
+      return {
+        value: chain ? `${chain.shortLabel} · ${mech.shortLabel}` : mech.shortLabel,
+        prominent: true,
+      };
+    }
+    return { value: 'Custody audit lead', prominent: false };
   }
 
   if (finding.monetary_exposure_inr) {

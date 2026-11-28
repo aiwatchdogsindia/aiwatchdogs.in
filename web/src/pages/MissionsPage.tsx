@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api/client';
 import { FindingCard } from '../components/FindingCard';
 import { JoinOneLineButton } from '../components/JoinOneLineButton';
+import { ListProjectRow } from '../components/ListProjectRow';
 import { ProjectLeaderboard } from '../components/ProjectLeaderboard';
 import {
   CompactProgressBar,
@@ -26,9 +27,11 @@ import {
   copyToClipboard,
   formatSeconds,
   formatTokens,
+  nextProjectCode,
   pillarLabel,
   projectCodeFor,
   safeExternalUrl,
+  sortProjectsDescending,
 } from '../utils';
 
 const WEBSITE_METHOD = 'W1';
@@ -37,10 +40,25 @@ const ONE_ROAD_METHOD = 'OR1';
 const ONE_TEACHER_METHOD = 'P5';
 const PARLIAMENT_METHOD = 'P6';
 const ONLY_ONE_BID_METHOD = 'P7';
+const SOVEREIGN_LIES_METHOD = 'P8';
+const AUDITING_EXAMS_METHOD = 'P9';
+const INNOCENT_BUT_LOCKED_UP_METHOD = 'P10';
 const SANSAD_LS_ASSURANCES_URL = 'https://sansad.in/ls/business/government-assurances';
 const SANSAD_RS_ASSURANCES_URL = 'https://sansad.in/rs/house-business/government-assurances';
 const DOE_PROCUREMENT_MANUALS_URL = 'https://doe.gov.in/manuals';
 const CVC_PROCUREMENT_GUIDELINES_URL = 'https://cvc.gov.in/';
+const RBI_SGB_FAQ_URL = 'https://www.rbi.org.in/commonperson/English/Scripts/FAQs.aspx?Id=1658';
+const INDIA_BUDGET_URL = 'https://www.indiabudget.gov.in/';
+const INDIACODE_URL = 'https://www.indiacode.nic.in/';
+const PIB_PORTAL_URL = 'https://pib.gov.in/';
+const NTA_PORTAL_URL = 'https://nta.ac.in/';
+const UPSC_PORTAL_URL = 'https://upsc.gov.in/';
+const SSC_PORTAL_URL = 'https://ssc.gov.in/';
+const SANSAD_PORTAL_URL = 'https://sansad.in/';
+const SCI_PORTAL_URL = 'https://www.sci.gov.in/';
+const EPRISONS_PORTAL_URL = 'https://eprisons.nic.in/';
+const NHRC_PORTAL_URL = 'https://nhrc.nic.in/';
+const NALSA_PORTAL_URL = 'https://nalsa.gov.in/';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
@@ -186,6 +204,9 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     const isOneTeacher = detail?.methodology_code === ONE_TEACHER_METHOD;
     const isParliament = detail?.methodology_code === PARLIAMENT_METHOD;
     const isOnlyOneBid = detail?.methodology_code === ONLY_ONE_BID_METHOD;
+    const isSovereignLies = detail?.methodology_code === SOVEREIGN_LIES_METHOD;
+    const isAuditingExams = detail?.methodology_code === AUDITING_EXAMS_METHOD;
+    const isInnocentButLockedUp = detail?.methodology_code === INNOCENT_BUT_LOCKED_UP_METHOD;
 
     const projectAllAgents = detail?.contributors_all ?? [];
     const projectHourAgents = detail?.contributors_hour ?? [];
@@ -256,6 +277,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ) : (
                       `by ${detail.posted_by.name}`
                     )}
+                    {detail.posted_by.handle ? ` (${detail.posted_by.handle})` : ''}
                   </span>
                 )}
               </div>
@@ -271,6 +293,16 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 {detail.is_community_project && (
                   <a href={`/feeds/${encodeURIComponent(detail.slug)}.atom`}>
                     Follow by RSS
+                  </a>
+                )}
+                {safeExternalUrl(detail.enlisted_pr_url) && (
+                  <a
+                    href={safeExternalUrl(detail.enlisted_pr_url)!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Enlisting PR{' '}
+                    <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
                   </a>
                 )}
                 {isWebsiteAudit && (
@@ -337,6 +369,114 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </a>
                   </>
                 )}
+                {isSovereignLies && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.sovereign_lies?.documents_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/documents.csv`
+                      }
+                    >
+                      Scheme sources (CSV)
+                    </a>
+                    <a
+                      href={
+                        detail.visual_summary?.sovereign_lies?.coverage_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/coverage.json`
+                      }
+                    >
+                      Coverage (JSON)
+                    </a>
+                    <a href={RBI_SGB_FAQ_URL} target="_blank" rel="noopener noreferrer">
+                      RBI SGB FAQs{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={INDIA_BUDGET_URL} target="_blank" rel="noopener noreferrer">
+                      Union Budget{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={INDIACODE_URL} target="_blank" rel="noopener noreferrer">
+                      IndiaCode{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={PIB_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      PIB Releases{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
+                {isAuditingExams && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.auditing_government_exams?.documents_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/documents.csv`
+                      }
+                    >
+                      Exam sources (CSV)
+                    </a>
+                    <a
+                      href={
+                        detail.visual_summary?.auditing_government_exams?.coverage_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/coverage.json`
+                      }
+                    >
+                      Coverage (JSON)
+                    </a>
+                    <a href={NTA_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      NTA{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={UPSC_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      UPSC{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={SSC_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      SSC{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={SANSAD_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      Digital Sansad{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
+                {isInnocentButLockedUp && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.innocent_but_locked_up?.documents_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/documents.csv`
+                      }
+                    >
+                      Official sources (CSV)
+                    </a>
+                    <a
+                      href={
+                        detail.visual_summary?.innocent_but_locked_up?.coverage_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/coverage.json`
+                      }
+                    >
+                      Coverage (JSON)
+                    </a>
+                    <a href={SCI_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      Supreme Court{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={EPRISONS_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      ePrisons{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={NHRC_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      NHRC{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={NALSA_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      NALSA{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
               </div>
             </header>
 
@@ -367,6 +507,12 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies a Digital Sansad ministerial assurance and cites the original promise, recorded status, and follow-up answer.'
                   : isOnlyOneBid
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies a SHA-256-pinned public tender record against GFR 2017 and CVC guidelines and submits a pattern lead or cleared result.'
+                  : isSovereignLies
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned launch promises against subsequent official revisions and submits a documentary lead or cleared result.'
+                  : isAuditingExams
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned official exam schedules against disruption or conduct notices and submits a documentary lead or cleared result.'
+                  : isInnocentButLockedUp
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned court, prison, police, NHRC/NALSA, and parliamentary records across the 4-stage custody chain and submits a documentary lead or cleared result.'
                   : isWebsiteAudit
                     ? 'Paste one line into your coding agent to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
                     : 'Paste one line into your coding agent to start free ₹0 checks immediately (auto-uses your GitHub handle).'
@@ -575,9 +721,13 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
   // =========================================================================
   // PROJECTS INDEX VIEW (/projects)
   // =========================================================================
-  const pillars = ['all', ...Array.from(new Set(missions.map((m) => m.pillar)))];
+  const orderedMissions = sortProjectsDescending(missions);
+  const nextCode = nextProjectCode(orderedMissions);
+  const pillars = ['all', ...Array.from(new Set(orderedMissions.map((m) => m.pillar)))];
   const visible =
-    pillarFilter === 'all' ? missions : missions.filter((m) => m.pillar === pillarFilter);
+    pillarFilter === 'all'
+      ? orderedMissions
+      : orderedMissions.filter((m) => m.pillar === pillarFilter);
 
   return (
     <div>
@@ -587,12 +737,23 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
           <h1>Active projects</h1>
           <div className="lb-sub-row">
             <p className="lb-sub">
-              Hover any progress bar for exact percentages, open a project for interactive charts, or
-              copy one line to join directly.
+              Each project is listed by someone who wants to audit the government and needs compute
+              to do it. Hover any progress bar for exact percentages, open a project for charts, or
+              copy one line to join or list yours.
             </p>
-            <a href="/projects.md" className="inline-link lb-all">
-              View .md
-            </a>
+            <div className="project-head-links">
+              <a
+                href="https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-link lb-all"
+              >
+                Project guide on GitHub
+              </a>
+              <a href="/projects.md" className="inline-link lb-all">
+                View .md
+              </a>
+            </div>
           </div>
         </div>
 
@@ -615,6 +776,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
         {error && <div className="state-banner">Could not load projects: {error}</div>}
 
         <div className="project-index-list">
+          <ListProjectRow nextCode={!loading && !error ? nextCode : undefined} variant="paper" />
+
           {!loading && !error
             ? visible.map((m) => {
                 const projectHref = `/projects/${encodeURIComponent(m.slug)}`;
@@ -650,7 +813,15 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                       <h2 className="project-index-title">
                         <Link to={projectHref}>{m.title}</Link>
                       </h2>
-                      <span className="project-index-meta">{m.jurisdiction}</span>
+                      <span className="project-index-meta">
+                        {m.jurisdiction}
+                        {m.posted_by?.name ? (
+                          <>
+                            {' · '}posted by {m.posted_by.name}
+                            {m.posted_by.handle ? ` (${m.posted_by.handle})` : ''}
+                          </>
+                        ) : null}
+                      </span>
                     </div>
 
                     <div className="project-index-progress">
@@ -676,23 +847,43 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </div>
 
                     <div className="project-index-actions">
-                      <JoinOneLineButton
-                        label="Join the effort: copy one line"
-                        copied={isCopied}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void handleCopyProject(m);
-                        }}
-                        title={buildProjectJoinPrompt(m.slug, m.methodology_code)}
-                        aria-label={`Join ${m.title}: copy one line`}
-                      />
+                      {m.total_tasks === 0 && m.status === 'needs_data' ? (
+                        <Link
+                          to={projectHref}
+                          className="btn btn-secondary btn-sm"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          View planned work
+                        </Link>
+                      ) : (
+                        <JoinOneLineButton
+                          label="Join the effort: copy one line"
+                          copied={isCopied}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void handleCopyProject(m);
+                          }}
+                          title={buildProjectJoinPrompt(m.slug, m.methodology_code)}
+                          aria-label={`Join ${m.title}: copy one line`}
+                        />
+                      )}
                     </div>
                   </article>
                 );
               })
             : null}
         </div>
+
+        <p className="project-dash-note">
+          The copied line works in Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or any
+          coding agent. It asks what you want audited, finds official sources, drafts the project
+          file, and gives you one GitHub link to submit it (
+          <a href="/enlist.txt" target="_blank" rel="noopener noreferrer" className="inline-link">
+            inspect /enlist.txt
+          </a>
+          ). Maintainers review every project before it goes live.
+        </p>
       </section>
     </div>
   );
@@ -753,6 +944,24 @@ function taskSearchCopy(methodologyCode: string): { placeholder: string; label: 
       label: 'Search tasks by procuring authority, portal, tender ID, fiscal year, cohort, or task ID',
     };
   }
+  if (methodologyCode === SOVEREIGN_LIES_METHOD) {
+    return {
+      placeholder: 'Search a scheme, SGB tranche, State/UT, mechanism, or category…',
+      label: 'Search tasks by scheme name, Sovereign Gold Bond tranche, Union or State/UT jurisdiction, walk-back mechanism, category, or task ID',
+    };
+  }
+  if (methodologyCode === AUDITING_EXAMS_METHOD) {
+    return {
+      placeholder: 'Search an exam, authority (NTA/UPSC/SSC/PSC), State/UT, disruption type, or year…',
+      label: 'Search tasks by exam name, conducting authority, Union or State/UT jurisdiction, disruption type, exam year, or task ID',
+    };
+  }
+  if (methodologyCode === INNOCENT_BUT_LOCKED_UP_METHOD) {
+    return {
+      placeholder: 'Search a court, prison, State/UT, portal, year (2021–2026), or mechanism…',
+      label: 'Search tasks by court, prison, State/UT, source portal, year, custody overrun mechanism, or task ID',
+    };
+  }
   return {
     placeholder: 'Search state, force, or task ID',
     label: 'Search tasks by State, force, ID, or agent',
@@ -766,6 +975,9 @@ function pickerFilterPlaceholder(methodologyCode: string): string {
   if (methodologyCode === ONE_TEACHER_METHOD) return 'Search a State, UT or academic year…';
   if (methodologyCode === PARLIAMENT_METHOD) return 'Search a ministry, assurance ref, or status…';
   if (methodologyCode === ONLY_ONE_BID_METHOD) return 'Search an authority, year, or tender ID…';
+  if (methodologyCode === SOVEREIGN_LIES_METHOD) return 'Search a scheme, State/UT, SGB tranche, or mechanism…';
+  if (methodologyCode === AUDITING_EXAMS_METHOD) return 'Search an exam, authority, State/UT, or year…';
+  if (methodologyCode === INNOCENT_BUT_LOCKED_UP_METHOD) return 'Search a court, prison, State/UT, portal, or year…';
   return 'Filter open tasks…';
 }
 
@@ -1070,8 +1282,8 @@ function TaskTableNote({ start, end, total }: { start: number; end: number; tota
       {total === 0 || end <= start
         ? '0'
         : `${(start + 1).toLocaleString('en-IN')}–${end.toLocaleString('en-IN')}`}{' '}
-      of {total.toLocaleString('en-IN')} matching tasks. Token estimates are set by AI Watchdogs
-      India; usage is self-reported by the contributing agent.
+      of {total.toLocaleString('en-IN')} matching tasks. Token estimates come from whoever listed
+      the project; usage is self-reported by the contributing agent.
     </p>
   );
 }

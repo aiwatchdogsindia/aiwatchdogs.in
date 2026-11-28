@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6, P7)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6, P7, P8, P9, P10)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.engines import (
+    auditing_government_exams,
     fiscal,
+    innocent_but_locked_up,
     one_road_two_bills,
     one_teacher_five_grades,
     only_one_bid,
@@ -23,6 +25,7 @@ from aiwatchdogs.engines import (
     procurement,
     proximity,
     schemes,
+    sovereign_lies,
     union_budget,
 )
 
@@ -43,6 +46,9 @@ RULESET_VERSIONS: dict[str, str] = {
     "P5": "P5-2026.11-v1",
     "P6": "P6-2026.11-v1",
     "P7": "P7-2026.11-v1",
+    "P8": "P8-2026.11-v1",
+    "P9": "P9-2026.11-v1",
+    "P10": "P10-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -295,6 +301,71 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://raw.githubusercontent.com/CivicDataLab/assam-tenders-data/1e12e516748130c15398b2501fb092bfa7413941/data/ProcessedData/ocds-mapped-data/v2/ocds_mapped_data_fiscal_year_2016_2022_v2.csv",
         "module": "aiwatchdogs.engines.only_one_bid",
     },
+    "P8": {
+        "code": "P8",
+        "name": "Sovereign Lies: Indian Government Scheme Promises vs Subsequent Walk-Backs",
+        "pillar": "scheme",
+        "ruleset_version": RULESET_VERSIONS["P8"],
+        "statutory_anchors": [
+            "Constitution-Art-265",
+            "Income-Tax-Act-Sec-47-viic",
+            "Finance-Act-2026",
+            "RBI-SGB-Notifications",
+            "RTI-Act-2005-Sec-4-1-b",
+        ],
+        "description": (
+            "Verifies checksummed official Union and State/UT government launch notifications, Finance Acts, "
+            "RBI circulars, Parliamentary records, and CAG audit reports to compare launch scheme commitments "
+            "against subsequent tax reversals, benefit cuts, discontinuations, eligibility narrowing, lock-in "
+            "changes, or arrears — anchored by the Sovereign Gold Bond (SGB) Scheme while transparently clearing "
+            "honored or grandfathered commitments."
+        ),
+        "reference_dataset_url": "https://www.indiabudget.gov.in/doc/memo.pdf",
+        "module": "aiwatchdogs.engines.sovereign_lies",
+    },
+    "P9": {
+        "code": "P9",
+        "name": "Auditing Government Exams: Indian Public Examination Conduct & Disruption Audit",
+        "pillar": "audit",
+        "ruleset_version": RULESET_VERSIONS["P9"],
+        "statutory_anchors": [
+            "Public-Examinations-Prevention-of-Unfair-Means-Act-2024",
+            "Constitution-Art-14-16",
+            "Constitution-Art-315-320",
+            "RTI-Act-2005-Sec-4-1-b",
+        ],
+        "description": (
+            "Verifies checksummed official Union and State/UT public examination notices, Parliamentary "
+            "replies, and agency bulletins across a 3-year window (Nov 2023 – Nov 2026) to audit whether "
+            "government examinations were conducted flawlessly as scheduled or experienced delays, "
+            "postponements, reschedules, cancellations before or after conduct, or technical/partial re-exam "
+            "disruptions — while transparently clearing verified flawless examinations."
+        ),
+        "reference_dataset_url": "https://www.nta.ac.in/",
+        "module": "aiwatchdogs.engines.auditing_government_exams",
+    },
+    "P10": {
+        "code": "P10",
+        "name": "Innocent But Locked Up: Post-Acquittal Detention Overruns & Contempt of Court Compliance",
+        "pillar": "justice",
+        "ruleset_version": RULESET_VERSIONS["P10"],
+        "statutory_anchors": [
+            "Constitution-Art-21",
+            "Contempt-of-Courts-Act-1971",
+            "BNSS-2023-Sec-479-482",
+            "SC-FASTER-Compliance-Directives",
+            "RTI-Act-2005-Sec-4-1-b",
+        ],
+        "description": (
+            "Verifies checksummed official Indian Supreme Court and High Court orders, prison/police "
+            "compliance records, NHRC/SHRC orders, NALSA/UTRC reports, Digital Sansad records, and CAG "
+            "audits (2021–2026) tracking cases where a court ordered acquittal or release, prisons delayed "
+            "release, contempt or habeas corpus action followed, and release or remediation was ordered — "
+            "while transparently clearing verified timely-release compliance controls."
+        ),
+        "reference_dataset_url": "https://api.sci.gov.in/",
+        "module": "aiwatchdogs.engines.innocent_but_locked_up",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -312,6 +383,9 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "P5": (one_teacher_five_grades.run_p5_single_teacher_schools, one_teacher_five_grades),
     "P6": (parliaments_to_do_list.run_p6_parliamentary_assurances, parliaments_to_do_list),
     "P7": (only_one_bid.run_p7_only_one_bid, only_one_bid),
+    "P8": (sovereign_lies.run_p8_sovereign_lies, sovereign_lies),
+    "P9": (auditing_government_exams.run_p9_auditing_government_exams, auditing_government_exams),
+    "P10": (innocent_but_locked_up.run_p10_innocent_but_locked_up, innocent_but_locked_up),
 }
 
 

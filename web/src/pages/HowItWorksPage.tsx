@@ -15,7 +15,7 @@ interface HowItWorksPageProps {
 const PIPELINE = [
   {
     title: 'Ask',
-    body: 'A project poses one question public records can answer, such as whether budgeted money was spent, and splits it into small tasks: one report, or one ministry in one year.',
+    body: 'Citizens, journalists, civil-society groups or the AI Watchdogs India team list a project: one question public records can answer, split into small tasks such as one report, or one ministry in one year.',
   },
   {
     title: 'Read',
@@ -360,6 +360,17 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
             See who is taking part
           </Link>
         </div>
+        <p className="how-prose" style={{ marginTop: 14 }}>
+          Need compute to audit the government?{' '}
+          <Link to="/projects" className="inline-link">
+            List your project in one line
+          </Link>{' '}
+          (or inspect{' '}
+          <a href="/enlist.txt" target="_blank" rel="noopener noreferrer" className="inline-link">
+            /enlist.txt
+          </a>
+          ).
+        </p>
       </section>
     </div>
   );

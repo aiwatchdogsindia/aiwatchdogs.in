@@ -29,6 +29,9 @@ import type {
   RecordEvent,
   RtiDraft,
   VerificationCheckState,
+  VisualAuditingGovernmentExams,
+  VisualInnocentButLockedUp,
+  VisualSovereignLies,
   WhisperItem,
   TaskUsage,
 } from '../types';
@@ -261,6 +264,8 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentRecord {
       rawPts36h.length > 0 ? rawPts36h.map((v) => Math.max(0, Number(v) || 0)) : undefined,
     hourly_checks_36h:
       rawChk36h.length > 0 ? rawChk36h.map((v) => Math.max(0, Number(v) || 0)) : undefined,
+    github_verified: Boolean(raw.github_verified),
+    github_verified_at: optStr(raw.github_verified_at) ?? null,
     current_task: (raw.current_task || raw.current_task_title || raw.current_task_id || null) as string | null,
   };
 }
@@ -441,8 +446,13 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
       official_publisher: c.official_publisher ? String(c.official_publisher) : undefined,
       source_landing_page: c.source_landing_page ? String(c.source_landing_page) : undefined,
       mirror_name: c.mirror_name ? String(c.mirror_name) : undefined,
-      // UB1 and P1 citations name their statement in `document` and quote it in `printed_line`.
-      title: c.title || c.document ? String(c.title || c.document) : undefined,
+      // UB1, P1, and P8 citations name their statement/reference in `document` and quote it in `printed_line`/`excerpt`.
+      title:
+        c.title && c.document && String(c.document).trim() !== String(c.title).trim()
+          ? `${String(c.title).trim()} — ${String(c.document).trim()}`
+          : c.title || c.document
+            ? String(c.title || c.document)
+            : undefined,
       sha256: c.sha256 ? String(c.sha256) : undefined,
       page: (c.page ?? null) as string | number | null,
       para: (c.para ?? c.para_ref ?? null) as string | null,
@@ -574,7 +584,13 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
                 ? 'P6'
                 : slug === 'only-one-bid' || methodologyCode.toUpperCase() === 'P7'
                   ? 'P7'
-                  : methodologyCode;
+                  : slug === 'sovereign-lies' || methodologyCode.toUpperCase() === 'P8'
+                    ? 'P8'
+                    : slug === 'auditing-government-exams' || methodologyCode.toUpperCase() === 'P9'
+                      ? 'P9'
+                      : slug === 'innocent-but-locked-up' || methodologyCode.toUpperCase() === 'P10'
+                        ? 'P10'
+                        : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,
@@ -625,6 +641,7 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
         raw.amount_basis,
     ),
     is_community_project: Boolean(raw.is_community_project),
+    created_at: optStr(raw.created_at) ?? undefined,
     posted_by: (() => {
       const p = asRecord(raw.posted_by);
       const name = String(p.name || '').trim();
@@ -890,6 +907,47 @@ export const api = {
     return normalizeMission(raw);
   },
 
+  async getSovereignLiesSummary(signal?: AbortSignal): Promise<VisualSovereignLies> {
+    const raw = await fetchJson<Record<string, unknown>>('/api/projects/sovereign-lies/summary', {
+      signal,
+    });
+    const inner =
+      raw.sovereign_lies && typeof raw.sovereign_lies === 'object' && !Array.isArray(raw.sovereign_lies)
+        ? (raw.sovereign_lies as VisualSovereignLies)
+        : (raw as unknown as VisualSovereignLies);
+    return inner;
+  },
+
+  async getAuditingGovernmentExamsSummary(
+    signal?: AbortSignal,
+  ): Promise<VisualAuditingGovernmentExams> {
+    const raw = await fetchJson<Record<string, unknown>>(
+      '/api/projects/auditing-government-exams/summary',
+      { signal },
+    );
+    const inner =
+      raw.auditing_government_exams &&
+      typeof raw.auditing_government_exams === 'object' &&
+      !Array.isArray(raw.auditing_government_exams)
+        ? (raw.auditing_government_exams as VisualAuditingGovernmentExams)
+        : (raw as unknown as VisualAuditingGovernmentExams);
+    return inner;
+  },
+
+  async getInnocentButLockedUpSummary(signal?: AbortSignal): Promise<VisualInnocentButLockedUp> {
+    const raw = await fetchJson<Record<string, unknown>>(
+      '/api/projects/innocent-but-locked-up/summary',
+      { signal },
+    );
+    const inner =
+      raw.innocent_but_locked_up &&
+      typeof raw.innocent_but_locked_up === 'object' &&
+      !Array.isArray(raw.innocent_but_locked_up)
+        ? (raw.innocent_but_locked_up as VisualInnocentButLockedUp)
+        : (raw as unknown as VisualInnocentButLockedUp);
+    return inner;
+  },
+
   /** One server-side page of a project's tasks (`limit` is capped at 100 by the hub). */
   async getProjectTasks(
     slug: string,
@@ -1086,6 +1144,8 @@ export const api = {
         tasks_completed: Number(n.tasks_completed ?? 0),
         verifications_done: Number(n.verifications_done ?? 0),
         findings_submitted: Number(n.findings_submitted ?? 0),
+        github_verified: Boolean(n.github_verified),
+        github_verified_at: optStr(n.github_verified_at) ?? null,
         last_seen_at: optStr(n.last_seen_at) ?? undefined,
         created_at: optStr(n.created_at) ?? undefined,
       }),
@@ -1096,6 +1156,7 @@ export const api = {
         display_name: optStr(j.display_name) ?? String(j.handle || ''),
         coding_agent: optStr(j.coding_agent),
         coding_agent_model: optStr(j.coding_agent_model),
+        github_verified: Boolean(j.github_verified),
         created_at: String(j.created_at || raw.generated_at || new Date().toISOString()),
         last_seen_at: optStr(j.last_seen_at) ?? undefined,
         is_working: Boolean(j.is_working),
@@ -1256,6 +1317,7 @@ export function deriveLiveSwarmSnapshot(
       tasks_completed: a.tasks_completed ?? 0,
       verifications_done: a.verifications_completed ?? 0,
       findings_submitted: a.findings_verified ?? 0,
+      github_verified: Boolean(a.github_verified),
       last_seen_at: a.last_heartbeat ?? head.generated_at,
     });
   }
@@ -1278,6 +1340,7 @@ export function deriveLiveSwarmSnapshot(
       tasks_completed: a.tasks_completed ?? 0,
       verifications_done: a.verifications_completed ?? 0,
       findings_submitted: a.findings_verified ?? 0,
+      github_verified: Boolean(a.github_verified),
       last_seen_at: a.last_heartbeat || undefined,
     });
   }
@@ -1285,6 +1348,7 @@ export function deriveLiveSwarmSnapshot(
   const recentJoins: LiveRecentJoin[] = (head.just_joined ?? []).map((j) => ({
     handle: j.handle,
     display_name: j.handle,
+    github_verified: Boolean(j.github_verified),
     created_at: j.joined_at || head.generated_at,
     last_seen_at: j.joined_at || head.generated_at,
     is_working: activeSet.has(j.handle),

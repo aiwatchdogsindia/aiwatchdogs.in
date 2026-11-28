@@ -60,6 +60,7 @@ HUB_TABLES: frozenset[str] = frozenset(
         "treasury_ledger",
         "rate_limit_buckets",
         "summary_cache",
+        "github_verification_challenges",
     }
 )
 
@@ -70,7 +71,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 15
+LATEST_SCHEMA_VERSION = 16
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -100,6 +101,17 @@ CREATE TABLE IF NOT EXISTS summary_cache (
     version_stamp TEXT NOT NULL,
     payload_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+"""
+
+GITHUB_VERIFICATION_CHALLENGES_SQL = """
+CREATE TABLE IF NOT EXISTS github_verification_challenges (
+    agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+    handle TEXT NOT NULL,
+    challenge_token TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'github_gist',
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
 """
 
@@ -484,7 +496,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)
 CREATE INDEX IF NOT EXISTS idx_tasks_claimed_agent_status ON tasks(claimed_by_agent_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_mission_completed_amt ON tasks(mission_id, status, monetary_audited_inr);
 CREATE INDEX IF NOT EXISTS idx_findings_mission_status_quar ON findings(mission_id, status, quarantined);
-""" + RESEARCH_BATCHES_SQL + SUMMARY_CACHE_SQL
+""" + RESEARCH_BATCHES_SQL + SUMMARY_CACHE_SQL + GITHUB_VERIFICATION_CHALLENGES_SQL
 
 # Named editorial corrections for the 4 confirmed defective published dossiers from the
 # 24 November 2026 public audit. Applied idempotently during migration v4 if those IDs exist.
@@ -2369,6 +2381,31 @@ def _migrate_v15_peer_verify_claim_indexes(conn: Any, *, is_postgres: bool) -> N
         conn.execute(stmt)
 
 
+_V16_GITHUB_IDENTITY_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("agents", "github_verified", "INTEGER NOT NULL DEFAULT 0"),
+    ("agents", "github_user_id", "TEXT"),
+    ("agents", "github_verified_at", "TEXT"),
+    ("agents", "github_verification_method", "TEXT NOT NULL DEFAULT ''"),
+    ("agents", "registered_ip_hash", "TEXT NOT NULL DEFAULT ''"),
+)
+
+_V16_GITHUB_INDEXES: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_agents_github_user_id ON agents(github_user_id) WHERE github_user_id IS NOT NULL AND TRIM(github_user_id) != '' AND revoked_at IS NULL AND status != 'revoked'",
+    "CREATE INDEX IF NOT EXISTS idx_agents_registered_ip_hash ON agents(registered_ip_hash) WHERE TRIM(registered_ip_hash) != ''",
+    "CREATE INDEX IF NOT EXISTS idx_gh_challenges_expires ON github_verification_challenges(expires_at)",
+)
+
+
+def _migrate_v16_github_identity_and_sybil_guard(conn: Any, *, is_postgres: bool) -> None:
+    """Migration v16: GitHub ownership proof columns/challenges and privacy-preserving Sybil IP hash."""
+    col_cache: dict[str, set[str]] = {}
+    for table, column, col_def in _V16_GITHUB_IDENTITY_COLUMNS:
+        _ensure_column(conn, table, column, col_def, is_postgres=is_postgres, column_cache=col_cache)
+    _execute_statements(conn, GITHUB_VERIFICATION_CHALLENGES_SQL)
+    for stmt in _V16_GITHUB_INDEXES:
+        conn.execute(stmt)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -2385,6 +2422,7 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (13, "013_egress_cache_and_token_totals", _migrate_v13_egress_cache_and_token_totals),
     (14, "014_quorum3_cross_harness_backfill", _migrate_v14_quorum3_cross_harness_backfill),
     (15, "015_peer_verify_claim_indexes", _migrate_v15_peer_verify_claim_indexes),
+    (16, "016_github_identity_and_sybil_guard", _migrate_v16_github_identity_and_sybil_guard),
 )
 
 
