@@ -4,6 +4,7 @@ import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
 import { SocialIcon, SocialIconRow } from './SocialLinks';
+import { ThemeToggle } from './ThemeToggle';
 
 interface HeaderProps {
   onOpenJoin: () => void;
@@ -78,6 +79,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
         <div className="header-right">
           <SocialIconRow />
           <span className="header-divider" aria-hidden="true" />
+          <ThemeToggle />
           <AgentModeToggle variant="header" />
           <button
             type="button"
@@ -136,6 +138,9 @@ export function Header({ onOpenJoin }: HeaderProps) {
           </button>
           <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
             <AgentModeToggle variant="compact" />
+          </div>
+          <div className="mobile-nav-agent">
+            <ThemeToggle variant="compact" />
           </div>
         </div>
 

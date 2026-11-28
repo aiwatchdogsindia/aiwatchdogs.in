@@ -3,6 +3,20 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 70,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/70",
+      "mergedAt": "2026-11-28T07:09:09Z",
+      "title": "Dark mode, a footer theme picker and a live status line",
+      "items": [
+        "A sun/moon button in the header (and a row in the mobile menu) switches the whole site between light and dark.",
+        "The footer has a three-way picker: match your device, light, or dark. Until you choose, the site follows your device; your choice is then remembered in your browser.",
+        "Dark mode uses near-black paper and ivory ink. Saffron and the white of the flag are unchanged; India green and navy are lightened so they stay readable.",
+        "The observatory map, the live swarm viewer, the site mark and single-colour agent logos all switch with the theme.",
+        "The footer shows a live status line (\"All systems normal.\") read from the hub's public /health check, and says so when the hub is degraded or unreachable.",
+        "Light mode looks exactly as before."
+      ]
+    },
+    {
       "pr": 63,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/63",
       "mergedAt": "2026-11-28T05:33:52Z",
