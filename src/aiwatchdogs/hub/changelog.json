@@ -3,6 +3,17 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 92,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/92",
+      "mergedAt": "2026-11-28T19:20:00Z",
+      "title": "Findings page laid out like a news aggregator: trending words and three columns",
+      "items": [
+        "Added a Trending line to /findings: the words repeated most across the 100 latest headlines (for the chosen topic), sized by how often they appear; clicking a word searches for it.",
+        "Findings now sit in three columns on wide screens (two on tablets, one on phones), with the newest items across the top row, larger bold headlines and no divider lines.",
+        "The header puts the title, a one-line description, search and the status filter on one row, and each meta line now reads like a news source line: time, then the public body's short name (for example GPSC), status and the official record link."
+      ]
+    },
+    {
       "pr": 91,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/91",
       "mergedAt": "2026-11-28T18:45:00Z",
