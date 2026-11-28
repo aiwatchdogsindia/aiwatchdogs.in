@@ -142,6 +142,16 @@ uv run python scripts/build_sovereign_lies_project.py
 
 The script fetches and SHA-256 verifies all 668 unique official URLs (Union Budget Finance Bills & Memoranda on `indiabudget.gov.in`, Digital Sansad Lok Sabha & Rajya Sabha Q&A PDFs on `sansad.in` / `bucketapi.rajyasabha.digital`, NSE SGB listing circulars on `nsearchives.nseindia.com`, CAG Union & State Audit Reports on `cag.gov.in` / `d1jmc0u14z2tmp.cloudfront.net`, static PIB factsheets on `static.pib.gov.in`, State Gazettes/Finance GOs on `transport.delhi.gov.in`, `wcd.delhi.gov.in`, `apfinance.gov.in`, and PRS State Budget Analyses on `prsindia.org`), dry-runs all 1,000 tasks through `P8` (`881` leads, `119` cleared grandfathered/honored benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `sovereign-lies/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
+### Auditing Government Exams (`P9`)
+
+`projects/auditing-government-exams.json` is generated from live-verified, double-fetch byte-stable official Union and State/UT examination notices across **1,000 tasks** spanning the **past 3 years (`2023-11-28` to `2026-11-28`, exam years 2023–2026)** (`347` Union + `586` State + `67` UT covering **all 28 States and all 8 Union Territories**, `716` unique examinations, `165` authorities, `859` unique SHA-256-pinned official documents across `30` verified domains), anchored by Task #1 `p9-union-ugc-net-june-2024-0001` (**UGC-NET June 2024**, conducted on 18 June 2024 for 9,08,580 appeared candidates and cancelled post-conduct prior to CBT re-conduct):
+
+```
+uv run python scripts/build_auditing_government_exams_project.py
+```
+
+The script fetches and SHA-256 verifies all 859 unique official URLs (`ssc.gov.in`, `nta.ac.in`, `ugcnet.nta.ac.in`, `csirnet.nta.ac.in`, `sansad.in`, `www.upsc.gov.in`, `www.cbse.gov.in`, `www.ibps.in`, `hpsc.gov.in`, `hssc.gov.in`, `www.tnpsc.gov.in`, `nssb.nagaland.gov.in`, `apssb.nic.in`, `appsc.gov.in`, `gpsc.goa.gov.in`, `gpsc.gujarat.gov.in`, `rpsc.rajasthan.gov.in`, `mpsc.mizoram.gov.in`, `apsc.nic.in`, `bceceboard.bihar.gov.in`, `bpssc.bihar.gov.in`, `websitenew.tgpsc.gov.in`, `dsssb.delhi.gov.in`, `spsc.sikkim.gov.in`, `mppsc.mp.gov.in`, `psc.cg.gov.in`, `www.keralapsc.gov.in`, and additional State/UT portals), dry-runs all 1,000 tasks through `P9` (`745` leads across 6 disruption categories — `10` cancelled after conduct, `35` postponed, `120` rescheduled, `482` delayed, `35` cancelled before conduct, `63` technical glitch / partial re-exam — plus `255` cleared `flawless_conduct` benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `auditing-government-exams/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
 ## Renaming a project
 
 Change the `slug` (and the file name), and list the old slug under `formerly`:
