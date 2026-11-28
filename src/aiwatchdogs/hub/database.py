@@ -2432,9 +2432,6 @@ def _migrate_v16_github_identity_and_sybil_guard(conn: Any, *, is_postgres: bool
         conn.execute(stmt)
 
 
-
-
-
 def _migrate_v17_plain_texts(conn: Any, *, is_postgres: bool) -> None:
     _execute_statements(conn, PLAIN_TEXTS_SQL)
 
