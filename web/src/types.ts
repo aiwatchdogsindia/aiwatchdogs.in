@@ -1733,6 +1733,93 @@ export interface FindingItem {
   rti_draft?: RtiDraft | null;
   created_at?: string;
   verified_at?: string | null;
+  plain?: PlainCard | null;
+}
+
+export interface PlainCard {
+  lang: string;
+  dir: 'ltr' | 'rtl' | string;
+  kind: string;
+  source: 'template' | 'model' | string;
+  model?: string;
+  head: string;
+  what: string;
+  why: string;
+  ask: string;
+  project: string;
+  status: string;
+  not: string;
+  speak: string;
+}
+
+export interface PlainLanguage {
+  code: string;
+  name: string;
+  native: string;
+  dir: string;
+  bcp47: string;
+}
+
+export interface NewsStory {
+  finding_id: string;
+  head: string;
+  what: string;
+  why: string;
+  ask: string;
+  status: string;
+  project: string;
+  kind: string;
+  source: string;
+  amount: string;
+  source_url: string;
+}
+
+export interface NewsProjectState {
+  slug: string;
+  name: string;
+  lines: string[];
+  finding_id: string | null;
+  source_url: string;
+  project_url: string;
+  prompt: string;
+}
+
+export interface NewsSection {
+  id: string;
+  title: string;
+  stories?: NewsStory[];
+  lines?: { text: string; finding_id?: string }[];
+  projects?: NewsProjectState[];
+  big?: string;
+  heading?: string;
+  text?: string;
+  note?: string;
+  prompt?: string;
+  finding_id?: string;
+}
+
+export interface NewsEdition {
+  date: string;
+  state: 'live' | 'final' | string;
+  lang: string;
+  dir: string;
+  bcp47: string;
+  title: string;
+  tagline: string;
+  edition_label: string;
+  lede: string;
+  lede_model: string;
+  intro: string;
+  reading_minutes: number;
+  reading_label: string;
+  sections: NewsSection[];
+  footer: string;
+  fingerprint: string;
+  fingerprint_label: string;
+  speak: string;
+  share_text: string;
+  url: string;
+  labels: Record<string, string>;
 }
 
 export interface PaginatedFindings {

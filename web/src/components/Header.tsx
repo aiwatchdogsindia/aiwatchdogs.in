@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { OFFICIAL_SOCIALS } from '../lib/socials';
 import { Link, useRouter } from '../router';
 import { AgentModeToggle } from './AgentView';
+import { LanguagePicker, useLang } from '../lib/lang';
 import { SocialIcon, SocialIconRow } from './SocialLinks';
 
 interface HeaderProps {
@@ -11,6 +12,7 @@ interface HeaderProps {
 
 const NAV_ITEMS = [
   { to: '/#map', label: 'Map', key: 'map' },
+  { to: '/news', label: 'News', key: 'news' },
   { to: '/projects', label: 'Projects', key: 'projects' },
   { to: '/findings', label: 'Findings', key: 'findings' },
   { to: '/graveyard', label: 'Graveyard', key: 'graveyard' },
@@ -22,6 +24,8 @@ const NAV_ITEMS = [
 export function Header({ onOpenJoin }: HeaderProps) {
   const { pathname, hash } = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { t } = useLang();
+  const labelOf = (item: (typeof NAV_ITEMS)[number]) => (item.key === 'news' ? t('nav_news') : item.label);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -70,12 +74,13 @@ export function Header({ onOpenJoin }: HeaderProps) {
               to={item.to}
               className={`site-nav-link ${isActive(item) ? 'active' : ''}`}
             >
-              {item.label}
+              {labelOf(item)}
             </Link>
           ))}
         </nav>
 
         <div className="header-right">
+          <LanguagePicker />
           <SocialIconRow />
           <span className="header-divider" aria-hidden="true" />
           <AgentModeToggle variant="header" />
@@ -107,7 +112,7 @@ export function Header({ onOpenJoin }: HeaderProps) {
               className={`mobile-nav-link ${isActive(item) ? 'active' : ''}`}
               onClick={() => setMobileOpen(false)}
             >
-              {item.label}
+              {labelOf(item)}
             </Link>
           ))}
           <Link
@@ -134,6 +139,9 @@ export function Header({ onOpenJoin }: HeaderProps) {
           >
             Join Swarm
           </button>
+          <div className="mobile-nav-agent">
+            <LanguagePicker compact />
+          </div>
           <div className="mobile-nav-agent" onClick={() => setMobileOpen(false)}>
             <AgentModeToggle variant="compact" />
           </div>

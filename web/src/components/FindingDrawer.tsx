@@ -15,6 +15,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useLang } from '../lib/lang';
+import { PlainBlock } from './PlainBlock';
 import { AgentBadge, ProviderModelBadge } from './AgentLogos';
 import { api } from '../api/client';
 import { useDialogFocus } from '../hooks/useDialogFocus';
@@ -130,6 +132,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const toast = useToast();
+  const { lang } = useLang();
 
   useDialogFocus(findingId != null, panelRef, onClose);
 
@@ -158,7 +161,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     return () => {
       cancelled = true;
     };
-  }, [findingId]);
+  }, [findingId, lang]);
 
   if (findingId == null) return null;
 
@@ -515,8 +518,9 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               id="finding-drawer-title"
               className="font-serif drawer-title"
             >
-              {loading ? 'Loading evidence dossier…' : finding?.title || 'Finding Dossier'}
+              {loading ? 'Loading evidence dossier…' : finding?.plain?.head || finding?.title || 'Finding Dossier'}
             </h2>
+            {finding?.plain && <p className="fc-tech-title">{finding.title}</p>}
           </div>
 
           <button
@@ -542,6 +546,8 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
 
           {finding && (
             <>
+              {finding.plain && !isQuarantined && <PlainBlock plain={finding.plain} sourceUrl={finding.source_url} />}
+
               {/* Quarantine Notice Shell (Privacy / Legal Compliance Hold) */}
               {isQuarantined && (
                 <div className="dossier-quarantine" role="alert">

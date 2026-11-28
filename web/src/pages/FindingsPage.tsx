@@ -8,6 +8,7 @@ import {
   FINDING_TAGS,
   getWorkTypeTag,
 } from '../lib/tags';
+import { useLang } from '../lib/lang';
 import { Link } from '../router';
 import type { FindingItem } from '../types';
 import { METHODOLOGY_DESCRIPTIONS, pillarLabel } from '../utils';
@@ -43,6 +44,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { lang, t } = useLang();
 
   useEffect(() => {
     setPage(0);
@@ -80,7 +82,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [status, pillar, methodology, search, page, refreshTick]);
+  }, [status, pillar, methodology, search, page, refreshTick, lang]);
 
   const resetFilters = () => {
     setStatus('');
@@ -103,9 +105,11 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
             Findings &amp; Evidence Ledger
           </h1>
           <p className="section-subtitle">
-            Click any card to open its full Evidence Dossier with deterministic calculations,
-            cryptographic provenance, editorial correction history, mandatory benign explanations,
-            explicit peer verification checks, and RTI Act 2005 Sec 6(1) draft generator.
+            Every card explains one finding in plain words, in your language. Open a card to see the
+            numbers, the original government record, how it was checked, and a ready RTI request.{' '}
+            <Link to="/news" className="inline-link">
+              {t('today')}
+            </Link>
           </p>
         </div>
       </div>

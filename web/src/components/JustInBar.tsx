@@ -34,7 +34,7 @@ function isVerifiedFinding(f: FindingItem): boolean {
 function findingToEntry(f: FindingItem): TickerEntry {
   return {
     id: f.id,
-    title: f.title,
+    title: f.plain?.head || f.title,
     monetary_exposure_inr_cr:
       f.monetary_exposure_inr != null && Number.isFinite(f.monetary_exposure_inr)
         ? f.monetary_exposure_inr / 1e7
