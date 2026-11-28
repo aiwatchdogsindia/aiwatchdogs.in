@@ -355,6 +355,21 @@ def _validate_r1_context(ctx: Any, where: str, errors: list[str]) -> None:
                     errors.append(f"{where}.payload.context.reading.expected_grand_total keys must be strings.")
                 if isinstance(val, bool) or not isinstance(val, (int, float)) or not math.isfinite(float(val)):
                     errors.append(f"{where}.payload.context.reading.expected_grand_total['{col}'] must be finite.")
+    pt_path = reading.get("page_texts_path")
+    if pt_path is not None:
+        if not isinstance(pt_path, str) or not pt_path.strip() or ".." in pt_path or pt_path.startswith("/"):
+            errors.append(f"{where}.payload.context.reading.page_texts_path must be a safe relative path under projects/.")
+        pt_sha = reading.get("page_texts_sha256")
+        if not isinstance(pt_sha, str) or not SHA256_RE.match(pt_sha):
+            errors.append(
+                f"{where}.payload.context.reading.page_texts_sha256 must be a 64-character lowercase SHA-256 when page_texts_path is set."
+            )
+    min_rows = reading.get("min_rows")
+    if min_rows is not None and (isinstance(min_rows, bool) or not isinstance(min_rows, int) or min_rows < 1):
+        errors.append(f"{where}.payload.context.reading.min_rows must be a positive integer.")
+    min_ga = reading.get("min_golden_accuracy")
+    if min_ga is not None and (isinstance(min_ga, bool) or not isinstance(min_ga, (int, float)) or not 0.0 <= float(min_ga) <= 1.0):
+        errors.append(f"{where}.payload.context.reading.min_golden_accuracy must be between 0.0 and 1.0.")
 
 
 def _validate_estimate(item: dict[str, Any], where: str, errors: list[str]) -> None:

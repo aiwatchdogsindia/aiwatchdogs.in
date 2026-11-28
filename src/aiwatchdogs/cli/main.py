@@ -1946,25 +1946,46 @@ def project_validate(
 @app.command("reproduce")
 def reproduce(
     project: str | None = typer.Option(
-        None, "--project", "-p", help="Optional project slug to fingerprint (default: all active projects)."
+        None, "--project", "-p", help="Optional project slug to reproduce (default: all active projects)."
     ),
     json_out: Path | None = typer.Option(
         None, "--json-out", help="Optional path to write the canonical release verification manifest JSON."
     ),
+    execute_live: bool = typer.Option(
+        False,
+        "--execute-live",
+        help="Also download pinned official datasets for selected projects, verify SHA-256, run engines, and hash live outputs.",
+    ),
+    live_limit: int = typer.Option(
+        3,
+        "--live-limit",
+        help="Max live tasks to download and run per project when --execute-live is enabled (0 = all).",
+    ),
 ) -> None:
-    """Compute a deterministic release fingerprint over pinned project manifests and engine code.
+    """Execute deterministic engines, verify pinned R1 page bundles, and hash manifests + actual outputs.
 
-    Lets CI or any volunteer machine confirm the canonical ruleset/engine/digest hash in a single
-    pass instead of re-running deterministic Python three times per task across the swarm.
+    Unlike a file-only hash, this runs registered deterministic engines over canonical
+    inputs (and optionally live pinned official datasets via --execute-live), verifies
+    every pinned R1 page-text bundle SHA-256 and anti-spoofing gate, and hashes both
+    manifests and actual engine outputs into one repeatable release hash.
     """
     import hashlib
 
     from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, get_engine_fingerprint
+    from aiwatchdogs.engines.reproduce_suite import (
+        REPRODUCE_AS_OF_DATE,
+        execute_live_pinned_tasks,
+        run_deterministic_engine_suite,
+        verify_pinned_reading_bundles,
+    )
     from aiwatchdogs.projects import default_projects_dir, load_project_files
 
-    loaded = load_project_files(default_projects_dir())
+    projects_dir = default_projects_dir()
+    loaded = load_project_files(projects_dir)
     projects_summary: list[dict[str, Any]] = []
+    selected_project_docs: list[dict[str, Any]] = []
     engine_fingerprints: dict[str, dict[str, Any]] = {}
+    selected_methods: set[str] = set()
 
     for pf in sorted(loaded, key=lambda item: item.path.name):
         if pf.errors or not isinstance(pf.data, dict):
@@ -1975,29 +1996,34 @@ def reproduce(
         status_val = str(pf.data.get("status") or "active")
         if status_val != "active":
             continue
+        selected_project_docs.append(pf.data)
         tasks = pf.data.get("tasks") or []
         method = str(
             pf.data.get("methodology_code")
             or (tasks[0].get("methodology_code") if tasks and isinstance(tasks[0], dict) else "")
             or ""
         ).strip().upper()
-        if method in METHODOLOGY_CATALOG and method not in engine_fingerprints:
-            engine_fingerprints[method] = get_engine_fingerprint(method, as_of_date="2026-11-28")
 
+        proj_methods: set[str] = set()
+        if method:
+            proj_methods.add(method)
         digest_set: set[str] = set()
-        task_ids: list[str] = []
         for t in tasks:
             if not isinstance(t, dict):
                 continue
-            tid = str(t.get("id") or "")
-            if tid:
-                task_ids.append(tid)
+            tm = str(t.get("methodology_code") or method or "").strip().upper()
+            if tm:
+                proj_methods.add(tm)
             payload = t.get("payload") or {}
             if isinstance(payload, dict):
-                for k in ("expected_sha256", "secondary_sha256"):
+                for k in ("expected_sha256", "secondary_sha256", "secondary_expected_sha256"):
                     h = str(payload.get(k) or "").strip().lower()
                     if h:
                         digest_set.add(h)
+        selected_methods.update(proj_methods)
+        for m in sorted(proj_methods):
+            if m in METHODOLOGY_CATALOG and m not in engine_fingerprints:
+                engine_fingerprints[m] = get_engine_fingerprint(m, as_of_date=REPRODUCE_AS_OF_DATE)
 
         manifest_bytes = pf.path.read_bytes()
         manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
@@ -2006,10 +2032,11 @@ def reproduce(
                 "slug": slug,
                 "project_code": pf.data.get("project_code"),
                 "methodology_code": method,
+                "methodologies": sorted(proj_methods),
                 "task_count": len(tasks),
                 "distinct_source_digests": len(digest_set),
                 "manifest_sha256": manifest_sha,
-                "engine_script_hash": engine_fingerprints.get(method, {}).get("script_hash"),
+                "engine_script_hash": engine_fingerprints.get(method, {}).get("combined_hash"),
                 "ruleset_version": engine_fingerprints.get(method, {}).get("ruleset_version"),
             }
         )
@@ -2018,28 +2045,73 @@ def reproduce(
         err_console.print(f"[red]No active project matched slug '{project}'.[/red]")
         raise typer.Exit(code=1)
 
+    # Actually execute deterministic engines and hash their normalized outputs!
+    suite_methods = sorted(selected_methods) if project else None
+    engine_suite = run_deterministic_engine_suite(suite_methods)
+
+    # Verify every pinned R1 reading page-text bundle SHA-256 and anti-spoofing gate
+    reading_bundles = verify_pinned_reading_bundles(projects_dir, selected_project_docs)
+    if reading_bundles["errors"]:
+        for err in reading_bundles["errors"]:
+            err_console.print(f"[red]✗ Reading bundle error:[/red] {err}")
+        raise typer.Exit(code=1)
+
+    live_exec: dict[str, Any] | None = None
+    if execute_live:
+        live_exec = execute_live_pinned_tasks(selected_project_docs, limit_per_project=live_limit)
+        if live_exec["errors"]:
+            for err in live_exec["errors"]:
+                err_console.print(f"[red]✗ Live execution error:[/red] {err}")
+            raise typer.Exit(code=1)
+
+    canonical_core: dict[str, Any] = {
+        "projects": projects_summary,
+        "engines": engine_fingerprints,
+        "engine_outputs_hash": engine_suite["engine_outputs_hash"],
+        "reading_bundles_hash": reading_bundles["reading_bundles_hash"],
+    }
+    if live_exec is not None:
+        canonical_core["live_outputs_hash"] = live_exec["live_outputs_hash"]
     canonical_payload = json.dumps(
-        {"projects": projects_summary, "engines": engine_fingerprints},
+        canonical_core,
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
     release_hash = hashlib.sha256(canonical_payload).hexdigest()
 
-    out_doc = {
-        "schema_version": 1,
+    out_doc: dict[str, Any] = {
+        "schema_version": 2,
+        "as_of_date": REPRODUCE_AS_OF_DATE,
         "release_hash": release_hash,
+        "engine_outputs_hash": engine_suite["engine_outputs_hash"],
+        "engines_executed": engine_suite["engines_executed"],
+        "reading_bundles_verified": reading_bundles["bundles_verified"],
+        "reading_bundles_hash": reading_bundles["reading_bundles_hash"],
         "active_projects": len(projects_summary),
         "total_tasks": sum(p["task_count"] for p in projects_summary),
         "projects": projects_summary,
+        "engine_runs": engine_suite["engines"],
     }
+    if live_exec is not None:
+        out_doc["live_tasks_executed"] = live_exec["tasks_executed"]
+        out_doc["live_outputs_hash"] = live_exec["live_outputs_hash"]
+        out_doc["live_tasks"] = live_exec["tasks"]
+
     if json_out is not None:
         json_out.parent.mkdir(parents=True, exist_ok=True)
         json_out.write_text(json.dumps(out_doc, indent=2) + "\n", encoding="utf-8")
 
     console.print(f"[bold green]Release hash:[/bold green] {release_hash}")
+    console.print(f"[bold green]Engine outputs hash:[/bold green] {engine_suite['engine_outputs_hash']}")
     console.print(
-        f"Verified {out_doc['active_projects']} active project(s), {out_doc['total_tasks']:,} pinned task(s)."
+        f"Executed {engine_suite['engines_executed']} engine(s), verified {reading_bundles['bundles_verified']} pinned reading bundle(s), "
+        f"{out_doc['active_projects']} active project(s), {out_doc['total_tasks']:,} pinned task(s)."
     )
+    if live_exec is not None:
+        console.print(
+            f"[bold green]Live outputs hash:[/bold green] {live_exec['live_outputs_hash']} "
+            f"({live_exec['tasks_executed']} live pinned task(s) executed)"
+        )
 
 
 @app.command("read-claim")
@@ -2053,23 +2125,34 @@ def read_claim(
     ),
     task_id: str | None = typer.Option(None, "--task", "--task-id", help="Claim a specific R1 task ID."),
     out: Path | None = typer.Option(None, "--out", help="Output JSON bundle path for the coding agent to read."),
+    render_images: bool = typer.Option(
+        False,
+        "--render-images",
+        help="Render table pages to PNG files (auto-enabled when image-only scan pages are detected).",
+    ),
     allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URL."),
 ) -> None:
     """Claim one R1 AI document-reading task, download & SHA-256-verify the PDF, and write a reading bundle."""
+    import hashlib
+
     from aiwatchdogs.cli.reading_runner import (
         build_coding_agent_reading_bundle,
         extract_pdf_pages_for_reading,
+        render_pdf_pages_to_pngs,
     )
+    from aiwatchdogs.connectors.loader import USER_AGENT as LOADER_USER_AGENT
 
     clean_handle = (handle or "").strip().lstrip("@").lower() or None
     target_hub_hint = (hub or DEFAULT_HUB_URL).rstrip("/")
     saved, _ = _safe_load_existing_config(clean_handle, hub_url=target_hub_hint)
     if saved is None or not saved.handle or not saved.api_token:
-        err_console.print("[red]No saved contributor credentials found. Run `aiwatchdogs join` first.[/red]")
+        err_console.print("[red]No saved contributor credentials found. Run `aiwatchdogs join --no-run` first.[/red]")
         raise typer.Exit(code=1)
     if hub:
         saved.hub_url = validate_hub_url(hub, allow_insecure_http=allow_insecure_http)
 
+    out_path_resolved: Path | None = None
+    page_images: dict[int, str] = {}
     with AgentRunner(
         saved,
         config_path=_resolve_config_path(saved.handle),
@@ -2089,6 +2172,7 @@ def read_claim(
         task = lease.get("task") or {}
         payload = task.get("payload") or {}
         expected_sha = str(payload.get("expected_sha256") or "").strip() or None
+        out_path_resolved = out or Path(f"reading-{task.get('id', 'task')}.json")
         try:
             dataset = runner._load_task_dataset(payload, expected_sha256=expected_sha)
             digest_state, primary_ok, _, _, digest_err = runner._verify_digests_strict(
@@ -2103,21 +2187,45 @@ def read_claim(
             reading_ctx = ctx.get("reading") if isinstance(ctx.get("reading"), dict) else {}
             table_pages = reading_ctx.get("table_pages") if isinstance(reading_ctx.get("table_pages"), list) else None
             page_texts = extract_pdf_pages_for_reading(dataset.records, table_pages=table_pages)
-            bundle = build_coding_agent_reading_bundle(lease, page_texts=page_texts, sha256=dataset.sha256)
+            image_only_pages = [p for p, txt in page_texts.items() if len(txt.strip()) < 20]
+            need_pages = sorted(page_texts.keys()) if render_images else image_only_pages
+            ret_url = str(payload.get("retrieval_url") or "").strip()
+            if need_pages and ret_url.startswith("https://"):
+                pdf_resp = httpx.get(
+                    ret_url,
+                    headers={"User-Agent": LOADER_USER_AGENT},
+                    timeout=30.0,
+                    follow_redirects=True,
+                )
+                pdf_resp.raise_for_status()
+                if hashlib.sha256(pdf_resp.content).hexdigest() == dataset.sha256:
+                    img_dir = out_path_resolved.parent / f"{out_path_resolved.stem}_pages"
+                    page_images = render_pdf_pages_to_pngs(pdf_resp.content, pages=need_pages, out_dir=img_dir)
+            bundle = build_coding_agent_reading_bundle(
+                lease,
+                page_texts=page_texts,
+                sha256=dataset.sha256,
+                page_images=page_images,
+            )
         except Exception as exc:
             runner.release(lease_id, reason="execution_error", notes=f"read-claim failed: {type(exc).__name__}")
             err_console.print(f"[red]Failed to prepare reading bundle (lease released): {exc}[/red]")
             raise typer.Exit(code=1) from exc
 
-    out_path = out or Path(f"reading-{task.get('id', 'task')}.json")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(bundle, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    assert out_path_resolved is not None
+    out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
+    out_path_resolved.write_text(json.dumps(bundle, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     console.print(f"[bold green]Claimed R1 task:[/bold green] {task.get('id')} ({task.get('title')})")
     console.print(f"[bold]Lease ID:[/bold] {lease_id} (expires {lease.get('lease_expires_at')})")
-    console.print(f"[bold]Reading bundle written:[/bold] {out_path} ({len(page_texts)} table page(s), sha256:{dataset.sha256[:12]})")
+    img_note = f", {len(page_images)} PNG image(s)" if page_images else ""
     console.print(
-        f"[bold cyan]Next step:[/bold cyan] Fill `extraction_template` from `page_texts` into `extraction.json`, then run:\n"
-        f"  aiwatchdogs read-submit {lease_id} extraction.json --bundle {out_path}"
+        f"[bold]Reading bundle written:[/bold] {out_path_resolved} "
+        f"({len(page_texts)} table page(s){img_note}, sha256:{dataset.sha256[:12]})"
+    )
+    console.print(
+        f"[bold cyan]Next step:[/bold cyan] Fill `extraction_template` from `page_texts` "
+        f"(or `page_images` for scans) into `extraction.json`, then run:\n"
+        f"  aiwatchdogs read-submit {lease_id} extraction.json --bundle {out_path_resolved}"
     )
 
 

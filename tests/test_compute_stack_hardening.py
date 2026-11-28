@@ -589,5 +589,20 @@ def test_reproduce_cli_outputs_repeatable_release_hash(
     d1 = json.loads(out1.read_text(encoding="utf-8"))
     d2 = json.loads(out2.read_text(encoding="utf-8"))
     assert d1["release_hash"] == d2["release_hash"]
+    assert d1["engine_outputs_hash"] == d2["engine_outputs_hash"]
+    assert len(d1["engine_outputs_hash"]) == 64
+    assert d1["engines_executed"] == 1
+    assert d1["engine_runs"]["P1"]["leads_count"] >= 1
+    assert d1["projects"][0]["engine_script_hash"] is not None
     assert d1["active_projects"] == 1
     assert d1["total_tasks"] == 100
+
+    # Full reproduce executes all 19 engines (17 registry + W1 + R1) and verifies all 11 P3 reading bundles
+    out_all = tmp_path / "all.json"
+    res_all = runner.invoke(cli_app, ["reproduce", "--json-out", str(out_all)])
+    assert res_all.exit_code == 0, res_all.output
+    dall = json.loads(out_all.read_text(encoding="utf-8"))
+    assert dall["engines_executed"] >= 19
+    assert dall["reading_bundles_verified"] == 11
+    assert dall["engine_runs"]["R1"]["adversarial_one_row_rejected"] is True
+    assert dall["engine_runs"]["W1"]["outcome"] == "observed"

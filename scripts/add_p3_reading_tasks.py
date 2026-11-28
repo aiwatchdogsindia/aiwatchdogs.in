@@ -32,6 +32,7 @@ logging.getLogger("pypdf").setLevel(logging.CRITICAL)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_JSON = REPO_ROOT / "projects" / "union-budget-unspent-funds.json"
 DOCS_CSV = REPO_ROOT / "projects" / "union-budget-unspent-funds" / "documents.csv"
+READING_PAGES_DIR = REPO_ROOT / "projects" / "union-budget-unspent-funds" / "reading_pages"
 
 _NUM_RE = re.compile(r"^(?:\.\.\.|-?\d[\d,]*\.\d+)$")
 _PERIOD_RE = re.compile(
@@ -150,12 +151,35 @@ def _inspect_statement(row: dict[str, str]) -> dict[str, Any]:
 
     est_tokens = max(12_000, gt_page * 6_000)
     short_dept = department or ministry or f"Demand No. {demand_no}"
+    task_id = f"r1-ub-{budget}-d{demand_no:03d}"
     title = f"AI read · {budget} Demand {demand_no}: {short_dept} (p.1–{gt_page}, ₹{expected_gt['be_total']:,.2f} Cr)"
     if len(title) > 150:
         title = title[:147].rstrip() + "..."
 
+    # Pin the exact Section A table page texts so the Hub verifies quotes, headers, and row figures
+    # server-side in <1ms with zero outbound HTTP calls inside Postgres transactions.
+    READING_PAGES_DIR.mkdir(parents=True, exist_ok=True)
+    pinned_pages = {str(pno): texts[pno - 1].strip() for pno in range(1, gt_page + 1)}
+    page_bundle_bytes = (
+        json.dumps(
+            {
+                "task_id": task_id,
+                "document_sha256": expected_sha,
+                "source_url": url,
+                "pages": pinned_pages,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
+    page_bundle_path = READING_PAGES_DIR / f"{task_id}.json"
+    page_bundle_path.write_bytes(page_bundle_bytes)
+    page_bundle_sha = hashlib.sha256(page_bundle_bytes).hexdigest()
+    page_bundle_rel = f"union-budget-unspent-funds/reading_pages/{task_id}.json"
+
     return {
-        "id": f"r1-ub-{budget}-d{demand_no:03d}",
+        "id": task_id,
         "title": title,
         "instructions": (
             f"Download the pinned Union Budget {budget} Demand No. {demand_no} ({short_dept}) PDF, "
@@ -185,6 +209,9 @@ def _inspect_statement(row: dict[str, str]) -> dict[str, Any]:
                     "department": short_dept,
                     "page_count": page_count,
                     "table_pages": [1, gt_page],
+                    "min_rows": 2,
+                    "page_texts_path": page_bundle_rel,
+                    "page_texts_sha256": page_bundle_sha,
                     "periods": periods,
                     "subcolumns": subcolumns,
                     "expected_grand_total": expected_gt,

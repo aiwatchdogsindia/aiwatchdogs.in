@@ -4137,8 +4137,55 @@ class DeskService:
                 "guidelines": "https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/",
                 **loads_json(row["output_json"], {})}
 
+    @staticmethod
+    def _load_pinned_reading_page_texts(reading_ctx: dict[str, Any]) -> dict[int, str] | None:
+        """Load server-pinned PDF page texts for R1 verification without outbound HTTP."""
+        inline = reading_ctx.get("page_texts")
+        if isinstance(inline, dict) and inline:
+            parsed_inline: dict[int, str] = {}
+            for k, v in inline.items():
+                try:
+                    parsed_inline[int(k)] = str(v or "")
+                except (TypeError, ValueError):
+                    continue
+            if parsed_inline:
+                return parsed_inline
+
+        rel_path = str(reading_ctx.get("page_texts_path") or "").strip()
+        if not rel_path:
+            return None
+        if ".." in rel_path or rel_path.startswith("/"):
+            raise HTTPException(status_code=500, detail="Invalid pinned page_texts_path in reading task.")
+        from aiwatchdogs.projects import default_projects_dir
+
+        root = default_projects_dir().resolve()
+        target = (root / rel_path).resolve()
+        if root not in target.parents or not target.is_file():
+            raise HTTPException(
+                status_code=503,
+                detail="Pinned PDF page text bundle is unavailable in this deployment.",
+            )
+        raw_bytes = target.read_bytes()
+        expected_bundle_sha = str(reading_ctx.get("page_texts_sha256") or "").strip().lower()
+        if expected_bundle_sha and hashlib.sha256(raw_bytes).hexdigest() != expected_bundle_sha:
+            raise HTTPException(
+                status_code=503,
+                detail="Pinned PDF page text bundle failed SHA-256 integrity check.",
+            )
+        bundle = loads_json(raw_bytes.decode("utf-8"), {})
+        raw_pages = bundle.get("pages") if isinstance(bundle, dict) else {}
+        if not isinstance(raw_pages, dict) or not raw_pages:
+            return None
+        out: dict[int, str] = {}
+        for k, v in raw_pages.items():
+            try:
+                out[int(k)] = str(v or "")
+            except (TypeError, ValueError):
+                continue
+        return out or None
+
     def mission_reading_extraction(self, slug: str, task_id: str) -> dict[str, Any]:
-        """Return the deterministically verified AI document-reading extraction for a completed R1 task."""
+        """Return the deterministically or two-model verified AI document-reading extraction for an R1 task."""
         slug = self.resolve_slug(slug)
         with self.db.read() as conn:
             row = conn.execute(
@@ -4151,11 +4198,22 @@ class DeskService:
             raise HTTPException(status_code=404, detail="No completed verified reading extraction for this task")
         manifest = loads_json(row["payload_json"], {})
         stored = loads_json(row["output_json"], {})
+        v_status = str(stored.get("verification_status") or "").strip()
+        if not v_status:
+            v_mode = str((stored.get("verification") or {}).get("verification_mode") or "").strip()
+            v_status = v_mode
+        if v_status not in {"deterministic_verified", "two_model_verified"}:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Reading extraction is not yet verified for publication (status: {v_status or 'pending'}).",
+            )
         return {
             "task_id": task_id,
             "mission_slug": slug,
             "title": row["title"],
             "contributor_handle": row["claimed_by_handle"],
+            "verification_status": v_status,
+            "corroborated_by_handle": stored.get("corroborated_by_handle"),
             "source_url": manifest.get("retrieval_url"),
             "source_sha256": manifest.get("expected_sha256"),
             "official_publisher": manifest.get("official_publisher"),
@@ -4170,7 +4228,7 @@ class DeskService:
             rows = conn.execute(
                 """
                 SELECT t.id, t.mission_slug, t.title, t.status, t.estimated_tokens,
-                       t.claimed_by_handle, t.completed_at, t.payload_json
+                       t.claimed_by_handle, t.completed_at, t.payload_json, t.output_json
                 FROM tasks t
                 JOIN missions m ON m.id = t.mission_id
                 WHERE t.methodology_code = 'R1'
@@ -4193,13 +4251,19 @@ class DeskService:
             elif st == "completed":
                 completed += 1
             payload = loads_json(r["payload_json"], {})
+            stored = loads_json(r["output_json"], {}) if r["output_json"] else {}
             ctx_reading = (payload.get("context") or {}).get("reading") if isinstance(payload, dict) else {}
+            v_status = str(stored.get("verification_status") or "").strip() if isinstance(stored, dict) else ""
+            if not v_status and isinstance(stored, dict):
+                v_status = str((stored.get("verification") or {}).get("verification_mode") or "").strip()
+            published = st == "completed" and v_status in {"deterministic_verified", "two_model_verified"}
             items.append(
                 {
                     "task_id": str(r["id"]),
                     "project_slug": str(r["mission_slug"]),
                     "title": str(r["title"]),
                     "status": st,
+                    "verification_status": v_status or None,
                     "estimated_tokens": int(r["estimated_tokens"] or 0),
                     "claimed_by_handle": r["claimed_by_handle"],
                     "completed_at": r["completed_at"],
@@ -4207,7 +4271,7 @@ class DeskService:
                     "expected_sha256": payload.get("expected_sha256") if isinstance(payload, dict) else None,
                     "document_type": ctx_reading.get("document_type") if isinstance(ctx_reading, dict) else None,
                     "reading_url": (
-                        f"/api/missions/{r['mission_slug']}/readings/{r['id']}" if st == "completed" else None
+                        f"/api/missions/{r['mission_slug']}/readings/{r['id']}" if published else None
                     ),
                 }
             )
@@ -11020,6 +11084,22 @@ class DeskService:
                         detail=f"Agent '{agent_handle}' is excluded from claiming task '{resolved_tid}'.",
                     )
 
+                if str(cand["methodology_code"] or "").strip().upper() == "R1":
+                    cand_payload = loads_json(cand["payload_json"], {})
+                    cand_ctx = cand_payload.get("context") if isinstance(cand_payload, dict) else {}
+                    cand_rc = cand_ctx.get("reading") if isinstance(cand_ctx, dict) else {}
+                    first_sub = cand_rc.get("first_submission") if isinstance(cand_rc, dict) else {}
+                    first_model = norm_attr(first_sub.get("effective_model") or "") if isinstance(first_sub, dict) else ""
+                    claimer_model = norm_attr(_row_get(agent, "coding_agent_model", "") or _row_get(agent, "model", ""))
+                    if first_model and claimer_model and claimer_model == first_model:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Second-model reading verification requires a distinct model from the first reader "
+                                f"(both use '{claimer_model}')."
+                            ),
+                        )
+
                 if cand["task_type"] == "research":
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
@@ -11115,6 +11195,16 @@ class DeskService:
                     common_clauses.append("t.methodology_code != 'W1'")
                 if not document_reading:
                     common_clauses.append("t.methodology_code != 'R1'")
+                else:
+                    reader_model_norm = norm_attr(
+                        _row_get(agent, "coding_agent_model", "") or _row_get(agent, "model", "")
+                    )
+                    if reader_model_norm:
+                        common_clauses.append(
+                            "(t.methodology_code != 'R1' OR COALESCE(t.work_type, '') != 'cross_check' "
+                            "OR t.payload_json NOT LIKE ? ESCAPE '\\')"
+                        )
+                        common_params.append(f'%"effective_model":"{escape_like(reader_model_norm)}"%')
                 if allowed_methods is not None:
                     sorted_allowed = sorted(allowed_methods)
                     mph = ",".join("?" for _ in sorted_allowed)
@@ -11793,9 +11883,9 @@ class DeskService:
             existing_retry = int(_row_get(task, "retry_count", 0) or 0)
             max_retries = int(_row_get(task, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
 
-            # A capability refusal (an older client that lacks the task's engine) must never burn
-            # the task's retry budget or push it to needs_adjudication; return it straight to queued.
-            if clean_reason == "unsupported_methodology":
+            # A capability refusal (an older client that lacks the task's engine) or same-model
+            # corroboration skip must never burn the task's retry budget or delay re-claim.
+            if clean_reason in ("unsupported_methodology", "same_model_cannot_corroborate"):
                 new_retry = existing_retry
                 next_status = "queued"
                 available_at: str | None = now
@@ -11990,7 +12080,12 @@ class DeskService:
                 )
                 self._emit_durable_event(conn, envelopes, "whisper", w1_whisper, now=now)
             elif outcome == "reading_extraction":
-                from aiwatchdogs.engines.reading_verifier import verify_budget_extraction
+                from aiwatchdogs.engines.reading_verifier import (
+                    DEFAULT_ABS_TOLERANCE,
+                    DEFAULT_REL_TOLERANCE,
+                    _within_tol,
+                    verify_budget_extraction,
+                )
 
                 raw_extraction = payload.get("extraction")
                 if not isinstance(raw_extraction, dict):
@@ -12013,81 +12108,350 @@ class DeskService:
                 exp_sha = str(task_payload.get("expected_sha256") or "").strip() or None
                 exp_gt = reading_ctx.get("expected_grand_total")
                 max_pg = reading_ctx.get("page_count")
+                min_rows_val = reading_ctx.get("min_rows")
+                min_rows = int(min_rows_val) if isinstance(min_rows_val, int) and not isinstance(min_rows_val, bool) else 1
+                golden_exp = reading_ctx.get("golden_expected")
+                raw_min_ga = reading_ctx.get("min_golden_accuracy")
+                min_ga = (
+                    float(raw_min_ga)
+                    if isinstance(raw_min_ga, (int, float)) and not isinstance(raw_min_ga, bool)
+                    else (0.95 if isinstance(golden_exp, dict) else None)
+                )
+                pinned_page_texts = self._load_pinned_reading_page_texts(reading_ctx)
+
                 vres = verify_budget_extraction(
                     raw_extraction,
                     expected_sha256=exp_sha,
+                    page_texts=pinned_page_texts,
                     expected_grand_total=exp_gt if isinstance(exp_gt, dict) else None,
                     max_page=int(max_pg) if isinstance(max_pg, int) and not isinstance(max_pg, bool) else None,
+                    min_rows=min_rows,
+                    require_text_verification=False,
+                    golden_expected=golden_exp if isinstance(golden_exp, dict) else None,
+                    min_golden_accuracy=min_ga,
                 )
                 if not vres.accepted:
                     raise HTTPException(
                         status_code=422,
                         detail="Reading extraction failed deterministic verification: " + "; ".join(vres.errors[:6]),
                     )
+
                 clean_extraction, _ = _scrub_recursive(raw_extraction)
                 rows_count = len(clean_extraction.get("rows") or []) if isinstance(clean_extraction, dict) else 0
-                result = {
-                    "status": "accepted",
-                    "outcome": outcome,
-                    "task_id": task["id"],
-                    "rows_extracted": rows_count,
-                    "verification_mode": vres.verification_mode,
-                    "checks": dict(vres.checks),
-                    "reading_url": f"/api/missions/{mission['slug']}/readings/{task['id']}",
-                }
-                self._settle_task_atomically(
-                    conn,
-                    task_id=task["id"],
-                    lease_id=lease_id,
-                    agent_id=agent["id"],
-                    output_obj={
+                eff_model = norm_attr(_row_get(agent, "coding_agent_model", "") or _row_get(agent, "model", ""))
+                second_for_tid = str(reading_ctx.get("second_model_for_task_id") or "").strip()
+
+                if second_for_tid:
+                    # Paired 2nd-model corroboration for an image-only scan
+                    first_sub = reading_ctx.get("first_submission") if isinstance(reading_ctx.get("first_submission"), dict) else {}
+                    first_handle = str(first_sub.get("agent_handle") or "").strip().lower()
+                    first_model = norm_attr(first_sub.get("effective_model") or "")
+                    if first_handle and str(agent["handle"]).strip().lower() == first_handle:
+                        raise HTTPException(
+                            status_code=409,
+                            detail="Second-model reading verification requires a distinct contributor handle.",
+                        )
+                    if first_model and eff_model and eff_model == first_model:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                f"Second-model reading verification requires a distinct model from the first reader "
+                                f"(both used '{eff_model}')."
+                            ),
+                        )
+                    first_sums = first_sub.get("column_sums") if isinstance(first_sub.get("column_sums"), dict) else {}
+                    mismatches: list[str] = []
+                    first_cols = set(first_sums.keys())
+                    second_cols = set(vres.column_sums.keys())
+                    missing_cols = sorted(first_cols - second_cols)
+                    extra_cols = sorted(second_cols - first_cols)
+                    if missing_cols:
+                        mismatches.append(f"missing column(s) vs first reader: {', '.join(missing_cols)}")
+                    if extra_cols:
+                        mismatches.append(f"extra column(s) vs first reader: {', '.join(extra_cols)}")
+                    shared_cols = sorted(first_cols & second_cols)
+                    if not shared_cols:
+                        mismatches.append("no overlapping numeric columns with first reader")
+                    for col in shared_cols:
+                        v1 = float(first_sums[col])
+                        v2 = float(vres.column_sums[col])
+                        if not _within_tol(v2, v1, abs_tol=DEFAULT_ABS_TOLERANCE, rel_tol=DEFAULT_REL_TOLERANCE):
+                            mismatches.append(f"{col}: reader1={v1:.2f} vs reader2={v2:.2f}")
+
+                    agreed = len(mismatches) == 0
+                    v_status = "two_model_verified" if agreed else "disputed_reading"
+                    result = {
+                        "status": "accepted" if agreed else "disputed",
                         "outcome": outcome,
-                        "extraction": clean_extraction,
-                        "verification": vres.to_dict(),
-                    },
-                    idempotency_key=eff_idem,
-                    response_obj=result,
-                    monetary_audited_inr=0,
-                    now=now,
-                )
-                conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (mission["id"],))
-                conn.execute(
-                    "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
-                    "last_heartbeat_at = ? WHERE id = ?",
-                    (now, agent["id"]),
-                )
-                self._record_score_event(
-                    conn,
-                    agent_id=str(agent["id"]),
-                    agent_handle=str(agent["handle"]),
-                    event_type="document_reading_verified",
-                    ref_id=str(task["id"]),
-                    now=now,
-                )
-                r1_msg = whisper_text or (
-                    f"Extracted and verified {rows_count} budget table rows ({vres.verification_mode}; {task['title'][:85]})."
-                )
-                r1_whisper = self._insert_whisper(
-                    conn,
-                    agent_handle=str(agent["handle"]),
-                    provider=agent["provider"],
-                    model=agent["model"],
-                    mission_slug=mission["slug"],
-                    event_type="document_reading_verified",
-                    message=r1_msg,
-                )
-                self._emit_durable_event(
-                    conn,
-                    envelopes,
-                    "document_reading_verified",
-                    {
-                        **result,
+                        "task_id": task["id"],
+                        "corroborated_task_id": second_for_tid,
+                        "rows_extracted": rows_count,
+                        "verification_mode": vres.verification_mode,
+                        "verification_status": v_status,
+                        "checks": dict(vres.checks),
+                        "golden_accuracy": vres.golden_accuracy,
+                        "disagreement_details": mismatches,
+                        "reading_url": (
+                            f"/api/missions/{mission['slug']}/readings/{second_for_tid}" if agreed else None
+                        ),
+                    }
+                    self._settle_task_atomically(
+                        conn,
+                        task_id=task["id"],
+                        lease_id=lease_id,
+                        agent_id=agent["id"],
+                        output_obj={
+                            "outcome": outcome,
+                            "verification_status": v_status,
+                            "corroborated_task_id": second_for_tid,
+                            "disagreement_details": mismatches,
+                            "extraction": clean_extraction,
+                            "verification": vres.to_dict(),
+                        },
+                        idempotency_key=eff_idem,
+                        response_obj=result,
+                        monetary_audited_inr=0,
+                        now=now,
+                    )
+                    # Update the original 1st-reader task's stored status
+                    first_row = conn.execute("SELECT output_json FROM tasks WHERE id = ?", (second_for_tid,)).fetchone()
+                    if first_row is not None:
+                        first_out = loads_json(first_row["output_json"], {})
+                        if isinstance(first_out, dict):
+                            first_out["verification_status"] = v_status
+                            first_out["corroborated_by_task_id"] = task["id"]
+                            first_out["corroborated_by_handle"] = str(agent["handle"])
+                            first_out["disagreement_details"] = mismatches
+                            conn.execute(
+                                "UPDATE tasks SET output_json = ?, updated_at = ? WHERE id = ?",
+                                (dumps_json(first_out), now, second_for_tid),
+                            )
+                    conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (mission["id"],))
+                    conn.execute(
+                        "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
+                        "last_heartbeat_at = ? WHERE id = ?",
+                        (now, agent["id"]),
+                    )
+                    if agreed:
+                        first_aid = str(first_sub.get("agent_id") or "").strip()
+                        if first_aid and first_handle:
+                            self._record_score_event(
+                                conn,
+                                agent_id=first_aid,
+                                agent_handle=first_handle,
+                                event_type="document_reading_verified",
+                                ref_id=second_for_tid,
+                                now=now,
+                            )
+                        self._record_score_event(
+                            conn,
+                            agent_id=str(agent["id"]),
+                            agent_handle=str(agent["handle"]),
+                            event_type="document_reading_verified",
+                            ref_id=str(task["id"]),
+                            now=now,
+                        )
+                    r1_msg = whisper_text or (
+                        f"Two-model verified {rows_count} scan rows for {task['title'][:80]}."
+                        if agreed
+                        else f"Second-model read disagreed on {task['title'][:75]} ({'; '.join(mismatches[:2])}); held for review."
+                    )
+                    r1_whisper = self._insert_whisper(
+                        conn,
+                        agent_handle=str(agent["handle"]),
+                        provider=agent["provider"],
+                        model=agent["model"],
+                        mission_slug=mission["slug"],
+                        event_type="document_reading_verified" if agreed else "whisper",
+                        message=r1_msg,
+                    )
+                    self._emit_durable_event(
+                        conn,
+                        envelopes,
+                        "document_reading_verified" if agreed else "reading_disputed",
+                        {
+                            **result,
+                            "agent_handle": str(agent["handle"]),
+                            "mission_slug": mission["slug"],
+                        },
+                        now=now,
+                    )
+                    self._emit_durable_event(conn, envelopes, "whisper", r1_whisper, now=now)
+
+                elif vres.verification_mode == "requires_second_model":
+                    # Image-only scan (no text layer): hold publication & points until a 2nd distinct model agrees!
+                    r2_task_id = f"{task['id']}-r2"
+                    r2_payload = dict(task_payload) if isinstance(task_payload, dict) else {}
+                    r2_ctx = dict(ctx) if isinstance(ctx, dict) else {}
+                    r2_reading = dict(reading_ctx)
+                    r2_reading["second_model_for_task_id"] = str(task["id"])
+                    r2_reading["first_submission"] = {
+                        "agent_id": str(agent["id"]),
                         "agent_handle": str(agent["handle"]),
-                        "mission_slug": mission["slug"],
-                    },
-                    now=now,
-                )
-                self._emit_durable_event(conn, envelopes, "whisper", r1_whisper, now=now)
+                        "effective_model": eff_model,
+                        "column_sums": dict(vres.column_sums),
+                        "printed_grand_total": dict(vres.printed_grand_total),
+                        "rows_count": rows_count,
+                    }
+                    r2_ctx["reading"] = r2_reading
+                    r2_payload["context"] = r2_ctx
+                    result = {
+                        "status": "pending_second_model",
+                        "outcome": outcome,
+                        "task_id": task["id"],
+                        "rows_extracted": rows_count,
+                        "verification_mode": vres.verification_mode,
+                        "verification_status": "pending_second_model",
+                        "second_model_task_id": r2_task_id,
+                        "checks": dict(vres.checks),
+                        "golden_accuracy": vres.golden_accuracy,
+                        "reading_url": None,
+                    }
+                    self._settle_task_atomically(
+                        conn,
+                        task_id=task["id"],
+                        lease_id=lease_id,
+                        agent_id=agent["id"],
+                        output_obj={
+                            "outcome": outcome,
+                            "verification_status": "pending_second_model",
+                            "second_model_task_id": r2_task_id,
+                            "extraction": clean_extraction,
+                            "verification": vres.to_dict(),
+                        },
+                        idempotency_key=eff_idem,
+                        response_obj=result,
+                        monetary_audited_inr=0,
+                        now=now,
+                    )
+                    cur_r2 = conn.execute(
+                        """
+                        INSERT INTO tasks (
+                            id, mission_id, mission_slug, methodology_code, task_type,
+                            title, instructions, payload_json, target_finding_id,
+                            excluded_handles_json, status, dataset_key, financial_quantity_type,
+                            work_type, estimated_tokens, estimate_basis, created_at, updated_at
+                        ) VALUES (?, ?, ?, 'R1', 'anomaly_scan', ?, ?, ?, NULL, ?, 'queued', ?, ?, 'cross_check', ?, ?, ?, ?)
+                        ON CONFLICT(id) DO NOTHING
+                        """,
+                        (
+                            r2_task_id,
+                            mission["id"],
+                            mission["slug"],
+                            f"2nd-model verify · {task['title'][:130]}",
+                            task["instructions"],
+                            dumps_json(r2_payload),
+                            dumps_json([str(agent["handle"])]),
+                            task["dataset_key"],
+                            task["financial_quantity_type"],
+                            task["estimated_tokens"],
+                            "Independent 2nd-model corroboration for image-only scan extraction.",
+                            now,
+                            now,
+                        ),
+                    )
+                    extra_total = 1 if cur_r2.rowcount == 1 else 0
+                    conn.execute(
+                        "UPDATE missions SET completed_tasks = completed_tasks + 1, total_tasks = total_tasks + ? WHERE id = ?",
+                        (extra_total, mission["id"]),
+                    )
+                    conn.execute(
+                        "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
+                        "last_heartbeat_at = ? WHERE id = ?",
+                        (now, agent["id"]),
+                    )
+                    r1_msg = whisper_text or (
+                        f"Extracted {rows_count} image-only scan rows ({task['title'][:75]}); routed to 2nd independent model."
+                    )
+                    r1_whisper = self._insert_whisper(
+                        conn,
+                        agent_handle=str(agent["handle"]),
+                        provider=agent["provider"],
+                        model=agent["model"],
+                        mission_slug=mission["slug"],
+                        event_type="whisper",
+                        message=r1_msg,
+                    )
+                    self._emit_durable_event(
+                        conn,
+                        envelopes,
+                        "reading_routed_second_model",
+                        {
+                            **result,
+                            "agent_handle": str(agent["handle"]),
+                            "mission_slug": mission["slug"],
+                        },
+                        now=now,
+                    )
+                    self._emit_durable_event(conn, envelopes, "whisper", r1_whisper, now=now)
+
+                else:
+                    # Deterministically verified against server-pinned page text layer!
+                    result = {
+                        "status": "accepted",
+                        "outcome": outcome,
+                        "task_id": task["id"],
+                        "rows_extracted": rows_count,
+                        "verification_mode": vres.verification_mode,
+                        "verification_status": "deterministic_verified",
+                        "checks": dict(vres.checks),
+                        "golden_accuracy": vres.golden_accuracy,
+                        "reading_url": f"/api/missions/{mission['slug']}/readings/{task['id']}",
+                    }
+                    self._settle_task_atomically(
+                        conn,
+                        task_id=task["id"],
+                        lease_id=lease_id,
+                        agent_id=agent["id"],
+                        output_obj={
+                            "outcome": outcome,
+                            "verification_status": "deterministic_verified",
+                            "extraction": clean_extraction,
+                            "verification": vres.to_dict(),
+                        },
+                        idempotency_key=eff_idem,
+                        response_obj=result,
+                        monetary_audited_inr=0,
+                        now=now,
+                    )
+                    conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (mission["id"],))
+                    conn.execute(
+                        "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
+                        "last_heartbeat_at = ? WHERE id = ?",
+                        (now, agent["id"]),
+                    )
+                    self._record_score_event(
+                        conn,
+                        agent_id=str(agent["id"]),
+                        agent_handle=str(agent["handle"]),
+                        event_type="document_reading_verified",
+                        ref_id=str(task["id"]),
+                        now=now,
+                    )
+                    r1_msg = whisper_text or (
+                        f"Extracted and verified {rows_count} budget table rows ({vres.verification_mode}; {task['title'][:85]})."
+                    )
+                    r1_whisper = self._insert_whisper(
+                        conn,
+                        agent_handle=str(agent["handle"]),
+                        provider=agent["provider"],
+                        model=agent["model"],
+                        mission_slug=mission["slug"],
+                        event_type="document_reading_verified",
+                        message=r1_msg,
+                    )
+                    self._emit_durable_event(
+                        conn,
+                        envelopes,
+                        "document_reading_verified",
+                        {
+                            **result,
+                            "agent_handle": str(agent["handle"]),
+                            "mission_slug": mission["slug"],
+                        },
+                        now=now,
+                    )
+                    self._emit_durable_event(conn, envelopes, "whisper", r1_whisper, now=now)
             elif outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
