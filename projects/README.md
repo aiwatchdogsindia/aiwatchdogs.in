@@ -168,6 +168,16 @@ uv run python scripts/build_auditing_government_exams_project.py
 
 The script fetches and SHA-256 verifies all 858 unique official URLs (`ssc.gov.in`, `nta.ac.in`, `ugcnet.nta.ac.in`, `csirnet.nta.ac.in`, `sansad.in`, `www.upsc.gov.in`, `www.cbse.gov.in`, `www.ibps.in`, `hpsc.gov.in`, `hssc.gov.in`, `www.tnpsc.gov.in`, `nssb.nagaland.gov.in`, `apssb.nic.in`, `appsc.gov.in`, `gpsc.goa.gov.in`, `gpsc.gujarat.gov.in`, `rpsc.rajasthan.gov.in`, `mpsc.mizoram.gov.in`, `apsc.nic.in`, `bceceboard.bihar.gov.in`, `websitenew.tgpsc.gov.in`, `dsssb.delhi.gov.in`, `spsc.sikkim.gov.in`, `mppsc.mp.gov.in`, `www.keralapsc.gov.in`, and additional State/UT portals), dry-runs all 1,000 tasks through `P9` (`738` leads across 6 disruption categories — `10` cancelled after conduct, `32` postponed, `120` rescheduled, `478` delayed, `35` cancelled before conduct, `63` technical glitch / partial re-exam — plus `262` cleared `flawless_conduct` benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `auditing-government-exams/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
+### Innocent But Locked Up (`P10`)
+
+`projects/innocent-but-locked-up.json` is generated from live-verified, double-fetch byte-stable official Indian judicial, prison, police, human-rights, legal-aid, parliamentary, ministry, and CAG records spanning the past five years (**2021–2026**) across **1,000 tasks** (`1,002` unique SHA-256-pinned PDFs across `19` verified official/open-data domains, all `26` constitutional courts — Supreme Court + all `25` High Courts — `29` States/UTs + Union of India, `280` explicitly named prisons, and all `8` official portal categories), anchored by Task #1 `p10-court-2024-anchor-bashir-ahmad-koka-v-chandraker-bh-0001` (*Bashir Ahmad Koka v. Chandraker Bharti & Ors.*, J&K & Ladakh High Court, paired `WP(Crl) 498/2022` detention-quashment PDF + `CCP(S) 123/2024` Article 215 contempt PDF documenting 98 days of post-quashment custody overrun before release):
+
+```
+uv run python scripts/build_innocent_but_locked_up_project.py
+```
+
+The script verifies every primary and secondary SHA-256 digest (caching outside git in `/tmp/p10-cache`), parses every PDF via canonical `load_dataset()`, dry-runs all 1,000 tasks through `P10` (`866` leads, `134` cleared compliant/timely-release benchmarks, `0` unevaluable), enforces BNS Sec 356 neutrality, DPDP Act 2023 PII scrubbing, header `< 10 KiB`, and total JSON `<= 20 MiB`, validates via `aiwatchdogs project validate`, and writes `innocent-but-locked-up/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
 ## Renaming a project
 
 Change the `slug` (and the file name), and list the old slug under `formerly`:
