@@ -144,6 +144,7 @@ def _seed_r1_project(
     sha: str = SAMPLE_SHA,
     *,
     include_page_texts: bool = True,
+    file_backed_page_texts: bool = False,
     min_rows: int = 2,
     golden_expected: dict[str, Any] | None = None,
     min_golden_accuracy: float | None = None,
@@ -170,7 +171,16 @@ def _seed_r1_project(
         "min_rows": min_rows,
     }
     if include_page_texts:
-        reading_ctx["page_texts"] = {"1": PAGE_1_TEXT, "2": PAGE_2_TEXT}
+        pages = {"1": PAGE_1_TEXT, "2": PAGE_2_TEXT}
+        if file_backed_page_texts:
+            bundle_path = pdir / "reading_pages" / "test-bundle.json"
+            bundle_path.parent.mkdir()
+            bundle_bytes = json.dumps({"pages": pages}).encode("utf-8")
+            bundle_path.write_bytes(bundle_bytes)
+            reading_ctx["page_texts_path"] = bundle_path.relative_to(pdir).as_posix()
+            reading_ctx["page_texts_sha256"] = hashlib.sha256(bundle_bytes).hexdigest()
+        else:
+            reading_ctx["page_texts"] = pages
     if golden_expected is not None:
         reading_ctx["golden_expected"] = golden_expected
     if min_golden_accuracy is not None:
@@ -285,10 +295,11 @@ def test_multipage_reading_verifier_plan_nonplan_and_official_anchor() -> None:
     assert res_h.checks["horizontal_row_totals"] == "fail"
 
 
+@pytest.mark.parametrize("file_backed_page_texts", [False, True], ids=["inline-pages", "pinned-pages"])
 def test_r1_capability_isolation_and_server_anti_hallucination_gate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, file_backed_page_texts: bool
 ) -> None:
-    _seed_r1_project(tmp_path, monkeypatch)
+    _seed_r1_project(tmp_path, monkeypatch, file_backed_page_texts=file_backed_page_texts)
     app = create_app(db_path=tmp_path / "r1_gate.db", seed=True)
     with TestClient(app, base_url="http://testserver") as client:
         reg_cpu = client.post(

@@ -4186,7 +4186,7 @@ class DeskService:
             )
         raw_bytes = target.read_bytes()
         expected_bundle_sha = str(reading_ctx.get("page_texts_sha256") or "").strip().lower()
-        if expected_bundle_sha and hashlib.sha256(raw_bytes).hexdigest() != expected_bundle_sha:
+        if expected_bundle_sha and compute_sha256(raw_bytes) != expected_bundle_sha:
             raise HTTPException(
                 status_code=503,
                 detail="Pinned PDF page text bundle failed SHA-256 integrity check.",
