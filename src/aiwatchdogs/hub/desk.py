@@ -52,6 +52,7 @@ from aiwatchdogs.hub.quorum import (
     IN_REVIEW_FINDING_STATUSES,
     LEGACY_CHECK_TO_CANONICAL as _LEGACY_CHECK_TO_CANONICAL,
     REVIEWABLE_FINDING_STATUSES,
+    UNSUPPORTED_ENGINE_NOTE_RE,
     VALID_CHECK_STATES,
     all_checks_passed as _all_checks_passed,
     build_attr_conflict_sql,
@@ -10668,10 +10669,22 @@ class DeskService:
         website_observations: bool = False,
         task_id: str | None = None,
         request_id: str | None = None,
+        supported_methodologies: list[str] | None = None,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
         requested_task_id = (task_id or "").strip()
         clean_request_id = (request_id or "").strip()[:128] or None
+        allowed_methods: set[str] | None = None
+        if supported_methodologies is not None:
+            parsed_methods = {
+                str(code or "").strip().upper()
+                for code in supported_methodologies
+                if str(code or "").strip()
+            }
+            if parsed_methods:
+                if not website_observations:
+                    parsed_methods.discard("W1")
+                allowed_methods = parsed_methods
         with self.db.transaction() as conn:
             agent = self._authenticate_agent(conn, token, required=True)
             assert agent is not None
@@ -10805,6 +10818,16 @@ class DeskService:
                         detail=(
                             f"Task '{resolved_tid}' is a W1 website review batch and requires "
                             "website_observations=true."
+                        ),
+                    )
+
+                cand_method = str(cand["methodology_code"] or "").strip().upper()
+                if allowed_methods is not None and cand_method and cand_method not in allowed_methods:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Task '{resolved_tid}' requires methodology '{cand_method}', which this worker "
+                            "did not advertise as supported. Upgrade the CLI before claiming it."
                         ),
                     )
 
@@ -10984,6 +11007,13 @@ class DeskService:
                 ]
                 if not website_observations:
                     common_clauses.append("t.methodology_code != 'W1'")
+                if allowed_methods is not None:
+                    sorted_allowed = sorted(allowed_methods)
+                    mph = ",".join("?" for _ in sorted_allowed)
+                    common_clauses.append(
+                        f"(COALESCE(TRIM(t.methodology_code), '') = '' OR UPPER(TRIM(t.methodology_code)) IN ({mph}))"
+                    )
+                    common_params.extend(sorted_allowed)
                 if max_estimated_tokens is not None:
                     common_clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
                     common_params.append(int(max_estimated_tokens))
@@ -11652,18 +11682,26 @@ class DeskService:
                     "available_at": None,
                 }
             clean_notes, _ = scrub_pii(str(notes or "")[:2000])
-            new_retry = int(_row_get(task, "retry_count", 0) or 0) + 1
+            existing_retry = int(_row_get(task, "retry_count", 0) or 0)
             max_retries = int(_row_get(task, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
 
-            # Never allow a single unprivileged client (e.g. reason='permanent_error') to bypass max_retries
-            # and destroy queued backlog; all client releases follow bounded backoff & retry_count escalation.
-            if new_retry >= max_retries:
-                next_status = "needs_adjudication"
-                available_at: str | None = None
-            else:
+            # A capability refusal (an older client that lacks the task's engine) must never burn
+            # the task's retry budget or push it to needs_adjudication; return it straight to queued.
+            if clean_reason == "unsupported_methodology":
+                new_retry = existing_retry
                 next_status = "queued"
-                delay_sec = min(900, max(0, base_delay) * (2 ** max(0, new_retry - 1)))
-                available_at = _future_iso_seconds(delay_sec) if delay_sec > 0 else now
+                available_at: str | None = now
+            else:
+                new_retry = existing_retry + 1
+                # Never allow a single unprivileged client (e.g. reason='permanent_error') to bypass max_retries
+                # and destroy queued backlog; all client releases follow bounded backoff & retry_count escalation.
+                if new_retry >= max_retries:
+                    next_status = "needs_adjudication"
+                    available_at = None
+                else:
+                    next_status = "queued"
+                    delay_sec = min(900, max(0, base_delay) * (2 ** max(0, new_retry - 1)))
+                    available_at = _future_iso_seconds(delay_sec) if delay_sec > 0 else now
 
             cur = conn.execute(
                 """
@@ -13057,6 +13095,31 @@ class DeskService:
                 detail="verdict='flag_pii_or_legal' requires descriptive notes (>= 8 characters) explaining the privacy/legal issue.",
             )
 
+        # Server-side evidence gate for negative/uncertain verdicts: a worker that could not run
+        # the methodology must NEVER cast a dispute vote or earn verification points.
+        if verdict in ("dispute", "reject_false_positive", "needs_review"):
+            if UNSUPPORTED_ENGINE_NOTE_RE.search(notes):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "A worker without an engine for this methodology cannot vote on the finding; "
+                        "release the lease with reason='unsupported_methodology' and upgrade the CLI."
+                    ),
+                )
+            if verdict in ("dispute", "reject_false_positive"):
+                any_performed_check = any(checks.get(k) in ("pass", "fail") for k in CANONICAL_CHECKS)
+                has_bound_artifact = bool(
+                    isinstance(manifest_clean, dict) and manifest_clean.get("artifact_sha256")
+                )
+                if not any_performed_check and not reproduced and not has_bound_artifact:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"verdict={verdict!r} requires at least one performed check ('pass'/'fail') "
+                            "or bound reproduction evidence."
+                        ),
+                    )
+
         # Strict confirmation requirements: all 4 checks pass + non-empty consistent metrics + matching bound digests
         if verdict == "confirm":
             missing_or_failed = [k for k in CANONICAL_CHECKS if checks.get(k) != "pass"]
@@ -13161,7 +13224,7 @@ class DeskService:
             """
             SELECT pv.id, pv.contributor_id, pv.verifier_handle, pv.verdict, pv.checks_json,
                    pv.reproduced_metrics_json, pv.confidence, pv.coding_agent, pv.coding_agent_model,
-                   pv.created_at,
+                   pv.notes, pv.created_at,
                    pva.github_verified, pva.github_user_id, pva.registered_ip_hash
             FROM peer_verifications pv
             LEFT JOIN agents pva ON pva.id = pv.verifier_node_id

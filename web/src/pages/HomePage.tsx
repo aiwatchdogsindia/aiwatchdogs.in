@@ -38,6 +38,7 @@ import {
   formatInrCr,
   formatRelativeTime,
   isClearedStatus,
+  isProposalMission,
   isVerifiedStatus,
   nextProjectCode,
   projectCodeFor,
@@ -213,8 +214,10 @@ export function HomePage({
     : 50;
   const tugRightPct = 100 - tugLeftPct;
 
-  const missions = useMemo(() => sortProjectsDescending(head?.missions ?? []), [head?.missions]);
-  const nextCode = useMemo(() => (missions.length > 0 ? nextProjectCode(missions) : undefined), [missions]);
+  const allMissions = useMemo(() => sortProjectsDescending(head?.missions ?? []), [head?.missions]);
+  const missions = useMemo(() => allMissions.filter((m) => !isProposalMission(m)), [allMissions]);
+  const proposalCount = allMissions.length - missions.length;
+  const nextCode = useMemo(() => (allMissions.length > 0 ? nextProjectCode(allMissions) : undefined), [allMissions]);
   const findings = head?.recent_findings ?? [];
   // Strictly freshly-live agents within the 120s live window (never stale 60m rings)
   const activeHandleSet = useMemo(() => {
@@ -617,6 +620,16 @@ export function HomePage({
             );
           })}
         </ul>
+
+        {proposalCount > 0 && (
+          <p style={{ marginTop: 12, fontSize: 13.5, color: 'var(--ink-secondary)' }}>
+            {proposalCount} community {proposalCount === 1 ? 'proposal is' : 'proposals are'} waiting on verified datasets in the{' '}
+            <Link to="/projects#proposals" className="inline-link">
+              intake lane
+            </Link>
+            .
+          </p>
+        )}
 
         <div className="race-note">
           <div className="race-legend">

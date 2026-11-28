@@ -1943,5 +1943,144 @@ def project_validate(
         raise typer.Exit(code=1)
 
 
+@app.command("reproduce")
+def reproduce(
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="Optional project slug to fingerprint (default: all active projects)."
+    ),
+    json_out: Path | None = typer.Option(
+        None, "--json-out", help="Optional path to write the canonical release verification manifest JSON."
+    ),
+) -> None:
+    """Compute a deterministic release fingerprint over pinned project manifests and engine code.
+
+    Lets CI or any volunteer machine confirm the canonical ruleset/engine/digest hash in a single
+    pass instead of re-running deterministic Python three times per task across the swarm.
+    """
+    import hashlib
+
+    from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, get_engine_fingerprint
+    from aiwatchdogs.projects import default_projects_dir, load_project_files
+
+    loaded = load_project_files(default_projects_dir())
+    projects_summary: list[dict[str, Any]] = []
+    engine_fingerprints: dict[str, dict[str, Any]] = {}
+
+    for pf in sorted(loaded, key=lambda item: item.path.name):
+        if pf.errors or not isinstance(pf.data, dict):
+            continue
+        slug = str(pf.data.get("slug") or "")
+        if project and slug != project.strip():
+            continue
+        status_val = str(pf.data.get("status") or "active")
+        if status_val != "active":
+            continue
+        tasks = pf.data.get("tasks") or []
+        method = str(
+            pf.data.get("methodology_code")
+            or (tasks[0].get("methodology_code") if tasks and isinstance(tasks[0], dict) else "")
+            or ""
+        ).strip().upper()
+        if method in METHODOLOGY_CATALOG and method not in engine_fingerprints:
+            engine_fingerprints[method] = get_engine_fingerprint(method, as_of_date="2026-11-28")
+
+        digest_set: set[str] = set()
+        task_ids: list[str] = []
+        for t in tasks:
+            if not isinstance(t, dict):
+                continue
+            tid = str(t.get("id") or "")
+            if tid:
+                task_ids.append(tid)
+            payload = t.get("payload") or {}
+            if isinstance(payload, dict):
+                for k in ("expected_sha256", "secondary_sha256"):
+                    h = str(payload.get(k) or "").strip().lower()
+                    if h:
+                        digest_set.add(h)
+
+        manifest_bytes = pf.path.read_bytes()
+        manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+        projects_summary.append(
+            {
+                "slug": slug,
+                "project_code": pf.data.get("project_code"),
+                "methodology_code": method,
+                "task_count": len(tasks),
+                "distinct_source_digests": len(digest_set),
+                "manifest_sha256": manifest_sha,
+                "engine_script_hash": engine_fingerprints.get(method, {}).get("script_hash"),
+                "ruleset_version": engine_fingerprints.get(method, {}).get("ruleset_version"),
+            }
+        )
+
+    if project and not projects_summary:
+        err_console.print(f"[red]No active project matched slug '{project}'.[/red]")
+        raise typer.Exit(code=1)
+
+    canonical_payload = json.dumps(
+        {"projects": projects_summary, "engines": engine_fingerprints},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    release_hash = hashlib.sha256(canonical_payload).hexdigest()
+
+    out_doc = {
+        "schema_version": 1,
+        "release_hash": release_hash,
+        "active_projects": len(projects_summary),
+        "total_tasks": sum(p["task_count"] for p in projects_summary),
+        "projects": projects_summary,
+    }
+    if json_out is not None:
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        json_out.write_text(json.dumps(out_doc, indent=2) + "\n", encoding="utf-8")
+
+    console.print(f"[bold green]Release hash:[/bold green] {release_hash}")
+    console.print(
+        f"Verified {out_doc['active_projects']} active project(s), {out_doc['total_tasks']:,} pinned task(s)."
+    )
+
+
+@app.command("verify-reading")
+def verify_reading(
+    submission_file: Path = typer.Argument(..., help="Path to JSON extraction produced by an AI model."),
+    pdf: Path | None = typer.Option(None, "--pdf", help="Optional local PDF file to check quotes against."),
+    expected_sha256: str | None = typer.Option(None, "--sha256", help="Expected SHA-256 of the source document."),
+    golden_file: Path | None = typer.Option(None, "--golden", help="Optional known-answer reference JSON."),
+) -> None:
+    """Verify an AI-extracted budget table deterministically (Grand Total, row sums, and page quotes)."""
+    from aiwatchdogs.core.safety import compute_sha256
+    from aiwatchdogs.engines.reading_verifier import verify_budget_extraction
+
+    submission = json.loads(submission_file.read_text(encoding="utf-8"))
+    page_text: str | None = None
+    exp_sha = expected_sha256
+    if pdf is not None:
+        raw_bytes = pdf.read_bytes()
+        if not exp_sha:
+            exp_sha = compute_sha256(raw_bytes)
+        page_num = int(submission.get("page") or 1)
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(str(pdf))
+            if 1 <= page_num <= len(reader.pages):
+                page_text = reader.pages[page_num - 1].extract_text() or ""
+        except Exception:
+            page_text = ""
+
+    golden = json.loads(golden_file.read_text(encoding="utf-8")) if golden_file else None
+    result = verify_budget_extraction(
+        submission,
+        expected_sha256=exp_sha,
+        page_text=page_text,
+        golden_expected=golden,
+    )
+    console.print_json(json.dumps(result.to_dict()))
+    if not result.accepted:
+        raise typer.Exit(code=1)
+
+
 if __name__ == "__main__":
     app()

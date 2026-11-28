@@ -60,7 +60,23 @@ CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
-CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.7"
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.8"
+
+
+def supported_methodology_codes(*, include_website: bool = True) -> list[str]:
+    """Return the sorted list of methodology codes this CLI build can actually execute."""
+    codes = sorted(METHODOLOGY_CATALOG.keys())
+    if include_website and "W1" not in codes:
+        codes.append("W1")
+    return codes
+
+
+class UnsupportedMethodology(ValueError):
+    """Raised when this CLI build has no engine for the task's methodology.
+
+    The task is released back to the queue without downloading or voting: a build that cannot
+    run a check must never submit a dispute verdict on it.
+    """
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
 MAX_RATE_LIMIT_WAITS = 12
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
@@ -1472,6 +1488,7 @@ class AgentRunner:
             "mode": self.config.mode,
             "region": region,
             "capabilities": ["anomaly_scan", "peer_verify", "deterministic_audit"],
+            "supported_methodologies": supported_methodology_codes(include_website=True),
             "coding_agent": getattr(self.config, "coding_agent", "") or "",
             "coding_agent_model": getattr(self.config, "coding_agent_model", "") or "",
         }
@@ -1540,6 +1557,7 @@ class AgentRunner:
             "handle": self.config.handle,
             "mode": self.config.mode,
             "request_id": claim_request_id,
+            "supported_methodologies": supported_methodology_codes(include_website=True),
         }
         body["website_observations"] = True
         if preferred_mission:
@@ -1986,6 +2004,11 @@ class AgentRunner:
         task_id = task.get("id")
         mission_slug = str(task.get("mission_slug", ""))
         methodology_code = str(task.get("methodology_code", "")).upper().strip()
+        if methodology_code and methodology_code != "W1" and methodology_code not in METHODOLOGY_CATALOG:
+            raise UnsupportedMethodology(
+                f"This CLI build has no engine for methodology {methodology_code!r}; "
+                "update the CLI (uvx --refresh ...) to run it."
+            )
         payload = task.get("payload") or {}
         artifact_label = str(
             payload.get("artifact_title") or task.get("title") or mission_slug or methodology_code
@@ -2358,6 +2381,13 @@ class AgentRunner:
             finding.get("methodology_code") or task.get("methodology_code") or ""
         ).upper().strip()
 
+        # A build without this engine cannot reproduce the finding, so it must release without voting.
+        if methodology_code not in METHODOLOGY_CATALOG:
+            raise UnsupportedMethodology(
+                f"This CLI build has no engine for methodology {methodology_code!r}; "
+                "update the CLI (uvx --refresh ...) to verify it."
+            )
+
         # Check 4: Neutrality & recursive PII safety across ALL finding fields (including nested metrics/citations/editorial)
         title = str(finding.get("title", ""))
         summary = str(finding.get("summary", ""))
@@ -2515,10 +2545,6 @@ class AgentRunner:
                 "records_scanned": records_count,
                 "aborted_due_to_digest_mismatch": True,
             }
-        elif methodology_code not in METHODOLOGY_CATALOG:
-            reproduction_state = CHECK_FAIL
-            metric_tolerance_state = CHECK_FAIL
-            notes_parts.append(f"Unknown methodology_code {methodology_code!r}.")
         elif dataset is not None:
             repro = self._invoke_engine(
                 methodology_code,
@@ -2707,6 +2733,9 @@ class AgentRunner:
             elif isinstance(exc, UnevaluableSourceFailure):
                 release_reason = "unevaluable_source"
                 safe_release_note = "The check could not read the figures it was asked to compare."
+            elif isinstance(exc, UnsupportedMethodology):
+                release_reason = "unsupported_methodology"
+                safe_release_note = "This CLI build has no engine for the task's methodology; update the CLI."
             elif isinstance(exc, PermissionError):
                 exc_msg = str(exc)
                 if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:
