@@ -2548,7 +2548,12 @@ def _parse_pdf_bytes(
     max_pdf_pages: int = DEFAULT_MAX_PDF_PAGES,
     max_pdf_chars: int = DEFAULT_MAX_PDF_CHARS,
 ) -> tuple[list[dict[str, Any]], str, str]:
-    reader = PdfReader(io.BytesIO(raw_bytes))
+    try:
+        reader = PdfReader(io.BytesIO(raw_bytes))
+    except Exception:
+        # Some older government PDFs (e.g. Union Budget 2015-16 Demands) have malformed xref pointers
+        # that pypdf rejects in strict mode but reads cleanly in non-strict mode.
+        reader = PdfReader(io.BytesIO(raw_bytes), strict=False)
     num_pages = len(reader.pages)
     if num_pages > max_pdf_pages:
         raise ValueError(
@@ -2559,7 +2564,10 @@ def _parse_pdf_bytes(
     preview_chars = 0
     total_chars = 0
     for page_idx, page in enumerate(reader.pages, start=1):
-        page_text = (page.extract_text() or "").strip()
+        try:
+            page_text = (page.extract_text() or "").strip()
+        except Exception:
+            page_text = ""
         total_chars += len(page_text)
         if total_chars > max_pdf_chars:
             raise ValueError(

@@ -31,9 +31,44 @@ from aiwatchdogs.core.safety import scan_forbidden_terms, scrub_pii_in_obj
 _WS_RE = re.compile(r"\s+")
 _PUNCT_NORM_RE = re.compile(r"[^\w.%₹/-]+")
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_NUM_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])(-?\d[\d,]*(?:\.\d+)?)(?![A-Za-z0-9_])")
+_SUMMARY_QUOTE_RE = re.compile(
+    r"(?:\bgrand\s+total\b|\bsub[\s-]*total\b|\bnet\s+total\b|\btotal\s*[-–—:]"
+    r"|\btotal\s+-?\d[\d,]*(?:\.\d+)?"
+    r"|^\s*(?:gross|net|revenue|capital)\s+(?:-?\d[\d,]*(?:\.\d+)?|\.{2,}))",
+    re.IGNORECASE,
+)
+_SUMMARY_LABEL_EXACT = frozenset(
+    {"grand total", "total", "sub total", "subtotal", "gross", "net", "revenue", "capital"}
+)
+_SUMMARY_LABEL_PREFIX_RE = re.compile(
+    r"^(?:grand\s+total|sub[\s-]*total|net\s+total|total\s*[-–—:])",
+    re.IGNORECASE,
+)
 
 DEFAULT_ABS_TOLERANCE = 0.05  # ₹0.05 crore (standard two-decimal budget rounding)
 DEFAULT_REL_TOLERANCE = 0.001  # 0.1%
+
+
+def _extract_numeric_tokens(text: str) -> set[float]:
+    """Extract all finite numeric values appearing in a page or quote snippet."""
+    vals: set[float] = set()
+    for match in _NUM_TOKEN_RE.finditer(str(text or "")):
+        raw = match.group(1).replace(",", "")
+        try:
+            f = float(raw)
+        except ValueError:
+            continue
+        if math.isfinite(f):
+            vals.add(round(f, 4))
+    return vals
+
+
+def _num_present_in_set(val: float, token_set: set[float], tol: float = 0.005) -> bool:
+    rounded = round(val, 4)
+    if rounded in token_set:
+        return True
+    return any(abs(rounded - tok) <= tol for tok in token_set)
 
 
 def _norm_text(text: str) -> str:
@@ -88,24 +123,80 @@ class ReadingVerificationResult:
         }
 
 
+def _check_horizontal_triples(
+    record: dict[str, Any],
+    *,
+    label_prefix: str,
+    abs_tol: float,
+    rel_tol: float,
+) -> tuple[int, int, list[str]]:
+    """Check Revenue+Capital=Total, Plan+Non-Plan=Total, Charged+Voted=Total (both bare and prefixed)."""
+    checked = 0
+    failed = 0
+    errors: list[str] = []
+    triple_specs: list[tuple[str, str, str]] = [
+        ("revenue", "capital", "total"),
+        ("plan", "non_plan", "total"),
+        ("charged", "voted", "total"),
+    ]
+    # Also discover multi-period prefixed triples such as actual_plan / actual_non_plan / actual_total
+    # or be_2022_23_revenue / be_2022_23_capital / be_2022_23_total.
+    keys = [str(k) for k in record.keys()]
+    seen_triples: set[tuple[str, str, str]] = set(triple_specs)
+    for key in keys:
+        for left_suf, right_suf, tot_suf in (
+            ("_revenue", "_capital", "_total"),
+            ("_plan", "_non_plan", "_total"),
+            ("_charged", "_voted", "_total"),
+        ):
+            if key.endswith(left_suf):
+                prefix = key[: -len(left_suf)]
+                triple = (f"{prefix}{left_suf}", f"{prefix}{right_suf}", f"{prefix}{tot_suf}")
+                if triple not in seen_triples:
+                    seen_triples.add(triple)
+                    triple_specs.append(triple)
+
+    for k_left, k_right, k_tot in triple_specs:
+        left_val = _to_float(record.get(k_left))
+        right_val = _to_float(record.get(k_right))
+        tot_val = _to_float(record.get(k_tot))
+        if left_val is not None and right_val is not None and tot_val is not None:
+            checked += 1
+            if not _within_tol(left_val + right_val, tot_val, abs_tol=abs_tol, rel_tol=rel_tol):
+                failed += 1
+                errors.append(
+                    f"{label_prefix} horizontal mismatch: {k_left} ({left_val:.2f}) + "
+                    f"{k_right} ({right_val:.2f}) != {k_tot} ({tot_val:.2f})."
+                )
+    return checked, failed, errors
+
+
 def verify_budget_extraction(
     submission: dict[str, Any],
     *,
     expected_sha256: str | None = None,
     page_text: str | None = None,
+    page_texts: dict[int, str] | None = None,
+    expected_grand_total: dict[str, float] | None = None,
+    max_page: int | None = None,
+    min_rows: int = 1,
+    require_text_verification: bool = False,
     golden_expected: dict[str, Any] | None = None,
+    min_golden_accuracy: float | None = None,
     abs_tolerance: float = DEFAULT_ABS_TOLERANCE,
     rel_tolerance: float = DEFAULT_REL_TOLERANCE,
 ) -> ReadingVerificationResult:
-    """Deterministically verify an AI-extracted budget table submission."""
+    """Deterministically verify an AI-extracted budget table submission (single-page or multi-page)."""
     errors: list[str] = []
     warnings: list[str] = []
     checks: dict[str, str] = {
         "document_digest": "unrecorded",
         "vertical_grand_total": "unrecorded",
+        "grand_total_anchor": "unrecorded",
         "horizontal_row_totals": "unrecorded",
         "column_headers_anchored": "unrecorded",
         "verbatim_quotes": "unrecorded",
+        "row_figures_grounded": "unrecorded",
         "neutrality_privacy": "unrecorded",
     }
 
@@ -138,8 +229,16 @@ def verify_budget_extraction(
     sub_sha = str(submission.get("document_sha256") or "").strip().lower()
     exp_sha = str(expected_sha256 or "").strip().lower()
     page_no = submission.get("page")
+    pages_list = submission.get("pages")
+    if page_no is None and isinstance(pages_list, list) and pages_list:
+        first_p = pages_list[0]
+        if isinstance(first_p, int) and not isinstance(first_p, bool) and first_p >= 1:
+            page_no = first_p
     if not isinstance(page_no, int) or isinstance(page_no, bool) or page_no < 1:
         errors.append("'page' must be a positive integer (>= 1).")
+    elif max_page is not None and page_no > max_page:
+        errors.append(f"'page' ({page_no}) exceeds document page count ({max_page}).")
+
     if exp_sha:
         if sub_sha == exp_sha:
             checks["document_digest"] = "pass"
@@ -164,31 +263,64 @@ def verify_budget_extraction(
             errors=errors,
             warnings=warnings,
         )
+    if min_rows > 1 and len(rows) < min_rows:
+        errors.append(
+            f"Expected at least {min_rows} extracted leaf rows for this multi-line statement, got {len(rows)}."
+        )
+
+    # Build normalized text, raw line lists, and numeric-token lookups across one or more pages
+    raw_pages_lines: dict[int, list[tuple[str, str]]] = {}
+    norm_pages: dict[int, str] = {}
+    page_num_tokens: dict[int, set[float]] = {}
+    if isinstance(page_texts, dict):
+        for p_idx, p_txt in page_texts.items():
+            try:
+                p_int = int(p_idx)
+            except (TypeError, ValueError):
+                continue
+            raw_p = str(p_txt or "")
+            raw_pages_lines[p_int] = [(ln, _norm_text(ln)) for ln in raw_p.splitlines() if ln.strip()]
+            norm_pages[p_int] = _norm_text(raw_p)
+            page_num_tokens[p_int] = _extract_numeric_tokens(raw_p)
+    if page_text is not None:
+        key_p = page_no if isinstance(page_no, int) and page_no >= 1 else 1
+        raw_pages_lines.setdefault(
+            key_p, [(ln, _norm_text(ln)) for ln in str(page_text).splitlines() if ln.strip()]
+        )
+        norm_pages.setdefault(key_p, _norm_text(page_text))
+        page_num_tokens.setdefault(key_p, _extract_numeric_tokens(page_text))
+    text_backed_pages = {p for p, txt in norm_pages.items() if len(txt) >= 20}
+    sparse_pages = {p for p, txt in norm_pages.items() if len(txt) < 20}
+    combined_norm_text = " ".join(norm_pages[p] for p in sorted(text_backed_pages))
+    combined_num_tokens: set[float] = set()
+    for p in text_backed_pages:
+        combined_num_tokens.update(page_num_tokens.get(p, set()))
+    has_text_layer = bool(text_backed_pages)
+    if require_text_verification and not has_text_layer:
+        errors.append("Server-side text verification is required for this document, but no page text layer was loaded.")
 
     # 3. Column headers anchoring (anti-column-swap check)
     raw_headers = submission.get("column_headers")
-    norm_page = _norm_text(page_text or "")
-    has_text_layer = len(norm_page) >= 20
     if isinstance(raw_headers, list) and any(str(h or "").strip() for h in raw_headers):
         if has_text_layer:
             missing_hdrs = [
                 str(h).strip()
                 for h in raw_headers
-                if str(h or "").strip() and _norm_text(str(h)) not in norm_page
+                if str(h or "").strip() and _norm_text(str(h)) not in combined_norm_text
             ]
             if missing_hdrs:
                 checks["column_headers_anchored"] = "fail"
-                errors.append(f"Column header(s) not found on cited page: {', '.join(missing_hdrs[:3])}.")
+                errors.append(f"Column header(s) not found on cited page(s): {', '.join(missing_hdrs[:3])}.")
             else:
                 checks["column_headers_anchored"] = "pass"
         else:
             checks["column_headers_anchored"] = "unrecorded"
-            warnings.append("Page has no text layer (image-only scan); column headers require 2-model check.")
+            warnings.append("No text layer provided; column headers require text verification or 2-model check.")
     else:
         checks["column_headers_anchored"] = "fail"
         errors.append("'column_headers' must quote the printed table column headings to prevent column swaps.")
 
-    # 4. Vertical Grand Total check + Horizontal row cross-check
+    # 4. Vertical Grand Total check + Official Grand Total Anchor + Horizontal row cross-check
     printed_gt_raw = submission.get("printed_grand_total")
     printed_gt: dict[str, float] = {}
     if isinstance(printed_gt_raw, dict):
@@ -201,47 +333,159 @@ def verify_budget_extraction(
         checks["vertical_grand_total"] = "fail"
         errors.append("'printed_grand_total' must provide at least one numeric printed column total.")
 
+    # Official Grand Total anchor check (prevents fabricated self-consistent tables)
+    if isinstance(expected_grand_total, dict) and expected_grand_total:
+        anchor_mismatches: list[str] = []
+        for col, raw_exp in expected_grand_total.items():
+            exp_val = _to_float(raw_exp)
+            if exp_val is None:
+                continue
+            obs_gt = printed_gt.get(col)
+            if obs_gt is None:
+                anchor_mismatches.append(f"{col}: missing from printed_grand_total (expected {exp_val:.2f})")
+            elif not _within_tol(obs_gt, exp_val, abs_tol=abs_tolerance, rel_tol=rel_tolerance):
+                anchor_mismatches.append(f"{col}: submitted Grand Total={obs_gt:.2f} != official={exp_val:.2f}")
+        if anchor_mismatches:
+            checks["grand_total_anchor"] = "fail"
+            errors.append("Official Grand Total anchor mismatch: " + "; ".join(anchor_mismatches))
+        else:
+            checks["grand_total_anchor"] = "pass"
+
     column_sums: dict[str, float] = {col: 0.0 for col in printed_gt}
     horizontal_checked = 0
     horizontal_failed = 0
     quote_checked = 0
     quote_failed = 0
+    grounded_checked = 0
+    grounded_failed = 0
+    non_zero_rows = 0
+    unverified_scan_rows = 0
+    seen_nonzero_quotes: set[tuple[int, str]] = set()
+
+    if printed_gt:
+        gt_h_chk, gt_h_fail, gt_h_errs = _check_horizontal_triples(
+            printed_gt,
+            label_prefix="printed_grand_total",
+            abs_tol=abs_tolerance,
+            rel_tol=rel_tolerance,
+        )
+        horizontal_checked += gt_h_chk
+        horizontal_failed += gt_h_fail
+        errors.extend(gt_h_errs)
 
     for idx, row in enumerate(rows):
         if not isinstance(row, dict):
             errors.append(f"rows[{idx}] must be an object.")
             continue
 
+        row_page = row.get("page", page_no)
+        if not isinstance(row_page, int) or isinstance(row_page, bool) or row_page < 1:
+            errors.append(f"rows[{idx}].page must be a positive integer (>= 1).")
+            row_page = page_no if isinstance(page_no, int) else 1
+        elif max_page is not None and row_page > max_page:
+            errors.append(f"rows[{idx}].page ({row_page}) exceeds document page count ({max_page}).")
+
         # Accumulate vertical totals for every column declared in printed_grand_total
+        row_nonzero_vals: list[tuple[str, float]] = []
         for col in printed_gt:
             val = _to_float(row.get(col))
             if val is None:
                 errors.append(f"rows[{idx}] is missing numeric value for column '{col}'.")
             else:
                 column_sums[col] += val
+                if abs(val) > 1e-6:
+                    row_nonzero_vals.append((col, val))
+        if row_nonzero_vals:
+            non_zero_rows += 1
 
-        # Horizontal check: revenue + capital == total (when all 3 are present)
-        rev = _to_float(row.get("revenue"))
-        cap = _to_float(row.get("capital"))
-        tot = _to_float(row.get("total"))
-        if rev is not None and cap is not None and tot is not None:
-            horizontal_checked += 1
-            if not _within_tol(rev + cap, tot, abs_tol=abs_tolerance, rel_tol=rel_tolerance):
-                horizontal_failed += 1
-                errors.append(
-                    f"rows[{idx}] horizontal mismatch: revenue ({rev:.2f}) + capital ({cap:.2f}) != total ({tot:.2f})."
-                )
+        # Reject summary/subtotal labels that would bypass leaf-row extraction
+        raw_label = str(row.get("label") or "").strip()
+        norm_label = _norm_text(raw_label)
+        if norm_label in _SUMMARY_LABEL_EXACT or _SUMMARY_LABEL_PREFIX_RE.match(raw_label):
+            quote_failed += 1
+            errors.append(
+                f"rows[{idx}] label {raw_label!r} looks like a summary/total line rather than a leaf budget entry."
+            )
 
-        # Verbatim quote verification against text layer
+        # Horizontal checks (Revenue+Capital=Total, Plan+Non-Plan=Total, Charged+Voted=Total, incl. prefixed)
+        h_chk, h_fail, h_errs = _check_horizontal_triples(
+            row,
+            label_prefix=f"rows[{idx}]",
+            abs_tol=abs_tolerance,
+            rel_tol=rel_tolerance,
+        )
+        horizontal_checked += h_chk
+        horizontal_failed += h_fail
+        errors.extend(h_errs)
+
+        # Verbatim quote verification + numeric figure grounding against text layer
         quote = str(row.get("verbatim_quote") or "").strip()
         if not quote:
             quote_failed += 1
             errors.append(f"rows[{idx}] is missing required 'verbatim_quote'.")
+        elif _SUMMARY_QUOTE_RE.search(quote):
+            quote_failed += 1
+            errors.append(
+                f"rows[{idx}] verbatim_quote must cite a leaf budget row, not a Total/Revenue/Capital summary line."
+            )
         elif has_text_layer:
-            quote_checked += 1
-            if _norm_text(quote) not in norm_page:
-                quote_failed += 1
-                errors.append(f"rows[{idx}] verbatim_quote not found on page {page_no}.")
+            norm_q = _norm_text(quote)
+            if row_nonzero_vals:
+                q_key = (row_page, norm_q)
+                if q_key in seen_nonzero_quotes:
+                    quote_failed += 1
+                    errors.append(
+                        f"rows[{idx}] duplicates verbatim_quote already used by another non-zero row on page {row_page}."
+                    )
+                else:
+                    seen_nonzero_quotes.add(q_key)
+
+            if row_page in sparse_pages:
+                # Mixed document: this specific table page is an image-only scan without extractable text.
+                # Do not reject genuine scan transcriptions; route the extraction to 2nd-model corroboration.
+                unverified_scan_rows += 1
+            else:
+                quote_checked += 1
+                page_has_own_text = row_page in text_backed_pages
+                target_text = norm_pages[row_page] if page_has_own_text else combined_norm_text
+                if norm_q not in target_text and (page_has_own_text or norm_q not in combined_norm_text):
+                    quote_failed += 1
+                    errors.append(f"rows[{idx}] verbatim_quote not found on page {row_page}.")
+                else:
+                    # Reject truncated summary quotes (e.g. quoting only '1231.66 585.00' from a
+                    # 'Total 1231.66 ...' or 'Revenue 1221.70 ...' summary line on the page).
+                    cand_lines = raw_pages_lines.get(row_page, []) if page_has_own_text else []
+                    matching_lines = [raw_ln for raw_ln, norm_ln in cand_lines if norm_q and norm_q in norm_ln]
+                    if matching_lines and all(_SUMMARY_QUOTE_RE.search(raw_ln) for raw_ln in matching_lines):
+                        quote_failed += 1
+                        errors.append(
+                            f"rows[{idx}] verbatim_quote matches only a Total/Revenue/Capital summary line on page {row_page}, not a leaf row."
+                        )
+                    elif row_nonzero_vals:
+                        grounded_checked += 1
+                        page_nums = page_num_tokens[row_page] if page_has_own_text else combined_num_tokens
+                        missing_on_page = [
+                            f"{col}={val:.2f}"
+                            for col, val in row_nonzero_vals
+                            if not _num_present_in_set(val, page_nums)
+                        ]
+                        quote_nums = _extract_numeric_tokens(quote)
+                        any_in_quote = any(_num_present_in_set(val, quote_nums) for _, val in row_nonzero_vals)
+                        if missing_on_page:
+                            grounded_failed += 1
+                            errors.append(
+                                f"rows[{idx}] figure(s) not printed on page {row_page}: {', '.join(missing_on_page[:3])}."
+                            )
+                        elif not any_in_quote:
+                            grounded_failed += 1
+                            errors.append(
+                                f"rows[{idx}] verbatim_quote does not include any of the row's non-zero numeric figures."
+                            )
+
+    if min_rows > 1 and any(abs(v) > 1e-6 for v in printed_gt.values()) and non_zero_rows < min_rows:
+        errors.append(
+            f"Expected at least {min_rows} non-zero leaf rows for this multi-line statement, got {non_zero_rows}."
+        )
 
     if printed_gt:
         gt_mismatches: list[str] = []
@@ -261,11 +505,25 @@ def verify_budget_extraction(
 
     if quote_failed > 0:
         checks["verbatim_quotes"] = "fail"
+    elif unverified_scan_rows > 0:
+        checks["verbatim_quotes"] = "unrecorded"
+        warnings.append(
+            f"Mixed scan document: {unverified_scan_rows} row(s) come from image-only page(s) without text; route to 2nd model."
+        )
     elif quote_checked > 0:
         checks["verbatim_quotes"] = "pass"
     elif not has_text_layer:
         checks["verbatim_quotes"] = "unrecorded"
         warnings.append("Image-only scan: verbatim quotes cannot be checked against a text layer; route to 2nd model.")
+
+    if grounded_failed > 0:
+        checks["row_figures_grounded"] = "fail"
+    elif unverified_scan_rows > 0:
+        checks["row_figures_grounded"] = "unrecorded"
+    elif grounded_checked > 0:
+        checks["row_figures_grounded"] = "pass"
+    elif has_text_layer:
+        checks["row_figures_grounded"] = "pass"
 
     # 5. Optional seeded known-answer (golden) accuracy scoring
     golden_accuracy: float | None = None
@@ -291,6 +549,15 @@ def verify_budget_extraction(
                         fields_matched += 1
         if fields_checked > 0:
             golden_accuracy = round(fields_matched / fields_checked, 4)
+            if min_golden_accuracy is not None:
+                if golden_accuracy >= float(min_golden_accuracy):
+                    checks["golden_calibration"] = "pass"
+                else:
+                    checks["golden_calibration"] = "fail"
+                    errors.append(
+                        f"Golden calibration accuracy {golden_accuracy:.2%} below minimum required "
+                        f"{float(min_golden_accuracy):.2%}."
+                    )
 
     if errors:
         return ReadingVerificationResult(
@@ -304,9 +571,9 @@ def verify_budget_extraction(
             golden_accuracy=golden_accuracy,
         )
 
-    # If the page had a text layer, vertical totals + quotes + headers all passed deterministically!
-    # If image-only scan (no text layer), math closed cleanly but needs a 2nd independent model read.
-    if has_text_layer:
+    # Deterministically verified ONLY when EVERY extracted row was backed by a real text layer
+    # (never when all pages are scans OR when any cited table page is a sparse/image-only scan).
+    if has_text_layer and unverified_scan_rows == 0:
         return ReadingVerificationResult(
             accepted=True,
             verification_mode="deterministic_verified",

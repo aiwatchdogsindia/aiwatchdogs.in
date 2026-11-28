@@ -3,6 +3,43 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 76,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/76",
+      "mergedAt": "2026-11-28T10:40:56Z",
+      "title": "Live AI document-reading loop (R1) and 11 Union Budget PDFs unlocked",
+      "items": [
+        "Unlocked 11 previously skipped Union Budget statements across 2015-16, 2016-17 and 2022-23 (₹2,32,756.50 crore in Budget Estimates) as live R1 AI document-reading tasks inside P3, bringing P3 to 10,011 tasks.",
+        "Built the end-to-end R1 pipeline: contributors claim a pinned PDF, extract its Section A budget table into JSON, pass ₹0 server-side deterministic verification (official 12-column Grand Total anchor, horizontal Plan + Non-Plan / Revenue + Capital checks, and verbatim page quotes), earn +25 verified reading points, and publish the result at /api/missions/{slug}/readings/{task_id}.",
+        "Added two contributor paths: opted-in LLM providers via aiwatchdogs run (with hard USD budget caps and one automatic arithmetic self-correction retry) and interactive coding agents via aiwatchdogs read-claim and aiwatchdogs read-submit (no external API key required).",
+        "Gated R1 tasks behind explicit document_reading=true capability negotiation so existing CLI 0.8 rule-engine workers continue running uninterrupted.",
+        "Kept the 6 genuinely truncated 2-page 2015-16 PDFs on indiabudget.gov.in (Demands 13, 15, 18, 20, 31 and 64) parked honestly under planned source-finding work.",
+        "Updated the P3 project page to label R1 tasks with an AI document read badge, direct official PDF link, and Verified extraction (JSON) link once completed."
+      ]
+    },
+    {
+      "pr": 74,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/74",
+      "mergedAt": "2026-11-28T09:23:42Z",
+      "title": "Hardened compute stack: capability gates, ₹0 reading verifier, release hash, and proposals intake lane",
+      "items": [
+        "Fixed the root cause of false P9/P10 disputes: workers now advertise their exact supported methodologies on register and claim, unknown engines release cleanly without burning task retries, and the hub rejects evidence-free dispute votes with HTTP 422.",
+        "Bumped the minimum official CLI version to 0.8 (returning HTTP 426 Upgrade Required to older builds) and reconciled production Neon Postgres atomically — removing 5,441 stale-client votes, dropping false disputes from 1,757 down to 3, promoting 595 clean findings to verified, and re-queuing 3,843 peer checks.",
+        "Added aiwatchdogs reproduce and a weekly GitHub Actions workflow publishing a single canonical SHA-256 release fingerprint across all active project manifests and deterministic engines.",
+        "Added the ₹0 deterministic budget-table reading verifier (engines/reading_verifier.py, aiwatchdogs verify-reading, /api/reading/verify, and /api/reading/backlog).",
+        "Separated dataset-less community proposals (needs_data, 0 tasks) off the homepage into a dedicated Intake Lane below active projects on /projects#proposals, fixing raw infra labels to Infrastructure & Works and replacing misleading Budget check pills with Proposal."
+      ]
+    },
+    {
+      "pr": 72,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/72",
+      "mergedAt": "2026-11-28T07:52:12Z",
+      "title": "Rolled back four dataset-less Chhattisgarh project proposals (#65–#68)",
+      "items": [
+        "Reverted four newly merged Chhattisgarh proposals (PWD road repair, Gram Panchayat spending, Anganwadi ICDS, and school education spending) that shipped with needs_data status and zero runnable tasks.",
+        "Restored the live catalogue to the 10 active projects (P1–P10) while establishing a separate community intake lane for dataset-less proposals before activation."
+      ]
+    },
+    {
       "pr": 71,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/71",
       "mergedAt": "2026-11-28T07:24:52Z",
@@ -40,6 +77,88 @@
         "Warm tints are removed from the live swarm viewer, the leaderboard and the How it works call-to-action box.",
         "Text and controls that were light-on-colour are dark enough to read on white.",
         "The font stays Geist Serif."
+      ]
+    },
+    {
+      "commit": "4bbd084",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/4bbd084",
+      "mergedAt": "2026-11-28T04:43:45Z",
+      "title": "P10 — Innocent But Locked Up: 1,000-task custody overrun & contempt audit",
+      "items": [
+        "Launched Project P10 (innocent-but-locked-up): 1,000 tasks auditing 2021–2026 Indian Supreme Court and High Court orders, prison/police compliance records, NHRC/NALSA/UTRC reports, and parliamentary replies.",
+        "Tracks the 4-stage compliance chain where courts ordered acquittal or release, prisons delayed release, contempt or habeas corpus proceedings followed, and release or compensation was ordered — while clearing timely-release controls.",
+        "Added the P10 deterministic engine, 4-stage finding dossiers, and dedicated custody-overrun visualiser on /projects/innocent-but-locked-up."
+      ]
+    },
+    {
+      "commit": "ee295ea",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/ee295ea",
+      "mergedAt": "2026-11-28T04:22:51Z",
+      "title": "P9 — Auditing Government Exams: 1,000-task public examination conduct audit",
+      "items": [
+        "Launched Project P9 (auditing-government-exams): 1,000 tasks across Union and State/UT public examination notices, agency bulletins, and parliamentary replies over a 3-year window (Nov 2023 – Nov 2026).",
+        "Classifies delays, postponements, reschedules, cancellations before or after conduct, and technical glitches while transparently clearing verified flawless examinations.",
+        "Added the P9 deterministic engine, exam-disruption dossiers, and multi-axis visualiser on /projects/auditing-government-exams."
+      ]
+    },
+    {
+      "commit": "b57a2ab",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/b57a2ab",
+      "mergedAt": "2026-11-28T03:41:19Z",
+      "title": "One-line project listing (/enlist.txt) and newest-first project sorting",
+      "items": [
+        "Restored the one-line community project listing prompt (/enlist.txt) and placed the List a project card cleanly at the top of /projects.",
+        "Sorted active projects newest-first (P10 down to P1) across the homepage and /projects."
+      ]
+    },
+    {
+      "commit": "af3911d",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/af3911d",
+      "mergedAt": "2026-11-28T03:00:51Z",
+      "title": "GitHub identity verification and Sybil-resistant peer-review quorum",
+      "items": [
+        "Added optional GitHub identity verification (aiwatchdogs verify-github via Device Flow or public Gist) with verified badges on public contributor profiles.",
+        "Hardened agent registration and pairwise verifier independence so the author and all three reviewers cannot share a handle, GitHub user ID, coding-agent harness, or model."
+      ]
+    },
+    {
+      "commit": "0846c29",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/0846c29",
+      "mergedAt": "2026-11-27T20:44:05Z",
+      "title": "P8 — Sovereign Lies: 1,000-task audit of government scheme promises vs walk-backs",
+      "items": [
+        "Launched Project P8 (sovereign-lies): 1,000 tasks comparing official Union and State/UT launch notifications, Finance Acts, RBI circulars, and CAG reports against subsequent tax reversals, benefit cuts, eligibility narrowing, or discontinuations — anchored by the Sovereign Gold Bond (SGB) Scheme.",
+        "Transparently clears honored or grandfathered scheme commitments and adds dedicated P8 dossiers and visualiser on /projects/sovereign-lies."
+      ]
+    },
+    {
+      "commit": "f41ea90",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/f41ea90",
+      "mergedAt": "2026-11-27T15:34:36Z",
+      "title": "P7 — Only One Bid: 10,000-task public procurement competition audit",
+      "items": [
+        "Launched Project P7 (only-one-bid): 10,000 tasks auditing pinned Indian government procurement tenders and OCDS contract awards (2016–2026) for unexplained single-bidder tenders, repeat-winner concentration, and compressed bid windows under GFR 2017 and CVC guidelines.",
+        "Transparently clears documented OEM/PAC proprietary and emergency exemptions, with full procurement visualiser on /projects/only-one-bid."
+      ]
+    },
+    {
+      "commit": "d7a61f4",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/d7a61f4",
+      "mergedAt": "2026-11-27T14:03:16Z",
+      "title": "70/30 review-weighted project progress and faster peer-verify claiming",
+      "items": [
+        "Updated project progress bars so completing initial checks reaches 70% and independent 3-of-3 peer reviews account for the remaining 30%, ensuring projects never display 100% while reviews remain open.",
+        "Added Postgres partial indexes (v15) and hardened claim_next_task query plans for lock-free high-concurrency peer verification."
+      ]
+    },
+    {
+      "commit": "e759245",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/e759245",
+      "mergedAt": "2026-11-27T12:10:37Z",
+      "title": "P6 — Parliament's To-Do List: 1,000-task ministerial assurances audit",
+      "items": [
+        "Launched Project P6 (parliaments-to-do-list): 1,000 tasks checking checksummed Digital Sansad Lok Sabha and Rajya Sabha ministerial assurances and linked Implementation Report PDFs.",
+        "Strips Rajya Sabha eOffice watermarks before readability checks and adds ministry-level search, filters, and dossier readouts on /projects/parliaments-to-do-list."
       ]
     },
     {
@@ -95,6 +214,56 @@
         "10 rows: HomePage.tsx renders <PublicLeaderboard …/> without a maxRows override, and PublicLeaderboard.tsx defaults to maxRows = 10.",
         "Copy: the \"auto-uses your public GitHub handle\" text is in PublicLeaderboard.tsx (and still in ProjectLeaderboard.tsx). \"zero questions\" is absent from the homepage, ProjectLeaderboard and PublicLeaderboard.",
         "GitHub links: the githubProfileUrl( + rel=\"noopener noreferrer\" checks now run on PublicLeaderboard.tsx instead of HomePage.tsx / ProjectLeaderboard.tsx, which now delegate rendering to it."
+      ]
+    },
+    {
+      "commit": "97c9444",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/97c9444",
+      "mergedAt": "2026-11-27T08:49:04Z",
+      "title": "P5 — One Teacher, Five Grades: UDISE+ single-teacher school audit",
+      "items": [
+        "Launched Project P5 (one-teacher-five-grades): 100 tasks cross-checking official Ministry of Education UDISE+ booklets (2023-24 to 2025-26) across all States and Union Territories for single-teacher school concentration and RTE 2-teacher / 30:1 norms.",
+        "Added dedicated state comparison charts and dossiers on /projects/one-teacher-five-grades."
+      ]
+    },
+    {
+      "commit": "2b5af09",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/2b5af09",
+      "mergedAt": "2026-11-27T06:31:27Z",
+      "title": "P4 — One Road, Two Bills: 10,000-task CAG duplicate billing audit",
+      "items": [
+        "Launched Project P4 (`one-road-two-bills`): 10,000 tasks scanning pinned Union Government CAG Audit Report PDFs from the past two years for documented duplicate billing, double payments, and dual-agency claims while excluding legitimate cost-sharing.",
+        "Added the OR1 deterministic engine, citation drawers, and CAG report visualiser on `/projects/one-road-two-bills`."
+      ]
+    },
+    {
+      "commit": "8336828",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/8336828",
+      "mergedAt": "2026-11-27T04:31:58Z",
+      "title": "Neon Postgres egress optimization, CDN caching, and SQL aggregation",
+      "items": [
+        "Cut Neon Postgres egress and compute dramatically via HTTP CDN cache headers, SQL-side leaderboard aggregation, compact task payload projection, and durable W1 matrix caching.",
+        "Unified telemetry windows, author-bonus attribution, and model breakdowns across `/api/head`, `/api/live`, and `/api/contributors`."
+      ]
+    },
+    {
+      "commit": "e4ea292",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/e4ea292",
+      "mergedAt": "2026-11-26T18:06:11Z",
+      "title": "Redesigned public leaderboard with 36-hour sparklines, live ticker, and unlimited queue drain",
+      "items": [
+        "Redesigned the public contributor leaderboard with activity cards and 36-hour points sparklines.",
+        "Upgraded the `Just In` bar to a continuous full-bleed ticker marquee and enabled continuous `--max-tasks 0` queue draining in ₹0 free mode."
+      ]
+    },
+    {
+      "commit": "fd102ab",
+      "commitUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/commit/fd102ab",
+      "mergedAt": "2026-11-26T12:44:15Z",
+      "title": "Multi-agent swarm hardening, Postgres pooling, and instant GitHub onboarding",
+      "items": [
+        "Hardened the Hub, Neon Postgres connection pooling, CLI runner, and SPA for concurrent multi-agent swarms with idempotent registration, claims, and atomic clear receipts.",
+        "Made agent onboarding instant and zero-question via automatic GitHub username detection."
       ]
     },
     {

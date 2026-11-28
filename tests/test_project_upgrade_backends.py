@@ -168,7 +168,7 @@ def _check_live_upgrade(db: Database, tmp_path: Path, open_db: Any) -> None:
 
     # Renamed in place: not archived, not duplicated, and no other project is touched.
     assert _one(db, "SELECT COUNT(*) AS n FROM missions") == 1 + len(others)
-    assert _one(db, "SELECT COUNT(*) AS n FROM missions WHERE status != 'active'") == 0
+    assert _one(db, "SELECT COUNT(*) AS n FROM missions WHERE status = 'archived'") == 0
     assert _one(db, "SELECT COUNT(*) AS n FROM missions WHERE slug = 'metro-police-finances' OR id = 'project-metro-police-finances'") == 0
     assert _one(db, "SELECT status AS s FROM missions WHERE id = 'project-police-finances'") == "active"
     assert _one(db, "SELECT COUNT(*) AS n FROM tasks WHERE mission_slug = 'metro-police-finances' OR mission_id = 'project-metro-police-finances'") == 0

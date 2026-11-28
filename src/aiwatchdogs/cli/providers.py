@@ -811,11 +811,13 @@ def _call_llm_provider_with_usage(
     env: Mapping[str, str],
     http_client: httpx.Client | None = None,
     timeout_s: float = 15.0,
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
 ) -> tuple[str | None, dict[str, Any]]:
     """Make a lightweight httpx REST call to the configured LLM provider and extract token usage."""
     provider = provider_cfg.provider.lower()
     owns_client = http_client is None
     client = http_client or httpx.Client(timeout=httpx.Timeout(timeout_s))
+    eff_max_tokens = max(64, int(max_output_tokens))
     usage: dict[str, Any] = {
         "http_200": False,
         "prompt_tokens": None,
@@ -863,7 +865,7 @@ def _call_llm_provider_with_usage(
                 json={
                     "model": provider_cfg.model,
                     "temperature": 0.1,
-                    "max_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
+                    "max_tokens": eff_max_tokens,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
@@ -911,7 +913,7 @@ def _call_llm_provider_with_usage(
                     "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
                     "generationConfig": {
                         "temperature": 0.1,
-                        "maxOutputTokens": DEFAULT_MAX_OUTPUT_TOKENS,
+                        "maxOutputTokens": eff_max_tokens,
                         "responseMimeType": "application/json",
                     },
                 },
@@ -951,7 +953,7 @@ def _call_llm_provider_with_usage(
                 },
                 json={
                     "model": provider_cfg.model,
-                    "max_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
+                    "max_tokens": eff_max_tokens,
                     "temperature": 0.1,
                     "system": system_prompt,
                     "messages": [{"role": "user", "content": user_prompt}],

@@ -26,7 +26,7 @@ export function ChangelogPage() {
           const refLabel = entry.pr
             ? `PR #${entry.pr}`
             : entry.commit
-              ? `Pre-PR · ${entry.commit}`
+              ? `Commit · ${entry.commit}`
               : 'Launch';
 
           return (
