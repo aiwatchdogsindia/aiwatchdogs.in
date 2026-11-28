@@ -394,6 +394,125 @@ export function HomePage({
   return (
     <div>
       {/* =================================================================
+          BAND 4 — "THE PROJECTS" AUDIT PROGRESS RACE BAND
+         ================================================================= */}
+      <section className="race" aria-label="Projects and their audit progress">
+        <div className="race-head">
+          <div className="race-head-left">
+            <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={64} height={64} />
+            <h2>The projects</h2>
+          </div>
+          <Link to="/projects" className="race-link">
+            All projects
+          </Link>
+        </div>
+
+        <ListProjectRow
+          nextCode={nextCode}
+          variant="race"
+          className="race-enlist-row"
+        />
+
+        <ul className="tracks">
+          {missions.map((m) => {
+            const rungs = fallbackRungsForMission(m);
+            const verifiedRungs = m.verified_findings_count;
+            return (
+              <li key={m.slug} className="lane-track">
+                <Link to={`/projects/${encodeURIComponent(m.slug)}`} className="lane-name">
+                  <span className="lane-code">{projectCodeFor(m)}</span>
+                  <span className="lane-title-text" title={m.plain_answer || m.title}>
+                    {m.plain_answer ? (
+                      <>
+                        <span className="plain-answer">{m.plain_answer}</span>
+                        <span className="plain-answer-question">{m.title}</span>
+                      </>
+                    ) : (
+                      m.title
+                    )}
+                  </span>
+                </Link>
+
+                <div className="lane-line">
+                  <div className="lane-wire" aria-hidden="true" />
+                  <div className="lane-rungs">
+                    {rungs.map((r, i) => (
+                      <button
+                        key={`${r.id}-${i}`}
+                        type="button"
+                        className="rung-btn"
+                        title={`${getRungTag(r.state).label}: ${r.label}`}
+                        onClick={() => {
+                          if (r.finding_id != null) {
+                            onSelectFinding(r.finding_id);
+                          } else {
+                            navigate(`/projects/${encodeURIComponent(m.slug)}`);
+                          }
+                        }}
+                      >
+                        <span className={`rung-dot ${r.state}`} />
+                      </button>
+                    ))}
+                  </div>
+                  <Link
+                    to={`/projects/${encodeURIComponent(m.slug)}`}
+                    className="lane-star"
+                    title={`Open project: ${m.title}`}
+                    aria-label={`Open ${m.title}`}
+                  />
+                </div>
+
+                <div className="lane-stat tabular">
+                  {verifiedRungs} verified, {m.completed_tasks}/{m.total_tasks} tasks
+                  {m.monetary_audited_inr_cr ? `, ${formatInrCr(m.monetary_audited_inr_cr)}` : ''}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        {proposalCount > 0 && (
+          <p style={{ marginTop: 12, fontSize: 13.5, color: 'var(--ink-secondary)' }}>
+            {proposalCount} community {proposalCount === 1 ? 'proposal is' : 'proposals are'} waiting on verified datasets in the{' '}
+            <Link to="/projects#proposals" className="inline-link">
+              intake lane
+            </Link>
+            .
+          </p>
+        )}
+
+        <div className="race-note">
+          <div className="race-legend">
+            <span className="race-leg-item">
+              <span className="rung-dot verified" />
+              <span>{FINDING_TAGS.verified.label}</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot hard" />
+              <span>{TASK_TAGS.in_progress.label}</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot peer_review" />
+              <span>{FINDING_TAGS.in_review.label}</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot cleared" />
+              <span>{FINDING_TAGS.cleared.label}</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot disputed" />
+              <span>{FINDING_TAGS.disputed.label}</span>
+            </span>
+            <span className="race-leg-item">
+              <span className="rung-dot" />
+              <span>{TASK_TAGS.open.label}</span>
+            </span>
+          </div>
+          <span>Dots show completed checks and open tasks — click any dot to inspect.</span>
+        </div>
+      </section>
+
+      {/* =================================================================
           BAND 1 — TOP LIVE BAR + HERO LIVE SWARM VIEWER (SAFFRON FRAME)
          ================================================================= */}
       <section className="hero-swarm home-live" aria-label="Live swarm observatory">
@@ -549,118 +668,6 @@ export function HomePage({
         className="leaderboard--below-hero"
         ariaLabel="Public compute leaderboard"
       />
-
-      {/* =================================================================
-          BAND 4 — "THE PROJECTS" AUDIT PROGRESS RACE BAND
-         ================================================================= */}
-      <section className="race" aria-label="Projects and their audit progress">
-        <div className="race-head">
-          <div className="race-head-left">
-            <img src="/logo-dark.svg" alt="" className="race-logo-dark" width={64} height={64} />
-            <h2>The projects</h2>
-          </div>
-          <Link to="/projects" className="race-link">
-            All projects
-          </Link>
-        </div>
-
-        <ListProjectRow
-          nextCode={nextCode}
-          variant="race"
-          className="race-enlist-row"
-        />
-
-        <ul className="tracks">
-          {missions.map((m) => {
-            const rungs = fallbackRungsForMission(m);
-            const verifiedRungs = m.verified_findings_count;
-            return (
-              <li key={m.slug} className="lane-track">
-                <Link to={`/projects/${encodeURIComponent(m.slug)}`} className="lane-name">
-                  <span className="lane-code">{projectCodeFor(m)}</span>
-                  <span className="lane-title-text" title={m.title}>
-                    {m.title}
-                  </span>
-                </Link>
-
-                <div className="lane-line">
-                  <div className="lane-wire" aria-hidden="true" />
-                  <div className="lane-rungs">
-                    {rungs.map((r, i) => (
-                      <button
-                        key={`${r.id}-${i}`}
-                        type="button"
-                        className="rung-btn"
-                        title={`${getRungTag(r.state).label}: ${r.label}`}
-                        onClick={() => {
-                          if (r.finding_id != null) {
-                            onSelectFinding(r.finding_id);
-                          } else {
-                            navigate(`/projects/${encodeURIComponent(m.slug)}`);
-                          }
-                        }}
-                      >
-                        <span className={`rung-dot ${r.state}`} />
-                      </button>
-                    ))}
-                  </div>
-                  <Link
-                    to={`/projects/${encodeURIComponent(m.slug)}`}
-                    className="lane-star"
-                    title={`Open project: ${m.title}`}
-                    aria-label={`Open ${m.title}`}
-                  />
-                </div>
-
-                <div className="lane-stat tabular">
-                  {verifiedRungs} verified, {m.completed_tasks}/{m.total_tasks} tasks
-                  {m.monetary_audited_inr_cr ? `, ${formatInrCr(m.monetary_audited_inr_cr)}` : ''}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-
-        {proposalCount > 0 && (
-          <p style={{ marginTop: 12, fontSize: 13.5, color: 'var(--ink-secondary)' }}>
-            {proposalCount} community {proposalCount === 1 ? 'proposal is' : 'proposals are'} waiting on verified datasets in the{' '}
-            <Link to="/projects#proposals" className="inline-link">
-              intake lane
-            </Link>
-            .
-          </p>
-        )}
-
-        <div className="race-note">
-          <div className="race-legend">
-            <span className="race-leg-item">
-              <span className="rung-dot verified" />
-              <span>{FINDING_TAGS.verified.label}</span>
-            </span>
-            <span className="race-leg-item">
-              <span className="rung-dot hard" />
-              <span>{TASK_TAGS.in_progress.label}</span>
-            </span>
-            <span className="race-leg-item">
-              <span className="rung-dot peer_review" />
-              <span>{FINDING_TAGS.in_review.label}</span>
-            </span>
-            <span className="race-leg-item">
-              <span className="rung-dot cleared" />
-              <span>{FINDING_TAGS.cleared.label}</span>
-            </span>
-            <span className="race-leg-item">
-              <span className="rung-dot disputed" />
-              <span>{FINDING_TAGS.disputed.label}</span>
-            </span>
-            <span className="race-leg-item">
-              <span className="rung-dot" />
-              <span>{TASK_TAGS.open.label}</span>
-            </span>
-          </div>
-          <span>Dots show completed checks and open tasks — click any dot to inspect.</span>
-        </div>
-      </section>
 
       {/* =================================================================
           BAND 7 — FULL-BLEED INTERACTIVE CANVAS DARK OBSERVATORY (LAZY-LOADED)

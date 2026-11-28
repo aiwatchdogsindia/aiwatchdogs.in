@@ -1,5 +1,5 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { api, deriveLiveSwarmSnapshot, mergeSseWhispersIntoSnapshot } from './api/client';
 import { AgentViewPanel, AgentViewProvider, useAgentView } from './components/AgentView';
 import { Footer } from './components/Footer';
@@ -9,6 +9,8 @@ import { computeEffectiveWorkingNow } from './components/LiveSwarmViewer';
 import { ToastProvider } from './components/Toast';
 import type { SseStatus } from './hooks/useSwarmStream';
 import { HomePage } from './pages/HomePage';
+import { LanguageProvider, useLang } from './lib/lang';
+import './styles/plain.css';
 import { initAnalytics } from './lib/analytics';
 import { RouterProvider, useRouter } from './router';
 import type { HeadData, LiveSwarmSnapshot, WhisperItem } from './types';
@@ -34,6 +36,7 @@ const LiveSwarmPage = lazy(() =>
 const ContributorsPage = lazy(() =>
   import('./pages/ContributorsPage').then((m) => ({ default: m.ContributorsPage })),
 );
+const NewsPage = lazy(() => import('./pages/NewsPage').then((m) => ({ default: m.NewsPage })));
 const HowItWorksPage = lazy(() =>
   import('./pages/HowItWorksPage').then((m) => ({ default: m.HowItWorksPage })),
 );
@@ -79,6 +82,7 @@ function PageFallback() {
 function AppShell() {
   const { pathname, search, navigate } = useRouter();
   const { isAgentView } = useAgentView();
+  const { lang } = useLang();
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
 
   // Google Analytics (no-op unless VITE_GA_MEASUREMENT_ID is set). Page views, including
@@ -127,16 +131,20 @@ function AppShell() {
     }
   }, []);
 
+  const headSeq = useRef(0);
   const fetchHead = useCallback(async () => {
+    const seq = ++headSeq.current;
     try {
       const data = await api.getHead();
+      if (seq !== headSeq.current) return;
       setHead(data);
       setHeadError(null);
       setLiveWhispers((prev) => mergeWhispersNewestFirst(prev, data.whispers, 40));
     } catch (err) {
+      if (seq !== headSeq.current) return;
       setHeadError(err instanceof Error ? err.message : 'Hub unreachable');
     } finally {
-      setHeadLoading(false);
+      if (seq === headSeq.current) setHeadLoading(false);
     }
   }, []);
 
@@ -144,7 +152,7 @@ function AppShell() {
   useEffect(() => {
     fetchHead();
     fetchSwarmLive();
-  }, [fetchHead, fetchSwarmLive]);
+  }, [fetchHead, fetchSwarmLive, lang]);
 
   // Allow opening finding drawer via ?finding=... query parameter or direct /findings/:id URL
   useEffect(() => {
@@ -186,6 +194,12 @@ function AppShell() {
     fetchSwarmLive();
     setRefreshTick((t) => t + 1);
   }, [fetchHead, fetchSwarmLive]);
+
+  const [seenLang, setSeenLang] = useState(lang);
+  if (seenLang !== lang) {
+    setSeenLang(lang);
+    setRefreshTick((t) => t + 1);
+  }
 
   const effectiveSwarmLive = useMemo<LiveSwarmSnapshot | null>(() => {
     if (swarmLive) {
@@ -254,6 +268,15 @@ function AppShell() {
       return (
         <Suspense fallback={<PageFallback />}>
           <FindingsPage onSelectFinding={setSelectedFindingId} refreshTick={refreshTick} />
+        </Suspense>
+      );
+    }
+
+    if (cleanPath === '/news' || cleanPath.startsWith('/news/')) {
+      const day = cleanPath.startsWith('/news/') ? safeDecodeURIComponent(cleanPath.slice('/news/'.length)) : undefined;
+      return (
+        <Suspense fallback={<PageFallback />}>
+          <NewsPage date={day} onSelectFinding={setSelectedFindingId} />
         </Suspense>
       );
     }
@@ -424,9 +447,11 @@ export function App() {
   return (
     <RouterProvider>
       <ToastProvider>
-        <AgentViewProvider>
-          <AppShell />
-        </AgentViewProvider>
+        <LanguageProvider>
+          <AgentViewProvider>
+            <AppShell />
+          </AgentViewProvider>
+        </LanguageProvider>
       </ToastProvider>
     </RouterProvider>
   );

@@ -1,0 +1,29 @@
+name: Plain writer
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plain-writer
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ask the hub to write plain text for new findings
+        env:
+          PLAIN_SECRET: ${{ secrets.AIWATCHDOGS_PLAIN_SECRET }}
+          HUB_URL: ${{ vars.AIWATCHDOGS_HUB_URL || 'https://aiwatchdogs.in' }}
+        run: |
+          if [ -z "$PLAIN_SECRET" ]; then
+            echo "AIWATCHDOGS_PLAIN_SECRET is not set, skipping."
+            exit 0
+          fi
+          curl -fsS --max-time 90 -X POST -H "Authorization: Bearer $PLAIN_SECRET" "$HUB_URL/api/plain/run"

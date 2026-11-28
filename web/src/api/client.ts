@@ -1,4 +1,7 @@
 import type {
+  NewsEdition,
+  PlainCard,
+  PlainLanguage,
   AgentRecord,
   Citation,
   ContributorProfile,
@@ -542,6 +545,7 @@ export function normalizeFinding(raw: Record<string, unknown>): FindingItem {
     rti_draft: rti,
     created_at: raw.created_at ? String(raw.created_at) : undefined,
     verified_at: raw.verified_at ? String(raw.verified_at) : null,
+    plain: raw.plain && typeof raw.plain === 'object' ? (raw.plain as PlainCard) : null,
   };
 }
 
@@ -596,6 +600,8 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     project_code: explicitProjectCode || fallbackProjectCode,
     title: String(raw.title || 'Audit project'),
     description: raw.description ? String(raw.description) : undefined,
+    plain_answer: optStr(raw.plain_answer) ?? undefined,
+    plain_answer_finding: optStr(raw.plain_answer_finding) ?? null,
     pillar: String(raw.pillar || 'budget'),
     methodology_code: methodologyCode,
     jurisdiction: String(raw.jurisdiction || 'Union'),
@@ -766,7 +772,7 @@ function normalizeJustIn(raw: unknown): JustInItem | null {
   if (!r.id && !r.title) return null;
   return {
     id: (r.id ?? '') as string | number,
-    title: String(r.title || ''),
+    title: String(r.plain_head || r.title || ''),
     methodology_code: String(r.methodology_code || 'P1'),
     entity_name: String(r.entity_name || ''),
     monetary_exposure_inr_cr: Number(r.monetary_exposure_inr_cr ?? 0),
@@ -792,9 +798,38 @@ function normalizeRecordEvent(raw: Record<string, unknown>): RecordEvent {
   };
 }
 
+let plainLang = 'en';
+
+export function setPlainLang(code: string): void {
+  plainLang = /^[a-z]{2,3}$/.test(code) ? code : 'en';
+}
+
+function withLang(url: string): string {
+  return `${url}${url.includes('?') ? '&' : '?'}lang=${encodeURIComponent(plainLang)}`;
+}
+
 export const api = {
+  async getPlainLanguages(): Promise<PlainLanguage[]> {
+    const raw = await fetchJson<Record<string, unknown>>('/api/plain/languages');
+    return asArray<PlainLanguage>(raw.languages);
+  },
+
+  async getPlainLabels(code: string): Promise<Record<string, string>> {
+    const raw = await fetchJson<Record<string, unknown>>(`/api/plain/labels?lang=${encodeURIComponent(code)}`);
+    return asRecord(raw.labels) as Record<string, string>;
+  },
+
+  async getNews(date?: string): Promise<NewsEdition> {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    return fetchJson<NewsEdition>(withLang(`/api/news${qs}`));
+  },
+
+  async getNewsEditions(): Promise<{ today: string; dates: string[] }> {
+    return fetchJson<{ today: string; dates: string[] }>('/api/news/editions');
+  },
+
   async getHead(): Promise<HeadData> {
-    const raw = await fetchJson<Record<string, unknown>>('/api/head');
+    const raw = await fetchJson<Record<string, unknown>>(withLang('/api/head'));
     const stats = asRecord(raw.stats);
     const disp = asRecord(raw.disposition);
 
@@ -881,7 +916,7 @@ export const api = {
   },
 
   async getMissions(): Promise<MissionItem[]> {
-    const raw = await fetchJson<unknown>('/api/missions');
+    const raw = await fetchJson<unknown>(withLang('/api/missions'));
     const list = Array.isArray(raw)
       ? raw
       : asArray<Record<string, unknown>>(asRecord(raw).missions ?? asRecord(raw).items);
@@ -889,7 +924,7 @@ export const api = {
   },
 
   async getMissionDetail(slug: string): Promise<MissionItem> {
-    const raw = await fetchJson<Record<string, unknown>>(`/api/missions/${encodeURIComponent(slug)}`);
+    const raw = await fetchJson<Record<string, unknown>>(withLang(`/api/missions/${encodeURIComponent(slug)}`));
     if (raw.mission && typeof raw.mission === 'object') {
       const m = raw.mission as Record<string, unknown>;
       return normalizeMission({
@@ -1007,7 +1042,7 @@ export const api = {
     if (params.limit != null) sp.set('limit', String(params.limit));
     if (params.offset != null) sp.set('offset', String(params.offset));
     const qs = sp.toString();
-    const raw = await fetchJson<unknown>(`/api/findings${qs ? `?${qs}` : ''}`);
+    const raw = await fetchJson<unknown>(withLang(`/api/findings${qs ? `?${qs}` : ''}`));
     if (Array.isArray(raw)) {
       const items = raw.map((f) => normalizeFinding(asRecord(f)));
       const offset = params.offset ?? 0;
@@ -1028,7 +1063,7 @@ export const api = {
 
   async getFindingDetail(id: string | number): Promise<FindingItem> {
     const raw = await fetchJson<Record<string, unknown>>(
-      `/api/findings/${encodeURIComponent(String(id))}`,
+      withLang(`/api/findings/${encodeURIComponent(String(id))}`),
     );
     if (raw.finding && typeof raw.finding === 'object') {
       const f = raw.finding as Record<string, unknown>;
@@ -1199,7 +1234,7 @@ export const api = {
 
   async getContributorProfile(handle: string): Promise<ContributorProfile> {
     const raw = await fetchJson<Record<string, unknown>>(
-      `/api/contributors/${encodeURIComponent(handle)}`,
+      withLang(`/api/contributors/${encodeURIComponent(handle)}`),
     );
     const agentObj = raw.agent ? asRecord(raw.agent) : raw;
     return {

@@ -1,0 +1,267 @@
+{
+  "code": "en",
+  "name": "English",
+  "native": "English",
+  "dir": "ltr",
+  "bcp47": "en-IN",
+  "num": {
+    "dec": ".",
+    "group": ",",
+    "grouping": "indian"
+  },
+  "money": {
+    "style": "indian",
+    "crore": "crore",
+    "lakh": "lakh",
+    "million": "million",
+    "billion": "billion",
+    "wan": "",
+    "yi": ""
+  },
+  "ui": {
+    "nav_news": "News",
+    "language": "Language",
+    "simple_words": "In simple words",
+    "what_found": "What we found",
+    "why_matters": "Why it matters",
+    "not_mean": "What this does not mean",
+    "where_stands": "Where it stands",
+    "ask": "A fair question to ask",
+    "source": "See the original record",
+    "technical": "Technical details",
+    "listen": "Listen",
+    "stop": "Stop",
+    "share_whatsapp": "Share on WhatsApp",
+    "copy": "Copy text",
+    "copied": "Copied",
+    "today": "Today's edition",
+    "past": "Past editions",
+    "live": "Updating through the day",
+    "final": "Final edition",
+    "no_voice": "Your device has no reading voice for this language.",
+    "open_finding": "Open the full finding",
+    "none_yet": "No editions yet.",
+    "names_note": "Names of offices, places and schemes are kept as they appear in the original records.",
+    "feed": "Follow by feed",
+    "min_read": "{n} min read",
+    "edition_of": "Edition of {date}",
+    "copy_prompt": "Copy the line for your agent",
+    "model_note": "Written in plain words by {model}, then checked by machine against the original numbers."
+  },
+  "terms": {
+    "be": "first plan",
+    "re": "revised plan",
+    "actual": "amount actually spent",
+    "be_next": "plan for next year"
+  },
+  "status": {
+    "peer_review": "Being checked: {done} of {need} independent checks done. Treat this as a lead, not a fact yet.",
+    "verified": "Confirmed: {need} independent checkers repeated the check using the original record and got the same result.",
+    "cleared": "Cleared: on checking, this was explained or within the rules.",
+    "disputed": "Disputed: the checkers did not agree, so this is not confirmed.",
+    "retracted": "Withdrawn: this turned out to be wrong and was taken back.",
+    "under_review": "Under review by human editors before anything more is said.",
+    "not_wrongdoing": "This is a pattern in public numbers, not proof that anyone broke the law. There can be good reasons for it."
+  },
+  "kinds": {
+    "budget_gap": {
+      "name": "Police budgets",
+      "about": "Compares what police departments planned to spend with what they really spent, line by line, using official budget papers.",
+      "head_more": "{entity}: the {a_label} is {pct} higher than the {b_label}",
+      "head_less": "{entity}: the {a_label} is {pct} lower than the {b_label}",
+      "what": "Official budget papers show {a_amount} as the {a_label} and {b_amount} as the {b_label}. That is a gap of {pct}. Our rule flags gaps bigger than {limit}.",
+      "head_same": "{entity}: the revised plan is exactly the same as the first plan",
+      "what_same": "The budget papers print {amount} for both the first plan and the revised plan. Plans usually change during the year, so an exact match is worth a second look.",
+      "why": "Big gaps between plans and spending can mean work was delayed, money was moved, or the plan was not realistic. People have a right to know which.",
+      "ask": "Why did the plan change this much, and where did the difference go?"
+    },
+    "unspent": {
+      "name": "Unspent Union Budget money",
+      "about": "Finds money the Union Budget set aside since 2014-15 that was never spent, line by line.",
+      "head": "{entity}: {pct} of the money set aside for {year} was not spent",
+      "what": "The Union Budget set aside {budget}. Only {actual} was actually spent. That leaves {unspent} unused.",
+      "what_zero": "The Union Budget set aside {budget}. None of it was spent.",
+      "head_none": "{entity}: no spending is printed for {year}",
+      "what_none": "The Union Budget set aside {budget}. The later budget papers print no spending figure for this line.",
+      "head_cut": "{entity}: the money planned for {year} was cut by {pct} midway",
+      "what_cut": "The budget first set aside {budget}. Later in the year this was cut to {revised}, a drop of {cut}.",
+      "why": "Money that is promised but not spent can mean a scheme moved slowly, got stuck, or was no longer needed. Each reason matters to the people it was meant to help.",
+      "ask": "What stopped this money from being spent, and what happened to the work it was meant for?",
+      "head_norevised": "{entity}: no revised estimate is printed for {year}",
+      "what_norevised": "The Union Budget set aside {budget}. The budget papers print no revised estimate for this line.",
+      "ask_norevised": "Why is no revised estimate printed for this line, and how much was actually used?"
+    },
+    "double_bill": {
+      "name": "One road, two bills",
+      "about": "Reads official audit reports for work that may have been paid for twice.",
+      "head_dup": "{entity}: auditor's report notes the same work may have been paid for twice",
+      "head_dual": "{entity}: auditor's report notes two agencies claiming the same work",
+      "what_dup": "A report by India's official auditor, the CAG, describes a payment that may have been made twice for the same work.",
+      "what_dual": "A report by India's official auditor, the CAG, describes the same work being claimed by more than one agency or scheme.",
+      "amount_line": "The amount named in the report is {amount}.",
+      "why": "Paying twice for one job leaves less money for other roads, schools and services.",
+      "ask": "Was the extra payment recovered, and what checks now stop it from happening again?"
+    },
+    "teachers": {
+      "name": "One teacher, five grades",
+      "about": "Maps where schools have just one teacher, using official school data.",
+      "head": "{state}: {share} of schools have just one teacher ({year})",
+      "what": "Official school data (UDISE+) counts {single} schools in {state} where one teacher handles every class. Each of these teachers has about {spt} students.",
+      "head_staff": "{state}: government primary schools have fewer than two teachers each ({year})",
+      "what_staff": "Official school data (UDISE+) shows about {tps} teachers per government primary school in {state}. So one teacher often teaches several grades at once.",
+      "why": "When one teacher must teach five grades at once, every child gets less attention. The Right to Education rules ask for no more than 30 children per teacher in primary school.",
+      "ask": "How many teacher posts are empty in these schools, and when will they be filled?"
+    },
+    "promise_pending": {
+      "name": "Parliament's to-do list",
+      "about": "Tracks promises ministers made in Parliament and whether they were kept.",
+      "head": "{entity}: a promise made in Parliament is still open after {days} days",
+      "head_partly": "{entity}: a promise made in Parliament was only partly kept",
+      "head_dropped": "{entity}: a promise made in Parliament was dropped",
+      "what": "In Parliament, a minister promised to come back with action on: \"{subject}\". Parliament's own records show it is still not complete.",
+      "what_partly": "In Parliament, a minister promised to come back with action on: \"{subject}\". Parliament's own records mark it as only partly done.",
+      "what_dropped": "In Parliament, a minister promised to come back with action on: \"{subject}\". Parliament's own records show it was dropped before it was done.",
+      "why": "Promises made by ministers in Parliament are meant to be kept, usually within three months. Tracking them helps Parliament hold the government to its word.",
+      "ask": "What is the status of this promise today, and when will it be completed?"
+    },
+    "one_bid": {
+      "name": "Only one bid",
+      "about": "Looks for government purchases where only one company bid.",
+      "head": "{entity}: a tender worth {amount} got only one bid",
+      "head_noamount": "{entity}: a tender got only one bid",
+      "head_repeat": "{entity}: the same company won {wins} contracts from this office",
+      "head_window": "{entity}: a tender gave companies only {days} days to bid",
+      "what": "Public purchase records show that \"{title}\" got just one valid bid. With only one bidder, there is no competition on price.",
+      "what_repeat": "Public purchase records show the same company won {wins} contracts from this office, including \"{title}\".",
+      "what_window": "Public purchase records show that \"{title}\" was open for bids for only {days} days. A short window can leave too little time for companies to apply.",
+      "why": "Public money gets the best value when many companies compete. The rules (GFR 2017) ask officials to record why a single bid was accepted.",
+      "ask": "Why did only one company bid, and was the reason written down as the rules require?",
+      "why_repeat": "When one company keeps winning work from the same office, it is worth checking that others had a fair chance to compete.",
+      "ask_repeat": "How were these contracts advertised, and how many companies bid for each?",
+      "why_window": "A short bidding window can leave too few companies time to apply, which weakens competition on price.",
+      "ask_window": "Why was the bidding window this short, and did the rules allow it?",
+      "head_qualified": "{entity}: a tender worth {amount} had only one qualified bid",
+      "head_qualified_noamount": "{entity}: a tender had only one qualified bid",
+      "what_qualified": "Public purchase records show that \"{title}\" got {received} bids, but only one passed the technical check. With one qualified bidder, there is no competition on price.",
+      "ask_qualified": "Why were the other bids rejected at the technical stage, and was the reason written down?"
+    },
+    "promise_changed": {
+      "name": "Promises and later changes",
+      "about": "Checks whether government schemes kept their launch promises or changed them later.",
+      "head": "{entity}: the launch promise was changed later",
+      "what": "The launch papers of {entity} made one promise. A later official notice ({year}) changed it. People who joined under the first terms may be affected.",
+      "why": "When a scheme changes its rules after people have joined, those who trusted the first promise can lose out.",
+      "ask": "Who is affected by the change, and are people who joined earlier protected?"
+    },
+    "exam": {
+      "name": "Government exams",
+      "about": "Checks whether public exams were held on time, or were cancelled, delayed or held again.",
+      "head": "{entity} ({year}): {kind}",
+      "what": "Official notices from {authority} record that this exam was: {kind}.",
+      "delay_line": "Delay: {days} days.",
+      "cand_line": "Candidates affected: {count}.",
+      "why": "Every delayed or cancelled exam costs students months of time, travel money and peace of mind.",
+      "ask": "What went wrong, and what is being done so it does not happen again?"
+    },
+    "custody": {
+      "name": "Innocent but locked up",
+      "about": "Finds people who stayed in jail after a court ordered their release.",
+      "head": "{entity}: a person stayed in jail {days} days after release was ordered",
+      "head_nodays": "{entity}: a person stayed in jail after release was ordered",
+      "what": "Court and prison records show that a court ordered this person's release, but they stayed in custody for {days} more days.",
+      "what_nodays": "Court and prison records show that a court ordered this person's release, but they stayed in custody after that.",
+      "head_record": "{entity}: an official record flags a problem with releasing people from custody",
+      "what_record": "A court, legal-aid or prison record points to a gap in how release orders are carried out. It does not say how many people were held, or for how long.",
+      "why": "When a court says someone should go free, every extra day in jail takes away their freedom without a legal reason.",
+      "ask": "Why was the release order not followed on time, and what has changed since?"
+    },
+    "website": {
+      "name": "Government websites",
+      "about": "Checks whether government websites publish the information the law asks them to.",
+      "head": "{entity}: website check",
+      "what": "Our checker looked at this government website against the official web guidelines and the RTI Act.",
+      "why": "Government websites are often the only way people can find forms, rules and contacts. Missing information makes it harder to use public services.",
+      "ask": "When will the missing information be published on the website?"
+    },
+    "generic": {
+      "name": "Public audit",
+      "about": "Checks public records for unusual numbers.",
+      "head": "{entity}: an unusual number in public records",
+      "what": "Our automatic check found a number in public records that crossed a set limit. The rule used was: {rule}.",
+      "why": "Unusual numbers are where questions start. Checking them in public helps everyone see how public money and services are run.",
+      "ask": "What explains this number?"
+    }
+  },
+  "exam_kinds": {
+    "cancelled_after_conduct": "cancelled after students had already taken it",
+    "cancelled_before_conduct": "cancelled before it was held",
+    "postponed": "postponed",
+    "rescheduled": "moved to new dates",
+    "delayed": "delayed",
+    "partial_reexam_or_glitch": "held again in part after a problem",
+    "other": "disrupted"
+  },
+  "news": {
+    "title": "The Daily Watch",
+    "tagline": "Five minutes on what India's public records showed today.",
+    "intro_busy": "Today our checkers confirmed {verified} and cleared {cleared}. New leads opened: {new}.",
+    "intro_quiet": "A quieter day, with no newly confirmed findings. Here is what is on the checking desk, and a short explainer.",
+    "sec_top": "Confirmed today",
+    "sec_recent": "Recently confirmed",
+    "sec_cleared": "Checked and cleared",
+    "sec_corrections": "Corrections",
+    "sec_desk": "On the checking desk",
+    "sec_number": "Number of the day",
+    "sec_explainer": "Explainer",
+    "sec_spotlight": "Project spotlight",
+    "sec_act": "What you can do",
+    "sec_totals": "By the numbers",
+    "desk_line": "{project}: new leads sent for checking: {count}",
+    "desk_note": "These leads are not confirmed yet. We describe a lead here only after three independent checks.",
+    "desk_empty": "Nothing is waiting on the checking desk right now.",
+    "correction_line": "A finding was corrected or withdrawn: {head}",
+    "totals_line": "So far: {confirmed} confirmed, {cleared} cleared, {review} still being checked. Independent checks done: {checks}.",
+    "act_body": "Anyone in India can ask a government office for records under the Right to Information (RTI) Act, 2005. Every confirmed finding on this site comes with a ready draft that you can read, change and send yourself.",
+    "sec_state": "Where things stand",
+    "state_intro": "As of {date}, here is where each project stands.",
+    "state_counts": "Leads flagged so far: {flagged}. Confirmed: {verified}. Cleared: {cleared}. Disputed or withdrawn: {disputed}.",
+    "state_tasks": "{done} of {total} planned checks are done.",
+    "state_sum": "Confirmed amounts add up to {amount}. This adds separate items together, so treat it as a rough size, not one single sum.",
+    "state_example": "Biggest confirmed example: {head}",
+    "state_none": "Nothing confirmed yet. Every lead still needs three independent checks.",
+    "sec_cta": "Help find more",
+    "cta_body": "Do you use an AI coding agent such as Claude Code, Codex, Cursor or Gemini CLI? Paste one line into it and it joins the checking, free of cost. Pick a project above, or use this line to help wherever it is needed most:",
+    "footer": "Every story links to the original government record, so you can check it yourself.",
+    "fingerprint": "Edition fingerprint: {hash}"
+  },
+  "explainers": {
+    "budget_words": {
+      "title": "Budget words, made simple",
+      "body": "A Budget Estimate is the plan made before the year starts. A Revised Estimate is the updated plan made in the middle of the year. Actuals are what was really spent. Putting the three side by side shows how well plans matched what happened."
+    },
+    "tenders": {
+      "title": "Why more bidders matter",
+      "body": "When the government buys something, it invites companies to bid. More bids usually mean better prices and better quality. A single bid is not always wrong, but the reason for accepting it should be on record."
+    },
+    "cag": {
+      "title": "Who is the CAG?",
+      "body": "The Comptroller and Auditor General is the official auditor of the Union and State governments. Its reports go to Parliament and the State assemblies, and anyone can read them."
+    },
+    "rti": {
+      "title": "Your right to ask",
+      "body": "Under the RTI Act, 2005, any citizen can ask a public office for its records. The office must usually reply within 30 days. Central offices charge a fee of 10 rupees, and people below the poverty line do not pay."
+    },
+    "quorum": {
+      "title": "How we check a finding",
+      "body": "A computer program first spots an unusual number. Then three separate checkers, run by different people using different AI tools, redo the work from the original document. Only when all three agree is a finding marked as confirmed."
+    },
+    "assurance": {
+      "title": "Promises in Parliament",
+      "body": "When a minister says in Parliament that the government will look into something, it is recorded as an assurance. A committee of Parliament tracks these promises, and the government is expected to complete them, usually within three months."
+    },
+    "release": {
+      "title": "Release orders",
+      "body": "When a court acquits someone or grants bail, the prison must act on the order quickly. Delays keep people locked up without a legal reason, and courts have ordered compensation for such delays."
+    }
+  }
+}

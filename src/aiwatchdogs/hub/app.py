@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import math
 import mimetypes
@@ -68,6 +69,11 @@ from aiwatchdogs.hub.desk import MAX_TASK_PAGE, DeskService
 from aiwatchdogs.hub.feed import feed_entries, graveyard_feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
+from aiwatchdogs.plain import available_languages, explain_finding, labels, resolve_lang
+from aiwatchdogs.plain import news as plain_news
+from aiwatchdogs.plain import writer as plain_writer
+from aiwatchdogs.plain.answers import project_answers
+from aiwatchdogs.plain.store import load_texts
 from aiwatchdogs.hub.templates import (
     DEFAULT_PUBLIC_HUB_URL,
     normalize_base_url,
@@ -622,6 +628,34 @@ class _SelfHealingHubMiddleware:
         await self.app(scope, receive, send)
 
 
+def hmac_compare(a: str, b: str) -> bool:
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
+def _attach_plain(items: Any, lang: str, db: Any = None) -> None:
+    if not isinstance(items, list):
+        return
+    rows = [i for i in items if isinstance(i, dict) and "methodology_code" in i]
+    written = load_texts(db, [f"finding:{i.get('id')}" for i in rows]) if db is not None else {}
+    for item in rows:
+        item["plain"] = explain_finding(item, lang, written.get(f"finding:{item.get('id')}"))
+
+
+def _attach_answers(missions: Any, lang: str, db: Any) -> None:
+    if not isinstance(missions, list):
+        return
+    rows = [m for m in missions if isinstance(m, dict) and m.get("slug")]
+    try:
+        answers = project_answers(db, [str(m["slug"]) for m in rows], lang)
+    except Exception:
+        return
+    for m in rows:
+        a = answers.get(str(m["slug"]))
+        if a:
+            m["plain_answer"] = a["answer"]
+            m["plain_answer_finding"] = a["finding_id"]
+
+
 def create_degraded_app(
     *,
     reason: str,
@@ -711,6 +745,8 @@ def create_app(
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         try:
+            if not db.read_only:
+                plain_writer.start_background_loop(db)
             yield
         finally:
             db.close()
@@ -894,9 +930,19 @@ def create_app(
     _MATRIX_CACHE = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
 
     @application.get("/api/head")
-    def api_head(response: Response) -> dict[str, Any]:
+    def api_head(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
         response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
-        return desk.get_head()
+        data = dict(desk.get_head())
+        recent = [dict(f) for f in data.get("recent_findings") or [] if isinstance(f, dict)]
+        _attach_plain(recent, resolve_lang(lang), db)
+        data["recent_findings"] = recent
+        data["missions"] = [dict(m) for m in data.get("missions") or [] if isinstance(m, dict)]
+        _attach_answers(data["missions"], resolve_lang(lang), db)
+        just_in = data.get("just_in")
+        if isinstance(just_in, dict):
+            match = next((f for f in recent if str(f.get("id")) == str(just_in.get("id")) and f.get("plain")), None)
+            data["just_in"] = {**just_in, "plain_head": match["plain"]["head"]} if match else just_in
+        return data
 
     @application.get("/api/events")
     def api_events(
@@ -964,14 +1010,25 @@ def create_app(
             raise
 
     @application.get("/api/missions")
-    def api_missions(response: Response) -> dict[str, Any]:
+    def api_missions(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
         response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
-        return desk.list_missions()
+        data = dict(desk.list_missions())
+        data["missions"] = [dict(m) for m in data.get("missions") or [] if isinstance(m, dict)]
+        _attach_answers(data["missions"], resolve_lang(lang), db)
+        return data
 
     @application.get("/api/missions/{slug}")
-    def api_mission_detail(slug: str, response: Response) -> dict[str, Any]:
+    def api_mission_detail(
+        slug: str,
+        response: Response,
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.get_mission_detail(slug)
+        data = desk.get_mission_detail(slug)
+        code = resolve_lang(lang)
+        _attach_plain(data.get("findings"), code, db)
+        _attach_answers([data], code, db)
+        return data
 
     @application.get("/api/missions/{slug}/observations/{task_id}")
     def website_observations(slug: str, task_id: str, response: Response) -> dict[str, Any]:
@@ -1182,9 +1239,10 @@ def create_app(
         search: str | None = Query(default=None, max_length=120),
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=50_000),
+        lang: str | None = Query(default=None, max_length=32),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.list_findings(
+        data = desk.list_findings(
             status_filter=status_filter,
             pillar=pillar,
             methodology=methodology,
@@ -1193,11 +1251,19 @@ def create_app(
             limit=limit,
             offset=offset,
         )
+        _attach_plain(data.get("findings"), resolve_lang(lang), db)
+        return data
 
     @application.get("/api/findings/{finding_id}")
-    def api_finding_detail(finding_id: str, response: Response) -> dict[str, Any]:
+    def api_finding_detail(
+        finding_id: str,
+        response: Response,
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.get_finding_detail(finding_id)
+        data = desk.get_finding_detail(finding_id)
+        _attach_plain([data], resolve_lang(lang), db)
+        return data
 
     @application.get("/api/graveyard")
     def api_graveyard(
@@ -1249,9 +1315,113 @@ def create_app(
         return desk.list_contributors(window=window)
 
     @application.get("/api/contributors/{handle}")
-    def api_contributor_profile(handle: str, response: Response) -> dict[str, Any]:
+    def api_contributor_profile(
+        handle: str,
+        response: Response,
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.get_contributor_profile(handle)
+        data = desk.get_contributor_profile(handle)
+        for key in ("findings", "recent_findings", "submitted_findings"):
+            _attach_plain(data.get(key), resolve_lang(lang), db)
+        return data
+
+    @application.get("/api/plain/languages")
+    def api_plain_languages(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=86400"
+        return {"default": "en", "languages": available_languages()}
+
+    @application.get("/api/plain/labels")
+    def api_plain_labels(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=86400"
+        code = resolve_lang(lang)
+        meta = next(x for x in available_languages() if x["code"] == code)
+        return {**meta, "labels": labels(code)}
+
+    def _render_news(d: Any, code: str, base: str) -> dict[str, Any]:
+        edition = plain_news.get_edition(db, d)
+        frozen = edition.get("written")
+        written = frozen if isinstance(frozen, dict) else load_texts(db, plain_news.text_keys(edition))
+        return plain_news.render(edition, code, base, written=written, lede=written.get(f"news:{d.isoformat()}"))
+
+    def _news_date(raw: str | None) -> Any:
+        d = plain_news.parse_date(raw)
+        if d is None:
+            raise HTTPException(status_code=404, detail="No edition for that date")
+        return d
+
+    def _news_cache(d: Any) -> str:
+        if d >= plain_news.today_ist():
+            return "public, max-age=60, s-maxage=120, stale-while-revalidate=600"
+        return "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
+
+    @application.get("/api/news")
+    def api_news(
+        request: Request,
+        response: Response,
+        date: str | None = Query(default=None, max_length=10),
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
+        d = _news_date(date)
+        response.headers["Cache-Control"] = _news_cache(d)
+        return _render_news(d, resolve_lang(lang), _public_base_url(request))
+
+    def _plain_authorized(request: Request) -> bool:
+        secrets_ok = [v for v in (os.environ.get("AIWATCHDOGS_PLAIN_SECRET"), os.environ.get("CRON_SECRET")) if v]
+        got = request.headers.get("authorization", "")
+        return any(hmac_compare(got, f"Bearer {v}") for v in secrets_ok)
+
+    @application.api_route("/api/plain/run", methods=["GET", "POST"], include_in_schema=False)
+    def api_plain_run(request: Request) -> JSONResponse:
+        if not _plain_authorized(request):
+            return JSONResponse(status_code=401, content={"detail": "Not allowed"})
+        report = plain_writer.run_once(db, time_budget_s=45.0, base_url=_public_base_url(request))
+        return JSONResponse(content=report, headers={"Cache-Control": "no-store"})
+
+    @application.get("/api/news/editions")
+    def api_news_editions(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "public, max-age=120, s-maxage=600, stale-while-revalidate=3600"
+        dates = plain_news.list_dates(db)
+        return {"today": plain_news.today_ist().isoformat(), "dates": dates}
+
+    @application.get("/news.md")
+    @application.head("/news.md", include_in_schema=False)
+    def md_news(request: Request, lang: str | None = Query(default=None, max_length=32)) -> Response:
+        d = _news_date(None)
+        r = _render_news(d, resolve_lang(lang), _public_base_url(request))
+        return markdown_response(plain_news.render_markdown(r), md_path="/news.md")
+
+    @application.get("/news/{day}.md")
+    @application.head("/news/{day}.md", include_in_schema=False)
+    def md_news_day(day: str, request: Request, lang: str | None = Query(default=None, max_length=32)) -> Response:
+        d = _news_date(day)
+        r = _render_news(d, resolve_lang(lang), _public_base_url(request))
+        return markdown_response(plain_news.render_markdown(r), md_path=f"/news/{d.isoformat()}.md")
+
+    @application.get("/news.atom")
+    @application.head("/news.atom", include_in_schema=False)
+    def news_atom(request: Request, lang: str | None = Query(default=None, max_length=32)) -> Response:
+        code = resolve_lang(lang)
+        suffix = "" if code == "en" else f"?lang={code}"
+        entries = []
+        for day in plain_news.list_dates(db)[:14]:
+            d = plain_news.parse_date(day)
+            if d is None:
+                continue
+            r = _render_news(d, code, _public_base_url(request))
+            heads = [st["head"] for sec in r["sections"] for st in sec.get("stories", [])][:5]
+            entries.append(
+                {
+                    "key": f"news-{day}-{code}",
+                    "updated": f"{day}T18:29:59Z" if r["state"] == "final" else utc_now_iso(),
+                    "term": "daily_edition",
+                    "title": f"{r['title']} · {day}",
+                    "path": f"/news/{day}{suffix}",
+                    "summary": " ".join([r["intro"], *[f"• {h}" for h in heads]]),
+                }
+            )
+        title = f"AI Watchdogs India: {labels(code).get('nav_news', 'News')}"
+        return _atom(request, f"/news.atom{suffix}", title, f"/news{suffix}", entries)
 
     @application.get("/api/sponsors")
     def api_sponsors(response: Response) -> dict[str, Any]:
@@ -1787,6 +1957,11 @@ def create_app(
             return JSONResponse(status_code=404, content={"detail": "Not found"})
 
         md_alt = resolve_spa_markdown_path(norm_path)
+        if md_alt is not None and md_alt.startswith("/news") and prefers_markdown(request.headers.get("accept")):
+            day = md_alt[len("/news/") : -len(".md")] if md_alt != "/news.md" else None
+            d = _news_date(day)
+            r = _render_news(d, resolve_lang(request.query_params.get("lang")), _public_base_url(request))
+            return markdown_response(plain_news.render_markdown(r), md_path=md_alt)
         if md_alt is not None and prefers_markdown(request.headers.get("accept")):
             rendered = render_markdown_for_path(desk, _public_base_url(request), "/" + norm_path)
             if rendered is not None:

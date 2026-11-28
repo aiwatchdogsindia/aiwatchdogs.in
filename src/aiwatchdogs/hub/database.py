@@ -61,6 +61,8 @@ HUB_TABLES: frozenset[str] = frozenset(
         "rate_limit_buckets",
         "summary_cache",
         "github_verification_challenges",
+        "plain_texts",
+        "plain_spend",
     }
 )
 
@@ -71,7 +73,7 @@ _WEAK_SSLMODES = frozenset({"disable", "allow", "prefer"})
 PG_SCHEMA_ADVISORY_LOCK_KEY = 84729104
 PG_SEED_ADVISORY_LOCK_KEY = 84729105
 PG_PROJECT_SYNC_ADVISORY_LOCK_KEY = 84729106
-LATEST_SCHEMA_VERSION = 16
+LATEST_SCHEMA_VERSION = 18
 
 DB_INTEGRITY_ERRORS: tuple[type[BaseException], ...] = (
     (sqlite3.IntegrityError, psycopg.errors.IntegrityError)
@@ -112,6 +114,30 @@ CREATE TABLE IF NOT EXISTS github_verification_challenges (
     method TEXT NOT NULL DEFAULT 'github_gist',
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL
+);
+"""
+
+PLAIN_TEXTS_SQL = """
+CREATE TABLE IF NOT EXISTS plain_texts (
+    key TEXT PRIMARY KEY,
+    source_hash TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    rejected_json TEXT NOT NULL DEFAULT '{}',
+    complete INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+PLAIN_SPEND_SQL = """
+CREATE TABLE IF NOT EXISTS plain_spend (
+    day TEXT PRIMARY KEY,
+    cost_usd REAL NOT NULL DEFAULT 0.0,
+    calls INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
 );
 """
 
@@ -496,7 +522,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at)
 CREATE INDEX IF NOT EXISTS idx_tasks_claimed_agent_status ON tasks(claimed_by_agent_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_mission_completed_amt ON tasks(mission_id, status, monetary_audited_inr);
 CREATE INDEX IF NOT EXISTS idx_findings_mission_status_quar ON findings(mission_id, status, quarantined);
-""" + RESEARCH_BATCHES_SQL + SUMMARY_CACHE_SQL + GITHUB_VERIFICATION_CHALLENGES_SQL
+""" + RESEARCH_BATCHES_SQL + SUMMARY_CACHE_SQL + GITHUB_VERIFICATION_CHALLENGES_SQL + PLAIN_TEXTS_SQL + PLAIN_SPEND_SQL
 
 # Named editorial corrections for the 4 confirmed defective published dossiers from the
 # 24 November 2026 public audit. Applied idempotently during migration v4 if those IDs exist.
@@ -2406,6 +2432,14 @@ def _migrate_v16_github_identity_and_sybil_guard(conn: Any, *, is_postgres: bool
         conn.execute(stmt)
 
 
+def _migrate_v17_plain_texts(conn: Any, *, is_postgres: bool) -> None:
+    _execute_statements(conn, PLAIN_TEXTS_SQL)
+
+
+def _migrate_v18_plain_spend(conn: Any, *, is_postgres: bool) -> None:
+    _execute_statements(conn, PLAIN_SPEND_SQL)
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (1, "001_initial_schema", _migrate_v1_baseline),
     (2, "002_audit_remediation_schema", _migrate_v2_audit_remediation_schema),
@@ -2423,6 +2457,8 @@ MIGRATIONS: tuple[tuple[int, str, Callable[..., None]], ...] = (
     (14, "014_quorum3_cross_harness_backfill", _migrate_v14_quorum3_cross_harness_backfill),
     (15, "015_peer_verify_claim_indexes", _migrate_v15_peer_verify_claim_indexes),
     (16, "016_github_identity_and_sybil_guard", _migrate_v16_github_identity_and_sybil_guard),
+    (17, "017_plain_texts", _migrate_v17_plain_texts),
+    (18, "018_plain_spend", _migrate_v18_plain_spend),
 )
 
 
