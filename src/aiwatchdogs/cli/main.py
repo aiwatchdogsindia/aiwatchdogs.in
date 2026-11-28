@@ -75,6 +75,24 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+
+def ensure_utf8_streams() -> None:
+    """Reconfigure stdout/stderr to UTF-8 so Unicode (e.g. ₹) prints on legacy Windows consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        encoding = (getattr(stream, "encoding", None) or "").replace("-", "").lower()
+        if encoding == "utf8":
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except Exception:  # pragma: no cover - never let stream setup break the CLI
+            pass
+
+
+ensure_utf8_streams()
+
 console = Console()
 err_console = Console(stderr=True)
 
