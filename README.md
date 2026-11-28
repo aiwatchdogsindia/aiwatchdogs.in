@@ -139,6 +139,41 @@ flowchart LR
 
 ---
 
+## Plain language, in 22 languages
+
+Every finding is explained in plain words automatically, the moment it lands. Nobody has to write it by hand and the reporting agent is never asked to explain itself.
+
+* **Templates first.** `src/aiwatchdogs/plain/` turns each finding's verified numbers into a short card: what was found, why it matters, what it does *not* mean, where the checks stand, and a fair question to ask. The numbers go in as slots, so a translation can never change a number.
+* **22 languages.** English, Hindi, Bengali, Marathi, Telugu, Tamil, Gujarati, Urdu, Kannada, Odia, Malayalam, Punjabi, Assamese, Spanish, French, Arabic, Portuguese, Russian, Chinese, Indonesian, German and Japanese. The site picks the reader's language from the browser; the picker in the header changes it. Every API that returns findings takes `?lang=`.
+* **Checked in CI.** `tests/test_plain.py` fails if a language is missing a line, a template loses a placeholder, English goes above a 12-year-old's reading level, or any output uses loaded words.
+
+## News: the Daily Watch
+
+`/news` is a five-minute daily briefing built from the day's public records: where each project stands, what was confirmed or cleared, the number of the day, a short explainer, and a one-line prompt so readers can point their own coding agent at a project. Every edition is in every language, can be read aloud in the browser, shared on WhatsApp, and followed at `/news.atom?lang=hi`. Agents can read `/news.md`. Past editions are frozen with a fingerprint so they can't be quietly changed.
+
+## Optional model writer
+
+Templates are the floor and cost nothing. A model can be switched on to write warmer, more natural cards and a daily opening paragraph, but everything it writes is checked before it is shown: every number must come from the source record, no loaded words in any language, readable English, and the "this is not proof of wrongdoing" line always comes from the template, never from the model. Anything that fails is dropped and the template is shown instead.
+
+| Setting | What it does |
+|---|---|
+| `AIWATCHDOGS_PLAIN_WRITER` | `anthropic` (Claude API) or `local` (an open model next to the hub). Empty means off. |
+| `AIWATCHDOGS_PLAIN_MODEL` | Model id. Defaults to `claude-opus-5-5`, or `gemma3:4b` for `local`. |
+| `AIWATCHDOGS_PLAIN_DAILY_BUDGET_USD` | Hard daily cap for paid calls. Default `2`. |
+| `AIWATCHDOGS_PLAIN_SECRET` | Lets the scheduler call `POST /api/plain/run`. |
+
+On Vercel the writer runs inside the site's own function: `.github/workflows/plain-writer.yml` pings it every 15 minutes (set the `AIWATCHDOGS_PLAIN_SECRET` repo secret), with a daily Vercel cron as backup. With Docker, `docker compose --profile model up` starts a local open-model container next to the hub and the hub writes in the background, no API key needed.
+
+Which model should write? Measure it, don't guess:
+
+```bash
+uv run aiwatchdogs plain bakeoff --n 20
+```
+
+It runs each candidate (templates included) on real findings, then a separate model plays an ordinary reader who answers who, how much, what happened, and "was wrongdoing proven?" from the card alone. Scores go to `plain-bakeoff.md`. If no model beats the templates, leave the writer off.
+
+---
+
 ## Projects
 
 Every audit is a **project** listed by a person, newsroom, civil-society group, or the AI Watchdogs India team that wants to audit the government and needs compute to do it. Projects live as JSON files in [`projects/`](./projects); anyone can list one in a pull request, in one shot by pasting this line into their coding agent:
