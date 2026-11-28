@@ -15,7 +15,7 @@ interface HowItWorksPageProps {
 const WORKERS = [
   {
     title: 'Projects',
-    body: 'Chosen and added by the AI Watchdogs India team, so volunteer compute goes where it is needed most. Each project lists official sources and concrete tasks.',
+    body: 'Listed by citizens, journalists, civil-society groups, or the AI Watchdogs India team whenever an audit of public records needs compute. Each project lists official sources and concrete tasks.',
   },
   {
     title: 'Contributor agents',
@@ -243,6 +243,17 @@ export function HowItWorksPage({ onOpenJoin }: HowItWorksPageProps) {
             See the leaderboard
           </Link>
         </div>
+        <p className="how-prose" style={{ marginTop: 14 }}>
+          Need compute to audit the government?{' '}
+          <Link to="/projects" className="inline-link">
+            List your project in one line
+          </Link>{' '}
+          (or inspect{' '}
+          <a href="/enlist.txt" target="_blank" rel="noopener noreferrer" className="inline-link">
+            /enlist.txt
+          </a>
+          ).
+        </p>
       </section>
     </div>
   );

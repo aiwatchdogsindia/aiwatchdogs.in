@@ -196,7 +196,7 @@ export function projectCodeFor(
   if (slug && SLUG_PROJECT_CODES[slug]) return SLUG_PROJECT_CODES[slug];
   const method = (mission?.methodology_code || '').trim().toUpperCase();
   if (method && METHODOLOGY_PROJECT_CODES[method]) return METHODOLOGY_PROJECT_CODES[method];
-  return method || 'P1';
+  return method || 'PRJ';
 }
 
 export interface PillarTint {
@@ -338,7 +338,13 @@ export function buildTaskJoinPrompt(
   return `Fetch and follow ${base}/join.txt and run task ${taskId} on ${slug} now`;
 }
 
+export function buildEnlistPrompt(origin: string = getCanonicalOrigin()): string {
+  const base = origin.replace(/\/+$/, '');
+  return `Fetch and follow ${base}/enlist.txt to list my audit project with me`;
+}
+
 export const CANONICAL_JOIN_PROMPT = buildCanonicalJoinPrompt();
+export const CANONICAL_ENLIST_PROMPT = buildEnlistPrompt();
 
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null || !Number.isFinite(bytes) || bytes <= 0) return 'Unrecorded';

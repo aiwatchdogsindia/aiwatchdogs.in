@@ -68,7 +68,13 @@ from aiwatchdogs.hub.desk import MAX_TASK_PAGE, DeskService
 from aiwatchdogs.hub.feed import feed_entries, graveyard_feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
-from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
+from aiwatchdogs.hub.templates import (
+    DEFAULT_PUBLIC_HUB_URL,
+    normalize_base_url,
+    render_enlist_txt,
+    render_join_sh,
+    render_join_txt,
+)
 from aiwatchdogs.projects import (
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
@@ -851,6 +857,16 @@ def create_app(
         return Response(
             content=content,
             media_type="text/x-shellscript; charset=utf-8",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @application.get("/enlist.txt", response_class=PlainTextResponse)
+    @application.head("/enlist.txt", response_class=PlainTextResponse, include_in_schema=False)
+    def enlist_txt(request: Request) -> PlainTextResponse:
+        content = render_enlist_txt(_public_base_url(request))
+        return PlainTextResponse(
+            content=content,
+            media_type="text/plain; charset=utf-8",
             headers={"Cache-Control": "no-store"},
         )
 

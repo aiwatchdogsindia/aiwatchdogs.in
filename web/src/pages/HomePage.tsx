@@ -9,6 +9,7 @@ import {
   isNodeFreshlyLive,
   isTimestampFreshlyLive,
 } from '../components/LiveSwarmViewer';
+import { ListProjectRow } from '../components/ListProjectRow';
 import { PublicLeaderboard } from '../components/PublicLeaderboard';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
@@ -607,6 +608,12 @@ export function HomePage({
             );
           })}
         </ul>
+
+        <ListProjectRow
+          rank={missions.length > 0 ? missions.length + 1 : null}
+          variant="race"
+          className="race-enlist-row"
+        />
 
         <div className="race-note">
           <div className="race-legend">

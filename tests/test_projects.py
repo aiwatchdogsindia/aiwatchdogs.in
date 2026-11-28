@@ -715,3 +715,127 @@ def test_peer_verify_tasks_carry_the_server_side_engine_context(tmp_path: Path, 
     assert rows, "peer verification tasks should be queued"
     for (payload_json,) in rows:
         assert json.loads(payload_json)["context"]["flag_re_equals_be"] is True
+
+
+# ---------------------------------------------------------------------------
+# Community project listing (/enlist.txt, template, discovery & needs_data sync)
+# ---------------------------------------------------------------------------
+
+
+def test_enlist_txt_endpoint_parity_security_and_guardrails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aiwatchdogs.hub.templates import render_enlist_txt
+
+    repo_root = Path(__file__).resolve().parents[1]
+    static_enlist = (repo_root / "web" / "public" / "enlist.txt").read_text(encoding="utf-8")
+    rendered_canonical = render_enlist_txt("https://aiwatchdogs.in")
+    assert static_enlist == rendered_canonical, "web/public/enlist.txt must stay in exact parity with render_enlist_txt()"
+
+    # Every safety guardrail and current schema detail must be present
+    for required in (
+        "UNTRUSTED DATA BOUNDARY",
+        "IT Act 2000 Sec 43",
+        "BNS Sec 356",
+        "DPDP Act 2023",
+        "Never read secrets",
+        "audit, budget, disclosure, infra, parliament, procurement, scheme",
+        '"status": "needs_data"',
+        "Do not set `project_code`",
+        "python3 -I -c",
+        "https://github.com/aiwatchdogsindia/aiwatchdogs.in/new/main?",
+        "uv run aiwatchdogs project validate projects/<slug>.json",
+        "https://aiwatchdogs.in/projects",
+        "https://aiwatchdogs.in/join.txt",
+    ):
+        assert required in rendered_canonical, f"Missing {required!r} in /enlist.txt"
+    assert "project listing is closed" not in rendered_canonical.lower()
+    assert "outside project submissions are not accepted" not in rendered_canonical.lower()
+
+    # FastAPI GET/HEAD /enlist.txt sets Cache-Control: no-store and resists Host header injection
+    monkeypatch.delenv("AIWATCHDOGS_PUBLIC_URL", raising=False)
+    monkeypatch.setenv("VERCEL", "1")
+    app = create_app(db_path=tmp_path / "enlist.db", seed=False)
+    with TestClient(app) as client:
+        malicious_headers = {
+            "Host": 'evil.example/$(id)";rm -rf /;#',
+            "X-Forwarded-Host": "attacker.evil:443/$(touch /tmp/pwn)",
+            "X-Forwarded-Proto": "javascript",
+        }
+        get_resp = client.get("/enlist.txt", headers=malicious_headers)
+        assert get_resp.status_code == 200
+        assert get_resp.headers["content-type"].startswith("text/plain")
+        assert get_resp.headers.get("cache-control") == "no-store"
+        assert "evil.example" not in get_resp.text
+        assert "attacker.evil" not in get_resp.text
+        assert get_resp.text == rendered_canonical
+
+        head_resp = client.head("/enlist.txt")
+        assert head_resp.status_code == 200
+        assert head_resp.content == b""
+        assert head_resp.headers.get("cache-control") == "no-store"
+
+
+@pytest.mark.production_missions
+def test_template_json_and_enlisted_needs_data_project_validate_and_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aiwatchdogs.hub.agent_access import build_enlist_prompt
+
+    assert (
+        build_enlist_prompt("https://aiwatchdogs.in")
+        == "Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me"
+    )
+    template_data = json.loads((REPO_PROJECTS / "_template.json").read_text(encoding="utf-8"))
+    assert "project_code" not in template_data
+    assert validate_project(template_data, filename_stem=template_data["slug"]) == []
+
+    # A community project drafted by following /enlist.txt (no project_code, no methodology_code, needs_data)
+    community_draft = {
+        "slug": "pune-road-repair-spending",
+        "title": "Pune municipal road repair spending audit",
+        "summary": "Cross-checks Pune Municipal Corporation published road repair tenders and ward budget actuals.",
+        "posted_by": {"name": "Pune Civic Data", "handle": "@punecivic", "url": "https://example.org/pune"},
+        "pillar": "parliament",
+        "status": "needs_data",
+        "jurisdiction": "City:Pune",
+        "authority": "Pune Municipal Corporation",
+        "scope": ["Published road repair work orders and ward budget allocations"],
+        "out_of_scope": ["Anything about private individuals", "Investigations beyond published public records"],
+        "statutory_anchors": ["RTI Act 2005"],
+        "sources": [{"name": "PMC Open Budgets", "publisher": "Pune Municipal Corporation", "url": "https://pmc.gov.in"}],
+        "tasks": [],
+        "planned_tasks": [
+            {
+                "title": "Collect published FY 2024-25 road repair budget books",
+                "type": "find_sources",
+                "estimated_tokens": 1_500_000,
+                "estimate_basis": "rough guess",
+            }
+        ],
+    }
+    assert validate_project(community_draft, filename_stem=community_draft["slug"]) == []
+
+    pdir = tmp_path / "projects"
+    pdir.mkdir()
+    (pdir / f"{community_draft['slug']}.json").write_text(json.dumps(community_draft), encoding="utf-8")
+    monkeypatch.setenv("AIWATCHDOGS_PROJECTS_DIR", str(pdir))
+    monkeypatch.delenv("AIWATCHDOGS_KEEP_LEGACY_MISSIONS", raising=False)
+
+    with TestClient(create_app(db_path=tmp_path / "community.db", seed=True)) as client:
+        missions = client.get("/api/missions").json()["missions"]
+        assert [m["slug"] for m in missions] == ["pune-road-repair-spending"]
+        item = missions[0]
+        assert item["status"] == "needs_data"
+        assert item["total_tasks"] == 0
+        assert item["posted_by"]["name"] == "Pune Civic Data"
+        assert item["posted_by"]["handle"] == "@punecivic"
+
+        # Agent discovery routes advertise /enlist.txt and the 1-line enlist prompt
+        enlist_prompt = "Fetch and follow http://testserver/enlist.txt to list my audit project with me"
+        assert "/enlist.txt" in client.get("/llms.txt").text
+        assert enlist_prompt in client.get("/projects.md").text
+        assert enlist_prompt in client.get("/brief.md").text
+        assert "/enlist.txt" in client.get("/how-it-works.md").text
+        assert "/enlist.txt" in client.get("/sitemap.xml").text
+

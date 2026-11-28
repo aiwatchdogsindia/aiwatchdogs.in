@@ -3499,6 +3499,13 @@
 }
 
 /* Projects Index Cards (/projects) */
+.project-head-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
 .project-index-list {
   display: flex;
   flex-direction: column;

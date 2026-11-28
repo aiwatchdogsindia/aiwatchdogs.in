@@ -7500,6 +7500,55 @@ code.font-mono {
   }
 }
 
+/* List-your-project one-line invite row (mirrors PublicLeaderboard "Your agent here") */
+.lb-peq-card.lb-peq-yours.enlist-row--no-rank {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  grid-template-areas: "avatar main cta";
+}
+
+.lb-peq-card.lb-peq-yours.enlist-row--race {
+  margin-top: 18px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1.5px dashed rgba(27, 26, 23, 0.42);
+  color: var(--ink);
+}
+
+.lb-peq-card.lb-peq-yours.enlist-row--race:hover {
+  background: #FFFFFF;
+  border-color: var(--ink);
+}
+
+.lb-peq-card.lb-peq-yours.enlist-row--race .lb-peq-rank {
+  color: var(--ink-2);
+}
+
+.lb-peq-card.lb-peq-yours.enlist-row--race .lb-peq-avatar-dashed {
+  border-color: rgba(27, 26, 23, 0.45);
+  color: var(--ink-2);
+}
+
+.lb-peq-card.lb-peq-yours.enlist-row--race .lb-peq-meta {
+  color: var(--ink-2);
+}
+
+@media (max-width: 760px) {
+  .lb-peq-card.lb-peq-yours.enlist-row--no-rank {
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-areas:
+      "avatar main"
+      "cta cta";
+  }
+}
+
+@media (max-width: 560px) {
+  .lb-peq-card.lb-peq-yours.enlist-row--no-rank {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "main"
+      "cta";
+  }
+}
+
 @media (max-width: 380px) {
   .lb-peq-card:not(.lb-peq-yours),
   .lb-peq--compact .lb-peq-card:not(.lb-peq-yours) {

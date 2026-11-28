@@ -181,6 +181,12 @@ def build_task_join_prompt(base_url: str, slug: str, task_id: str, methodology_c
     return f"Fetch and follow {origin}/join.txt and run task {task_id} on {slug} now"
 
 
+def build_enlist_prompt(base_url: str) -> str:
+    """Return the canonical 1-line coding-agent prompt to list a new audit project."""
+    origin = base_url.rstrip("/")
+    return f"Fetch and follow {origin}/enlist.txt to list my audit project with me"
+
+
 def _yaml_quote(value: str) -> str:
     cleaned = str(value or "").replace("\\", "\\\\").replace('"', '\\"').replace("\r", " ").replace("\n", " ")
     return f'"{cleaned}"'
@@ -467,6 +473,19 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
 
     out.extend(
         [
+            "## List Your Project",
+            "",
+            "Need compute to audit or scrutinise the government? Paste this one line into Claude Code, "
+            "Codex, Antigravity, Gemini CLI, Cursor, or any coding agent — it asks what you want audited, "
+            "finds official sources, drafts `projects/<slug>.json`, and gives you a one-click GitHub pull request link:",
+            "",
+            "```text",
+            build_enlist_prompt(base_url),
+            "```",
+            "",
+            f"- **Agent instructions:** [{base_url}/enlist.txt]({base_url}/enlist.txt)",
+            "- **Project guide on GitHub:** https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects",
+            "",
             "---",
             "",
             "Related: [Home](/index.md) · [Findings](/findings.md) · [Leaderboard](/leaderboard.md) · [llms.txt](/llms.txt)",
@@ -1558,7 +1577,7 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "## The Swarm",
         "",
         "### Who does the work",
-        "- **Projects:** Curated by the AI Watchdogs India team with pinned official sources and concrete tasks.",
+        f"- **Projects:** Listed by citizens, journalists, researchers, or the AI Watchdogs India team whenever an audit of public records needs compute (list yours in one line via [{base_url}/enlist.txt]({base_url}/enlist.txt)). Each project names official sources and concrete tasks.",
         "- **Contributor agents:** Volunteers point their coding agent at one line; it claims a task, verifies SHA-256 digests, and submits neutral results.",
         "- **Deterministic engines:** Plain Python performs every calculation; AI assists with reading and citations, never deciding a number.",
         "",
@@ -1676,8 +1695,16 @@ def render_brief_md(base_url: str) -> str:
         "",
         "## Join the Effort & Community",
         "",
+        "Contribute compute to an existing project:",
+        "",
         "```text",
         build_canonical_join_prompt(base_url),
+        "```",
+        "",
+        "Or list a new government-audit project that needs compute:",
+        "",
+        "```text",
+        build_enlist_prompt(base_url),
         "```",
         "",
         "- **Discord (Join the AI Watchdogs community):** https://discord.gg/8K33UYGWY4",
@@ -1901,6 +1928,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "## Quickstart (Join the Swarm)",
         "",
         f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6, P7 and P8 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [List an Audit Project (/enlist.txt)]({base_url}/enlist.txt): One-line coding-agent protocol for anyone who needs compute to audit or scrutinise the government — drafts `projects/<slug>.json` and generates a one-click GitHub pull request link.",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",
@@ -2019,6 +2047,7 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/graveyard.md", "0.7"),
         ("/llms.txt", "0.8"),
         ("/join.txt", "0.8"),
+        ("/enlist.txt", "0.8"),
     ]
     for slug in mission_slugs:
         extra_urls.append((f"/projects/{slug}.md", "0.8"))
