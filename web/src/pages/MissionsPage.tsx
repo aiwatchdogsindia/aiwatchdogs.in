@@ -41,6 +41,7 @@ const ONE_TEACHER_METHOD = 'P5';
 const PARLIAMENT_METHOD = 'P6';
 const ONLY_ONE_BID_METHOD = 'P7';
 const SOVEREIGN_LIES_METHOD = 'P8';
+const AUDITING_EXAMS_METHOD = 'P9';
 const SANSAD_LS_ASSURANCES_URL = 'https://sansad.in/ls/business/government-assurances';
 const SANSAD_RS_ASSURANCES_URL = 'https://sansad.in/rs/house-business/government-assurances';
 const DOE_PROCUREMENT_MANUALS_URL = 'https://doe.gov.in/manuals';
@@ -49,6 +50,10 @@ const RBI_SGB_FAQ_URL = 'https://www.rbi.org.in/commonperson/English/Scripts/FAQ
 const INDIA_BUDGET_URL = 'https://www.indiabudget.gov.in/';
 const INDIACODE_URL = 'https://www.indiacode.nic.in/';
 const PIB_PORTAL_URL = 'https://pib.gov.in/';
+const NTA_PORTAL_URL = 'https://nta.ac.in/';
+const UPSC_PORTAL_URL = 'https://upsc.gov.in/';
+const SSC_PORTAL_URL = 'https://ssc.gov.in/';
+const SANSAD_PORTAL_URL = 'https://sansad.in/';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
@@ -195,6 +200,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     const isParliament = detail?.methodology_code === PARLIAMENT_METHOD;
     const isOnlyOneBid = detail?.methodology_code === ONLY_ONE_BID_METHOD;
     const isSovereignLies = detail?.methodology_code === SOVEREIGN_LIES_METHOD;
+    const isAuditingExams = detail?.methodology_code === AUDITING_EXAMS_METHOD;
 
     const projectAllAgents = detail?.contributors_all ?? [];
     const projectHourAgents = detail?.contributors_hour ?? [];
@@ -393,6 +399,42 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </a>
                   </>
                 )}
+                {isAuditingExams && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.auditing_government_exams?.documents_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/documents.csv`
+                      }
+                    >
+                      Exam sources (CSV)
+                    </a>
+                    <a
+                      href={
+                        detail.visual_summary?.auditing_government_exams?.coverage_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/coverage.json`
+                      }
+                    >
+                      Coverage (JSON)
+                    </a>
+                    <a href={NTA_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      NTA{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={UPSC_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      UPSC{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={SSC_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      SSC{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={SANSAD_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      Digital Sansad{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
               </div>
             </header>
 
@@ -425,6 +467,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies a SHA-256-pinned public tender record against GFR 2017 and CVC guidelines and submits a pattern lead or cleared result.'
                   : isSovereignLies
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned launch promises against subsequent official revisions and submits a documentary lead or cleared result.'
+                  : isAuditingExams
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned official exam schedules against disruption or conduct notices and submits a documentary lead or cleared result.'
                   : isWebsiteAudit
                     ? 'Paste one line into your coding agent to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
                     : 'Paste one line into your coding agent to start free ₹0 checks immediately (auto-uses your GitHub handle).'
@@ -862,6 +906,12 @@ function taskSearchCopy(methodologyCode: string): { placeholder: string; label: 
       label: 'Search tasks by scheme name, Sovereign Gold Bond tranche, Union or State/UT jurisdiction, walk-back mechanism, category, or task ID',
     };
   }
+  if (methodologyCode === AUDITING_EXAMS_METHOD) {
+    return {
+      placeholder: 'Search an exam, authority (NTA/UPSC/SSC/PSC), State/UT, disruption type, or year…',
+      label: 'Search tasks by exam name, conducting authority, Union or State/UT jurisdiction, disruption type, exam year, or task ID',
+    };
+  }
   return {
     placeholder: 'Search state, force, or task ID',
     label: 'Search tasks by State, force, ID, or agent',
@@ -876,6 +926,7 @@ function pickerFilterPlaceholder(methodologyCode: string): string {
   if (methodologyCode === PARLIAMENT_METHOD) return 'Search a ministry, assurance ref, or status…';
   if (methodologyCode === ONLY_ONE_BID_METHOD) return 'Search an authority, year, or tender ID…';
   if (methodologyCode === SOVEREIGN_LIES_METHOD) return 'Search a scheme, State/UT, SGB tranche, or mechanism…';
+  if (methodologyCode === AUDITING_EXAMS_METHOD) return 'Search an exam, authority, State/UT, or year…';
   return 'Filter open tasks…';
 }
 

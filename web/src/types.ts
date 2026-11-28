@@ -909,6 +909,297 @@ export interface VisualSovereignLies {
   coverage_url?: string;
 }
 
+export type ExamJurisdictionLevel = 'union' | 'state' | 'ut';
+
+export type ExamDisruptionType =
+  | 'cancelled_after_conduct'
+  | 'postponed'
+  | 'rescheduled'
+  | 'delayed'
+  | 'cancelled_before_conduct'
+  | 'partial_reexam_or_glitch'
+  | 'flawless_conduct';
+
+export type ExamAuthorityType =
+  | 'central_testing_agency'
+  | 'union_psc_or_recruitment'
+  | 'railway_banking_psu'
+  | 'defence_medical_technical'
+  | 'state_psc'
+  | 'state_police_or_subordinate'
+  | 'state_teacher_or_entrance'
+  | 'ut_recruitment_or_board';
+
+export type ExamCategory =
+  | 'civil_services_and_psc'
+  | 'police_and_defence'
+  | 'teaching_and_faculty'
+  | 'medical_and_health'
+  | 'engineering_and_higher_ed'
+  | 'banking_railways_ssc'
+  | 'clerical_and_subordinate'
+  | 'board_and_other_public';
+
+export type ExamDisruptionReasonCategory =
+  | 'paper_integrity_compromise'
+  | 'administrative_or_logistical'
+  | 'technical_or_cbt_glitch'
+  | 'election_or_calendar_clash'
+  | 'weather_or_disaster'
+  | 'judicial_or_policy_review'
+  | 'none_flawless';
+
+export interface VisualExamAuditWindow {
+  start_date: string;
+  end_date: string;
+  years: number[];
+  label: string;
+}
+
+export interface VisualExamHeadlineCounts {
+  total_audited: number;
+  not_flawless_count: number;
+  flawless_count: number;
+  not_flawless_rate_pct: number;
+  flawless_rate_pct: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+  documented_affected_candidates_total: number;
+}
+
+export interface VisualExamDisruptionBucket {
+  disruption_type: ExamDisruptionType | string;
+  label?: string;
+  rule?: string | null;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  pct?: number;
+  documented_affected_candidates?: number;
+}
+
+export interface VisualExamTierCounts {
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads?: number;
+  cleared?: number;
+  not_flawless?: number;
+  flawless?: number;
+  cancelled_after_conduct?: number;
+}
+
+export interface VisualExamAuthorityType {
+  authority_type: ExamAuthorityType | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+}
+
+export interface VisualExamCategory {
+  exam_category: ExamCategory | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+}
+
+export interface VisualExamYear {
+  year: number | string;
+  tasks: number;
+  done?: number;
+  leads?: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+}
+
+export interface VisualExamReasonCategory {
+  reason_category: ExamDisruptionReasonCategory | string;
+  label?: string;
+  tasks: number;
+  leads: number;
+}
+
+export interface VisualExamJurisdiction {
+  jurisdiction: string;
+  jurisdiction_level: ExamJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+  not_flawless_rate_pct?: number;
+  documented_affected_candidates?: number;
+}
+
+export interface VisualExamAuthority {
+  authority: string;
+  authority_key: string;
+  authority_type: ExamAuthorityType | string;
+  jurisdiction: string;
+  jurisdiction_level: ExamJurisdictionLevel | string;
+  tasks: number;
+  done?: number;
+  leads: number;
+  not_flawless: number;
+  flawless: number;
+  cancelled_after_conduct: number;
+  postponed: number;
+  rescheduled: number;
+  delayed: number;
+  cancelled_before_conduct: number;
+  partial_reexam_or_glitch: number;
+  not_flawless_rate_pct?: number;
+  documented_affected_candidates?: number;
+}
+
+export interface VisualExamAnchorCase {
+  task_id?: string;
+  case_key: string;
+  finding_id?: string | null;
+  exam_name: string;
+  exam_slug?: string;
+  cycle_or_stage?: string;
+  exam_year: number;
+  jurisdiction: string;
+  jurisdiction_level: ExamJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  authority: string;
+  authority_key?: string;
+  authority_type?: ExamAuthorityType | string;
+  exam_category?: ExamCategory | string;
+  scheduled_date?: string;
+  actual_or_event_date?: string;
+  delay_days?: number | null;
+  disruption_type: ExamDisruptionType | string;
+  disruption_reason_category?: ExamDisruptionReasonCategory | string;
+  students_took_exam_before_cancellation?: boolean;
+  schedule_summary: string;
+  schedule_document_ref?: string;
+  outcome_summary: string;
+  outcome_document_ref?: string;
+  affected_candidates_count?: number | null;
+  affected_candidates_basis?: string;
+  statutory_anchor?: string;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  severity?: string;
+}
+
+export interface VisualExamLead {
+  finding_id?: string | null;
+  task_id?: string;
+  case_key: string;
+  title: string;
+  exam_name: string;
+  exam_slug?: string;
+  cycle_or_stage?: string;
+  exam_year: number;
+  jurisdiction: string;
+  jurisdiction_level?: ExamJurisdictionLevel | string;
+  state_or_ut?: string | null;
+  authority: string;
+  authority_key?: string;
+  authority_type?: ExamAuthorityType | string;
+  exam_category?: ExamCategory | string;
+  scheduled_date?: string;
+  actual_or_event_date?: string;
+  delay_days?: number | null;
+  disruption_type: ExamDisruptionType | string;
+  disruption_reason_category?: ExamDisruptionReasonCategory | string;
+  signal_category?: string;
+  rule_triggered?: string;
+  students_took_exam_before_cancellation?: boolean;
+  schedule_summary?: string;
+  schedule_document_ref?: string;
+  outcome_summary?: string;
+  outcome_document_ref?: string;
+  affected_candidates_count?: number | null;
+  affected_candidates_basis?: string;
+  statutory_anchor?: string;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  is_anchor_case?: boolean;
+  severity?: string;
+  status: string;
+}
+
+export interface VisualExamDryRunSummary {
+  status: string;
+  evaluated_tasks: number;
+  flagged_leads: number;
+  cleared_flawless: number;
+  unevaluable: number;
+  verified_documents: number;
+  as_of_date?: string;
+}
+
+export interface VisualAuditingGovernmentExams {
+  project_slug?: string;
+  project_code?: string;
+  methodology_code?: string;
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  audit_window?: VisualExamAuditWindow;
+  total_tasks: number;
+  completed_tasks?: number;
+  published_leads?: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  unevaluable_tasks?: number;
+  unique_exams_covered?: number;
+  unique_authorities_covered?: number;
+  unique_documents_count?: number;
+  states_and_uts_covered?: number;
+  leads_source?: 'live' | 'corpus_fallback' | string;
+  documents_url?: string;
+  coverage_url?: string;
+  headline_counts?: VisualExamHeadlineCounts;
+  by_disruption_type?: Record<string, VisualExamDisruptionBucket | number>;
+  by_jurisdiction_level?: Record<string, VisualExamTierCounts | number>;
+  by_authority_type?: VisualExamAuthorityType[];
+  by_exam_category?: VisualExamCategory[];
+  by_year?: VisualExamYear[];
+  by_reason_category?: VisualExamReasonCategory[];
+  jurisdictions?: VisualExamJurisdiction[];
+  top_authorities?: VisualExamAuthority[];
+  anchor_cases?: VisualExamAnchorCase[];
+  leads?: VisualExamLead[];
+  dry_run_summary?: VisualExamDryRunSummary | null;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -920,6 +1211,7 @@ export interface ProjectVisualSummary {
   parliaments_to_do_list?: VisualParliamentsToDoList;
   only_one_bid?: VisualOnlyOneBid;
   sovereign_lies?: VisualSovereignLies;
+  auditing_government_exams?: VisualAuditingGovernmentExams;
 }
 
 export interface MissionItem {

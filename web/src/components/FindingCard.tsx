@@ -3,8 +3,13 @@ import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from '
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
 import {
+  extractAuditingGovernmentExamsMetrics,
   extractOnlyOneBidMetrics,
   extractSovereignLiesMetrics,
+  formatCandidateCountCompact,
+  formatExamCategory,
+  formatExamDisruption,
+  formatExamDisruptionReason,
   formatInr,
   formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
@@ -76,6 +81,26 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     ? formatJurisdictionLabel(p8Record.jurisdiction, p8Record.stateOrUt, p8Record.jurisdictionLevel)
     : null;
 
+  const p9Record =
+    finding.methodology_code === 'P9' && !isQuarantined
+      ? extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics)
+      : null;
+  const p9Disruption =
+    p9Record && (p9Record.disruptionType || p9Record.signalCategory)
+      ? formatExamDisruption(p9Record.disruptionType || p9Record.signalCategory)
+      : null;
+  const p9Reason =
+    p9Record?.disruptionReasonCategory && p9Record.disruptionReasonCategory !== 'none_flawless'
+      ? formatExamDisruptionReason(p9Record.disruptionReasonCategory)
+      : null;
+  const p9Category = p9Record?.examCategory ? formatExamCategory(p9Record.examCategory) : null;
+  const p9Jurisdiction = p9Record
+    ? formatJurisdictionLabel(p9Record.jurisdiction, p9Record.stateOrUt, p9Record.jurisdictionLevel)
+    : null;
+  const p9CandidatesCompact = p9Record
+    ? formatCandidateCountCompact(p9Record.affectedCandidatesCount)
+    : null;
+
   return (
     <article
       className={`finding-card status-${finding.status}`}
@@ -132,6 +157,21 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           {p8Record?.isSgbAnchor && (
             <span className="p8-sgb-chip" title="Flagship Sovereign Gold Bond anchor case">
               SGB Anchor
+            </span>
+          )}
+          {p9Disruption && (
+            <span className={p9Disruption.chipClass} title={`Conduct outcome: ${p9Disruption.label}`}>
+              {p9Disruption.shortLabel}
+            </span>
+          )}
+          {p9Record?.studentsTookExamBeforeCancellation && (
+            <span className="p9-sat-chip" title="Students sat for the exam before it was cancelled">
+              Sat, then cancelled
+            </span>
+          )}
+          {p9Record?.isAnchorCase && (
+            <span className="p9-anchor-chip" title="Flagship audited examination anchor case">
+              Anchor Case
             </span>
           )}
           {hasCorrections && sm.id !== 'corrected' && (
@@ -303,6 +343,73 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
                 </p>
                 {p8Record.walkbackDocumentRef && !compact && (
                   <span className="fc-p8-col-ref font-mono">{p8Record.walkbackDocumentRef}</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {p9Record && (
+        <div className="fc-p9-strip" aria-label="Original exam schedule versus actual conduct outcome">
+          <div className="fc-p8-meta-row">
+            {p9Jurisdiction && <span className="tag-mono">{p9Jurisdiction}</span>}
+            {p9Record.examYear != null && (
+              <span className="tag-mono tabular">{String(p9Record.examYear)}</span>
+            )}
+            {p9Category && <span className="tag-mono">{p9Category.shortLabel}</span>}
+            {p9Record.scheduledDate && (
+              <span className="tag-mono tabular">
+                {p9Record.scheduledDate}
+                {p9Record.actualOrEventDate && p9Record.actualOrEventDate !== p9Record.scheduledDate
+                  ? ` → ${p9Record.actualOrEventDate}`
+                  : ''}
+                {!p9Disruption?.isCleared && p9Record.delayDays != null && p9Record.delayDays > 0
+                  ? ` (+${p9Record.delayDays.toLocaleString('en-IN')}d)`
+                  : ''}
+              </span>
+            )}
+            {p9Reason && !compact && (
+              <span className={p9Reason.chipClass} title={p9Reason.label}>
+                {p9Reason.shortLabel}
+              </span>
+            )}
+            {p9CandidatesCompact && (
+              <span
+                className="fc-p8-delta-pill tabular"
+                title={p9Record.affectedCandidatesBasis || 'Documented affected candidates'}
+              >
+                {p9CandidatesCompact} candidates
+              </span>
+            )}
+          </div>
+
+          {(p9Record.scheduleSummary || p9Record.outcomeSummary) && (
+            <div className="fc-p8-compare-grid">
+              <div className="fc-p8-col fc-p8-col--promise">
+                <span className="fc-p8-col-kicker">Original Schedule</span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p9Record.scheduleSummary, compact ? 95 : 135) ||
+                    'Original exam date documented in primary official schedule.'}
+                </p>
+                {p9Record.scheduleDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p9Record.scheduleDocumentRef}</span>
+                )}
+              </div>
+              <div
+                className={`fc-p8-col ${
+                  p9Disruption?.isCleared ? 'fc-p8-col--honored' : 'fc-p8-col--walkback'
+                }`}
+              >
+                <span className="fc-p8-col-kicker">
+                  {p9Disruption?.isCleared ? 'Conducted Flawlessly' : 'What Actually Happened'}
+                </span>
+                <p className="fc-p8-col-text">
+                  {clipCardText(p9Record.outcomeSummary, compact ? 95 : 135) ||
+                    'Subsequent conduct outcome documented in official public notice.'}
+                </p>
+                {p9Record.outcomeDocumentRef && !compact && (
+                  <span className="fc-p8-col-ref font-mono">{p9Record.outcomeDocumentRef}</span>
                 )}
               </div>
             </div>

@@ -77,6 +77,14 @@ const LIVE_PROJECTS = [
     summary:
       'The government made a promise when it launched the scheme. Did it keep it? Audits 1,000 Union and State/UT scheme records — anchored by the Sovereign Gold Bond (SGB) walk-back — comparing launch terms against subsequent amendments, cuts, restrictions, or discontinuations.',
   },
+  {
+    code: 'P9',
+    slug: 'auditing-government-exams',
+    title: 'Auditing Government Exams',
+    tag: WORK_TYPE_TAGS.exam_conduct,
+    summary:
+      'Out of 1,000 Indian government exams scheduled over the past 3 years (Nov 2023 – Nov 2026), how many happened flawlessly — and how many were delayed, postponed, rescheduled, or cancelled after students sat? Audits Union agencies and all 36 States & UTs from SHA-256-pinned official notices.',
+  },
 ];
 
 const EXPLORE_LINKS = [

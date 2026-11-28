@@ -28,6 +28,7 @@ import type {
   RecordEvent,
   RtiDraft,
   VerificationCheckState,
+  VisualAuditingGovernmentExams,
   VisualSovereignLies,
   WhisperItem,
   TaskUsage,
@@ -583,7 +584,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
                   ? 'P7'
                   : slug === 'sovereign-lies' || methodologyCode.toUpperCase() === 'P8'
                     ? 'P8'
-                    : methodologyCode;
+                    : slug === 'auditing-government-exams' || methodologyCode.toUpperCase() === 'P9'
+                      ? 'P9'
+                      : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,
@@ -908,6 +911,22 @@ export const api = {
       raw.sovereign_lies && typeof raw.sovereign_lies === 'object' && !Array.isArray(raw.sovereign_lies)
         ? (raw.sovereign_lies as VisualSovereignLies)
         : (raw as unknown as VisualSovereignLies);
+    return inner;
+  },
+
+  async getAuditingGovernmentExamsSummary(
+    signal?: AbortSignal,
+  ): Promise<VisualAuditingGovernmentExams> {
+    const raw = await fetchJson<Record<string, unknown>>(
+      '/api/projects/auditing-government-exams/summary',
+      { signal },
+    );
+    const inner =
+      raw.auditing_government_exams &&
+      typeof raw.auditing_government_exams === 'object' &&
+      !Array.isArray(raw.auditing_government_exams)
+        ? (raw.auditing_government_exams as VisualAuditingGovernmentExams)
+        : (raw as unknown as VisualAuditingGovernmentExams);
     return inner;
   },
 
