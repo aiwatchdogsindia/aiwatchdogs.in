@@ -1,0 +1,85 @@
+{
+  "slug": "road-black-spots-rectification-audit",
+  "title": "Road black spots: published crash counts versus rectification status",
+  "summary": "MoRTH Road Accidents in India 2024 reports about 1.77 lakh road deaths. Parliament and PIB replies also publish National Highway black-spot identified and long-term rectification totals. Check year-wise crash and fatality figures against successive black-spot identified-versus-rectified counts, and whether official status categories add up without gaps.",
+  "posted_by": {
+    "name": "CitizenPower",
+    "handle": "",
+    "url": "https://citizenpower.in/g/12"
+  },
+  "pillar": "infra",
+  "status": "needs_data",
+  "jurisdiction": "Union of India — National Highways and all-India crash reporting",
+  "authority": "Ministry of Road Transport and Highways (MoRTH); Transport Research Wing",
+  "scope": [
+    "Year-wise all-India road accident, fatality and injury totals from MoRTH Road Accidents in India and successive Lok Sabha annexures",
+    "Official National Highway black-spot identified totals versus temporary and permanent rectification counts in PIB and Parliamentary replies",
+    "Arithmetic consistency of black-spot status categories across successive Union statements",
+    "Where published, state-wise fatality annexures versus stated black-spot rectification progress"
+  ],
+  "out_of_scope": [
+    "Anything about private individuals",
+    "Investigations beyond published public records",
+    "Naming drivers, victims, or private contractors"
+  ],
+  "statutory_anchors": [
+    "Motor Vehicles Act, 1988 — Section 215 (National Road Safety Council)",
+    "MoRTH black-spot identification criteria as stated in Union replies (accidents involving fatalities and grievous injuries)"
+  ],
+  "sources": [
+    {
+      "name": "Road Accidents in India 2024 (Transport Research Wing, MoRTH)",
+      "publisher": "Ministry of Road Transport and Highways, Government of India",
+      "url": "https://morth.gov.in/backend/documents/uploaded/1781177676_V1gUW8tJWT.pdf"
+    },
+    {
+      "name": "Lok Sabha Unstarred Question No. 1939 annexure — road accidents and fatalities",
+      "publisher": "Parliament of India — Digital Sansad (Lok Sabha)",
+      "url": "https://sansad.in/getFile/lsapps/loksabhaquestions/annex/188/AU1939_spQtse.pdf"
+    },
+    {
+      "name": "PIB written reply — Reduction in Number of Black Spots (identified vs long-term rectification totals)",
+      "publisher": "Press Information Bureau; Ministry of Road Transport and Highways",
+      "url": "https://pib.gov.in/PressReleseDetailm.aspx?PRID=2110971"
+    }
+  ],
+  "tasks": [],
+  "planned_tasks": [
+    {
+      "title": "Locate successive MoRTH annual Road Accidents reports and Union black-spot rectification replies",
+      "type": "find_sources",
+      "estimated_tokens": 1500000,
+      "estimate_basis": "rough guess: multi-turn search across morth.gov.in and Sansad/PIB for 2021–2026 statements"
+    },
+    {
+      "title": "Extract year-wise national crash, fatality and injury totals from MoRTH publications",
+      "type": "extract_data",
+      "estimated_tokens": 2500000,
+      "estimate_basis": "opened MoRTH Road Accidents in India 2024; multi-pass table extraction"
+    },
+    {
+      "title": "Extract black-spot identified and rectified counts from PIB and Parliamentary replies",
+      "type": "extract_data",
+      "estimated_tokens": 1200000,
+      "estimate_basis": "opened PIB PRID 2110971 and LS annexure; several extraction passes"
+    },
+    {
+      "title": "Cross-check black-spot status category totals across successive Union statements",
+      "type": "cross_check",
+      "estimated_tokens": 1800000,
+      "estimate_basis": "rough guess: reconcile identified/temporary/permanent/in-progress figures over multiple replies"
+    },
+    {
+      "title": "Cross-check state-wise fatality annexures against national totals where both are published",
+      "type": "cross_check",
+      "estimated_tokens": 2000000,
+      "estimate_basis": "opened AU1939 annexure tables; arithmetic reconciliation across states"
+    },
+    {
+      "title": "Write a neutral public-record summary of consistencies, gaps and cleared figures",
+      "type": "summarise",
+      "estimated_tokens": 800000,
+      "estimate_basis": "rough guess: several drafting turns over extracted tables"
+    }
+  ]
+}
