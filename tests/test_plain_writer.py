@@ -156,3 +156,30 @@ def test_failed_calls_release_the_hold(tmp_path: Path, monkeypatch: pytest.Monke
             with pytest.raises(writer.CallFailed):
                 writer.call_model(cfg, "s", "p", {"type": "object"}, max_tokens=4000, db=db)
         assert abs(writer.spent_today(db) - 0.06) < 1e-6
+
+
+def test_more_languages_and_corrections_bring_cards_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        db = app.state.db
+        start, _ = news.window(news.today_ist())
+        _add(app, "f-l", "verified", start, start, amount=5.895e9)
+        seen: list[list[str]] = []
+
+        def fake(cfg, system, prompt, schema, max_tokens, timeout_s):
+            langs = list(schema["properties"])
+            if "lede" in json.dumps(schema):
+                return writer.Result({c: {"lede": "One finding was confirmed today."} for c in langs}, 0.0, "fake")
+            seen.append(langs)
+            return writer.Result({c: {"head": "Rural Development left 49.1% unspent", "what": "Only ₹610 crore of ₹1,200 crore was spent.", "why": "w", "ask": "a?"} for c in langs}, 0.0, "fake")
+
+        monkeypatch.setattr(writer, "_call_anthropic", fake)
+        cfg = writer.Config("anthropic", "claude-haiku-5-5", "low", 5.0, "", ["en"])
+        writer.run_once(db, cfg, time_budget_s=600)
+        assert ["en"] in seen
+        seen.clear()
+        writer.run_once(db, cfg, time_budget_s=600)
+        assert seen == []
+        writer.run_once(db, writer.Config("anthropic", "claude-haiku-5-5", "low", 5.0, "", ["en", "hi"]), time_budget_s=600)
+        assert ["hi"] in seen
+        assert set(writer.load_texts(db, ["finding:f-l"])["finding:f-l"]["langs"]) == {"en", "hi"}

@@ -390,6 +390,26 @@ def _missing_langs(db: Any, key: str, h: str, langs: list[str]) -> list[str]:
     return [c for c in langs if c not in have]
 
 
+LANGS_KEY = "writer:langs"
+
+
+def _sync_languages(db: Any, langs: list[str]) -> None:
+    sig = ",".join(sorted(langs))
+    with db.read() as conn:
+        row = conn.execute("SELECT payload_json FROM plain_texts WHERE key = ?", (LANGS_KEY,)).fetchone()
+    if row is not None and str(row["payload_json"]) == json.dumps(sig):
+        return
+    now = _now()
+    with db.transaction() as conn:
+        conn.execute("UPDATE plain_texts SET complete = 0 WHERE key LIKE 'finding:%' OR key LIKE 'news:%'")
+        conn.execute(
+            "INSERT INTO plain_texts (key, source_hash, provider, model, payload_json, complete, created_at, updated_at) "
+            "VALUES (?, '', 'writer', '', ?, 1, ?, ?) ON CONFLICT(key) DO UPDATE SET payload_json = excluded.payload_json, "
+            "updated_at = excluded.updated_at",
+            (LANGS_KEY, json.dumps(sig), now, now),
+        )
+
+
 def _pending_findings(db: Any, limit: int) -> list[dict[str, Any]]:
     with db.read() as conn:
         rows = conn.execute(
@@ -397,7 +417,8 @@ def _pending_findings(db: Any, limit: int) -> list[dict[str, Any]]:
             f"f.monetary_exposure_inr, f.anomaly_metrics_json, f.rule_triggered, f.status, f.confirm_count, "
             f"f.required_quorum FROM findings f LEFT JOIN plain_texts p ON p.key = 'finding:' || f.id "
             "WHERE COALESCE(f.quarantined, 0) = 0 AND f.status != 'quarantined' AND COALESCE(f.is_demo_sample, 0) = 0 "
-            "AND (p.key IS NULL OR p.complete = 0) "
+            "AND (p.key IS NULL OR p.complete = 0 OR EXISTS (SELECT 1 FROM finding_corrections c "
+            "WHERE c.finding_id = f.id AND c.created_at > p.updated_at)) "
             "ORDER BY CASE f.status WHEN 'verified' THEN 0 WHEN 'rti_filed' THEN 0 WHEN 'cleared' THEN 1 "
             "WHEN 'resolved_explained' THEN 1 WHEN 'peer_review' THEN 2 ELSE 3 END, "
             "COALESCE(f.verified_at, f.created_at) DESC, f.id ASC LIMIT ?",
@@ -437,6 +458,11 @@ def run_once(db: Any, cfg: Config | None = None, *, time_budget_s: float = 40.0,
         report["spent_usd"] += cost
 
     from . import news as plain_news
+
+    try:
+        _sync_languages(db, cfg.languages)
+    except Exception as exc:
+        log.warning("plain writer language sync failed: %s", exc)
 
     try:
         d = plain_news.today_ist()
