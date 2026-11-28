@@ -47,7 +47,8 @@ function shortEntity(name: string): string {
 interface ProjectTrend {
   code: string;
   label: string;
-  count: number;
+  /** Verified findings, or null when the projects API could not be reached. */
+  count: number | null;
 }
 
 /** Live projects with published findings, named the way the Projects page names them. */
@@ -74,7 +75,7 @@ function Trending({
 }) {
   if (projects.length === 0) return null;
   // Sizes follow finding counts on a log scale, since projects range from a handful to thousands.
-  const counts = projects.map((p) => Math.log(p.count + 1));
+  const counts = projects.map((p) => Math.log((p.count ?? 0) + 1));
   const lo = Math.min(...counts);
   const hi = Math.max(...counts);
   // Mix big and small names as Pulse does, in an order that stays the same between visits.
@@ -92,7 +93,7 @@ function Trending({
         All projects
       </button>
       {ordered.map((p) => {
-        const scale = hi > lo ? (Math.log(p.count + 1) - lo) / (hi - lo) : 1;
+        const scale = p.count != null && hi > lo ? (Math.log(p.count + 1) - lo) / (hi - lo) : 0.5;
         const isActive = p.code === active;
         return (
           <button
@@ -101,7 +102,7 @@ function Trending({
             className={isActive ? 'pulse-trend is-active' : 'pulse-trend'}
             style={{ '--trend-scale': scale.toFixed(3) } as CSSProperties}
             aria-pressed={isActive}
-            title={`${p.count.toLocaleString('en-IN')} verified findings`}
+            title={p.count != null ? `${p.count.toLocaleString('en-IN')} verified findings` : undefined}
             onClick={() => onPick(isActive ? '' : p.code)}
           >
             {p.label}
@@ -185,7 +186,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
         if (!cancelled) setProjects(projectTrends(missions));
       })
       .catch(() => {
-        if (!cancelled) setProjects(TOPICS.map((t) => ({ ...t, count: 1 })));
+        if (!cancelled) setProjects(TOPICS.map((t) => ({ ...t, count: null })));
       });
     return () => {
       cancelled = true;
