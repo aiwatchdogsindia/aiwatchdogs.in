@@ -2605,9 +2605,41 @@ def _resolve_provenance(
         inferred_publisher = "Union Budget / Ministry of Finance (unverified third-party mirror)"
         inferred_landing = "https://indiabudget.gov.in"
         inferred_mirror = "GitHub Mirror (Varnasr/PolicyStack)"
-    elif host == "sansad.in" or host.endswith(".sansad.in"):
+    elif host == "sansad.in" or host.endswith(".sansad.in") or host == "rajyasabha.digital" or host.endswith(".rajyasabha.digital"):
         inferred_publisher = "Parliament of India (Digital Sansad)"
         inferred_landing = "https://sansad.in"
+        inferred_mirror = None
+    elif host == "nta.ac.in" or host.endswith(".nta.ac.in"):
+        inferred_publisher = "National Testing Agency (NTA), Ministry of Education"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "upsc.gov.in" or host.endswith(".upsc.gov.in"):
+        inferred_publisher = "Union Public Service Commission (UPSC)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host in {"ssc.gov.in", "ssc.nic.in"} or host.endswith((".ssc.gov.in", ".ssc.nic.in")):
+        inferred_publisher = "Staff Selection Commission (SSC), Government of India"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "natboard.edu.in" or host.endswith(".natboard.edu.in"):
+        inferred_publisher = "National Board of Examinations in Medical Sciences (NBEMS)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "cbse.gov.in" or host.endswith(".cbse.gov.in"):
+        inferred_publisher = "Central Board of Secondary Education (CBSE)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "ibps.in" or host.endswith(".ibps.in"):
+        inferred_publisher = "Institute of Banking Personnel Selection (IBPS)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "prsindia.org" or host.endswith(".prsindia.org"):
+        inferred_publisher = "PRS Legislative Research (Parliamentary Records)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "cag.gov.in" or host.endswith(".cag.gov.in"):
+        inferred_publisher = "Comptroller and Auditor General of India (CAG)"
+        inferred_landing = source_ref
         inferred_mirror = None
     elif host == "rbi.org.in" or host.endswith(".rbi.org.in"):
         inferred_publisher = "Reserve Bank of India"
@@ -2976,7 +3008,11 @@ def load_dataset(
         records, raw_text, resolved_fmt = _parse_html_bytes(
             raw_bytes, source_ref, max_parse_rows=max_parse_rows
         )
-        if isinstance(ctx.get("sovereign_lies"), dict) or ctx.get("_extract_html_text"):
+        if (
+            isinstance(ctx.get("sovereign_lies"), dict)
+            or isinstance(ctx.get("auditing_government_exams"), dict)
+            or ctx.get("_extract_html_text")
+        ):
             visible_text = _extract_html_visible_text(raw_bytes, max_chars=max_pdf_chars)
             html_body_record = {
                 "page": 1,
@@ -3038,7 +3074,7 @@ def load_dataset(
             "max_pdf_pages": max_pdf_pages,
             "max_pdf_chars": max_pdf_chars,
         }
-        if isinstance(ctx.get("sovereign_lies"), dict):
+        if isinstance(ctx.get("sovereign_lies"), dict) or isinstance(ctx.get("auditing_government_exams"), dict):
             sec_ctx["_extract_html_text"] = True
         sec_ds = load_dataset(
             secondary_ref,
@@ -3067,9 +3103,9 @@ def load_dataset(
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {**rec, "document": "secondary", "secondary_sha256": sec_ds.sha256} for rec in sec_ds.records
             ]
-        elif isinstance(ctx.get("sovereign_lies"), dict):
-            # P8 pairs a launch-promise official record with a walk-back/amendment official record
-            # across PDF, HTML, JSON, CSV, or TXT formats while keeping both sets clearly tagged.
+        elif isinstance(ctx.get("sovereign_lies"), dict) or isinstance(ctx.get("auditing_government_exams"), dict):
+            # P8/P9 pair primary and secondary official records across PDF, HTML, JSON, CSV, or TXT
+            # formats while keeping both sets clearly tagged.
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {
                     **rec,

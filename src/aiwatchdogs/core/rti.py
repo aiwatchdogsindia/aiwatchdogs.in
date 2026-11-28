@@ -255,6 +255,11 @@ _CENTRAL_AUTHORITY_CUES: tuple[str, ...] = (
     "central coalfields",
     "nlc india",
     "union government",
+    "national testing agency",
+    "union public service commission",
+    "staff selection commission",
+    "railway recruitment board",
+    "national board of examinations",
 )
 
 _METHODOLOGY_RECORDS: dict[str, list[str]] = {
@@ -313,6 +318,11 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of all subsequent amending notifications, circulars, Finance Department/Cabinet notes, or discontinuance orders modifying, restricting, capping, or suspending those launch terms.",
         "Certified copies of any published fiscal-impact assessment, grandfathering/transitional relief consideration note, or beneficiary/outlay arrears statement held on record under Section 4(1)(b) of the RTI Act, 2005.",
     ],
+    "P9": [
+        "Certified copies of the original examination schedule notification, agency/testing-vendor conduct order, and all subsequent postponement, rescheduling, cancellation, or re-examination notices issued for the referenced public examination.",
+        "Certified copies of official committee notes, administrative orders, or technical incident summaries recording the grounds for exam postponement, rescheduling, cancellation, or partial re-examination — including any safeguard action recorded under the Public Examinations (Prevention of Unfair Means) Act, 2024 or applicable State examination rules (with personal PII redacted under Section 8(1)(j)).",
+        "Certified copies of aggregate candidate statistics (registered, appeared, and affected candidates), re-examination timelines, and fee-refund or facilitation circulars proactively disclosed under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
@@ -352,7 +362,19 @@ def _format_inr(amount: float) -> str:
 def _extract_reference_ids(finding: dict[str, Any]) -> str:
     refs: list[str] = []
     metrics = finding.get("anomaly_metrics") if isinstance(finding.get("anomaly_metrics"), dict) else {}
-    for mkey in ("assurance_ref", "para_number", "tender_id", "ocid", "promise_document_ref", "walkback_document_ref", "case_key", "scheme_slug"):
+    for mkey in (
+        "assurance_ref",
+        "para_number",
+        "tender_id",
+        "ocid",
+        "promise_document_ref",
+        "walkback_document_ref",
+        "schedule_document_ref",
+        "outcome_document_ref",
+        "case_key",
+        "scheme_slug",
+        "exam_slug",
+    ):
         val = metrics.get(mkey)
         cleaned = _clean_single_line(val, max_len=64) if val else ""
         if cleaned and cleaned not in refs:

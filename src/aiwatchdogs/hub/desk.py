@@ -65,6 +65,8 @@ from aiwatchdogs.hub.quorum import (
 from aiwatchdogs.hub.seed import FINANCIAL_QUANTITY_LABELS, INDEPENDENCE_PLEDGE
 from aiwatchdogs.hub.sse import SSEBroker
 from aiwatchdogs.projects import (
+    AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
+    AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
     CANONICAL_PROJECT_CODES,
     ONE_ROAD_TWO_BILLS_METHODOLOGY,
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
@@ -83,6 +85,7 @@ from aiwatchdogs.projects import (
 _FINANCIAL_QUANTITY_LABELS: dict[str, str] = {
     **FINANCIAL_QUANTITY_LABELS,
     "scheme_promises_and_revisions": "Scheme launch promises, amendments, & published outlays",
+    "public_examination_conduct": "Public examination conduct, schedule disruptions, & candidate impact",
 }
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
@@ -166,6 +169,7 @@ OPEN_CHOICE_PROJECTS = frozenset(
         PARLIAMENTS_TO_DO_LIST_PROJECT_SLUG,
         ONLY_ONE_BID_PROJECT_SLUG,
         SOVEREIGN_LIES_PROJECT_SLUG,
+        AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
     }
 )
 
@@ -3795,6 +3799,10 @@ class DeskService:
             summary["sovereign_lies"] = self._sovereign_lies_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == AUDITING_GOVERNMENT_EXAMS_METHODOLOGY:
+            summary["auditing_government_exams"] = self._auditing_government_exams_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -4010,6 +4018,7 @@ class DeskService:
                         ONE_ROAD_TWO_BILLS_METHODOLOGY,
                         ONLY_ONE_BID_METHODOLOGY,
                         SOVEREIGN_LIES_METHODOLOGY,
+                        AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
                     )
                 )
                 else _TASK_LIST_COLUMNS
@@ -5787,6 +5796,1082 @@ class DeskService:
             "top_schemes": top_schemes_list,
             "sgb_anchor_case": sgb_anchor_case,
             "top_leads": cleaned_top_leads,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def get_auditing_government_exams_summary(self) -> dict[str, Any]:
+        """Public summary endpoint payload for Project 9 (Auditing Government Exams)."""
+        slug = self.resolve_slug(AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT * FROM missions WHERE slug = ? OR methodology_code = ? LIMIT 1",
+                (slug, AUDITING_GOVERNMENT_EXAMS_METHODOLOGY),
+            ).fetchone()
+            if row is not None:
+                return self._auditing_government_exams_summary(conn, mission_row=row)
+        coverage = _project_coverage(slug)
+        if not coverage:
+            raise HTTPException(status_code=404, detail="Project 'auditing-government-exams' not found")
+        return self._auditing_government_exams_summary(None, mission_row=None)
+
+    def _auditing_government_exams_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fallback-safe 3-year public examination audit summary, breakdowns, anchors, and leads for P9."""
+        from aiwatchdogs.engines.auditing_government_exams import (
+            AUTHORITY_TYPE_LABELS,
+            DISRUPTION_TYPE_LABELS,
+            DISRUPTION_TYPE_RULES,
+            EXAM_CATEGORY_LABELS,
+            P9_AUDIT_WINDOW_END,
+            P9_AUDIT_WINDOW_LABEL,
+            P9_AUDIT_WINDOW_START,
+            P9_AUDIT_WINDOW_YEARS,
+            P9_DEFAULT_HOOK,
+            REASON_CATEGORY_LABELS,
+            SIGNAL_CATEGORIES,
+            VALID_DISRUPTION_TYPES,
+            canonical_key,
+            evaluate_exam_disruption_rule,
+        )
+
+        mid = str(mission_row["id"]) if mission_row is not None else None
+        slug = str(mission_row["slug"]) if mission_row is not None else AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG
+        coverage = _project_coverage(slug)
+
+        def _opt_int(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            return None
+
+        def _make_jurisdiction_row(jur: str, jlvl: str, s_ut: Any) -> dict[str, Any]:
+            clean_lvl = jlvl if jlvl in {"union", "state", "ut"} else "state"
+            clean_sut = str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None
+            if clean_lvl == "union":
+                clean_sut = None
+            return {
+                "jurisdiction": jur,
+                "jurisdiction_level": clean_lvl,
+                "state_or_ut": clean_sut,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "cleared": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+                "postponed": 0,
+                "rescheduled": 0,
+                "delayed": 0,
+                "cancelled_before_conduct": 0,
+                "partial_reexam_or_glitch": 0,
+                "not_flawless_rate_pct": 0.0,
+                "documented_affected_candidates": 0,
+            }
+
+        def _make_authority_row(
+            authority: str,
+            akey: str,
+            atype: str,
+            jur: str,
+            jlvl: str,
+        ) -> dict[str, Any]:
+            return {
+                "authority": authority,
+                "authority_key": akey,
+                "authority_type": atype if atype in AUTHORITY_TYPE_LABELS else "central_testing_agency",
+                "jurisdiction": jur,
+                "jurisdiction_level": jlvl if jlvl in {"union", "state", "ut"} else "union",
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+                "postponed": 0,
+                "rescheduled": 0,
+                "delayed": 0,
+                "cancelled_before_conduct": 0,
+                "partial_reexam_or_glitch": 0,
+                "not_flawless_rate_pct": 0.0,
+                "documented_affected_candidates": 0,
+            }
+
+        by_disruption_type: dict[str, dict[str, Any]] = {
+            d: {
+                "disruption_type": d,
+                "label": DISRUPTION_TYPE_LABELS[d],
+                "rule": DISRUPTION_TYPE_RULES.get(d),
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "cleared": 0,
+                "pct": 0.0,
+                "documented_affected_candidates": 0,
+            }
+            for d in (*SIGNAL_CATEGORIES, "flawless_conduct")
+        }
+        raw_dis = coverage.get("by_disruption_type") if isinstance(coverage.get("by_disruption_type"), dict) else {}
+        for d in VALID_DISRUPTION_TYPES:
+            val = raw_dis.get(d)
+            if isinstance(val, dict):
+                by_disruption_type[d]["tasks"] = int(val.get("tasks") or 0)
+                by_disruption_type[d]["documented_affected_candidates"] = int(
+                    val.get("documented_affected_candidates") or 0
+                )
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_disruption_type[d]["tasks"] = int(val)
+
+        by_jurisdiction_level: dict[str, dict[str, Any]] = {
+            lvl: {
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "leads": 0,
+                "cleared": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+            }
+            for lvl in ("union", "state", "ut")
+        }
+        raw_jlevels = (
+            coverage.get("by_jurisdiction_level")
+            if isinstance(coverage.get("by_jurisdiction_level"), dict)
+            else {}
+        )
+        for lvl in ("union", "state", "ut"):
+            item = raw_jlevels.get(lvl)
+            if isinstance(item, dict):
+                by_jurisdiction_level[lvl]["tasks"] = int(item.get("tasks") or 0)
+                by_jurisdiction_level[lvl]["not_flawless"] = int(item.get("not_flawless") or 0)
+                by_jurisdiction_level[lvl]["flawless"] = int(item.get("flawless") or 0)
+                by_jurisdiction_level[lvl]["cancelled_after_conduct"] = int(item.get("cancelled_after_conduct") or 0)
+
+        authority_types_map: dict[str, dict[str, Any]] = {
+            at: {
+                "authority_type": at,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+            }
+            for at, label in AUTHORITY_TYPE_LABELS.items()
+        }
+        raw_atypes = coverage.get("by_authority_type")
+        if isinstance(raw_atypes, list):
+            for item in raw_atypes:
+                if not isinstance(item, dict):
+                    continue
+                akey = str(item.get("authority_type") or "").strip().lower()
+                if akey in authority_types_map:
+                    authority_types_map[akey]["tasks"] = int(item.get("tasks") or 0)
+                    authority_types_map[akey]["not_flawless"] = int(item.get("not_flawless") or 0)
+                    authority_types_map[akey]["flawless"] = int(item.get("flawless") or 0)
+                    authority_types_map[akey]["cancelled_after_conduct"] = int(
+                        item.get("cancelled_after_conduct") or 0
+                    )
+        elif isinstance(raw_atypes, dict):
+            for akey, val in raw_atypes.items():
+                if akey in authority_types_map:
+                    if isinstance(val, dict):
+                        authority_types_map[akey]["tasks"] = int(val.get("tasks") or 0)
+                        authority_types_map[akey]["not_flawless"] = int(val.get("not_flawless") or 0)
+                        authority_types_map[akey]["flawless"] = int(val.get("flawless") or 0)
+                        authority_types_map[akey]["cancelled_after_conduct"] = int(
+                            val.get("cancelled_after_conduct") or 0
+                        )
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        authority_types_map[akey]["tasks"] = int(val)
+
+        exam_categories_map: dict[str, dict[str, Any]] = {
+            ec: {
+                "exam_category": ec,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+            }
+            for ec, label in EXAM_CATEGORY_LABELS.items()
+        }
+        raw_ecats = coverage.get("by_exam_category")
+        if isinstance(raw_ecats, list):
+            for item in raw_ecats:
+                if not isinstance(item, dict):
+                    continue
+                ekey = str(item.get("exam_category") or "").strip().lower()
+                if ekey in exam_categories_map:
+                    exam_categories_map[ekey]["tasks"] = int(item.get("tasks") or 0)
+                    exam_categories_map[ekey]["not_flawless"] = int(item.get("not_flawless") or 0)
+                    exam_categories_map[ekey]["flawless"] = int(item.get("flawless") or 0)
+                    exam_categories_map[ekey]["cancelled_after_conduct"] = int(
+                        item.get("cancelled_after_conduct") or 0
+                    )
+        elif isinstance(raw_ecats, dict):
+            for ekey, val in raw_ecats.items():
+                if ekey in exam_categories_map:
+                    if isinstance(val, dict):
+                        exam_categories_map[ekey]["tasks"] = int(val.get("tasks") or 0)
+                        exam_categories_map[ekey]["not_flawless"] = int(val.get("not_flawless") or 0)
+                        exam_categories_map[ekey]["flawless"] = int(val.get("flawless") or 0)
+                        exam_categories_map[ekey]["cancelled_after_conduct"] = int(
+                            val.get("cancelled_after_conduct") or 0
+                        )
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        exam_categories_map[ekey]["tasks"] = int(val)
+
+        years_map: dict[int, dict[str, Any]] = {
+            yr: {
+                "year": yr,
+                "tasks": 0,
+                "done": 0,
+                "leads": 0,
+                "not_flawless": 0,
+                "flawless": 0,
+                "cancelled_after_conduct": 0,
+                "postponed": 0,
+                "rescheduled": 0,
+                "delayed": 0,
+                "cancelled_before_conduct": 0,
+                "partial_reexam_or_glitch": 0,
+            }
+            for yr in P9_AUDIT_WINDOW_YEARS
+        }
+        raw_years = coverage.get("by_year")
+        if isinstance(raw_years, list):
+            for item in raw_years:
+                if not isinstance(item, dict):
+                    continue
+                yr = _opt_int(item.get("year"))
+                if yr in years_map:
+                    yrow = years_map[yr]
+                    yrow["tasks"] = int(item.get("tasks") or 0)
+                    yrow["not_flawless"] = int(item.get("not_flawless") or 0)
+                    yrow["flawless"] = int(item.get("flawless") or 0)
+                    for sig in SIGNAL_CATEGORIES:
+                        yrow[sig] = int(item.get(sig) or 0)
+        elif isinstance(raw_years, dict):
+            for yr_k, val in raw_years.items():
+                yr = _opt_int(yr_k)
+                if yr in years_map and isinstance(val, dict):
+                    yrow = years_map[yr]
+                    yrow["tasks"] = int(val.get("tasks") or 0)
+                    yrow["not_flawless"] = int(val.get("not_flawless") or 0)
+                    yrow["flawless"] = int(val.get("flawless") or 0)
+                    for sig in SIGNAL_CATEGORIES:
+                        yrow[sig] = int(val.get(sig) or 0)
+
+        reasons_map: dict[str, dict[str, Any]] = {
+            rc: {"reason_category": rc, "label": label, "tasks": 0, "leads": 0}
+            for rc, label in REASON_CATEGORY_LABELS.items()
+        }
+        raw_reasons = coverage.get("by_reason_category")
+        if isinstance(raw_reasons, list):
+            for item in raw_reasons:
+                if not isinstance(item, dict):
+                    continue
+                rkey = str(item.get("reason_category") or "").strip().lower()
+                if rkey in reasons_map:
+                    reasons_map[rkey]["tasks"] = int(item.get("tasks") or 0)
+        elif isinstance(raw_reasons, dict):
+            for rkey, val in raw_reasons.items():
+                if rkey in reasons_map:
+                    if isinstance(val, dict):
+                        reasons_map[rkey]["tasks"] = int(val.get("tasks") or 0)
+                    elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                        reasons_map[rkey]["tasks"] = int(val)
+
+        jurisdictions_map: dict[str, dict[str, Any]] = {}
+        for jitem in coverage.get("jurisdictions") if isinstance(coverage.get("jurisdictions"), list) else []:
+            if not isinstance(jitem, dict):
+                continue
+            jname = str(jitem.get("jurisdiction") or "").strip()
+            if not jname:
+                continue
+            jlvl = str(
+                jitem.get("jurisdiction_level")
+                or ("union" if jname == "Union of India" else ("ut" if jname.startswith("UT:") else "state"))
+            ).strip().lower()
+            jrow = _make_jurisdiction_row(jname, jlvl, jitem.get("state_or_ut"))
+            jrow["tasks"] = int(jitem.get("tasks") or 0)
+            jrow["not_flawless"] = int(jitem.get("not_flawless") or 0)
+            jrow["flawless"] = int(jitem.get("flawless") or 0)
+            for sig in SIGNAL_CATEGORIES:
+                jrow[sig] = int(jitem.get(sig) or 0)
+            jrow["documented_affected_candidates"] = int(jitem.get("documented_affected_candidates") or 0)
+            jurisdictions_map[jname] = jrow
+
+        authorities_map: dict[str, dict[str, Any]] = {}
+        for aitem in coverage.get("top_authorities") if isinstance(coverage.get("top_authorities"), list) else []:
+            if not isinstance(aitem, dict):
+                continue
+            aname = str(aitem.get("authority") or "").strip()
+            if not aname:
+                continue
+            akey = str(aitem.get("authority_key") or canonical_key(aname)).strip().lower()
+            atype = str(aitem.get("authority_type") or "central_testing_agency").strip().lower()
+            jur = str(aitem.get("jurisdiction") or "Union of India").strip()
+            jlvl = str(aitem.get("jurisdiction_level") or "union").strip().lower()
+            arow = _make_authority_row(aname, akey, atype, jur, jlvl)
+            arow["tasks"] = int(aitem.get("tasks") or 0)
+            arow["not_flawless"] = int(aitem.get("not_flawless") or 0)
+            arow["flawless"] = int(aitem.get("flawless") or 0)
+            for sig in SIGNAL_CATEGORIES:
+                arow[sig] = int(aitem.get(sig) or 0)
+            arow["documented_affected_candidates"] = int(aitem.get("documented_affected_candidates") or 0)
+            authorities_map[akey] = arow
+
+        anchor_cases: list[dict[str, Any]] = []
+        raw_anchors = coverage.get("anchor_cases") if isinstance(coverage.get("anchor_cases"), list) else []
+        for ac in raw_anchors:
+            if isinstance(ac, dict) and ac.get("exam_name"):
+                entry = dict(ac)
+                entry.setdefault("finding_id", None)
+                anchor_cases.append(entry)
+
+        coverage_sample_leads: list[dict[str, Any]] = []
+        raw_sample = coverage.get("sample_leads") if isinstance(coverage.get("sample_leads"), list) else (
+            coverage.get("leads") if isinstance(coverage.get("leads"), list) else []
+        )
+        for sl in raw_sample:
+            if isinstance(sl, dict) and sl.get("exam_name"):
+                item = dict(sl)
+                item.setdefault("finding_id", None)
+                item.setdefault("status", "corpus_queued")
+                coverage_sample_leads.append(item)
+
+        db_total_tasks = 0
+        db_completed_tasks = 0
+        db_unevaluable_tasks = 0
+        db_unique_exams: set[str] = set()
+        db_unique_docs: set[str] = set()
+        db_documented_candidates_total = 0
+        db_corpus_leads: list[dict[str, Any]] = []
+        has_coverage = bool(coverage)
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        def _build_corpus_lead(task_id_raw: str, title: str, t_payload: dict[str, Any], t_spec: dict[str, Any]) -> dict[str, Any]:
+            dtype = str(t_spec.get("disruption_type") or "").strip().lower()
+            rcat = str(t_spec.get("disruption_reason_category") or "").strip().lower()
+            sat = bool(t_spec.get("students_took_exam_before_cancellation"))
+            delay = _opt_int(t_spec.get("delay_days"))
+            cands = _opt_int(t_spec.get("affected_candidates_count"))
+            is_anchor = bool(t_spec.get("is_anchor_case"))
+            _, rule_tr, sig_cat, _, sev = evaluate_exam_disruption_rule(
+                disruption_type=dtype,
+                disruption_reason_category=rcat,
+                students_took_exam_before_cancellation=sat,
+                delay_days=delay,
+                affected_candidates_count=cands,
+                is_anchor_case=is_anchor,
+            )
+            t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+            sec_url = str(t_payload.get("secondary_url") or t_ctx.get("secondary_url") or "").strip() or None
+            exam_name = str(t_spec.get("exam_name") or "").strip()
+            authority = str(t_spec.get("authority") or "").strip()
+            s_ut = t_spec.get("state_or_ut")
+            return {
+                "finding_id": None,
+                "task_id": task_id_raw.removeprefix("prj-"),
+                "case_key": str(t_spec.get("case_key") or task_id_raw.removeprefix("prj-")),
+                "title": title or f"{exam_name} — {t_spec.get('cycle_or_stage') or ''}",
+                "exam_name": exam_name,
+                "exam_slug": str(t_spec.get("exam_slug") or canonical_key(exam_name)),
+                "cycle_or_stage": str(t_spec.get("cycle_or_stage") or ""),
+                "exam_year": _opt_int(t_spec.get("exam_year")),
+                "jurisdiction": str(t_spec.get("jurisdiction") or "Union of India"),
+                "jurisdiction_level": str(t_spec.get("jurisdiction_level") or "union"),
+                "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                "authority": authority,
+                "authority_key": str(t_spec.get("authority_key") or canonical_key(authority)),
+                "authority_type": str(t_spec.get("authority_type") or ""),
+                "exam_category": str(t_spec.get("exam_category") or ""),
+                "scheduled_date": str(t_spec.get("scheduled_date") or ""),
+                "actual_or_event_date": str(t_spec.get("actual_or_event_date") or ""),
+                "delay_days": delay,
+                "disruption_type": dtype,
+                "disruption_reason_category": rcat,
+                "signal_category": sig_cat or dtype,
+                "rule_triggered": rule_tr or DISRUPTION_TYPE_RULES.get(dtype, ""),
+                "students_took_exam_before_cancellation": sat,
+                "schedule_summary": str(t_spec.get("schedule_summary") or ""),
+                "schedule_document_ref": str(t_spec.get("schedule_document_ref") or ""),
+                "outcome_summary": str(t_spec.get("outcome_summary") or ""),
+                "outcome_document_ref": str(t_spec.get("outcome_document_ref") or ""),
+                "affected_candidates_count": cands,
+                "affected_candidates_basis": str(t_spec.get("affected_candidates_basis") or ""),
+                "statutory_anchor": str(t_spec.get("statutory_anchor") or ""),
+                "source_url": str(t_payload.get("retrieval_url") or ""),
+                "secondary_url": sec_url,
+                "portal_url": str(t_payload.get("source_landing_page") or ""),
+                "is_anchor_case": is_anchor,
+                "severity": sev,
+                "status": "corpus_queued",
+                "_sort_anchor": 1 if is_anchor else 0,
+                "_sort_cac": 1 if dtype == "cancelled_after_conduct" else 0,
+                "_sort_sev": sev_rank.get(sev, 0),
+                "_sort_cands": cands or 0,
+            }
+
+        if conn is not None and mid is not None:
+            lvl_counts_from_db: dict[str, dict[str, int]] = {
+                lvl: {"tasks": 0, "done": 0, "claimed": 0, "open": 0}
+                for lvl in ("union", "state", "ut")
+            }
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN id LIKE 'prj-p9-union-%' OR id LIKE 'p9-union-%' THEN 'union' "
+                "WHEN id LIKE 'prj-p9-ut-%' OR id LIKE 'p9-ut-%' THEN 'ut' "
+                "WHEN id LIKE 'prj-p9-state-%' OR id LIKE 'p9-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, status, COUNT(*) AS c "
+                "FROM tasks WHERE mission_id = ? AND task_type != 'peer_verify' AND status != 'retired' "
+                "GROUP BY jlvl, status",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                st = str(r["status"] or "")
+                n = int(r["c"] or 0)
+                db_total_tasks += n
+                bucket = lvl_counts_from_db[jlvl]
+                bucket["tasks"] += n
+                if st == "completed":
+                    bucket["done"] += n
+                    db_completed_tasks += n
+                elif st == "claimed":
+                    bucket["claimed"] += n
+                elif st == "queued":
+                    bucket["open"] += n
+                elif st in {"failed", "unevaluable"}:
+                    db_unevaluable_tasks += n
+
+            for lvl in ("union", "state", "ut"):
+                if lvl_counts_from_db[lvl]["tasks"] > 0:
+                    by_jurisdiction_level[lvl]["tasks"] = lvl_counts_from_db[lvl]["tasks"]
+                    by_jurisdiction_level[lvl]["done"] = lvl_counts_from_db[lvl]["done"]
+                    by_jurisdiction_level[lvl]["claimed"] = lvl_counts_from_db[lvl]["claimed"]
+                    by_jurisdiction_level[lvl]["open"] = lvl_counts_from_db[lvl]["open"]
+                else:
+                    by_jurisdiction_level[lvl]["open"] = max(
+                        0,
+                        by_jurisdiction_level[lvl]["tasks"]
+                        - by_jurisdiction_level[lvl]["done"]
+                        - by_jurisdiction_level[lvl]["claimed"],
+                    )
+
+            for r in conn.execute(
+                "SELECT CASE "
+                "WHEN t.id LIKE 'prj-p9-union-%' OR t.id LIKE 'p9-union-%' THEN 'union' "
+                "WHEN t.id LIKE 'prj-p9-ut-%' OR t.id LIKE 'p9-ut-%' THEN 'ut' "
+                "WHEN t.id LIKE 'prj-p9-state-%' OR t.id LIKE 'p9-state-%' THEN 'state' "
+                "ELSE 'union' END AS jlvl, COUNT(*) AS c "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "AND NOT EXISTS (SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id) "
+                "GROUP BY jlvl",
+                (mid,),
+            ).fetchall():
+                jlvl = str(r["jlvl"] or "union")
+                by_jurisdiction_level[jlvl]["cleared"] = int(r["c"] or 0)
+
+            # Populate full corpus breakdowns from DB tasks when coverage.json is absent,
+            # OR collect corpus_fallback leads if coverage.json lacks sample_leads.
+            need_full_db_scan = not has_coverage and db_total_tasks > 0
+            need_corpus_leads_scan = not coverage_sample_leads and db_total_tasks > 0
+            if need_full_db_scan or need_corpus_leads_scan:
+                for tr in conn.execute(
+                    "SELECT id, title, status, payload_json FROM tasks WHERE mission_id = ? "
+                    "AND task_type != 'peer_verify' AND status != 'retired' LIMIT 2000",
+                    (mid,),
+                ).fetchall():
+                    t_payload = loads_json(tr["payload_json"], {})
+                    t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                    t_spec = (
+                        t_ctx.get("auditing_government_exams")
+                        if isinstance(t_ctx.get("auditing_government_exams"), dict)
+                        else {}
+                    )
+                    if not t_spec:
+                        continue
+
+                    dtype = str(t_spec.get("disruption_type") or "").strip().lower()
+                    rcat = str(t_spec.get("disruption_reason_category") or "").strip().lower()
+                    atype = str(t_spec.get("authority_type") or "").strip().lower()
+                    ecat = str(t_spec.get("exam_category") or "").strip().lower()
+                    eyear = _opt_int(t_spec.get("exam_year"))
+                    jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                    jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                    if jlvl not in {"union", "state", "ut"}:
+                        jlvl = "union"
+                    s_ut = t_spec.get("state_or_ut")
+                    ename = str(t_spec.get("exam_name") or "").strip()
+                    eslug = str(t_spec.get("exam_slug") or canonical_key(ename)).strip().lower()
+                    aname = str(t_spec.get("authority") or "").strip()
+                    akey = str(t_spec.get("authority_key") or canonical_key(aname)).strip().lower()
+                    cands = _opt_int(t_spec.get("affected_candidates_count"))
+                    is_flawless = dtype == "flawless_conduct"
+                    is_cac = dtype == "cancelled_after_conduct"
+
+                    if need_corpus_leads_scan and not is_flawless:
+                        db_corpus_leads.append(
+                            _build_corpus_lead(str(tr["id"]), str(tr["title"] or ""), t_payload, t_spec)
+                        )
+
+                    if not need_full_db_scan:
+                        continue
+
+                    if eslug:
+                        db_unique_exams.add(eslug)
+                    r_url = str(t_payload.get("retrieval_url") or "").strip()
+                    if r_url:
+                        db_unique_docs.add(r_url)
+                    s_url = str(t_payload.get("secondary_url") or t_ctx.get("secondary_url") or "").strip()
+                    if s_url:
+                        db_unique_docs.add(s_url)
+                    if cands is not None and cands > 0:
+                        db_documented_candidates_total += cands
+
+                    if dtype in by_disruption_type:
+                        by_disruption_type[dtype]["tasks"] += 1
+                        if cands is not None and cands > 0:
+                            by_disruption_type[dtype]["documented_affected_candidates"] += cands
+
+                    by_jurisdiction_level[jlvl]["flawless" if is_flawless else "not_flawless"] += 1
+                    if is_cac:
+                        by_jurisdiction_level[jlvl]["cancelled_after_conduct"] += 1
+
+                    if atype in authority_types_map:
+                        authority_types_map[atype]["tasks"] += 1
+                        authority_types_map[atype]["flawless" if is_flawless else "not_flawless"] += 1
+                        if is_cac:
+                            authority_types_map[atype]["cancelled_after_conduct"] += 1
+
+                    if ecat in exam_categories_map:
+                        exam_categories_map[ecat]["tasks"] += 1
+                        exam_categories_map[ecat]["flawless" if is_flawless else "not_flawless"] += 1
+                        if is_cac:
+                            exam_categories_map[ecat]["cancelled_after_conduct"] += 1
+
+                    if eyear in years_map:
+                        yrow = years_map[eyear]
+                        yrow["tasks"] += 1
+                        yrow["flawless" if is_flawless else "not_flawless"] += 1
+                        if dtype in SIGNAL_CATEGORIES:
+                            yrow[dtype] += 1
+
+                    if rcat in reasons_map:
+                        reasons_map[rcat]["tasks"] += 1
+
+                    j_entry = jurisdictions_map.setdefault(jur, _make_jurisdiction_row(jur, jlvl, s_ut))
+                    j_entry["tasks"] += 1
+                    j_entry["flawless" if is_flawless else "not_flawless"] += 1
+                    if dtype in SIGNAL_CATEGORIES:
+                        j_entry[dtype] += 1
+                    if cands is not None and cands > 0:
+                        j_entry["documented_affected_candidates"] += cands
+
+                    if aname and akey:
+                        a_entry = authorities_map.setdefault(
+                            akey, _make_authority_row(aname, akey, atype, jur, jlvl)
+                        )
+                        a_entry["tasks"] += 1
+                        a_entry["flawless" if is_flawless else "not_flawless"] += 1
+                        if dtype in SIGNAL_CATEGORIES:
+                            a_entry[dtype] += 1
+                        if cands is not None and cands > 0:
+                            a_entry["documented_affected_candidates"] += cands
+
+                    if bool(t_spec.get("is_anchor_case")):
+                        _, _, _, _, sev = evaluate_exam_disruption_rule(
+                            disruption_type=dtype,
+                            disruption_reason_category=rcat,
+                            students_took_exam_before_cancellation=bool(
+                                t_spec.get("students_took_exam_before_cancellation")
+                            ),
+                            delay_days=_opt_int(t_spec.get("delay_days")),
+                            affected_candidates_count=cands,
+                            is_anchor_case=True,
+                        )
+                        anchor_cases.append(
+                            {
+                                "task_id": str(tr["id"]).removeprefix("prj-"),
+                                "case_key": str(t_spec.get("case_key") or ""),
+                                "finding_id": None,
+                                "exam_name": ename,
+                                "exam_slug": eslug,
+                                "cycle_or_stage": str(t_spec.get("cycle_or_stage") or ""),
+                                "exam_year": eyear,
+                                "jurisdiction": jur,
+                                "jurisdiction_level": jlvl,
+                                "state_or_ut": str(s_ut).strip() if isinstance(s_ut, str) and s_ut.strip() else None,
+                                "authority": aname,
+                                "authority_key": akey,
+                                "authority_type": atype,
+                                "exam_category": ecat,
+                                "scheduled_date": str(t_spec.get("scheduled_date") or ""),
+                                "actual_or_event_date": str(t_spec.get("actual_or_event_date") or ""),
+                                "delay_days": _opt_int(t_spec.get("delay_days")),
+                                "disruption_type": dtype,
+                                "disruption_reason_category": rcat,
+                                "students_took_exam_before_cancellation": bool(
+                                    t_spec.get("students_took_exam_before_cancellation")
+                                ),
+                                "schedule_summary": str(t_spec.get("schedule_summary") or ""),
+                                "schedule_document_ref": str(t_spec.get("schedule_document_ref") or ""),
+                                "outcome_summary": str(t_spec.get("outcome_summary") or ""),
+                                "outcome_document_ref": str(t_spec.get("outcome_document_ref") or ""),
+                                "affected_candidates_count": cands,
+                                "affected_candidates_basis": str(t_spec.get("affected_candidates_basis") or ""),
+                                "statutory_anchor": str(t_spec.get("statutory_anchor") or ""),
+                                "source_url": r_url,
+                                "secondary_url": s_url or None,
+                                "portal_url": str(t_payload.get("source_landing_page") or ""),
+                                "severity": sev,
+                            }
+                        )
+
+            # Always aggregate live completed-task progress (`done` and `cleared`) from DB even with coverage.json.
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 2000",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = (
+                    t_ctx.get("auditing_government_exams")
+                    if isinstance(t_ctx.get("auditing_government_exams"), dict)
+                    else {}
+                )
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                dtype = str(t_spec.get("disruption_type") or "").strip().lower()
+                if dtype in by_disruption_type:
+                    by_disruption_type[dtype]["done"] += 1
+                    if is_cleared_task:
+                        by_disruption_type[dtype]["cleared"] += 1
+                atype = str(t_spec.get("authority_type") or "").strip().lower()
+                if atype in authority_types_map:
+                    authority_types_map[atype]["done"] += 1
+                ecat = str(t_spec.get("exam_category") or "").strip().lower()
+                if ecat in exam_categories_map:
+                    exam_categories_map[ecat]["done"] += 1
+                eyear = _opt_int(t_spec.get("exam_year"))
+                if eyear in years_map:
+                    years_map[eyear]["done"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                jlvl = str(t_spec.get("jurisdiction_level") or "union").strip().lower()
+                s_ut = t_spec.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(jur, _make_jurisdiction_row(jur, jlvl, s_ut))
+                j_entry["done"] += 1
+                if is_cleared_task:
+                    j_entry["cleared"] += 1
+                aname = str(t_spec.get("authority") or "").strip()
+                akey = str(t_spec.get("authority_key") or canonical_key(aname)).strip().lower()
+                if akey and akey in authorities_map:
+                    authorities_map[akey]["done"] += 1
+        else:
+            for lvl in ("union", "state", "ut"):
+                by_jurisdiction_level[lvl]["open"] = by_jurisdiction_level[lvl]["tasks"]
+
+        for entry in by_jurisdiction_level.values():
+            entry["pct"] = round(entry["done"] / entry["tasks"] * 100.0, 2) if entry["tasks"] else 0.0
+
+        published_leads = verified = peer_review = 0
+        live_leads: list[dict[str, Any]] = []
+        task_to_finding_id: dict[str, str] = {}
+        case_to_finding_id: dict[str, str] = {}
+        rule_to_disruption = {rule: dtype for dtype, rule in DISRUPTION_TYPE_RULES.items()}
+
+        if conn is not None and mid is not None:
+            live_sql = (
+                "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+                "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+            )
+            for r in conn.execute(
+                f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
+                f"anomaly_metrics_json, provenance_json, source_url, task_id "
+                f"FROM findings WHERE {live_sql} ORDER BY id ASC",
+                (mid,),
+            ).fetchall():
+                published_leads += 1
+                st = str(r["status"] or "")
+                if st == "verified":
+                    verified += 1
+                elif st in ("peer_review", "raw_lead"):
+                    peer_review += 1
+
+                metrics = loads_json(r["anomaly_metrics_json"], {})
+                metrics = metrics if isinstance(metrics, dict) else {}
+                prov = loads_json(r["provenance_json"], {})
+                prov = prov if isinstance(prov, dict) else {}
+
+                rule = str(r["rule_triggered"] or "").strip()
+                dtype = str(
+                    metrics.get("disruption_type")
+                    or metrics.get("signal_category")
+                    or rule_to_disruption.get(rule)
+                    or ""
+                ).strip().lower()
+                rcat = str(metrics.get("disruption_reason_category") or "").strip().lower()
+                if dtype in by_disruption_type:
+                    by_disruption_type[dtype]["leads"] += 1
+                if rcat in reasons_map:
+                    reasons_map[rcat]["leads"] += 1
+
+                jlvl = str(metrics.get("jurisdiction_level") or "").strip().lower()
+                jur = str(metrics.get("jurisdiction") or r["jurisdiction"] or "Union of India").strip()
+                if jlvl not in {"union", "state", "ut"}:
+                    if jur.startswith("State:"):
+                        jlvl = "state"
+                    elif jur.startswith("UT:"):
+                        jlvl = "ut"
+                    else:
+                        jlvl = "union"
+                by_jurisdiction_level[jlvl]["leads"] += 1
+
+                atype = str(metrics.get("authority_type") or "").strip().lower()
+                if atype in authority_types_map:
+                    authority_types_map[atype]["leads"] += 1
+
+                ecat = str(metrics.get("exam_category") or "").strip().lower()
+                if ecat in exam_categories_map:
+                    exam_categories_map[ecat]["leads"] += 1
+
+                eyear = _opt_int(metrics.get("exam_year"))
+                if eyear in years_map:
+                    years_map[eyear]["leads"] += 1
+
+                s_ut_val = metrics.get("state_or_ut")
+                j_entry = jurisdictions_map.setdefault(jur, _make_jurisdiction_row(jur, jlvl, s_ut_val))
+                j_entry["leads"] += 1
+
+                aname = str(metrics.get("authority") or r["entity_name"] or "").strip()
+                akey = str(metrics.get("authority_key") or canonical_key(aname)).strip().lower()
+                if aname and akey:
+                    a_entry = authorities_map.setdefault(
+                        akey, _make_authority_row(aname, akey, atype, jur, jlvl)
+                    )
+                    a_entry["leads"] += 1
+
+                raw_tid = str(r["task_id"] or "").removeprefix("prj-")
+                ckey = str(metrics.get("case_key") or raw_tid)
+                fid = str(r["id"])
+                if raw_tid:
+                    task_to_finding_id.setdefault(raw_tid, fid)
+                if ckey:
+                    case_to_finding_id.setdefault(ckey, fid)
+
+                ename = str(metrics.get("exam_name") or "").strip()
+                eslug = str(metrics.get("exam_slug") or canonical_key(ename)).strip().lower()
+                cands = _opt_int(metrics.get("affected_candidates_count"))
+                is_anchor = bool(metrics.get("is_anchor_case"))
+                sev = str(r["severity"] or "medium").lower()
+                live_leads.append(
+                    {
+                        "finding_id": fid,
+                        "task_id": raw_tid or None,
+                        "case_key": ckey,
+                        "title": str(r["title"] or ""),
+                        "exam_name": ename or str(r["entity_name"] or ""),
+                        "exam_slug": eslug,
+                        "cycle_or_stage": str(metrics.get("cycle_or_stage") or ""),
+                        "exam_year": eyear,
+                        "jurisdiction": jur,
+                        "jurisdiction_level": jlvl,
+                        "state_or_ut": str(s_ut_val).strip() if isinstance(s_ut_val, str) and s_ut_val.strip() else None,
+                        "authority": aname,
+                        "authority_key": akey,
+                        "authority_type": atype,
+                        "exam_category": ecat,
+                        "scheduled_date": str(metrics.get("scheduled_date") or ""),
+                        "actual_or_event_date": str(metrics.get("actual_or_event_date") or ""),
+                        "delay_days": _opt_int(metrics.get("delay_days")),
+                        "disruption_type": dtype,
+                        "disruption_reason_category": rcat,
+                        "signal_category": str(metrics.get("signal_category") or dtype),
+                        "rule_triggered": rule or DISRUPTION_TYPE_RULES.get(dtype, ""),
+                        "students_took_exam_before_cancellation": bool(
+                            metrics.get("students_took_exam_before_cancellation")
+                        ),
+                        "schedule_summary": str(metrics.get("schedule_summary") or ""),
+                        "schedule_document_ref": str(metrics.get("schedule_document_ref") or ""),
+                        "outcome_summary": str(metrics.get("outcome_summary") or ""),
+                        "outcome_document_ref": str(metrics.get("outcome_document_ref") or ""),
+                        "affected_candidates_count": cands,
+                        "affected_candidates_basis": str(metrics.get("affected_candidates_basis") or ""),
+                        "statutory_anchor": str(metrics.get("statutory_anchor") or ""),
+                        "source_url": str(r["source_url"] or ""),
+                        "secondary_url": str(prov.get("secondary_url") or "").strip() or None,
+                        "portal_url": str(prov.get("source_landing_page") or r["source_url"] or "").strip(),
+                        "is_anchor_case": is_anchor,
+                        "severity": sev,
+                        "status": st,
+                        "_sort_anchor": 1 if is_anchor else 0,
+                        "_sort_cac": 1 if dtype == "cancelled_after_conduct" else 0,
+                        "_sort_sev": sev_rank.get(sev, 0),
+                        "_sort_cands": cands or 0,
+                    }
+                )
+
+            for ac in anchor_cases:
+                if not ac.get("finding_id"):
+                    ac_tid = str(ac.get("task_id") or "").removeprefix("prj-")
+                    ac_ckey = str(ac.get("case_key") or "")
+                    ac["finding_id"] = task_to_finding_id.get(ac_tid) or case_to_finding_id.get(ac_ckey)
+
+        # Headline counts (prefer coverage.json headline_counts when present, else derive identically from corpus counts)
+        raw_headline = coverage.get("headline_counts") if isinstance(coverage.get("headline_counts"), dict) else {}
+        sum_dis_tasks = sum(int(v["tasks"]) for v in by_disruption_type.values())
+        total_tasks_resolved = int(
+            coverage.get("total_tasks")
+            or db_total_tasks
+            or (mission_row["total_tasks"] if mission_row is not None else 0)
+            or sum_dis_tasks
+            or 0
+        )
+        total_audited = int(raw_headline.get("total_audited") or sum_dis_tasks or total_tasks_resolved)
+        flawless_count = int(
+            raw_headline.get("flawless_count")
+            if raw_headline.get("flawless_count") is not None
+            else by_disruption_type["flawless_conduct"]["tasks"]
+        )
+        not_flawless_count = int(
+            raw_headline.get("not_flawless_count")
+            if raw_headline.get("not_flawless_count") is not None
+            else sum(by_disruption_type[sig]["tasks"] for sig in SIGNAL_CATEGORIES)
+        )
+        not_flawless_rate_pct = (
+            round(not_flawless_count / total_audited * 100.0, 2) if total_audited else 0.0
+        )
+        flawless_rate_pct = round(flawless_count / total_audited * 100.0, 2) if total_audited else 0.0
+        doc_cands_total = int(
+            raw_headline.get("documented_affected_candidates_total")
+            if raw_headline.get("documented_affected_candidates_total") is not None
+            else (
+                sum(int(v["documented_affected_candidates"]) for v in by_disruption_type.values())
+                or db_documented_candidates_total
+            )
+        )
+        headline_counts: dict[str, Any] = {
+            "total_audited": total_audited,
+            "not_flawless_count": not_flawless_count,
+            "flawless_count": flawless_count,
+            "not_flawless_rate_pct": not_flawless_rate_pct,
+            "flawless_rate_pct": flawless_rate_pct,
+            "cancelled_after_conduct": int(
+                raw_headline.get("cancelled_after_conduct")
+                if raw_headline.get("cancelled_after_conduct") is not None
+                else by_disruption_type["cancelled_after_conduct"]["tasks"]
+            ),
+            "postponed": int(
+                raw_headline.get("postponed")
+                if raw_headline.get("postponed") is not None
+                else by_disruption_type["postponed"]["tasks"]
+            ),
+            "rescheduled": int(
+                raw_headline.get("rescheduled")
+                if raw_headline.get("rescheduled") is not None
+                else by_disruption_type["rescheduled"]["tasks"]
+            ),
+            "delayed": int(
+                raw_headline.get("delayed")
+                if raw_headline.get("delayed") is not None
+                else by_disruption_type["delayed"]["tasks"]
+            ),
+            "cancelled_before_conduct": int(
+                raw_headline.get("cancelled_before_conduct")
+                if raw_headline.get("cancelled_before_conduct") is not None
+                else by_disruption_type["cancelled_before_conduct"]["tasks"]
+            ),
+            "partial_reexam_or_glitch": int(
+                raw_headline.get("partial_reexam_or_glitch")
+                if raw_headline.get("partial_reexam_or_glitch") is not None
+                else by_disruption_type["partial_reexam_or_glitch"]["tasks"]
+            ),
+            "documented_affected_candidates_total": doc_cands_total,
+        }
+
+        for drow in by_disruption_type.values():
+            drow["pct"] = round(drow["tasks"] / total_audited * 100.0, 2) if total_audited else 0.0
+
+        for jrow in jurisdictions_map.values():
+            jrow["not_flawless_rate_pct"] = (
+                round(jrow["not_flawless"] / jrow["tasks"] * 100.0, 2) if jrow["tasks"] else 0.0
+            )
+        for arow in authorities_map.values():
+            arow["not_flawless_rate_pct"] = (
+                round(arow["not_flawless"] / arow["tasks"] * 100.0, 2) if arow["tasks"] else 0.0
+            )
+
+        by_authority_type_list = sorted(
+            authority_types_map.values(),
+            key=lambda x: (-int(x["tasks"]), str(x["authority_type"])),
+        )
+        by_exam_category_list = sorted(
+            exam_categories_map.values(),
+            key=lambda x: (-int(x["tasks"]), str(x["exam_category"])),
+        )
+        by_year_list = [years_map[yr] for yr in P9_AUDIT_WINDOW_YEARS]
+        by_reason_category_list = sorted(
+            reasons_map.values(),
+            key=lambda x: (-int(x["tasks"]), str(x["reason_category"])),
+        )
+        jurisdictions_list = sorted(
+            jurisdictions_map.values(),
+            key=lambda j: (
+                0 if j["jurisdiction_level"] == "union" else 1,
+                -int(j["not_flawless"]),
+                -int(j["tasks"]),
+                str(j["jurisdiction"]).lower(),
+            ),
+        )
+        top_authorities_list = sorted(
+            authorities_map.values(),
+            key=lambda a: (
+                -int(a["not_flawless"]),
+                -int(a["tasks"]),
+                str(a["authority"]).lower(),
+            ),
+        )[:40]
+
+        anchor_cases.sort(
+            key=lambda a: (
+                0 if str(a.get("disruption_type") or "") == "cancelled_after_conduct" else 1,
+                -(int(a.get("affected_candidates_count") or 0)),
+                str(a.get("task_id") or a.get("case_key") or ""),
+            )
+        )
+        anchor_cases_out = anchor_cases[:15]
+
+        if live_leads:
+            live_leads.sort(
+                key=lambda x: (
+                    -int(x["_sort_anchor"]),
+                    -int(x["_sort_cac"]),
+                    -int(x["_sort_sev"]),
+                    -int(x["_sort_cands"]),
+                    str(x.get("finding_id") or ""),
+                )
+            )
+            leads_out = [
+                {k: v for k, v in item.items() if not k.startswith("_sort_")}
+                for item in live_leads[:200]
+            ]
+            leads_source = "live"
+        elif coverage_sample_leads:
+            leads_out = coverage_sample_leads[:120]
+            leads_source = "corpus_fallback"
+        else:
+            db_corpus_leads.sort(
+                key=lambda x: (
+                    -int(x["_sort_anchor"]),
+                    -int(x["_sort_cac"]),
+                    -int(x["_sort_sev"]),
+                    -int(x["_sort_cands"]),
+                    str(x.get("task_id") or ""),
+                )
+            )
+            leads_out = [
+                {k: v for k, v in item.items() if not k.startswith("_sort_")}
+                for item in db_corpus_leads[:120]
+            ]
+            leads_source = "corpus_fallback"
+
+        states_uts_count = sum(
+            1
+            for j in jurisdictions_list
+            if j["jurisdiction_level"] in {"state", "ut"} and (j["tasks"] > 0 or j["leads"] > 0)
+        )
+        unique_docs_count = int(
+            coverage.get("unique_documents_count")
+            or coverage.get("documents_count")
+            or len(db_unique_docs)
+        )
+
+        raw_aw = coverage.get("audit_window") if isinstance(coverage.get("audit_window"), dict) else {}
+        audit_window = {
+            "start_date": str(raw_aw.get("start_date") or P9_AUDIT_WINDOW_START.isoformat()),
+            "end_date": str(raw_aw.get("end_date") or P9_AUDIT_WINDOW_END.isoformat()),
+            "years": list(raw_aw.get("years") or P9_AUDIT_WINDOW_YEARS),
+            "label": str(raw_aw.get("label") or P9_AUDIT_WINDOW_LABEL),
+        }
+
+        resolved_unevaluable_tasks = max(
+            db_unevaluable_tasks,
+            int(_row_get(mission_row, "unevaluable_count", 0) or 0) if mission_row is not None else 0,
+        )
+
+        raw_dry = coverage.get("dry_run_summary") if isinstance(coverage.get("dry_run_summary"), dict) else {}
+        as_of_resolved = str(coverage.get("as_of_date") or P9_AUDIT_WINDOW_END.isoformat())
+        dry_run_summary = {
+            "status": str(raw_dry.get("status") or ("verified" if raw_dry else "corpus_ready")),
+            "evaluated_tasks": int(
+                raw_dry.get("evaluated_tasks") if raw_dry.get("evaluated_tasks") is not None else total_audited
+            ),
+            "flagged_leads": int(
+                raw_dry.get("flagged_leads") if raw_dry.get("flagged_leads") is not None else not_flawless_count
+            ),
+            "cleared_flawless": int(
+                raw_dry.get("cleared_flawless") if raw_dry.get("cleared_flawless") is not None else flawless_count
+            ),
+            "unevaluable": int(
+                raw_dry.get("unevaluable") if raw_dry.get("unevaluable") is not None else resolved_unevaluable_tasks
+            ),
+            "verified_documents": int(
+                raw_dry.get("verified_documents")
+                if raw_dry.get("verified_documents") is not None
+                else unique_docs_count
+            ),
+            "as_of_date": str(raw_dry.get("as_of_date") or as_of_resolved),
+        }
+
+        return {
+            "project_slug": slug,
+            "project_code": "P9",
+            "methodology_code": AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
+            "hook": str(coverage.get("hook") or P9_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": as_of_resolved,
+            "audit_window": audit_window,
+            "total_tasks": total_tasks_resolved,
+            "completed_tasks": db_completed_tasks,
+            "published_leads": published_leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
+            "unevaluable_tasks": resolved_unevaluable_tasks,
+            "unique_exams_covered": int(coverage.get("unique_exams_covered") or len(db_unique_exams)),
+            "unique_authorities_covered": int(
+                coverage.get("unique_authorities_covered") or len(authorities_map)
+            ),
+            "unique_documents_count": unique_docs_count,
+            "states_and_uts_covered": int(coverage.get("states_and_uts_covered") or states_uts_count),
+            "leads_source": leads_source,
+            "headline_counts": headline_counts,
+            "by_disruption_type": by_disruption_type,
+            "by_jurisdiction_level": by_jurisdiction_level,
+            "by_authority_type": by_authority_type_list,
+            "by_exam_category": by_exam_category_list,
+            "by_year": by_year_list,
+            "by_reason_category": by_reason_category_list,
+            "jurisdictions": jurisdictions_list,
+            "top_authorities": top_authorities_list,
+            "anchor_cases": anchor_cases_out,
+            "leads": leads_out,
+            "dry_run_summary": dry_run_summary,
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }

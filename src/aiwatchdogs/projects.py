@@ -48,6 +48,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "parliaments-to-do-list": "P6",
     "only-one-bid": "P7",
     "sovereign-lies": "P8",
+    "auditing-government-exams": "P9",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -99,6 +100,7 @@ VALID_QUANTITY_TYPES = {
     "school_staffing_and_enrolment",
     "parliamentary_assurances",
     "scheme_promises_and_revisions",
+    "public_examination_conduct",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_FORMER_SLUGS = 10
@@ -116,6 +118,8 @@ ONLY_ONE_BID_PROJECT_SLUG = "only-one-bid"
 ONLY_ONE_BID_METHODOLOGY = "P7"
 SOVEREIGN_LIES_PROJECT_SLUG = "sovereign-lies"
 SOVEREIGN_LIES_METHODOLOGY = "P8"
+AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG = "auditing-government-exams"
+AUDITING_GOVERNMENT_EXAMS_METHODOLOGY = "P9"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -459,6 +463,7 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
         errors.append("A project with no tasks yet must use \"status\": \"needs_data\".")
 
     seen_task_ids: set[str] = set()
+    seen_p9_case_keys: set[str] = set()
     for i, task in enumerate(tasks):
         where = f"tasks[{i}]"
         if not isinstance(task, dict):
@@ -521,6 +526,17 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
             if isinstance(tid, str) and not P8_TASK_ID_RE.fullmatch(tid):
                 errors.append(
                     f"{where}.id must match 'p8-(union|state|ut)-<slug>-NNNN' for {SOVEREIGN_LIES_METHODOLOGY} tasks."
+                )
+        if code == AUDITING_GOVERNMENT_EXAMS_METHODOLOGY:
+            if task.get("financial_quantity_type") != "public_examination_conduct":
+                errors.append(
+                    f"{where} must use the public_examination_conduct quantity type with {AUDITING_GOVERNMENT_EXAMS_METHODOLOGY}."
+                )
+            from aiwatchdogs.engines.auditing_government_exams import P9_TASK_ID_RE
+
+            if isinstance(tid, str) and not P9_TASK_ID_RE.fullmatch(tid):
+                errors.append(
+                    f"{where}.id must match 'p9-(union|state|ut)-<slug>-NNNN' for {AUDITING_GOVERNMENT_EXAMS_METHODOLOGY} tasks."
                 )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
@@ -634,6 +650,57 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                     errors.append(
                         f"{where}.payload.secondary_url is required when payload.context.sovereign_lies.secondary_role is '{sec_role}'."
                     )
+        if code == AUDITING_GOVERNMENT_EXAMS_METHODOLOGY:
+            from aiwatchdogs.engines.auditing_government_exams import (
+                P9_TASK_ID_RE,
+                validate_context as validate_p9_context,
+            )
+
+            errors.extend(validate_p9_context(ctx, where))
+            p9_spec = ctx.get("auditing_government_exams") if isinstance(ctx, dict) else None
+            ctx_sec_url = ctx.get("secondary_url") if isinstance(ctx, dict) else None
+            if ctx_sec_url not in (None, "") and sec_url in (None, ""):
+                if not _is_https(ctx_sec_url):
+                    errors.append(f"{where}.payload.context.secondary_url must be a public https:// link.")
+                else:
+                    clean_err = _validate_url_clean(ctx_sec_url)
+                    if clean_err:
+                        errors.append(f"{where}.payload.context.secondary_url {clean_err}")
+                    gh_err = _validate_github_immutability(ctx_sec_url)
+                    if gh_err:
+                        errors.append(f"{where}.payload.context.secondary_url {gh_err}")
+                ctx_sec_sha = (
+                    ctx.get("secondary_expected_sha256")
+                    if isinstance(ctx, dict) and ctx.get("secondary_expected_sha256") not in (None, "")
+                    else payload.get("secondary_expected_sha256")
+                )
+                if not isinstance(ctx_sec_sha, str) or not SHA256_RE.match(ctx_sec_sha):
+                    errors.append(
+                        f"{where}.payload.context.secondary_expected_sha256 must be a 64-character lowercase SHA-256 when secondary_url is set."
+                    )
+            effective_sec_url = sec_url if sec_url not in (None, "") else ctx_sec_url
+            if isinstance(tid, str) and isinstance(p9_spec, dict):
+                id_match = P9_TASK_ID_RE.fullmatch(tid)
+                jlevel = p9_spec.get("jurisdiction_level")
+                if id_match and jlevel in {"union", "state", "ut"} and id_match.group(1) != jlevel:
+                    errors.append(
+                        f"{where}.id tier '{id_match.group(1)}' does not match payload.context.auditing_government_exams.jurisdiction_level '{jlevel}'."
+                    )
+            if isinstance(p9_spec, dict):
+                p9_ckey = p9_spec.get("case_key")
+                if isinstance(p9_ckey, str) and p9_ckey.strip():
+                    norm_ckey = p9_ckey.strip()
+                    if norm_ckey in seen_p9_case_keys:
+                        errors.append(
+                            f"{where}.payload.context.auditing_government_exams.case_key '{norm_ckey}' is used twice."
+                        )
+                    else:
+                        seen_p9_case_keys.add(norm_ckey)
+                sec_role = str(p9_spec.get("secondary_role") or "").strip()
+                if sec_role and effective_sec_url in (None, ""):
+                    errors.append(
+                        f"{where}.payload.secondary_url is required when payload.context.auditing_government_exams.secondary_role is '{sec_role}'."
+                    )
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -679,6 +746,7 @@ def _validation_code_digest() -> str:
     """A digest of the code that decides whether a project file is valid."""
     from aiwatchdogs.core import safety
     from aiwatchdogs.engines import (
+        auditing_government_exams,
         one_road_two_bills,
         one_teacher_five_grades,
         only_one_bid,
@@ -697,6 +765,7 @@ def _validation_code_digest() -> str:
         parliaments_to_do_list,
         only_one_bid,
         sovereign_lies,
+        auditing_government_exams,
     ):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():
