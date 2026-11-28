@@ -9,6 +9,8 @@ import { computeEffectiveWorkingNow } from './components/LiveSwarmViewer';
 import { ToastProvider } from './components/Toast';
 import type { SseStatus } from './hooks/useSwarmStream';
 import { HomePage } from './pages/HomePage';
+import { LanguageProvider, useLang } from './lib/lang';
+import './styles/plain.css';
 import { initAnalytics } from './lib/analytics';
 import { RouterProvider, useRouter } from './router';
 import type { HeadData, LiveSwarmSnapshot, WhisperItem } from './types';
@@ -79,6 +81,7 @@ function PageFallback() {
 function AppShell() {
   const { pathname, search, navigate } = useRouter();
   const { isAgentView } = useAgentView();
+  const { lang } = useLang();
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
 
   // Google Analytics (no-op unless VITE_GA_MEASUREMENT_ID is set). Page views, including
@@ -144,7 +147,7 @@ function AppShell() {
   useEffect(() => {
     fetchHead();
     fetchSwarmLive();
-  }, [fetchHead, fetchSwarmLive]);
+  }, [fetchHead, fetchSwarmLive, lang]);
 
   // Allow opening finding drawer via ?finding=... query parameter or direct /findings/:id URL
   useEffect(() => {
@@ -186,6 +189,12 @@ function AppShell() {
     fetchSwarmLive();
     setRefreshTick((t) => t + 1);
   }, [fetchHead, fetchSwarmLive]);
+
+  const [seenLang, setSeenLang] = useState(lang);
+  if (seenLang !== lang) {
+    setSeenLang(lang);
+    setRefreshTick((t) => t + 1);
+  }
 
   const effectiveSwarmLive = useMemo<LiveSwarmSnapshot | null>(() => {
     if (swarmLive) {
@@ -424,9 +433,11 @@ export function App() {
   return (
     <RouterProvider>
       <ToastProvider>
-        <AgentViewProvider>
-          <AppShell />
-        </AgentViewProvider>
+        <LanguageProvider>
+          <AgentViewProvider>
+            <AppShell />
+          </AgentViewProvider>
+        </LanguageProvider>
       </ToastProvider>
     </RouterProvider>
   );
