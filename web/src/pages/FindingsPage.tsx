@@ -30,7 +30,7 @@ const KEY_TAGS = [
   ACTION_TAGS.rti_filed,
 ];
 
-const PILLAR_FILTERS = ['', 'procurement', 'budget', 'disclosure', 'audit', 'scheme', 'parliament'];
+const PILLAR_FILTERS = ['', 'procurement', 'budget', 'disclosure', 'audit', 'scheme', 'parliament', 'justice'];
 
 export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps) {
   const [status, setStatus] = useState('');
@@ -141,7 +141,7 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
             type="text"
             className="input-field"
             style={{ width: '100%', paddingLeft: 32 }}
-            placeholder="Search ministry, state, exam, scheme, rule, title, or entity…"
+            placeholder="Search ministry, state, exam, court, prison, scheme, rule, title, or entity…"
             aria-label="Search public audit findings"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

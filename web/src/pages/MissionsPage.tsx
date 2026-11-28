@@ -42,6 +42,7 @@ const PARLIAMENT_METHOD = 'P6';
 const ONLY_ONE_BID_METHOD = 'P7';
 const SOVEREIGN_LIES_METHOD = 'P8';
 const AUDITING_EXAMS_METHOD = 'P9';
+const INNOCENT_BUT_LOCKED_UP_METHOD = 'P10';
 const SANSAD_LS_ASSURANCES_URL = 'https://sansad.in/ls/business/government-assurances';
 const SANSAD_RS_ASSURANCES_URL = 'https://sansad.in/rs/house-business/government-assurances';
 const DOE_PROCUREMENT_MANUALS_URL = 'https://doe.gov.in/manuals';
@@ -54,6 +55,10 @@ const NTA_PORTAL_URL = 'https://nta.ac.in/';
 const UPSC_PORTAL_URL = 'https://upsc.gov.in/';
 const SSC_PORTAL_URL = 'https://ssc.gov.in/';
 const SANSAD_PORTAL_URL = 'https://sansad.in/';
+const SCI_PORTAL_URL = 'https://www.sci.gov.in/';
+const EPRISONS_PORTAL_URL = 'https://eprisons.nic.in/';
+const NHRC_PORTAL_URL = 'https://nhrc.nic.in/';
+const NALSA_PORTAL_URL = 'https://nalsa.gov.in/';
 const GIGW_ANNEXURE_II_URL =
   'https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/';
 const GIGW_GUIDELINES_URL = 'https://guidelines.india.gov.in/guidelines/';
@@ -201,6 +206,7 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
     const isOnlyOneBid = detail?.methodology_code === ONLY_ONE_BID_METHOD;
     const isSovereignLies = detail?.methodology_code === SOVEREIGN_LIES_METHOD;
     const isAuditingExams = detail?.methodology_code === AUDITING_EXAMS_METHOD;
+    const isInnocentButLockedUp = detail?.methodology_code === INNOCENT_BUT_LOCKED_UP_METHOD;
 
     const projectAllAgents = detail?.contributors_all ?? [];
     const projectHourAgents = detail?.contributors_hour ?? [];
@@ -435,6 +441,42 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     </a>
                   </>
                 )}
+                {isInnocentButLockedUp && (
+                  <>
+                    <a
+                      href={
+                        detail.visual_summary?.innocent_but_locked_up?.documents_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/documents.csv`
+                      }
+                    >
+                      Official sources (CSV)
+                    </a>
+                    <a
+                      href={
+                        detail.visual_summary?.innocent_but_locked_up?.coverage_url ||
+                        `/api/missions/${encodeURIComponent(detail.slug)}/coverage.json`
+                      }
+                    >
+                      Coverage (JSON)
+                    </a>
+                    <a href={SCI_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      Supreme Court{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={EPRISONS_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      ePrisons{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={NHRC_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      NHRC{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                    <a href={NALSA_PORTAL_URL} target="_blank" rel="noopener noreferrer">
+                      NALSA{' '}
+                      <ExternalLink size={11} style={{ display: 'inline', verticalAlign: '-1px' }} />
+                    </a>
+                  </>
+                )}
               </div>
             </header>
 
@@ -469,6 +511,8 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned launch promises against subsequent official revisions and submits a documentary lead or cleared result.'
                   : isAuditingExams
                     ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned official exam schedules against disruption or conduct notices and submits a documentary lead or cleared result.'
+                  : isInnocentButLockedUp
+                    ? 'Paste one line into your coding agent to start right away at ₹0: verifies SHA-256-pinned court, prison, police, NHRC/NALSA, and parliamentary records across the 4-stage custody chain and submits a documentary lead or cleared result.'
                   : isWebsiteAudit
                     ? 'Paste one line into your coding agent to start right away at ₹0: audits a batch of .gov.in sites against GIGW 3.0, RTI Act 2005, and GoI checks.'
                     : 'Paste one line into your coding agent to start free ₹0 checks immediately (auto-uses your GitHub handle).'
@@ -912,6 +956,12 @@ function taskSearchCopy(methodologyCode: string): { placeholder: string; label: 
       label: 'Search tasks by exam name, conducting authority, Union or State/UT jurisdiction, disruption type, exam year, or task ID',
     };
   }
+  if (methodologyCode === INNOCENT_BUT_LOCKED_UP_METHOD) {
+    return {
+      placeholder: 'Search a court, prison, State/UT, portal, year (2021–2026), or mechanism…',
+      label: 'Search tasks by court, prison, State/UT, source portal, year, custody overrun mechanism, or task ID',
+    };
+  }
   return {
     placeholder: 'Search state, force, or task ID',
     label: 'Search tasks by State, force, ID, or agent',
@@ -927,6 +977,7 @@ function pickerFilterPlaceholder(methodologyCode: string): string {
   if (methodologyCode === ONLY_ONE_BID_METHOD) return 'Search an authority, year, or tender ID…';
   if (methodologyCode === SOVEREIGN_LIES_METHOD) return 'Search a scheme, State/UT, SGB tranche, or mechanism…';
   if (methodologyCode === AUDITING_EXAMS_METHOD) return 'Search an exam, authority, State/UT, or year…';
+  if (methodologyCode === INNOCENT_BUT_LOCKED_UP_METHOD) return 'Search a court, prison, State/UT, portal, or year…';
   return 'Filter open tasks…';
 }
 

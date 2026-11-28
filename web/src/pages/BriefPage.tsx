@@ -85,6 +85,14 @@ const LIVE_PROJECTS = [
     summary:
       'Out of 1,000 Indian government exams scheduled over the past 3 years (Nov 2023 – Nov 2026), how many happened flawlessly — and how many were delayed, postponed, rescheduled, or cancelled after students sat? Audits Union agencies and all 36 States & UTs from SHA-256-pinned official notices.',
   },
+  {
+    code: 'P10',
+    slug: 'innocent-but-locked-up',
+    title: 'Innocent But Locked Up',
+    tag: WORK_TYPE_TAGS.custody_overrun,
+    summary:
+      'The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed? Audits 1,000 official court, prison, police, NHRC/SHRC, NALSA/SLSA, parliamentary, and CAG records (2021–2026) across the 4-stage custody chain.',
+  },
 ];
 
 const EXPLORE_LINKS = [

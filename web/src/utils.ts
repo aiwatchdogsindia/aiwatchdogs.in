@@ -153,6 +153,7 @@ export function pillarLabel(pillar?: string): string {
     infrastructure: 'Infrastructure & Works',
     corporate_political: 'Disclosures & Governance',
     parliament: 'Parliament & RTI',
+    justice: 'Courts & Custody',
   };
   return map[(pillar || '').toLowerCase()] || pillar || 'Public Audit';
 }
@@ -167,6 +168,7 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'only-one-bid': 'P7',
   'sovereign-lies': 'P8',
   'auditing-government-exams': 'P9',
+  'innocent-but-locked-up': 'P10',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -179,6 +181,7 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   P7: 'P7',
   P8: 'P8',
   P9: 'P9',
+  P10: 'P10',
 };
 
 /**
@@ -294,6 +297,9 @@ export function pillarTint(pillar?: string): PillarTint {
   if (p.includes('parl')) {
     return { hex: '#A84F00', rgb: '168, 79, 0', wash: 'rgba(168, 79, 0, 0.11)', label: 'Parliament & RTI' };
   }
+  if (p.includes('just') || p.includes('court') || p.includes('custody')) {
+    return { hex: '#000080', rgb: '0, 0, 128', wash: 'rgba(0, 0, 128, 0.10)', label: 'Courts & Custody' };
+  }
   return { hex: '#1B1A17', rgb: '60, 56, 50', wash: 'rgba(27, 26, 23, 0.10)', label: pillarLabel(pillar) };
 }
 
@@ -326,6 +332,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P9: {
     name: 'Auditing Government Exams: 3-year schedule vs. conduct audit across Union & State/UT examinations',
     rule: 'Cross-checks SHA-256-pinned official exam schedules and calendars against subsequent public notices, parliamentary replies, and statutory records (Nov 2023 – Nov 2026) — classifying cancellations after conduct, postponements, reschedules, delays, pre-exam cancellations, and technical glitches while publishing exams conducted flawlessly as Cleared.',
+  },
+  P10: {
+    name: 'Innocent But Locked Up: post-acquittal custody overruns & contempt compliance (2021–2026)',
+    rule: 'Verifies SHA-256-pinned Supreme Court, High Court, prison, police, NHRC/SHRC, NALSA/SLSA, Parliamentary, and CAG records (2021–2026) across the 4-stage custody chain (acquittal/release order → continued prison detention → contempt/habeas intervention → verified release), while publishing timely-release compliance benchmarks as Cleared.',
   },
 };
 
@@ -467,7 +477,15 @@ export function isOfficialGovUrl(url?: string | null): boolean {
       host === 'ugc.ac.in' ||
       host.endsWith('.ugc.ac.in') ||
       host === 'csirhrdg.res.in' ||
-      host.endsWith('.csirhrdg.res.in')
+      host.endsWith('.csirhrdg.res.in') ||
+      host === 'allahabadhighcourt.in' ||
+      host.endsWith('.allahabadhighcourt.in') ||
+      host === 'dslsa.org' ||
+      host.endsWith('.dslsa.org') ||
+      host === 'jhalsa.org' ||
+      host.endsWith('.jhalsa.org') ||
+      host === 'pshrc.net' ||
+      host.endsWith('.pshrc.net')
     );
   } catch {
     return false;
@@ -822,6 +840,11 @@ export function formatCitationRoleLabel(role?: string | null): string | null {
     corroborating_record: 'Corroborating Record',
     recorded_status: 'Recorded Status',
     followup_answer: 'Follow-Up Answer',
+    acquittal_and_custody_order: 'Acquittal & Custody Order',
+    contempt_and_release_outcome: 'Contempt & Release Outcome',
+    contempt_order_document: 'Contempt Order Record',
+    acquittal_order_document: 'Acquittal Order Record',
+    release_or_compliance_record: 'Release / Compliance Record',
   };
   if (map[r]) return map[r];
   const readable = r.replace(/_/g, ' ');
@@ -1848,6 +1871,509 @@ export function extractAuditingGovernmentExamsMetrics(
   };
 }
 
+export type P10MechanismKey =
+  | 'post_acquittal_contempt_overrun'
+  | 'bail_or_release_order_contempt'
+  | 'warrant_or_faster_transmission_delay'
+  | 'statutory_commission_detention_finding'
+  | 'institutional_compliance_gap'
+  | 'timely_release_or_compliant'
+  | 'other';
+
+export interface P10MechanismMeta {
+  key: P10MechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  isCleared: boolean;
+}
+
+export function formatCustodyOverrunMechanism(raw?: string | null): P10MechanismMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (
+    s === 'post_acquittal_contempt_overrun' ||
+    s === 'p10_post_acquittal_contempt_overrun'
+  ) {
+    return {
+      key: 'post_acquittal_contempt_overrun',
+      label: 'Post-Acquittal Contempt Overrun',
+      shortLabel: 'Acquittal + contempt',
+      chipClass: 'p10-mech p10-mech--acquittal-contempt',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'bail_or_release_order_contempt' ||
+    s === 'p10_release_order_contempt_overrun' ||
+    s === 'release_order_contempt_overrun'
+  ) {
+    return {
+      key: 'bail_or_release_order_contempt',
+      label: 'Release Order Contempt Overrun',
+      shortLabel: 'Release contempt',
+      chipClass: 'p10-mech p10-mech--release-contempt',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'warrant_or_faster_transmission_delay' ||
+    s === 'p10_warrant_transmission_delay' ||
+    s === 'warrant_transmission_delay'
+  ) {
+    return {
+      key: 'warrant_or_faster_transmission_delay',
+      label: 'Warrant / FASTER Transmission Delay',
+      shortLabel: 'FASTER / warrant delay',
+      chipClass: 'p10-mech p10-mech--transmission',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'statutory_commission_detention_finding' ||
+    s === 'p10_statutory_unlawful_detention' ||
+    s === 'statutory_unlawful_detention'
+  ) {
+    return {
+      key: 'statutory_commission_detention_finding',
+      label: 'NHRC / SHRC Detention Finding',
+      shortLabel: 'Commission finding',
+      chipClass: 'p10-mech p10-mech--commission',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'institutional_compliance_gap' ||
+    s === 'p10_institutional_compliance_gap'
+  ) {
+    return {
+      key: 'institutional_compliance_gap',
+      label: 'Institutional Compliance Gap',
+      shortLabel: 'Compliance gap',
+      chipClass: 'p10-mech p10-mech--compliance',
+      isCleared: false,
+    };
+  }
+  if (
+    s === 'timely_release_or_compliant' ||
+    s === 'compliant_control' ||
+    s === 'cleared'
+  ) {
+    return {
+      key: 'timely_release_or_compliant',
+      label: 'Timely Release / Compliant',
+      shortLabel: 'Compliant (Cleared)',
+      chipClass: 'p10-mech p10-mech--compliant',
+      isCleared: true,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Custody Compliance Record',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Custody record',
+    chipClass: 'p10-mech p10-mech--other',
+    isCleared: false,
+  };
+}
+
+export interface P10PortalCategoryMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+const P10_PORTAL_CATEGORY_MAP: Record<
+  string,
+  { label: string; shortLabel: string; chipClass: string }
+> = {
+  court_portal: {
+    label: 'Court Portal',
+    shortLabel: 'Court Portal',
+    chipClass: 'p10-portal p10-portal--court',
+  },
+  prison_portal: {
+    label: 'Prison Portal',
+    shortLabel: 'Prison Portal',
+    chipClass: 'p10-portal p10-portal--prison',
+  },
+  police_portal: {
+    label: 'Police Portal',
+    shortLabel: 'Police Portal',
+    chipClass: 'p10-portal p10-portal--police',
+  },
+  nhrc_shrc: {
+    label: 'NHRC / SHRC',
+    shortLabel: 'NHRC/SHRC',
+    chipClass: 'p10-portal p10-portal--nhrc',
+  },
+  nalsa_slsa: {
+    label: 'NALSA / SLSA',
+    shortLabel: 'NALSA/SLSA',
+    chipClass: 'p10-portal p10-portal--nalsa',
+  },
+  parliament: {
+    label: 'Parliament (Digital Sansad)',
+    shortLabel: 'Parliament',
+    chipClass: 'p10-portal p10-portal--parliament',
+  },
+  govt_ministry: {
+    label: 'Govt Ministry (MHA / DoJ / PIB)',
+    shortLabel: 'Govt Ministry',
+    chipClass: 'p10-portal p10-portal--govt',
+  },
+  cag_audit: {
+    label: 'CAG Audit',
+    shortLabel: 'CAG Audit',
+    chipClass: 'p10-portal p10-portal--cag',
+  },
+};
+
+export function formatPortalCategory(raw?: string | null): P10PortalCategoryMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (P10_PORTAL_CATEGORY_MAP[s]) {
+    return { key: s, ...P10_PORTAL_CATEGORY_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Official Portal';
+  return {
+    key: s || 'other',
+    label: readable,
+    shortLabel: readable,
+    chipClass: 'p10-portal p10-portal--other',
+  };
+}
+
+export interface P10CourtTierMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatCourtTier(raw?: string | null): P10CourtTierMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'supreme_court') {
+    return {
+      key: 'supreme_court',
+      label: 'Supreme Court of India',
+      shortLabel: 'Supreme Court',
+      chipClass: 'p10-tier p10-tier--sc',
+    };
+  }
+  if (s === 'high_court') {
+    return {
+      key: 'high_court',
+      label: 'High Court',
+      shortLabel: 'High Court',
+      chipClass: 'p10-tier p10-tier--hc',
+    };
+  }
+  if (s === 'district_court') {
+    return {
+      key: 'district_court',
+      label: 'District / Sessions Court',
+      shortLabel: 'District Court',
+      chipClass: 'p10-tier p10-tier--dc',
+    };
+  }
+  if (s === 'statutory_body') {
+    return {
+      key: 'statutory_body',
+      label: 'Statutory / Executive Body',
+      shortLabel: 'Statutory Body',
+      chipClass: 'p10-tier p10-tier--stat',
+    };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Judicial / Statutory Body';
+  return {
+    key: s || 'other',
+    label: readable,
+    shortLabel: readable,
+    chipClass: 'p10-tier p10-tier--other',
+  };
+}
+
+export interface P10ChainStatusMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatChainStatus(
+  raw?: string | null,
+  stagesCount?: number | null,
+): P10ChainStatusMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'full_4_stage_chain') {
+    return {
+      key: 'full_4_stage_chain',
+      label: 'Full 4-Stage Chain Verified',
+      shortLabel: '4/4 stages',
+      chipClass: 'p10-chain p10-chain--full',
+    };
+  }
+  if (s === 'partial_3_stage') {
+    return {
+      key: 'partial_3_stage',
+      label: '3-Stage Custody Chain',
+      shortLabel: stagesCount != null ? `${stagesCount}/4 stages` : '3/4 stages',
+      chipClass: 'p10-chain p10-chain--partial',
+    };
+  }
+  if (s === 'institutional_record') {
+    return {
+      key: 'institutional_record',
+      label: 'Institutional Compliance Record',
+      shortLabel: 'Institutional',
+      chipClass: 'p10-chain p10-chain--institutional',
+    };
+  }
+  if (s === 'compliant_control') {
+    return {
+      key: 'compliant_control',
+      label: 'Timely Release Benchmark',
+      shortLabel: 'Compliant',
+      chipClass: 'p10-chain p10-chain--compliant',
+    };
+  }
+  if (stagesCount != null && stagesCount >= 4) {
+    return {
+      key: 'full_4_stage_chain',
+      label: 'Full 4-Stage Chain Verified',
+      shortLabel: '4/4 stages',
+      chipClass: 'p10-chain p10-chain--full',
+    };
+  }
+  if (stagesCount != null && stagesCount === 3) {
+    return {
+      key: 'partial_3_stage',
+      label: '3-Stage Custody Chain',
+      shortLabel: '3/4 stages',
+      chipClass: 'p10-chain p10-chain--partial',
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: s || 'institutional_record',
+    label: clean ? clean.replace(/_/g, ' ') : 'Institutional Record',
+    shortLabel: stagesCount != null ? `${stagesCount}/4 stages` : 'Institutional',
+    chipClass: 'p10-chain p10-chain--institutional',
+  };
+}
+
+export function formatAcquittalOrderType(raw?: string | null): string {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const map: Record<string, string> = {
+    acquittal: 'Acquittal Order',
+    discharge: 'Discharge Order',
+    detention_quashed: 'Detention Quashed',
+    bail_release_order: 'Bail / Release Order',
+    conviction_set_aside: 'Conviction Set Aside',
+    institutional_compliance_review: 'Institutional Compliance Review',
+  };
+  if (map[s]) return map[s];
+  const clean = (raw || '').trim();
+  return clean ? clean.replace(/_/g, ' ') : 'Release Order';
+}
+
+export function formatOverrunDays(days?: number | null): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  const rounded = Math.round(days);
+  if (rounded >= 365) {
+    const yrs = (rounded / 365.25).toFixed(1);
+    return `${rounded.toLocaleString('en-IN')} days (~${yrs} yrs)`;
+  }
+  return `${rounded.toLocaleString('en-IN')} ${rounded === 1 ? 'day' : 'days'}`;
+}
+
+export interface ParsedInnocentButLockedUpMetrics {
+  caseKey: string | null;
+  caseTitle: string | null;
+  portalCategory: string | null;
+  courtTier: string | null;
+  stateUt: string | null;
+  jurisdiction: string | null;
+  year: number | null;
+  documentDate: string | null;
+  documentRef: string | null;
+  overrunMechanism: string | null;
+  signalCategory: string | null;
+  verdict: string | null;
+  triggeredRules: string[];
+  stagesVerifiedCount: number | null;
+  chainStatus: string | null;
+  stage1AcquittalVerified: boolean;
+  acquittalOrderDate: string | null;
+  acquittalCourt: string | null;
+  acquittalCaseNumber: string | null;
+  acquittalOrderType: string | null;
+  acquittalQuote: string | null;
+  stage2ContinuedDetentionVerified: boolean;
+  prisonName: string | null;
+  custodyAuthority: string | null;
+  nonReleaseReason: string | null;
+  overrunDays: number | null;
+  overrunWindow: string | null;
+  stage3ContemptVerified: boolean;
+  contemptCaseNumber: string | null;
+  contemptCourt: string | null;
+  contemptFilingDate: string | null;
+  contemptOrderDate: string | null;
+  contemptQuote: string | null;
+  stage4ReleaseVerified: boolean;
+  releaseDate: string | null;
+  releaseVerified: boolean;
+  compensationInr: number | null;
+  judicialDirectionSummary: string | null;
+  custodyOrderExcerpt: string | null;
+  custodyOrderLocator: string | null;
+  custodyOrderTokensMatched: string[];
+  contemptOrOutcomeExcerpt: string | null;
+  contemptOrOutcomeLocator: string | null;
+  contemptOrOutcomeTokensMatched: string[];
+  statutoryAnchor: string | null;
+  secondaryRole: string | null;
+  isAnchorCase: boolean;
+  asOfDate: string | null;
+  sourceLocator: string | null;
+}
+
+const P10_MECHANISM_SET = new Set([
+  'post_acquittal_contempt_overrun',
+  'bail_or_release_order_contempt',
+  'warrant_or_faster_transmission_delay',
+  'statutory_commission_detention_finding',
+  'institutional_compliance_gap',
+  'timely_release_or_compliant',
+  'p10_post_acquittal_contempt_overrun',
+  'p10_release_order_contempt_overrun',
+  'p10_warrant_transmission_delay',
+  'p10_statutory_unlawful_detention',
+  'p10_institutional_compliance_gap',
+]);
+
+export function extractInnocentButLockedUpMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedInnocentButLockedUpMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const overrunMechanism = metricStr(metrics, 'overrun_mechanism');
+  const portalCategory = metricStr(metrics, 'portal_category');
+  const acquittalCourt = metricStr(metrics, 'acquittal_court');
+  const acquittalCaseNumber = metricStr(metrics, 'acquittal_case_number');
+  const contemptCaseNumber = metricStr(metrics, 'contempt_case_number');
+  const prisonName = metricStr(metrics, 'prison_name');
+  const chainStatus = metricStr(metrics, 'chain_status');
+  const signalCategory = metricStr(metrics, 'signal_category');
+  const overrunDays = metricNum(metrics, 'overrun_days');
+
+  const normSignal = (signalCategory || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasP10Signal = Boolean(normSignal && P10_MECHANISM_SET.has(normSignal));
+
+  if (
+    !overrunMechanism &&
+    !portalCategory &&
+    !acquittalCourt &&
+    !acquittalCaseNumber &&
+    !contemptCaseNumber &&
+    !prisonName &&
+    !chainStatus &&
+    overrunDays === null &&
+    !hasP10Signal
+  ) {
+    return null;
+  }
+
+  const isCompliant =
+    formatCustodyOverrunMechanism(overrunMechanism || signalCategory).isCleared ||
+    (chainStatus || '').trim().toLowerCase() === 'compliant_control';
+  const acquittalOrderDate = metricStr(metrics, 'acquittal_order_date');
+  const acquittalQuote = metricStr(metrics, 'acquittal_quote');
+  const nonReleaseReason = metricStr(metrics, 'non_release_reason');
+  const contemptCourt = metricStr(metrics, 'contempt_court');
+  const contemptFilingDate = metricStr(metrics, 'contempt_filing_date');
+  const contemptOrderDate = metricStr(metrics, 'contempt_order_date');
+  const contemptQuote = metricStr(metrics, 'contempt_quote');
+  const releaseDate = metricStr(metrics, 'release_date');
+
+  const stage1 =
+    metrics.stage_1_acquittal_verified !== undefined
+      ? metricBool(metrics, 'stage_1_acquittal_verified')
+      : Boolean(acquittalOrderDate || acquittalCaseNumber || acquittalQuote);
+  const stage2 =
+    metrics.stage_2_continued_detention_verified !== undefined
+      ? metricBool(metrics, 'stage_2_continued_detention_verified')
+      : isCompliant && (overrunDays == null || overrunDays === 0)
+        ? false
+        : Boolean((overrunDays != null && overrunDays > 0) || (nonReleaseReason && !isCompliant));
+  const stage3 =
+    metrics.stage_3_contempt_verified !== undefined
+      ? metricBool(metrics, 'stage_3_contempt_verified')
+      : Boolean(contemptCaseNumber || contemptCourt || contemptFilingDate || contemptOrderDate || contemptQuote);
+  const releaseVerified = metricBool(metrics, 'release_verified');
+  const stage4 =
+    metrics.stage_4_release_verified !== undefined
+      ? metricBool(metrics, 'stage_4_release_verified')
+      : Boolean(releaseVerified || releaseDate);
+  const computedStages = [stage1, stage2, stage3, stage4].filter(Boolean).length;
+  const rawStagesCount = metricNum(metrics, 'stages_verified_count');
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    caseTitle: metricStr(metrics, 'case_title'),
+    portalCategory,
+    courtTier: metricStr(metrics, 'court_tier'),
+    stateUt: metricStr(metrics, 'state_ut'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    year: metricNum(metrics, 'year'),
+    documentDate: metricStr(metrics, 'document_date'),
+    documentRef: metricStr(metrics, 'document_ref'),
+    overrunMechanism,
+    signalCategory,
+    verdict: metricStr(metrics, 'verdict'),
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    stagesVerifiedCount: rawStagesCount ?? (computedStages > 0 ? computedStages : null),
+    chainStatus,
+    stage1AcquittalVerified: stage1,
+    acquittalOrderDate,
+    acquittalCourt,
+    acquittalCaseNumber,
+    acquittalOrderType: metricStr(metrics, 'acquittal_order_type'),
+    acquittalQuote,
+    stage2ContinuedDetentionVerified: stage2,
+    prisonName,
+    custodyAuthority: metricStr(metrics, 'custody_authority'),
+    nonReleaseReason,
+    overrunDays,
+    overrunWindow: metricStr(metrics, 'overrun_window'),
+    stage3ContemptVerified: stage3,
+    contemptCaseNumber,
+    contemptCourt,
+    contemptFilingDate,
+    contemptOrderDate,
+    contemptQuote,
+    stage4ReleaseVerified: stage4,
+    releaseDate,
+    releaseVerified: releaseVerified || stage4,
+    compensationInr: metricNum(metrics, 'compensation_inr'),
+    judicialDirectionSummary: metricStr(metrics, 'judicial_direction_summary'),
+    custodyOrderExcerpt: metricStr(metrics, 'custody_order_excerpt'),
+    custodyOrderLocator: metricStr(metrics, 'custody_order_locator'),
+    custodyOrderTokensMatched: metricStrList(metrics, 'custody_order_tokens_matched'),
+    contemptOrOutcomeExcerpt: metricStr(metrics, 'contempt_or_outcome_excerpt'),
+    contemptOrOutcomeLocator: metricStr(metrics, 'contempt_or_outcome_locator'),
+    contemptOrOutcomeTokensMatched: metricStrList(metrics, 'contempt_or_outcome_tokens_matched'),
+    statutoryAnchor: metricStr(metrics, 'statutory_anchor'),
+    secondaryRole: metricStr(metrics, 'secondary_role'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+    asOfDate: metricStr(metrics, 'as_of_date'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+  };
+}
+
 export interface FindingDrawerMetric {
   label: string;
   value: string;
@@ -1972,6 +2498,51 @@ export function resolveFindingDrawerMetric(
     };
   }
 
+  if (finding.methodology_code === 'P10' && !isQuarantined) {
+    const p10Record = extractInnocentButLockedUpMetrics(finding.anomaly_metrics);
+    const compVal =
+      p10Record?.compensationInr != null && p10Record.compensationInr > 0
+        ? p10Record.compensationInr
+        : finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+          ? finding.monetary_exposure_inr
+          : null;
+    if (p10Record?.overrunDays != null && p10Record.overrunDays > 0) {
+      const daysLabel = `+${p10Record.overrunDays.toLocaleString('en-IN')} ${
+        p10Record.overrunDays === 1 ? 'day' : 'days'
+      }`;
+      return {
+        label: 'Custody Overrun',
+        value: compVal != null ? `${daysLabel} · ${formatInr(compVal)}` : daysLabel,
+      };
+    }
+    if (compVal != null && compVal > 0) {
+      return {
+        label: 'Ordered Compensation',
+        value: formatInr(compVal),
+      };
+    }
+    const mechKey = p10Record?.overrunMechanism || p10Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatCustodyOverrunMechanism(mechKey);
+      const chain = p10Record?.chainStatus || p10Record?.stagesVerifiedCount != null
+        ? formatChainStatus(p10Record?.chainStatus, p10Record?.stagesVerifiedCount)
+        : null;
+      return {
+        label: mech.isCleared ? 'Release Compliance' : 'Custody Audit Pattern',
+        value:
+          mech.isCleared
+            ? mech.shortLabel
+            : chain
+              ? `${mech.shortLabel} · ${chain.shortLabel}`
+              : mech.shortLabel,
+      };
+    }
+    return {
+      label: 'Custody Compliance Check',
+      value: 'Documented',
+    };
+  }
+
   return {
     label: finding.amount_label
       ? finding.amount_label.replace(/_/g, ' ')
@@ -2080,6 +2651,41 @@ export function resolveFindingCardMetric(
       };
     }
     return { value: 'Exam audit lead', prominent: false };
+  }
+
+  if (finding.methodology_code === 'P10') {
+    const p10Record = extractInnocentButLockedUpMetrics(finding.anomaly_metrics);
+    const compVal =
+      p10Record?.compensationInr != null && p10Record.compensationInr > 0
+        ? p10Record.compensationInr
+        : finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+          ? finding.monetary_exposure_inr
+          : null;
+    if (p10Record?.overrunDays != null && p10Record.overrunDays > 0) {
+      const base = `+${p10Record.overrunDays.toLocaleString('en-IN')}d overrun`;
+      return {
+        value: compVal != null ? `${base} · ${formatInr(compVal)}` : base,
+        prominent: true,
+      };
+    }
+    if (compVal != null && compVal > 0) {
+      return { value: formatInr(compVal), prominent: true };
+    }
+    const mechKey = p10Record?.overrunMechanism || p10Record?.signalCategory;
+    if (mechKey) {
+      const mech = formatCustodyOverrunMechanism(mechKey);
+      if (mech.isCleared) {
+        return { value: mech.shortLabel, prominent: true };
+      }
+      const chain = p10Record?.chainStatus || p10Record?.stagesVerifiedCount != null
+        ? formatChainStatus(p10Record?.chainStatus, p10Record?.stagesVerifiedCount)
+        : null;
+      return {
+        value: chain ? `${chain.shortLabel} · ${mech.shortLabel}` : mech.shortLabel,
+        prominent: true,
+      };
+    }
+    return { value: 'Custody audit lead', prominent: false };
   }
 
   if (finding.monetary_exposure_inr) {

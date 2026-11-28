@@ -27,12 +27,17 @@ import {
   downloadTextFile,
   extractAssuranceMetrics,
   extractAuditingGovernmentExamsMetrics,
+  extractInnocentButLockedUpMetrics,
   extractOnlyOneBidMetrics,
   extractSovereignLiesMetrics,
+  formatAcquittalOrderType,
   formatAssuranceStatus,
   formatBytes,
   formatCandidateCountCompact,
+  formatChainStatus,
   formatCitationRoleLabel,
+  formatCourtTier,
+  formatCustodyOverrunMechanism,
   formatDateShort,
   formatElapsedPromiseSpan,
   formatExamAuthorityType,
@@ -43,6 +48,8 @@ import {
   formatInr,
   formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
+  formatOverrunDays,
+  formatPortalCategory,
   formatProcurementAmountType,
   formatProcurementSignal,
   formatRelativeTime,
@@ -381,6 +388,50 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
   const p9ScheduleSha = p9ScheduleCit?.sha256 || prov?.observed_sha256 || null;
   const p9OutcomeSha = p9OutcomeCit?.sha256 || prov?.secondary_sha256 || prov?.observed_sha256 || null;
 
+
+  const p10Record =
+    finding?.methodology_code === 'P10' && !isQuarantined
+      ? extractInnocentButLockedUpMetrics(finding.anomaly_metrics)
+      : null;
+  const p10Mechanism =
+    p10Record && (p10Record.overrunMechanism || p10Record.signalCategory)
+      ? formatCustodyOverrunMechanism(p10Record.overrunMechanism || p10Record.signalCategory)
+      : null;
+  const p10Portal = p10Record?.portalCategory
+    ? formatPortalCategory(p10Record.portalCategory)
+    : null;
+  const p10Tier = p10Record?.courtTier ? formatCourtTier(p10Record.courtTier) : null;
+  const p10Chain = p10Record
+    ? formatChainStatus(p10Record.chainStatus, p10Record.stagesVerifiedCount)
+    : null;
+  const p10OverrunLabel = p10Record ? formatOverrunDays(p10Record.overrunDays) : null;
+  const p10Compensation =
+    p10Record?.compensationInr != null && p10Record.compensationInr > 0
+      ? p10Record.compensationInr
+      : finding && finding.monetary_exposure_inr != null && finding.monetary_exposure_inr > 0
+        ? finding.monetary_exposure_inr
+        : null;
+  const p10OrderCit = finding?.citations.find((c) => {
+    const r = (c.role || '').toLowerCase();
+    return r === 'acquittal_and_custody_order' || r === 'acquittal_order_document';
+  });
+  const p10ContemptCit = finding?.citations.find((c) => {
+    const r = (c.role || '').toLowerCase();
+    return (
+      r === 'contempt_and_release_outcome' ||
+      r === 'contempt_order_document' ||
+      r === 'release_or_compliance_record'
+    );
+  });
+  const p10OrderHref = p10OrderCit
+    ? citationHref(p10OrderCit, finding?.artifact_sha256)
+    : safeRetrievalUrl;
+  const p10ContemptHref = p10ContemptCit
+    ? citationHref(p10ContemptCit, finding?.artifact_sha256)
+    : safeExternalUrl(prov?.secondary_url) || safeRetrievalUrl;
+  const p10OrderSha = p10OrderCit?.sha256 || prov?.observed_sha256 || null;
+  const p10ContemptSha = p10ContemptCit?.sha256 || prov?.secondary_sha256 || prov?.observed_sha256 || null;
+
   const drawerMetric = finding ? resolveFindingDrawerMetric(finding) : null;
   const displayMetricEntries = finding
     ? Object.entries(finding.anomaly_metrics).filter(
@@ -396,7 +447,12 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               (k === 'schedule_summary' ||
                 k === 'outcome_summary' ||
                 k === 'schedule_excerpt' ||
-                k === 'outcome_excerpt'))
+                k === 'outcome_excerpt')) ||
+            (p10Record &&
+              (k === 'acquittal_quote' ||
+                k === 'contempt_quote' ||
+                k === 'custody_order_excerpt' ||
+                k === 'contempt_or_outcome_excerpt'))
           ),
       )
     : [];
@@ -1592,6 +1648,410 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           {p9Record.triggeredRules.length > 0 && (
                             <div className="drawer-p7-chips">
                               {p9Record.triggeredRules.map((rule) => (
+                                <span key={rule} className="tag-mono font-mono">
+                                  {rule}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* P10 Structured 4-Stage Post-Acquittal Custody Overrun & Contempt Dossier */}
+                  {p10Record && (
+                    <section
+                      className={`card card-pad drawer-p10-card${
+                        p10Mechanism?.isCleared ? ' drawer-p10-card--compliant' : ''
+                      }`}
+                      aria-label="Four-stage post-acquittal custody overrun and contempt dossier"
+                    >
+                      <div className="drawer-p6-head">
+                        <div>
+                          <div className="section-kicker" style={{ marginBottom: 4 }}>
+                            Custody Overrun Dossier · 4-Stage Acquittal → Prison → Contempt → Release Chain
+                          </div>
+                          <div className="drawer-p6-meta">
+                            {p10Record.isAnchorCase && (
+                              <span className="p10-anchor-chip">Flagship Anchor Case</span>
+                            )}
+                            {p10Tier && <span className={p10Tier.chipClass}>{p10Tier.label}</span>}
+                            {p10Portal && <span className={p10Portal.chipClass}>{p10Portal.label}</span>}
+                            {(p10Record.stateUt || p10Record.jurisdiction) && (
+                              <span className="tag-mono">
+                                {p10Record.stateUt || formatJurisdictionLabel(p10Record.jurisdiction)}
+                              </span>
+                            )}
+                            {p10Record.year != null && (
+                              <span className="tag-mono tabular">{String(p10Record.year)}</span>
+                            )}
+                            {p10Chain && (
+                              <span className={p10Chain.chipClass}>{p10Chain.label}</span>
+                            )}
+                          </div>
+                        </div>
+                        {p10Mechanism && (
+                          <span className={p10Mechanism.chipClass}>{p10Mechanism.label}</span>
+                        )}
+                      </div>
+
+                      {p10Record.caseTitle && (
+                        <h3 className="drawer-p8-title">{p10Record.caseTitle}</h3>
+                      )}
+
+                      {(p10Record.documentRef || p10Record.custodyAuthority || p10Record.prisonName) && (
+                        <div className="drawer-p6-people">
+                          {p10Record.prisonName && (
+                            <span>
+                              <strong>Prison / Facility:</strong> {p10Record.prisonName}
+                            </span>
+                          )}
+                          {p10Record.custodyAuthority && (
+                            <span>
+                              <strong>Custody authority:</strong> {p10Record.custodyAuthority}
+                            </span>
+                          )}
+                          {p10Record.documentRef && (
+                            <span className="font-mono">
+                              <strong>Ref:</strong> {p10Record.documentRef}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Key Overrun & Outcome Strip */}
+                      <div
+                        className={`drawer-p10-metrics-bar tabular${
+                          p10Compensation != null ? ' drawer-p10-metrics-bar--with-comp' : ''
+                        }`}
+                      >
+                        <div className="drawer-p8-delta-box drawer-p10-box--s1">
+                          <span className="drawer-p8-delta-kicker">
+                            {p10Record.acquittalOrderType
+                              ? formatAcquittalOrderType(p10Record.acquittalOrderType)
+                              : 'Acquittal / Release Order'}
+                          </span>
+                          <span className="drawer-p8-delta-val">
+                            {p10Record.acquittalOrderDate || p10Record.documentDate || 'Recorded'}
+                          </span>
+                          {p10Record.acquittalCaseNumber && (
+                            <span className="drawer-p8-delta-sub font-mono">
+                              {p10Record.acquittalCaseNumber}
+                            </span>
+                          )}
+                        </div>
+
+                        <div
+                          className={`drawer-p8-delta-box ${
+                            p10Mechanism?.isCleared ? 'drawer-p8-delta-box--honored' : 'drawer-p10-box--s2'
+                          }`}
+                        >
+                          <span className="drawer-p8-delta-kicker">Custody Overrun</span>
+                          <span className="drawer-p8-delta-val">
+                            {p10OverrunLabel && (p10Record.overrunDays ?? 0) > 0
+                              ? `+${p10OverrunLabel}`
+                              : p10Mechanism?.isCleared
+                                ? 'Timely (0 days)'
+                                : p10Record.overrunWindow || 'Documented delay'}
+                          </span>
+                          {p10Record.overrunWindow && (p10Record.overrunDays ?? 0) > 0 && (
+                            <span className="drawer-p8-delta-sub">{p10Record.overrunWindow}</span>
+                          )}
+                        </div>
+
+                        <div className="drawer-p8-delta-box drawer-p10-box--s4">
+                          <span className="drawer-p8-delta-kicker">Release Outcome</span>
+                          <span className="drawer-p8-delta-val">
+                            {p10Record.releaseDate
+                              ? p10Record.releaseDate
+                              : p10Record.releaseVerified
+                                ? 'Verified Released'
+                                : 'Status Logged'}
+                          </span>
+                          {p10Record.contemptCaseNumber && (
+                            <span className="drawer-p8-delta-sub font-mono">
+                              Contempt: {p10Record.contemptCaseNumber}
+                            </span>
+                          )}
+                        </div>
+
+                        {p10Compensation != null && (
+                          <div className="drawer-p8-delta-box drawer-p8-delta-box--exposure">
+                            <span className="drawer-p8-delta-kicker">Compensation Ordered</span>
+                            <span className="drawer-p8-delta-val">{formatInr(p10Compensation)}</span>
+                            <span className="drawer-p8-delta-sub">Court / Commission direction</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Full 4-Stage Visual Custody Timeline */}
+                      <ol
+                        className="p10-timeline p10-timeline--drawer"
+                        aria-label="Full 4-stage custody overrun timeline"
+                      >
+                        <li
+                          className={`p10-stage p10-stage--s1${
+                            p10Record.stage1AcquittalVerified
+                              ? ' p10-stage--verified'
+                              : ' p10-stage--unrecorded'
+                          }`}
+                        >
+                          <div className="p10-stage-head">
+                            <span className="p10-stage-num font-mono" aria-hidden="true">1</span>
+                            <span className="p10-stage-title">
+                              {p10Record.acquittalOrderType
+                                ? formatAcquittalOrderType(p10Record.acquittalOrderType)
+                                : 'Acquitted / Release Order'}
+                            </span>
+                          </div>
+                          {p10Record.acquittalOrderDate && (
+                            <span className="p10-stage-badge p10-stage-badge--s1 tabular">
+                              {p10Record.acquittalOrderDate}
+                            </span>
+                          )}
+                          <p className="p10-stage-primary">
+                            {[p10Record.acquittalCourt, p10Record.acquittalCaseNumber]
+                              .filter(Boolean)
+                              .join(' · ') || 'Judicial release or acquittal order verified in official record.'}
+                          </p>
+                          {p10Record.acquittalQuote && (
+                            <blockquote className="p10-stage-quote">
+                              &ldquo;{p10Record.acquittalQuote}&rdquo;
+                            </blockquote>
+                          )}
+                        </li>
+
+                        <li
+                          className={`p10-stage p10-stage--s2${
+                            p10Record.stage2ContinuedDetentionVerified
+                              ? ' p10-stage--verified'
+                              : ' p10-stage--unrecorded'
+                          }`}
+                        >
+                          <div className="p10-stage-head">
+                            <span className="p10-stage-num font-mono" aria-hidden="true">2</span>
+                            <span className="p10-stage-title">Held in Prison</span>
+                          </div>
+                          {p10OverrunLabel && (p10Record.overrunDays ?? 0) > 0 && (
+                            <span className="p10-stage-badge p10-stage-badge--s2 tabular">
+                              +{p10OverrunLabel} overrun
+                            </span>
+                          )}
+                          <p className="p10-stage-primary">
+                            {[p10Record.prisonName, p10Record.custodyAuthority]
+                              .filter(Boolean)
+                              .join(' · ') ||
+                              (p10Mechanism?.isCleared
+                                ? 'Timely release verified without post-acquittal custody overrun.'
+                                : 'Continued custody following judicial release order.')}
+                          </p>
+                          {p10Record.nonReleaseReason && (
+                            <p className="p10-stage-sub">
+                              <strong>Recorded reason:</strong> {p10Record.nonReleaseReason}
+                            </p>
+                          )}
+                        </li>
+
+                        <li
+                          className={`p10-stage p10-stage--s3${
+                            p10Record.stage3ContemptVerified
+                              ? ' p10-stage--verified'
+                              : ' p10-stage--unrecorded'
+                          }`}
+                        >
+                          <div className="p10-stage-head">
+                            <span className="p10-stage-num font-mono" aria-hidden="true">3</span>
+                            <span className="p10-stage-title">Contempt Filed</span>
+                          </div>
+                          {(p10Record.contemptOrderDate || p10Record.contemptFilingDate) && (
+                            <span className="p10-stage-badge p10-stage-badge--s3 tabular">
+                              {p10Record.contemptFilingDate && p10Record.contemptOrderDate
+                                ? `${p10Record.contemptFilingDate} → ${p10Record.contemptOrderDate}`
+                                : p10Record.contemptOrderDate || p10Record.contemptFilingDate}
+                            </span>
+                          )}
+                          <p className="p10-stage-primary">
+                            {[p10Record.contemptCourt, p10Record.contemptCaseNumber]
+                              .filter(Boolean)
+                              .join(' · ') ||
+                              (p10Mechanism?.isCleared
+                                ? 'No contempt proceedings required (timely release).'
+                                : 'Contempt / habeas corpus compliance action recorded.')}
+                          </p>
+                          {p10Record.contemptQuote && (
+                            <blockquote className="p10-stage-quote">
+                              &ldquo;{p10Record.contemptQuote}&rdquo;
+                            </blockquote>
+                          )}
+                        </li>
+
+                        <li
+                          className={`p10-stage p10-stage--s4${
+                            p10Record.stage4ReleaseVerified
+                              ? ' p10-stage--verified'
+                              : ' p10-stage--unrecorded'
+                          }`}
+                        >
+                          <div className="p10-stage-head">
+                            <span className="p10-stage-num font-mono" aria-hidden="true">4</span>
+                            <span className="p10-stage-title">Released &amp; Directions</span>
+                          </div>
+                          {p10Record.releaseDate && (
+                            <span className="p10-stage-badge p10-stage-badge--s4 tabular">
+                              Released {p10Record.releaseDate}
+                            </span>
+                          )}
+                          <p className="p10-stage-primary">
+                            {p10Record.releaseVerified
+                              ? 'Release verified in official primary record.'
+                              : 'Release status logged from primary institutional record.'}
+                            {p10Compensation != null ? ` Compensation ordered: ${formatInr(p10Compensation)}.` : ''}
+                          </p>
+                          {p10Record.judicialDirectionSummary && (
+                            <p className="p10-stage-sub">{p10Record.judicialDirectionSummary}</p>
+                          )}
+                        </li>
+                      </ol>
+
+                      {/* Two-Column Verbatim Documentary Anchors + Official Links & SHA-256 Badges */}
+                      <div className="drawer-p8-compare-grid" style={{ marginTop: 12 }}>
+                        <div className="drawer-p8-doc-col drawer-p10-doc-col--order">
+                          <div className="drawer-p8-doc-head">
+                            <div className="drawer-p6-step-kicker" style={{ marginBottom: 0 }}>
+                              Primary Anchor · Acquittal &amp; Custody Order
+                            </div>
+                            {p10Record.acquittalOrderDate && (
+                              <span className="tag-mono tabular">{p10Record.acquittalOrderDate}</span>
+                            )}
+                          </div>
+                          {(p10Record.custodyOrderExcerpt || p10OrderCit?.excerpt || p10Record.acquittalQuote) && (
+                            <blockquote className="drawer-p8-excerpt">
+                              &ldquo;
+                              {p10Record.custodyOrderExcerpt ||
+                                p10OrderCit?.excerpt ||
+                                p10Record.acquittalQuote}
+                              &rdquo;
+                            </blockquote>
+                          )}
+                          {p10Record.custodyOrderLocator && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              Locator: {p10Record.custodyOrderLocator}
+                            </div>
+                          )}
+                          {p10Record.custodyOrderTokensMatched.length > 0 && (
+                            <div className="drawer-p8-tokens" aria-label="Verified custody order evidence tokens">
+                              {p10Record.custodyOrderTokensMatched.slice(0, 6).map((tok) => (
+                                <span key={tok} className="tag-mono font-mono">
+                                  ✓ {tok}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(p10OrderHref || p10OrderSha) && (
+                            <div className="drawer-p8-source-bar">
+                              {p10OrderHref && (
+                                <a
+                                  href={p10OrderHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={11} aria-hidden="true" />
+                                  <span>Official primary document</span>
+                                </a>
+                              )}
+                              {p10OrderSha && (
+                                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                  sha256:{p10OrderSha.slice(0, 12)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className={`drawer-p8-doc-col ${
+                            p10Mechanism?.isCleared
+                              ? 'drawer-p8-doc-col--honored'
+                              : 'drawer-p10-doc-col--contempt'
+                          }`}
+                        >
+                          <div className="drawer-p8-doc-head">
+                            <div className="drawer-p6-step-kicker" style={{ marginBottom: 0 }}>
+                              {p10Mechanism?.isCleared
+                                ? 'Outcome Anchor · Compliance Verification'
+                                : 'Outcome Anchor · Contempt & Release Record'}
+                            </div>
+                            {(p10Record.releaseDate || p10Record.contemptOrderDate) && (
+                              <span className="tag-mono tabular">
+                                {p10Record.releaseDate || p10Record.contemptOrderDate}
+                              </span>
+                            )}
+                          </div>
+                          {(p10Record.contemptOrOutcomeExcerpt ||
+                            p10ContemptCit?.excerpt ||
+                            p10Record.contemptQuote) && (
+                            <blockquote className="drawer-p8-excerpt">
+                              &ldquo;
+                              {p10Record.contemptOrOutcomeExcerpt ||
+                                p10ContemptCit?.excerpt ||
+                                p10Record.contemptQuote}
+                              &rdquo;
+                            </blockquote>
+                          )}
+                          {p10Record.contemptOrOutcomeLocator && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              Locator: {p10Record.contemptOrOutcomeLocator}
+                            </div>
+                          )}
+                          {p10Record.contemptOrOutcomeTokensMatched.length > 0 && (
+                            <div className="drawer-p8-tokens" aria-label="Verified contempt and release tokens">
+                              {p10Record.contemptOrOutcomeTokensMatched.slice(0, 6).map((tok) => (
+                                <span key={tok} className="tag-mono font-mono">
+                                  ✓ {tok}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(p10ContemptHref || p10ContemptSha) && (
+                            <div className="drawer-p8-source-bar">
+                              {p10ContemptHref && (
+                                <a
+                                  href={p10ContemptHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={11} aria-hidden="true" />
+                                  <span>
+                                    {p10Mechanism?.isCleared
+                                      ? 'Compliance source'
+                                      : 'Contempt / release source'}
+                                  </span>
+                                </a>
+                              )}
+                              {p10ContemptSha && (
+                                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                  sha256:{p10ContemptSha.slice(0, 12)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {(p10Record.statutoryAnchor || p10Record.triggeredRules.length > 0) && (
+                        <div style={{ marginTop: 10 }}>
+                          {p10Record.statutoryAnchor && (
+                            <p className="drawer-p6-step-sub" style={{ marginTop: 0 }}>
+                              <strong>Constitutional &amp; statutory anchor:</strong>{' '}
+                              {p10Record.statutoryAnchor}
+                            </p>
+                          )}
+                          {p10Record.triggeredRules.length > 0 && (
+                            <div className="drawer-p7-chips">
+                              {p10Record.triggeredRules.map((rule) => (
                                 <span key={rule} className="tag-mono font-mono">
                                   {rule}
                                 </span>

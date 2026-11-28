@@ -37,6 +37,13 @@ import type {
   VisualExamLead,
   VisualExamTierCounts,
   VisualExamYear,
+  VisualInnocentButLockedUpCourt,
+  VisualInnocentButLockedUpCourtTierCounts,
+  VisualInnocentButLockedUpLead,
+  VisualInnocentButLockedUpMechanismCounts,
+  VisualInnocentButLockedUpPortal,
+  VisualInnocentButLockedUpState,
+  VisualInnocentButLockedUpYear,
   VisualOnlyOneBidAuthority,
   VisualOnlyOneBidCohortCounts,
   VisualOnlyOneBidRepeatWinner,
@@ -53,7 +60,11 @@ import type {
   WebsiteVerificationMode,
 } from '../types';
 import {
+  formatAcquittalOrderType,
   formatAssuranceStatus,
+  formatChainStatus,
+  formatCourtTier,
+  formatCustodyOverrunMechanism,
   formatCandidateCountCompact,
   formatElapsedPromiseSpan,
   formatExamAuthorityType,
@@ -64,6 +75,8 @@ import {
   formatInr,
   formatInrCr,
   formatJurisdictionLabel,
+  formatOverrunDays,
+  formatPortalCategory,
   formatProcurementAmountType,
   formatProcurementSignal,
   formatRetroactiveImpact,
@@ -1210,6 +1223,16 @@ export function ProjectResultsVisualizer({
   if (code === 'P9') {
     return (
       <AuditingGovernmentExamsVisualiser
+        mission={mission}
+        visualSummary={visualSummary}
+        onSelectFinding={onSelectFinding}
+        onFilterTasks={onFilterTasks}
+      />
+    );
+  }
+  if (code === 'P10') {
+    return (
+      <InnocentButLockedUpVisualiser
         mission={mission}
         visualSummary={visualSummary}
         onSelectFinding={onSelectFinding}
@@ -9618,6 +9641,1879 @@ export function AuditingGovernmentExamsVisualiser({
               : hasActiveFilters && allLeads.length > 0
                 ? 'No audited exams match your active filter combination. Reset filters above to view all records.'
                 : 'Audited Indian government exam records appear here once the hub loads the P9 corpus or contributor agents submit verified results.'}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 3I. P10 Innocent But Locked Up: post-acquittal custody overruns & contempt compliance ---------- */
+
+const P10_METHOD_URL =
+  'https://github.com/aiwatchdogsindia/aiwatchdogs.in/blob/main/projects/innocent-but-locked-up/METHODOLOGY.md';
+export const P10_DEFAULT_HOOK =
+  'The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed?';
+const P10_INITIAL_STATES = 12;
+const P10_INITIAL_COURTS = 12;
+const P10_INITIAL_PRISONS = 10;
+
+export type P10PortalCategoryKey =
+  | 'court_portal'
+  | 'prison_portal'
+  | 'police_portal'
+  | 'nhrc_shrc'
+  | 'nalsa_slsa'
+  | 'parliament'
+  | 'govt_ministry'
+  | 'cag_audit';
+
+export type P10CourtTierKey =
+  | 'supreme_court'
+  | 'high_court'
+  | 'district_court'
+  | 'statutory_body';
+
+export type P10ChainStatusKey =
+  | 'full_4_stage_chain'
+  | 'partial_3_stage'
+  | 'institutional_record'
+  | 'compliant_control';
+
+export type P10OverrunMechanismKey =
+  | 'post_acquittal_contempt_overrun'
+  | 'bail_or_release_order_contempt'
+  | 'warrant_or_faster_transmission_delay'
+  | 'statutory_commission_detention_finding'
+  | 'institutional_compliance_gap'
+  | 'timely_release_or_compliant';
+
+export interface P10NormalizedPortal {
+  portal_category: P10PortalCategoryKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  segClass: string;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  sharePct: number;
+}
+
+export interface P10NormalizedYear {
+  year: number;
+  tasks: number;
+  done: number;
+  claimed: number;
+  open: number;
+  pct: number;
+  leads: number;
+  cleared: number;
+  full_4_stage: number;
+  overrun_days: number;
+}
+
+export interface P10NormalizedCourtTier {
+  key: P10CourtTierKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  tasks: number;
+  done: number;
+  leads: number;
+  cleared: number;
+  sharePct: number;
+}
+
+export interface P10NormalizedMechanism {
+  key: P10OverrunMechanismKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  fillClass: string;
+  isCleared: boolean;
+  tasks: number;
+  leads: number;
+  sharePct: number;
+}
+
+export interface P10NormalizedChainStatus {
+  key: P10ChainStatusKey;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+  count: number;
+  sharePct: number;
+}
+
+export interface P10StageStep {
+  stage: 1 | 2 | 3 | 4;
+  kicker: string;
+  title: string;
+  verified: boolean;
+  date: string | null;
+  primary: string;
+  secondary: string | null;
+  badge: string | null;
+  quote: string | null;
+}
+
+export function p10PortalLabel(portal: string): string {
+  return formatPortalCategory(portal).label;
+}
+
+export function p10MechanismLabel(mechanism: string): string {
+  return formatCustodyOverrunMechanism(mechanism).label;
+}
+
+export function p10CourtTierLabel(tier: string): string {
+  return formatCourtTier(tier).label;
+}
+
+export function p10ChainStatusLabel(status: string): string {
+  return formatChainStatus(status).label;
+}
+
+export function p10StateFilterQuery(
+  stateUt?: string | null,
+  jurisdiction?: string | null,
+): string {
+  const cleanState = (stateUt || '').trim();
+  if (cleanState) return cleanState;
+  const cleanJur = (jurisdiction || '').trim();
+  if (!cleanJur) return '';
+  if (/^state:/i.test(cleanJur)) return cleanJur.slice(6).trim();
+  if (/^ut:/i.test(cleanJur)) return cleanJur.slice(3).trim();
+  return cleanJur;
+}
+
+export function p10NormalizePortals(
+  byPortal?:
+    | VisualInnocentButLockedUpPortal[]
+    | Record<string, VisualInnocentButLockedUpPortal | number>
+    | null,
+): {
+  items: P10NormalizedPortal[];
+  totalTasks: number;
+  totalLeads: number;
+} {
+  const ordered: Array<{ key: P10PortalCategoryKey; segClass: string }> = [
+    { key: 'court_portal', segClass: 'pv-p10-seg--court' },
+    { key: 'prison_portal', segClass: 'pv-p10-seg--prison' },
+    { key: 'police_portal', segClass: 'pv-p10-seg--police' },
+    { key: 'nhrc_shrc', segClass: 'pv-p10-seg--nhrc' },
+    { key: 'nalsa_slsa', segClass: 'pv-p10-seg--nalsa' },
+    { key: 'parliament', segClass: 'pv-p10-seg--parliament' },
+    { key: 'govt_ministry', segClass: 'pv-p10-seg--govt' },
+    { key: 'cag_audit', segClass: 'pv-p10-seg--cag' },
+  ];
+
+  const lookup = new Map<string, VisualInnocentButLockedUpPortal | number>();
+  if (Array.isArray(byPortal)) {
+    for (const item of byPortal) {
+      if (item && item.portal_category) {
+        lookup.set(item.portal_category.trim().toLowerCase().replace(/[\s-]+/g, '_'), item);
+      }
+    }
+  } else if (byPortal && typeof byPortal === 'object') {
+    for (const [k, v] of Object.entries(byPortal)) {
+      lookup.set(k.trim().toLowerCase().replace(/[\s-]+/g, '_'), v);
+    }
+  }
+
+  const rows = ordered.map(({ key, segClass }) => {
+    const raw = lookup.get(key);
+    const meta = formatPortalCategory(key);
+    if (typeof raw === 'number') {
+      const tasks = Math.max(0, raw);
+      return {
+        portal_category: key,
+        label: meta.label,
+        shortLabel: meta.shortLabel,
+        chipClass: meta.chipClass,
+        segClass,
+        tasks,
+        done: 0,
+        claimed: 0,
+        open: tasks,
+        pct: 0,
+        leads: 0,
+        cleared: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    const tasks = Math.max(0, Number(obj?.tasks) || 0);
+    const done = Math.max(0, Number(obj?.done) || 0);
+    const claimed = Math.max(0, Number(obj?.claimed) || 0);
+    const open =
+      obj?.open != null ? Math.max(0, Number(obj.open) || 0) : Math.max(0, tasks - done - claimed);
+    const pct =
+      obj?.pct != null && Number.isFinite(Number(obj.pct))
+        ? Math.max(0, Number(obj.pct))
+        : calcPct(done, tasks);
+    return {
+      portal_category: key,
+      label: obj?.label?.trim() || meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      segClass,
+      tasks,
+      done,
+      claimed,
+      open,
+      pct,
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P10NormalizedPortal[] = rows
+    .map((r) => ({
+      ...r,
+      sharePct: calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+    }))
+    .sort((a, b) => b.tasks - a.tasks || b.leads - a.leads);
+
+  return { items, totalTasks, totalLeads };
+}
+
+export function p10NormalizeYears(
+  byYear?: VisualInnocentButLockedUpYear[] | null,
+): P10NormalizedYear[] {
+  if (!Array.isArray(byYear)) return [];
+  return byYear
+    .map((y) => {
+      const yr = Number(y.year);
+      if (!Number.isFinite(yr) || yr < 2000) return null;
+      const tasks = Math.max(0, Number(y.tasks) || 0);
+      const done = Math.max(0, Number(y.done) || 0);
+      const claimed = Math.max(0, Number(y.claimed) || 0);
+      const open =
+        y.open != null ? Math.max(0, Number(y.open) || 0) : Math.max(0, tasks - done - claimed);
+      const pct =
+        y.pct != null && Number.isFinite(Number(y.pct))
+          ? Math.max(0, Number(y.pct))
+          : calcPct(done, tasks);
+      return {
+        year: yr,
+        tasks,
+        done,
+        claimed,
+        open,
+        pct,
+        leads: Math.max(0, Number(y.leads) || 0),
+        cleared: Math.max(0, Number(y.cleared) || 0),
+        full_4_stage: Math.max(0, Number(y.full_4_stage) || 0),
+        overrun_days: Math.max(0, Number(y.overrun_days) || 0),
+      };
+    })
+    .filter((item): item is P10NormalizedYear => item !== null)
+    .sort((a, b) => a.year - b.year);
+}
+
+export function p10NormalizeCourtTiers(
+  byTier?: Record<string, VisualInnocentButLockedUpCourtTierCounts | number> | null,
+): {
+  items: P10NormalizedCourtTier[];
+  totalTasks: number;
+} {
+  const keys: P10CourtTierKey[] = [
+    'supreme_court',
+    'high_court',
+    'district_court',
+    'statutory_body',
+  ];
+  const rows = keys.map((key) => {
+    const raw = byTier?.[key];
+    const meta = formatCourtTier(key);
+    if (typeof raw === 'number') {
+      return {
+        key,
+        label: meta.label,
+        shortLabel: meta.shortLabel,
+        chipClass: meta.chipClass,
+        tasks: Math.max(0, raw),
+        done: 0,
+        leads: 0,
+        cleared: 0,
+      };
+    }
+    const obj = raw && typeof raw === 'object' ? raw : null;
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      tasks: Math.max(0, Number(obj?.tasks) || 0),
+      done: Math.max(0, Number(obj?.done) || 0),
+      leads: Math.max(0, Number(obj?.leads) || 0),
+      cleared: Math.max(0, Number(obj?.cleared) || 0),
+    };
+  });
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const items: P10NormalizedCourtTier[] = rows.map((r) => ({
+    ...r,
+    sharePct: calcPct(r.tasks, totalTasks),
+  }));
+  return { items, totalTasks };
+}
+
+export function p10NormalizeMechanisms(
+  byMechanism?: Record<string, VisualInnocentButLockedUpMechanismCounts | number> | null,
+  bySignal?: Record<string, number> | null,
+): {
+  items: P10NormalizedMechanism[];
+  totalTasks: number;
+  totalLeads: number;
+} {
+  const ordered: Array<{
+    key: P10OverrunMechanismKey;
+    ruleKey: string;
+    fillClass: string;
+  }> = [
+    {
+      key: 'post_acquittal_contempt_overrun',
+      ruleKey: 'P10-POST-ACQUITTAL-CONTEMPT-OVERRUN',
+      fillClass: 'pv-p10-mech-fill--acquittal-contempt',
+    },
+    {
+      key: 'bail_or_release_order_contempt',
+      ruleKey: 'P10-RELEASE-ORDER-CONTEMPT-OVERRUN',
+      fillClass: 'pv-p10-mech-fill--release-contempt',
+    },
+    {
+      key: 'warrant_or_faster_transmission_delay',
+      ruleKey: 'P10-WARRANT-TRANSMISSION-DELAY',
+      fillClass: 'pv-p10-mech-fill--transmission',
+    },
+    {
+      key: 'statutory_commission_detention_finding',
+      ruleKey: 'P10-STATUTORY-UNLAWFUL-DETENTION',
+      fillClass: 'pv-p10-mech-fill--commission',
+    },
+    {
+      key: 'institutional_compliance_gap',
+      ruleKey: 'P10-INSTITUTIONAL-COMPLIANCE-GAP',
+      fillClass: 'pv-p10-mech-fill--compliance',
+    },
+    {
+      key: 'timely_release_or_compliant',
+      ruleKey: 'CLEARED',
+      fillClass: 'pv-p10-mech-fill--compliant',
+    },
+  ];
+
+  const rows = ordered.map(({ key, ruleKey, fillClass }) => {
+    const rawMech = byMechanism?.[key];
+    let tasks = 0;
+    let leads = 0;
+    if (typeof rawMech === 'number') {
+      tasks = Math.max(0, rawMech);
+    } else if (rawMech && typeof rawMech === 'object') {
+      tasks = Math.max(0, Number(rawMech.tasks) || 0);
+      leads = Math.max(0, Number(rawMech.leads) || 0);
+    }
+    if (leads === 0 && bySignal) {
+      const sigVal = bySignal[key] ?? bySignal[ruleKey] ?? bySignal[ruleKey.toLowerCase()];
+      if (sigVal != null) {
+        leads = Math.max(0, Number(sigVal) || 0);
+      }
+    }
+    const meta = formatCustodyOverrunMechanism(key);
+    return {
+      key,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      fillClass,
+      isCleared: meta.isCleared,
+      tasks,
+      leads,
+    };
+  });
+
+  const totalTasks = rows.reduce((acc, r) => acc + r.tasks, 0);
+  const totalLeads = rows.reduce((acc, r) => acc + r.leads, 0);
+  const denominator = totalTasks > 0 ? totalTasks : totalLeads;
+
+  const items: P10NormalizedMechanism[] = rows.map((r) => ({
+    ...r,
+    sharePct: calcPct(totalTasks > 0 ? r.tasks : r.leads, denominator),
+  }));
+
+  return { items, totalTasks, totalLeads };
+}
+
+export function p10NormalizeChainStatuses(
+  byChain?: Record<string, number> | null,
+): {
+  items: P10NormalizedChainStatus[];
+  total: number;
+} {
+  const keys: P10ChainStatusKey[] = [
+    'full_4_stage_chain',
+    'partial_3_stage',
+    'institutional_record',
+    'compliant_control',
+  ];
+  const counts = keys.map((k) => Math.max(0, Number(byChain?.[k]) || 0));
+  const total = counts.reduce((acc, n) => acc + n, 0);
+  const items: P10NormalizedChainStatus[] = keys.map((k, idx) => {
+    const meta = formatChainStatus(k);
+    const count = counts[idx];
+    return {
+      key: k,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      chipClass: meta.chipClass,
+      count,
+      sharePct: calcPct(count, total),
+    };
+  });
+  return { items, total };
+}
+
+export function p10FilterStates(
+  states: VisualInnocentButLockedUpState[],
+  query: string,
+): VisualInnocentButLockedUpState[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return states;
+  return states.filter(
+    (s) =>
+      (s.state_ut || '').toLowerCase().includes(q) ||
+      (s.jurisdiction || '').toLowerCase().includes(q),
+  );
+}
+
+export function p10FilterCourts(
+  courts: VisualInnocentButLockedUpCourt[],
+  query: string,
+  tierFilter: 'all' | P10CourtTierKey = 'all',
+  stateFilter = 'all',
+): VisualInnocentButLockedUpCourt[] {
+  const q = query.trim().toLowerCase();
+  const st = stateFilter.trim().toLowerCase();
+  return courts.filter((c) => {
+    const tier = (c.court_tier || '').trim().toLowerCase();
+    if (tierFilter !== 'all' && tier !== tierFilter) return false;
+    if (st && st !== 'all') {
+      const courtState = (c.state_ut || '').trim().toLowerCase();
+      if (st === 'union of india') {
+        if (courtState && courtState !== 'union of india') return false;
+      } else if (courtState !== st) {
+        return false;
+      }
+    }
+    if (!q) return true;
+    return (
+      c.court_name.toLowerCase().includes(q) ||
+      (c.state_ut || 'Union of India').toLowerCase().includes(q) ||
+      formatCourtTier(c.court_tier).label.toLowerCase().includes(q)
+    );
+  });
+}
+
+export function p10FilterLeads(
+  leads: VisualInnocentButLockedUpLead[],
+  yearFilter: 'all' | number = 'all',
+  stateFilter = 'all',
+  portalFilter: 'all' | P10PortalCategoryKey = 'all',
+  chainFilter: 'all' | P10ChainStatusKey = 'all',
+  mechanismFilter: 'all' | P10OverrunMechanismKey = 'all',
+  courtTierFilter: 'all' | P10CourtTierKey = 'all',
+): VisualInnocentButLockedUpLead[] {
+  const st = stateFilter.trim().toLowerCase();
+  return leads.filter((l) => {
+    if (yearFilter !== 'all' && Number(l.year) !== yearFilter) return false;
+    if (st && st !== 'all') {
+      const leadState = (l.state_ut || '').trim().toLowerCase();
+      const leadJur = p10StateFilterQuery(l.state_ut, l.jurisdiction).toLowerCase();
+      if (st === 'union of india') {
+        if (
+          (leadState && leadState !== 'union of india') ||
+          (leadJur && leadJur !== 'union of india')
+        ) {
+          return false;
+        }
+      } else if (leadState !== st && leadJur !== st) {
+        return false;
+      }
+    }
+    if (
+      portalFilter !== 'all' &&
+      (l.portal_category || '').trim().toLowerCase().replace(/[\s-]+/g, '_') !== portalFilter
+    ) {
+      return false;
+    }
+    if (chainFilter !== 'all') {
+      const cStatus = formatChainStatus(l.chain_status, l.stages_verified_count).key;
+      if (cStatus !== chainFilter) return false;
+    }
+    if (
+      mechanismFilter !== 'all' &&
+      formatCustodyOverrunMechanism(l.overrun_mechanism || l.signal_category).key !== mechanismFilter
+    ) {
+      return false;
+    }
+    if (
+      courtTierFilter !== 'all' &&
+      (l.court_tier || '').trim().toLowerCase().replace(/[\s-]+/g, '_') !== courtTierFilter
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export function p10BuildFourStageChain(rec: {
+  overrun_mechanism?: string | null;
+  chain_status?: string | null;
+  stages_verified_count?: number | null;
+  stage_1_acquittal_verified?: boolean;
+  stage_2_continued_detention_verified?: boolean;
+  stage_3_contempt_verified?: boolean;
+  stage_4_release_verified?: boolean;
+  acquittal_order_date?: string | null;
+  acquittal_court?: string | null;
+  acquittal_case_number?: string | null;
+  acquittal_order_type?: string | null;
+  acquittal_quote?: string | null;
+  prison_name?: string | null;
+  custody_authority?: string | null;
+  non_release_reason?: string | null;
+  overrun_days?: number | null;
+  overrun_window?: string | null;
+  contempt_case_number?: string | null;
+  contempt_court?: string | null;
+  contempt_filing_date?: string | null;
+  contempt_order_date?: string | null;
+  contempt_quote?: string | null;
+  release_date?: string | null;
+  release_verified?: boolean;
+  compensation_inr?: number | null;
+  judicial_direction_summary?: string | null;
+}): P10StageStep[] {
+  const isCompliant =
+    formatCustodyOverrunMechanism(rec.overrun_mechanism).isCleared ||
+    (rec.chain_status || '').trim().toLowerCase() === 'compliant_control';
+  const isFull4Stage =
+    !isCompliant &&
+    ((rec.chain_status || '').trim().toLowerCase() === 'full_4_stage_chain' ||
+      (rec.stages_verified_count != null && rec.stages_verified_count >= 4));
+
+  const s1Verified =
+    typeof rec.stage_1_acquittal_verified === 'boolean'
+      ? rec.stage_1_acquittal_verified
+      : isFull4Stage ||
+        Boolean(rec.acquittal_order_date || rec.acquittal_case_number || rec.acquittal_quote);
+  const s2Verified =
+    typeof rec.stage_2_continued_detention_verified === 'boolean'
+      ? rec.stage_2_continued_detention_verified
+      : isCompliant && (rec.overrun_days == null || rec.overrun_days === 0)
+        ? false
+        : isFull4Stage || Boolean(rec.overrun_days != null && rec.overrun_days > 0);
+  const s3Verified =
+    typeof rec.stage_3_contempt_verified === 'boolean'
+      ? rec.stage_3_contempt_verified
+      : isFull4Stage ||
+        Boolean(
+          rec.contempt_case_number ||
+            rec.contempt_court ||
+            rec.contempt_filing_date ||
+            rec.contempt_order_date ||
+            rec.contempt_quote,
+        );
+  const s4Verified =
+    typeof rec.stage_4_release_verified === 'boolean'
+      ? rec.stage_4_release_verified
+      : isFull4Stage || Boolean(rec.release_verified || rec.release_date);
+
+  const overrunBadge =
+    rec.overrun_days != null && rec.overrun_days > 0
+      ? `+${rec.overrun_days.toLocaleString('en-IN')} ${rec.overrun_days === 1 ? 'day' : 'days'} overrun`
+      : rec.overrun_days === 0
+        ? '0 days overrun'
+        : null;
+  const compBadge =
+    rec.compensation_inr != null && rec.compensation_inr > 0
+      ? `${formatInr(rec.compensation_inr)} compensation`
+      : null;
+
+  return [
+    {
+      stage: 1,
+      kicker: 'Stage 1',
+      title: rec.acquittal_order_type
+        ? formatAcquittalOrderType(rec.acquittal_order_type)
+        : 'Acquitted / Release Ordered',
+      verified: s1Verified,
+      date: rec.acquittal_order_date || null,
+      primary:
+        [rec.acquittal_court, rec.acquittal_case_number].filter(Boolean).join(' · ') ||
+        'Judicial acquittal or release order verified in primary record',
+      secondary: null,
+      badge: rec.acquittal_order_date ? rec.acquittal_order_date : null,
+      quote: rec.acquittal_quote || null,
+    },
+    {
+      stage: 2,
+      kicker: 'Stage 2',
+      title: 'Held in Prison',
+      verified: s2Verified,
+      date: rec.overrun_window || null,
+      primary:
+        [rec.prison_name, rec.custody_authority].filter(Boolean).join(' · ') ||
+        'Continued custody after judicial release order',
+      secondary: rec.non_release_reason || null,
+      badge: overrunBadge,
+      quote: null,
+    },
+    {
+      stage: 3,
+      kicker: 'Stage 3',
+      title: 'Contempt Filed',
+      verified: s3Verified,
+      date: rec.contempt_order_date || rec.contempt_filing_date || null,
+      primary:
+        [rec.contempt_court, rec.contempt_case_number].filter(Boolean).join(' · ') ||
+        (s3Verified ? 'Contempt / habeas corpus proceedings initiated' : 'No separate contempt docket recorded'),
+      secondary:
+        rec.contempt_filing_date && rec.contempt_order_date
+          ? `Filed ${rec.contempt_filing_date} · Order ${rec.contempt_order_date}`
+          : rec.contempt_filing_date
+            ? `Filed ${rec.contempt_filing_date}`
+            : rec.contempt_order_date
+              ? `Order ${rec.contempt_order_date}`
+              : null,
+      badge: rec.contempt_case_number || null,
+      quote: rec.contempt_quote || null,
+    },
+    {
+      stage: 4,
+      kicker: 'Stage 4',
+      title: 'Released & Directions',
+      verified: s4Verified,
+      date: rec.release_date || null,
+      primary: s4Verified
+        ? rec.release_date
+          ? `Release verified (${rec.release_date})`
+          : 'Release verified in official record'
+        : 'Release status pending documentary confirmation',
+      secondary: rec.judicial_direction_summary || null,
+      badge: compBadge,
+      quote: null,
+    },
+  ];
+}
+
+function p10ShortText(text?: string | null, maxLen = 135): string {
+  const clean = (text || '').replace(/\s+/g, ' ').trim();
+  if (!clean) return '—';
+  return clean.length > maxLen ? `${clean.slice(0, maxLen - 1).trimEnd()}…` : clean;
+}
+
+export function InnocentButLockedUpVisualiser({
+  mission,
+  visualSummary,
+  onSelectFinding,
+  onFilterTasks,
+}: {
+  mission: MissionItem;
+  visualSummary?: ProjectVisualSummary;
+  onSelectFinding?: (id: string | number) => void;
+  onFilterTasks?: (text: string) => void;
+}) {
+  const p10 = visualSummary?.innocent_but_locked_up;
+  const workTag = getWorkTypeTag(undefined, mission.methodology_code);
+  const slugPath = encodeURIComponent(mission.slug);
+
+  const [selectedYear, setSelectedYear] = useState<'all' | number>('all');
+  const [selectedState, setSelectedState] = useState('all');
+  const [selectedPortal, setSelectedPortal] = useState<'all' | P10PortalCategoryKey>('all');
+  const [selectedChain, setSelectedChain] = useState<'all' | P10ChainStatusKey>('all');
+  const [selectedMechanism, setSelectedMechanism] = useState<'all' | P10OverrunMechanismKey>('all');
+  const [selectedCourtTier, setSelectedCourtTier] = useState<'all' | P10CourtTierKey>('all');
+
+  const [stateQuery, setStateQuery] = useState('');
+  const [showAllStates, setShowAllStates] = useState(false);
+  const [courtQuery, setCourtQuery] = useState('');
+  const [showAllCourts, setShowAllCourts] = useState(false);
+
+  const hook = p10?.hook?.trim() || P10_DEFAULT_HOOK;
+  const totalTasks = p10?.total_tasks ?? mission.total_tasks ?? 0;
+  const uniqueDocs = p10?.unique_documents_covered ?? 0;
+  const statesCovered = p10?.states_and_uts_covered ?? p10?.states?.length ?? 0;
+  const courtsCovered = p10?.courts_covered ?? p10?.top_courts?.length ?? 0;
+  const prisonsNamed = p10?.prisons_named ?? p10?.top_prisons?.length ?? 0;
+  const full4StageTasks = p10?.full_4_stage_tasks ?? 0;
+  const contemptTasks = p10?.contempt_tasks ?? 0;
+  const verifiedReleaseTasks = p10?.verified_release_tasks ?? 0;
+  const clearedEmbedded = p10?.cleared_control_tasks_embedded ?? 0;
+  const totalOverrunDays = p10?.total_overrun_days_documented ?? 0;
+  const medianOverrunDays = p10?.median_overrun_days ?? null;
+  const maxOverrunDays = p10?.max_overrun_days ?? null;
+  const totalCompensationInr = p10?.total_compensation_ordered_inr ?? 0;
+
+  const leads = p10?.leads ?? 0;
+  const verified = p10?.verified ?? mission.verified_findings_count ?? 0;
+  const inReview = p10?.peer_review ?? mission.peer_review_count ?? 0;
+  const clearedTasks = p10?.cleared_tasks ?? mission.cleared_tasks_count ?? 0;
+
+  const states = p10?.states ?? [];
+  const topCourts = p10?.top_courts ?? [];
+  const topPrisons = p10?.top_prisons ?? [];
+  const topLeads = p10?.top_leads ?? [];
+  const anchorCase = p10?.anchor_case ?? null;
+  const documentsUrl = p10?.documents_url || `/api/missions/${slugPath}/documents.csv`;
+  const coverageUrl = p10?.coverage_url || `/api/missions/${slugPath}/coverage.json`;
+
+  const portals = useMemo(
+    () => p10NormalizePortals(p10?.by_portal_category),
+    [p10?.by_portal_category],
+  );
+  const years = useMemo(() => p10NormalizeYears(p10?.by_year), [p10?.by_year]);
+  const courtTiers = useMemo(
+    () => p10NormalizeCourtTiers(p10?.by_court_tier),
+    [p10?.by_court_tier],
+  );
+  const mechanisms = useMemo(
+    () => p10NormalizeMechanisms(p10?.by_mechanism, p10?.by_signal),
+    [p10?.by_mechanism, p10?.by_signal],
+  );
+  const chainStatuses = useMemo(
+    () => p10NormalizeChainStatuses(p10?.by_chain_status),
+    [p10?.by_chain_status],
+  );
+
+  const filteredStates = useMemo(
+    () => p10FilterStates(states, stateQuery),
+    [states, stateQuery],
+  );
+  const visibleStates =
+    showAllStates || stateQuery.trim().length > 0
+      ? filteredStates
+      : filteredStates.slice(0, P10_INITIAL_STATES);
+
+  const filteredCourts = useMemo(
+    () => p10FilterCourts(topCourts, courtQuery, selectedCourtTier, selectedState),
+    [topCourts, courtQuery, selectedCourtTier, selectedState],
+  );
+  const visibleCourts =
+    showAllCourts ||
+    courtQuery.trim().length > 0 ||
+    selectedCourtTier !== 'all' ||
+    selectedState !== 'all'
+      ? filteredCourts
+      : filteredCourts.slice(0, P10_INITIAL_COURTS);
+
+  const filteredLeads = useMemo(
+    () =>
+      p10FilterLeads(
+        topLeads,
+        selectedYear,
+        selectedState,
+        selectedPortal,
+        selectedChain,
+        selectedMechanism,
+        selectedCourtTier,
+      ),
+    [
+      topLeads,
+      selectedYear,
+      selectedState,
+      selectedPortal,
+      selectedChain,
+      selectedMechanism,
+      selectedCourtTier,
+    ],
+  );
+
+  const hasActiveFilters =
+    selectedYear !== 'all' ||
+    selectedState !== 'all' ||
+    selectedPortal !== 'all' ||
+    selectedChain !== 'all' ||
+    selectedMechanism !== 'all' ||
+    selectedCourtTier !== 'all';
+
+  const resetAllFilters = () => {
+    setSelectedYear('all');
+    setSelectedState('all');
+    setSelectedPortal('all');
+    setSelectedChain('all');
+    setSelectedMechanism('all');
+    setSelectedCourtTier('all');
+  };
+
+  const anchorStages = useMemo(
+    () => (anchorCase ? p10BuildFourStageChain(anchorCase) : []),
+    [anchorCase],
+  );
+  const anchorMechanism = anchorCase?.overrun_mechanism
+    ? formatCustodyOverrunMechanism(anchorCase.overrun_mechanism)
+    : null;
+  const anchorPortal = anchorCase?.portal_category
+    ? formatPortalCategory(anchorCase.portal_category)
+    : null;
+  const anchorTier = anchorCase?.court_tier ? formatCourtTier(anchorCase.court_tier) : null;
+  const anchorChain = anchorCase
+    ? formatChainStatus(anchorCase.chain_status, anchorCase.stages_verified_count)
+    : null;
+  const anchorPrimaryUrl = safeExternalUrl(anchorCase?.source_url);
+  const anchorSecondaryUrl = safeExternalUrl(anchorCase?.secondary_url);
+  const anchorPortalUrl = safeExternalUrl(anchorCase?.portal_url);
+
+  const maxYearTasks = years.reduce((m, y) => Math.max(m, y.tasks), 0);
+
+  return (
+    <section
+      className="card card-pad pv-results"
+      aria-label="Innocent But Locked Up post-acquittal custody and contempt audit results"
+    >
+      {/* Header + Summary Pills */}
+      <div className="pv-results-head">
+        <div className="pv-results-title-wrap">
+          <span className="kicker">
+            <BarChart3 size={12} aria-hidden="true" />
+            Live results · {workTag.label}
+          </span>
+          <h2 className="pv-results-title">
+            Innocent But Locked Up: Post-Acquittal Custody &amp; Contempt Ledger
+          </h2>
+          <p className="pv-p6-hook">{hook}</p>
+        </div>
+
+        <div className="pv-summary-pills tabular">
+          <span className="tag-mono">
+            {fmtCount(totalTasks)} {totalTasks === 1 ? 'case task' : 'case tasks'}
+          </span>
+          {full4StageTasks > 0 ? (
+            <span className="p10-chain p10-chain--full">
+              {fmtCount(full4StageTasks)} 4-stage {full4StageTasks === 1 ? 'chain' : 'chains'}
+            </span>
+          ) : null}
+          {contemptTasks > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(contemptTasks)} contempt {contemptTasks === 1 ? 'record' : 'records'}
+            </span>
+          ) : null}
+          {verifiedReleaseTasks > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(verifiedReleaseTasks)} verified {verifiedReleaseTasks === 1 ? 'release' : 'releases'}
+            </span>
+          ) : null}
+          {courtsCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(courtsCovered)} {courtsCovered === 1 ? 'court' : 'courts'}
+            </span>
+          ) : null}
+          {statesCovered > 0 ? (
+            <span className="tag-mono">
+              {fmtCount(statesCovered)} {statesCovered === 1 ? 'State / UT' : 'States & UTs'}
+            </span>
+          ) : null}
+          <span className="tag-mono">
+            {fmtCount(leads)} {leads === 1 ? 'overrun lead' : 'overrun leads'}
+          </span>
+          {verified > 0 ? (
+            <span className={FINDING_TAGS.verified.badgeClass}>
+              {fmtCount(verified)} {FINDING_TAGS.verified.label}
+            </span>
+          ) : null}
+          {inReview > 0 ? (
+            <span className={FINDING_TAGS.in_review.badgeClass}>
+              {fmtCount(inReview)} {FINDING_TAGS.in_review.label}
+            </span>
+          ) : null}
+          {clearedTasks > 0 ? (
+            <span className={FINDING_TAGS.cleared.badgeClass}>
+              {fmtCount(clearedTasks)} {FINDING_TAGS.cleared.label}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Headline KPIs */}
+      <div className="pv-p10-overview">
+        <div className="pv-p10-kpi-grid">
+          <div className="pv-overview-tile pv-p10-kpi--tasks">
+            <span className="pv-overview-kicker">Audited tasks (2021–2026)</span>
+            <span className="pv-overview-num tabular">{fmtCount(totalTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {uniqueDocs > 0 ? `${fmtCount(uniqueDocs)} official ${uniqueDocs === 1 ? 'doc' : 'docs'} · ` : ''}
+              {courtsCovered > 0 ? `${fmtCount(courtsCovered)} ${courtsCovered === 1 ? 'court' : 'courts'} · ` : ''}
+              {statesCovered > 0
+                ? `${fmtCount(statesCovered)} ${statesCovered === 1 ? 'State/UT' : 'States/UTs'}`
+                : 'Supreme Court, High Courts & official portals'}
+            </span>
+          </div>
+
+          <div className="pv-overview-tile pv-p10-kpi--chain">
+            <span className="pv-overview-kicker">4-stage chains &amp; contempt</span>
+            <span className="pv-overview-num tabular">{fmtCount(full4StageTasks)}</span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(contemptTasks)} contempt filed · {fmtCount(verifiedReleaseTasks)} verified{' '}
+              {verifiedReleaseTasks === 1 ? 'release' : 'releases'}
+              {prisonsNamed > 0
+                ? ` · ${fmtCount(prisonsNamed)} ${prisonsNamed === 1 ? 'prison' : 'prisons'} named`
+                : ''}
+            </span>
+          </div>
+
+          <div className="pv-overview-tile pv-p10-kpi--overrun">
+            <span className="pv-overview-kicker">Documented overrun days</span>
+            <span className="pv-overview-num tabular">
+              {totalOverrunDays > 0 ? fmtCount(totalOverrunDays) : 'Documentary'}
+            </span>
+            <span className="pv-overview-sub tabular">
+              {medianOverrunDays != null && medianOverrunDays > 0
+                ? `Median ${medianOverrunDays.toLocaleString('en-IN', { maximumFractionDigits: 1 })}d`
+                : 'Verified dates across court orders'}
+              {maxOverrunDays != null && maxOverrunDays > 0
+                ? ` · Max ${fmtCount(maxOverrunDays)}d`
+                : ''}
+            </span>
+          </div>
+
+          <div className="pv-overview-tile pv-p10-kpi--outcomes">
+            <span className="pv-overview-kicker">Leads, cleared &amp; compensation</span>
+            <span className="pv-overview-num tabular">
+              {totalCompensationInr > 0 ? formatInr(totalCompensationInr) : fmtCount(leads)}
+            </span>
+            <span className="pv-overview-sub tabular">
+              {fmtCount(verified)} verified · {fmtCount(inReview)} in review · {fmtCount(clearedTasks)} cleared
+              {clearedEmbedded > 0
+                ? ` (${fmtCount(clearedEmbedded)} compliant ${clearedEmbedded === 1 ? 'control' : 'controls'})`
+                : ''}
+            </span>
+          </div>
+        </div>
+
+        {/* Flagship 4-Stage Anchor Case Spotlight */}
+        {anchorCase ? (
+          <article
+            className="pv-p10-anchor"
+            aria-label="Flagship 4-stage post-acquittal custody overrun anchor case"
+          >
+            <div className="pv-p6-anchor-head">
+              <div className="pv-p6-anchor-meta">
+                <span className="p10-anchor-chip">Flagship Anchor · 4-Stage Custody Chain</span>
+                {anchorTier ? <span className={anchorTier.chipClass}>{anchorTier.shortLabel}</span> : null}
+                {anchorPortal ? (
+                  <span className={anchorPortal.chipClass}>{anchorPortal.shortLabel}</span>
+                ) : null}
+                {anchorCase.state_ut || anchorCase.jurisdiction ? (
+                  <span className="tag-mono">
+                    {anchorCase.state_ut || formatJurisdictionLabel(anchorCase.jurisdiction)}
+                  </span>
+                ) : null}
+                {anchorCase.year ? (
+                  <span className="tag-mono tabular">{String(anchorCase.year)}</span>
+                ) : null}
+                {anchorChain ? (
+                  <span className={anchorChain.chipClass}>{anchorChain.shortLabel}</span>
+                ) : null}
+              </div>
+              {anchorMechanism ? (
+                <span className={anchorMechanism.chipClass}>{anchorMechanism.label}</span>
+              ) : null}
+            </div>
+
+            <h3 className="pv-p6-anchor-title">{anchorCase.case_title}</h3>
+
+            {/* 4-Stage Visual Custody Timeline */}
+            <ol
+              className="p10-timeline"
+              aria-label="4-stage custody overrun timeline from acquittal to release"
+            >
+              {anchorStages.map((step) => (
+                <li
+                  key={step.stage}
+                  className={`p10-stage p10-stage--s${step.stage}${
+                    step.verified ? ' p10-stage--verified' : ' p10-stage--unrecorded'
+                  }`}
+                >
+                  <div className="p10-stage-head">
+                    <span className="p10-stage-num font-mono" aria-hidden="true">
+                      {step.stage}
+                    </span>
+                    <span className="p10-stage-title">{step.title}</span>
+                  </div>
+                  {step.badge ? (
+                    <span className={`p10-stage-badge p10-stage-badge--s${step.stage} tabular`}>
+                      {step.badge}
+                    </span>
+                  ) : null}
+                  <p className="p10-stage-primary">{step.primary}</p>
+                  {step.secondary ? (
+                    <p className="p10-stage-sub">{p10ShortText(step.secondary, 130)}</p>
+                  ) : null}
+                  {step.quote ? (
+                    <blockquote className="p10-stage-quote">
+                      &ldquo;{p10ShortText(step.quote, 150)}&rdquo;
+                    </blockquote>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+
+            <div className="pv-p6-anchor-actions">
+              {anchorCase.finding_id && onSelectFinding ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onSelectFinding(anchorCase.finding_id!)}
+                >
+                  Inspect anchor dossier
+                </button>
+              ) : onFilterTasks && anchorCase.task_id ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-xs"
+                  onClick={() => onFilterTasks(anchorCase.task_id!)}
+                >
+                  Find anchor task in queue
+                </button>
+              ) : null}
+              {anchorPrimaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPrimaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Primary official order <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorSecondaryUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Contempt / release record{' '}
+                  <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorPortalUrl &&
+              anchorPortalUrl !== anchorPrimaryUrl &&
+              anchorPortalUrl !== anchorSecondaryUrl ? (
+                <a
+                  className="inline-link"
+                  href={anchorPortalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Official portal <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+                </a>
+              ) : null}
+              {anchorCase.source_sha256 ? (
+                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                  sha256:{anchorCase.source_sha256.slice(0, 10)}
+                </span>
+              ) : null}
+            </div>
+          </article>
+        ) : (
+          <div className="pv-empty-box">
+            Flagship 4-stage post-acquittal custody anchor dossier loads automatically from the hub summary index.
+          </div>
+        )}
+
+        {/* Interactive Source Portal Category Breakdown (8 Official Portals) */}
+        {portals.totalTasks > 0 || portals.totalLeads > 0 ? (
+          <div className="pv-p7-cohort-panel">
+            <div className="pv-p7-cohort-head">
+              <h3>Source portal categories (select any portal to filter explorer)</h3>
+              <div className="pv-mini-legend">
+                {(() => {
+                  const activePortalsCount = portals.items.filter(
+                    (p) => p.tasks > 0 || p.leads > 0,
+                  ).length;
+                  return (
+                    <span className="pv-chart-note tabular">
+                      {fmtCount(activePortalsCount)} active official portal{' '}
+                      {activePortalsCount === 1 ? 'category' : 'categories'}
+                    </span>
+                  );
+                })()}
+                {selectedPortal !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedPortal('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All portals</span>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div
+              className="pv-p10-portal-bar"
+              role="img"
+              aria-label={`Portal distribution across ${fmtCount(portals.totalTasks)} tasks`}
+            >
+              {portals.items
+                .filter((p) => p.sharePct > 0)
+                .map((p) => (
+                  <span
+                    key={p.portal_category}
+                    className={`pv-p10-seg ${p.segClass}`}
+                    style={{ width: `${p.sharePct}%` }}
+                    title={`${p.label}: ${fmtCount(p.tasks)} (${fmtPct(p.sharePct)})`}
+                  />
+                ))}
+            </div>
+
+            <div className="pv-p10-portal-grid" role="group" aria-label="Filter by official source portal category">
+              {portals.items.map((p) => {
+                const isSelected = selectedPortal === p.portal_category;
+                return (
+                  <button
+                    key={p.portal_category}
+                    type="button"
+                    aria-pressed={isSelected}
+                    className={`pv-p10-portal-btn${isSelected ? ' pv-p10-portal-btn--active' : ''}`}
+                    onClick={() =>
+                      setSelectedPortal((prev) =>
+                        prev === p.portal_category ? 'all' : p.portal_category,
+                      )
+                    }
+                  >
+                    <span className="pv-p7-cohort-btn-top">
+                      <span className={p.chipClass}>{p.shortLabel}</span>
+                      <span className="pv-p7-cohort-share tabular">{fmtPct(p.sharePct)}</span>
+                    </span>
+                    <span className="pv-p10-portal-num tabular">
+                      {fmtCount(p.tasks)} {p.tasks === 1 ? 'task' : 'tasks'}
+                    </span>
+                    <span className="pv-p7-cohort-sub tabular">
+                      {fmtCount(p.done)} checked
+                      {p.leads > 0 ? ` · ${fmtCount(p.leads)} ${p.leads === 1 ? 'lead' : 'leads'}` : ''}
+                      {p.cleared > 0 ? ` · ${fmtCount(p.cleared)} cleared` : ''}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Interactive 5-Year Timeline (2021–2026) + 4-Stage Chain & Mechanisms Filter Deck */}
+        <div className="pv-p7-cohort-panel">
+          {years.length > 0 ? (
+            <div className="pv-p10-year-block">
+              <div className="pv-p7-cohort-head">
+                <h3>5-year audit window (2021–2026 — select a year to filter)</h3>
+                {selectedYear !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedYear('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All years</span>
+                  </button>
+                ) : (
+                  <span className="pv-chart-note">Official orders, releases &amp; audit disclosures</span>
+                )}
+              </div>
+
+              <div className="pv-p10-year-grid" role="group" aria-label="Filter by year 2021 to 2026">
+                {years.map((y) => {
+                  const isSelected = selectedYear === y.year;
+                  const relPct = maxYearTasks > 0 ? calcPct(y.tasks, maxYearTasks) : 0;
+                  return (
+                    <button
+                      key={y.year}
+                      type="button"
+                      aria-pressed={isSelected}
+                      className={`pv-p10-year-btn${isSelected ? ' pv-p10-year-btn--active' : ''}`}
+                      onClick={() => setSelectedYear((prev) => (prev === y.year ? 'all' : y.year))}
+                    >
+                      <span className="pv-p10-year-top">
+                        <strong className="font-mono tabular">{y.year}</strong>
+                        <span className="pv-p7-cohort-share tabular">
+                          {fmtCount(y.tasks)}
+                        </span>
+                      </span>
+                      <span className="pv-p7-signal-track" aria-hidden="true">
+                        <span
+                          className="pv-p7-signal-fill pv-p10-year-fill"
+                          style={{ width: `${relPct > 0 ? Math.max(4, relPct) : 0}%` }}
+                        />
+                      </span>
+                      <span className="pv-p7-cohort-sub tabular">
+                        {y.full_4_stage > 0 ? `${fmtCount(y.full_4_stage)} 4-stage` : `${fmtCount(y.done)} checked`}
+                        {y.overrun_days > 0 ? ` · ${fmtCount(y.overrun_days)}d` : ''}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="pv-p7-cohort-head" style={{ marginTop: years.length > 0 ? 6 : 0 }}>
+            <h3>Custody overrun mechanisms (6 deterministic categories — select to filter)</h3>
+            <span className="pv-chart-note tabular">
+              {mechanisms.totalTasks > 0
+                ? `${fmtCount(mechanisms.totalTasks)} tasks across 5 overrun patterns + timely-release benchmarks`
+                : 'Counts populate from the hub summary index'}
+            </span>
+          </div>
+
+          <div className="pv-p10-mech-grid" role="group" aria-label="Filter by custody overrun mechanism">
+            {mechanisms.items.map((m) => {
+              const isSelected = selectedMechanism === m.key;
+              return (
+                <button
+                  key={m.key}
+                  type="button"
+                  aria-pressed={isSelected}
+                  className={`pv-p8-mech-btn${m.isCleared ? ' pv-p8-mech-btn--cleared' : ''}`}
+                  onClick={() =>
+                    setSelectedMechanism((prev) => (prev === m.key ? 'all' : m.key))
+                  }
+                >
+                  <div className="pv-p7-signal-top">
+                    <span className={m.chipClass}>{m.label}</span>
+                    <span className="pv-p7-signal-count tabular">
+                      <strong>{fmtCount(m.tasks)}</strong> {m.tasks === 1 ? 'task' : 'tasks'}
+                      {m.leads > 0
+                        ? ` · ${fmtCount(m.leads)} ${m.leads === 1 ? 'lead' : 'leads'}`
+                        : ''}
+                    </span>
+                  </div>
+                  <span className="pv-p7-signal-track" aria-hidden="true">
+                    <span
+                      className={`pv-p7-signal-fill ${m.fillClass}`}
+                      style={{ width: `${m.sharePct > 0 ? Math.max(3, m.sharePct) : 0}%` }}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 4-Stage Chain Completeness Filter Pills */}
+          {chainStatuses.total > 0 ? (
+            <div className="pv-p8-cat-pills" role="group" aria-label="Filter by 4-stage chain completeness">
+              <span className="pv-p7-jur-label">4-stage chain completeness:</span>
+              <button
+                type="button"
+                aria-pressed={selectedChain === 'all'}
+                className={`btn btn-xs ${selectedChain === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setSelectedChain('all')}
+              >
+                All ({fmtCount(chainStatuses.total)})
+              </button>
+              {chainStatuses.items
+                .filter((cs) => cs.count > 0)
+                .map((cs) => {
+                  const active = selectedChain === cs.key;
+                  return (
+                    <button
+                      key={cs.key}
+                      type="button"
+                      aria-pressed={active}
+                      className={`btn btn-xs ${active ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() =>
+                        setSelectedChain((prev) => (prev === cs.key ? 'all' : cs.key))
+                      }
+                    >
+                      {cs.shortLabel} ({fmtCount(cs.count)})
+                    </button>
+                  );
+                })}
+            </div>
+          ) : null}
+
+          {hasActiveFilters ? (
+            <div className="pv-p8-active-filters">
+              <span>
+                Active filters:{' '}
+                {[
+                  selectedYear !== 'all' ? String(selectedYear) : null,
+                  selectedState !== 'all' ? selectedState : null,
+                  selectedPortal !== 'all' ? p10PortalLabel(selectedPortal) : null,
+                  selectedChain !== 'all' ? p10ChainStatusLabel(selectedChain) : null,
+                  selectedMechanism !== 'all' ? p10MechanismLabel(selectedMechanism) : null,
+                  selectedCourtTier !== 'all' ? p10CourtTierLabel(selectedCourtTier) : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </span>
+              <button type="button" className="btn btn-ghost btn-xs" onClick={resetAllFilters}>
+                <RotateCcw size={11} aria-hidden="true" />
+                <span>Reset all filters</span>
+              </button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Two-Column Split: States & UTs Breakdown + How to Read This */}
+      <div className="pv-results-split">
+        <div className="pv-chart-card">
+          <div className="pv-chart-subhead">
+            <h3>States &amp; UTs covered ({fmtCount(states.length)})</h3>
+            <span className="pv-chart-note">
+              Click a State/UT to filter courts &amp; case dossiers below
+            </span>
+          </div>
+
+          {states.length > 0 ? (
+            <>
+              <div className="pv-p6-ministry-controls">
+                <div className="pv-p6-search-wrap">
+                  <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                  <input
+                    type="search"
+                    className="input-field pv-p6-search"
+                    value={stateQuery}
+                    onChange={(e) => setStateQuery(e.target.value)}
+                    placeholder={`Filter ${fmtCount(states.length)} States & UTs (e.g. Uttar Pradesh, Delhi, Maharashtra)…`}
+                    aria-label="Filter States and Union Territories"
+                  />
+                </div>
+                {selectedState !== 'all' ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => setSelectedState('all')}
+                  >
+                    <RotateCcw size={11} aria-hidden="true" />
+                    <span>All States/UTs</span>
+                  </button>
+                ) : null}
+              </div>
+
+              {visibleStates.length > 0 ? (
+                <div className="pv-ub-years-wrap">
+                  <table className="pv-ub-table pv-ub-years pv-p6-ministries-table">
+                    <caption className="pv-ub-caption">
+                      Post-acquittal custody overrun and contempt compliance coverage across Indian States and Union Territories.
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">State / UT</th>
+                        <th scope="col">Tasks &amp; progress</th>
+                        <th scope="col" className="num">
+                          Overruns / Leads
+                        </th>
+                        <th scope="col" className="num">
+                          Queue
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleStates.map((st) => {
+                        const display = st.state_ut || formatJurisdictionLabel(st.jurisdiction);
+                        const stateKey = st.state_ut || st.jurisdiction || 'Union of India';
+                        const total = Math.max(0, st.tasks);
+                        const done = Math.max(0, st.done ?? 0);
+                        const donePct = calcPct(done, total);
+                        const isSelected = selectedState === stateKey;
+                        const queueToken = p10StateFilterQuery(st.state_ut, st.jurisdiction);
+
+                        return (
+                          <tr
+                            key={stateKey}
+                            className="pv-p6-ministry-row--interactive"
+                            style={isSelected ? { background: 'var(--sunk)' } : undefined}
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement | null;
+                              if (target?.closest('a, button')) return;
+                              setSelectedState((prev) => (prev === stateKey ? 'all' : stateKey));
+                            }}
+                          >
+                            <th scope="row" className="pv-ub-year pv-p8-jur-name">
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  setSelectedState((prev) => (prev === stateKey ? 'all' : stateKey))
+                                }
+                              >
+                                {display}
+                              </button>
+                              {(st.full_4_stage ?? 0) > 0 ? (
+                                <span className="pv-ub-sub tabular">
+                                  {fmtCount(st.full_4_stage)} 4-stage{' '}
+                                  {st.full_4_stage === 1 ? 'case' : 'cases'}
+                                </span>
+                              ) : null}
+                            </th>
+                            <td className="pv-ub-years-checked">
+                              <span
+                                className="pv-ub-bar"
+                                role="img"
+                                aria-label={`${display}: ${fmtCount(done)} of ${fmtCount(total)} tasks checked`}
+                              >
+                                {donePct > 0 ? (
+                                  <span
+                                    className="pv-ub-bar-seg pv-p10-seg--court"
+                                    style={{ width: `${Math.max(donePct, 1.5)}%` }}
+                                  />
+                                ) : null}
+                              </span>
+                              <span className="pv-ub-sub tabular">
+                                {fmtCount(total)} {total === 1 ? 'task' : 'tasks'} · {fmtCount(done)} checked ({fmtPct(donePct)})
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-lines" data-label="Overruns / Leads">
+                              <span className="pv-ub-cell-val">
+                                {(st.total_overrun_days ?? 0) > 0
+                                  ? `+${fmtCount(st.total_overrun_days)}d`
+                                  : `${fmtCount(st.leads)} ${st.leads === 1 ? 'lead' : 'leads'}`}
+                              </span>
+                              <span className="pv-ub-sub">
+                                {(st.compensation_inr ?? 0) > 0
+                                  ? formatInr(st.compensation_inr)
+                                  : (st.cleared ?? 0) > 0
+                                    ? `${fmtCount(st.cleared)} cleared`
+                                    : `${fmtCount(st.leads)} ${st.leads === 1 ? 'lead' : 'leads'}`}
+                              </span>
+                            </td>
+                            <td className="num pv-ub-years-below" data-label="Queue">
+                              {onFilterTasks ? (
+                                <button
+                                  type="button"
+                                  className="pv-ub-link"
+                                  onClick={() => onFilterTasks(queueToken)}
+                                  aria-label={`Filter task queue for ${display}`}
+                                >
+                                  Tasks →
+                                </button>
+                              ) : (
+                                <span className="pv-ub-sub">{fmtCount(total)}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="pv-empty-box">
+                  No States or UTs match &ldquo;{stateQuery}&rdquo;.
+                </div>
+              )}
+
+              {stateQuery.trim().length === 0 && filteredStates.length > P10_INITIAL_STATES ? (
+                <div className="pv-list-more">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setShowAllStates((v) => !v)}
+                  >
+                    {showAllStates
+                      ? `Show top ${P10_INITIAL_STATES} States & UTs`
+                      : `Show all ${fmtCount(filteredStates.length)} States & UTs`}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="pv-empty-box">
+              State and UT custody coverage appears here once the hub loads the P10 summary index.
+            </div>
+          )}
+        </div>
+
+        <div className="pv-chart-card pv-ub-guide">
+          <div className="pv-chart-subhead">
+            <h3>How to read this</h3>
+          </div>
+          <p>
+            Every task fetches and SHA-256-verifies official court orders, prison release records,
+            police circulars, NHRC/SHRC proceedings, NALSA/SLSA release reports, Digital Sansad
+            answers, or CAG audit chapters from <strong>2021–2026</strong>. If a pinned file fails
+            byte-digest verification or lacks required verbatim anchors, the check fails closed as{' '}
+            {FINDING_TAGS.not_enough_data.label}.
+          </p>
+          <p>
+            Full 4-stage cases document all four verifiable milestones in official primary records:
+            <strong> [1] Acquitted / Release Order</strong> → <strong>[2] Held in Prison</strong> →{' '}
+            <strong>[3] Contempt Filed</strong> → <strong>[4] Released</strong>. Timely-release
+            and FASTER compliance benchmarks without custody overrun are published as{' '}
+            {FINDING_TAGS.cleared.label} with equal standing.
+          </p>
+          <p>
+            Every dossier uses strictly factual institutional audit framing under{' '}
+            <strong>BNS Sec 356</strong>, scrubs personal identifiers under the{' '}
+            <strong>DPDP Act 2023</strong>, records lawful procedural explanations (pending
+            warrant verification, other active custody cases, or clerical docket transit), and
+            requires three pairwise-independent peer verifications before reaching{' '}
+            {FINDING_TAGS.verified.label}.
+          </p>
+          <div className="pv-ub-links">
+            <a className="inline-link" href={documentsUrl}>
+              Official sources (CSV)
+            </a>
+            <a className="inline-link" href={coverageUrl}>
+              Coverage (JSON)
+            </a>
+            <a className="inline-link" href={P10_METHOD_URL} target="_blank" rel="noopener noreferrer">
+              Method <ExternalLink size={11} aria-hidden="true" className="pv-ub-ext" />
+            </a>
+          </div>
+          {p10?.generated_on ? (
+            <p className="pv-chart-note">
+              P10 custody audit index built {p10.generated_on}
+              {p10.as_of_date && p10.as_of_date !== p10.generated_on
+                ? ` · as of ${p10.as_of_date}`
+                : ''}
+              .
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Interactive Courts & Named Prisons Explorer */}
+      <div className="pv-chart-card pv-p7-section-card">
+        <div className="pv-chart-subhead">
+          <h3>
+            Courts &amp; statutory bodies covered ({fmtCount(filteredCourts.length)}
+            {filteredCourts.length !== topCourts.length
+              ? ` of ${fmtCount(topCourts.length)}`
+              : ''}
+            )
+          </h3>
+          <span className="pv-chart-note">
+            Filter by court tier or State/UT — click any court to view its tasks in the queue
+          </span>
+        </div>
+
+        {topCourts.length > 0 ? (
+          <>
+            <div className="pv-p6-ministry-controls">
+              <div className="pv-p6-search-wrap">
+                <Search size={13} aria-hidden="true" className="pv-p6-search-icon" />
+                <input
+                  type="search"
+                  className="input-field pv-p6-search"
+                  value={courtQuery}
+                  onChange={(e) => setCourtQuery(e.target.value)}
+                  placeholder={`Search ${fmtCount(topCourts.length)} courts & bodies (e.g. Supreme Court, Allahabad, Delhi, NHRC)…`}
+                  aria-label="Search courts and statutory bodies"
+                />
+              </div>
+              <div className="pv-p6-filter-pills" role="group" aria-label="Filter courts by tier">
+                <button
+                  type="button"
+                  aria-pressed={selectedCourtTier === 'all'}
+                  className={`btn btn-xs ${selectedCourtTier === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                  onClick={() => setSelectedCourtTier('all')}
+                >
+                  All
+                </button>
+                {courtTiers.items
+                  .filter((t) => t.tasks > 0 || topCourts.some((c) => c.court_tier === t.key))
+                  .map((t) => (
+                    <button
+                      key={t.key}
+                      type="button"
+                      aria-pressed={selectedCourtTier === t.key}
+                      className={`btn btn-xs ${selectedCourtTier === t.key ? 'btn-primary' : 'btn-ghost'}`}
+                      onClick={() =>
+                        setSelectedCourtTier((prev) => (prev === t.key ? 'all' : t.key))
+                      }
+                    >
+                      {t.shortLabel}
+                      {t.tasks > 0 ? ` (${fmtCount(t.tasks)})` : ''}
+                    </button>
+                  ))}
+              </div>
+            </div>
+
+            {visibleCourts.length > 0 ? (
+              <div className="table-wrap pv-ub-leads-wrap">
+                <table className="ledger-table pv-ub-table pv-ub-leads-table">
+                  <caption className="pv-ub-caption">
+                    Indian courts and statutory bodies indexed in Project P10 (2021–2026).
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Court / Statutory Body</th>
+                      <th scope="col">Tier</th>
+                      <th scope="col">State / UT</th>
+                      <th scope="col" className="num">
+                        4-Stage Chains
+                      </th>
+                      <th scope="col" className="num">
+                        Tasks / Leads
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleCourts.map((c) => {
+                      const tier = formatCourtTier(c.court_tier);
+                      return (
+                        <tr key={`${c.court_name}-${c.state_ut || ''}`}>
+                          <td className="pv-ub-line pv-p8-scheme-col">
+                            {onFilterTasks ? (
+                              <button
+                                type="button"
+                                className="pv-ub-link"
+                                onClick={() => onFilterTasks(c.court_name)}
+                              >
+                                {c.court_name}
+                              </button>
+                            ) : (
+                              <span>{c.court_name}</span>
+                            )}
+                          </td>
+                          <td data-label="Tier">
+                            <span className={tier.chipClass}>{tier.shortLabel}</span>
+                          </td>
+                          <td data-label="State / UT">{c.state_ut || 'All-India / Union'}</td>
+                          <td className="num tabular" data-label="4-Stage Chains">
+                            {fmtCount(c.full_4_stage ?? 0)}
+                          </td>
+                          <td className="num tabular" data-label="Tasks / Leads">
+                            <span className="pv-ub-cell-val">
+                              {fmtCount(c.tasks)} {c.tasks === 1 ? 'task' : 'tasks'}
+                            </span>
+                            <span className="pv-ub-sub">
+                              {fmtCount(c.leads)} {c.leads === 1 ? 'lead' : 'leads'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="pv-empty-box">
+                No courts or statutory bodies match the current filter combination.
+              </div>
+            )}
+
+            {courtQuery.trim().length === 0 &&
+            selectedCourtTier === 'all' &&
+            selectedState === 'all' &&
+            filteredCourts.length > P10_INITIAL_COURTS ? (
+              <div className="pv-list-more">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setShowAllCourts((v) => !v)}
+                >
+                  {showAllCourts
+                    ? `Show top ${P10_INITIAL_COURTS} courts`
+                    : `Show all ${fmtCount(filteredCourts.length)} courts`}
+                </button>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="pv-empty-box">
+            Court-by-court coverage appears here once the hub loads the P10 corpus index.
+          </div>
+        )}
+
+        {/* Named Prisons / Custody Facilities Strip */}
+        {topPrisons.length > 0 ? (
+          <div className="pv-p10-prisons-strip" aria-label="Named prisons and custody facilities">
+            <span className="pv-p7-jur-label">Named prisons &amp; custody facilities:</span>
+            {topPrisons.slice(0, P10_INITIAL_PRISONS).map((pr) => (
+              <button
+                key={`${pr.prison_name}-${pr.state_ut || ''}`}
+                type="button"
+                className="btn btn-ghost btn-xs pv-p10-prison-pill"
+                onClick={() => onFilterTasks?.(pr.prison_name)}
+                disabled={!onFilterTasks}
+                title={
+                  pr.state_ut
+                    ? `${pr.prison_name} (${pr.state_ut}) — click to filter tasks`
+                    : `${pr.prison_name} — click to filter tasks`
+                }
+              >
+                <span>{pr.prison_name}</span>
+                {pr.state_ut ? <span className="pv-p10-prison-state">{pr.state_ut}</span> : null}
+                <span className="tabular font-mono">
+                  {fmtCount(pr.tasks)}
+                  {(pr.total_overrun_days ?? 0) > 0 ? ` · +${fmtCount(pr.total_overrun_days)}d` : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Reported Custody-Overrun Case Dossiers Table */}
+      <div className="pv-ub-leads">
+        <div className="pv-chart-subhead">
+          <h3>
+            Custody-overrun &amp; contempt case dossiers reported so far
+            {hasActiveFilters && topLeads.length > 0
+              ? ` (${fmtCount(filteredLeads.length)} matching filters)`
+              : ''}
+          </h3>
+          {filteredLeads.length > 0 ? (
+            <span className="pv-chart-note">
+              4-stage documentary chain: Acquitted → Held in Prison → Contempt Filed → Released
+            </span>
+          ) : null}
+        </div>
+        {filteredLeads.length > 0 ? (
+          <div className="table-wrap pv-ub-leads-wrap">
+            <table className="ledger-table pv-ub-table pv-ub-leads-table">
+              <caption className="pv-ub-caption">
+                Verified and in-review post-acquittal custody overrun and contempt compliance dossiers.
+                {onSelectFinding
+                  ? ' Open any row to read the full 4-stage custody timeline, official citations, SHA-256 hashes, and RTI draft.'
+                  : ''}
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Case &amp; Court / Authority</th>
+                  <th scope="col">Year, State &amp; Portal</th>
+                  <th scope="col">4-Stage Custody Chain</th>
+                  <th scope="col">Mechanism &amp; Outcome</th>
+                  <th scope="col">Audit Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredLeads.map((lead) => {
+                  const tag = getFindingTag(lead.status);
+                  const mech = formatCustodyOverrunMechanism(
+                    lead.overrun_mechanism || lead.signal_category,
+                  );
+                  const portal = formatPortalCategory(lead.portal_category);
+                  const chain = formatChainStatus(lead.chain_status, lead.stages_verified_count);
+                  const stages = p10BuildFourStageChain(lead);
+                  const overrunText = formatOverrunDays(lead.overrun_days);
+
+                  return (
+                    <tr key={lead.finding_id}>
+                      <td className="pv-ub-line pv-p8-lead-scheme">
+                        {onSelectFinding ? (
+                          <button
+                            type="button"
+                            className="pv-ub-link"
+                            onClick={() => onSelectFinding(lead.finding_id)}
+                          >
+                            {lead.case_title || lead.title}
+                          </button>
+                        ) : (
+                          <span>{lead.case_title || lead.title}</span>
+                        )}
+                        <span className="pv-ub-sub">
+                          {lead.is_anchor_case ? (
+                            <>
+                              <span
+                                className="p10-anchor-chip"
+                                style={{ fontSize: 10.5, padding: '0 6px' }}
+                              >
+                                Anchor
+                              </span>{' '}
+                            </>
+                          ) : null}
+                          {[lead.acquittal_court || lead.entity_name, lead.prison_name]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </td>
+                      <td className="tabular pv-ub-lead-year" data-label="Year, State & portal">
+                        <span>
+                          {[
+                            lead.year ? String(lead.year) : null,
+                            lead.state_ut ||
+                              (lead.jurisdiction ? formatJurisdictionLabel(lead.jurisdiction) : null),
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || '—'}
+                        </span>
+                        <span className="pv-ub-sub">
+                          <span
+                            className={portal.chipClass}
+                            style={{ fontSize: 10.5, padding: '0 6px' }}
+                          >
+                            {portal.shortLabel}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="pv-p10-lead-chain" data-label="4-Stage custody chain">
+                        <div className="p10-mini-chain" aria-label={chain.label}>
+                          {stages.map((st) => (
+                            <span
+                              key={st.stage}
+                              className={`p10-mini-node p10-mini-node--s${st.stage}${
+                                st.verified ? ' is-done' : ''
+                              }`}
+                              title={`${st.kicker}: ${st.title}${st.date ? ` (${st.date})` : ''}`}
+                            >
+                              {st.stage}
+                            </span>
+                          ))}
+                          <span className={chain.chipClass} style={{ fontSize: 10.5, padding: '0 6px' }}>
+                            {chain.shortLabel}
+                          </span>
+                        </div>
+                        <span className="pv-ub-sub tabular">
+                          {[
+                            lead.acquittal_order_date ? `Acq ${lead.acquittal_order_date}` : null,
+                            overrunText && lead.overrun_days != null && lead.overrun_days > 0
+                              ? `+${overrunText}`
+                              : null,
+                            lead.release_date ? `Rel ${lead.release_date}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ') || 'Documented in official record'}
+                        </span>
+                      </td>
+                      <td data-label="Mechanism & outcome">
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          <span className={mech.chipClass}>{mech.shortLabel}</span>
+                          {lead.compensation_inr != null && lead.compensation_inr > 0 ? (
+                            <span className="tag-mono tabular">
+                              {formatInr(lead.compensation_inr)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {lead.judicial_direction_summary || lead.contempt_case_number ? (
+                          <span className="pv-ub-sub">
+                            {p10ShortText(
+                              lead.judicial_direction_summary || lead.contempt_case_number,
+                              95,
+                            )}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="pv-ub-lead-status">
+                        <span className={tag.badgeClass} title={tag.description}>
+                          {tag.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="pv-empty-box">
+            {hasActiveFilters && topLeads.length > 0
+              ? 'No reported case dossiers match the active explorer filters. Reset filters above to view all dossiers.'
+              : 'Post-acquittal custody overrun and contempt dossiers appear here as contributor agents verify tasks. Every record cites official court/portal documents, SHA-256 digests, verbatim excerpts, and lawful procedural context.'}
           </div>
         )}
       </div>

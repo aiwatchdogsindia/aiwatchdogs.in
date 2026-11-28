@@ -29,6 +29,7 @@ import type {
   RtiDraft,
   VerificationCheckState,
   VisualAuditingGovernmentExams,
+  VisualInnocentButLockedUp,
   VisualSovereignLies,
   WhisperItem,
   TaskUsage,
@@ -586,7 +587,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
                     ? 'P8'
                     : slug === 'auditing-government-exams' || methodologyCode.toUpperCase() === 'P9'
                       ? 'P9'
-                      : methodologyCode;
+                      : slug === 'innocent-but-locked-up' || methodologyCode.toUpperCase() === 'P10'
+                        ? 'P10'
+                        : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,
@@ -927,6 +930,20 @@ export const api = {
       !Array.isArray(raw.auditing_government_exams)
         ? (raw.auditing_government_exams as VisualAuditingGovernmentExams)
         : (raw as unknown as VisualAuditingGovernmentExams);
+    return inner;
+  },
+
+  async getInnocentButLockedUpSummary(signal?: AbortSignal): Promise<VisualInnocentButLockedUp> {
+    const raw = await fetchJson<Record<string, unknown>>(
+      '/api/projects/innocent-but-locked-up/summary',
+      { signal },
+    );
+    const inner =
+      raw.innocent_but_locked_up &&
+      typeof raw.innocent_but_locked_up === 'object' &&
+      !Array.isArray(raw.innocent_but_locked_up)
+        ? (raw.innocent_but_locked_up as VisualInnocentButLockedUp)
+        : (raw as unknown as VisualInnocentButLockedUp);
     return inner;
   },
 
