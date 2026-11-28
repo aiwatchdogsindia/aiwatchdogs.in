@@ -117,10 +117,10 @@ SECURITY_CSP = (
 _ALLOWED_VERCEL_HOST_RE = re.compile(r"^aiwatchdogs(?:-[a-z0-9-]+)?\.vercel\.app$")
 _SAFE_HOST_PORT_RE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?$")
 _CANONICAL_HOSTS = frozenset({"aiwatchdogs.in", "www.aiwatchdogs.in"})
-# The official CLI names itself in its User-Agent. Builds older than this cannot safely submit
-# grouped multi-line UB1 shortfalls or idempotent claims, so they are asked to refresh.
+# The official CLI names itself in its User-Agent. Builds older than this lack newer engines
+# (P9/P10) or capability-aware release semantics and must refresh before claiming/submitting.
 _OFFICIAL_CLI_UA_RE = re.compile(r"^AIWatchdogs-India-AgentCLI/(\d{1,4})\.(\d{1,4})")
-MIN_OFFICIAL_CLI_VERSION = (0, 6)
+MIN_OFFICIAL_CLI_VERSION = (0, 8)
 _WEBSITE_BATCH_FILENAME_RE = re.compile(r"^batch-(?:000[1-9]|00[1-9][0-9]|0[1-9][0-9]{2}|1000)\.csv\Z")
 _LOCAL_DEV_HOSTS = frozenset({"localhost", "127.0.0.1", "testserver"})
 _PUBLIC_CROSS_ORIGIN_ASSET_RE = re.compile(
@@ -292,6 +292,7 @@ class RegisterAgentRequest(BaseModel):
     mode: str = Field(default="auto", max_length=32)
     region: str = Field(default="IN", max_length=32)
     capabilities: list[str] = Field(default_factory=list, max_length=20)
+    supported_methodologies: list[str] | None = Field(default=None, max_length=64)
     # Which AI coding agent runs this node (e.g. "Claude Code", "Antigravity") and its model.
     coding_agent: str | None = Field(default=None, max_length=80)
     coding_agent_model: str | None = Field(default=None, max_length=120)
@@ -316,6 +317,7 @@ class DeskNextRequest(BaseModel):
     max_estimated_tokens: int | None = Field(default=None, ge=0, le=MAX_TOKENS)
     task_id: str | None = Field(default=None, max_length=128)
     request_id: str | None = Field(default=None, max_length=128)
+    supported_methodologies: list[str] | None = Field(default=None, max_length=64)
 
 
 class DeskBeatRequest(BaseModel):
@@ -351,6 +353,12 @@ class DeskUsageRequest(BaseModel):
 class RTIDraftRequest(BaseModel):
     public_authority: str | None = Field(default=None, max_length=240)
     preview: bool | None = None
+
+
+class ReadingVerifyRequest(BaseModel):
+    submission: dict[str, Any]
+    expected_sha256: str | None = Field(default=None, max_length=128)
+    page_text: str | None = Field(default=None, max_length=200_000)
 
 
 class SponsorPledgeRequest(BaseModel):
@@ -1275,6 +1283,55 @@ def create_app(
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.list_sources()
 
+    @application.get("/api/reading/backlog")
+    def api_reading_backlog(response: Response) -> dict[str, Any]:
+        """Return parked document-reading & source-extraction planned tasks across active projects."""
+        response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
+        missions_data = desk.list_missions()
+        items: list[dict[str, Any]] = []
+        total_est_tokens = 0
+        for m in missions_data.get("missions", []):
+            planned = m.get("planned_tasks") or []
+            for idx, pt in enumerate(planned):
+                est = int(pt.get("estimated_tokens") or 0)
+                total_est_tokens += est
+                items.append(
+                    {
+                        "id": f"{m.get('slug')}-planned-{idx + 1}",
+                        "project_slug": m.get("slug"),
+                        "project_code": m.get("project_code"),
+                        "project_title": m.get("title"),
+                        "project_status": m.get("status"),
+                        "title": pt.get("title"),
+                        "type": pt.get("type"),
+                        "estimated_tokens": est,
+                        "estimate_basis": pt.get("estimate_basis"),
+                    }
+                )
+        return {
+            "count": len(items),
+            "total_estimated_tokens": total_est_tokens,
+            "items": items,
+        }
+
+    @application.post("/api/reading/verify")
+    def api_reading_verify(body: ReadingVerifyRequest, request: Request, response: Response) -> dict[str, Any]:
+        """Deterministically verify an AI-extracted budget table for ₹0 (Grand Total + row sums + page quotes)."""
+        from aiwatchdogs.engines.reading_verifier import verify_budget_extraction
+
+        desk.check_rate_limit(
+            bucket_key=f"reading_verify:{_extract_client_ip(request)}",
+            limit=60,
+            window_seconds=60,
+        )
+        response.headers["Cache-Control"] = "no-store"
+        result = verify_budget_extraction(
+            body.submission,
+            expected_sha256=body.expected_sha256,
+            page_text=body.page_text,
+        )
+        return result.to_dict()
+
     # ------------------------------------------------------------------
     # Desk Coordination Plane (unlimited volunteer contributions — zero rate-limit throttling)
     # ------------------------------------------------------------------
@@ -1433,6 +1490,7 @@ def create_app(
             website_observations=body.website_observations,
             task_id=body.task_id,
             request_id=idempotency_key or body.request_id,
+            supported_methodologies=body.supported_methodologies,
         )
         if claimed is None:
             return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "no-store"})

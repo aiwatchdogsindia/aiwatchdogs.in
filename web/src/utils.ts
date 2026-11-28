@@ -150,6 +150,7 @@ export function pillarLabel(pillar?: string): string {
     budget: 'Union & State Budgets',
     disclosure: 'Public Disclosure',
     scheme: 'Welfare & Social Audits',
+    infra: 'Infrastructure & Works',
     infrastructure: 'Infrastructure & Works',
     corporate_political: 'Disclosures & Governance',
     parliament: 'Parliament & RTI',
@@ -235,12 +236,55 @@ export function nextProjectCode(
   return highest > 0 ? `P${highest + 1}` : 'P1';
 }
 
+/** Return true when a mission is a dataset-less intake proposal rather than an active runnable audit. */
+export function isProposalMission(
+  mission?: {
+    status?: string | null;
+    total_tasks?: number | null;
+  } | null,
+): boolean {
+  if (!mission) return false;
+  return (mission.status || '').trim().toLowerCase() === 'needs_data' && (mission.total_tasks ?? 0) === 0;
+}
+
+/**
+ * Partition missions into active runnable audits and community intake proposals (`needs_data` with 0 tasks)
+ * so dataset-less proposals never crowd out active projects on `/` or at the top of `/projects`.
+ */
+export function splitActiveAndProposalProjects<
+  T extends {
+    status?: string | null;
+    total_tasks?: number | null;
+    project_code?: string | null;
+    slug?: string | null;
+    methodology_code?: string | null;
+    created_at?: string | null;
+  },
+>(missions: readonly T[]): { active: T[]; proposals: T[] } {
+  const active: T[] = [];
+  const proposals: T[] = [];
+  for (const m of missions) {
+    if (isProposalMission(m)) {
+      proposals.push(m);
+    } else {
+      active.push(m);
+    }
+  }
+  return {
+    active: sortProjectsDescending(active),
+    proposals: sortProjectsDescending(proposals),
+  };
+}
+
 /**
  * Sort projects in descending order so the latest listed project appears first:
  * newly listed unnumbered community projects on top, then highest P# descending (P8, P7, P6, ... P1).
+ * Any `needs_data` proposal with zero runnable tasks always sorts after active projects.
  */
 export function sortProjectsDescending<
   T extends {
+    status?: string | null;
+    total_tasks?: number | null;
     project_code?: string | null;
     slug?: string | null;
     methodology_code?: string | null;
@@ -248,6 +292,10 @@ export function sortProjectsDescending<
   },
 >(missions: readonly T[]): T[] {
   return missions.slice().sort((a, b) => {
+    const propA = isProposalMission(a);
+    const propB = isProposalMission(b);
+    if (propA !== propB) return propA ? 1 : -1;
+
     const numA = projectCodeNumber(a);
     const numB = projectCodeNumber(b);
 

@@ -1,0 +1,53 @@
+name: Deterministic Release Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Optional project slug (blank = all active projects)"
+        required: false
+        default: ""
+  schedule:
+    # Weekly reproducible verification of all pinned project manifests & engine hashes
+    - cron: "30 2 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-manifest:
+    name: Verify Project Manifests & Publish Release Fingerprint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python 3.14
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.14"
+          enable-cache: true
+
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Validate all project manifests
+        run: uv run aiwatchdogs project validate
+
+      - name: Compute deterministic release verification hash
+        run: |
+          if [ -n "${{ inputs.project }}" ]; then
+            uv run aiwatchdogs reproduce --project "${{ inputs.project }}" --json-out release-verification-hash.json
+          else
+            uv run aiwatchdogs reproduce --json-out release-verification-hash.json
+          fi
+          cat release-verification-hash.json
+
+      - name: Upload release verification fingerprint
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-verification-hash
+          path: release-verification-hash.json
+          retention-days: 90

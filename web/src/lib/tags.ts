@@ -318,6 +318,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Locates the official public source document.',
   ),
+  proposal: makeTag(
+    'proposal',
+    'Proposal',
+    'waiting',
+    'project',
+    'Community audit proposal waiting on verified public datasets.',
+  ),
 } as const;
 
 export const WEBSITE_OUTCOME_TAGS = {
@@ -502,6 +509,7 @@ export function getWorkTypeTag(
   if (t === 'cross_check') return WORK_TYPE_TAGS.cross_check;
   if (t === 'summarise' || t === 'summarize' || t === 'summary') return WORK_TYPE_TAGS.summary;
   if (t === 'find_sources') return WORK_TYPE_TAGS.find_sources;
+  if (t === 'proposal' || (t === 'needs_data' && !m)) return WORK_TYPE_TAGS.proposal;
   if (t === 'run_check' || t === 'anomaly_scan') {
     if (m === 'W1') return WORK_TYPE_TAGS.website_check;
     if (m === 'P1') return WORK_TYPE_TAGS.budget_check;
