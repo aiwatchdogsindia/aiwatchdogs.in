@@ -60,15 +60,20 @@ interface TrendTerm {
   count: number;
 }
 
-/** The most repeated words across recent headlines, the way Pulse builds its trending line. */
+/**
+ * The most repeated words across recent headlines, the way Pulse builds its trending line. Search
+ * runs on each finding's stored text, so a word counts only if that text contains it too; otherwise
+ * clicking it could return nothing.
+ */
 function trendingTerms(findings: FindingItem[], max = 42): TrendTerm[] {
   const counts = new Map<string, number>();
   for (const f of findings) {
     const text = (f.headline || f.title || '').toLowerCase();
+    const searchable = `${f.title} ${f.summary} ${f.entity_name} ${f.jurisdiction}`.toLowerCase();
     const seen = new Set<string>();
     for (const raw of text.split(/[^a-z\u0900-\u097f&'-]+/)) {
       const word = raw.replace(/^['-]+|['-]+$/g, '').replace(/'s$/, '');
-      if (word.length < 3 || STOPWORDS.has(word) || seen.has(word)) continue;
+      if (word.length < 3 || STOPWORDS.has(word) || seen.has(word) || !searchable.includes(word)) continue;
       seen.add(word);
       counts.set(word, (counts.get(word) || 0) + 1);
     }
@@ -97,7 +102,7 @@ function Trending({ terms, onPick }: { terms: TrendTerm[]; onPick: (word: string
             type="button"
             className="pulse-trend"
             style={{ fontSize: `${(13 + scale * 17).toFixed(1)}px` }}
-            title={`${t.count} recent findings mention “${t.word}”`}
+            title={`${t.count} of the latest verified findings mention “${t.word}”`}
             onClick={() => onPick(t.word)}
           >
             {t.word}
@@ -161,22 +166,6 @@ function PulseItem({
   );
 }
 
-function columnsFor(width: number): number {
-  if (width >= 1000) return 3;
-  if (width >= 640) return 2;
-  return 1;
-}
-
-function useColumnCount(): number {
-  const [count, setCount] = useState(() => columnsFor(window.innerWidth));
-  useEffect(() => {
-    const onResize = () => setCount(columnsFor(window.innerWidth));
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-  return count;
-}
-
 export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps) {
   const [status, setStatus] = useState('');
   const [topic, setTopic] = useState('');
@@ -188,12 +177,13 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trending, setTrending] = useState<TrendTerm[]>([]);
-  const columns = useColumnCount();
 
   useEffect(() => {
     let cancelled = false;
+    // Drop the previous topic's words at once, so none of them can be clicked against the new topic.
+    setTrending([]);
     api
-      .getFindings({ methodology: topic || undefined, limit: 100, offset: 0 })
+      .getFindings({ status: 'verified', methodology: topic || undefined, limit: 100, offset: 0 })
       .then((res) => {
         if (!cancelled) setTrending(trendingTerms(res.items));
       })
@@ -317,18 +307,12 @@ export function FindingsPage({ onSelectFinding, refreshTick }: FindingsPageProps
 
       {!error && findings.length > 0 && (
         <>
-          {/* Newest items go across the top row, then down, as on Pulse. */}
-          <div className={loading ? 'pulse-list is-loading' : 'pulse-list'}>
-            {Array.from({ length: columns }, (_, col) => (
-              <ul key={col} className="pulse-column">
-                {findings
-                  .filter((_, i) => i % columns === col)
-                  .map((f) => (
-                    <PulseItem key={f.id} finding={f} onSelect={onSelectFinding} />
-                  ))}
-              </ul>
+          {/* One list in date order, laid out row by row so the newest sit across the top. */}
+          <ul className={loading ? 'pulse-list is-loading' : 'pulse-list'}>
+            {findings.map((f) => (
+              <PulseItem key={f.id} finding={f} onSelect={onSelectFinding} />
             ))}
-          </div>
+          </ul>
 
           {(total > PAGE_SIZE || page > 0 || hasMore) && (
             <nav className="pagination-bar" aria-label="Findings pagination">

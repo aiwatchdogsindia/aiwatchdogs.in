@@ -458,19 +458,27 @@
 }
 
 .pulse-list {
+  list-style: none;
   margin: 22px 0 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 48px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 48px;
   transition: opacity 120ms ease;
 }
 
-.pulse-column {
-  flex: 1 1 0;
-  min-width: 0;
-  list-style: none;
-  margin: 0;
-  padding: 0;
+@media (max-width: 999px) {
+  .pulse-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+  }
+}
+
+@media (max-width: 639px) {
+  .pulse-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .pulse-list.is-loading {
