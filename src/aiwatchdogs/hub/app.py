@@ -68,6 +68,8 @@ from aiwatchdogs.hub.desk import MAX_TASK_PAGE, DeskService
 from aiwatchdogs.hub.feed import feed_entries, graveyard_feed_entries, render_atom
 from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
+from aiwatchdogs.plain import available_languages, explain_finding, labels, resolve_lang
+from aiwatchdogs.plain.answers import project_answers
 from aiwatchdogs.hub.templates import (
     DEFAULT_PUBLIC_HUB_URL,
     normalize_base_url,
@@ -622,6 +624,29 @@ class _SelfHealingHubMiddleware:
         await self.app(scope, receive, send)
 
 
+def _attach_plain(items: Any, lang: str, db: Any = None) -> None:
+    if not isinstance(items, list):
+        return
+    rows = [i for i in items if isinstance(i, dict) and "methodology_code" in i]
+    for item in rows:
+        item["plain"] = explain_finding(item, lang)
+
+
+def _attach_answers(missions: Any, lang: str, db: Any) -> None:
+    if not isinstance(missions, list):
+        return
+    rows = [m for m in missions if isinstance(m, dict) and m.get("slug")]
+    try:
+        answers = project_answers(db, [str(m["slug"]) for m in rows], lang)
+    except Exception:
+        return
+    for m in rows:
+        a = answers.get(str(m["slug"]))
+        if a:
+            m["plain_answer"] = a["answer"]
+            m["plain_answer_finding"] = a["finding_id"]
+
+
 def create_degraded_app(
     *,
     reason: str,
@@ -894,9 +919,19 @@ def create_app(
     _MATRIX_CACHE = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400"
 
     @application.get("/api/head")
-    def api_head(response: Response) -> dict[str, Any]:
+    def api_head(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
         response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
-        return desk.get_head()
+        data = dict(desk.get_head())
+        recent = [dict(f) for f in data.get("recent_findings") or [] if isinstance(f, dict)]
+        _attach_plain(recent, resolve_lang(lang), db)
+        data["recent_findings"] = recent
+        data["missions"] = [dict(m) for m in data.get("missions") or [] if isinstance(m, dict)]
+        _attach_answers(data["missions"], resolve_lang(lang), db)
+        just_in = data.get("just_in")
+        if isinstance(just_in, dict):
+            match = next((f for f in recent if str(f.get("id")) == str(just_in.get("id")) and f.get("plain")), None)
+            data["just_in"] = {**just_in, "plain_head": match["plain"]["head"]} if match else just_in
+        return data
 
     @application.get("/api/events")
     def api_events(
@@ -964,14 +999,25 @@ def create_app(
             raise
 
     @application.get("/api/missions")
-    def api_missions(response: Response) -> dict[str, Any]:
+    def api_missions(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
         response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
-        return desk.list_missions()
+        data = dict(desk.list_missions())
+        data["missions"] = [dict(m) for m in data.get("missions") or [] if isinstance(m, dict)]
+        _attach_answers(data["missions"], resolve_lang(lang), db)
+        return data
 
     @application.get("/api/missions/{slug}")
-    def api_mission_detail(slug: str, response: Response) -> dict[str, Any]:
+    def api_mission_detail(
+        slug: str,
+        response: Response,
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.get_mission_detail(slug)
+        data = desk.get_mission_detail(slug)
+        code = resolve_lang(lang)
+        _attach_plain(data.get("findings"), code, db)
+        _attach_answers([data], code, db)
+        return data
 
     @application.get("/api/missions/{slug}/observations/{task_id}")
     def website_observations(slug: str, task_id: str, response: Response) -> dict[str, Any]:
@@ -1182,9 +1228,10 @@ def create_app(
         search: str | None = Query(default=None, max_length=120),
         limit: int = Query(default=24, ge=1, le=100),
         offset: int = Query(default=0, ge=0, le=50_000),
+        lang: str | None = Query(default=None, max_length=32),
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.list_findings(
+        data = desk.list_findings(
             status_filter=status_filter,
             pillar=pillar,
             methodology=methodology,
@@ -1193,11 +1240,19 @@ def create_app(
             limit=limit,
             offset=offset,
         )
+        _attach_plain(data.get("findings"), resolve_lang(lang), db)
+        return data
 
     @application.get("/api/findings/{finding_id}")
-    def api_finding_detail(finding_id: str, response: Response) -> dict[str, Any]:
+    def api_finding_detail(
+        finding_id: str,
+        response: Response,
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.get_finding_detail(finding_id)
+        data = desk.get_finding_detail(finding_id)
+        _attach_plain([data], resolve_lang(lang), db)
+        return data
 
     @application.get("/api/graveyard")
     def api_graveyard(
@@ -1249,9 +1304,28 @@ def create_app(
         return desk.list_contributors(window=window)
 
     @application.get("/api/contributors/{handle}")
-    def api_contributor_profile(handle: str, response: Response) -> dict[str, Any]:
+    def api_contributor_profile(
+        handle: str,
+        response: Response,
+        lang: str | None = Query(default=None, max_length=32),
+    ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
-        return desk.get_contributor_profile(handle)
+        data = desk.get_contributor_profile(handle)
+        for key in ("findings", "recent_findings", "submitted_findings"):
+            _attach_plain(data.get(key), resolve_lang(lang), db)
+        return data
+
+    @application.get("/api/plain/languages")
+    def api_plain_languages(response: Response) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=86400"
+        return {"default": "en", "languages": available_languages()}
+
+    @application.get("/api/plain/labels")
+    def api_plain_labels(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=86400"
+        code = resolve_lang(lang)
+        meta = next(x for x in available_languages() if x["code"] == code)
+        return {**meta, "labels": labels(code)}
 
     @application.get("/api/sponsors")
     def api_sponsors(response: Response) -> dict[str, Any]:

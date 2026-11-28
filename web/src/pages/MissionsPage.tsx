@@ -290,7 +290,22 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                 )}
               </div>
 
-              <h1 className="section-title project-detail-title">{detail.title}</h1>
+              {detail.plain_answer && (
+                <p className="project-detail-answer">
+                  {detail.plain_answer_finding ? (
+                    <button
+                      type="button"
+                      className="project-detail-answer-link"
+                      onClick={() => onSelectFinding(detail.plain_answer_finding as string)}
+                    >
+                      {detail.plain_answer}
+                    </button>
+                  ) : (
+                    detail.plain_answer
+                  )}
+                </p>
+              )}
+              <h1 className={`section-title project-detail-title${detail.plain_answer ? ' project-detail-title--sub' : ''}`}>{detail.title}</h1>
 
               {detail.description && (
                 <p className="project-detail-desc">{detail.description}</p>
@@ -826,7 +841,16 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                         )}
                       </div>
                       <h2 className="project-index-title">
-                        <Link to={projectHref}>{m.title}</Link>
+                        <Link to={projectHref}>
+                          {m.plain_answer ? (
+                            <>
+                              <span className="plain-answer">{m.plain_answer}</span>
+                              <span className="plain-answer-question">{m.title}</span>
+                            </>
+                          ) : (
+                            m.title
+                          )}
+                        </Link>
                       </h2>
                       <span className="project-index-meta">
                         {m.jurisdiction}
