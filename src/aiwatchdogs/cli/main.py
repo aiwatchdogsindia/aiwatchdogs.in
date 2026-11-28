@@ -1943,5 +1943,55 @@ def project_validate(
         raise typer.Exit(code=1)
 
 
+plain_app = typer.Typer(help="Plain-language explanations and the model bake-off.")
+app.add_typer(plain_app, name="plain")
+
+
+@plain_app.command("bakeoff")
+def plain_bakeoff(
+    hub: str = typer.Option("https://aiwatchdogs.in", help="Hub to read real findings from."),
+    candidates: str = typer.Option(
+        "template,anthropic:claude-opus-5-5,anthropic:claude-sonnet-5-5,anthropic:claude-haiku-5-5",
+        help="Comma list: template, anthropic:<model>, local:<model> (an open model served next to the hub).",
+    ),
+    reader: str = typer.Option("anthropic:claude-opus-5-5", help="Model that plays the ordinary reader, or 'none'."),
+    n: int = typer.Option(20, min=1, max=200, help="How many findings to test."),
+    lang: str = typer.Option("en", help="Language code to test."),
+    status: str = typer.Option("verified,peer_review,cleared", help="Finding statuses to sample."),
+    out: str = typer.Option("plain-bakeoff", help="Output file prefix (.json and .md)."),
+    yes: bool = typer.Option(False, "--yes", help="Skip the spend confirmation."),
+) -> None:
+    from aiwatchdogs.plain import bakeoff as bo
+    from aiwatchdogs.plain.writer import load_config
+
+    findings: list[dict[str, Any]] = []
+    per = max(1, n // max(1, len(status.split(","))))
+    with httpx.Client(timeout=30.0) as client:
+        for st in [x.strip() for x in status.split(",") if x.strip()]:
+            r = client.get(f"{hub.rstrip('/')}/api/findings", params={"status": st, "limit": min(100, per)})
+            r.raise_for_status()
+            findings.extend(r.json().get("findings", []))
+    findings = findings[:n]
+    if not findings:
+        console.print("[yellow]No findings to test.[/yellow]")
+        raise typer.Exit(code=1)
+    cands = bo.parse_candidates(candidates)
+    rcfg = None if reader.strip().lower() == "none" else load_config(*reader.split(":", 1))
+    cost = bo.estimate_cost(len(findings), cands, rcfg)
+    console.print(f"{len(findings)} findings × {len(cands)} candidates. Estimated spend: about ${cost}")
+    if cost > 0 and not yes and not Confirm.ask("Spend this on model calls?", default=False):
+        raise typer.Exit(code=1)
+    report = bo.run_bakeoff(findings, cands, rcfg, lang)
+    Path(f"{out}.json").write_text(bo.dumps(report), encoding="utf-8")
+    Path(f"{out}.md").write_text(bo.to_markdown(report), encoding="utf-8")
+    table = Table(title=f"Plain-language bake-off ({lang})", box=box.SIMPLE)
+    for col in ("candidate", "score", "checks_pass", "who_ok", "number_ok", "fair_ok", "avg_grade", "avg_hard_words", "cost_usd"):
+        table.add_column(col)
+    for row in report["summary"]:
+        table.add_row(*[str(row.get(c)) for c in ("candidate", "score", "checks_pass", "who_ok", "number_ok", "fair_ok", "avg_grade", "avg_hard_words", "cost_usd")])
+    console.print(table)
+    console.print(f"Wrote {out}.json and {out}.md")
+
+
 if __name__ == "__main__":
     app()
