@@ -288,3 +288,7 @@
     font-size: 15px;
   }
 }
+
+.news-card-status--corrected {
+  border-style: solid;
+}

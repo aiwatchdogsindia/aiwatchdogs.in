@@ -42,25 +42,27 @@ export function JustInBar({ justIn, recentFindings, fallbackFinding, onSelectFin
   const { t, dir } = useLang();
 
   const entries = useMemo<Entry[]>(() => {
-    const out: Entry[] = [];
-    const seen = new Set<string>();
-    const add = (e: Entry) => {
-      const key = String(e.id);
-      if (seen.has(key) || out.length >= MAX_ITEMS) return;
-      seen.add(key);
-      out.push(e);
-    };
-    for (const f of recentFindings ?? []) if (isVerified(f)) add(toEntry(f));
+    const all: Entry[] = [];
     if (justIn) {
-      add({
+      all.push({
         id: justIn.id,
         title: justIn.title,
         crore: justIn.monetary_exposure_inr_cr ?? 0,
         when: justIn.verified_at || '',
       });
     }
-    if (fallbackFinding && isVerified(fallbackFinding)) add(toEntry(fallbackFinding));
-    return out;
+    for (const f of recentFindings ?? []) if (isVerified(f)) all.push(toEntry(f));
+    if (fallbackFinding && isVerified(fallbackFinding)) all.push(toEntry(fallbackFinding));
+    const seen = new Set<string>();
+    return all
+      .filter((e) => {
+        const key = String(e.id);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((x, y) => (Date.parse(y.when) || 0) - (Date.parse(x.when) || 0))
+      .slice(0, MAX_ITEMS);
   }, [justIn, recentFindings, fallbackFinding]);
 
   return (
