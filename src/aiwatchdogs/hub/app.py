@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import math
 import mimetypes
@@ -70,6 +71,7 @@ from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.plain import available_languages, explain_finding, labels, resolve_lang
 from aiwatchdogs.plain import news as plain_news
+from aiwatchdogs.plain import writer as plain_writer
 from aiwatchdogs.plain.answers import project_answers
 from aiwatchdogs.plain.store import load_texts
 from aiwatchdogs.hub.templates import (
@@ -626,6 +628,10 @@ class _SelfHealingHubMiddleware:
         await self.app(scope, receive, send)
 
 
+def hmac_compare(a: str, b: str) -> bool:
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
 def _attach_plain(items: Any, lang: str, db: Any = None) -> None:
     if not isinstance(items, list):
         return
@@ -739,6 +745,8 @@ def create_app(
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
         try:
+            if not db.read_only:
+                plain_writer.start_background_loop(db)
             yield
         finally:
             db.close()
@@ -1357,6 +1365,18 @@ def create_app(
         d = _news_date(date)
         response.headers["Cache-Control"] = _news_cache(d)
         return _render_news(d, resolve_lang(lang), _public_base_url(request))
+
+    def _plain_authorized(request: Request) -> bool:
+        secrets_ok = [v for v in (os.environ.get("AIWATCHDOGS_PLAIN_SECRET"), os.environ.get("CRON_SECRET")) if v]
+        got = request.headers.get("authorization", "")
+        return any(hmac_compare(got, f"Bearer {v}") for v in secrets_ok)
+
+    @application.api_route("/api/plain/run", methods=["GET", "POST"], include_in_schema=False)
+    def api_plain_run(request: Request) -> JSONResponse:
+        if not _plain_authorized(request):
+            return JSONResponse(status_code=401, content={"detail": "Not allowed"})
+        report = plain_writer.run_once(db, time_budget_s=45.0, base_url=_public_base_url(request))
+        return JSONResponse(content=report, headers={"Cache-Control": "no-store"})
 
     @application.get("/api/news/editions")
     def api_news_editions(response: Response) -> dict[str, Any]:

@@ -151,6 +151,27 @@ Every finding is explained in plain words automatically, the moment it lands. No
 
 `/news` is a five-minute daily briefing built from the day's public records: where each project stands, what was confirmed or cleared, the number of the day, a short explainer, and a one-line prompt so readers can point their own coding agent at a project. Every edition is in every language, can be read aloud in the browser, shared on WhatsApp, and followed at `/news.atom?lang=hi`. Agents can read `/news.md`. Past editions are frozen with a fingerprint so they can't be quietly changed.
 
+## Optional model writer
+
+Templates are the floor and cost nothing. A model can be switched on to write warmer, more natural cards and a daily opening paragraph, but everything it writes is checked before it is shown: every number must come from the source record, no loaded words in any language, readable English, and the "this is not proof of wrongdoing" line always comes from the template, never from the model. Anything that fails is dropped and the template is shown instead.
+
+| Setting | What it does |
+|---|---|
+| `AIWATCHDOGS_PLAIN_WRITER` | `anthropic` (Claude API) or `local` (an open model next to the hub). Empty means off. |
+| `AIWATCHDOGS_PLAIN_MODEL` | Model id. Defaults to `claude-opus-5-5`, or `gemma3:4b` for `local`. |
+| `AIWATCHDOGS_PLAIN_DAILY_BUDGET_USD` | Hard daily cap for paid calls. Default `2`. |
+| `AIWATCHDOGS_PLAIN_SECRET` | Lets the scheduler call `POST /api/plain/run`. |
+
+On Vercel the writer runs inside the site's own function: `.github/workflows/plain-writer.yml` pings it every 15 minutes (set the `AIWATCHDOGS_PLAIN_SECRET` repo secret), with a daily Vercel cron as backup. With Docker, `AIWATCHDOGS_PLAIN_WRITER=local docker compose --profile model up` starts a local open-model container next to the hub and turns the writer on, so the hub writes in the background with no API key. The profile alone only starts the model container, the writer stays off until `AIWATCHDOGS_PLAIN_WRITER` is set.
+
+Which model should write? Measure it, don't guess:
+
+```bash
+uv run aiwatchdogs plain bakeoff --n 20
+```
+
+It runs each candidate (templates included) on real findings, then a separate model plays an ordinary reader who answers who, how much, what happened, and "was wrongdoing proven?" from the card alone. Scores go to `plain-bakeoff.md`. If no model beats the templates, leave the writer off.
+
 ---
 
 ## Projects

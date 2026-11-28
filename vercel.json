@@ -430,5 +430,11 @@
       "source": "/news/((?!.*\\.md$).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/plain/run",
+      "schedule": "17 1 * * *"
+    }
   ]
 }
