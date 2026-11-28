@@ -297,6 +297,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Reads cited figures from an official public document.',
   ),
+  ai_document_read: makeTag(
+    'ai_document_read',
+    'AI document read',
+    'work',
+    'project',
+    'Extracts structured tables from an official government PDF and verifies every column against the printed Grand Total.',
+  ),
   cross_check: makeTag(
     'cross_check',
     'Cross-check',
@@ -317,6 +324,13 @@ export const WORK_TYPE_TAGS = {
     'work',
     'project',
     'Locates the official public source document.',
+  ),
+  proposal: makeTag(
+    'proposal',
+    'Proposal',
+    'waiting',
+    'project',
+    'Community audit proposal waiting on verified public datasets.',
   ),
 } as const;
 
@@ -497,11 +511,13 @@ export function getWorkTypeTag(
   const t = (type || '').trim().toLowerCase();
   const m = (methodologyCode || '').trim().toUpperCase();
 
+  if (m === 'R1') return WORK_TYPE_TAGS.ai_document_read;
   if (t === 'peer_verify' || t === 'peer_check') return WORK_TYPE_TAGS.peer_check;
   if (t === 'extract_data' || t === 'ingest_parse') return WORK_TYPE_TAGS.data_check;
   if (t === 'cross_check') return WORK_TYPE_TAGS.cross_check;
   if (t === 'summarise' || t === 'summarize' || t === 'summary') return WORK_TYPE_TAGS.summary;
   if (t === 'find_sources') return WORK_TYPE_TAGS.find_sources;
+  if (t === 'proposal' || (t === 'needs_data' && !m)) return WORK_TYPE_TAGS.proposal;
   if (t === 'run_check' || t === 'anomaly_scan') {
     if (m === 'W1') return WORK_TYPE_TAGS.website_check;
     if (m === 'P1') return WORK_TYPE_TAGS.budget_check;

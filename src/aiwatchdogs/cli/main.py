@@ -1943,6 +1943,307 @@ def project_validate(
         raise typer.Exit(code=1)
 
 
+@app.command("reproduce")
+def reproduce(
+    project: str | None = typer.Option(
+        None, "--project", "-p", help="Optional project slug to fingerprint (default: all active projects)."
+    ),
+    json_out: Path | None = typer.Option(
+        None, "--json-out", help="Optional path to write the canonical release verification manifest JSON."
+    ),
+) -> None:
+    """Compute a deterministic release fingerprint over pinned project manifests and engine code.
+
+    Lets CI or any volunteer machine confirm the canonical ruleset/engine/digest hash in a single
+    pass instead of re-running deterministic Python three times per task across the swarm.
+    """
+    import hashlib
+
+    from aiwatchdogs.engines.registry import METHODOLOGY_CATALOG, get_engine_fingerprint
+    from aiwatchdogs.projects import default_projects_dir, load_project_files
+
+    loaded = load_project_files(default_projects_dir())
+    projects_summary: list[dict[str, Any]] = []
+    engine_fingerprints: dict[str, dict[str, Any]] = {}
+
+    for pf in sorted(loaded, key=lambda item: item.path.name):
+        if pf.errors or not isinstance(pf.data, dict):
+            continue
+        slug = str(pf.data.get("slug") or "")
+        if project and slug != project.strip():
+            continue
+        status_val = str(pf.data.get("status") or "active")
+        if status_val != "active":
+            continue
+        tasks = pf.data.get("tasks") or []
+        method = str(
+            pf.data.get("methodology_code")
+            or (tasks[0].get("methodology_code") if tasks and isinstance(tasks[0], dict) else "")
+            or ""
+        ).strip().upper()
+        if method in METHODOLOGY_CATALOG and method not in engine_fingerprints:
+            engine_fingerprints[method] = get_engine_fingerprint(method, as_of_date="2026-11-28")
+
+        digest_set: set[str] = set()
+        task_ids: list[str] = []
+        for t in tasks:
+            if not isinstance(t, dict):
+                continue
+            tid = str(t.get("id") or "")
+            if tid:
+                task_ids.append(tid)
+            payload = t.get("payload") or {}
+            if isinstance(payload, dict):
+                for k in ("expected_sha256", "secondary_sha256"):
+                    h = str(payload.get(k) or "").strip().lower()
+                    if h:
+                        digest_set.add(h)
+
+        manifest_bytes = pf.path.read_bytes()
+        manifest_sha = hashlib.sha256(manifest_bytes).hexdigest()
+        projects_summary.append(
+            {
+                "slug": slug,
+                "project_code": pf.data.get("project_code"),
+                "methodology_code": method,
+                "task_count": len(tasks),
+                "distinct_source_digests": len(digest_set),
+                "manifest_sha256": manifest_sha,
+                "engine_script_hash": engine_fingerprints.get(method, {}).get("script_hash"),
+                "ruleset_version": engine_fingerprints.get(method, {}).get("ruleset_version"),
+            }
+        )
+
+    if project and not projects_summary:
+        err_console.print(f"[red]No active project matched slug '{project}'.[/red]")
+        raise typer.Exit(code=1)
+
+    canonical_payload = json.dumps(
+        {"projects": projects_summary, "engines": engine_fingerprints},
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    release_hash = hashlib.sha256(canonical_payload).hexdigest()
+
+    out_doc = {
+        "schema_version": 1,
+        "release_hash": release_hash,
+        "active_projects": len(projects_summary),
+        "total_tasks": sum(p["task_count"] for p in projects_summary),
+        "projects": projects_summary,
+    }
+    if json_out is not None:
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        json_out.write_text(json.dumps(out_doc, indent=2) + "\n", encoding="utf-8")
+
+    console.print(f"[bold green]Release hash:[/bold green] {release_hash}")
+    console.print(
+        f"Verified {out_doc['active_projects']} active project(s), {out_doc['total_tasks']:,} pinned task(s)."
+    )
+
+
+@app.command("read-claim")
+def read_claim(
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help="Saved contributor handle."),
+    hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Override saved Hub URL."),
+    project: str | None = typer.Option(
+        "union-budget-unspent-funds",
+        "--project",
+        help="Project slug with open R1 document-reading tasks.",
+    ),
+    task_id: str | None = typer.Option(None, "--task", "--task-id", help="Claim a specific R1 task ID."),
+    out: Path | None = typer.Option(None, "--out", help="Output JSON bundle path for the coding agent to read."),
+    allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URL."),
+) -> None:
+    """Claim one R1 AI document-reading task, download & SHA-256-verify the PDF, and write a reading bundle."""
+    from aiwatchdogs.cli.reading_runner import (
+        build_coding_agent_reading_bundle,
+        extract_pdf_pages_for_reading,
+    )
+
+    clean_handle = (handle or "").strip().lstrip("@").lower() or None
+    target_hub_hint = (hub or DEFAULT_HUB_URL).rstrip("/")
+    saved, _ = _safe_load_existing_config(clean_handle, hub_url=target_hub_hint)
+    if saved is None or not saved.handle or not saved.api_token:
+        err_console.print("[red]No saved contributor credentials found. Run `aiwatchdogs join` first.[/red]")
+        raise typer.Exit(code=1)
+    if hub:
+        saved.hub_url = validate_hub_url(hub, allow_insecure_http=allow_insecure_http)
+
+    with AgentRunner(
+        saved,
+        config_path=_resolve_config_path(saved.handle),
+        allow_insecure_http=allow_insecure_http,
+        enable_document_reading=True,
+    ) as runner:
+        lease = runner.claim_next(
+            preferred_mission=project,
+            task_id=task_id,
+            document_reading=True,
+            supported_methodologies=["R1"],
+        )
+        if lease is None:
+            console.print("[yellow]No open R1 document-reading tasks available right now.[/yellow]")
+            return
+        lease_id = str(lease["lease_id"])
+        task = lease.get("task") or {}
+        payload = task.get("payload") or {}
+        expected_sha = str(payload.get("expected_sha256") or "").strip() or None
+        try:
+            dataset = runner._load_task_dataset(payload, expected_sha256=expected_sha)
+            digest_state, primary_ok, _, _, digest_err = runner._verify_digests_strict(
+                dataset,
+                expected_primary_sha=expected_sha or "",
+                secondary_url=None,
+                expected_secondary_sha="",
+            )
+            if digest_state == "fail" or primary_ok is not True:
+                raise ValueError(digest_err or "Primary PDF SHA-256 verification failed.")
+            ctx = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+            reading_ctx = ctx.get("reading") if isinstance(ctx.get("reading"), dict) else {}
+            table_pages = reading_ctx.get("table_pages") if isinstance(reading_ctx.get("table_pages"), list) else None
+            page_texts = extract_pdf_pages_for_reading(dataset.records, table_pages=table_pages)
+            bundle = build_coding_agent_reading_bundle(lease, page_texts=page_texts, sha256=dataset.sha256)
+        except Exception as exc:
+            runner.release(lease_id, reason="execution_error", notes=f"read-claim failed: {type(exc).__name__}")
+            err_console.print(f"[red]Failed to prepare reading bundle (lease released): {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+
+    out_path = out or Path(f"reading-{task.get('id', 'task')}.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(bundle, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    console.print(f"[bold green]Claimed R1 task:[/bold green] {task.get('id')} ({task.get('title')})")
+    console.print(f"[bold]Lease ID:[/bold] {lease_id} (expires {lease.get('lease_expires_at')})")
+    console.print(f"[bold]Reading bundle written:[/bold] {out_path} ({len(page_texts)} table page(s), sha256:{dataset.sha256[:12]})")
+    console.print(
+        f"[bold cyan]Next step:[/bold cyan] Fill `extraction_template` from `page_texts` into `extraction.json`, then run:\n"
+        f"  aiwatchdogs read-submit {lease_id} extraction.json --bundle {out_path}"
+    )
+
+
+@app.command("read-submit")
+def read_submit(
+    lease_id: str = typer.Argument(..., help="Lease ID returned by `aiwatchdogs read-claim`."),
+    extraction_file: Path = typer.Argument(..., help="Path to extracted budget table JSON."),
+    bundle: Path | None = typer.Option(None, "--bundle", help="Optional reading bundle JSON for local quote/total pre-check."),
+    handle: str | None = typer.Option(None, "--handle", envvar="AIWATCHDOGS_HANDLE", help="Saved contributor handle."),
+    hub: str | None = typer.Option(None, "--hub", envvar="AIWATCHDOGS_HUB_URL", help="Override saved Hub URL."),
+    whisper: str | None = typer.Option(None, "--whisper", help="Optional public summary note."),
+    allow_insecure_http: bool = typer.Option(False, "--allow-insecure-http", help="Allow non-loopback http:// Hub URL."),
+) -> None:
+    """Deterministically verify and submit an AI-extracted R1 budget table to the Hub."""
+    from aiwatchdogs.engines.reading_verifier import verify_budget_extraction
+
+    extraction = json.loads(extraction_file.read_text(encoding="utf-8"))
+    if bundle is not None:
+        bundle_data = json.loads(bundle.read_text(encoding="utf-8"))
+        raw_pages = bundle_data.get("page_texts") or {}
+        page_texts = {int(k): str(v) for k, v in raw_pages.items() if str(k).isdigit()}
+        reading_ctx = bundle_data.get("reading_context") or {}
+        exp_gt = reading_ctx.get("expected_grand_total") if isinstance(reading_ctx, dict) else None
+        max_pg = reading_ctx.get("page_count") if isinstance(reading_ctx, dict) else None
+        local_res = verify_budget_extraction(
+            extraction,
+            expected_sha256=bundle_data.get("document_sha256"),
+            page_texts=page_texts or None,
+            expected_grand_total=exp_gt if isinstance(exp_gt, dict) else None,
+            max_page=int(max_pg) if isinstance(max_pg, int) and not isinstance(max_pg, bool) else None,
+        )
+        if not local_res.accepted:
+            err_console.print("[red]Local deterministic verification failed (not submitted):[/red]")
+            console.print_json(json.dumps(local_res.to_dict()))
+            raise typer.Exit(code=1)
+
+    clean_handle = (handle or "").strip().lstrip("@").lower() or None
+    target_hub_hint = (hub or DEFAULT_HUB_URL).rstrip("/")
+    saved, _ = _safe_load_existing_config(clean_handle, hub_url=target_hub_hint)
+    if saved is None or not saved.handle or not saved.api_token:
+        err_console.print("[red]No saved contributor credentials found. Run `aiwatchdogs join` first.[/red]")
+        raise typer.Exit(code=1)
+    if hub:
+        saved.hub_url = validate_hub_url(hub, allow_insecure_http=allow_insecure_http)
+
+    with AgentRunner(
+        saved,
+        config_path=_resolve_config_path(saved.handle),
+        allow_insecure_http=allow_insecure_http,
+        enable_document_reading=True,
+    ) as runner:
+        resp = runner.submit(
+            lease_id,
+            outcome="reading_extraction",
+            extraction=extraction,
+            whisper=whisper,
+        )
+    console.print("[bold green]Reading extraction accepted and verified by Hub![/bold green]")
+    console.print_json(json.dumps(resp))
+
+
+@app.command("verify-reading")
+def verify_reading(
+    submission_file: Path = typer.Argument(..., help="Path to JSON extraction produced by an AI model."),
+    pdf: Path | None = typer.Option(None, "--pdf", help="Optional local PDF file to check quotes against."),
+    bundle: Path | None = typer.Option(None, "--bundle", help="Optional reading bundle JSON from `aiwatchdogs read-claim`."),
+    expected_sha256: str | None = typer.Option(None, "--sha256", help="Expected SHA-256 of the source document."),
+    golden_file: Path | None = typer.Option(None, "--golden", help="Optional known-answer reference JSON."),
+) -> None:
+    """Verify an AI-extracted budget table deterministically (Grand Total, row sums, and page quotes)."""
+    from aiwatchdogs.core.safety import compute_sha256
+    from aiwatchdogs.engines.reading_verifier import verify_budget_extraction
+
+    submission = json.loads(submission_file.read_text(encoding="utf-8"))
+    page_texts: dict[int, str] | None = None
+    exp_sha = expected_sha256
+    exp_gt: dict[str, float] | None = None
+    max_page: int | None = None
+    if bundle is not None:
+        bdata = json.loads(bundle.read_text(encoding="utf-8"))
+        if not exp_sha:
+            exp_sha = bdata.get("document_sha256")
+        raw_pages = bdata.get("page_texts") or {}
+        page_texts = {int(k): str(v) for k, v in raw_pages.items() if str(k).isdigit()} or None
+        rctx = bdata.get("reading_context") or {}
+        if isinstance(rctx, dict):
+            if isinstance(rctx.get("expected_grand_total"), dict):
+                exp_gt = rctx["expected_grand_total"]
+            if isinstance(rctx.get("page_count"), int) and not isinstance(rctx.get("page_count"), bool):
+                max_page = rctx["page_count"]
+    if pdf is not None:
+        raw_bytes = pdf.read_bytes()
+        if not exp_sha:
+            exp_sha = compute_sha256(raw_bytes)
+        try:
+            from pypdf import PdfReader
+
+            try:
+                reader = PdfReader(str(pdf))
+            except Exception:
+                reader = PdfReader(str(pdf), strict=False)
+            max_page = len(reader.pages)
+            extracted_pages: dict[int, str] = {}
+            for p_idx, page in enumerate(reader.pages, start=1):
+                try:
+                    extracted_pages[p_idx] = page.extract_text() or ""
+                except Exception:
+                    extracted_pages[p_idx] = ""
+            page_texts = extracted_pages
+        except Exception:
+            page_texts = None
+
+    golden = json.loads(golden_file.read_text(encoding="utf-8")) if golden_file else None
+    result = verify_budget_extraction(
+        submission,
+        expected_sha256=exp_sha,
+        page_texts=page_texts,
+        expected_grand_total=exp_gt,
+        max_page=max_page,
+        golden_expected=golden,
+    )
+    console.print_json(json.dumps(result.to_dict()))
+    if not result.accepted:
+        raise typer.Exit(code=1)
+
+
 plain_app = typer.Typer(help="Plain-language explanations and the model bake-off.")
 app.add_typer(plain_app, name="plain")
 

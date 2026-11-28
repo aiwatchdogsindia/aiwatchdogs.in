@@ -32,6 +32,7 @@ import {
   projectCodeFor,
   safeExternalUrl,
   sortProjectsDescending,
+  splitActiveAndProposalProjects,
 } from '../utils';
 
 const WEBSITE_METHOD = 'W1';
@@ -259,9 +260,16 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
             <header className="card card-pad project-detail-header">
               <div className="project-detail-tags">
                 <span className="tag-mono tag-method">{projectCodeFor(detail)}</span>
-                <span className={getWorkTypeTag(undefined, detail.methodology_code).badgeClass}>
-                  {getWorkTypeTag(undefined, detail.methodology_code).label}
-                </span>
+                {(detail.methodology_code || detail.status !== 'needs_data') && (
+                  <span className={getWorkTypeTag(undefined, detail.methodology_code).badgeClass}>
+                    {getWorkTypeTag(undefined, detail.methodology_code).label}
+                  </span>
+                )}
+                {detail.status === 'needs_data' && (
+                  <span className={getProjectStatusTag('needs_data').badgeClass}>
+                    {getProjectStatusTag('needs_data').label}
+                  </span>
+                )}
                 <span className="tag-mono">{pillarLabel(detail.pillar)}</span>
                 <span className="tag-mono">{detail.jurisdiction}</span>
                 {detail.posted_by?.name && (
@@ -737,12 +745,17 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
   // PROJECTS INDEX VIEW (/projects)
   // =========================================================================
   const orderedMissions = sortProjectsDescending(missions);
+  const { active: activeMissions, proposals: proposalMissions } = splitActiveAndProposalProjects(orderedMissions);
   const nextCode = nextProjectCode(orderedMissions);
   const pillars = ['all', ...Array.from(new Set(orderedMissions.map((m) => m.pillar)))];
   const visible =
     pillarFilter === 'all'
-      ? orderedMissions
-      : orderedMissions.filter((m) => m.pillar === pillarFilter);
+      ? activeMissions
+      : activeMissions.filter((m) => m.pillar === pillarFilter);
+  const visibleProposals =
+    pillarFilter === 'all'
+      ? proposalMissions
+      : proposalMissions.filter((m) => m.pillar === pillarFilter);
 
   return (
     <div>
@@ -815,9 +828,11 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
                     <div className="project-index-main">
                       <div className="project-index-pills">
                         <span className="tag-mono tag-method">{projectCodeFor(m)}</span>
-                        <span className={getWorkTypeTag(undefined, m.methodology_code).badgeClass}>
-                          {getWorkTypeTag(undefined, m.methodology_code).label}
-                        </span>
+                        {(m.methodology_code || m.status !== 'needs_data') && (
+                          <span className={getWorkTypeTag(undefined, m.methodology_code).badgeClass}>
+                            {getWorkTypeTag(undefined, m.methodology_code).label}
+                          </span>
+                        )}
                         <span className="tag-mono">{pillarLabel(m.pillar)}</span>
                         {m.status !== 'active' && (
                           <span className={getProjectStatusTag(m.status).badgeClass}>
@@ -898,6 +913,75 @@ export function MissionsPage({ slug, onSelectFinding, refreshTick }: MissionsPag
               })
             : null}
         </div>
+
+        {!loading && !error && visibleProposals.length > 0 && (
+          <div id="proposals" style={{ marginTop: 36 }}>
+            <div className="lb-head" style={{ marginBottom: 14 }}>
+              <h2 style={{ fontSize: 24, margin: 0 }}>Community proposals · Needs datasets</h2>
+              <div className="lb-sub-row">
+                <p className="lb-sub">
+                  Submitted audit ideas waiting on verified, SHA-256-pinned public datasets or a
+                  reusable reader PR before graduating to the active swarm queue.
+                </p>
+              </div>
+            </div>
+            <div className="project-index-list">
+              {visibleProposals.map((m) => {
+                const projectHref = `/projects/${encodeURIComponent(m.slug)}`;
+                return (
+                  <article
+                    key={m.slug}
+                    className="project-index-card"
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement | null;
+                      if (target?.closest('a, button')) return;
+                      navigate(projectHref);
+                    }}
+                  >
+                    <div className="project-index-main">
+                      <div className="project-index-pills">
+                        <span className="tag-mono tag-method">{projectCodeFor(m)}</span>
+                        <span className="tag-mono">{pillarLabel(m.pillar)}</span>
+                        <span className={getProjectStatusTag('needs_data').badgeClass}>
+                          {getProjectStatusTag('needs_data').label}
+                        </span>
+                      </div>
+                      <h3 className="project-index-title">
+                        <Link to={projectHref}>{m.title}</Link>
+                      </h3>
+                      <span className="project-index-meta">
+                        {m.jurisdiction}
+                        {m.posted_by?.name ? (
+                          <>
+                            {' · '}posted by {m.posted_by.name}
+                            {m.posted_by.handle ? ` (${m.posted_by.handle})` : ''}
+                          </>
+                        ) : null}
+                      </span>
+                    </div>
+
+                    <div className="project-index-progress">
+                      <span style={{ fontSize: 13.5, color: 'var(--ink-secondary)' }}>
+                        Waiting for verified datasets
+                      </span>
+                    </div>
+
+                    <div className="project-index-actions">
+                      <Link
+                        to={projectHref}
+                        className="btn btn-secondary btn-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        View planned work
+                      </Link>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         <p className="project-dash-note">
           The copied line works in Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or any
@@ -1217,7 +1301,8 @@ function TaskRow({
   const canCopy = t.status === 'queued';
   const isRowCopied = copiedTaskId === String(t.id);
   const statusTag = getTaskTag(t.status);
-  const workTag = getWorkTypeTag(t.work_type || t.task_type, detail.methodology_code);
+  const taskMethod = (t.methodology_code || detail.methodology_code || '').toUpperCase();
+  const workTag = getWorkTypeTag(t.work_type || t.task_type, taskMethod);
   const retrievalUrl = safeExternalUrl(t.retrieval_url);
 
   return (
@@ -1236,6 +1321,25 @@ function TaskRow({
                   href={`/api/missions/${encodeURIComponent(detail.slug)}/observations/${encodeURIComponent(String(t.id))}`}
                 >
                   Volunteer observations (JSON)
+                </a>
+              </>
+            )}
+          </div>
+        )}
+        {taskMethod === 'R1' && (
+          <div className="project-task-links">
+            {retrievalUrl && (
+              <a href={retrievalUrl} target="_blank" rel="noopener noreferrer">
+                Official PDF
+              </a>
+            )}
+            {t.status === 'completed' && (
+              <>
+                {retrievalUrl && <span aria-hidden="true">·</span>}
+                <a
+                  href={`/api/missions/${encodeURIComponent(detail.slug)}/readings/${encodeURIComponent(String(t.id))}`}
+                >
+                  Verified extraction (JSON)
                 </a>
               </>
             )}

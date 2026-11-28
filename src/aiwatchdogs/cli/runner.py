@@ -60,7 +60,25 @@ CHECK_UNRECORDED = "unrecorded"
 
 MAX_HUB_RESPONSE_BYTES = 5 * 1024 * 1024  # 5 MiB cap on Hub JSON responses
 # Sent with every Hub request so the Hub can tell an out-of-date official CLI to refresh.
-CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.7"
+CLI_USER_AGENT = "AIWatchdogs-India-AgentCLI/0.9"
+
+
+def supported_methodology_codes(*, include_website: bool = True, include_reading: bool = False) -> list[str]:
+    """Return the sorted list of methodology codes this CLI build can actually execute."""
+    codes = sorted(METHODOLOGY_CATALOG.keys())
+    if include_website and "W1" not in codes:
+        codes.append("W1")
+    if include_reading and "R1" not in codes:
+        codes.append("R1")
+    return sorted(codes)
+
+
+class UnsupportedMethodology(ValueError):
+    """Raised when this CLI build has no engine for the task's methodology.
+
+    The task is released back to the queue without downloading or voting: a build that cannot
+    run a check must never submit a dispute verdict on it.
+    """
 # How patiently the runner waits out the Hub's per-IP rate limit (many nodes can share one address).
 MAX_RATE_LIMIT_WAITS = 12
 MAX_RATE_LIMIT_WAIT_SECONDS = 75.0
@@ -198,6 +216,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "pac_note_threshold_inr",
         "parliaments_to_do_list",
         "q4_ceiling_pct",
+        "reading",
         "retrieval_url",
         "secondary_dataset_url",
         "secondary_document",
@@ -1224,9 +1243,13 @@ class AgentRunner:
         allow_insecure_http: bool = False,
         budget_tracker: BudgetTracker | None = None,
         keepalive_interval: float = LEASE_KEEPALIVE_INTERVAL_SECONDS,
+        enable_document_reading: bool = False,
+        llm_http_client: httpx.Client | None = None,
     ) -> None:
         self.config = config
         self.allow_local_files = bool(allow_local_files)
+        self.enable_document_reading = bool(enable_document_reading)
+        self.llm_http_client = llm_http_client
         if http_client is None:
             validate_hub_url(config.normalized_hub_url, allow_insecure_http=allow_insecure_http)
         self.provider_cfg = provider_cfg or resolve_provider_config(
@@ -1454,6 +1477,17 @@ class AgentRunner:
             raise ValueError(f"Hub response exceeded maximum size limit ({MAX_HUB_RESPONSE_BYTES} bytes).")
         return resp.json()
 
+    def _can_run_document_reading(self) -> bool:
+        """Return True when this runner has an enabled AI reader capable of executing R1 tasks."""
+        if self.enable_document_reading:
+            return True
+        prov = str(self.provider_cfg.provider or "").strip().lower()
+        if not prov or prov == "rule-engine":
+            return False
+        if is_paid_provider(self.provider_cfg):
+            return bool(self.config.allow_paid_provider and self.config.max_usd > 0.0)
+        return True
+
     def register(
         self,
         *,
@@ -1464,6 +1498,10 @@ class AgentRunner:
         """Register/reconnect handle with Hub and atomically persist config ONLY on HTTP 2xx."""
         normalized_handle = self.config.handle.strip().lstrip("@").lower()
         self.config.handle = normalized_handle
+        can_read = self._can_run_document_reading()
+        caps = ["anomaly_scan", "peer_verify", "deterministic_audit"]
+        if can_read:
+            caps.append("document_reading")
         payload = {
             "handle": normalized_handle,
             "display_name": display_name or normalized_handle,
@@ -1471,7 +1509,11 @@ class AgentRunner:
             "model": self.config.model,
             "mode": self.config.mode,
             "region": region,
-            "capabilities": ["anomaly_scan", "peer_verify", "deterministic_audit"],
+            "capabilities": caps,
+            "supported_methodologies": supported_methodology_codes(
+                include_website=True,
+                include_reading=can_read,
+            ),
             "coding_agent": getattr(self.config, "coding_agent", "") or "",
             "coding_agent_model": getattr(self.config, "coding_agent_model", "") or "",
         }
@@ -1533,15 +1575,26 @@ class AgentRunner:
         self,
         preferred_mission: str | None = None,
         task_id: str | None = None,
+        *,
+        document_reading: bool | None = None,
+        supported_methodologies: list[str] | None = None,
     ) -> dict[str, Any] | None:
-        """Claim the next available audit or verification task via POST /api/desk/next."""
+        """Claim the next available audit, verification, or document-reading task via POST /api/desk/next."""
         claim_request_id = f"claim-{secrets.token_hex(12)}"
+        eff_reading = self._can_run_document_reading() if document_reading is None else bool(document_reading)
+        eff_methods = (
+            list(supported_methodologies)
+            if supported_methodologies is not None
+            else supported_methodology_codes(include_website=True, include_reading=eff_reading)
+        )
         body: dict[str, Any] = {
             "handle": self.config.handle,
             "mode": self.config.mode,
             "request_id": claim_request_id,
+            "supported_methodologies": eff_methods,
+            "website_observations": True,
+            "document_reading": eff_reading,
         }
-        body["website_observations"] = True
         if preferred_mission:
             body["preferred_mission"] = preferred_mission
         cleaned_task_id = (task_id or "").strip()
@@ -1744,11 +1797,12 @@ class AgentRunner:
         finding: dict[str, Any] | None = None,
         findings: list[dict[str, Any]] | None = None,
         observations: list[dict[str, Any]] | None = None,
+        extraction: dict[str, Any] | None = None,
         verification: dict[str, Any] | None = None,
         metrics: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        """Submit task outcome (finding | cleared | verification) to POST /api/desk/submit."""
+        """Submit task outcome (finding | cleared | verification | observations | reading_extraction) to POST /api/desk/submit."""
         self._stop_active_keepalive()
         idem_key = idempotency_key or f"settle-{lease_id}-{outcome}"
         body: dict[str, Any] = {
@@ -1765,6 +1819,8 @@ class AgentRunner:
                 body["whisper"] = safe_whisper
         if observations is not None:
             body["observations"] = observations
+        if extraction is not None:
+            body["extraction"] = extraction
         if finding is not None:
             body["finding"] = finding
         if findings is not None:
@@ -1986,6 +2042,11 @@ class AgentRunner:
         task_id = task.get("id")
         mission_slug = str(task.get("mission_slug", ""))
         methodology_code = str(task.get("methodology_code", "")).upper().strip()
+        if methodology_code and methodology_code not in {"W1", "R1"} and methodology_code not in METHODOLOGY_CATALOG:
+            raise UnsupportedMethodology(
+                f"This CLI build has no engine for methodology {methodology_code!r}; "
+                "update the CLI (uvx --refresh ...) to run it."
+            )
         payload = task.get("payload") or {}
         artifact_label = str(
             payload.get("artifact_title") or task.get("title") or mission_slug or methodology_code
@@ -2043,6 +2104,73 @@ class AgentRunner:
                     rows.extend(pool.map(observe_site, dataset.records[index:index + 13]))
             response = self.submit(lease_id, outcome="observations", observations=rows)
             return {"status": "completed", "task_id": task_id, "outcome": "observations", "response": response}
+
+        if methodology_code == "R1":
+            from aiwatchdogs.cli.reading_runner import (
+                ReadingExtractionError,
+                extract_pdf_pages_for_reading,
+                run_llm_budget_extraction,
+            )
+
+            if primary_matched is not True:
+                raise DigestMismatchFailure("R1 document reading requires verified primary PDF SHA-256.")
+            if not self._can_run_document_reading():
+                raise UnsupportedMethodology(
+                    "R1 document reading requires an opted-in LLM provider (or `aiwatchdogs read-claim`)."
+                )
+            ctx = payload.get("context") if isinstance(payload.get("context"), dict) else {}
+            reading_ctx = ctx.get("reading") if isinstance(ctx.get("reading"), dict) else {}
+            table_pages = reading_ctx.get("table_pages") if isinstance(reading_ctx.get("table_pages"), list) else None
+            page_texts = extract_pdf_pages_for_reading(dataset.records, table_pages=table_pages)
+            if not page_texts:
+                raise ReadingExtractionError("No readable PDF pages were extracted for R1 document reading.")
+            if not self.heartbeat(
+                lease_id,
+                whisper=(
+                    f"Downloaded {artifact_label} ({len(page_texts)} table page(s), sha256:{dataset.sha256[:8]} matched); "
+                    f"extracting structured budget table with {self.provider_cfg.provider}/{self.provider_cfg.model}"
+                ),
+                progress_pct=45,
+            ):
+                return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
+            submission, vres, reading_stats = run_llm_budget_extraction(
+                task,
+                page_texts=page_texts,
+                expected_sha256=dataset.sha256,
+                provider_cfg=self.provider_cfg,
+                budget_tracker=self.budget_tracker,
+                http_client=self.llm_http_client,
+            )
+            self._task_input_tokens += int(reading_stats.get("input_tokens") or 0)
+            self._task_output_tokens += int(reading_stats.get("output_tokens") or 0)
+            rows_extracted = len(submission.get("rows") or [])
+            if not self.heartbeat(
+                lease_id,
+                whisper=(
+                    f"Verified {rows_extracted} extracted rows locally ({vres.verification_mode}; "
+                    f"{reading_stats.get('attempts', 1)} attempt(s)); submitting to Hub"
+                ),
+                progress_pct=90,
+            ):
+                return {"status": "aborted_410", "task_id": task_id, "outcome": "aborted_410"}
+            response = self.submit(
+                lease_id,
+                outcome="reading_extraction",
+                extraction=submission,
+                whisper=(
+                    f"R1 extracted and verified {rows_extracted} rows for {artifact_label[:80]} "
+                    f"({vres.verification_mode})"
+                ),
+            )
+            return {
+                "status": "completed",
+                "task_id": task_id,
+                "outcome": "reading_extraction",
+                "extraction": submission,
+                "verification": vres.to_dict(),
+                "reading_stats": reading_stats,
+                "response": response,
+            }
 
         sha_note = (
             f"sha256:{dataset.sha256[:8]} matched"
@@ -2358,6 +2486,13 @@ class AgentRunner:
             finding.get("methodology_code") or task.get("methodology_code") or ""
         ).upper().strip()
 
+        # A build without this engine cannot reproduce the finding, so it must release without voting.
+        if methodology_code not in METHODOLOGY_CATALOG:
+            raise UnsupportedMethodology(
+                f"This CLI build has no engine for methodology {methodology_code!r}; "
+                "update the CLI (uvx --refresh ...) to verify it."
+            )
+
         # Check 4: Neutrality & recursive PII safety across ALL finding fields (including nested metrics/citations/editorial)
         title = str(finding.get("title", ""))
         summary = str(finding.get("summary", ""))
@@ -2515,10 +2650,6 @@ class AgentRunner:
                 "records_scanned": records_count,
                 "aborted_due_to_digest_mismatch": True,
             }
-        elif methodology_code not in METHODOLOGY_CATALOG:
-            reproduction_state = CHECK_FAIL
-            metric_tolerance_state = CHECK_FAIL
-            notes_parts.append(f"Unknown methodology_code {methodology_code!r}.")
         elif dataset is not None:
             repro = self._invoke_engine(
                 methodology_code,
@@ -2707,6 +2838,12 @@ class AgentRunner:
             elif isinstance(exc, UnevaluableSourceFailure):
                 release_reason = "unevaluable_source"
                 safe_release_note = "The check could not read the figures it was asked to compare."
+            elif isinstance(exc, UnsupportedMethodology):
+                release_reason = "unsupported_methodology"
+                safe_release_note = "This CLI build has no engine for the task's methodology; update the CLI."
+            elif type(exc).__name__ == "ReadingExtractionError":
+                release_reason = "reading_verification_failed"
+                safe_release_note = "AI document reading extraction failed deterministic verification."
             elif isinstance(exc, PermissionError):
                 exc_msg = str(exc)
                 if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:

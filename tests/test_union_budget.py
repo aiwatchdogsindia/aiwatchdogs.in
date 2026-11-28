@@ -342,13 +342,25 @@ def test_repository_project_is_ten_thousand_pinned_ub1_tasks() -> None:
     data = json.loads((REPO_PROJECTS / "union-budget-unspent-funds.json").read_text(encoding="utf-8"))
     assert validate_project(data, filename_stem="union-budget-unspent-funds") == []
     assert (data["project_code"], data["methodology_code"], data["pillar"]) == ("P3", "UB1", "budget")
-    tasks = data["tasks"]
+    all_tasks = data["tasks"]
+    tasks = [t for t in all_tasks if t.get("methodology_code", "UB1") == "UB1"]
+    r1_tasks = [t for t in all_tasks if t.get("methodology_code") == "R1"]
     assert len(tasks) == 10_000 and len({t["id"] for t in tasks}) == 10_000
+    assert len(r1_tasks) == 11 and len({t["id"] for t in r1_tasks}) == 11
+    assert len(all_tasks) == 10_011
 
     with (REPO_PROJECTS / "union-budget-unspent-funds" / "documents.csv").open(encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     documents = {row["url"]: row["sha256"] for row in rows}
     healthy_urls = {row["url"] for row in rows if row["status"] == "adds up to the Grand Total"}
+    unclosed_urls = {row["url"] for row in rows if row["status"] == "lines do not add up to the Grand Total"}
+    for rtask in r1_tasks:
+        rpayload = rtask["payload"]
+        assert rpayload["retrieval_url"] in unclosed_urls
+        assert documents[rpayload["retrieval_url"]] == rpayload["expected_sha256"]
+        rctx = rpayload["context"]["reading"]
+        assert rctx["document_type"] == "union_budget_sbe"
+        assert len(rctx["expected_grand_total"]) == 12
     lines = 0
     years: dict[str, int] = {}
     for task in tasks:

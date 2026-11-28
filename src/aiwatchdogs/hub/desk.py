@@ -52,6 +52,7 @@ from aiwatchdogs.hub.quorum import (
     IN_REVIEW_FINDING_STATUSES,
     LEGACY_CHECK_TO_CANONICAL as _LEGACY_CHECK_TO_CANONICAL,
     REVIEWABLE_FINDING_STATUSES,
+    UNSUPPORTED_ENGINE_NOTE_RE,
     VALID_CHECK_STATES,
     all_checks_passed as _all_checks_passed,
     build_attr_conflict_sql,
@@ -225,6 +226,17 @@ def task_role(task_type: Any, payload: Any = None) -> dict[str, str]:
             "brief": "Verify the batch checksum, review the assigned public pages and submit one dated observation for every host.",
             "submit_outcomes": "observations",
         }
+    if kind == "anomaly_scan" and isinstance(payload, dict) and payload.get("methodology_code") == "R1":
+        return {
+            "name": "auditor",
+            "title": "Document reader",
+            "brief": (
+                "Download the pinned official PDF, verify its SHA-256, extract the full budget table with "
+                "column headers and verbatim row quotes so every column closes to the printed Grand Total, "
+                "and submit the verified extraction."
+            ),
+            "submit_outcomes": "reading_extraction",
+        }
     if kind == "peer_verify":
         review = str(payload.get("review_type") or "") if isinstance(payload, dict) else ""
         return dict(TASK_ROLES["adjudicator" if review == "adjudication" else "peer_verifier"])
@@ -346,6 +358,7 @@ SCORE_WEIGHTS: dict[str, int] = {
     "peer_verification": 15,
     "cleared_scan": 10,
     "website_batch_observed": 10,
+    "document_reading_verified": 25,
 }
 
 QUARANTINE_NOTICE = (
@@ -3342,7 +3355,7 @@ class DeskService:
                       AND COALESCE(mf.quarantined, 0) = 0 AND mf.status != 'quarantined'
                 )
             ) OR (
-                se.event_type IN ('cleared_scan', 'website_batch_observed')
+                se.event_type IN ('cleared_scan', 'website_batch_observed', 'document_reading_verified')
                 AND EXISTS (
                     SELECT 1 FROM tasks t
                     WHERE t.id = se.ref_id AND t.mission_id = ?
@@ -3397,7 +3410,7 @@ class DeskService:
               AND t.status IN ('completed', 'settled')
               AND t.claimed_by_handle IS NOT NULL
               AND t.task_type != 'peer_verify'
-              AND t.methodology_code != 'W1'
+              AND t.methodology_code NOT IN ('W1', 'R1')
               AND t.output_json LIKE '%"cleared"%'
               AND NOT EXISTS (
                   SELECT 1 FROM score_events se
@@ -4123,6 +4136,88 @@ class DeskService:
                 "matrix_endpoint": "/api/missions/gov-in-public-information/matrix",
                 "guidelines": "https://guidelines.india.gov.in/annexure-ii-matrix-to-check-conformity/",
                 **loads_json(row["output_json"], {})}
+
+    def mission_reading_extraction(self, slug: str, task_id: str) -> dict[str, Any]:
+        """Return the deterministically verified AI document-reading extraction for a completed R1 task."""
+        slug = self.resolve_slug(slug)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT output_json, payload_json, completed_at, claimed_by_handle, title "
+                "FROM tasks WHERE mission_slug = ? AND id = ? "
+                "AND methodology_code = 'R1' AND status = 'completed'",
+                (slug, task_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="No completed verified reading extraction for this task")
+        manifest = loads_json(row["payload_json"], {})
+        stored = loads_json(row["output_json"], {})
+        return {
+            "task_id": task_id,
+            "mission_slug": slug,
+            "title": row["title"],
+            "contributor_handle": row["claimed_by_handle"],
+            "source_url": manifest.get("retrieval_url"),
+            "source_sha256": manifest.get("expected_sha256"),
+            "official_publisher": manifest.get("official_publisher"),
+            "completed_at": row["completed_at"],
+            "extraction": stored.get("extraction"),
+            "verification": stored.get("verification"),
+        }
+
+    def list_live_reading_tasks(self) -> dict[str, Any]:
+        """Summarize live claimable R1 document-reading tasks across active projects."""
+        with self.db.read() as conn:
+            rows = conn.execute(
+                """
+                SELECT t.id, t.mission_slug, t.title, t.status, t.estimated_tokens,
+                       t.claimed_by_handle, t.completed_at, t.payload_json
+                FROM tasks t
+                JOIN missions m ON m.id = t.mission_id
+                WHERE t.methodology_code = 'R1'
+                  AND t.status != 'retired'
+                  AND COALESCE(m.status, 'active') = 'active'
+                ORDER BY t.mission_slug ASC, t.id ASC
+                LIMIT 200
+                """
+            ).fetchall()
+        items: list[dict[str, Any]] = []
+        queued = 0
+        claimed = 0
+        completed = 0
+        for r in rows:
+            st = str(r["status"] or "")
+            if st == "queued":
+                queued += 1
+            elif st == "claimed":
+                claimed += 1
+            elif st == "completed":
+                completed += 1
+            payload = loads_json(r["payload_json"], {})
+            ctx_reading = (payload.get("context") or {}).get("reading") if isinstance(payload, dict) else {}
+            items.append(
+                {
+                    "task_id": str(r["id"]),
+                    "project_slug": str(r["mission_slug"]),
+                    "title": str(r["title"]),
+                    "status": st,
+                    "estimated_tokens": int(r["estimated_tokens"] or 0),
+                    "claimed_by_handle": r["claimed_by_handle"],
+                    "completed_at": r["completed_at"],
+                    "source_url": payload.get("retrieval_url") if isinstance(payload, dict) else None,
+                    "expected_sha256": payload.get("expected_sha256") if isinstance(payload, dict) else None,
+                    "document_type": ctx_reading.get("document_type") if isinstance(ctx_reading, dict) else None,
+                    "reading_url": (
+                        f"/api/missions/{r['mission_slug']}/readings/{r['id']}" if st == "completed" else None
+                    ),
+                }
+            )
+        return {
+            "total": len(items),
+            "queued": queued,
+            "claimed": claimed,
+            "completed": completed,
+            "items": items,
+        }
 
     def list_mission_tasks(
         self, slug: str, *, status_filter: str = "all", q: str = "", kind: str = "audit", offset: int = 0, limit: int = 25,
@@ -9119,6 +9214,7 @@ class DeskService:
                 "WHEN 'finding_submitted' THEN 4 "
                 "WHEN 'cleared' THEN 4 "
                 "WHEN 'website_batch_observed' THEN 4 "
+                "WHEN 'document_reading_verified' THEN 4 "
                 "WHEN 'whisper' THEN 3 "
                 "WHEN 'task_claimed' THEN 2 "
                 "WHEN 'agent_joined' THEN 1 "
@@ -9305,7 +9401,7 @@ class DeskService:
                         w_role = "adjudicator"
                     else:
                         w_role = "peer_verifier"
-                elif ev_type in ("finding_submitted", "cleared", "scan_cleared", "website_batch_observed"):
+                elif ev_type in ("finding_submitted", "cleared", "scan_cleared", "website_batch_observed", "document_reading_verified"):
                     w_role = "auditor"
                 elif ev_type == "task_claimed":
                     msg_low = msg.lower()
@@ -10666,12 +10762,27 @@ class DeskService:
         preferred_mission: str | None = None,
         max_estimated_tokens: int | None = None,
         website_observations: bool = False,
+        document_reading: bool = False,
         task_id: str | None = None,
         request_id: str | None = None,
+        supported_methodologies: list[str] | None = None,
     ) -> dict[str, Any] | None:
         envelopes: list[dict[str, Any]] = []
         requested_task_id = (task_id or "").strip()
         clean_request_id = (request_id or "").strip()[:128] or None
+        allowed_methods: set[str] | None = None
+        if supported_methodologies is not None:
+            parsed_methods = {
+                str(code or "").strip().upper()
+                for code in supported_methodologies
+                if str(code or "").strip()
+            }
+            if parsed_methods:
+                if not website_observations:
+                    parsed_methods.discard("W1")
+                if not document_reading:
+                    parsed_methods.discard("R1")
+                allowed_methods = parsed_methods
         with self.db.transaction() as conn:
             agent = self._authenticate_agent(conn, token, required=True)
             assert agent is not None
@@ -10805,6 +10916,24 @@ class DeskService:
                         detail=(
                             f"Task '{resolved_tid}' is a W1 website review batch and requires "
                             "website_observations=true."
+                        ),
+                    )
+                if cand["methodology_code"] == "R1" and not document_reading:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Task '{resolved_tid}' is an R1 AI document-reading task and requires "
+                            "document_reading=true (use an opted-in LLM provider or `aiwatchdogs read-claim`)."
+                        ),
+                    )
+
+                cand_method = str(cand["methodology_code"] or "").strip().upper()
+                if allowed_methods is not None and cand_method and cand_method not in allowed_methods:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Task '{resolved_tid}' requires methodology '{cand_method}', which this worker "
+                            "did not advertise as supported. Upgrade the CLI before claiming it."
                         ),
                     )
 
@@ -10984,6 +11113,15 @@ class DeskService:
                 ]
                 if not website_observations:
                     common_clauses.append("t.methodology_code != 'W1'")
+                if not document_reading:
+                    common_clauses.append("t.methodology_code != 'R1'")
+                if allowed_methods is not None:
+                    sorted_allowed = sorted(allowed_methods)
+                    mph = ",".join("?" for _ in sorted_allowed)
+                    common_clauses.append(
+                        f"(COALESCE(TRIM(t.methodology_code), '') = '' OR UPPER(TRIM(t.methodology_code)) IN ({mph}))"
+                    )
+                    common_params.extend(sorted_allowed)
                 if max_estimated_tokens is not None:
                     common_clauses.append("(t.estimated_tokens IS NULL OR t.estimated_tokens <= ?)")
                     common_params.append(int(max_estimated_tokens))
@@ -11652,18 +11790,26 @@ class DeskService:
                     "available_at": None,
                 }
             clean_notes, _ = scrub_pii(str(notes or "")[:2000])
-            new_retry = int(_row_get(task, "retry_count", 0) or 0) + 1
+            existing_retry = int(_row_get(task, "retry_count", 0) or 0)
             max_retries = int(_row_get(task, "max_retries", DEFAULT_MAX_RETRIES) or DEFAULT_MAX_RETRIES)
 
-            # Never allow a single unprivileged client (e.g. reason='permanent_error') to bypass max_retries
-            # and destroy queued backlog; all client releases follow bounded backoff & retry_count escalation.
-            if new_retry >= max_retries:
-                next_status = "needs_adjudication"
-                available_at: str | None = None
-            else:
+            # A capability refusal (an older client that lacks the task's engine) must never burn
+            # the task's retry budget or push it to needs_adjudication; return it straight to queued.
+            if clean_reason == "unsupported_methodology":
+                new_retry = existing_retry
                 next_status = "queued"
-                delay_sec = min(900, max(0, base_delay) * (2 ** max(0, new_retry - 1)))
-                available_at = _future_iso_seconds(delay_sec) if delay_sec > 0 else now
+                available_at: str | None = now
+            else:
+                new_retry = existing_retry + 1
+                # Never allow a single unprivileged client (e.g. reason='permanent_error') to bypass max_retries
+                # and destroy queued backlog; all client releases follow bounded backoff & retry_count escalation.
+                if new_retry >= max_retries:
+                    next_status = "needs_adjudication"
+                    available_at = None
+                else:
+                    next_status = "queued"
+                    delay_sec = min(900, max(0, base_delay) * (2 ** max(0, new_retry - 1)))
+                    available_at = _future_iso_seconds(delay_sec) if delay_sec > 0 else now
 
             cur = conn.execute(
                 """
@@ -11741,7 +11887,7 @@ class DeskService:
     ) -> dict[str, Any]:
         lease_id = str(payload.get("lease_id") or "").strip()
         outcome = str(payload.get("outcome") or "").strip().lower()
-        if outcome not in {"finding", "cleared", "verification", "observations"}:
+        if outcome not in {"finding", "cleared", "verification", "observations", "reading_extraction"}:
             raise HTTPException(
                 status_code=422,
                 detail="Unknown task outcome",
@@ -11763,6 +11909,11 @@ class DeskService:
 
             if (task["methodology_code"] == "W1") != (outcome == "observations"):
                 raise HTTPException(status_code=422, detail="Website assignments require a batch observation report.")
+            if (task["methodology_code"] == "R1") != (outcome == "reading_extraction"):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Document reading (R1) assignments require outcome='reading_extraction' with a verified extraction payload.",
+                )
 
             # Server-authoritative task type enforcement
             assigned_type = str(task["task_type"] or "").strip().lower()
@@ -11838,6 +11989,105 @@ class DeskService:
                     now=now,
                 )
                 self._emit_durable_event(conn, envelopes, "whisper", w1_whisper, now=now)
+            elif outcome == "reading_extraction":
+                from aiwatchdogs.engines.reading_verifier import verify_budget_extraction
+
+                raw_extraction = payload.get("extraction")
+                if not isinstance(raw_extraction, dict):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="'extraction' JSON object is required when outcome='reading_extraction'.",
+                    )
+                _validate_json_blob(
+                    raw_extraction,
+                    field_name="extraction",
+                    max_depth=10,
+                    max_nodes=12_000,
+                    max_bytes=512_000,
+                )
+                task_payload = loads_json(task["payload_json"], {})
+                ctx = task_payload.get("context") if isinstance(task_payload, dict) else {}
+                reading_ctx = ctx.get("reading") if isinstance(ctx, dict) else {}
+                if not isinstance(reading_ctx, dict):
+                    reading_ctx = {}
+                exp_sha = str(task_payload.get("expected_sha256") or "").strip() or None
+                exp_gt = reading_ctx.get("expected_grand_total")
+                max_pg = reading_ctx.get("page_count")
+                vres = verify_budget_extraction(
+                    raw_extraction,
+                    expected_sha256=exp_sha,
+                    expected_grand_total=exp_gt if isinstance(exp_gt, dict) else None,
+                    max_page=int(max_pg) if isinstance(max_pg, int) and not isinstance(max_pg, bool) else None,
+                )
+                if not vres.accepted:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Reading extraction failed deterministic verification: " + "; ".join(vres.errors[:6]),
+                    )
+                clean_extraction, _ = _scrub_recursive(raw_extraction)
+                rows_count = len(clean_extraction.get("rows") or []) if isinstance(clean_extraction, dict) else 0
+                result = {
+                    "status": "accepted",
+                    "outcome": outcome,
+                    "task_id": task["id"],
+                    "rows_extracted": rows_count,
+                    "verification_mode": vres.verification_mode,
+                    "checks": dict(vres.checks),
+                    "reading_url": f"/api/missions/{mission['slug']}/readings/{task['id']}",
+                }
+                self._settle_task_atomically(
+                    conn,
+                    task_id=task["id"],
+                    lease_id=lease_id,
+                    agent_id=agent["id"],
+                    output_obj={
+                        "outcome": outcome,
+                        "extraction": clean_extraction,
+                        "verification": vres.to_dict(),
+                    },
+                    idempotency_key=eff_idem,
+                    response_obj=result,
+                    monetary_audited_inr=0,
+                    now=now,
+                )
+                conn.execute("UPDATE missions SET completed_tasks = completed_tasks + 1 WHERE id = ?", (mission["id"],))
+                conn.execute(
+                    "UPDATE agents SET tasks_completed = tasks_completed + 1, current_task_id = NULL, "
+                    "last_heartbeat_at = ? WHERE id = ?",
+                    (now, agent["id"]),
+                )
+                self._record_score_event(
+                    conn,
+                    agent_id=str(agent["id"]),
+                    agent_handle=str(agent["handle"]),
+                    event_type="document_reading_verified",
+                    ref_id=str(task["id"]),
+                    now=now,
+                )
+                r1_msg = whisper_text or (
+                    f"Extracted and verified {rows_count} budget table rows ({vres.verification_mode}; {task['title'][:85]})."
+                )
+                r1_whisper = self._insert_whisper(
+                    conn,
+                    agent_handle=str(agent["handle"]),
+                    provider=agent["provider"],
+                    model=agent["model"],
+                    mission_slug=mission["slug"],
+                    event_type="document_reading_verified",
+                    message=r1_msg,
+                )
+                self._emit_durable_event(
+                    conn,
+                    envelopes,
+                    "document_reading_verified",
+                    {
+                        **result,
+                        "agent_handle": str(agent["handle"]),
+                        "mission_slug": mission["slug"],
+                    },
+                    now=now,
+                )
+                self._emit_durable_event(conn, envelopes, "whisper", r1_whisper, now=now)
             elif outcome == "finding":
                 result = self._handle_submit_finding(
                     conn=conn,
@@ -13057,6 +13307,31 @@ class DeskService:
                 detail="verdict='flag_pii_or_legal' requires descriptive notes (>= 8 characters) explaining the privacy/legal issue.",
             )
 
+        # Server-side evidence gate for negative/uncertain verdicts: a worker that could not run
+        # the methodology must NEVER cast a dispute vote or earn verification points.
+        if verdict in ("dispute", "reject_false_positive", "needs_review"):
+            if UNSUPPORTED_ENGINE_NOTE_RE.search(notes):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "A worker without an engine for this methodology cannot vote on the finding; "
+                        "release the lease with reason='unsupported_methodology' and upgrade the CLI."
+                    ),
+                )
+            if verdict in ("dispute", "reject_false_positive"):
+                any_performed_check = any(checks.get(k) in ("pass", "fail") for k in CANONICAL_CHECKS)
+                has_bound_artifact = bool(
+                    isinstance(manifest_clean, dict) and manifest_clean.get("artifact_sha256")
+                )
+                if not any_performed_check and not reproduced and not has_bound_artifact:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=(
+                            f"verdict={verdict!r} requires at least one performed check ('pass'/'fail') "
+                            "or bound reproduction evidence."
+                        ),
+                    )
+
         # Strict confirmation requirements: all 4 checks pass + non-empty consistent metrics + matching bound digests
         if verdict == "confirm":
             missing_or_failed = [k for k in CANONICAL_CHECKS if checks.get(k) != "pass"]
@@ -13161,7 +13436,7 @@ class DeskService:
             """
             SELECT pv.id, pv.contributor_id, pv.verifier_handle, pv.verdict, pv.checks_json,
                    pv.reproduced_metrics_json, pv.confidence, pv.coding_agent, pv.coding_agent_model,
-                   pv.created_at,
+                   pv.notes, pv.created_at,
                    pva.github_verified, pva.github_user_id, pva.registered_ip_hash
             FROM peer_verifications pv
             LEFT JOIN agents pva ON pva.id = pv.verifier_node_id

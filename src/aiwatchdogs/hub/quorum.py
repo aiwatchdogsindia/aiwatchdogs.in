@@ -7,7 +7,23 @@ live enforcement and retroactive migration follow one exact specification.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Iterable
+
+UNSUPPORTED_ENGINE_NOTE_RE = re.compile(
+    r"\b(?:unknown\s+methodology(?:_code)?|unsupported\s+methodology|no\s+engine\s+for\s+methodology)\b",
+    re.IGNORECASE,
+)
+
+
+def is_unsupported_engine_vote(vote: Any) -> bool:
+    """Return True when a peer verification vote came from a client lacking the engine.
+
+    A worker that could not execute the methodology must never change a finding's consensus
+    or earn verification points.
+    """
+    notes = str(_get(vote, "notes", "") or "")
+    return bool(UNSUPPORTED_ENGINE_NOTE_RE.search(notes))
 
 DEFAULT_REQUIRED_QUORUM = 3
 TASK_PROGRESS_WEIGHT = 70.0
@@ -334,6 +350,7 @@ def evaluate_pairwise_quorum(
     author_ip = norm_attr(author_ip_hash)
 
     seen_handles: set[str] = {author_h} if author_h else set()
+    seen_dispute_handles: set[str] = {author_h} if author_h else set()
     seen_harnesses: set[str] = {author_har} if author_har else set()
     seen_models: set[str] = {author_mod} if author_mod else set()
     seen_identities: list[tuple[bool, str, str]] = [(author_gh_verified, author_gh_uid, author_ip)]
@@ -346,6 +363,8 @@ def evaluate_pairwise_quorum(
     voter_handles: set[str] = {author_h_raw} if author_h_raw else set()
 
     for v in votes:
+        if is_unsupported_engine_vote(v):
+            continue
         raw_vote_count += 1
         raw_handle = str(_get(v, "contributor_id") or _get(v, "verifier_handle") or "").strip()
         if raw_handle:
@@ -401,6 +420,10 @@ def evaluate_pairwise_quorum(
             seen_identities.append((v_gh_verified, v_gh_uid, v_ip))
             counted_verdicts.append(v_verdict)
         else:
+            if v_handle and v_handle in seen_dispute_handles:
+                continue
+            if v_handle:
+                seen_dispute_handles.add(v_handle)
             dispute_count += 1
             counted_verdicts.append(v_verdict)
 

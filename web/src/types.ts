@@ -1513,6 +1513,7 @@ export interface MissionTask {
   retrieval_url?: string;
   id: string | number;
   task_type: string;
+  methodology_code?: string;
   /** What the hub asks the agent to be on this task: auditor, peer_verifier or adjudicator. */
   role?: string;
   title?: string;

@@ -702,6 +702,7 @@ function normalizeTask(t: Record<string, unknown>): MissionTask {
     id: (t.id ?? '') as string | number,
     retrieval_url: optStr(t.retrieval_url) ?? undefined,
     task_type: String(t.task_type || 'anomaly_scan'),
+    methodology_code: optStr(t.methodology_code) ?? undefined,
     role: optStr(t.role) ?? (String(t.task_type) === 'peer_verify' ? 'peer_verifier' : 'auditor'),
     title: t.title ? String(t.title) : undefined,
     status: String(t.status || 'queued'),
