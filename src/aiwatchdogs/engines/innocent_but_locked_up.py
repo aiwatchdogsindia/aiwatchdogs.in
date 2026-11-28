@@ -161,8 +161,11 @@ _QUOTE_DOUBLE_RE = re.compile(r"[\u201c\u201d\u201e\u201f]")
 
 # BNS Sec 356 neutralizers for quoted third-party judicial & official text.
 # Convert legal phrases containing "guilty" into strictly neutral equivalents BEFORE general neutralization.
-_NOT_GUILTY_RE = re.compile(r"\bnot[\s-]+guilty\b", re.IGNORECASE)
-_HELD_GUILTY_CONTEMPT_RE = re.compile(r"\b(?:held|found)\s+guilty\s+of\s+contempt\b", re.IGNORECASE)
+_NOT_GUILTY_RE = re.compile(r"(?<![a-z])not[\s_-]+guilty(?![a-z])", re.IGNORECASE)
+_HELD_GUILTY_CONTEMPT_RE = re.compile(
+    r"(?<![a-z])(?:held|found)[\s_]+guilty[\s_]+of[\s_]+contempt(?![a-z])",
+    re.IGNORECASE,
+)
 _ACB_RE = re.compile(r"\banti[\s-]+corruption\b", re.IGNORECASE)
 _NEUTRAL_REPLACE_RE = re.compile(
     r"(?<![a-z])(?:scam(?:s|med|mer|mers)?|corrupt(?:ed|ing|ly|ion)?|brib(?:e|es|ed|ing|ery)|"
@@ -211,17 +214,26 @@ class _TokenVerification:
     excerpt: str
 
 
+def _strip_invisible_and_nfkc(text: str) -> str:
+    """Apply NFKC normalization and strip invisible Unicode Cf/Cc chars (e.g. soft hyphens, ZWSP, BOM)."""
+    normalized = unicodedata.normalize("NFKC", text or "")
+    return "".join(
+        ch for ch in normalized if unicodedata.category(ch) not in {"Cf", "Cc"} or ch in ("\n", "\t", " ")
+    )
+
+
 def neutral_text(text: str) -> str:
     """Neutralize BNS Sec 356 prohibited words in quoted third-party judicial/official text."""
-    cleaned = _NOT_GUILTY_RE.sub("acquitted", text or "")
+    cleaned = _strip_invisible_and_nfkc(text or "")
+    cleaned = _NOT_GUILTY_RE.sub("acquitted", cleaned)
     cleaned = _HELD_GUILTY_CONTEMPT_RE.sub("held in contempt", cleaned)
     cleaned = _ACB_RE.sub("Vigilance", cleaned)
     return _NEUTRAL_REPLACE_RE.sub("compliance-review", cleaned)
 
 
 def clean_custody_text(text: Any, *, max_len: int | None = None) -> str:
-    """Collapse control chars/whitespace, scrub PII, and apply BNS Sec 356 neutralization."""
-    raw = str(text or "")
+    """Normalize NFKC, strip invisible Cf/Cc chars, collapse whitespace, scrub PII, and apply BNS Sec 356 neutralization."""
+    raw = _strip_invisible_and_nfkc(str(text or ""))
     raw = _CTRL_CHARS_RE.sub(" ", raw)
     raw = _MULTI_SPACE_RE.sub(" ", raw).strip()
     if not raw:
@@ -259,8 +271,8 @@ def parse_iso_date(value: Any) -> date | None:
 
 
 def _norm_search(text: str) -> str:
-    """Normalize Unicode, dashes, smart quotes, whitespace, and case for deterministic token matching."""
-    norm = unicodedata.normalize("NFKC", text or "")
+    """Normalize Unicode, strip invisible Cf/Cc chars, normalize dashes/quotes/whitespace/case."""
+    norm = _strip_invisible_and_nfkc(text or "")
     norm = _DASH_VARIANTS_RE.sub("-", norm)
     norm = _QUOTE_SINGLE_RE.sub("'", norm)
     norm = _QUOTE_DOUBLE_RE.sub('"', norm)
@@ -858,6 +870,43 @@ def run_p10_innocent_but_locked_up(
                 f"P10 unevaluable ({case_key}): archive_member '{archive_member}' not found in verified archive.",
                 meta,
             )
+
+    secondary_archive_member = str(selector.get("secondary_archive_member") or "").strip()
+    if secondary_archive_member:
+        if not secondary_records:
+            meta.update(
+                {
+                    "verdict": "unevaluable",
+                    "unevaluable_count": 1,
+                    "reason": "secondary_archive_member_not_found",
+                    "case_key": case_key,
+                }
+            )
+            return (
+                [],
+                0,
+                0.0,
+                f"P10 unevaluable ({case_key}): secondary_archive_member '{secondary_archive_member}' requested without secondary records.",
+                meta,
+            )
+        filtered_sec_arc, sec_arc_only_fail = _apply_archive_member_filter(secondary_records, secondary_archive_member)
+        if sec_arc_only_fail:
+            meta.update(
+                {
+                    "verdict": "unevaluable",
+                    "unevaluable_count": 1,
+                    "reason": "secondary_archive_member_not_found",
+                    "case_key": case_key,
+                }
+            )
+            return (
+                [],
+                0,
+                0.0,
+                f"P10 unevaluable ({case_key}): secondary_archive_member '{secondary_archive_member}' not found in secondary archive.",
+                meta,
+            )
+        secondary_records = filtered_sec_arc
 
     # Apply structured record selector when match_field + match_value are specified.
     if selector.get("match_field") and selector.get("match_value"):

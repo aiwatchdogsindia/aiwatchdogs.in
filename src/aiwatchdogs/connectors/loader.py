@@ -2103,7 +2103,17 @@ def _parse_tar_bytes(
             max_compression_ratio=max_compression_ratio,
         )
 
-    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:*") as tf:
+    # Strictly disallow auto-detected bz2/xz/lzma streams (`mode="r:*"`) that would bypass
+    # `_decompress_gzip_bounded` and `max_compression_ratio` / `max_decompressed_bytes` guards.
+    try:
+        tf_ctx = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:")
+    except tarfile.ReadError as exc:
+        raise ValueError(
+            f"Refused unsupported or compressed TAR stream for {source_ref} "
+            "(only uncompressed .tar and bounded .tar.gz are permitted)."
+        ) from exc
+
+    with tf_ctx as tf:
         infos = tf.getmembers()
         if len(infos) > max_zip_members:
             raise ValueError(f"TAR archive has {len(infos)} members, exceeding cap of {max_zip_members}.")

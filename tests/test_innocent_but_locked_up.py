@@ -687,6 +687,56 @@ def test_p10_loader_tar_zip_html_and_digest_verification(tmp_path: Path) -> None
     with pytest.raises(DigestMismatchError):
         load_dataset(str(tar_path), allow_local_files=True, expected_sha256="0" * 64)
 
+    # Security regression: .tar.bz2 / .tar.xz compression bombs MUST be refused (no mode="r:*" auto-decompress!)
+    bz2_tar = tmp_path / "bomb.tar"
+    with tarfile.open(bz2_tar, "w:bz2") as tf:
+        payload = b"0" * (512 * 1024)
+        ti = tarfile.TarInfo(name="bomb.txt")
+        ti.size = len(payload)
+        tf.addfile(ti, io.BytesIO(payload))
+    with pytest.raises(ValueError, match="uncompressed .tar and bounded .tar.gz"):
+        load_dataset(
+            str(bz2_tar),
+            fmt="tar",
+            context={"max_compression_ratio": 10.0},
+            allow_local_files=True,
+        )
+
+    # Secondary archive_member filtering (both hit and miss fail-closed)
+    sec_tar_path = tmp_path / "sec_contempt.tar.gz"
+    pdf_c = _create_pdf_bytes(
+        [["SUPREME COURT M.A. No. 1086 directing Rs. 5,00,000 compensation and judicial inquiry."]]
+    )
+    with tarfile.open(sec_tar_path, "w:gz") as tf:
+        for name, blob in (("2025/other.pdf", pdf_a), ("2025/contempt_1086.pdf", pdf_c)):
+            ti = tarfile.TarInfo(name=name)
+            ti.size = len(blob)
+            tf.addfile(ti, io.BytesIO(blob))
+
+    dual_arc_spec = _sample_anchor_spec(
+        secondary_role="contempt_order_document",
+        record_selector={"secondary_archive_member": "2025/contempt_1086.pdf"},
+    )
+    dual_arc_records = [
+        {"document": "primary", "page": 1, "raw_text": "Crl.A. No. 2295 release order addressed to District Jail, Ghaziabad."},
+        {"document": "secondary", "page": 1, "archive_member": "2025/other.pdf", "raw_text": "Unrelated civil appeal text."},
+        {
+            "document": "secondary",
+            "page": 1,
+            "archive_member": "2025/contempt_1086.pdf",
+            "raw_text": "M.A. No. 1086 ordered Rs. 5,00,000 compensation and judicial inquiry.",
+            "secondary_sha256": "b" * 64,
+        },
+    ]
+    res_sec_hit = run_engine("P10", dual_arc_records, context={"innocent_but_locked_up": dual_arc_spec})
+    assert len(res_sec_hit.leads) == 1
+    assert "2025/contempt_1086.pdf:page=1" in res_sec_hit.leads[0].source_locator
+
+    miss_sec_spec = copy.deepcopy(dual_arc_spec)
+    miss_sec_spec["record_selector"] = {"secondary_archive_member": "2025/missing.pdf"}
+    res_sec_miss = run_engine("P10", dual_arc_records, context={"innocent_but_locked_up": miss_sec_spec})
+    assert res_sec_miss.leads == [] and res_sec_miss.unevaluable_count == 1
+
 
 # ---------------------------------------------------------------------------
 # 4. BNS Sec 356 Neutrality (incl. "not guilty" / "held guilty of contempt") & PII Scrubbing
@@ -737,6 +787,28 @@ def test_p10_neutralizes_not_guilty_and_scrubs_all_pii() -> None:
     assert "9876543210" not in dumped
     assert "prisoner.relative@gmail.com" not in dumped
     assert not contains_pii(lead.model_dump())[0]
+
+    # Regression test: soft-hyphen (\u00ad), ZWSP (\u200b), BOM (\ufeff), fullwidth NFKC, and underscore variants
+    obfuscated_records = [
+        {
+            "page": 1,
+            "raw_text": (
+                "Order: Accused declared not guil\u00adty and not_guilty in acquittal judgment for "
+                "District Jail, Ghaziabad. Official was held guil\u200bty of contempt and reviewed for "
+                "\ufeffguilty / \uff47\uff55\uff49\uff4c\uff54\uff59 conduct under contempt notice and judicial inquiry."
+            ),
+        }
+    ]
+    res_obf = run_engine("P10", obfuscated_records, context={"innocent_but_locked_up": spec, "as_of_date": "2026-11-28"})
+    assert len(res_obf.leads) == 1
+    obf_lead = res_obf.leads[0]
+    assert lint_neutrality(
+        obf_lead.title,
+        obf_lead.summary,
+        obf_lead.benign_explanations,
+        extra_fields={"excerpts": " ".join(str(c.get("excerpt") or "") for c in obf_lead.citations)},
+    ).passed
+    assert "guilty" not in json.dumps(obf_lead.model_dump()).lower()
 
 
 # ---------------------------------------------------------------------------
