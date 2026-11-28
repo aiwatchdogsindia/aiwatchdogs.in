@@ -287,6 +287,21 @@ def fetch_merged_prs_from_github(repository: str, *, token: str | None = None, m
     return prs
 
 
+def count_new_pr_entries(existing_doc: dict[str, Any], updated_doc: dict[str, Any]) -> int:
+    """Return the number of newly added PR entries in *updated_doc* compared to *existing_doc*."""
+    old_prs = {
+        int(e["pr"])
+        for e in (existing_doc.get("entries") or [])
+        if isinstance(e, dict) and isinstance(e.get("pr"), int) and not isinstance(e.get("pr"), bool)
+    }
+    new_prs = {
+        int(e["pr"])
+        for e in (updated_doc.get("entries") or [])
+        if isinstance(e, dict) and isinstance(e.get("pr"), int) and not isinstance(e.get("pr"), bool)
+    }
+    return len(new_prs - old_prs)
+
+
 def serialize_changelog(doc: dict[str, Any]) -> str:
     return json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
 
@@ -376,6 +391,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend-path", type=Path, default=DEFAULT_BACKEND_PATH)
     parser.add_argument("--web-path", type=Path, default=DEFAULT_WEB_PATH)
     parser.add_argument("--backend-only", action="store_true", help="Write only backend JSON (skip writing web JSON)")
+    parser.add_argument(
+        "--min-new-prs",
+        type=int,
+        default=1,
+        help="With --from-github, only write updates once at least this many new merged PRs have accumulated (default: 1).",
+    )
     args = parser.parse_args(argv)
 
     if args.check:
@@ -393,6 +414,14 @@ def main(argv: list[str] | None = None) -> int:
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or None
         prs = fetch_merged_prs_from_github(args.repo, token=token)
         updated = merge_github_prs(existing, prs, repository=args.repo)
+        new_pr_count = count_new_pr_entries(existing, updated)
+        min_new = max(1, int(args.min_new_prs))
+        if min_new > 1 and new_pr_count < min_new:
+            print(
+                f"Holding changelog sync: {new_pr_count} new merged PR(s) since last update "
+                f"(waiting for batch of {min_new})."
+            )
+            return 0
     else:
         updated = normalize_document(existing, repository=args.repo)
 
