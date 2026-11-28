@@ -1485,6 +1485,8 @@ export interface MissionItem {
   is_community_project?: boolean;
   created_at?: string;
   posted_by?: ProjectPoster;
+  plain_answer?: string;
+  plain_answer_finding?: string | null;
   project_sources?: ProjectSource[];
   project_scope?: { scope: string[]; out_of_scope: string[] };
   enlisted_pr_url?: string;

@@ -600,6 +600,8 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
     project_code: explicitProjectCode || fallbackProjectCode,
     title: String(raw.title || 'Audit project'),
     description: raw.description ? String(raw.description) : undefined,
+    plain_answer: optStr(raw.plain_answer) ?? undefined,
+    plain_answer_finding: optStr(raw.plain_answer_finding) ?? null,
     pillar: String(raw.pillar || 'budget'),
     methodology_code: methodologyCode,
     jurisdiction: String(raw.jurisdiction || 'Union'),
@@ -913,7 +915,7 @@ export const api = {
   },
 
   async getMissions(): Promise<MissionItem[]> {
-    const raw = await fetchJson<unknown>('/api/missions');
+    const raw = await fetchJson<unknown>(withLang('/api/missions'));
     const list = Array.isArray(raw)
       ? raw
       : asArray<Record<string, unknown>>(asRecord(raw).missions ?? asRecord(raw).items);

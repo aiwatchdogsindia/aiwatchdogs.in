@@ -289,3 +289,34 @@ def test_budget_stops_the_writer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         cfg = writer.Config("anthropic", "fake", "low", 0.0, "", ["en"])
         writer.run_once(app.state.db, cfg)
         assert calls == []
+
+
+def test_projects_lead_with_a_one_line_answer(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    today = news.today_ist()
+    start, _ = news.window(today)
+    with TestClient(app) as client:
+        with app.state.db.read() as conn:
+            slug = conn.execute("SELECT slug FROM missions WHERE status != 'archived' ORDER BY id LIMIT 1").fetchone()["slug"]
+        before = {m["slug"]: m for m in client.get("/api/missions").json()["missions"]}
+        assert before[slug]["plain_answer"] and before[slug]["plain_answer_finding"] is None
+
+        _add(app, "f-review", "peer_review", start)
+        mid = {m["slug"]: m for m in client.get("/api/missions").json()["missions"]}
+        assert mid[slug]["plain_answer"].startswith("Nothing confirmed yet")
+
+        _add(app, "f-small", "verified", start, start, amount=1e7)
+        _add(app, "f-big", "verified", start, start, amount=5.895e9)
+        _add(app, "f-hidden", "verified", start, start, quarantined=1, amount=9e12)
+        after = {m["slug"]: m for m in client.get("/api/missions").json()["missions"]}
+        assert after[slug]["plain_answer_finding"] == "f-big"
+        assert "49.1%" in after[slug]["plain_answer"] and "Raw title" not in after[slug]["plain_answer"]
+
+        hi = {m["slug"]: m for m in client.get("/api/missions", params={"lang": "hi"}).json()["missions"]}
+        assert hi[slug]["plain_answer"] != after[slug]["plain_answer"] and "49.1%" in hi[slug]["plain_answer"]
+
+        detail = client.get(f"/api/missions/{slug}", params={"lang": "ta"}).json()
+        assert detail["plain_answer_finding"] == "f-big"
+
+        head = client.get("/api/head").json()
+        assert next(m for m in head["missions"] if m["slug"] == slug)["plain_answer_finding"] == "f-big"

@@ -339,4 +339,9 @@ def explain_finding(f: dict[str, Any], lang: str = "en", written: dict[str, Any]
 
 
 def labels(lang: str) -> dict[str, str]:
-    return section(lang, "ui")
+    return {
+        **section(lang, "ui"),
+        "recently_confirmed": text(lang, "news", "sec_recent"),
+        "nothing_confirmed": text(lang, "news", "state_none"),
+        "news_title": text(lang, "news", "title"),
+    }

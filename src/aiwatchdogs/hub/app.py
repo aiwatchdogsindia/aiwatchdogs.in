@@ -72,6 +72,7 @@ from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.plain import available_languages, explain_finding, labels, resolve_lang
 from aiwatchdogs.plain import news as plain_news
 from aiwatchdogs.plain import writer as plain_writer
+from aiwatchdogs.plain.answers import project_answers
 from aiwatchdogs.hub.templates import (
     DEFAULT_PUBLIC_HUB_URL,
     normalize_base_url,
@@ -629,6 +630,21 @@ def _attach_plain(items: Any, lang: str, db: Any = None) -> None:
         item["plain"] = explain_finding(item, lang, written.get(f"finding:{item.get('id')}"))
 
 
+def _attach_answers(missions: Any, lang: str, db: Any) -> None:
+    if not isinstance(missions, list):
+        return
+    rows = [m for m in missions if isinstance(m, dict) and m.get("slug")]
+    try:
+        answers = project_answers(db, [str(m["slug"]) for m in rows], lang)
+    except Exception:
+        return
+    for m in rows:
+        a = answers.get(str(m["slug"]))
+        if a:
+            m["plain_answer"] = a["answer"]
+            m["plain_answer_finding"] = a["finding_id"]
+
+
 def create_degraded_app(
     *,
     reason: str,
@@ -909,6 +925,8 @@ def create_app(
         recent = [dict(f) for f in data.get("recent_findings") or [] if isinstance(f, dict)]
         _attach_plain(recent, resolve_lang(lang), db)
         data["recent_findings"] = recent
+        data["missions"] = [dict(m) for m in data.get("missions") or [] if isinstance(m, dict)]
+        _attach_answers(data["missions"], resolve_lang(lang), db)
         just_in = data.get("just_in")
         if isinstance(just_in, dict):
             match = next((f for f in recent if str(f.get("id")) == str(just_in.get("id")) and f.get("plain")), None)
@@ -981,9 +999,12 @@ def create_app(
             raise
 
     @application.get("/api/missions")
-    def api_missions(response: Response) -> dict[str, Any]:
+    def api_missions(response: Response, lang: str | None = Query(default=None, max_length=32)) -> dict[str, Any]:
         response.headers["Cache-Control"] = _PUBLIC_READ_CACHE
-        return desk.list_missions()
+        data = dict(desk.list_missions())
+        data["missions"] = [dict(m) for m in data.get("missions") or [] if isinstance(m, dict)]
+        _attach_answers(data["missions"], resolve_lang(lang), db)
+        return data
 
     @application.get("/api/missions/{slug}")
     def api_mission_detail(
@@ -993,7 +1014,9 @@ def create_app(
     ) -> dict[str, Any]:
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         data = desk.get_mission_detail(slug)
-        _attach_plain(data.get("findings"), resolve_lang(lang), db)
+        code = resolve_lang(lang)
+        _attach_plain(data.get("findings"), code, db)
+        _attach_answers([data], code, db)
         return data
 
     @application.get("/api/missions/{slug}/observations/{task_id}")

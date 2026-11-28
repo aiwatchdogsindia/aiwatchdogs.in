@@ -57,6 +57,9 @@ export const EN_LABELS: Record<string, string> = {
   edition_of: "Edition of {date}",
   copy_prompt: "Copy the line for your agent",
   model_note: "Written in plain words by {model}, then checked by machine against the original numbers.",
+  recently_confirmed: "Recently confirmed",
+  nothing_confirmed: "Nothing confirmed yet. Every lead still needs three independent checks.",
+  news_title: "The Daily Watch",
 };
 
 const STORAGE_KEY = 'awd-lang';
