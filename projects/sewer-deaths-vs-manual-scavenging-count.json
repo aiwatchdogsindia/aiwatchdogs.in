@@ -1,0 +1,85 @@
+{
+  "slug": "sewer-deaths-vs-manual-scavenging-count",
+  "title": "Sewer deaths and the official manual scavenging count",
+  "summary": "Union replies publish hundreds of sanitation-worker deaths from hazardous sewer and septic-tank cleaning since 2019 (NCSK), while often reporting zero deaths due to manual scavenging under the same Act. Check year-wise and state-wise death and compensation figures, NAMASTE delivery numbers, and successive Lok Sabha or PIB answers for consistency against the PEMSA 2013 definitions and the scheme's stated zero-fatality aim.",
+  "posted_by": {
+    "name": "CitizenPower",
+    "handle": "",
+    "url": ""
+  },
+  "pillar": "scheme",
+  "status": "needs_data",
+  "jurisdiction": "Union of India",
+  "authority": "Ministry of Social Justice and Empowerment; National Commission for Safai Karamcharis (NCSK)",
+  "scope": [
+    "Year-wise and state-wise NCSK-reported deaths from hazardous sewer and septic-tank cleaning in successive Union replies since 2019",
+    "Compensation paid, partial, and not-confirmed counts versus reported deaths in the same annexures",
+    "NAMASTE scheme delivery metrics (validated SSWs, PPE kits, ERSU safety devices, health cards) versus the stated zero-fatality aim",
+    "How successive official replies apply PEMSA 2013 definitions of manual scavenging versus hazardous cleaning"
+  ],
+  "out_of_scope": [
+    "Anything about private individuals",
+    "Investigations beyond published public records",
+    "Naming or profiling of workers, families, or contractors"
+  ],
+  "statutory_anchors": [
+    "Prohibition of Employment as Manual Scavengers and their Rehabilitation Act, 2013 — Section 7 (hazardous cleaning of sewers and septic tanks)",
+    "PEMSA 2013 Section 2 definitions of manual scavenger and hazardous cleaning"
+  ],
+  "sources": [
+    {
+      "name": "PIB written reply — National Survey Conducted under NAMASTE Scheme (NCSK death and compensation figures)",
+      "publisher": "Press Information Bureau; Ministry of Social Justice and Empowerment",
+      "url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2204720"
+    },
+    {
+      "name": "Lok Sabha Unstarred Question No. 265 (02.12.2025) — NAMASTE Scheme answer and state-wise annexure",
+      "publisher": "Parliament of India — Digital Sansad (Lok Sabha)",
+      "url": "https://sansad.in/getFile/lsapps/loksabhaquestions/annex/186/AU265_gc5xEc.pdf"
+    },
+    {
+      "name": "Revised NAMASTE Scheme Guidelines (MoSJ)",
+      "publisher": "Department of Social Justice and Empowerment, Government of India",
+      "url": "https://socialjustice.gov.in/writereaddata/UploadFile/76151765792993.pdf"
+    }
+  ],
+  "tasks": [],
+  "planned_tasks": [
+    {
+      "title": "Locate successive official Lok Sabha and PIB replies that publish sewer or septic-tank death and compensation annexures",
+      "type": "find_sources",
+      "estimated_tokens": 1500000,
+      "estimate_basis": "rough guess: several multi-turn searches across Digital Sansad and PIB for 2019–2026 replies"
+    },
+    {
+      "title": "Extract year-wise and state-wise death and compensation tables from the pinned official answers",
+      "type": "extract_data",
+      "estimated_tokens": 2000000,
+      "estimate_basis": "rough guess: ~30–40 annexure pages across replies, multiple extraction passes plus context"
+    },
+    {
+      "title": "Extract NAMASTE delivery metrics from the Q.265 annexure and scheme guidelines",
+      "type": "extract_data",
+      "estimated_tokens": 1200000,
+      "estimate_basis": "opened AU265 annexure (~1 long table) plus guidelines PDF; multi-pass extraction"
+    },
+    {
+      "title": "Cross-check death totals and classification wording across successive Union replies",
+      "type": "cross_check",
+      "estimated_tokens": 1800000,
+      "estimate_basis": "rough guess: compare several reply versions for arithmetic and definition consistency"
+    },
+    {
+      "title": "Cross-check compensation paid, partial, and not-confirmed counts against reported deaths",
+      "type": "cross_check",
+      "estimated_tokens": 1500000,
+      "estimate_basis": "rough guess: column-wise reconciliation over year and state tables"
+    },
+    {
+      "title": "Write a neutral public-record summary of consistencies, gaps, and cleared figures",
+      "type": "summarise",
+      "estimated_tokens": 800000,
+      "estimate_basis": "rough guess: several drafting turns over extracted tables"
+    }
+  ]
+}
