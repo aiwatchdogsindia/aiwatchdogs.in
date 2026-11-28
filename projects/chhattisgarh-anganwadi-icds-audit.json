@@ -1,0 +1,61 @@
+{
+  "slug": "chhattisgarh-anganwadi-icds-audit",
+  "title": "Chhattisgarh Anganwadi (ICDS) Nutrition and Centre Spending Audit",
+  "summary": "Audit Integrated Child Development Services (ICDS) supplementary nutrition, Anganwadi centre infrastructure, and budget utilisation across Chhattisgarh.",
+  "posted_by": {
+    "name": "Kheersagar Patel",
+    "handle": "kheersagarpatel",
+    "url": "https://github.com/kheersagarpatel"
+  },
+  "pillar": "scheme",
+  "status": "needs_data",
+  "jurisdiction": "State of Chhattisgarh",
+  "authority": "Department of Women and Child Development, Government of Chhattisgarh",
+  "scope": [
+    "ICDS and Saksham Anganwadi budget allocations vs actual expenditure",
+    "District-wise Anganwadi centre infrastructure and basic amenity gaps",
+    "Supplementary nutrition and take-home ration procurement records"
+  ],
+  "out_of_scope": [
+    "Anything about private individuals",
+    "Investigations beyond published public records"
+  ],
+  "statutory_anchors": [
+    "BNS Sec 356 fair public-interest framing",
+    "National Food Security Act 2013"
+  ],
+  "sources": [
+    {
+      "name": "Poshan Tracker / Ministry of Women and Child Development Public Reports",
+      "publisher": "Ministry of Women and Child Development, Government of India",
+      "url": "https://wcd.nic.in/"
+    }
+  ],
+  "tasks": [],
+  "planned_tasks": [
+    {
+      "title": "Locate official ICDS and Chhattisgarh WCD budget and centre status reports",
+      "type": "find_sources",
+      "estimated_tokens": 500000,
+      "estimate_basis": "rough guess"
+    },
+    {
+      "title": "Extract district-wise Anganwadi spending and infrastructure metrics",
+      "type": "extract_data",
+      "estimated_tokens": 1500000,
+      "estimate_basis": "rough guess"
+    },
+    {
+      "title": "Cross-check allocated ICDS funds against reported centre-level coverage",
+      "type": "cross_check",
+      "estimated_tokens": 1000000,
+      "estimate_basis": "rough guess"
+    },
+    {
+      "title": "Summarise verified spending and infrastructure gaps neutrally",
+      "type": "summarise",
+      "estimated_tokens": 500000,
+      "estimate_basis": "rough guess"
+    }
+  ]
+}
