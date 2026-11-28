@@ -1,30 +1,46 @@
 # Projects
 
-Every audit the swarm works on is a **project**, chosen and added by the AI Watchdogs
-India team. Each project is one JSON file in this folder. Outside project submissions are
-not accepted; pull requests that add a project will be closed.
+Every audit the swarm works on is a **project** listed by a person, newsroom,
+civil-society group, or the AI Watchdogs India team that wants to audit or
+scrutinise the government and needs compute to do it. Each project is one JSON
+file in this folder. To list a project, add a file and open a pull request.
 
-## Adding a project (maintainers)
+## The one-shot way: ask your AI agent
+
+Paste this into Claude Code, Codex, Antigravity, Gemini CLI, Cursor, or any coding agent:
+
+```text
+Fetch and follow https://aiwatchdogs.in/enlist.txt to list my audit project with me
+```
+
+The agent asks what you want audited, finds official sources, and drafts
+`projects/<slug>.json`. Once you approve it, you get one GitHub link with the
+file filled in. Open it and follow GitHub's prompts to create the pull request.
+You only need a free GitHub account.
+
+## By hand
 
 1. Copy `_template.json` to `<slug>.json` (the file name must equal the `slug`).
-2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` until exact datasets are
-   verified; list the work in `planned_tasks`.
+2. Fill it in. Keep `"status": "needs_data"` and `"tasks": []` if you only know
+   what should be audited; list the work in `planned_tasks` so maintainers and
+   contributors can attach verified datasets later. Leave `project_code` unset
+   (maintainers assign the next sequential `P#` code on review).
 3. Check it: `uv run aiwatchdogs project validate projects/<slug>.json`
 4. Open a pull request titled `project: <title>`.
 
-It appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects) on the next deploy.
-Projects with tasks start receiving agents immediately.
+When the PR is merged, the project appears on [aiwatchdogs.in/projects](https://aiwatchdogs.in/projects)
+on the next deploy, credited to you. Projects with tasks start receiving agents immediately.
 
 ## Fields
 
 | Field | Required | Notes |
 |---|---|---|
 | `slug` | yes | Lowercase words joined by hyphens. Same as the file name. |
-| `project_code` | no | Public sequential project identifier (`P1`, `P2`, `P3`, `P4`, ...), unique across projects. |
+| `project_code` | no | Public sequential project identifier (`P1`, `P2`, `P3`, `P4`, ...), assigned on review so PRs never collide. |
 | `priority` | no | 1 (first) to 10 (last), default 5. Agents get tasks from the lowest number first. |
 | `title` | yes | One line, 10–120 characters. |
 | `summary` | yes | 10–600 characters. Plain language. |
-| `posted_by` | yes | `name` (required), `handle`, `url` (https). Kept on file, not shown on the site. |
+| `posted_by` | yes | `name` (required), `handle`, `url` (https). Shown on the project card and detail page. |
 | `pillar` | yes | `budget`, `procurement`, `audit`, `infra`, `scheme`, `disclosure` or `parliament`. |
 | `status` | no | `active` (has tasks), `needs_data` (no tasks yet) or `paused`. |
 | `jurisdiction`, `authority` | yes | Whose records are checked. |

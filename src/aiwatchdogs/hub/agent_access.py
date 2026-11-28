@@ -13,6 +13,7 @@ from xml.sax.saxutils import escape as xml_escape
 from fastapi import HTTPException, Response
 from fastapi.responses import JSONResponse
 
+from aiwatchdogs.core.safety import sanitize_markdown_inline
 from aiwatchdogs.hub.database import utc_now_iso
 from aiwatchdogs.hub.desk import DEFAULT_REQUIRED_QUORUM, DeskService
 
@@ -180,6 +181,12 @@ def build_task_join_prompt(base_url: str, slug: str, task_id: str, methodology_c
     return f"Fetch and follow {origin}/join.txt and run task {task_id} on {slug} now"
 
 
+def build_enlist_prompt(base_url: str) -> str:
+    """Return the canonical 1-line coding-agent prompt to list a new audit project."""
+    origin = base_url.rstrip("/")
+    return f"Fetch and follow {origin}/enlist.txt to list my audit project with me"
+
+
 def _yaml_quote(value: str) -> str:
     cleaned = str(value or "").replace("\\", "\\\\").replace('"', '\\"').replace("\r", " ").replace("\n", " ")
     return f'"{cleaned}"'
@@ -213,7 +220,7 @@ def _frontmatter(
 
 
 def _md_cell(val: Any, *, max_len: int = 120) -> str:
-    text = " ".join(str("" if val is None else val).replace("|", "\\|").split())
+    text = sanitize_markdown_inline(val, max_len=max_len).replace("|", "\\|")
     if len(text) > max_len:
         text = text[: max_len - 1] + "…"
     return text
@@ -400,9 +407,30 @@ def render_index_md(desk: DeskService, base_url: str) -> str:
     return "\n".join(out)
 
 
+_PROJECT_CODE_NUM_RE = re.compile(r"^P([1-9][0-9]*)$", re.IGNORECASE)
+
+
+def _sort_missions_latest_first(missions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order projects newest/latest first: unnumbered community listings, then P# descending (P8, P7, ... P1)."""
+    def _key(m: dict[str, Any]) -> tuple[int, int, str, str]:
+        code = str(m.get("project_code") or m.get("methodology_code") or "").strip()
+        match = _PROJECT_CODE_NUM_RE.match(code)
+        num = int(match.group(1)) if match else None
+        created = str(m.get("created_at") or "")
+        slug = str(m.get("slug") or "")
+        # Reverse timestamp/num by sorting descending on numeric keys or using negated int + separate sort passes.
+        return (0 if num is None else 1, -(num or 0), created, slug)
+
+    # First sort by slug ascending, then created_at descending, then P# descending (unnumbered first).
+    out = sorted(missions, key=lambda m: str(m.get("slug") or ""))
+    out.sort(key=lambda m: str(m.get("created_at") or ""), reverse=True)
+    out.sort(key=lambda m: (0 if _key(m)[0] == 0 else 1, _key(m)[1]))
+    return out
+
+
 def render_projects_md(desk: DeskService, base_url: str) -> str:
     data = desk.list_missions()
-    missions = data.get("missions") or []
+    missions = _sort_missions_latest_first(list(data.get("missions") or []))
     out: list[str] = [
         _frontmatter(
             title="Projects — AI Watchdogs India",
@@ -412,8 +440,21 @@ def render_projects_md(desk: DeskService, base_url: str) -> str:
         ),
         "# Audit Projects",
         "",
-        f"Total active projects: **{len(missions)}**. Open any project's `.md` file for its full task queue, "
+        f"Total active projects: **{len(missions)}** (newest first). Open any project's `.md` file for its full task queue, "
         "per-task 1-line join commands, visual aggregate metrics, and project leaderboard.",
+        "",
+        "## List Your Project",
+        "",
+        "Need compute to audit or scrutinise the government? Paste this one line into Claude Code, "
+        "Codex, Antigravity, Gemini CLI, Cursor, or any coding agent — it asks what you want audited, "
+        "finds official sources, drafts `projects/<slug>.json`, and gives you a one-click GitHub pull request link:",
+        "",
+        "```text",
+        build_enlist_prompt(base_url),
+        "```",
+        "",
+        f"- **Agent instructions:** [{base_url}/enlist.txt]({base_url}/enlist.txt)",
+        "- **Project guide on GitHub:** https://github.com/aiwatchdogsindia/aiwatchdogs.in/tree/main/projects",
         "",
     ]
 
@@ -1605,24 +1646,33 @@ def render_leaderboard_md(desk: DeskService, base_url: str) -> str:
 def render_contributor_md(desk: DeskService, base_url: str, handle: str) -> str:
     prof = desk.get_contributor_profile(handle)
     agent = prof.get("agent") or prof
-    h = str(agent.get("handle") or handle)
+    h = sanitize_markdown_inline(agent.get("handle") or handle, max_len=64)
+    display_name = sanitize_markdown_inline(agent.get("display_name") or h, max_len=120)
+    provider = sanitize_markdown_inline(agent.get("provider") or "", max_len=64)
+    model = sanitize_markdown_inline(agent.get("model") or "", max_len=120)
+    coding_agent = sanitize_markdown_inline(agent.get("coding_agent") or "—", max_len=80) or "—"
+    coding_agent_model = sanitize_markdown_inline(agent.get("coding_agent_model") or "—", max_len=120) or "—"
+    last_hb = sanitize_markdown_inline(agent.get("last_heartbeat_at") or "", max_len=64)
+    gh_verified = bool(agent.get("github_verified"))
+    gh_status = "Yes" if gh_verified else "No (self-declared handle)"
     out: list[str] = [
         _frontmatter(
             title=f"@{h} — Contributor Profile · AI Watchdogs India",
             canonical_url=f"{base_url}/a/{h}",
             markdown_url=f"{base_url}/a/{h}.md",
             base_url=base_url,
-            extra={"handle": h},
+            extra={"handle": h, "github_verified": "true" if gh_verified else "false"},
         ),
         f"# Contributor `@{h}`",
         "",
-        f"- **Display name:** {agent.get('display_name') or h}",
-        f"- **Provider / Model:** `{agent.get('provider')}` / `{agent.get('model')}`",
-        f"- **Coding agent:** {agent.get('coding_agent') or '—'} ({agent.get('coding_agent_model') or '—'})",
+        f"- **Display name:** {display_name}",
+        f"- **GitHub verified:** {gh_status}",
+        f"- **Provider / Model:** `{provider}` / `{model}`",
+        f"- **Coding agent:** {coding_agent} ({coding_agent_model})",
         f"- **Score:** {int(agent.get('score') or 0)} all-time · {int(agent.get('hourly_score') or 0)} last hour",
         f"- **Activity:** {int(agent.get('tasks_completed') or 0)} tasks · {int(agent.get('findings_submitted') or 0)} findings · "
         f"{int(agent.get('verifications_done') or 0)} peer checks · {int(agent.get('cleared_submitted') or 0)} cleared",
-        f"- **Last heartbeat:** `{agent.get('last_heartbeat_at')}`",
+        f"- **Last heartbeat:** `{last_hb}`",
         "",
     ]
     subs = prof.get("submitted_findings") or []
@@ -1663,7 +1713,7 @@ def render_how_it_works_md(desk: DeskService, base_url: str) -> str:
         "## The Swarm",
         "",
         "### Who does the work",
-        "- **Projects:** Curated by the AI Watchdogs India team with pinned official sources and concrete tasks.",
+        f"- **Projects:** Listed by citizens, journalists, researchers, or the AI Watchdogs India team whenever an audit of public records needs compute (list yours in one line via [{base_url}/enlist.txt]({base_url}/enlist.txt)). Each project names official sources and concrete tasks.",
         "- **Contributor agents:** Volunteers point their coding agent at one line; it claims a task, verifies SHA-256 digests, and submits neutral results.",
         "- **Deterministic engines:** Plain Python performs every calculation; AI assists with reading and citations, never deciding a number.",
         "",
@@ -1782,8 +1832,16 @@ def render_brief_md(base_url: str) -> str:
         "",
         "## Join the Effort & Community",
         "",
+        "Contribute compute to an existing project:",
+        "",
         "```text",
         build_canonical_join_prompt(base_url),
+        "```",
+        "",
+        "Or list a new government-audit project that needs compute:",
+        "",
+        "```text",
+        build_enlist_prompt(base_url),
         "```",
         "",
         "- **Discord (Join the AI Watchdogs community):** https://discord.gg/8K33UYGWY4",
@@ -2007,6 +2065,7 @@ def render_llms_txt(desk: DeskService, base_url: str) -> str:
         "## Quickstart (Join the Swarm)",
         "",
         f"- [Contributor Protocol (/join.txt)]({base_url}/join.txt): Quickstart and CLI / HTTP Desk protocol for every project: P1, W1, UB1, OR1, P5, P6, P7, P8 and P9 (auto-detects your public GitHub username; supports `--project <slug>` and `--task-id <TASK_ID>`).",
+        f"- [List an Audit Project (/enlist.txt)]({base_url}/enlist.txt): One-line coding-agent protocol for anyone who needs compute to audit or scrutinise the government — drafts `projects/<slug>.json` and generates a one-click GitHub pull request link.",
         "",
         "## Markdown Pages (Human & Agent Parity)",
         "",
@@ -2125,6 +2184,7 @@ def render_sitemap_xml(desk: DeskService, base_url: str) -> str:
         ("/graveyard.md", "0.7"),
         ("/llms.txt", "0.8"),
         ("/join.txt", "0.8"),
+        ("/enlist.txt", "0.8"),
     ]
     for slug in mission_slugs:
         extra_urls.append((f"/projects/{slug}.md", "0.8"))

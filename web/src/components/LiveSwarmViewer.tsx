@@ -50,6 +50,8 @@ export interface LiveSwarmNode {
   verifications_done?: number;
   findings_submitted?: number;
   score?: number;
+  github_verified?: boolean;
+  github_verified_at?: string | null;
   last_seen_at?: string | null;
   created_at?: string | null;
 }
@@ -61,6 +63,7 @@ export interface LiveRecentJoin {
   coding_agent_model?: string | null;
   provider?: string | null;
   model?: string | null;
+  github_verified?: boolean;
   created_at: string;
   last_seen_at?: string | null;
   is_working?: boolean;
@@ -543,10 +546,14 @@ const SYNTHETIC_NON_GITHUB_HANDLES = new Set([
 ]);
 
 /**
- * Return the canonical GitHub profile URL for a real GitHub username, or null
- * for synthetic / `civic-*` sandbox fallback handles.
+ * Return the canonical GitHub profile URL ONLY for cryptographically verified
+ * GitHub usernames, or null for unverified / synthetic / `civic-*` handles.
  */
-export function githubProfileUrl(rawHandle: string | null | undefined): string | null {
+export function githubProfileUrl(
+  rawHandle: string | null | undefined,
+  githubVerified?: boolean,
+): string | null {
+  if (!githubVerified) return null;
   const clean = normalizeHandle(rawHandle || '');
   if (!clean) return null;
   if (NON_GITHUB_FALLBACK_RE.test(clean)) return null;
@@ -1504,7 +1511,11 @@ export function LiveSwarmViewer({
                       style={{ background: visual.color }}
                       aria-hidden="true"
                     />
-                    <GitHubAvatar handle={cleanHandle} size={cardAvatarSize} />
+                    <GitHubAvatar
+                      handle={cleanHandle}
+                      size={cardAvatarSize}
+                      verified={Boolean(node.github_verified)}
+                    />
                     <span className="lsv-card-handle" title={`@${cleanHandle}`}>
                       @{cleanHandle}
                     </span>
@@ -1604,7 +1615,11 @@ export function LiveSwarmViewer({
                     style={{ background: visual.color }}
                     aria-hidden="true"
                   />
-                  <GitHubAvatar handle={cleanHandle} size={22} />
+                  <GitHubAvatar
+                    handle={cleanHandle}
+                    size={22}
+                    verified={Boolean(node.github_verified)}
+                  />
                   <span className="lsv-card-handle">@{cleanHandle}</span>
                 </div>
                 <div className="lsv-card-sub">
@@ -1734,7 +1749,11 @@ export function LiveSwarmViewer({
                       style={{ background: visual.color }}
                       aria-hidden="true"
                     />
-                    <GitHubAvatar handle={cleanHandle} size={18} />
+                    <GitHubAvatar
+                      handle={cleanHandle}
+                      size={18}
+                      verified={Boolean(node.github_verified)}
+                    />
                     <span className="lsv-card-handle" title={`@${cleanHandle}`}>
                       @{cleanHandle}
                     </span>
@@ -1787,6 +1806,7 @@ export function LiveSwarmViewer({
             <GitHubAvatar
               handle={selectedNode.handle}
               size={38}
+              verified={Boolean(selectedNode.github_verified)}
               activeRing={isNodeActivelyWorking(selectedNode)}
               statusDot={
                 selectedNode.status === 'verifying'
@@ -1800,7 +1820,7 @@ export function LiveSwarmViewer({
               <div className="lsv-inspector-top">
                 {(() => {
                   const selClean = normalizeHandle(selectedNode.handle);
-                  const selGhUrl = githubProfileUrl(selClean);
+                  const selGhUrl = githubProfileUrl(selClean, Boolean(selectedNode.github_verified));
                   return selGhUrl ? (
                     <a
                       href={selGhUrl}
@@ -1944,7 +1964,11 @@ export function LiveSwarmViewer({
                         className={`lsv-role-dot${active ? ' is-pulsing' : ''}`}
                         style={{ background: visual.color }}
                       />
-                      <GitHubAvatar handle={cleanHandle} size={24} />
+                      <GitHubAvatar
+                        handle={cleanHandle}
+                        size={24}
+                        verified={Boolean(node.github_verified)}
+                      />
                       <span className="lsv-card-handle">@{cleanHandle}</span>
                     </div>
                     <span className="lsv-roster-seen tabular">

@@ -104,12 +104,15 @@ export interface GitHubAvatarProps {
   statusDot?: 'working' | 'verifying' | 'recent' | 'idle' | null;
   /** Render a subtle emerald live ring around the avatar when actively working. */
   activeRing?: boolean;
+  /** Only load the live GitHub avatar when handle ownership has been cryptographically verified. */
+  verified?: boolean;
 }
 
 /**
  * Renders a contributor's GitHub avatar (`https://github.com/<handle>.png?size=64`)
- * for valid GitHub-like handles, layered cleanly over a deterministic 5×5 geometric
- * SVG identicon fallback so broken image icons never appear and layout never jumps.
+ * ONLY when `verified === true`, layered cleanly over a deterministic 5×5 geometric
+ * SVG identicon fallback so unverified self-declared handles can never impersonate
+ * another person's GitHub photo.
  */
 export function GitHubAvatar({
   handle,
@@ -118,10 +121,12 @@ export function GitHubAvatar({
   alt = '',
   statusDot = null,
   activeRing = false,
+  verified = false,
 }: GitHubAvatarProps) {
   const cleanHandle = normalizeHandle(handle);
   const cacheKey = cleanHandle.toLowerCase();
-  const canTryGitHub = isValidGitHubHandle(cleanHandle) && !FAILED_GITHUB_HANDLES.has(cacheKey);
+  const canTryGitHub =
+    Boolean(verified) && isValidGitHubHandle(cleanHandle) && !FAILED_GITHUB_HANDLES.has(cacheKey);
 
   const [loadedHandle, setLoadedHandle] = useState<string | null>(null);
   const [failedHandle, setFailedHandle] = useState<string | null>(null);

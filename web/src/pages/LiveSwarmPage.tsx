@@ -403,6 +403,7 @@ export function LiveSwarmPage({
                       <GitHubAvatar
                         handle={a.handle}
                         size={22}
+                        verified={Boolean(a.github_verified)}
                         activeRing={isFreshlyActive}
                       />
                       <Link
@@ -467,6 +468,7 @@ export function LiveSwarmPage({
                   <GitHubAvatar
                     handle={a.handle}
                     size={26}
+                    verified={Boolean(a.github_verified)}
                     activeRing={isFreshlyActive}
                   />
                   <span className="lsv-fleet-card-handle">@{a.handle}</span>

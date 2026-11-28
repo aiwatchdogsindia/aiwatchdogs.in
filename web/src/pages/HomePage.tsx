@@ -9,6 +9,7 @@ import {
   isNodeFreshlyLive,
   isTimestampFreshlyLive,
 } from '../components/LiveSwarmViewer';
+import { ListProjectRow } from '../components/ListProjectRow';
 import { PublicLeaderboard } from '../components/PublicLeaderboard';
 import type { SseStatus } from '../hooks/useSwarmStream';
 import {
@@ -38,7 +39,9 @@ import {
   formatRelativeTime,
   isClearedStatus,
   isVerifiedStatus,
+  nextProjectCode,
   projectCodeFor,
+  sortProjectsDescending,
 } from '../utils';
 
 const ObservatoryMap = lazy(() =>
@@ -210,7 +213,8 @@ export function HomePage({
     : 50;
   const tugRightPct = 100 - tugLeftPct;
 
-  const missions = head?.missions ?? [];
+  const missions = useMemo(() => sortProjectsDescending(head?.missions ?? []), [head?.missions]);
+  const nextCode = useMemo(() => (missions.length > 0 ? nextProjectCode(missions) : undefined), [missions]);
   const findings = head?.recent_findings ?? [];
   // Strictly freshly-live agents within the 120s live window (never stale 60m rings)
   const activeHandleSet = useMemo(() => {
@@ -556,6 +560,12 @@ export function HomePage({
             All projects
           </Link>
         </div>
+
+        <ListProjectRow
+          nextCode={nextCode}
+          variant="race"
+          className="race-enlist-row"
+        />
 
         <ul className="tracks">
           {missions.map((m) => {

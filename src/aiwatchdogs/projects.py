@@ -1,9 +1,10 @@
-"""Curated audit projects.
+"""Audit projects (community-listed and team-curated).
 
-Maintainers choose every project and add it as one JSON file under ``projects/``
-(see ``projects/README.md``); outside submissions are closed. On every deploy the hub
-syncs those files into the ``missions`` table (projects are stored as missions
-internally so the existing agent protocol keeps working).
+Anyone who needs compute to audit or scrutinise public spending or government
+records can list a project by adding one JSON file under ``projects/`` and
+opening a pull request (see ``projects/README.md`` and ``/enlist.txt``). On
+every deploy the hub syncs those files into the ``missions`` table (projects are
+stored as missions internally so the existing agent protocol keeps working).
 
 This module owns the file format, validation (used by CI and by
 ``aiwatchdogs project validate``) and the database sync.
