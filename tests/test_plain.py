@@ -256,7 +256,8 @@ def test_writer_saves_checked_text_with_a_fake_model(tmp_path: Path, monkeypatch
         start, _ = news.window(news.today_ist())
         _add(app, "f-w", "verified", start, start, amount=5.895e9)
 
-        def fake(cfg, system, prompt, schema):
+        def fake(cfg, system, prompt, schema, max_tokens, timeout_s):
+            assert timeout_s <= writer.MAX_CALL_S and max_tokens <= 16000
             langs = list(schema["properties"])
             if "lede" in json.dumps(schema):
                 return writer.Result({c: {"lede": "Today one finding was confirmed."} for c in langs}, 0.01, "fake")
@@ -264,8 +265,8 @@ def test_writer_saves_checked_text_with_a_fake_model(tmp_path: Path, monkeypatch
             data[langs[-1]] = {**data[langs[-1]], "what": "A made-up ₹4,321 crore figure."}
             return writer.Result(data, 0.02, "fake")
 
-        monkeypatch.setattr(writer, "call_model", fake)
-        cfg = writer.Config("anthropic", "fake", "low", 5.0, "", ["en", "hi", "ta", "sa"])
+        monkeypatch.setattr(writer, "_call_anthropic", fake)
+        cfg = writer.Config("anthropic", "claude-haiku-5-5", "low", 5.0, "", ["en", "hi", "ta", "sa"])
         report = writer.run_once(app.state.db, cfg, time_budget_s=600)
         assert report["calls"] >= 2 and report["rejected"] >= 1
         texts = writer.load_texts(app.state.db, ["finding:f-w"])["finding:f-w"]
@@ -320,3 +321,114 @@ def test_projects_lead_with_a_one_line_answer(tmp_path: Path) -> None:
 
         head = client.get("/api/head").json()
         assert next(m for m in head["missions"] if m["slug"] == slug)["plain_answer_finding"] == "f-big"
+
+
+def test_spending_is_reserved_before_each_call(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        db = app.state.db
+        assert writer._reserve(db, "2026-01-01", 0.6, 1.0)
+        assert not writer._reserve(db, "2026-01-01", 0.6, 1.0)
+        writer._settle(db, "2026-01-01", 0.6, 0.1)
+        assert writer._reserve(db, "2026-01-01", 0.6, 1.0)
+
+        calls = []
+        monkeypatch.setattr(writer, "_call_anthropic", lambda *a, **k: calls.append(1) or writer.Result({}, 0.0, "x"))
+        cfg = writer.Config("anthropic", "claude-opus-5-5", "low", 0.01, "", ["en"])
+        with pytest.raises(writer.BudgetExhausted):
+            writer.call_model(cfg, "s", "p", {"type": "object"}, max_tokens=4000, db=db)
+        assert calls == [] and writer.spent_today(db) == 0.0
+
+        cfg = writer.Config("anthropic", "claude-haiku-5-5", "low", 1.0, "", ["en"])
+        monkeypatch.setattr(writer, "_call_anthropic", lambda *a, **k: writer.Result({}, 0.0004, "x"))
+        writer.call_model(cfg, "s", "p", {"type": "object"}, max_tokens=4000, db=db)
+        assert abs(writer.spent_today(db) - 0.0004) < 1e-9
+
+
+def test_run_stops_starting_calls_near_the_time_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        start, _ = news.window(news.today_ist())
+        _add(app, "f-t", "verified", start, start)
+        calls = []
+        monkeypatch.setattr(writer, "_call_anthropic", lambda *a, **k: calls.append(a[5]) or writer.Result({}, 0.0, "x"))
+        cfg = writer.Config("anthropic", "claude-haiku-5-5", "low", 5.0, "", ["en"])
+        writer.run_once(app.state.db, cfg, time_budget_s=10.0)
+        assert calls == []
+        writer.run_once(app.state.db, cfg, time_budget_s=45.0)
+        assert calls and max(calls) <= 42.0
+
+
+def test_zero_or_unprinted_spending_is_never_invented() -> None:
+    base = SAMPLES[3]
+    zero = {**base, "anomaly_metrics": {**base["anomaly_metrics"], "actual": 0.0, "unspent": base["anomaly_metrics"]["budget_estimate"], "unspent_pct": 100.0}}
+    card = explain_finding(zero, "en")
+    assert "₹1 " not in card["what"] + " " and "None of it was spent" in card["what"]
+    missing = {**zero, "anomaly_metrics": {**zero["anomaly_metrics"], "actual_printed": False}}
+    for code in CODES:
+        c = explain_finding(missing, code)
+        assert c and "100" not in c["head"] and fmt.percent(100, code) not in c["what"]
+    assert "no spending figure" in explain_finding(missing, "en")["what"]
+
+
+def test_repeat_winner_headline_does_not_claim_single_bids() -> None:
+    for i in (13, 14):
+        head = explain_finding(SAMPLES[i], "en")["head"]
+        assert "only bidder" not in head and "won" in head
+
+
+def test_withheld_findings_leave_frozen_editions_and_wipes_do_not_change_them(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app) as client:
+        db = app.state.db
+        day = date(2026, 11, 2)
+        start, _ = news.window(day)
+        _add(app, "f-keep", "verified", start, start, amount=1e9)
+        _add(app, "f-pull", "verified", start, start, amount=5e9)
+        first = news.get_edition(db, day)
+        assert first["number"] == "f-pull"
+        with db.transaction() as conn:
+            conn.execute("DELETE FROM summary_cache")
+            conn.execute("UPDATE findings SET quarantined = 1 WHERE id = 'f-pull'")
+        _add(app, "f-new", "verified", start, start)
+        again = news.get_edition(db, day)
+        assert again["fingerprint"] == first["fingerprint"]
+        ids = {x["id"] for x in again["top"]}
+        assert ids == {"f-keep"} and again["number"] is None and again["withheld"] == 1
+        body = client.get("/api/news", params={"date": day.isoformat()}).text
+        assert "f-pull" not in body
+        assert "f-pull" not in client.get(f"/news/{day.isoformat()}.md").text
+
+
+def test_daily_counts_are_not_capped_by_the_story_list(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        day = news.today_ist()
+        start, _ = news.window(day)
+        for i in range(8):
+            _add(app, f"f-c{i}", "verified", start, start, amount=1e7 * (i + 1))
+        for i in range(5):
+            _add(app, f"f-x{i}", "cleared", start, start)
+        ed = news.get_edition(app.state.db, day)
+        assert len(ed["top"]) == 6 and ed["stats"]["confirmed"] == 8
+        assert len(ed["cleared"]) == 3 and ed["stats"]["cleared"] == 5
+
+
+def test_news_uses_saved_model_cards(tmp_path: Path) -> None:
+    app = create_app(db_path=tmp_path / "hub.db", seed=True)
+    with TestClient(app):
+        day = news.today_ist()
+        start, _ = news.window(day)
+        _add(app, "f-m", "verified", start, start, amount=5.895e9)
+        ed = news.get_edition(app.state.db, day)
+        snap = ed["top"][0]
+        assert snap["summary"] == "s"
+        written = {"finding:f-m": {"hash": writer.source_hash(snap), "model": "m", "langs": {"en": {
+            "head": "Rural Development left 49.1% of its money unspent",
+            "what": "Only ₹610 crore of ₹1,200 crore was spent.",
+            "why": "Money meant for villages sat unused.",
+            "ask": "What held it back?",
+        }}}}
+        r = news.render(ed, "en", written=written)
+        top = next(x for x in r["sections"] if x["id"] == "top")
+        assert top["stories"][0]["source"] == "model"

@@ -140,13 +140,53 @@ def _cost(model: str, usage: Any) -> float:
     return (tokens_in * pin + cache_w * pin * 1.25 + cache_r * pin * 0.1 + tokens_out * pout) / 1e6
 
 
-def _call_anthropic(cfg: Config, system: str, prompt: str, schema: dict[str, Any]) -> Result:
+class BudgetExhausted(RuntimeError):
+    pass
+
+
+MIN_CALL_S = 15.0
+MAX_CALL_S = 120.0
+
+
+def max_tokens_for(n_langs: int) -> int:
+    return min(16000, 1000 + 1200 * max(1, n_langs))
+
+
+def worst_case_usd(cfg: Config, system: str, prompt: str, schema: dict[str, Any], max_tokens: int) -> float:
+    pin, pout = PRICES.get(cfg.model, PRICES["claude-opus-5-5"])
+    tokens_in = float(len(system) + len(prompt) + len(json.dumps(schema)) + 1000)
+    return (tokens_in * pin * 1.25 + max_tokens * pout) / 1e6
+
+
+def _reserve(db: Any, day: str, amount: float, cap: float) -> bool:
+    now = _now()
+    with db.transaction() as conn:
+        conn.execute(
+            "INSERT INTO plain_spend (day, cost_usd, calls, updated_at) VALUES (?, 0, 0, ?) ON CONFLICT(day) DO NOTHING",
+            (day, now),
+        )
+        cur = conn.execute(
+            "UPDATE plain_spend SET cost_usd = cost_usd + ?, updated_at = ? WHERE day = ? AND cost_usd + ? <= ?",
+            (amount, now, day, amount, cap),
+        )
+        return cur.rowcount == 1
+
+
+def _settle(db: Any, day: str, held: float, actual: float, calls: int = 1) -> None:
+    with db.transaction() as conn:
+        conn.execute(
+            "UPDATE plain_spend SET cost_usd = cost_usd - ? + ?, calls = calls + ?, updated_at = ? WHERE day = ?",
+            (held, actual, calls, _now(), day),
+        )
+
+
+def _call_anthropic(cfg: Config, system: str, prompt: str, schema: dict[str, Any], max_tokens: int, timeout_s: float) -> Result:
     import anthropic
 
-    client = anthropic.Anthropic(max_retries=2, timeout=120.0)
+    client = anthropic.Anthropic(max_retries=0, timeout=timeout_s)
     kwargs: dict[str, Any] = {
         "model": cfg.model,
-        "max_tokens": 32000,
+        "max_tokens": max_tokens,
         "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": prompt}],
         "output_config": {"effort": cfg.effort, "format": {"type": "json_schema", "schema": schema}},
@@ -154,18 +194,16 @@ def _call_anthropic(cfg: Config, system: str, prompt: str, schema: dict[str, Any
     if cfg.model in FALLBACK_MODELS:
         kwargs["betas"] = ["server-side-fallback-2026-07-01"]
         kwargs["fallbacks"] = "default"
-        stream_ctx = client.beta.messages.stream(**kwargs)
+        msg = client.beta.messages.create(**kwargs)
     else:
-        stream_ctx = client.messages.stream(**kwargs)
-    with stream_ctx as stream:
-        msg = stream.get_final_message()
+        msg = client.messages.create(**kwargs)
     if msg.stop_reason in ("refusal", "max_tokens"):
         raise RuntimeError(f"model stopped: {msg.stop_reason}")
     text = next((b.text for b in msg.content if getattr(b, "type", "") == "text"), "")
     return Result(json.loads(text), _cost(cfg.model, msg.usage), str(getattr(msg, "model", cfg.model)))
 
 
-def _call_ollama(cfg: Config, system: str, prompt: str, schema: dict[str, Any]) -> Result:
+def _call_ollama(cfg: Config, system: str, prompt: str, schema: dict[str, Any], timeout_s: float) -> Result:
     import httpx
 
     body = {
@@ -175,7 +213,7 @@ def _call_ollama(cfg: Config, system: str, prompt: str, schema: dict[str, Any]) 
         "stream": False,
         "options": {"temperature": 0.2},
     }
-    with httpx.Client(timeout=600.0) as client:
+    with httpx.Client(timeout=timeout_s) as client:
         resp = client.post(f"{cfg.ollama_url}/api/chat", json=body)
         if resp.status_code == 404:
             client.post(f"{cfg.ollama_url}/api/pull", json={"model": cfg.model, "stream": False}, timeout=3600.0).raise_for_status()
@@ -185,12 +223,35 @@ def _call_ollama(cfg: Config, system: str, prompt: str, schema: dict[str, Any]) 
     return Result(json.loads(content), 0.0, cfg.model)
 
 
-def call_model(cfg: Config, system: str, prompt: str, schema: dict[str, Any]) -> Result:
-    if cfg.provider == "anthropic":
-        return _call_anthropic(cfg, system, prompt, schema)
+def call_model(
+    cfg: Config,
+    system: str,
+    prompt: str,
+    schema: dict[str, Any],
+    *,
+    max_tokens: int = 16000,
+    timeout_s: float = MAX_CALL_S,
+    db: Any = None,
+) -> Result:
     if cfg.provider == "ollama":
-        return _call_ollama(cfg, system, prompt, schema)
-    raise RuntimeError("plain writer is not configured")
+        return _call_ollama(cfg, system, prompt, schema, max(timeout_s, 600.0) if db is None else timeout_s)
+    if cfg.provider != "anthropic":
+        raise RuntimeError("plain writer is not configured")
+    if db is None:
+        return _call_anthropic(cfg, system, prompt, schema, max_tokens, timeout_s)
+    import anthropic
+
+    day = _today()
+    held = worst_case_usd(cfg, system, prompt, schema, max_tokens)
+    if not _reserve(db, day, held, cfg.budget_usd):
+        raise BudgetExhausted("daily budget reached")
+    try:
+        res = _call_anthropic(cfg, system, prompt, schema, max_tokens, timeout_s)
+    except anthropic.APIStatusError:
+        _settle(db, day, held, 0.0, calls=0)
+        raise
+    _settle(db, day, held, res.cost_usd)
+    return res
 
 
 def finding_facts(f: dict[str, Any]) -> dict[str, Any]:
@@ -212,7 +273,9 @@ def finding_facts(f: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def write_card(cfg: Config, f: dict[str, Any], langs: list[str]) -> tuple[dict[str, Any], dict[str, Any], float, str]:
+def write_card(
+    cfg: Config, f: dict[str, Any], langs: list[str], *, db: Any = None, timeout_s: float = MAX_CALL_S
+) -> tuple[dict[str, Any], dict[str, Any], float, str]:
     facts = finding_facts(f)
     ref = explain_finding(f, "en") or {}
     prompt = (
@@ -221,7 +284,7 @@ def write_card(cfg: Config, f: dict[str, Any], langs: list[str]) -> tuple[dict[s
         f"REFERENCE (English, from the template):\n"
         + json.dumps({k: ref.get(k, "") for k in CARD_FIELDS}, ensure_ascii=False, indent=1)
     )
-    res = call_model(cfg, STYLE, prompt, _schema(langs, CARD_FIELDS))
+    res = call_model(cfg, STYLE, prompt, _schema(langs, CARD_FIELDS), max_tokens=max_tokens_for(len(langs)), timeout_s=timeout_s, db=db)
     allowed = allowed_numbers(facts, ref.get("what", ""), ref.get("head", ""))
     good, bad = {}, {}
     for lang in langs:
@@ -234,7 +297,9 @@ def write_card(cfg: Config, f: dict[str, Any], langs: list[str]) -> tuple[dict[s
     return good, bad, res.cost_usd, res.model
 
 
-def write_lede(cfg: Config, rendered_en: dict[str, Any], langs: list[str]) -> tuple[dict[str, Any], dict[str, Any], float, str]:
+def write_lede(
+    cfg: Config, rendered_en: dict[str, Any], langs: list[str], *, db: Any = None, timeout_s: float = MAX_CALL_S
+) -> tuple[dict[str, Any], dict[str, Any], float, str]:
     stories = [
         {"section": sec["title"], "head": st["head"], "what": st["what"]}
         for sec in rendered_en.get("sections", [])
@@ -250,7 +315,7 @@ def write_lede(cfg: Config, rendered_en: dict[str, Any], langs: list[str]) -> tu
         f"{LEDE_TASK}\n\nLanguages:\n{_lang_lines(langs)}\n\n"
         f"TODAY:\n{json.dumps(facts, ensure_ascii=False, indent=1)}"
     )
-    res = call_model(cfg, STYLE, prompt, _schema(langs, LEDE_FIELDS))
+    res = call_model(cfg, STYLE, prompt, _schema(langs, LEDE_FIELDS), max_tokens=max_tokens_for(len(langs)), timeout_s=timeout_s, db=db)
     allowed = allowed_numbers(facts)
     good, bad = {}, {}
     for lang in langs:
@@ -275,15 +340,6 @@ def spent_today(db: Any) -> float:
     with db.read() as conn:
         row = conn.execute("SELECT cost_usd FROM plain_spend WHERE day = ?", (_today(),)).fetchone()
     return float(row["cost_usd"] or 0.0) if row is not None else 0.0
-
-
-def _record_spend(conn: Any, cost: float) -> None:
-    conn.execute(
-        "INSERT INTO plain_spend (day, cost_usd, calls, updated_at) VALUES (?, ?, 1, ?) "
-        "ON CONFLICT(day) DO UPDATE SET cost_usd = plain_spend.cost_usd + excluded.cost_usd, "
-        "calls = plain_spend.calls + 1, updated_at = excluded.updated_at",
-        (_today(), cost, _now()),
-    )
 
 
 def load_texts(db: Any, keys: list[str]) -> dict[str, dict[str, Any]]:
@@ -334,8 +390,6 @@ def _save(db: Any, key: str, h: str, cfg: Config, model: str, good: dict[str, An
             (key, h, cfg.provider, model, json.dumps(payload, ensure_ascii=False), json.dumps(rejected, ensure_ascii=False),
              1 if done else 0, prev_cost + cost, now, now),
         )
-        if cost:
-            _record_spend(conn, cost)
 
 
 def _missing_langs(db: Any, key: str, h: str, langs: list[str]) -> list[str]:
@@ -378,11 +432,20 @@ def run_once(db: Any, cfg: Config | None = None, *, time_budget_s: float = 40.0,
         return report
     start = time.monotonic()
 
-    def time_left() -> bool:
-        return time.monotonic() - start < time_budget_s * 0.4
+    def remaining() -> float:
+        return time_budget_s - (time.monotonic() - start) - 3.0
 
-    def budget_left() -> bool:
-        return cfg.provider == "ollama" or spent_today(db) < cfg.budget_usd
+    def can_call() -> bool:
+        return remaining() >= MIN_CALL_S and (cfg.provider == "ollama" or spent_today(db) < cfg.budget_usd)
+
+    def call_timeout() -> float:
+        return min(MAX_CALL_S, remaining()) if cfg.provider == "anthropic" else max(MIN_CALL_S, remaining())
+
+    def tally(good: dict[str, Any], bad: dict[str, Any], cost: float) -> None:
+        report["calls"] += 1
+        report["written"] += len(good)
+        report["rejected"] += len(bad)
+        report["spent_usd"] += cost
 
     from . import news as plain_news
 
@@ -392,42 +455,46 @@ def run_once(db: Any, cfg: Config | None = None, *, time_budget_s: float = 40.0,
         h = plain_news.lede_hash(edition)
         key = f"news:{d.isoformat()}"
         missing = _missing_langs(db, key, h, cfg.languages)
-        if missing and budget_left():
+        if missing and can_call():
             rendered = plain_news.render(edition, "en", base_url)
             for i in range(0, len(missing), LANG_GROUP * 2):
-                if not (time_left() and budget_left()):
+                if not can_call():
                     break
                 group = missing[i : i + LANG_GROUP * 2]
-                good, bad, cost, model = write_lede(cfg, rendered, group)
+                good, bad, cost, model = write_lede(cfg, rendered, group, db=db, timeout_s=call_timeout())
                 _save(db, key, h, cfg, model, good, bad, cost, cfg.languages)
-                report["calls"] += 1
-                report["written"] += len(good)
-                report["rejected"] += len(bad)
-                report["spent_usd"] += cost
+                tally(good, bad, cost)
+    except BudgetExhausted:
+        report["budget_reached"] = True
+        return _finish(db, cfg, report)
     except Exception as exc:
         log.warning("plain writer lede failed: %s", exc)
         report["error"] = str(exc)[:200]
 
     for f in _pending_findings(db, 25):
-        if not (time_left() and budget_left()):
+        if not can_call():
             break
         key, h = f"finding:{f['id']}", source_hash(f)
         missing = _missing_langs(db, key, h, cfg.languages)
         for i in range(0, len(missing), LANG_GROUP):
-            if not (time_left() and budget_left()):
+            if not can_call():
                 break
             group = missing[i : i + LANG_GROUP]
             try:
-                good, bad, cost, model = write_card(cfg, f, group)
+                good, bad, cost, model = write_card(cfg, f, group, db=db, timeout_s=call_timeout())
+            except BudgetExhausted:
+                report["budget_reached"] = True
+                return _finish(db, cfg, report)
             except Exception as exc:
                 log.warning("plain writer failed for %s: %s", f["id"], exc)
                 report["error"] = str(exc)[:200]
-                return report
+                return _finish(db, cfg, report)
             _save(db, key, h, cfg, model, good, bad, cost, cfg.languages)
-            report["calls"] += 1
-            report["written"] += len(good)
-            report["rejected"] += len(bad)
-            report["spent_usd"] += cost
+            tally(good, bad, cost)
+    return _finish(db, cfg, report)
+
+
+def _finish(db: Any, cfg: Config, report: dict[str, Any]) -> dict[str, Any]:
     report["spent_usd"] = round(report["spent_usd"], 4)
     report["spent_today_usd"] = round(spent_today(db), 4) if cfg.provider == "anthropic" else 0.0
     return report

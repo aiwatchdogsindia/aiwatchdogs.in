@@ -120,13 +120,18 @@ def _unspent(f: dict[str, Any], m: dict[str, Any], lang: str) -> Frame | None:
         actual, unspent, pct = _num(m.get("actual")), _num(m.get("unspent")), _num(m.get("unspent_pct"))
         if actual is None or unspent is None or pct is None:
             return None
+        budget = fmt.money(be * 1e7, lang)
+        if m.get("actual_printed") is False:
+            return "unspent", "head_none", "what_none", {"entity": entity, "year": year, "budget": budget}, []
         slots = {
             "entity": entity, "year": year, "pct": fmt.percent(pct, lang),
-            "budget": fmt.money(be * 1e7, lang),
-            "actual": fmt.money(actual * 1e7, lang) or fmt.money(1, lang),
+            "budget": budget,
             "unspent": fmt.money(unspent * 1e7, lang),
         }
-        return "unspent", "head", "what", slots, []
+        actual_text = fmt.money(actual * 1e7, lang)
+        if not actual_text:
+            return "unspent", "head", "what_zero", slots, []
+        return "unspent", "head", "what", {**slots, "actual": actual_text}, []
     rev, cut, pct = _num(m.get("revised_estimate")), _num(m.get("revised_cut")), _num(m.get("revised_cut_pct"))
     if rev is None or cut is None or pct is None:
         return None

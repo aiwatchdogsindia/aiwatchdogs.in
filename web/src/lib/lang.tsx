@@ -172,6 +172,15 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     setPlainLang(code);
     writeStored(code);
     setLangState(code);
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('lang')) {
+        url.searchParams.set('lang', code);
+        window.history.replaceState(window.history.state, '', url.toString());
+      }
+    } catch {
+      return;
+    }
   }, []);
 
   const value = useMemo<LangContextValue>(

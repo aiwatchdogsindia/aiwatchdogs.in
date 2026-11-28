@@ -12,13 +12,13 @@ from .packs import fill, pack, section, text
 
 IST = timezone(timedelta(hours=5, minutes=30))
 EDITION_VERSION = 1
-CACHE_PREFIX = f"news:v{EDITION_VERSION}:"
+CACHE_PREFIX = f"edition:v{EDITION_VERSION}:"
 FIRST_DATE = date(2025, 1, 1)
 MAX_ARCHIVE = 60
 SITE = "https://aiwatchdogs.in"
 _VISIBLE = "COALESCE(quarantined, 0) = 0 AND status != 'quarantined' AND COALESCE(is_demo_sample, 0) = 0"
 _SNAP_COLS = (
-    "id, mission_slug, methodology_code, title, entity_name, jurisdiction, fiscal_year, "
+    "id, mission_slug, methodology_code, title, summary, entity_name, jurisdiction, fiscal_year, "
     "monetary_exposure_inr, anomaly_metrics_json, rule_triggered, status, confirm_count, "
     "required_quorum, source_url, verified_at, created_at"
 )
@@ -62,6 +62,7 @@ def _snap(row: Any) -> dict[str, Any]:
         "mission_slug": str(row["mission_slug"] or ""),
         "methodology_code": str(row["methodology_code"] or ""),
         "title": str(row["title"] or ""),
+        "summary": str(row["summary"] or ""),
         "entity_name": str(row["entity_name"] or ""),
         "jurisdiction": str(row["jurisdiction"] or ""),
         "fiscal_year": str(row["fiscal_year"] or ""),
@@ -126,6 +127,25 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
             (start, end),
         ).fetchall()
     ]
+    def _count(statuses: tuple[str, ...]) -> int:
+        ph = ",".join("?" for _ in statuses)
+        r = q(
+            f"SELECT COUNT(*) AS c FROM findings WHERE status IN ({ph}) AND {_VISIBLE} "
+            "AND COALESCE(verified_at, created_at) >= ? AND COALESCE(verified_at, created_at) < ?",
+            (*statuses, start, end),
+        ).fetchone()
+        return int(r["c"] or 0) if r is not None else 0
+
+    confirmed_today = _count(("verified", "rti_filed"))
+    cleared_today = _count(("cleared", "resolved_explained"))
+    r = q(
+        f"SELECT COUNT(DISTINCT c.finding_id) AS c FROM finding_corrections c JOIN findings f ON f.id = c.finding_id "
+        f"WHERE c.created_at >= ? AND c.created_at < ? AND COALESCE(f.quarantined, 0) = 0 "
+        "AND f.status != 'quarantined' AND COALESCE(f.is_demo_sample, 0) = 0",
+        (start, end),
+    ).fetchone()
+    corrections_today = int(r["c"] or 0) if r is not None else 0
+
     desk_counts: dict[str, int] = {}
     new_leads = 0
     for r in q(
@@ -206,10 +226,10 @@ def build_edition(conn: Any, d: date, now: datetime | None = None) -> dict[str, 
         "window": [start, end],
         "generated_at": _iso(now or datetime.now(timezone.utc)),
         "stats": {
-            "confirmed": len(top),
-            "cleared": len(cleared),
+            "confirmed": confirmed_today,
+            "cleared": cleared_today,
             "new_leads": new_leads,
-            "corrections": len(corrections),
+            "corrections": corrections_today,
         },
         "top": top,
         "recent": recent,
@@ -233,17 +253,48 @@ def lede_hash(edition: dict[str, Any]) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
 
 
+def _edition_ids(edition: dict[str, Any]) -> set[str]:
+    ids = {str(x["id"]) for k in ("top", "recent", "cleared", "corrections") for x in edition.get(k) or [] if x}
+    ids |= {str(p["largest"]["id"]) for p in edition.get("projects") or [] if p.get("largest")}
+    return ids
+
+
+def _drop_hidden(conn: Any, edition: dict[str, Any]) -> dict[str, Any]:
+    ids = sorted(_edition_ids(edition))
+    if not ids:
+        return edition
+    ph = ",".join("?" for _ in ids)
+    visible = {
+        str(r["id"])
+        for r in conn.execute(f"SELECT id FROM findings WHERE id IN ({ph}) AND {_VISIBLE}", ids).fetchall()
+    }
+    hidden = set(ids) - visible
+    if not hidden:
+        return edition
+    out = dict(edition)
+    for k in ("top", "recent", "cleared", "corrections"):
+        out[k] = [x for x in edition.get(k) or [] if str(x["id"]) not in hidden]
+    out["projects"] = [
+        {**p, "largest": None} if p.get("largest") and str(p["largest"]["id"]) in hidden else p
+        for p in edition.get("projects") or []
+    ]
+    if out.get("number") in hidden:
+        out["number"] = None
+    out["withheld"] = len(hidden)
+    return out
+
+
 def get_edition(db: Any, d: date, now: datetime | None = None) -> dict[str, Any]:
     live = d >= today_ist(now)
     key = f"{CACHE_PREFIX}{d.isoformat()}"
     with db.read() as conn:
         if not live:
-            row = conn.execute("SELECT payload_json FROM summary_cache WHERE cache_key = ?", (key,)).fetchone()
+            row = conn.execute("SELECT payload_json FROM plain_texts WHERE key = ?", (key,)).fetchone()
             if row is not None:
                 try:
                     cached = json.loads(row["payload_json"])
                     if isinstance(cached, dict) and cached.get("v") == EDITION_VERSION:
-                        return {**cached, "state": "final"}
+                        return {**_drop_hidden(conn, cached), "state": "final"}
                 except (TypeError, ValueError):
                     pass
         edition = build_edition(conn, d, now)
@@ -251,9 +302,9 @@ def get_edition(db: Any, d: date, now: datetime | None = None) -> dict[str, Any]
         try:
             with db.transaction() as wconn:
                 wconn.execute(
-                    "INSERT INTO summary_cache (cache_key, version_stamp, payload_json, updated_at) "
-                    "VALUES (?, ?, ?, ?) ON CONFLICT(cache_key) DO NOTHING",
-                    (key, edition["fingerprint"], json.dumps(edition, default=str), edition["generated_at"]),
+                    "INSERT INTO plain_texts (key, source_hash, provider, model, payload_json, complete, created_at, updated_at) "
+                    "VALUES (?, ?, 'edition', '', ?, 1, ?, ?) ON CONFLICT(key) DO NOTHING",
+                    (key, edition["fingerprint"], json.dumps(edition, default=str), edition["generated_at"], edition["generated_at"]),
                 )
         except Exception:
             pass

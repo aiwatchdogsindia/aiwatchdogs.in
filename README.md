@@ -162,7 +162,7 @@ Templates are the floor and cost nothing. A model can be switched on to write wa
 | `AIWATCHDOGS_PLAIN_DAILY_BUDGET_USD` | Hard daily cap for paid calls. Default `2`. |
 | `AIWATCHDOGS_PLAIN_SECRET` | Lets the scheduler call `POST /api/plain/run`. |
 
-On Vercel the writer runs inside the site's own function: `.github/workflows/plain-writer.yml` pings it every 15 minutes (set the `AIWATCHDOGS_PLAIN_SECRET` repo secret), with a daily Vercel cron as backup. With Docker, `docker compose --profile model up` starts a local open-model container next to the hub and the hub writes in the background, no API key needed.
+On Vercel the writer runs inside the site's own function: `.github/workflows/plain-writer.yml` pings it every 15 minutes (set the `AIWATCHDOGS_PLAIN_SECRET` repo secret), with a daily Vercel cron as backup. With Docker, `AIWATCHDOGS_PLAIN_WRITER=local docker compose --profile model up` starts a local open-model container next to the hub and turns the writer on, so the hub writes in the background with no API key. The profile alone only starts the model container, the writer stays off until `AIWATCHDOGS_PLAIN_WRITER` is set.
 
 Which model should write? Measure it, don't guess:
 
