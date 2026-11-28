@@ -142,6 +142,16 @@ uv run python scripts/build_sovereign_lies_project.py
 
 The script fetches and SHA-256 verifies all 668 unique official URLs (Union Budget Finance Bills & Memoranda on `indiabudget.gov.in`, Digital Sansad Lok Sabha & Rajya Sabha Q&A PDFs on `sansad.in` / `bucketapi.rajyasabha.digital`, NSE SGB listing circulars on `nsearchives.nseindia.com`, CAG Union & State Audit Reports on `cag.gov.in` / `d1jmc0u14z2tmp.cloudfront.net`, static PIB factsheets on `static.pib.gov.in`, State Gazettes/Finance GOs on `transport.delhi.gov.in`, `wcd.delhi.gov.in`, `apfinance.gov.in`, and PRS State Budget Analyses on `prsindia.org`), dry-runs all 1,000 tasks through `P8` (`881` leads, `119` cleared grandfathered/honored benchmarks, `0` unevaluable), validates schema/neutrality/PII, and writes `sovereign-lies/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
 
+### Innocent But Locked Up (`P10`)
+
+`projects/innocent-but-locked-up.json` is generated from live-verified, double-fetch byte-stable official Indian judicial, prison, police, human-rights, legal-aid, parliamentary, ministry, and CAG records spanning the past five years (**2021–2026**) across **1,000 tasks** (`1,002` unique SHA-256-pinned PDFs across `19` verified official/open-data domains, all `26` constitutional courts — Supreme Court + all `25` High Courts — `29` States/UTs + Union of India, `280` explicitly named prisons, and all `8` official portal categories), anchored by Task #1 `p10-court-2024-anchor-bashir-ahmad-koka-v-chandraker-bh-0001` (*Bashir Ahmad Koka v. Chandraker Bharti & Ors.*, J&K & Ladakh High Court, paired `WP(Crl) 498/2022` detention-quashment PDF + `CCP(S) 123/2024` Article 215 contempt PDF documenting 98 days of post-quashment custody overrun before release):
+
+```
+uv run python scripts/build_innocent_but_locked_up_project.py
+```
+
+The script verifies every primary and secondary SHA-256 digest (caching outside git in `/tmp/p10-cache`), parses every PDF via canonical `load_dataset()`, dry-runs all 1,000 tasks through `P10` (`866` leads, `134` cleared compliant/timely-release benchmarks, `0` unevaluable), enforces BNS Sec 356 neutrality, DPDP Act 2023 PII scrubbing, header `< 10 KiB`, and total JSON `<= 20 MiB`, validates via `aiwatchdogs project validate`, and writes `innocent-but-locked-up/documents.csv`, `coverage.json`, and `METHODOLOGY.md`.
+
 ## Renaming a project
 
 Change the `slug` (and the file name), and list the old slug under `formerly`:

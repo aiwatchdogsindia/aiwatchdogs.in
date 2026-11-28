@@ -1,0 +1,882 @@
+{
+  "project_slug": "innocent-but-locked-up",
+  "project_code": "P10",
+  "methodology_code": "P10",
+  "hook": "The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed?",
+  "generated_on": "2026-11-28",
+  "as_of_date": "2026-11-28",
+  "year_range": [
+    2021,
+    2026
+  ],
+  "total_tasks": 1000,
+  "unique_documents_covered": 1002,
+  "documents_count": 1002,
+  "states_and_uts_covered": 29,
+  "courts_covered": 48,
+  "prisons_named": 280,
+  "full_4_stage_tasks": 14,
+  "contempt_tasks": 90,
+  "verified_release_tasks": 704,
+  "cleared_control_tasks_embedded": 134,
+  "total_overrun_days_documented": 5445,
+  "median_overrun_days": 88.5,
+  "max_overrun_days": 2676,
+  "total_compensation_ordered_inr": 1275000.0,
+  "by_portal_category": [
+    {
+      "portal_category": "court_portal",
+      "label": "Court Portals (SCI & High Courts)",
+      "tasks": 752,
+      "cleared_controls": 63
+    },
+    {
+      "portal_category": "parliament",
+      "label": "Parliament (Digital Sansad)",
+      "tasks": 130,
+      "cleared_controls": 46
+    },
+    {
+      "portal_category": "nhrc_shrc",
+      "label": "NHRC & State Human Rights Commissions",
+      "tasks": 66,
+      "cleared_controls": 0
+    },
+    {
+      "portal_category": "nalsa_slsa",
+      "label": "NALSA, SLSAs & UTRCs",
+      "tasks": 27,
+      "cleared_controls": 13
+    },
+    {
+      "portal_category": "govt_ministry",
+      "label": "Union & State Government Ministries",
+      "tasks": 12,
+      "cleared_controls": 7
+    },
+    {
+      "portal_category": "prison_portal",
+      "label": "Prison & Correctional Portals",
+      "tasks": 7,
+      "cleared_controls": 3
+    },
+    {
+      "portal_category": "police_portal",
+      "label": "Police & ICJS Portals",
+      "tasks": 4,
+      "cleared_controls": 2
+    },
+    {
+      "portal_category": "cag_audit",
+      "label": "CAG Audit Reports",
+      "tasks": 2,
+      "cleared_controls": 0
+    }
+  ],
+  "by_year": [
+    {
+      "year": 2021,
+      "tasks": 49,
+      "full_4_stage": 0,
+      "cleared_controls": 9,
+      "overrun_days": 0
+    },
+    {
+      "year": 2022,
+      "tasks": 108,
+      "full_4_stage": 1,
+      "cleared_controls": 13,
+      "overrun_days": 1203
+    },
+    {
+      "year": 2023,
+      "tasks": 143,
+      "full_4_stage": 2,
+      "cleared_controls": 15,
+      "overrun_days": 134
+    },
+    {
+      "year": 2024,
+      "tasks": 234,
+      "full_4_stage": 8,
+      "cleared_controls": 18,
+      "overrun_days": 343
+    },
+    {
+      "year": 2025,
+      "tasks": 270,
+      "full_4_stage": 2,
+      "cleared_controls": 44,
+      "overrun_days": 123
+    },
+    {
+      "year": 2026,
+      "tasks": 196,
+      "full_4_stage": 1,
+      "cleared_controls": 35,
+      "overrun_days": 3642
+    }
+  ],
+  "by_court_tier": {
+    "supreme_court": {
+      "tasks": 21,
+      "cleared_controls": 1
+    },
+    "high_court": {
+      "tasks": 731,
+      "cleared_controls": 62
+    },
+    "district_court": {
+      "tasks": 0,
+      "cleared_controls": 0
+    },
+    "statutory_body": {
+      "tasks": 248,
+      "cleared_controls": 71
+    }
+  },
+  "by_mechanism": {
+    "post_acquittal_contempt_overrun": {
+      "tasks": 174
+    },
+    "bail_or_release_order_contempt": {
+      "tasks": 123
+    },
+    "warrant_or_faster_transmission_delay": {
+      "tasks": 30
+    },
+    "statutory_commission_detention_finding": {
+      "tasks": 78
+    },
+    "institutional_compliance_gap": {
+      "tasks": 461
+    },
+    "timely_release_or_compliant": {
+      "tasks": 134
+    }
+  },
+  "by_chain_status": {
+    "full_4_stage_chain": 14,
+    "partial_3_stage": 170,
+    "institutional_record": 682,
+    "compliant_control": 134
+  },
+  "states": [
+    {
+      "state_ut": null,
+      "jurisdiction": "Union of India",
+      "tasks": 253,
+      "full_4_stage": 2,
+      "cleared_controls": 68,
+      "total_overrun_days": 1316,
+      "compensation_inr": 750000.0
+    },
+    {
+      "state_ut": "Tamil Nadu",
+      "jurisdiction": "State:Tamil Nadu",
+      "tasks": 216,
+      "full_4_stage": 0,
+      "cleared_controls": 45,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Jammu and Kashmir",
+      "jurisdiction": "UT:Jammu and Kashmir",
+      "tasks": 184,
+      "full_4_stage": 4,
+      "cleared_controls": 3,
+      "total_overrun_days": 213,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Chhattisgarh",
+      "jurisdiction": "State:Chhattisgarh",
+      "tasks": 63,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 2676,
+      "compensation_inr": 225000.0
+    },
+    {
+      "state_ut": "Karnataka",
+      "jurisdiction": "State:Karnataka",
+      "tasks": 34,
+      "full_4_stage": 1,
+      "cleared_controls": 1,
+      "total_overrun_days": 10,
+      "compensation_inr": 250000.0
+    },
+    {
+      "state_ut": "Manipur",
+      "jurisdiction": "State:Manipur",
+      "tasks": 29,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 13,
+      "compensation_inr": 50000.0
+    },
+    {
+      "state_ut": "Uttar Pradesh",
+      "jurisdiction": "State:Uttar Pradesh",
+      "tasks": 22,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 956,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Kerala",
+      "jurisdiction": "State:Kerala",
+      "tasks": 20,
+      "full_4_stage": 0,
+      "cleared_controls": 2,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Odisha",
+      "jurisdiction": "State:Odisha",
+      "tasks": 16,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Assam",
+      "jurisdiction": "State:Assam",
+      "tasks": 15,
+      "full_4_stage": 1,
+      "cleared_controls": 1,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Delhi",
+      "jurisdiction": "UT:Delhi",
+      "tasks": 15,
+      "full_4_stage": 0,
+      "cleared_controls": 3,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Jharkhand",
+      "jurisdiction": "State:Jharkhand",
+      "tasks": 13,
+      "full_4_stage": 1,
+      "cleared_controls": 1,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Nagaland",
+      "jurisdiction": "State:Nagaland",
+      "tasks": 13,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Sikkim",
+      "jurisdiction": "State:Sikkim",
+      "tasks": 13,
+      "full_4_stage": 0,
+      "cleared_controls": 1,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Goa",
+      "jurisdiction": "State:Goa",
+      "tasks": 12,
+      "full_4_stage": 0,
+      "cleared_controls": 3,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Himachal Pradesh",
+      "jurisdiction": "State:Himachal Pradesh",
+      "tasks": 12,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Maharashtra",
+      "jurisdiction": "State:Maharashtra",
+      "tasks": 12,
+      "full_4_stage": 1,
+      "cleared_controls": 1,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Gujarat",
+      "jurisdiction": "State:Gujarat",
+      "tasks": 10,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Telangana",
+      "jurisdiction": "State:Telangana",
+      "tasks": 7,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Bihar",
+      "jurisdiction": "State:Bihar",
+      "tasks": 6,
+      "full_4_stage": 2,
+      "cleared_controls": 0,
+      "total_overrun_days": 161,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Meghalaya",
+      "jurisdiction": "State:Meghalaya",
+      "tasks": 6,
+      "full_4_stage": 0,
+      "cleared_controls": 3,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Rajasthan",
+      "jurisdiction": "State:Rajasthan",
+      "tasks": 5,
+      "full_4_stage": 0,
+      "cleared_controls": 1,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Tripura",
+      "jurisdiction": "State:Tripura",
+      "tasks": 5,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "West Bengal",
+      "jurisdiction": "State:West Bengal",
+      "tasks": 5,
+      "full_4_stage": 1,
+      "cleared_controls": 0,
+      "total_overrun_days": 100,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Andhra Pradesh",
+      "jurisdiction": "State:Andhra Pradesh",
+      "tasks": 4,
+      "full_4_stage": 0,
+      "cleared_controls": 1,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Haryana",
+      "jurisdiction": "State:Haryana",
+      "tasks": 3,
+      "full_4_stage": 1,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Madhya Pradesh",
+      "jurisdiction": "State:Madhya Pradesh",
+      "tasks": 2,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Punjab",
+      "jurisdiction": "State:Punjab",
+      "tasks": 2,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Uttarakhand",
+      "jurisdiction": "State:Uttarakhand",
+      "tasks": 2,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    },
+    {
+      "state_ut": "Arunachal Pradesh",
+      "jurisdiction": "State:Arunachal Pradesh",
+      "tasks": 1,
+      "full_4_stage": 0,
+      "cleared_controls": 0,
+      "total_overrun_days": 0,
+      "compensation_inr": 0.0
+    }
+  ],
+  "top_courts": [
+    {
+      "court_name": "High Court of Judicature at Madras",
+      "court_tier": "high_court",
+      "state_ut": "Tamil Nadu",
+      "tasks": 216,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Jammu & Kashmir and Ladakh",
+      "court_tier": "high_court",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 184,
+      "full_4_stage": 4
+    },
+    {
+      "court_name": "High Court of Chhattisgarh",
+      "court_tier": "high_court",
+      "state_ut": "Chhattisgarh",
+      "tasks": 63,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "National Human Rights Commission (NHRC)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 60,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "Lok Sabha (Ministry of Home Affairs)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 43,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "Lok Sabha (Ministry of Law and Justice)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 33,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Karnataka",
+      "court_tier": "high_court",
+      "state_ut": "Karnataka",
+      "tasks": 32,
+      "full_4_stage": 1
+    },
+    {
+      "court_name": "Gauhati High Court",
+      "court_tier": "high_court",
+      "state_ut": "Assam",
+      "tasks": 29,
+      "full_4_stage": 1
+    },
+    {
+      "court_name": "High Court of Manipur",
+      "court_tier": "high_court",
+      "state_ut": "Manipur",
+      "tasks": 29,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "Rajya Sabha (Ministry of Home Affairs)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 27,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "National Legal Services Authority (NALSA)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 25,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Judicature at Bombay",
+      "court_tier": "high_court",
+      "state_ut": "Maharashtra",
+      "tasks": 24,
+      "full_4_stage": 1
+    },
+    {
+      "court_name": "Supreme Court of India",
+      "court_tier": "supreme_court",
+      "state_ut": null,
+      "tasks": 21,
+      "full_4_stage": 2
+    },
+    {
+      "court_name": "High Court of Judicature at Allahabad",
+      "court_tier": "high_court",
+      "state_ut": "Uttar Pradesh",
+      "tasks": 21,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Kerala",
+      "court_tier": "high_court",
+      "state_ut": "Kerala",
+      "tasks": 17,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "Department-Related Parliamentary Standing Committee",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 15,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Orissa",
+      "court_tier": "high_court",
+      "state_ut": "Odisha",
+      "tasks": 15,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Delhi",
+      "court_tier": "high_court",
+      "state_ut": "Delhi",
+      "tasks": 13,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Sikkim",
+      "court_tier": "high_court",
+      "state_ut": "Sikkim",
+      "tasks": 13,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Himachal Pradesh",
+      "court_tier": "high_court",
+      "state_ut": "Himachal Pradesh",
+      "tasks": 12,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Jharkhand",
+      "court_tier": "high_court",
+      "state_ut": "Jharkhand",
+      "tasks": 11,
+      "full_4_stage": 1
+    },
+    {
+      "court_name": "Rajya Sabha (Ministry of Law and Justice)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 11,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "Ministry of Home Affairs (Prison Reforms Division)",
+      "court_tier": "statutory_body",
+      "state_ut": null,
+      "tasks": 9,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court for the State of Telangana",
+      "court_tier": "high_court",
+      "state_ut": "Telangana",
+      "tasks": 7,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Judicature at Patna",
+      "court_tier": "high_court",
+      "state_ut": "Bihar",
+      "tasks": 6,
+      "full_4_stage": 2
+    },
+    {
+      "court_name": "High Court of Gujarat",
+      "court_tier": "high_court",
+      "state_ut": "Gujarat",
+      "tasks": 6,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Meghalaya",
+      "court_tier": "high_court",
+      "state_ut": "Meghalaya",
+      "tasks": 6,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court at Calcutta",
+      "court_tier": "high_court",
+      "state_ut": "West Bengal",
+      "tasks": 5,
+      "full_4_stage": 1
+    },
+    {
+      "court_name": "High Court of Rajasthan",
+      "court_tier": "high_court",
+      "state_ut": "Rajasthan",
+      "tasks": 5,
+      "full_4_stage": 0
+    },
+    {
+      "court_name": "High Court of Tripura",
+      "court_tier": "high_court",
+      "state_ut": "Tripura",
+      "tasks": 5,
+      "full_4_stage": 0
+    }
+  ],
+  "top_prisons": [
+    {
+      "prison_name": "Central Prison, Puzhal",
+      "state_ut": "Tamil Nadu",
+      "tasks": 60,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Coimbatore",
+      "state_ut": "Tamil Nadu",
+      "tasks": 27,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Salem",
+      "state_ut": "Tamil Nadu",
+      "tasks": 18,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Kot Bhalwal",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 17,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Sajiwa",
+      "state_ut": "Manipur",
+      "tasks": 12,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Cuddalore",
+      "state_ut": "Tamil Nadu",
+      "tasks": 11,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Durg",
+      "state_ut": "Chhattisgarh",
+      "tasks": 10,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Jammu",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 10,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Vellore",
+      "state_ut": "Tamil Nadu",
+      "tasks": 10,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "District Jail, Udhampur",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 10,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "District Jail, Kathua",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 8,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail Bilaspur",
+      "state_ut": "Chhattisgarh",
+      "tasks": 7,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail Raipur",
+      "state_ut": "Chhattisgarh",
+      "tasks": 7,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Bilaspur",
+      "state_ut": "Chhattisgarh",
+      "tasks": 7,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Imphal",
+      "state_ut": "Manipur",
+      "tasks": 7,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Puzhal Chennai",
+      "state_ut": "Tamil Nadu",
+      "tasks": 7,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail Ambikapur",
+      "state_ut": "Chhattisgarh",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail Kot Bhalwal",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Colvale",
+      "state_ut": "Goa",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Hazaribagh",
+      "state_ut": "Jharkhand",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Raipur",
+      "state_ut": "Chhattisgarh",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison Puzhal",
+      "state_ut": "Tamil Nadu",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Rongyek",
+      "state_ut": "Sikkim",
+      "tasks": 6,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Kote Bhalwal",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 4,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Rongyek and to the Jail Authority fo",
+      "state_ut": "Sikkim",
+      "tasks": 4,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Prison, Tiruchirapalli",
+      "state_ut": "Tamil Nadu",
+      "tasks": 4,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "District Jail, Jammu",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 4,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Dimapur",
+      "state_ut": "Nagaland",
+      "tasks": 3,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "CENTRAL JAIL, KANNUR",
+      "state_ut": "Kerala",
+      "tasks": 3,
+      "total_overrun_days": 0
+    },
+    {
+      "prison_name": "Central Jail, Kotbhalwal",
+      "state_ut": "Jammu and Kashmir",
+      "tasks": 3,
+      "total_overrun_days": 0
+    }
+  ],
+  "anchor_case": {
+    "task_id": "p10-court-2024-anchor-bashir-ahmad-koka-v-chandraker-bh-0001",
+    "finding_id": null,
+    "case_title": "Bashir Ahmad Koka v. Chandraker Bharti & Ors. (J&K Home Dept) — 98-Day Post-Quashment Illegal Confinement Contempt",
+    "portal_category": "court_portal",
+    "court_tier": "high_court",
+    "state_ut": "Jammu and Kashmir",
+    "jurisdiction": "UT:Jammu and Kashmir",
+    "year": 2024,
+    "overrun_mechanism": "post_acquittal_contempt_overrun",
+    "stages_verified_count": 4,
+    "chain_status": "full_4_stage_chain",
+    "acquittal_order_date": "2023-12-26",
+    "acquittal_court": "High Court of Jammu & Kashmir and Ladakh",
+    "acquittal_case_number": "WP(Crl) No. 498/2022",
+    "acquittal_quote": "Preventive detention order quashed by High Court of J&K and Ladakh in WP(Crl) No. 498/2022 on 26.12.2023 with direction to release the detenu forthwith.",
+    "prison_name": "Preventive Custody under District Magistrate Anantnag / J&K Prisons",
+    "custody_authority": "Home Department, UT of Jammu & Kashmir & District Magistrate, Anantnag",
+    "non_release_reason": "Detenu admittedly remained under illegal confinement for 98 days after detention order quashment on 26.12.2023 until contempt petition under Article 215 was filed.",
+    "overrun_days": 98,
+    "overrun_window": "2023-12-26 to 2024-04-03 (98 days)",
+    "contempt_case_number": "CCP(S) No. 123/2024",
+    "contempt_court": "High Court of Jammu & Kashmir and Ladakh",
+    "contempt_filing_date": "2024-03-15",
+    "contempt_order_date": "2024-04-04",
+    "contempt_quote": "Petitioner approached under Article 215 for willful disobedience of order dated 26.12.2023; Court recorded that detenu admittedly remained under illegal confinement over a period of 98 days and granted liberty to avail appropriate remedy.",
+    "release_date": "2024-04-03",
+    "release_verified": true,
+    "compensation_inr": null,
+    "judicial_direction_summary": "DM Anantnag issued release order dated 03.04.2024 after Article 215 contempt proceedings; Court directed handover to legal heirs and expressly preserved liberty to claim compensation/remedy for 98 days of illegal incarceration.",
+    "source_url": "https://indian-high-court-judgments.s3.amazonaws.com/data/pdf/year=2024/court=1_12/bench=kashmirhc/JKHC010014582024_1_2024-04-04.pdf",
+    "secondary_url": "https://indian-high-court-judgments.s3.amazonaws.com/data/pdf/year=2023/court=1_12/bench=kashmirhc/JKHC010033252022_1_2023-12-26.pdf",
+    "portal_url": "https://judgments.ecourts.gov.in"
+  },
+  "dry_run_summary": {
+    "tasks_tested": 1000,
+    "leads": 866,
+    "cleared": 134,
+    "unevaluable": 0,
+    "by_signal": {
+      "bail_or_release_order_contempt": 123,
+      "institutional_compliance_gap": 461,
+      "post_acquittal_contempt_overrun": 174,
+      "statutory_commission_detention_finding": 78,
+      "warrant_or_faster_transmission_delay": 30
+    },
+    "by_severity": {
+      "critical": 16,
+      "high": 359,
+      "medium": 491
+    }
+  }
+}
