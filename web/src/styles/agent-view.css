@@ -62,25 +62,25 @@
   outline-offset: 2px;
 }
 
-/* Footer variant (Ashoka Navy #000080 dark footer) */
+/* Footer variant (white footer) */
 .av-toggle--footer {
   width: 32px;
   height: 30px;
-  color: rgba(255, 255, 255, 0.9);
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-2);
+  border-color: var(--rule-strong);
+  background: var(--paper);
 }
 
 .av-toggle--footer:hover,
 .av-toggle--footer:focus-visible {
-  color: #FFFFFF;
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  background: var(--sunk);
+  border-color: var(--ink);
   outline: none;
 }
 
 .av-toggle--footer:focus-visible {
-  outline: 2px solid #FFFFFF;
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
 

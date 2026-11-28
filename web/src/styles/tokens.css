@@ -1,4 +1,4 @@
-/* AI Watchdogs · India — Tiranga Tricolour Broadsheet + Navy Observatory Tokens (Vercel Geist Serif) */
+/* AI Watchdogs · India — White Broadsheet Tokens with Tiranga accents (Vercel Geist Serif) */
 
 @font-face {
   font-family: 'Geist Serif';
@@ -19,19 +19,25 @@
 :root {
   /* ===== Tiranga (Indian Tricolour) Brand Palette =====
      Saffron (courage) · White (truth) · India Green (growth) · Ashoka Chakra Navy (law)
-     Page order top to bottom: white, saffron, green, then a navy footer.
-     Bands are carried by whole page zones (see the "TIRANGA ZONES" block at
-     the end of global.css). Navy appears only in the footer and the emblem. */
+     The whole site is white paper. Saffron, green and navy appear only as
+     small marks: dots, rings, hairlines, codes and underlines. No surface
+     larger than a pill is ever filled with a flag colour.
+       saffron = in progress / attention
+       green   = verified / live
+       navy    = structure: project codes, sources, end markers, focus */
   --flag-saffron: #FF9933;
   --flag-white: #FFFFFF;
   --flag-green: #138808;
   --flag-navy: #000080;
   --flag-green-deep: #0F7306;   /* same hue as India green, deep enough for AA white text */
   --flag-green-card: #0C6305;
-  --tricolor-band: linear-gradient(180deg,
+  --tricolor-band: linear-gradient(90deg,
     var(--flag-saffron) 0 33.333%,
     var(--flag-white) 33.333% 66.666%,
     var(--flag-green) 66.666% 100%);
+  /* Text-safe tints of the flag colours (AA on white) for codes and labels */
+  --saffron-ink: #B85C00;
+  --navy-ink: #000080;
 
   /* White Paper Surface Hierarchy (the white band of the flag) */
   --paper: #FFFFFF;
@@ -61,7 +67,7 @@
   --green: #138808;
   --green-bg: #E8F5E6;
   --live: #1FA319;
-  --green-on-dark: #5FD35A;
+  --green-on-dark: #138808;
 
   --in-work-ink: #8A4200;
   --in-work-ring: #FFB866;
@@ -71,7 +77,7 @@
   --red: #A2321F;
   --red-bg: #F7E4E0;
   --mid: #C2412D;
-  --red-on-dark: #E0705C;
+  --red-on-dark: #A2321F;
   --red-edge: #4A2622;
 
   --public: #3F3B34;
@@ -84,26 +90,26 @@
   --accent-flash: #FFD9B3;
   --accent-deep: #A84F00;
 
-  /* Race band & Observatory — saffron field (middle band of the page) */
-  --race-bg: #FF9933;
-  --obs-bg: #FF9933;
-  --obs-radial: radial-gradient(75% 75% at 40% 50%, #FFAD5C 0%, #FF9933 55%, #F28A1E 100%);
+  /* Race band & Observatory — white field, tricolour marks only */
+  --race-bg: #FFFFFF;
+  --obs-bg: #FFFFFF;
+  --obs-radial: #FFFFFF;
   --obs-surface: #FFFFFF;
   --obs-surface-raised: #F4F4F4;
-  --obs-border: rgba(27, 26, 23, 0.18);
+  --obs-border: rgba(27, 26, 23, 0.14);
   --obs-ink: #1B1A17;
-  --obs-mist: #3A2E1E;
-  --obs-muted: #45351F;
-  --obs-dead: #6E4A1C;
-  --obs-edge-solid: rgba(27, 26, 23, 0.42);
-  --obs-edge-open: rgba(27, 26, 23, 0.2);
+  --obs-mist: #575249;
+  --obs-muted: #635E54;
+  --obs-dead: #9E988B;
+  --obs-edge-solid: rgba(27, 26, 23, 0.22);
+  --obs-edge-open: rgba(27, 26, 23, 0.12);
   --obs-edge-disputed: #8A1C0C;
   --obs-cream: #FFFFFF;
   --obs-amber: #1B1A17;
   --obs-emerald: #0F7306;
   --obs-cobalt: #1B1A17;
   --obs-terracotta: #8A1C0C;
-  --obs-slate: #45351F;
+  --obs-slate: #635E54;
 
   /* Cluster / Pillar Hues — drawn from the tricolour */
   --pillar-procurement: #FF9933;
