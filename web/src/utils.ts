@@ -166,6 +166,7 @@ const SLUG_PROJECT_CODES: Record<string, string> = {
   'parliaments-to-do-list': 'P6',
   'only-one-bid': 'P7',
   'sovereign-lies': 'P8',
+  'auditing-government-exams': 'P9',
 };
 
 const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
@@ -177,6 +178,7 @@ const METHODOLOGY_PROJECT_CODES: Record<string, string> = {
   P6: 'P6',
   P7: 'P7',
   P8: 'P8',
+  P9: 'P9',
 };
 
 /**
@@ -257,6 +259,10 @@ export const METHODOLOGY_DESCRIPTIONS: Record<string, { name: string; rule: stri
   P8: {
     name: 'Sovereign Lies: launch promises vs. subsequent revisions across Union & State/UT schemes',
     rule: 'Cross-checks SHA-256-pinned official launch notifications against subsequent statutory amendments, circulars, and budget records across Indian Union and State/UT schemes — comparing original tax, payout, exit, subsidy, and eligibility commitments against walk-backs while publishing honored or grandfathered schemes as Cleared.',
+  },
+  P9: {
+    name: 'Auditing Government Exams: 3-year schedule vs. conduct audit across Union & State/UT examinations',
+    rule: 'Cross-checks SHA-256-pinned official exam schedules and calendars against subsequent public notices, parliamentary replies, and statutory records (Nov 2023 – Nov 2026) — classifying cancellations after conduct, postponements, reschedules, delays, pre-exam cancellations, and technical glitches while publishing exams conducted flawlessly as Cleared.',
   },
 };
 
@@ -374,7 +380,25 @@ export function isOfficialGovUrl(url?: string | null): boolean {
       host === 'rbi.org.in' ||
       host.endsWith('.rbi.org.in') ||
       host === 'pfrda.org.in' ||
-      host.endsWith('.pfrda.org.in')
+      host.endsWith('.pfrda.org.in') ||
+      host === 'nta.ac.in' ||
+      host.endsWith('.nta.ac.in') ||
+      host === 'natboard.edu.in' ||
+      host.endsWith('.natboard.edu.in') ||
+      host === 'nbe.edu.in' ||
+      host.endsWith('.nbe.edu.in') ||
+      host === 'aiimsexams.ac.in' ||
+      host.endsWith('.aiimsexams.ac.in') ||
+      host === 'ibps.in' ||
+      host.endsWith('.ibps.in') ||
+      host === 'sbi.co.in' ||
+      host.endsWith('.sbi.co.in') ||
+      host === 'cdac.in' ||
+      host.endsWith('.cdac.in') ||
+      host === 'ugc.ac.in' ||
+      host.endsWith('.ugc.ac.in') ||
+      host === 'csirhrdg.res.in' ||
+      host.endsWith('.csirhrdg.res.in')
     );
   } catch {
     return false;
@@ -722,6 +746,10 @@ export function formatCitationRoleLabel(role?: string | null): string | null {
     subsequent_walkback: 'Subsequent Walk-Back',
     promise_document: 'Original Promise Record',
     walkback_document: 'Subsequent Revision Record',
+    original_schedule: 'Original Exam Schedule',
+    conduct_outcome: 'Conduct / Disruption Notice',
+    schedule_document: 'Original Schedule Document',
+    outcome_document: 'Conduct Outcome Document',
     corroborating_record: 'Corroborating Record',
     recorded_status: 'Recorded Status',
     followup_answer: 'Follow-Up Answer',
@@ -1320,6 +1348,437 @@ export function extractSovereignLiesMetrics(
   };
 }
 
+export type ExamDisruptionKey =
+  | 'cancelled_after_conduct'
+  | 'postponed'
+  | 'rescheduled'
+  | 'delayed'
+  | 'cancelled_before_conduct'
+  | 'partial_reexam_or_glitch'
+  | 'flawless_conduct'
+  | 'other';
+
+export interface ExamDisruptionMeta {
+  key: ExamDisruptionKey;
+  label: string;
+  shortLabel: string;
+  ruleCode: string;
+  chipClass: string;
+  isCleared: boolean;
+}
+
+export function formatExamDisruption(raw?: string | null): ExamDisruptionMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'cancelled_after_conduct' || s === 'p9_cancelled_after_conduct') {
+    return {
+      key: 'cancelled_after_conduct',
+      label: 'Took Exam, Then Cancelled',
+      shortLabel: 'Cancelled after exam',
+      ruleCode: 'P9-CANCELLED-AFTER-CONDUCT',
+      chipClass: 'p9-disrupt p9-disrupt--cancelled-after',
+      isCleared: false,
+    };
+  }
+  if (s === 'postponed' || s === 'p9_postponed') {
+    return {
+      key: 'postponed',
+      label: 'Postponed',
+      shortLabel: 'Postponed',
+      ruleCode: 'P9-POSTPONED',
+      chipClass: 'p9-disrupt p9-disrupt--postponed',
+      isCleared: false,
+    };
+  }
+  if (s === 'rescheduled' || s === 'p9_rescheduled') {
+    return {
+      key: 'rescheduled',
+      label: 'Rescheduled',
+      shortLabel: 'Rescheduled',
+      ruleCode: 'P9-RESCHEDULED',
+      chipClass: 'p9-disrupt p9-disrupt--rescheduled',
+      isCleared: false,
+    };
+  }
+  if (s === 'delayed' || s === 'p9_delayed') {
+    return {
+      key: 'delayed',
+      label: 'Delayed',
+      shortLabel: 'Delayed',
+      ruleCode: 'P9-DELAYED',
+      chipClass: 'p9-disrupt p9-disrupt--delayed',
+      isCleared: false,
+    };
+  }
+  if (s === 'cancelled_before_conduct' || s === 'p9_cancelled_before_conduct') {
+    return {
+      key: 'cancelled_before_conduct',
+      label: 'Cancelled Before Conduct',
+      shortLabel: 'Cancelled pre-exam',
+      ruleCode: 'P9-CANCELLED-BEFORE-CONDUCT',
+      chipClass: 'p9-disrupt p9-disrupt--cancelled-before',
+      isCleared: false,
+    };
+  }
+  if (s === 'partial_reexam_or_glitch' || s === 'p9_partial_reexam_or_glitch') {
+    return {
+      key: 'partial_reexam_or_glitch',
+      label: 'Technical Glitch / Partial Re-Exam',
+      shortLabel: 'Glitch / Re-exam',
+      ruleCode: 'P9-PARTIAL-REEXAM-OR-GLITCH',
+      chipClass: 'p9-disrupt p9-disrupt--glitch',
+      isCleared: false,
+    };
+  }
+  if (s === 'flawless_conduct' || s === 'flawless' || s === 'cleared') {
+    return {
+      key: 'flawless_conduct',
+      label: 'Conducted Flawlessly (Cleared)',
+      shortLabel: 'Flawless (Cleared)',
+      ruleCode: 'CLEARED',
+      chipClass: 'p9-disrupt p9-disrupt--flawless',
+      isCleared: true,
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Schedule Disruption',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Disruption',
+    ruleCode: 'P9-DISRUPTION',
+    chipClass: 'p9-disrupt p9-disrupt--other',
+    isCleared: false,
+  };
+}
+
+export interface ExamAuthorityTypeMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+}
+
+const EXAM_AUTHORITY_TYPE_MAP: Record<string, { label: string; shortLabel: string }> = {
+  central_testing_agency: {
+    label: 'Central Testing Agency (NTA / NBEMS)',
+    shortLabel: 'Central Testing',
+  },
+  union_psc_or_recruitment: {
+    label: 'Union PSC & Staff Recruitment (UPSC / SSC)',
+    shortLabel: 'UPSC / SSC',
+  },
+  railway_banking_psu: {
+    label: 'Railways, Banking & PSU (RRB / IBPS / SBI / RBI)',
+    shortLabel: 'Railways & Banking',
+  },
+  defence_medical_technical: {
+    label: 'Defence, Medical & Technical (IIT / AIIMS / Defence)',
+    shortLabel: 'Defence / Medical / Tech',
+  },
+  state_psc: {
+    label: 'State Public Service Commissions (State PSCs)',
+    shortLabel: 'State PSC',
+  },
+  state_police_or_subordinate: {
+    label: 'State Police & Subordinate Boards',
+    shortLabel: 'State Police / Board',
+  },
+  state_teacher_or_entrance: {
+    label: 'State Teacher & Entrance Boards',
+    shortLabel: 'State Teacher / Entrance',
+  },
+  ut_recruitment_or_board: {
+    label: 'UT Recruitment & Examination Boards',
+    shortLabel: 'UT Board',
+  },
+};
+
+export function formatExamAuthorityType(raw?: string | null): ExamAuthorityTypeMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (EXAM_AUTHORITY_TYPE_MAP[s]) {
+    return { key: s, ...EXAM_AUTHORITY_TYPE_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Conducting Authority';
+  return { key: s || 'other', label: readable, shortLabel: readable };
+}
+
+export interface ExamCategoryMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+}
+
+const EXAM_CATEGORY_MAP: Record<string, { label: string; shortLabel: string }> = {
+  civil_services_and_psc: {
+    label: 'Civil Services & PSC',
+    shortLabel: 'Civil Services / PSC',
+  },
+  police_and_defence: {
+    label: 'Police & Defence Recruitment',
+    shortLabel: 'Police & Defence',
+  },
+  teaching_and_faculty: {
+    label: 'Teaching & Faculty (NET / TET)',
+    shortLabel: 'Teaching / NET / TET',
+  },
+  medical_and_health: {
+    label: 'Medical & Health (NEET / AIIMS)',
+    shortLabel: 'Medical & Health',
+  },
+  engineering_and_higher_ed: {
+    label: 'Engineering & Higher Ed (JEE / CUET / GATE)',
+    shortLabel: 'Higher Ed / Entrance',
+  },
+  banking_railways_ssc: {
+    label: 'Banking, Railways & SSC',
+    shortLabel: 'Banking / RRB / SSC',
+  },
+  clerical_and_subordinate: {
+    label: 'Clerical & Subordinate Services',
+    shortLabel: 'Clerical & Subordinate',
+  },
+  board_and_other_public: {
+    label: 'Board & Other Public Exams',
+    shortLabel: 'Public Boards',
+  },
+};
+
+export function formatExamCategory(raw?: string | null): ExamCategoryMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (EXAM_CATEGORY_MAP[s]) {
+    return { key: s, ...EXAM_CATEGORY_MAP[s] };
+  }
+  const clean = (raw || '').trim();
+  const readable = clean ? clean.replace(/_/g, ' ') : 'Public Examination';
+  return { key: s || 'other', label: readable, shortLabel: readable };
+}
+
+export interface ExamDisruptionReasonMeta {
+  key: string;
+  label: string;
+  shortLabel: string;
+  chipClass: string;
+}
+
+export function formatExamDisruptionReason(raw?: string | null): ExamDisruptionReasonMeta {
+  const s = (raw || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (s === 'paper_integrity_compromise') {
+    return {
+      key: 'paper_integrity_compromise',
+      label: 'Paper Integrity Safeguard',
+      shortLabel: 'Integrity safeguard',
+      chipClass: 'p9-reason p9-reason--integrity',
+    };
+  }
+  if (s === 'administrative_or_logistical') {
+    return {
+      key: 'administrative_or_logistical',
+      label: 'Administrative / Logistical',
+      shortLabel: 'Administrative',
+      chipClass: 'p9-reason p9-reason--admin',
+    };
+  }
+  if (s === 'technical_or_cbt_glitch') {
+    return {
+      key: 'technical_or_cbt_glitch',
+      label: 'Technical / CBT Glitch',
+      shortLabel: 'Technical / CBT',
+      chipClass: 'p9-reason p9-reason--tech',
+    };
+  }
+  if (s === 'election_or_calendar_clash') {
+    return {
+      key: 'election_or_calendar_clash',
+      label: 'Election / Calendar Clash',
+      shortLabel: 'Calendar clash',
+      chipClass: 'p9-reason p9-reason--calendar',
+    };
+  }
+  if (s === 'weather_or_disaster') {
+    return {
+      key: 'weather_or_disaster',
+      label: 'Weather / Disaster Safety',
+      shortLabel: 'Weather / Disaster',
+      chipClass: 'p9-reason p9-reason--weather',
+    };
+  }
+  if (s === 'judicial_or_policy_review') {
+    return {
+      key: 'judicial_or_policy_review',
+      label: 'Judicial / Policy Review',
+      shortLabel: 'Judicial / Policy',
+      chipClass: 'p9-reason p9-reason--judicial',
+    };
+  }
+  if (s === 'none_flawless') {
+    return {
+      key: 'none_flawless',
+      label: 'No Disruption Recorded',
+      shortLabel: 'No disruption',
+      chipClass: 'p9-reason p9-reason--none',
+    };
+  }
+  const clean = (raw || '').trim();
+  return {
+    key: s || 'other',
+    label: clean ? clean.replace(/_/g, ' ') : 'Documented reason',
+    shortLabel: clean ? clean.replace(/_/g, ' ') : 'Documented',
+    chipClass: 'p9-reason p9-reason--other',
+  };
+}
+
+export function formatExamDelaySpan(days?: number | null): string | null {
+  if (days == null || !Number.isFinite(days) || days < 0) return null;
+  const rounded = Math.round(days);
+  if (rounded === 0) return '0 days';
+  if (rounded >= 365) {
+    const yrs = (rounded / 365.25).toFixed(1);
+    return `${rounded.toLocaleString('en-IN')} days (~${yrs} yrs)`;
+  }
+  return `${rounded.toLocaleString('en-IN')} ${rounded === 1 ? 'day' : 'days'}`;
+}
+
+export function formatCandidateCountCompact(count?: number | null): string | null {
+  if (count == null || !Number.isFinite(count) || count <= 0) return null;
+  const rounded = Math.round(count);
+  if (rounded >= 1e7) {
+    return `${(rounded / 1e7).toLocaleString('en-IN', { maximumFractionDigits: 2 })} Cr`;
+  }
+  if (rounded >= 1e5) {
+    return `${(rounded / 1e5).toLocaleString('en-IN', { maximumFractionDigits: 2 })} L`;
+  }
+  return rounded.toLocaleString('en-IN');
+}
+
+export interface ParsedAuditingGovernmentExamsMetrics {
+  caseKey: string | null;
+  verdict: string | null;
+  signalCategory: string | null;
+  triggeredRules: string[];
+  examName: string | null;
+  examSlug: string | null;
+  cycleOrStage: string | null;
+  examYear: number | null;
+  jurisdiction: string | null;
+  jurisdictionLevel: string | null;
+  stateOrUt: string | null;
+  authority: string | null;
+  authorityKey: string | null;
+  authorityType: string | null;
+  examCategory: string | null;
+  scheduledDate: string | null;
+  actualOrEventDate: string | null;
+  delayDays: number | null;
+  disruptionType: string | null;
+  disruptionReasonCategory: string | null;
+  studentsTookExamBeforeCancellation: boolean;
+  scheduleSummary: string | null;
+  scheduleDocumentRef: string | null;
+  scheduleExcerpt: string | null;
+  scheduleLocator: string | null;
+  scheduleTokensMatched: string[];
+  outcomeSummary: string | null;
+  outcomeDocumentRef: string | null;
+  outcomeExcerpt: string | null;
+  outcomeLocator: string | null;
+  outcomeTokensMatched: string[];
+  affectedCandidatesCount: number | null;
+  affectedCandidatesBasis: string | null;
+  statutoryAnchor: string | null;
+  secondaryRole: string | null;
+  isAnchorCase: boolean;
+  asOfDate: string | null;
+  sourceLocator: string | null;
+}
+
+const P9_DISRUPTION_SET = new Set([
+  'cancelled_after_conduct',
+  'postponed',
+  'rescheduled',
+  'delayed',
+  'cancelled_before_conduct',
+  'partial_reexam_or_glitch',
+  'flawless_conduct',
+  'p9_cancelled_after_conduct',
+  'p9_postponed',
+  'p9_rescheduled',
+  'p9_delayed',
+  'p9_cancelled_before_conduct',
+  'p9_partial_reexam_or_glitch',
+]);
+
+export function extractAuditingGovernmentExamsMetrics(
+  metrics?: Record<string, unknown> | null,
+): ParsedAuditingGovernmentExamsMetrics | null {
+  if (!metrics || typeof metrics !== 'object') return null;
+
+  const examName = metricStr(metrics, 'exam_name');
+  const disruptionType = metricStr(metrics, 'disruption_type');
+  const scheduleSummary = metricStr(metrics, 'schedule_summary');
+  const outcomeSummary = metricStr(metrics, 'outcome_summary');
+  const scheduledDate = metricStr(metrics, 'scheduled_date');
+  const actualOrEventDate = metricStr(metrics, 'actual_or_event_date');
+  const signalCategory = metricStr(metrics, 'signal_category');
+
+  const normSignal = (signalCategory || '').toLowerCase().replace(/[\s-]+/g, '_');
+  const hasP9Signal = Boolean(normSignal && P9_DISRUPTION_SET.has(normSignal));
+
+  if (
+    !examName &&
+    !disruptionType &&
+    !scheduleSummary &&
+    !outcomeSummary &&
+    !scheduledDate &&
+    !actualOrEventDate &&
+    !hasP9Signal
+  ) {
+    return null;
+  }
+
+  return {
+    caseKey: metricStr(metrics, 'case_key'),
+    verdict: metricStr(metrics, 'verdict'),
+    signalCategory,
+    triggeredRules: metricStrList(metrics, 'triggered_rules'),
+    examName,
+    examSlug: metricStr(metrics, 'exam_slug'),
+    cycleOrStage: metricStr(metrics, 'cycle_or_stage'),
+    examYear: metricNum(metrics, 'exam_year'),
+    jurisdiction: metricStr(metrics, 'jurisdiction'),
+    jurisdictionLevel: metricStr(metrics, 'jurisdiction_level'),
+    stateOrUt: metricStr(metrics, 'state_or_ut'),
+    authority: metricStr(metrics, 'authority'),
+    authorityKey: metricStr(metrics, 'authority_key'),
+    authorityType: metricStr(metrics, 'authority_type'),
+    examCategory: metricStr(metrics, 'exam_category'),
+    scheduledDate,
+    actualOrEventDate,
+    delayDays: metricNum(metrics, 'delay_days'),
+    disruptionType,
+    disruptionReasonCategory: metricStr(metrics, 'disruption_reason_category'),
+    studentsTookExamBeforeCancellation: metricBool(
+      metrics,
+      'students_took_exam_before_cancellation',
+    ),
+    scheduleSummary,
+    scheduleDocumentRef: metricStr(metrics, 'schedule_document_ref'),
+    scheduleExcerpt: metricStr(metrics, 'schedule_excerpt'),
+    scheduleLocator: metricStr(metrics, 'schedule_locator'),
+    scheduleTokensMatched: metricStrList(metrics, 'schedule_tokens_matched'),
+    outcomeSummary,
+    outcomeDocumentRef: metricStr(metrics, 'outcome_document_ref'),
+    outcomeExcerpt: metricStr(metrics, 'outcome_excerpt'),
+    outcomeLocator: metricStr(metrics, 'outcome_locator'),
+    outcomeTokensMatched: metricStrList(metrics, 'outcome_tokens_matched'),
+    affectedCandidatesCount: metricNum(metrics, 'affected_candidates_count'),
+    affectedCandidatesBasis: metricStr(metrics, 'affected_candidates_basis'),
+    statutoryAnchor: metricStr(metrics, 'statutory_anchor'),
+    secondaryRole: metricStr(metrics, 'secondary_role'),
+    isAnchorCase: metricBool(metrics, 'is_anchor_case'),
+    asOfDate: metricStr(metrics, 'as_of_date'),
+    sourceLocator: metricStr(metrics, 'source_locator'),
+  };
+}
+
 export interface FindingDrawerMetric {
   label: string;
   value: string;
@@ -1424,6 +1883,26 @@ export function resolveFindingDrawerMetric(
     };
   }
 
+  if (finding.methodology_code === 'P9' && !isQuarantined) {
+    const p9Record = extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics);
+    const disruptKey = p9Record?.disruptionType || p9Record?.signalCategory;
+    if (disruptKey) {
+      const disrupt = formatExamDisruption(disruptKey);
+      return {
+        label: disrupt.isCleared ? 'Exam Conduct' : 'Conduct Outcome',
+        value: `${disrupt.shortLabel}${
+          !disrupt.isCleared && p9Record?.delayDays != null && p9Record.delayDays > 0
+            ? ` · +${p9Record.delayDays.toLocaleString('en-IN')}d`
+            : ''
+        }`,
+      };
+    }
+    return {
+      label: 'Exam Conduct Check',
+      value: 'Documented',
+    };
+  }
+
   return {
     label: finding.amount_label
       ? finding.amount_label.replace(/_/g, ' ')
@@ -1515,6 +1994,23 @@ export function resolveFindingCardMetric(
       };
     }
     return { value: 'Scheme audit lead', prominent: false };
+  }
+
+  if (finding.methodology_code === 'P9') {
+    const p9Record = extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics);
+    const disruptKey = p9Record?.disruptionType || p9Record?.signalCategory;
+    if (disruptKey) {
+      const disrupt = formatExamDisruption(disruptKey);
+      const delayTag =
+        !disrupt.isCleared && p9Record?.delayDays != null && p9Record.delayDays > 0
+          ? ` · +${p9Record.delayDays.toLocaleString('en-IN')}d`
+          : '';
+      return {
+        value: `${disrupt.shortLabel}${delayTag}`,
+        prominent: true,
+      };
+    }
+    return { value: 'Exam audit lead', prominent: false };
   }
 
   if (finding.monetary_exposure_inr) {

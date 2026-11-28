@@ -26,13 +26,20 @@ import {
   copyToClipboard,
   downloadTextFile,
   extractAssuranceMetrics,
+  extractAuditingGovernmentExamsMetrics,
   extractOnlyOneBidMetrics,
   extractSovereignLiesMetrics,
   formatAssuranceStatus,
   formatBytes,
+  formatCandidateCountCompact,
   formatCitationRoleLabel,
   formatDateShort,
   formatElapsedPromiseSpan,
+  formatExamAuthorityType,
+  formatExamCategory,
+  formatExamDelaySpan,
+  formatExamDisruption,
+  formatExamDisruptionReason,
   formatInr,
   formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
@@ -331,6 +338,49 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
   const p8PromiseSha = p8PromiseCit?.sha256 || prov?.observed_sha256 || null;
   const p8WalkbackSha = p8WalkbackCit?.sha256 || prov?.secondary_sha256 || prov?.observed_sha256 || null;
 
+  const p9Record =
+    finding?.methodology_code === 'P9' && !isQuarantined
+      ? extractAuditingGovernmentExamsMetrics(finding.anomaly_metrics)
+      : null;
+  const p9Disruption =
+    p9Record && (p9Record.disruptionType || p9Record.signalCategory)
+      ? formatExamDisruption(p9Record.disruptionType || p9Record.signalCategory)
+      : null;
+  const p9Reason = p9Record?.disruptionReasonCategory
+    ? formatExamDisruptionReason(p9Record.disruptionReasonCategory)
+    : null;
+  const p9AuthorityType = p9Record?.authorityType
+    ? formatExamAuthorityType(p9Record.authorityType)
+    : null;
+  const p9Category = p9Record?.examCategory ? formatExamCategory(p9Record.examCategory) : null;
+  const p9Jurisdiction = p9Record
+    ? formatJurisdictionLabel(
+        p9Record.jurisdiction || finding?.jurisdiction,
+        p9Record.stateOrUt,
+        p9Record.jurisdictionLevel,
+      )
+    : null;
+  const p9DelayLabel = p9Record ? formatExamDelaySpan(p9Record.delayDays) : null;
+  const p9CandidatesCompact = p9Record
+    ? formatCandidateCountCompact(p9Record.affectedCandidatesCount)
+    : null;
+  const p9ScheduleCit = finding?.citations.find((c) => {
+    const r = (c.role || '').toLowerCase();
+    return r === 'original_schedule' || r === 'schedule_document';
+  });
+  const p9OutcomeCit = finding?.citations.find((c) => {
+    const r = (c.role || '').toLowerCase();
+    return r === 'conduct_outcome' || r === 'outcome_document';
+  });
+  const p9ScheduleHref = p9ScheduleCit
+    ? citationHref(p9ScheduleCit, finding?.artifact_sha256)
+    : safeRetrievalUrl;
+  const p9OutcomeHref = p9OutcomeCit
+    ? citationHref(p9OutcomeCit, finding?.artifact_sha256)
+    : safeExternalUrl(prov?.secondary_url) || safeRetrievalUrl;
+  const p9ScheduleSha = p9ScheduleCit?.sha256 || prov?.observed_sha256 || null;
+  const p9OutcomeSha = p9OutcomeCit?.sha256 || prov?.secondary_sha256 || prov?.observed_sha256 || null;
+
   const drawerMetric = finding ? resolveFindingDrawerMetric(finding) : null;
   const displayMetricEntries = finding
     ? Object.entries(finding.anomaly_metrics).filter(
@@ -341,7 +391,12 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
               (k === 'promise_summary' ||
                 k === 'walkback_summary' ||
                 k === 'promise_excerpt' ||
-                k === 'walkback_excerpt'))
+                k === 'walkback_excerpt')) ||
+            (p9Record &&
+              (k === 'schedule_summary' ||
+                k === 'outcome_summary' ||
+                k === 'schedule_excerpt' ||
+                k === 'outcome_excerpt'))
           ),
       )
     : [];
@@ -351,6 +406,7 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
     (Boolean(finding) &&
       !isOfficialGovUrl(safeRtiPortalUrl) &&
       finding!.jurisdiction.toLowerCase() !== 'union' &&
+      finding!.jurisdiction.toLowerCase() !== 'union of india' &&
       finding!.jurisdiction.toLowerCase() !== 'all-india' &&
       finding!.jurisdiction.toLowerCase() !== 'central');
 
@@ -1216,6 +1272,326 @@ export function FindingDrawer({ findingId, onClose, onRtiCreated }: FindingDrawe
                           {p8Record.triggeredRules.length > 0 && (
                             <div className="drawer-p7-chips">
                               {p8Record.triggeredRules.map((rule) => (
+                                <span key={rule} className="tag-mono font-mono">
+                                  {rule}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {/* P9 Structured Exam Audit Dossier (Original Schedule vs. What Actually Happened) */}
+                  {p9Record && (
+                    <section
+                      className={`card card-pad drawer-p9-card${
+                        p9Disruption?.isCleared ? ' drawer-p9-card--flawless' : ''
+                      }`}
+                      aria-label="Government exam schedule versus conduct outcome dossier"
+                    >
+                      <div className="drawer-p6-head">
+                        <div>
+                          <div className="section-kicker" style={{ marginBottom: 4 }}>
+                            Exam Audit Dossier · Original Schedule vs. What Actually Happened
+                          </div>
+                          <div className="drawer-p6-meta">
+                            {p9Record.isAnchorCase && (
+                              <span className="p9-anchor-chip">Flagship Anchor Case</span>
+                            )}
+                            {p9Record.studentsTookExamBeforeCancellation && (
+                              <span className="p9-sat-chip">Students sat before cancellation</span>
+                            )}
+                            {p9Jurisdiction && (
+                              <span
+                                className={`p8-tier-chip p8-tier-chip--${
+                                  (p9Record.jurisdictionLevel || 'union').toLowerCase() === 'state'
+                                    ? 'state'
+                                    : (p9Record.jurisdictionLevel || 'union').toLowerCase() === 'ut'
+                                      ? 'ut'
+                                      : 'union'
+                                }`}
+                              >
+                                {p9Jurisdiction}
+                              </span>
+                            )}
+                            {p9Record.examYear != null && (
+                              <span className="tag-mono tabular">{String(p9Record.examYear)}</span>
+                            )}
+                            {p9Category && <span className="tag-mono">{p9Category.label}</span>}
+                            {p9AuthorityType && (
+                              <span className="tag-mono">{p9AuthorityType.shortLabel}</span>
+                            )}
+                            {p9Record.cycleOrStage && (
+                              <span className="tag-mono">{p9Record.cycleOrStage}</span>
+                            )}
+                            {p9Reason && (
+                              <span className={p9Reason.chipClass}>{p9Reason.label}</span>
+                            )}
+                          </div>
+                        </div>
+                        {p9Disruption && (
+                          <span className={p9Disruption.chipClass}>{p9Disruption.label}</span>
+                        )}
+                      </div>
+
+                      {p9Record.examName && (
+                        <h3 className="drawer-p8-title">
+                          {p9Record.examName}
+                          {p9Record.cycleOrStage ? ` — ${p9Record.cycleOrStage}` : ''}
+                        </h3>
+                      )}
+
+                      {(p9Record.authority || p9Record.affectedCandidatesBasis) && (
+                        <div className="drawer-p6-people">
+                          {p9Record.authority && (
+                            <span>
+                              <strong>Conducting authority:</strong> {p9Record.authority}
+                            </span>
+                          )}
+                          <span>
+                            <strong>Affected candidates:</strong>{' '}
+                            {p9Record.affectedCandidatesCount != null &&
+                            p9Record.affectedCandidatesCount > 0 ? (
+                              <>
+                                <strong className="tabular">
+                                  {p9Record.affectedCandidatesCount.toLocaleString('en-IN')}
+                                </strong>
+                                {p9CandidatesCompact ? ` (${p9CandidatesCompact})` : ''}
+                                {p9Record.affectedCandidatesBasis
+                                  ? ` — ${p9Record.affectedCandidatesBasis}`
+                                  : ''}
+                              </>
+                            ) : (
+                              p9Record.affectedCandidatesBasis ||
+                              'Not disclosed in cited official notice'
+                            )}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Exam Schedule -> Actual Event Timeline Strip */}
+                      <div
+                        className={`drawer-p8-delta-bar tabular${
+                          p9Record.affectedCandidatesCount != null &&
+                          p9Record.affectedCandidatesCount > 0
+                            ? ' drawer-p8-delta-bar--with-exposure'
+                            : ''
+                        }`}
+                      >
+                        <div className="drawer-p8-delta-box drawer-p8-delta-box--promise">
+                          <span className="drawer-p8-delta-kicker">Original Scheduled Date</span>
+                          <span className="drawer-p8-delta-val font-mono">
+                            {p9Record.scheduledDate || 'Unrecorded'}
+                          </span>
+                          {p9Record.examYear != null && (
+                            <span className="drawer-p8-delta-sub">
+                              Exam year {String(p9Record.examYear)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="drawer-p8-delta-arrow" aria-hidden="true">
+                          <span>→</span>
+                          <span className="drawer-p8-delta-span">
+                            {p9Disruption?.isCleared
+                              ? 'On schedule'
+                              : p9DelayLabel
+                                ? `+${p9DelayLabel}`
+                                : 'Timeline shift'}
+                          </span>
+                        </div>
+
+                        <div
+                          className={`drawer-p8-delta-box ${
+                            p9Disruption?.isCleared
+                              ? 'drawer-p8-delta-box--honored'
+                              : 'drawer-p8-delta-box--walkback'
+                          }`}
+                        >
+                          <span className="drawer-p8-delta-kicker">
+                            {p9Disruption?.isCleared
+                              ? 'Verified Conduct Date'
+                              : 'Actual / Disruption Event Date'}
+                          </span>
+                          <span className="drawer-p8-delta-val font-mono">
+                            {p9Record.actualOrEventDate || 'Unrecorded'}
+                          </span>
+                          <span className="drawer-p8-delta-sub">
+                            Students sat before cancellation:{' '}
+                            <strong>
+                              {p9Record.studentsTookExamBeforeCancellation ? 'Yes' : 'No'}
+                            </strong>
+                          </span>
+                        </div>
+
+                        {p9Record.affectedCandidatesCount != null &&
+                          p9Record.affectedCandidatesCount > 0 && (
+                            <div className="drawer-p8-delta-box drawer-p8-delta-box--exposure">
+                              <span className="drawer-p8-delta-kicker">Documented Candidates</span>
+                              <span className="drawer-p8-delta-val">
+                                {p9Record.affectedCandidatesCount.toLocaleString('en-IN')}
+                              </span>
+                              {p9Record.affectedCandidatesBasis && (
+                                <span className="drawer-p8-delta-sub">
+                                  {p9Record.affectedCandidatesBasis}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                      </div>
+
+                      {/* Two-Column Documentary Comparison: Original Schedule vs What Actually Happened */}
+                      <div className="drawer-p8-compare-grid">
+                        <div className="drawer-p8-doc-col drawer-p8-doc-col--promise">
+                          <div className="drawer-p8-doc-head">
+                            <div className="drawer-p6-step-kicker" style={{ marginBottom: 0 }}>
+                              01 · Original Schedule
+                            </div>
+                            {p9Record.scheduledDate && (
+                              <span className="tag-mono tabular">{p9Record.scheduledDate}</span>
+                            )}
+                          </div>
+                          {p9Record.scheduleDocumentRef && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              {p9Record.scheduleDocumentRef}
+                            </div>
+                          )}
+                          <p className="drawer-p6-step-body">
+                            {p9Record.scheduleSummary ||
+                              'Original exam schedule verified in pinned official record.'}
+                          </p>
+                          {(p9Record.scheduleExcerpt || p9ScheduleCit?.excerpt) && (
+                            <blockquote className="drawer-p8-excerpt">
+                              &ldquo;{p9Record.scheduleExcerpt || p9ScheduleCit?.excerpt}&rdquo;
+                            </blockquote>
+                          )}
+                          {p9Record.scheduleLocator && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              Locator: {p9Record.scheduleLocator}
+                            </div>
+                          )}
+                          {p9Record.scheduleTokensMatched.length > 0 && (
+                            <div
+                              className="drawer-p8-tokens"
+                              aria-label="Verified schedule evidence tokens"
+                            >
+                              {p9Record.scheduleTokensMatched.slice(0, 6).map((tok) => (
+                                <span key={tok} className="tag-mono font-mono">
+                                  ✓ {tok}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(p9ScheduleHref || p9ScheduleSha) && (
+                            <div className="drawer-p8-source-bar">
+                              {p9ScheduleHref && (
+                                <a
+                                  href={p9ScheduleHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={11} aria-hidden="true" />
+                                  <span>Primary schedule document</span>
+                                </a>
+                              )}
+                              {p9ScheduleSha && (
+                                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                  sha256:{p9ScheduleSha.slice(0, 12)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className={`drawer-p8-doc-col ${
+                            p9Disruption?.isCleared
+                              ? 'drawer-p8-doc-col--honored'
+                              : 'drawer-p8-doc-col--walkback'
+                          }`}
+                        >
+                          <div className="drawer-p8-doc-head">
+                            <div className="drawer-p6-step-kicker" style={{ marginBottom: 0 }}>
+                              {p9Disruption?.isCleared
+                                ? '02 · Conducted Flawlessly (Cleared)'
+                                : '02 · What Actually Happened'}
+                            </div>
+                            {p9Record.actualOrEventDate && (
+                              <span className="tag-mono tabular">{p9Record.actualOrEventDate}</span>
+                            )}
+                          </div>
+                          {p9Record.outcomeDocumentRef && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              {p9Record.outcomeDocumentRef}
+                            </div>
+                          )}
+                          <p className="drawer-p6-step-body">
+                            {p9Record.outcomeSummary ||
+                              'Conduct outcome verified in pinned official record.'}
+                          </p>
+                          {(p9Record.outcomeExcerpt || p9OutcomeCit?.excerpt) && (
+                            <blockquote className="drawer-p8-excerpt">
+                              &ldquo;{p9Record.outcomeExcerpt || p9OutcomeCit?.excerpt}&rdquo;
+                            </blockquote>
+                          )}
+                          {p9Record.outcomeLocator && (
+                            <div className="drawer-p8-doc-ref font-mono">
+                              Locator: {p9Record.outcomeLocator}
+                            </div>
+                          )}
+                          {p9Record.outcomeTokensMatched.length > 0 && (
+                            <div
+                              className="drawer-p8-tokens"
+                              aria-label="Verified conduct outcome evidence tokens"
+                            >
+                              {p9Record.outcomeTokensMatched.slice(0, 6).map((tok) => (
+                                <span key={tok} className="tag-mono font-mono">
+                                  ✓ {tok}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {(p9OutcomeHref || p9OutcomeSha) && (
+                            <div className="drawer-p8-source-bar">
+                              {p9OutcomeHref && (
+                                <a
+                                  href={p9OutcomeHref}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="provenance-link"
+                                >
+                                  <ExternalLink size={11} aria-hidden="true" />
+                                  <span>
+                                    {p9Disruption?.isCleared
+                                      ? 'Conduct verification source'
+                                      : 'Official disruption notice'}
+                                  </span>
+                                </a>
+                              )}
+                              {p9OutcomeSha && (
+                                <span className="tag-mono font-mono" style={{ fontSize: 11 }}>
+                                  sha256:{p9OutcomeSha.slice(0, 12)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {(p9Record.statutoryAnchor || p9Record.triggeredRules.length > 0) && (
+                        <div style={{ marginTop: 10 }}>
+                          {p9Record.statutoryAnchor && (
+                            <p className="drawer-p6-step-sub" style={{ marginTop: 0 }}>
+                              <strong>Statutory / examination framework anchor:</strong>{' '}
+                              {p9Record.statutoryAnchor}
+                            </p>
+                          )}
+                          {p9Record.triggeredRules.length > 0 && (
+                            <div className="drawer-p7-chips">
+                              {p9Record.triggeredRules.map((rule) => (
                                 <span key={rule} className="tag-mono font-mono">
                                   {rule}
                                 </span>

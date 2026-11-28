@@ -3420,6 +3420,558 @@
   max-width: 400px;
 }
 
+/* ---------- P9 Auditing Government Exams: 3-Year Reliability Scorecard, Anchor Cases & Exam Audit Dossier ---------- */
+
+.p9-disrupt,
+.p9-reason,
+.p9-sat-chip,
+.p9-anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--r-999);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid var(--rule);
+}
+
+.p9-disrupt--cancelled-after {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border-color: #E2B8B0;
+  font-weight: 600;
+}
+
+.p9-disrupt--postponed {
+  color: var(--in-work-ink);
+  background: #FFF4E6;
+  border-color: var(--in-work-ring);
+}
+
+.p9-disrupt--rescheduled {
+  color: #5E3A00;
+  background: #FDF7E7;
+  border-color: #E5C887;
+}
+
+.p9-disrupt--delayed {
+  color: #6B3410;
+  background: #FAF2EB;
+  border-color: #DEC1A8;
+}
+
+.p9-disrupt--cancelled-before {
+  color: #7D2618;
+  background: #FDF1EE;
+  border-color: #E5B9B0;
+}
+
+.p9-disrupt--glitch {
+  color: #0E3A63;
+  background: #EEF4FA;
+  border-color: #C2D4E6;
+}
+
+.p9-disrupt--flawless {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border-color: var(--ep-verified-bd);
+}
+
+.p9-disrupt--other {
+  color: var(--ink-3);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p9-sat-chip {
+  color: #8A1C0C;
+  background: #FFF0ED;
+  border-color: #D99B90;
+  font-weight: 600;
+}
+
+.p9-anchor-chip {
+  color: #6E4200;
+  background: #FFF6DD;
+  border-color: #E5C168;
+  font-weight: 600;
+}
+
+.p9-reason--integrity {
+  color: #8A1C0C;
+  background: #FDF2F0;
+  border-color: #E5BFB8;
+}
+
+.p9-reason--tech {
+  color: #0E3A63;
+  background: #EEF4FA;
+  border-color: #C2D4E6;
+}
+
+.p9-reason--admin,
+.p9-reason--calendar,
+.p9-reason--weather,
+.p9-reason--judicial,
+.p9-reason--other {
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p9-reason--none {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border-color: var(--ep-verified-bd);
+}
+
+/* P9 FindingCard & FindingDrawer accents */
+.fc-p9-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-6);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+}
+
+.drawer-p9-card {
+  border-left: 3px solid #A2321F;
+}
+
+.drawer-p9-card--flawless {
+  border-left-color: var(--green);
+}
+
+/* P9 Scorecard Hero */
+.pv-p9-scorecard {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pv-p9-hero-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pv-p9-hero-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+  border-radius: var(--r-8);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.pv-p9-hero-tile:hover {
+  border-color: var(--ink-4);
+}
+
+.pv-p9-hero-tile[aria-pressed='true'] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.pv-p9-hero-tile--disrupted {
+  border-top: 3px solid #A2321F;
+  background: linear-gradient(180deg, #FFFBF9 0%, var(--paper) 100%);
+}
+
+.pv-p9-hero-tile--flawless {
+  border-top: 3px solid var(--green);
+  background: linear-gradient(180deg, #F7FCF7 0%, var(--paper) 100%);
+}
+
+.pv-p9-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pv-p9-hero-rate {
+  font-family: var(--font-code);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: var(--r-999);
+}
+
+.pv-p9-hero-rate--disrupted {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border: 1px solid #E2B8B0;
+}
+
+.pv-p9-hero-rate--flawless {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border: 1px solid var(--ep-verified-bd);
+}
+
+.pv-p9-hero-num {
+  font-family: var(--font-serif);
+  font-size: clamp(28px, 3vw, 36px);
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.pv-p9-hero-denom {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--ink-3);
+  font-weight: 400;
+}
+
+/* Full-width reliability progress bar */
+.pv-p9-reliability-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.pv-p9-reliability-bar {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  border-radius: var(--r-999);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.pv-p9-rel-seg {
+  display: block;
+  height: 100%;
+}
+
+.pv-p9-rel-seg--disrupted,
+.pv-p9-dot--disrupted {
+  background: #B83724;
+}
+
+.pv-p9-rel-seg--flawless,
+.pv-p9-dot--flawless {
+  background: var(--green);
+}
+
+.pv-p9-reliability-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.pv-p9-reliability-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pv-p9-candidates-note {
+  margin-left: auto;
+  color: var(--ink-3);
+}
+
+/* 7 First-Class Disruption Callout Counters */
+.pv-p9-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pv-p9-counter-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 13px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.pv-p9-counter-btn:hover {
+  border-color: var(--ink-4);
+}
+
+.pv-p9-counter-btn[aria-pressed='true'] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.pv-p9-counter--cancelled-after {
+  border-top: 3px solid #8A1C0C;
+  background: #FFF9F8;
+}
+
+.pv-p9-counter--postponed {
+  border-top: 3px solid var(--accent);
+}
+
+.pv-p9-counter--rescheduled {
+  border-top: 3px solid #B57600;
+}
+
+.pv-p9-counter--delayed {
+  border-top: 3px solid #8A4200;
+}
+
+.pv-p9-counter--cancelled-before {
+  border-top: 3px solid #C2412D;
+}
+
+.pv-p9-counter--glitch {
+  border-top: 3px solid #1B4B7A;
+}
+
+.pv-p9-counter--flawless {
+  border-top: 3px solid var(--green);
+  grid-column: span 2;
+}
+
+.pv-p9-counter-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-3);
+}
+
+.pv-p9-counter-num {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.pv-p9-counter-sub {
+  font-size: 12px;
+  color: var(--ink-4);
+  line-height: 1.3;
+}
+
+/* Disruption fill bars */
+.pv-p9-fill--cancelled-after {
+  background: #8A1C0C;
+}
+
+.pv-p9-fill--postponed {
+  background: var(--accent);
+}
+
+.pv-p9-fill--rescheduled {
+  background: #B57600;
+}
+
+.pv-p9-fill--delayed {
+  background: #8A4200;
+}
+
+.pv-p9-fill--cancelled-before {
+  background: #C2412D;
+}
+
+.pv-p9-fill--glitch {
+  background: #1B4B7A;
+}
+
+.pv-p9-fill--flawless {
+  background: var(--green);
+}
+
+/* Anchor Cases Grid */
+.pv-p9-anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pv-p9-anchor-card {
+  border: 1px solid var(--rule);
+  border-left: 3px solid #A2321F;
+  border-radius: var(--r-8);
+  background: linear-gradient(180deg, #FFFDFB 0%, var(--sunk) 100%);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.pv-p9-anchor-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.pv-p9-anchor-meta-line {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+
+.pv-p9-anchor-compare {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pv-p9-anchor-col {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-4);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.pv-p9-anchor-col--schedule {
+  border-top: 2px solid var(--ink-3);
+}
+
+.pv-p9-anchor-col--outcome {
+  border-top: 2px solid #A2321F;
+}
+
+.pv-p9-anchor-col--flawless {
+  border-top: 2px solid var(--green);
+}
+
+/* Year-over-Year Cards */
+.pv-p9-years-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pv-p9-year-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 13px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.pv-p9-year-card:hover {
+  border-color: var(--ink-4);
+}
+
+.pv-p9-year-card[aria-pressed='true'] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+  background: var(--sunk);
+}
+
+.pv-p9-year-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pv-p9-year-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.pv-p9-year-totals {
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+.pv-p9-year-bar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: var(--r-999);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.pv-p9-year-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.pv-p9-dual-bar {
+  display: flex;
+}
+
+.pv-p9-sort-select,
+.pv-p9-filter-select {
+  min-width: 155px;
+  font-size: 12.5px;
+}
+
+.pv-p9-ledger-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.pv-p9-fallback-banner {
+  padding: 10px 13px;
+  border-radius: var(--r-6);
+  background: #FFF9EE;
+  border: 1px solid var(--in-work-ring);
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+
+.pv-p9-dryrun-box {
+  margin: 10px 0;
+  padding: 9px 12px;
+  border-radius: var(--r-6);
+  background: var(--ep-verified-bg);
+  border: 1px solid var(--ep-verified-bd);
+  font-size: 12.5px;
+  color: var(--ep-verified-fg);
+  line-height: 1.45;
+}
+
 /* ============================================================================
    6. PROJECT CARDS, COLLAPSIBLE DISCLOSURES & COMPACT TASK PICKER
    ============================================================================ */
@@ -3771,7 +4323,8 @@
   .pv-matrix-overview,
   .pv-sections-grid,
   .pv-p7-kpi-grid,
-  .pv-p8-kpi-grid {
+  .pv-p8-kpi-grid,
+  .pv-p9-counter-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -3792,6 +4345,9 @@
   .pv-p8-sgb-grid,
   .pv-p8-tier-cards,
   .pv-p8-mech-grid,
+  .pv-p9-hero-split,
+  .pv-p9-anchor-grid,
+  .pv-p9-anchor-compare,
   .drawer-p7-grid,
   .drawer-p7-values-split,
   .drawer-p8-compare-grid,
@@ -4665,6 +5221,26 @@
   .pv-p8-lead-compare {
     min-width: 0;
     max-width: none;
+  }
+
+  .pv-p9-counter--flawless {
+    grid-column: 1 / -1;
+  }
+
+  .pv-p9-candidates-note {
+    margin-left: 0;
+  }
+
+  .pv-p9-ledger-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pv-p9-sort-select,
+  .pv-p9-filter-select {
+    width: 100%;
+    min-height: 44px;
+    font-size: 15px;
   }
 
   .pv-ub-leads td[data-label]::before {

@@ -262,6 +262,13 @@ export const WORK_TYPE_TAGS = {
     'project',
     'Audits Indian Union and State/UT government schemes comparing official launch promises against subsequent statutory amendments, benefit revisions, eligibility restrictions, or discontinuations.',
   ),
+  exam_conduct: makeTag(
+    'exam_conduct',
+    'Exam conduct',
+    'work',
+    'project',
+    'Audits Indian Union and State/UT government examinations over the past 3 years comparing original schedules against postponements, reschedules, delays, post-exam cancellations, technical glitches, and flawless runs.',
+  ),
   peer_check: makeTag(
     'peer_check',
     'Peer check',
@@ -497,6 +504,7 @@ export function getWorkTypeTag(
     if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
     if (m === 'P7') return WORK_TYPE_TAGS.single_bid_procurement;
     if (m === 'P8') return WORK_TYPE_TAGS.sovereign_promises;
+    if (m === 'P9') return WORK_TYPE_TAGS.exam_conduct;
     return WORK_TYPE_TAGS.audit;
   }
 
@@ -508,6 +516,7 @@ export function getWorkTypeTag(
   if (m === 'P6') return WORK_TYPE_TAGS.parliament_assurances;
   if (m === 'P7') return WORK_TYPE_TAGS.single_bid_procurement;
   if (m === 'P8') return WORK_TYPE_TAGS.sovereign_promises;
+  if (m === 'P9') return WORK_TYPE_TAGS.exam_conduct;
 
   return WORK_TYPE_TAGS.audit;
 }
@@ -666,6 +675,7 @@ export const SITE_LEGEND_GROUPS: SiteLegendGroup[] = [
       WORK_TYPE_TAGS.parliament_assurances,
       WORK_TYPE_TAGS.single_bid_procurement,
       WORK_TYPE_TAGS.sovereign_promises,
+      WORK_TYPE_TAGS.exam_conduct,
       WORK_TYPE_TAGS.peer_check,
       WEBSITE_OUTCOME_TAGS.found,
       WEBSITE_OUTCOME_TAGS.missing,
