@@ -127,7 +127,7 @@ def typed_numbers(text: str, lang: str = "en") -> list[tuple[str, float, float]]
     return out
 
 
-def _walk_numbers(obj: Any, out: Allowed, key: str = "", unit: float = 1e7, depth: int = 0) -> None:
+def _walk_numbers(obj: Any, out: Allowed, key: str = "", unit: float = 1e7, depth: int = 0, declared: bool = False) -> None:
     if depth > 8 or isinstance(obj, bool):
         return
     if isinstance(obj, (int, float)):
@@ -139,7 +139,12 @@ def _walk_numbers(obj: Any, out: Allowed, key: str = "", unit: float = 1e7, dept
             out.pct.add(v)
         elif key and _MONEY_KEY.search(key):
             low = key.lower()
-            out.money.add(v if v >= 1e5 or "inr" in low or "rupee" in low else v * unit)
+            if "inr" in low or "rupee" in low:
+                out.money.add(v)
+            elif declared:
+                out.money.add(v * unit)
+            else:
+                out.money.add(v if v >= 1e5 else v * unit)
     elif isinstance(obj, str):
         for kind, v, inr in typed_numbers(obj):
             out.plain.add(v)
@@ -148,12 +153,13 @@ def _walk_numbers(obj: Any, out: Allowed, key: str = "", unit: float = 1e7, dept
             elif kind == "pct":
                 out.pct.add(v)
     elif isinstance(obj, dict):
-        u = _UNIT.get(str(obj.get("unit") or "").lower(), unit)
+        named = _UNIT.get(str(obj.get("unit") or "").lower())
+        u, dec = (named, True) if named is not None else (unit, declared)
         for k, v in obj.items():
-            _walk_numbers(v, out, str(k), u, depth + 1)
+            _walk_numbers(v, out, str(k), u, depth + 1, dec)
     elif isinstance(obj, (list, tuple)):
         for v in obj[:200]:
-            _walk_numbers(v, out, key, unit, depth + 1)
+            _walk_numbers(v, out, key, unit, depth + 1, declared)
 
 
 def allowed_numbers(*sources: Any) -> Allowed:

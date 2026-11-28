@@ -1,5 +1,5 @@
 import { RefreshCw, WifiOff } from 'lucide-react';
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { api, deriveLiveSwarmSnapshot, mergeSseWhispersIntoSnapshot } from './api/client';
 import { AgentViewPanel, AgentViewProvider, useAgentView } from './components/AgentView';
 import { Footer } from './components/Footer';
@@ -131,16 +131,20 @@ function AppShell() {
     }
   }, []);
 
+  const headSeq = useRef(0);
   const fetchHead = useCallback(async () => {
+    const seq = ++headSeq.current;
     try {
       const data = await api.getHead();
+      if (seq !== headSeq.current) return;
       setHead(data);
       setHeadError(null);
       setLiveWhispers((prev) => mergeWhispersNewestFirst(prev, data.whispers, 40));
     } catch (err) {
+      if (seq !== headSeq.current) return;
       setHeadError(err instanceof Error ? err.message : 'Hub unreachable');
     } finally {
-      setHeadLoading(false);
+      if (seq === headSeq.current) setHeadLoading(false);
     }
   }, []);
 

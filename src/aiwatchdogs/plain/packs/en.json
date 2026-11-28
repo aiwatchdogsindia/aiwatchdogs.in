@@ -86,7 +86,10 @@
       "head_cut": "{entity}: the money planned for {year} was cut by {pct} midway",
       "what_cut": "The budget first set aside {budget}. Later in the year this was cut to {revised}, a drop of {cut}.",
       "why": "Money that is promised but not spent can mean a scheme moved slowly, got stuck, or was no longer needed. Each reason matters to the people it was meant to help.",
-      "ask": "What stopped this money from being spent, and what happened to the work it was meant for?"
+      "ask": "What stopped this money from being spent, and what happened to the work it was meant for?",
+      "head_norevised": "{entity}: no revised estimate is printed for {year}",
+      "what_norevised": "The Union Budget set aside {budget}. The budget papers print no revised estimate for this line.",
+      "ask_norevised": "Why is no revised estimate printed for this line, and how much was actually used?"
     },
     "double_bill": {
       "name": "One road, two bills",
@@ -136,7 +139,11 @@
       "why_repeat": "When one company keeps winning work from the same office, it is worth checking that others had a fair chance to compete.",
       "ask_repeat": "How were these contracts advertised, and how many companies bid for each?",
       "why_window": "A short bidding window can leave too few companies time to apply, which weakens competition on price.",
-      "ask_window": "Why was the bidding window this short, and did the rules allow it?"
+      "ask_window": "Why was the bidding window this short, and did the rules allow it?",
+      "head_qualified": "{entity}: a tender worth {amount} had only one qualified bid",
+      "head_qualified_noamount": "{entity}: a tender had only one qualified bid",
+      "what_qualified": "Public purchase records show that \"{title}\" got {received} bids, but only one passed the technical check. With one qualified bidder, there is no competition on price.",
+      "ask_qualified": "Why were the other bids rejected at the technical stage, and was the reason written down?"
     },
     "promise_changed": {
       "name": "Promises and later changes",
