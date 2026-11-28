@@ -107,7 +107,7 @@
       ]
     },
     {
-      "source": "/(projects|missions|findings|graveyard|live|leaderboard|contributors|how-it-works|brief|changelog|back|sponsors|ledger)",
+      "source": "/(projects|missions|findings|graveyard|live|leaderboard|contributors|how-it-works|brief|changelog|back|sponsors|ledger|news)",
       "headers": [
         {
           "key": "Vary",
@@ -333,6 +333,28 @@
       "destination": "/back.md"
     },
     {
+      "source": "/news",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/news.md"
+    },
+    {
+      "source": "/news/:day((?!.*\\.md$)[^/]+)",
+      "has": [
+        {
+          "type": "header",
+          "key": "accept",
+          "value": "(.*)text/markdown(.*)"
+        }
+      ],
+      "destination": "/news/:day.md"
+    },
+    {
       "source": "/projects/((?!.*\\.md$).*)",
       "destination": "/index.html"
     },
@@ -398,6 +420,14 @@
     },
     {
       "source": "/how-it-works",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/news",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/news/((?!.*\\.md$).*)",
       "destination": "/index.html"
     }
   ]
