@@ -1,4 +1,4 @@
-"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6, P7, P8)."""
+"""Registry and dispatcher for the deterministic Indian civic-audit engines (M1-M8, P1, UB1, OR1, P5, P6, P7, P8, P9)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from aiwatchdogs.core import safety as core_safety
 from aiwatchdogs.core.models import AuditLeadCandidate, EngineRunResult
 from aiwatchdogs.core.safety import compute_sha256, lint_neutrality, scrub_pii, scrub_pii_in_obj
 from aiwatchdogs.engines import (
+    auditing_government_exams,
     fiscal,
     one_road_two_bills,
     one_teacher_five_grades,
@@ -45,6 +46,7 @@ RULESET_VERSIONS: dict[str, str] = {
     "P6": "P6-2026.11-v1",
     "P7": "P7-2026.11-v1",
     "P8": "P8-2026.11-v1",
+    "P9": "P9-2026.11-v1",
 }
 
 # Ephemeral / non-rule context keys excluded from deterministic rule-config hash
@@ -319,6 +321,27 @@ METHODOLOGY_CATALOG: dict[str, dict[str, Any]] = {
         "reference_dataset_url": "https://www.indiabudget.gov.in/doc/memo.pdf",
         "module": "aiwatchdogs.engines.sovereign_lies",
     },
+    "P9": {
+        "code": "P9",
+        "name": "Auditing Government Exams: Indian Public Examination Conduct & Disruption Audit",
+        "pillar": "audit",
+        "ruleset_version": RULESET_VERSIONS["P9"],
+        "statutory_anchors": [
+            "Public-Examinations-Prevention-of-Unfair-Means-Act-2024",
+            "Constitution-Art-14-16",
+            "Constitution-Art-315-320",
+            "RTI-Act-2005-Sec-4-1-b",
+        ],
+        "description": (
+            "Verifies checksummed official Union and State/UT public examination notices, Parliamentary "
+            "replies, and agency bulletins across a 3-year window (Nov 2023 – Nov 2026) to audit whether "
+            "government examinations were conducted flawlessly as scheduled or experienced delays, "
+            "postponements, reschedules, cancellations before or after conduct, or technical/partial re-exam "
+            "disruptions — while transparently clearing verified flawless examinations."
+        ),
+        "reference_dataset_url": "https://www.nta.ac.in/",
+        "module": "aiwatchdogs.engines.auditing_government_exams",
+    },
 }
 
 _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
@@ -337,6 +360,7 @@ _ENGINE_DISPATCH: dict[str, tuple[EngineCallable, Any]] = {
     "P6": (parliaments_to_do_list.run_p6_parliamentary_assurances, parliaments_to_do_list),
     "P7": (only_one_bid.run_p7_only_one_bid, only_one_bid),
     "P8": (sovereign_lies.run_p8_sovereign_lies, sovereign_lies),
+    "P9": (auditing_government_exams.run_p9_auditing_government_exams, auditing_government_exams),
 }
 
 

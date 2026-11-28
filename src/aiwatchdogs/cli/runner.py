@@ -209,6 +209,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "source_landing_page",
         "source_url",
         "sovereign_lies",
+        "auditing_government_exams",
         "suggested_authority",
         "union_budget",
         "upper_ratio",
@@ -245,6 +246,11 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
         "retroactive_impact",
         "scheme_category",
         "jurisdiction_level",
+        "disruption_type",
+        "disruption_reason_category",
+        "authority_type",
+        "exam_category",
+        "students_took_exam_before_cancellation",
     }
 )
 
@@ -257,6 +263,7 @@ RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "assurance_ref",
     "case_key",
     "scheme_slug",
+    "exam_slug",
     "normalized_winner_key",
     "source_locator",
     "ocid",
