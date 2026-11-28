@@ -70,6 +70,7 @@ from aiwatchdogs.hub.seed import seed_database
 from aiwatchdogs.hub.sse import SSEBroker, SSESubscriberLimitError
 from aiwatchdogs.hub.templates import DEFAULT_PUBLIC_HUB_URL, normalize_base_url, render_join_sh, render_join_txt
 from aiwatchdogs.projects import (
+    INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG,
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_PROJECT_SLUG,
     ONLY_ONE_BID_PROJECT_SLUG,
@@ -1082,6 +1083,29 @@ def create_app(
         """Dedicated P8 Sovereign Lies summary endpoint matching visual_summary.sovereign_lies."""
         response.headers["Cache-Control"] = _DETAIL_READ_CACHE
         return desk.get_sovereign_lies_summary()
+
+    @application.get(f"/api/missions/{INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG}/{{filename}}")
+    def api_innocent_but_locked_up_file(filename: str) -> Response:
+        """The court/prison/govt records audited by P10 (URL and SHA-256 of each) and its coverage summary."""
+        media_types = {"documents.csv": "text/csv; charset=utf-8", "coverage.json": "application/json"}
+        if filename not in media_types:
+            raise HTTPException(status_code=404, detail="Not found")
+        from aiwatchdogs.projects import default_projects_dir
+
+        path = default_projects_dir() / INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG / filename
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        return Response(
+            content=path.read_bytes(),
+            media_type=media_types[filename],
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @application.get(f"/api/projects/{INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG}/summary")
+    def api_innocent_but_locked_up_summary(response: Response) -> dict[str, Any]:
+        """Dedicated P10 Innocent But Locked Up summary endpoint matching visual_summary.innocent_but_locked_up."""
+        response.headers["Cache-Control"] = _DETAIL_READ_CACHE
+        return desk.get_innocent_but_locked_up_summary()
 
     @application.get("/api/findings")
     def api_findings(

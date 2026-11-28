@@ -47,6 +47,7 @@ CANONICAL_PROJECT_CODES: dict[str, str] = {
     "parliaments-to-do-list": "P6",
     "only-one-bid": "P7",
     "sovereign-lies": "P8",
+    "innocent-but-locked-up": "P10",
 }
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PINNED_GITHUB_RAW_PATH_RE = re.compile(r"^/[^/]+/[^/]+/[0-9a-f]{40}/.+$")
@@ -84,7 +85,7 @@ FORBIDDEN_CONTEXT_KEYS = frozenset(
 # Heuristic guard against catastrophic-backtracking regex patterns in P1 context.
 _UNSAFE_REGEX_RE = re.compile(r"(\([^)]*[+*][^)]*\)[+*?{]|\\[1-9])")
 
-VALID_PILLARS = {"procurement", "budget", "audit", "infra", "scheme", "disclosure", "parliament"}
+VALID_PILLARS = {"procurement", "budget", "audit", "infra", "scheme", "disclosure", "parliament", "justice"}
 VALID_STATUSES = {"active", "needs_data", "paused"}
 VALID_QUANTITY_TYPES = {
     "tender_estimates",
@@ -98,6 +99,7 @@ VALID_QUANTITY_TYPES = {
     "school_staffing_and_enrolment",
     "parliamentary_assurances",
     "scheme_promises_and_revisions",
+    "custody_overrun_and_contempt",
 }
 REQUIRED_TOP_LEVEL = ("slug", "title", "summary", "posted_by", "pillar", "jurisdiction", "authority")
 MAX_FORMER_SLUGS = 10
@@ -115,6 +117,8 @@ ONLY_ONE_BID_PROJECT_SLUG = "only-one-bid"
 ONLY_ONE_BID_METHODOLOGY = "P7"
 SOVEREIGN_LIES_PROJECT_SLUG = "sovereign-lies"
 SOVEREIGN_LIES_METHODOLOGY = "P8"
+INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG = "innocent-but-locked-up"
+INNOCENT_BUT_LOCKED_UP_METHODOLOGY = "P10"
 MAX_WEBSITE_PROJECT_TASKS = 1000
 MAX_PROJECT_TASKS = 20_000
 DEFAULT_PRIORITY = 5
@@ -521,6 +525,18 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                 errors.append(
                     f"{where}.id must match 'p8-(union|state|ut)-<slug>-NNNN' for {SOVEREIGN_LIES_METHODOLOGY} tasks."
                 )
+        if code == INNOCENT_BUT_LOCKED_UP_METHODOLOGY:
+            if task.get("financial_quantity_type") != "custody_overrun_and_contempt":
+                errors.append(
+                    f"{where} must use the custody_overrun_and_contempt quantity type with {INNOCENT_BUT_LOCKED_UP_METHODOLOGY}."
+                )
+            from aiwatchdogs.engines.innocent_but_locked_up import P10_TASK_ID_RE
+
+            if isinstance(tid, str) and not P10_TASK_ID_RE.fullmatch(tid):
+                errors.append(
+                    f"{where}.id must match 'p10-(court|prison|police|nhrc|nalsa|parl|govt|cag)-YYYY-<slug>-NNNN' "
+                    f"for {INNOCENT_BUT_LOCKED_UP_METHODOLOGY} tasks."
+                )
         if "depends_on" in task:
             errors.append(f"{where}.depends_on is not supported: every task must stand on its own.")
         payload = task.get("payload")
@@ -633,6 +649,36 @@ def validate_project(data: Any, *, filename_stem: str | None = None) -> list[str
                     errors.append(
                         f"{where}.payload.secondary_url is required when payload.context.sovereign_lies.secondary_role is '{sec_role}'."
                     )
+        if code == INNOCENT_BUT_LOCKED_UP_METHODOLOGY:
+            from aiwatchdogs.engines.innocent_but_locked_up import (
+                P10_TASK_ID_RE,
+                PORTAL_CATEGORY_ID_CODES,
+                validate_context as validate_p10_context,
+            )
+
+            errors.extend(validate_p10_context(ctx, where))
+            p10_spec = ctx.get("innocent_but_locked_up") if isinstance(ctx, dict) else None
+            if isinstance(tid, str) and isinstance(p10_spec, dict):
+                id_match = P10_TASK_ID_RE.fullmatch(tid)
+                pcat = p10_spec.get("portal_category")
+                expected_code = PORTAL_CATEGORY_ID_CODES.get(str(pcat or ""))
+                if id_match and expected_code and id_match.group(1) != expected_code:
+                    errors.append(
+                        f"{where}.id portal code '{id_match.group(1)}' does not match "
+                        f"payload.context.innocent_but_locked_up.portal_category '{pcat}' (expected '{expected_code}')."
+                    )
+                yr = p10_spec.get("year")
+                if id_match and isinstance(yr, int) and not isinstance(yr, bool) and int(id_match.group(2)) != yr:
+                    errors.append(
+                        f"{where}.id year '{id_match.group(2)}' does not match "
+                        f"payload.context.innocent_but_locked_up.year {yr}."
+                    )
+            if isinstance(p10_spec, dict):
+                sec_role = str(p10_spec.get("secondary_role") or "").strip()
+                if sec_role and sec_url in (None, ""):
+                    errors.append(
+                        f"{where}.payload.secondary_url is required when payload.context.innocent_but_locked_up.secondary_role is '{sec_role}'."
+                    )
 
     # Neutral framing (BNS Sec 356) and no personal data, across all human-written text.
     text_blobs = [
@@ -678,6 +724,7 @@ def _validation_code_digest() -> str:
     """A digest of the code that decides whether a project file is valid."""
     from aiwatchdogs.core import safety
     from aiwatchdogs.engines import (
+        innocent_but_locked_up,
         one_road_two_bills,
         one_teacher_five_grades,
         only_one_bid,
@@ -696,6 +743,7 @@ def _validation_code_digest() -> str:
         parliaments_to_do_list,
         only_one_bid,
         sovereign_lies,
+        innocent_but_locked_up,
     ):
         source = inspect.getsourcefile(module) if module is not None else None
         if source and Path(source).exists():

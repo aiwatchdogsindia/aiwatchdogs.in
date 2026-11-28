@@ -313,6 +313,11 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of all subsequent amending notifications, circulars, Finance Department/Cabinet notes, or discontinuance orders modifying, restricting, capping, or suspending those launch terms.",
         "Certified copies of any published fiscal-impact assessment, grandfathering/transitional relief consideration note, or beneficiary/outlay arrears statement held on record under Section 4(1)(b) of the RTI Act, 2005.",
     ],
+    "P10": [
+        "Certified copies of the relevant prison admission/release register abstract, receipt log of the court acquittal or release warrant (parwana / FASTER electronic transmission), and actual date/time of physical release under the applicable Prison Manual.",
+        "Certified copies of all official correspondence, verification notings, or administrative memos recording the reasons for any delay between receipt of the court release/acquittal order and release from custody.",
+        "Certified copies of compliance affidavits, departmental action-taken reports, compensation disbursement orders, or FASTER compliance circulars issued pursuant to court contempt/habeas corpus/NHRC/SHRC/UTRC directions under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
@@ -352,7 +357,19 @@ def _format_inr(amount: float) -> str:
 def _extract_reference_ids(finding: dict[str, Any]) -> str:
     refs: list[str] = []
     metrics = finding.get("anomaly_metrics") if isinstance(finding.get("anomaly_metrics"), dict) else {}
-    for mkey in ("assurance_ref", "para_number", "tender_id", "ocid", "promise_document_ref", "walkback_document_ref", "case_key", "scheme_slug"):
+    for mkey in (
+        "assurance_ref",
+        "para_number",
+        "tender_id",
+        "ocid",
+        "promise_document_ref",
+        "walkback_document_ref",
+        "acquittal_case_number",
+        "contempt_case_number",
+        "document_ref",
+        "case_key",
+        "scheme_slug",
+    ):
         val = metrics.get(mkey)
         cleaned = _clean_single_line(val, max_len=64) if val else ""
         if cleaned and cleaned not in refs:
