@@ -16,7 +16,9 @@ Implemented in [`src/aiwatchdogs/engines/one_road_two_bills.py`](../../src/aiwat
 4. **Two-tier signal detection**:
    - `duplicate_payment_or_billing`: explicit double payment, duplicate billing/voucher/invoice, paid twice, billed twice, reimbursed twice, two receipts/bills/vouchers.
    - `dual_agency_or_scheme_overlap`: two agencies/departments/ministries/schemes or already-executed overlapping works co-occurring with an audit irregularity marker and spending context.
-5. **Zero fabricated figures**: Only rupee figures explicitly printed in the matched section are cited.
+5. **Source attribution**: Name a payment actor only when explicit in the triggering sentence or in the opening of its enclosing section. Cite the section opening separately when it supplies the actor. Use a report or sector label if the source cannot resolve the subject.
+6. **Amount scope**: Use a single rupee amount tied to the signal in the triggering sentence or an explicitly linked follow-up. Leave recoveries, mixed totals, and unbound or competing amounts undisclosed. Mark a candidate in a flattened audit table unevaluable when row attribution is unresolved.
+7. **Repeated source mentions**: If an executive-summary paragraph explicitly cites the detailed section and repeats the same amount and evidence in the same report, retain both citations and count the exposure once in totals.
 
 ## Coverage
 

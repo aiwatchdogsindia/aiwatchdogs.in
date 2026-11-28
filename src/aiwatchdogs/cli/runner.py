@@ -264,6 +264,10 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
     }
 )
 
+OR1_EXPOSURE_REFERENCE_KEYS = frozenset(
+    {"exposure_reference_key", "exposure_reference_kind", "exposure_reference_section"}
+)
+
 # Record-level identifier keys that must match exactly when present on both submitted and candidate leads.
 RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "line_key",
@@ -890,6 +894,16 @@ def _compare_complete_metric_set(
         in_cand = key in cand_metrics
         sval = sub_metrics.get(key)
         cval = cand_metrics.get(key)
+
+        # These strings control the dashboard's exposure grouping and are case-sensitive.
+        if key in OR1_EXPOSURE_REFERENCE_KEYS:
+            if not in_sub:
+                details["missing_in_submitted"].append(key)
+            elif not in_cand:
+                details["missing_in_reproduced"].append(key)
+            elif not isinstance(sval, str) or sval != cval:
+                details["semantic_mismatches"].append({"key": key, "submitted": sval, "reproduced": cval})
+            continue
 
         s_is_num = _is_number(sval)
         c_is_num = _is_number(cval)
@@ -2118,12 +2132,13 @@ class AgentRunner:
             "pii_redactions_count": len(dataset.pii_redactions),
         }
 
-        if not engine_res.leads and unevaluable_count > 0 and int(engine_res.cleared_count or 0) == 0:
-            # Nothing was read, so nothing was checked. Reporting that as "cleared" would put a false
-            # clean result on the public record; hand the task back instead.
+        if not engine_res.leads and unevaluable_count > 0 and (
+            methodology_code == "OR1" or int(engine_res.cleared_count or 0) == 0
+        ):
+            # OR1 can hold a suspected anomaly when flattened text cannot support attribution.
+            # Cleared windows elsewhere in that task do not resolve the held window.
             raise UnevaluableSourceFailure(
-                f"{methodology_code} could not read any of the {unevaluable_count} figure set(s) it was asked "
-                "to compare in this file (the printed lines were not found as specified)."
+                f"{methodology_code} could not evaluate {unevaluable_count} required source window(s)."
             )
 
         if not engine_res.leads:
@@ -2706,7 +2721,7 @@ class AgentRunner:
                 safe_release_note = "Artifact SHA-256 digest mismatch."
             elif isinstance(exc, UnevaluableSourceFailure):
                 release_reason = "unevaluable_source"
-                safe_release_note = "The check could not read the figures it was asked to compare."
+                safe_release_note = "The check could not evaluate all the required source evidence."
             elif isinstance(exc, PermissionError):
                 exc_msg = str(exc)
                 if "returned HTTP 403" in exc_msg or "returned HTTP 401" in exc_msg:

@@ -146,7 +146,7 @@ The check used by the Union Budget project, P3 (`engines/union_budget.py`, rules
 
 ### `OR1` — One Road, Two Bills: Union Duplicate Billing & Dual-Agency Claims
 
-The check used by Project P4 (`one-road-two-bills`, `engines/one_road_two_bills.py`, ruleset `OR1-2026.11-v1`). It reads non-overlapping paragraph and section windows from checksummed Union Government CAG Audit Report PDFs from the past two years (`cag.gov.in`) to surface documented irregularities where a finished work, bill, or expenditure was paid twice or claimed across two agencies, departments, ministries, or schemes.
+The check used by Project P4 (`one-road-two-bills`, `engines/one_road_two_bills.py`, ruleset `OR1-2026.11-v2`). It reads non-overlapping paragraph and section windows from checksummed Union Government CAG Audit Report PDFs from the past two years (`cag.gov.in`) to surface documented irregularities where a finished work, bill, or expenditure was paid twice or claimed across two agencies, departments, ministries, or schemes.
 
 * **Statutory Anchors:** Constitution Article 151 (CAG Audit Reports); CAG (DPC) Act 1971; GFR 2017 Rules 21 & 62.
 * **Input:** one official Union Government CAG Audit Report PDF, pinned by its exact CloudFront URL and SHA-256 (`context.one_road_two_bills`), listing 1 to 20 non-overlapping `(page, line_start, line_end)` section windows.
@@ -155,7 +155,8 @@ The check used by Project P4 (`one-road-two-bills`, `engines/one_road_two_bills.
 * **Two-Tier Signal Rules:**
   * `duplicate_payment_or_billing`: explicit double payment, duplicate payment, paid/billed/claimed/reimbursed twice, double billing, duplicate voucher/invoice/bill, or two bills/vouchers/receipts.
   * `dual_agency_or_scheme_overlap`: two agencies/departments/ministries/schemes or already-executed overlapping works co-occurring with an audit irregularity indicator and concrete spending context.
-* **Outcomes:** Matching sections emit neutral leads quoting exact report number, page, paragraph/section anchor, SHA-256 checksum, cited rupee amount (never fabricated if unprinted), and neutralized excerpt. Non-matching or co-funded blocks record `cleared`; missing pages record `unevaluable`.
+* **Evidence and attribution:** A lead cites the triggering sentence, report number, page, section, and SHA-256. An explicit payment actor in that sentence or a supported opening of the same section may name the auditee. Cite the opening separately when it supplies the actor. If attribution is uncertain the lead uses a report or sector label. A closely linked sentence may supply a single amount explicitly tied to the signal. Recovery figures and totals that combine different irregularities stay undisclosed as duplicate exposure.
+* **Outcomes:** Non-matching or co-funded blocks record `cleared`. Missing pages and candidate signals in flattened audit tables with unresolved row attribution record `unevaluable`. A task with unevaluable windows and no attributable leads is handed back for review.
 * **Mandatory Benign Explanations Considered:** Action Taken Notes (ATNs) or PAC reviews recording subsequent recoveries or adjustments; phased/component billing across Measurement Books; and legitimate cost-sharing routed through separate executing agencies.
 
 ### `P5` — One Teacher, Five Grades: Single-Teacher & Primary School Concentration
