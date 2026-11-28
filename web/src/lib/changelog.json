@@ -3,9 +3,109 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 76,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/76",
+      "mergedAt": "2026-11-28T10:40:56Z",
+      "title": "Live R1 AI document-reading loop + 11 pinned P3 Union Budget tasks",
+      "items": [
+        "Multi-page ₹0 Reading Verifier + Fault-Tolerant PDF Loader (engines/reading_verifier.py, connectors/loader.py):",
+        "Supports multi-page statements (page_texts + per-row page / max_page), Plan + Non-Plan == Total (2015–17 Union Budgets) alongside Revenue + Capital == Total (2017–26) across all 4 budget periods, and an anti-hallucination official expected_grand_total anchor so fabricated tables cannot farm points.",
+        "Adds strict=False xref fallback in _parse_pdf_bytes.",
+        "Hub R1 Capability Gate, Verification & Publishing (projects.py, hub/app.py, hub/desk.py):",
+        "Registers generic methodology_code=\"R1\" (usable across P3, P1, and future projects without further platform code changes).",
+        "Capability-gated behind document_reading=True + \"R1\" in supported_methodologies so existing CLI 0.8 / rule-engine workers never receive R1 tasks (zero regressions).",
+        "Server-side outcome=\"reading_extraction\" runs verify_budget_extraction() deterministically for ₹0 in <1ms, awards +25 points (document_reading_verified), publishes verified extractions at GET /api/missions/{slug}/readings/{task_id}, and surfaces live reading status on GET /api/reading/backlog.",
+        "Autonomous LLM Runner + Coding-Agent Interactive CLI (cli/reading_runner.py, cli/runner.py, cli/providers.py, cli/main.py, hub/templates.py):"
+      ]
+    },
+    {
+      "pr": 74,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/74",
+      "mergedAt": "2026-11-28T09:23:42Z",
+      "title": "Harden compute stack (capability gate, reading verifier, reproduce CLI, intake lane)",
+      "items": [
+        "Server-side capability gate (hub/app.py, hub/desk.py): workers advertise supported_methodologies on register/claim; Hub filters queue claims and returns 409 Conflict on explicit incompatible task_id claims.",
+        "CLI release instead of dispute (cli/runner.py): unknown methodologies in peer_verify and anomaly_scan immediately raise UnsupportedMethodology and release with reason='unsupported_methodology' before downloading or voting (incorporates PR #59's core fix).",
+        "Retry-budget preservation (hub/desk.py): release_task with reason='unsupported_methodology' returns the task straight to queued without incrementing retry_count.",
+        "Negative-verdict evidence gate + quorum filter (hub/desk.py, hub/quorum.py): rejects 422 on dispute/reject_false_positive votes containing Unknown methodology_code or zero performed checks/reproduction evidence; filters any historical unknown-engine votes out of evaluate_pairwise_quorum.",
+        "CLI version bump: bumps CLI_USER_AGENT and MIN_OFFICIAL_CLI_VERSION to 0.8 so pre-fix 0.6/0.7 builds receive 426 Upgrade Required.",
+        "Reconciliation tool (scripts/reconcile_unsupported_votes.py): idempotent --dry-run / --apply repair script (SQLite & PostgreSQL) to void historical unsupported-engine votes, deduct unearned 15-pt awards, recompute finding status, and re-queue needed peer-verify slots.",
+        "aiwatchdogs reproduce (cli/main.py) + .github/workflows/deterministic-verify.yml: computes one canonical SHA-256 release fingerprint across all pinned active manifests and engine rulesets.",
+        "engines/reading_verifier.py, aiwatchdogs verify-reading, GET /api/reading/backlog, and POST /api/reading/verify: deterministically verifies AI-extracted document tables for ₹0 (vertical Grand Total closure, horizontal revenue + capital == total anti-column-swap cross-checks, quoted column headers, verbatim page-quote checks, image-only scan routing to req..."
+      ]
+    },
+    {
+      "pr": 72,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/72",
+      "mergedAt": "2026-11-28T07:52:12Z",
+      "title": "Revert: roll back Chhattisgarh project PRs (#65, #66, #67, #68)",
+      "items": [
+        "projects/chhattisgarh-road-repair-spending.json (#65 / P11)",
+        "projects/chhattisgarh-gram-panchayat-spending.json (#66 / P12)",
+        "projects/chhattisgarh-anganwadi-icds-audit.json (#67 / P13)",
+        "projects/chhattisgarh-school-education-spending.json (#68 / P14)"
+      ]
+    },
+    {
+      "pr": 68,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/68",
+      "mergedAt": "2026-11-28T07:50:40Z",
+      "title": "Add Chhattisgarh school education spending audit project",
+      "items": [
+        "Slug: chhattisgarh-school-education-spending",
+        "Pillar: scheme",
+        "Jurisdiction: State of Chhattisgarh",
+        "Authority: School Education Department, Government of Chhattisgarh",
+        "Official Source: https://udiseplus.gov.in/",
+        "Status: needs_data (tasks: [])"
+      ]
+    },
+    {
+      "pr": 67,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/67",
+      "mergedAt": "2026-11-28T07:47:52Z",
+      "title": "Add Chhattisgarh Anganwadi (ICDS) audit project",
+      "items": [
+        "Slug: chhattisgarh-anganwadi-icds-audit",
+        "Pillar: scheme",
+        "Jurisdiction: State of Chhattisgarh",
+        "Authority: Department of Women and Child Development, Government of Chhattisgarh",
+        "Official Source: https://wcd.nic.in/",
+        "Status: needs_data (tasks: [])"
+      ]
+    },
+    {
+      "pr": 66,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/66",
+      "mergedAt": "2026-11-28T07:47:47Z",
+      "title": "Add Chhattisgarh Gram Panchayat spending audit project",
+      "items": [
+        "Slug: chhattisgarh-gram-panchayat-spending",
+        "Pillar: budget",
+        "Jurisdiction: State of Chhattisgarh (Gram Panchayats)",
+        "Authority: Panchayat and Rural Development Department, Government of Chhattisgarh / Ministry of Panchayati Raj",
+        "Official Source: https://egramswaraj.gov.in/",
+        "Status: needs_data (tasks: [])"
+      ]
+    },
+    {
+      "pr": 65,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/65",
+      "mergedAt": "2026-11-28T07:47:42Z",
+      "title": "Add Chhattisgarh road repair spending audit project",
+      "items": [
+        "Slug: chhattisgarh-road-repair-spending",
+        "Pillar: infra",
+        "Jurisdiction: State of Chhattisgarh",
+        "Authority: Public Works Department (PWD), Government of Chhattisgarh",
+        "Official Source: https://pwd.cg.nic.in/",
+        "Status: needs_data (tasks: [])"
+      ]
+    },
+    {
       "pr": 71,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/71",
-      "mergedAt": "2026-11-28T07:24:52Z",
+      "mergedAt": "2026-11-28T07:28:11Z",
       "title": "Dark mode is true black with neutral greys",
       "items": [
         "The dark background is pure black instead of a dark grey.",
@@ -17,7 +117,7 @@
     {
       "pr": 70,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/70",
-      "mergedAt": "2026-11-28T07:09:09Z",
+      "mergedAt": "2026-11-28T07:15:02Z",
       "title": "Dark mode, a footer theme picker and a live status line",
       "items": [
         "A sun/moon button in the header (and a row in the mobile menu) switches the whole site between light and dark.",
@@ -31,7 +131,7 @@
     {
       "pr": 63,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/63",
-      "mergedAt": "2026-11-28T05:33:52Z",
+      "mergedAt": "2026-11-28T05:37:23Z",
       "title": "White site: saffron, green and navy now appear only as small marks",
       "items": [
         "Every page band is white: the saffron band (live viewer, projects, map, numbers), the green record band and the navy footer are replaced by white paper separated by hairline rules.",
