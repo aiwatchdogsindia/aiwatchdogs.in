@@ -171,6 +171,7 @@ _ALLOWED_TASK_CONTEXT_KEYS: frozenset[str] = frozenset(
         "fiscal_year_start",
         "flag_re_equals_be",
         "hhi_threshold",
+        "innocent_but_locked_up",
         "jurisdiction",
         "lower_ratio",
         "mad_cutoff",
@@ -251,6 +252,15 @@ CRITICAL_SEMANTIC_METRIC_KEYS: frozenset[str] = frozenset(
         "authority_type",
         "exam_category",
         "students_took_exam_before_cancellation",
+        "overrun_mechanism",
+        "portal_category",
+        "court_tier",
+        "chain_status",
+        "stage_1_acquittal_verified",
+        "stage_2_continued_detention_verified",
+        "stage_3_contempt_verified",
+        "stage_4_release_verified",
+        "release_verified",
     }
 )
 
@@ -264,6 +274,8 @@ RECORD_IDENTIFIER_KEYS: tuple[str, ...] = (
     "case_key",
     "scheme_slug",
     "exam_slug",
+    "acquittal_case_number",
+    "contempt_case_number",
     "normalized_winner_key",
     "source_locator",
     "ocid",

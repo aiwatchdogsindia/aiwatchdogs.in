@@ -323,6 +323,11 @@ _METHODOLOGY_RECORDS: dict[str, list[str]] = {
         "Certified copies of official committee notes, administrative orders, or technical incident summaries recording the grounds for exam postponement, rescheduling, cancellation, or partial re-examination — including any safeguard action recorded under the Public Examinations (Prevention of Unfair Means) Act, 2024 or applicable State examination rules (with personal PII redacted under Section 8(1)(j)).",
         "Certified copies of aggregate candidate statistics (registered, appeared, and affected candidates), re-examination timelines, and fee-refund or facilitation circulars proactively disclosed under Section 4(1)(b) of the RTI Act, 2005.",
     ],
+    "P10": [
+        "Certified copies of the relevant prison admission/release register abstract, receipt log of the court acquittal or release warrant (parwana / FASTER electronic transmission), and actual date/time of physical release under the applicable Prison Manual.",
+        "Certified copies of all official correspondence, verification notings, or administrative memos recording the reasons for any delay between receipt of the court release/acquittal order and release from custody.",
+        "Certified copies of compliance affidavits, departmental action-taken reports, compensation disbursement orders, or FASTER compliance circulars issued pursuant to court contempt/habeas corpus/NHRC/SHRC/UTRC directions under Section 4(1)(b) of the RTI Act, 2005.",
+    ],
 }
 
 _DEFAULT_RECORDS: list[str] = [
@@ -371,6 +376,9 @@ def _extract_reference_ids(finding: dict[str, Any]) -> str:
         "walkback_document_ref",
         "schedule_document_ref",
         "outcome_document_ref",
+        "acquittal_case_number",
+        "contempt_case_number",
+        "document_ref",
         "case_key",
         "scheme_slug",
         "exam_slug",

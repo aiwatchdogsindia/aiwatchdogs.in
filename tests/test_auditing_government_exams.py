@@ -1288,7 +1288,7 @@ def test_p9_hub_summary_corpus_fallback_live_submissions_and_routes(
 
         llms_resp = client.get("/llms.txt")
         assert llms_resp.status_code == 200
-        assert "P1, W1, UB1, OR1, P5, P6, P7, P8 and P9" in llms_resp.text
+        assert "P1, W1, UB1, OR1, P5, P6, P7, P8, P9 and P10" in llms_resp.text
         assert "/projects/auditing-government-exams.md" in llms_resp.text
 
     # Sanity check signal category alignment with rules dict

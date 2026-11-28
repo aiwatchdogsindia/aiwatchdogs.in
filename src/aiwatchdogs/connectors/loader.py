@@ -23,6 +23,7 @@ import os
 import re
 import socket
 import stat
+import tarfile
 import tempfile
 import threading
 import time
@@ -692,6 +693,13 @@ def _infer_format(source_ref: str, fmt: str | None, content_type: str = "", raw_
     parsed_path = parsed_url.path if parsed_url is not None else source_ref
     lower_path = parsed_path.lower()
     lower_query = (parsed_url.query or "").lower() if parsed_url is not None else ""
+    if (
+        lower_path.endswith((".tar", ".tar.gz", ".tgz"))
+        or ".tar.gz" in lower_query
+        or ".tgz" in lower_query
+        or (len(raw_bytes) > 262 and raw_bytes[257:262] == b"ustar")
+    ):
+        return "tar"
     if lower_path.endswith(".gz") or ".gz" in lower_query or raw_bytes[:2] == b"\x1f\x8b":
         return "gzip"
     if lower_path.endswith(".xlsx"):
@@ -1993,14 +2001,192 @@ def _parse_worldbank_procnotices(notices: list[Any], source_ref: str) -> list[di
     return records
 
 
-def _parse_zip_bytes(
+def _select_archive_member(members: list[str], archive_member: str | None) -> str | None:
+    """Safely resolve an optional requested member inside a ZIP/TAR archive (rejects traversal)."""
+    if not archive_member:
+        return None
+    norm_req = archive_member.strip().replace("\\", "/").lstrip("./")
+    if not norm_req or norm_req.startswith("/") or ".." in Path(norm_req).parts:
+        raise ValueError(f"Refused unsafe archive member selector: {archive_member!r}")
+    for m in members:
+        norm_m = m.replace("\\", "/").lstrip("./")
+        if norm_m == norm_req:
+            return m
+    suffix_matches = [m for m in members if m.replace("\\", "/").endswith("/" + norm_req)]
+    if len(suffix_matches) == 1:
+        return suffix_matches[0]
+    return ""
+
+
+def _parse_archive_member_bytes(
+    inner: bytes,
+    member_name: str,
+    source_ref: str,
+    *,
+    extract_html_text: bool = False,
+    max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
+    max_pdf_pages: int = DEFAULT_MAX_PDF_PAGES,
+    max_pdf_chars: int = DEFAULT_MAX_PDF_CHARS,
+) -> tuple[list[dict[str, Any]], str, Any, str]:
+    """Dispatch an extracted ZIP/TAR member's bytes to the appropriate bounded parser."""
+    lower_m = member_name.lower()
+    if lower_m.endswith(".pdf") or inner[:5] == b"%PDF-":
+        recs, preview, _ = _parse_pdf_bytes(
+            inner,
+            source_ref,
+            max_pdf_pages=max_pdf_pages,
+            max_pdf_chars=max_pdf_chars,
+        )
+        fmt = "pdf"
+        payload: Any = None
+    elif lower_m.endswith(".json"):
+        recs, preview, payload, fmt = _parse_json_bytes(inner, source_ref=source_ref, max_parse_rows=max_parse_rows)
+    elif lower_m.endswith((".jsonl", ".ndjson")):
+        recs, preview, fmt = _parse_jsonl_bytes(inner, source_ref=source_ref, max_parse_rows=max_parse_rows)
+        payload = None
+    elif lower_m.endswith(".csv"):
+        recs, preview = _parse_csv_bytes(inner, source_ref=source_ref, max_parse_rows=max_parse_rows)
+        fmt = "csv"
+        payload = None
+    elif lower_m.endswith((".html", ".htm")):
+        if extract_html_text:
+            visible_text = _extract_html_visible_text(inner, max_chars=max_pdf_chars)
+            recs = [
+                {
+                    "page": 1,
+                    "raw_text": visible_text,
+                    "source_ref": source_ref,
+                    "source_url": source_ref if _is_url(source_ref) else "",
+                    "source_format": "html",
+                    "jurisdiction": _infer_jurisdiction(source_ref),
+                }
+            ]
+            preview = visible_text[:65_536]
+            fmt = "html"
+            payload = None
+        else:
+            recs, preview, fmt = _parse_html_bytes(inner, source_ref=source_ref, max_parse_rows=max_parse_rows)
+            payload = None
+    else:
+        raw_txt = inner.decode("utf-8-sig", errors="replace")
+        recs = [{"raw_text": raw_txt, "page": 1, "source_ref": source_ref, "source_format": "txt"}]
+        preview = raw_txt[:65_536]
+        fmt = "txt"
+        payload = None
+
+    for r in recs:
+        if isinstance(r, dict):
+            r.setdefault("archive_member", member_name)
+    return recs, preview, payload, fmt
+
+
+def _parse_tar_bytes(
     raw_bytes: bytes,
     source_ref: str,
     *,
+    archive_member: str | None = None,
+    extract_html_text: bool = False,
     max_decompressed_bytes: int = DEFAULT_MAX_DECOMPRESSED_BYTES,
     max_compression_ratio: float = DEFAULT_MAX_COMPRESSION_RATIO,
     max_zip_members: int = DEFAULT_MAX_ZIP_MEMBERS,
     max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
+    max_pdf_pages: int = DEFAULT_MAX_PDF_PAGES,
+    max_pdf_chars: int = DEFAULT_MAX_PDF_CHARS,
+) -> tuple[list[dict[str, Any]], str, Any, str, str]:
+    """Pure-stdlib .tar / .tar.gz reader with decompression bomb, symlink, and traversal guards."""
+    tar_bytes = raw_bytes
+    if raw_bytes[:2] == b"\x1f\x8b":
+        tar_bytes = _decompress_gzip_bounded(
+            raw_bytes,
+            source_ref,
+            max_decompressed_bytes=max_decompressed_bytes,
+            max_compression_ratio=max_compression_ratio,
+        )
+
+    # Strictly disallow auto-detected bz2/xz/lzma streams (`mode="r:*"`) that would bypass
+    # `_decompress_gzip_bounded` and `max_compression_ratio` / `max_decompressed_bytes` guards.
+    try:
+        tf_ctx = tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:")
+    except tarfile.ReadError as exc:
+        raise ValueError(
+            f"Refused unsupported or compressed TAR stream for {source_ref} "
+            "(only uncompressed .tar and bounded .tar.gz are permitted)."
+        ) from exc
+
+    with tf_ctx as tf:
+        infos = tf.getmembers()
+        if len(infos) > max_zip_members:
+            raise ValueError(f"TAR archive has {len(infos)} members, exceeding cap of {max_zip_members}.")
+        regular_infos: dict[str, tarfile.TarInfo] = {}
+        ordered_names: list[str] = []
+        for info in infos:
+            norm_name = info.name.replace("\\", "/")
+            if norm_name.startswith("/") or ".." in Path(norm_name).parts:
+                raise ValueError(f"Refused unsafe TAR archive member path: {info.name!r}")
+            if not info.isfile() or info.issym() or info.islnk():
+                continue
+            if norm_name.startswith("__MACOSX/") or Path(norm_name).name.startswith("._"):
+                continue
+            regular_infos[info.name] = info
+            ordered_names.append(info.name)
+
+        chosen: str | None = None
+        if archive_member:
+            resolved = _select_archive_member(ordered_names, archive_member)
+            if not resolved:
+                return [], "", None, "tar", f"tar_member_missing={archive_member}"
+            chosen = resolved
+        else:
+            for exts in ((".pdf",), (".json",), (".jsonl", ".ndjson"), (".csv",), (".html", ".htm"), (".txt",)):
+                match = next((n for n in ordered_names if n.lower().endswith(exts)), None)
+                if match is not None:
+                    chosen = match
+                    break
+
+        if not chosen:
+            return [], "", None, "tar", "tar=empty"
+
+        tinfo = regular_infos[chosen]
+        if tinfo.size > max_decompressed_bytes:
+            raise ValueError(
+                f"TAR member '{chosen}' size {tinfo.size} exceeds remaining limit {max_decompressed_bytes}."
+            )
+        fh = tf.extractfile(tinfo)
+        if fh is None:
+            return [], "", None, "tar", f"tar_member={chosen}"
+        buf = bytearray()
+        while True:
+            chunk = fh.read(65536)
+            if not chunk:
+                break
+            buf.extend(chunk)
+            if len(buf) > max_decompressed_bytes:
+                raise ValueError(f"TAR member '{chosen}' exceeded maximum allowed decompressed size.")
+        inner = bytes(buf)
+        recs, preview, payload, fmt = _parse_archive_member_bytes(
+            inner,
+            chosen,
+            source_ref,
+            extract_html_text=extract_html_text,
+            max_parse_rows=max_parse_rows,
+            max_pdf_pages=max_pdf_pages,
+            max_pdf_chars=max_pdf_chars,
+        )
+        return recs, preview, payload, fmt, f"tar_member={chosen}"
+
+
+def _parse_zip_bytes(
+    raw_bytes: bytes,
+    source_ref: str,
+    *,
+    archive_member: str | None = None,
+    extract_html_text: bool = False,
+    max_decompressed_bytes: int = DEFAULT_MAX_DECOMPRESSED_BYTES,
+    max_compression_ratio: float = DEFAULT_MAX_COMPRESSION_RATIO,
+    max_zip_members: int = DEFAULT_MAX_ZIP_MEMBERS,
+    max_parse_rows: int = DEFAULT_MAX_PARSE_ROWS,
+    max_pdf_pages: int = DEFAULT_MAX_PDF_PAGES,
+    max_pdf_chars: int = DEFAULT_MAX_PDF_CHARS,
 ) -> tuple[list[dict[str, Any]], str, Any, str, str]:
     """Pure-stdlib .json.zip / .zip reader with decompression bomb and traversal guards."""
     with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
@@ -2014,7 +2200,7 @@ def _parse_zip_bytes(
             and not name.startswith("__MACOSX/")
             and not Path(name).name.startswith("._")
         ]
-        if "xl/workbook.xml" in members:
+        if not archive_member and "xl/workbook.xml" in members:
             recs, preview, fmt, locator = _parse_xlsx_bytes(
                 raw_bytes,
                 source_ref,
@@ -2024,6 +2210,27 @@ def _parse_zip_bytes(
                 max_parse_rows=max_parse_rows,
             )
             return recs, preview, None, fmt, locator
+
+        if archive_member:
+            chosen = _select_archive_member(members, archive_member)
+            if not chosen:
+                return [], "", None, "zip", f"zip_member_missing={archive_member}"
+            inner = _read_zip_member_bounded(
+                zf,
+                zf.getinfo(chosen),
+                remaining_bytes=max_decompressed_bytes,
+                max_ratio=max_compression_ratio,
+            )
+            recs, preview, payload, fmt = _parse_archive_member_bytes(
+                inner,
+                chosen,
+                source_ref,
+                extract_html_text=extract_html_text,
+                max_parse_rows=max_parse_rows,
+                max_pdf_pages=max_pdf_pages,
+                max_pdf_chars=max_pdf_chars,
+            )
+            return recs, preview, payload, fmt, f"zip_member={chosen}"
 
         json_members = [m for m in members if m.lower().endswith(".json")]
         if json_members:
@@ -2061,6 +2268,26 @@ def _parse_zip_bytes(
             )
             recs, preview = _parse_csv_bytes(inner, source_ref=source_ref, max_parse_rows=max_parse_rows)
             return recs, preview, None, "csv", f"zip_member={csv_members[0]}"
+
+        for exts in ((".pdf",), (".html", ".htm"), (".txt",)):
+            doc_members = [m for m in members if m.lower().endswith(exts)]
+            if doc_members:
+                inner = _read_zip_member_bounded(
+                    zf,
+                    zf.getinfo(doc_members[0]),
+                    remaining_bytes=max_decompressed_bytes,
+                    max_ratio=max_compression_ratio,
+                )
+                recs, preview, payload, fmt = _parse_archive_member_bytes(
+                    inner,
+                    doc_members[0],
+                    source_ref,
+                    extract_html_text=extract_html_text,
+                    max_parse_rows=max_parse_rows,
+                    max_pdf_pages=max_pdf_pages,
+                    max_pdf_chars=max_pdf_chars,
+                )
+                return recs, preview, payload, fmt, f"zip_member={doc_members[0]}"
 
     return [], "", None, "zip", "zip=empty"
 
@@ -2641,6 +2868,62 @@ def _resolve_provenance(
         inferred_publisher = "Comptroller and Auditor General of India (CAG)"
         inferred_landing = source_ref
         inferred_mirror = None
+    elif host == "indian-supreme-court-judgments.s3.amazonaws.com":
+        inferred_publisher = "Supreme Court of India (eSCR Official Judgments Archive)"
+        inferred_landing = "https://judgments.ecourts.gov.in/"
+        inferred_mirror = "AWS Open Data Registry (indian-supreme-court-judgments)"
+    elif host == "indian-high-court-judgments.s3.amazonaws.com":
+        inferred_publisher = "High Courts of India (eCourts Official Judgments Archive)"
+        inferred_landing = "https://judgments.ecourts.gov.in/"
+        inferred_mirror = "AWS Open Data Registry (indian-high-court-judgments)"
+    elif host == "sci.gov.in" or host.endswith(".sci.gov.in"):
+        inferred_publisher = "Supreme Court of India"
+        inferred_landing = "https://www.sci.gov.in/"
+        inferred_mirror = None
+    elif host == "rajyasabha.digital" or host.endswith(".rajyasabha.digital"):
+        inferred_publisher = "Rajya Sabha, Parliament of India (Digital Sansad)"
+        inferred_landing = "https://sansad.in/rs"
+        inferred_mirror = None
+    elif host == "nhrc.nic.in" or host.endswith(".nhrc.nic.in"):
+        inferred_publisher = "National Human Rights Commission of India (NHRC)"
+        inferred_landing = "https://nhrc.nic.in/"
+        inferred_mirror = None
+    elif host == "nalsa.gov.in" or host.endswith(".nalsa.gov.in"):
+        inferred_publisher = "National Legal Services Authority (NALSA)"
+        inferred_landing = "https://nalsa.gov.in/"
+        inferred_mirror = None
+    elif host == "cdnbbsr.s3waas.gov.in":
+        inferred_publisher = "National Informatics Centre (S3WaaS Official Government Document Repository)"
+        inferred_landing = source_ref
+        inferred_mirror = None
+    elif host == "mha.gov.in" or host.endswith(".mha.gov.in"):
+        inferred_publisher = "Ministry of Home Affairs, Government of India"
+        inferred_landing = "https://www.mha.gov.in/"
+        inferred_mirror = None
+    elif host == "doj.gov.in" or host.endswith(".doj.gov.in"):
+        inferred_publisher = "Department of Justice, Ministry of Law and Justice, Government of India"
+        inferred_landing = "https://doj.gov.in/"
+        inferred_mirror = None
+    elif host == "eprisons.nic.in" or host.endswith(".eprisons.nic.in"):
+        inferred_publisher = "ePrisons National Portal, NIC / Ministry of Home Affairs"
+        inferred_landing = "https://eprisons.nic.in/"
+        inferred_mirror = None
+    elif host == "dslsa.org" or host.endswith(".dslsa.org"):
+        inferred_publisher = "Delhi State Legal Services Authority (DSLSA)"
+        inferred_landing = "https://dslsa.org/"
+        inferred_mirror = None
+    elif host == "jhalsa.org" or host.endswith(".jhalsa.org"):
+        inferred_publisher = "Jharkhand State Legal Services Authority (JHALSA)"
+        inferred_landing = "https://jhalsa.org/"
+        inferred_mirror = None
+    elif host == "pshrc.net" or host.endswith(".pshrc.net"):
+        inferred_publisher = "Punjab State Human Rights Commission (PSHRC)"
+        inferred_landing = "https://pshrc.net/"
+        inferred_mirror = None
+    elif host == "allahabadhighcourt.in" or host.endswith(".allahabadhighcourt.in"):
+        inferred_publisher = "High Court of Judicature at Allahabad"
+        inferred_landing = "https://www.allahabadhighcourt.in/"
+        inferred_mirror = None
     elif host == "rbi.org.in" or host.endswith(".rbi.org.in"):
         inferred_publisher = "Reserve Bank of India"
         inferred_landing = source_ref
@@ -2945,9 +3228,32 @@ def load_dataset(
 
     resolved_fmt = _infer_format(source_ref, fmt, content_type, raw_bytes)
 
+    p10_spec = ctx.get("innocent_but_locked_up") if isinstance(ctx.get("innocent_but_locked_up"), dict) else None
+    p10_selector = p10_spec.get("record_selector") if isinstance(p10_spec, dict) and isinstance(p10_spec.get("record_selector"), dict) else {}
+    requested_archive_member = str(ctx.get("_archive_member") or p10_selector.get("archive_member") or "").strip() or None
+    wants_html_visible_text = bool(
+        isinstance(ctx.get("sovereign_lies"), dict)
+        or isinstance(ctx.get("auditing_government_exams"), dict)
+        or isinstance(p10_spec, dict)
+        or ctx.get("_extract_html_text")
+    )
+
     parsed_json: Any = None
     source_locator: str | None = None
-    if resolved_fmt == "gzip":
+    if resolved_fmt == "tar":
+        records, raw_text, parsed_json, resolved_fmt, source_locator = _parse_tar_bytes(
+            raw_bytes,
+            source_ref,
+            archive_member=requested_archive_member,
+            extract_html_text=wants_html_visible_text,
+            max_decompressed_bytes=max_decompressed_bytes,
+            max_compression_ratio=max_compression_ratio,
+            max_zip_members=max_zip_members,
+            max_parse_rows=max_parse_rows,
+            max_pdf_pages=max_pdf_pages,
+            max_pdf_chars=max_pdf_chars,
+        )
+    elif resolved_fmt == "gzip":
         decompressed = _decompress_gzip_bounded(
             raw_bytes,
             source_ref,
@@ -2959,7 +3265,20 @@ def load_dataset(
         if inner_fmt == "gzip":
             head_strip = decompressed[:2048].decode("utf-8-sig", errors="replace").lstrip()
             inner_fmt = "json" if (head_strip.startswith("{") or head_strip.startswith("[")) else "csv"
-        if inner_fmt == "csv":
+        if inner_fmt == "tar":
+            records, raw_text, parsed_json, resolved_fmt, source_locator = _parse_tar_bytes(
+                decompressed,
+                inner_ref,
+                archive_member=requested_archive_member,
+                extract_html_text=wants_html_visible_text,
+                max_decompressed_bytes=max_decompressed_bytes,
+                max_compression_ratio=max_compression_ratio,
+                max_zip_members=max_zip_members,
+                max_parse_rows=max_parse_rows,
+                max_pdf_pages=max_pdf_pages,
+                max_pdf_chars=max_pdf_chars,
+            )
+        elif inner_fmt == "csv":
             records, raw_text = _parse_csv_bytes(decompressed, inner_ref, max_parse_rows=max_parse_rows)
             resolved_fmt = "csv"
             source_locator = f"rows=1-{len(records)}" if records else "rows=0"
@@ -2994,10 +3313,14 @@ def load_dataset(
         records, raw_text, parsed_json, resolved_fmt, source_locator = _parse_zip_bytes(
             raw_bytes,
             source_ref,
+            archive_member=requested_archive_member,
+            extract_html_text=wants_html_visible_text,
             max_decompressed_bytes=max_decompressed_bytes,
             max_compression_ratio=max_compression_ratio,
             max_zip_members=max_zip_members,
             max_parse_rows=max_parse_rows,
+            max_pdf_pages=max_pdf_pages,
+            max_pdf_chars=max_pdf_chars,
         )
     elif resolved_fmt == "json":
         records, raw_text, parsed_json, resolved_fmt = _parse_json_bytes(
@@ -3008,11 +3331,7 @@ def load_dataset(
         records, raw_text, resolved_fmt = _parse_html_bytes(
             raw_bytes, source_ref, max_parse_rows=max_parse_rows
         )
-        if (
-            isinstance(ctx.get("sovereign_lies"), dict)
-            or isinstance(ctx.get("auditing_government_exams"), dict)
-            or ctx.get("_extract_html_text")
-        ):
+        if wants_html_visible_text:
             visible_text = _extract_html_visible_text(raw_bytes, max_chars=max_pdf_chars)
             html_body_record = {
                 "page": 1,
@@ -3074,8 +3393,15 @@ def load_dataset(
             "max_pdf_pages": max_pdf_pages,
             "max_pdf_chars": max_pdf_chars,
         }
-        if isinstance(ctx.get("sovereign_lies"), dict) or isinstance(ctx.get("auditing_government_exams"), dict):
+        if (
+            isinstance(ctx.get("sovereign_lies"), dict)
+            or isinstance(ctx.get("auditing_government_exams"), dict)
+            or isinstance(p10_spec, dict)
+        ):
             sec_ctx["_extract_html_text"] = True
+        sec_arc_member = str(p10_selector.get("secondary_archive_member") or "").strip()
+        if sec_arc_member:
+            sec_ctx["_archive_member"] = sec_arc_member
         sec_ds = load_dataset(
             secondary_ref,
             context=sec_ctx,
@@ -3103,9 +3429,13 @@ def load_dataset(
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {**rec, "document": "secondary", "secondary_sha256": sec_ds.sha256} for rec in sec_ds.records
             ]
-        elif isinstance(ctx.get("sovereign_lies"), dict) or isinstance(ctx.get("auditing_government_exams"), dict):
-            # P8/P9 pair primary and secondary official records across PDF, HTML, JSON, CSV, or TXT
-            # formats while keeping both sets clearly tagged.
+        elif (
+            isinstance(ctx.get("sovereign_lies"), dict)
+            or isinstance(ctx.get("auditing_government_exams"), dict)
+            or isinstance(p10_spec, dict)
+        ):
+            # P8 / P9 / P10 pair a primary official record with a secondary official record
+            # across PDF, HTML, JSON, JSONL, CSV, TXT, ZIP, or TAR formats while keeping both sets clearly tagged.
             records = [{**rec, "document": "primary"} for rec in records] + [
                 {
                     **rec,

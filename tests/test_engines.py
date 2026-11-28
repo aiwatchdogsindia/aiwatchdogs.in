@@ -353,7 +353,7 @@ def test_generate_rti_draft_statutory_requirements_and_500_word_cap() -> None:
 def test_methodology_catalog_contains_m1_through_m8_and_no_sample_dir() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     assert not (repo_root / "datasets" / "sample").exists()
-    assert sorted(METHODOLOGY_CATALOG.keys()) == sorted([f"M{i}" for i in range(1, 9)] + ["P1", "UB1", "OR1", "P5", "P6", "P7", "P8", "P9"])
+    assert sorted(METHODOLOGY_CATALOG.keys()) == sorted([f"M{i}" for i in range(1, 9)] + ["P1", "UB1", "OR1", "P5", "P6", "P7", "P8", "P9", "P10"])
     for code, meta in METHODOLOGY_CATALOG.items():
         assert "sample_dataset" not in meta
         assert meta["reference_dataset_url"].startswith("https://")
@@ -1053,5 +1053,14 @@ def test_p9_registered_in_methodology_catalog_and_fingerprint() -> None:
     assert METHODOLOGY_CATALOG["P9"]["pillar"] == "audit"
     h1 = get_engine_script_hash("P9", as_of_date="2026-11-28")
     h2 = get_engine_script_hash("P9", as_of_date="2026-11-28")
+    assert len(h1) == 64 and h1 == h2
+
+
+def test_p10_registered_in_methodology_catalog_and_fingerprint() -> None:
+    assert "P10" in METHODOLOGY_CATALOG
+    assert METHODOLOGY_CATALOG["P10"]["module"] == "aiwatchdogs.engines.innocent_but_locked_up"
+    assert METHODOLOGY_CATALOG["P10"]["pillar"] == "justice"
+    h1 = get_engine_script_hash("P10", as_of_date="2026-11-28")
+    h2 = get_engine_script_hash("P10", as_of_date="2026-11-28")
     assert len(h1) == 64 and h1 == h2
 

@@ -68,6 +68,8 @@ from aiwatchdogs.projects import (
     AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
     AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
     CANONICAL_PROJECT_CODES,
+    INNOCENT_BUT_LOCKED_UP_METHODOLOGY,
+    INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG,
     ONE_ROAD_TWO_BILLS_METHODOLOGY,
     ONE_ROAD_TWO_BILLS_PROJECT_SLUG,
     ONE_TEACHER_FIVE_GRADES_METHODOLOGY,
@@ -86,6 +88,7 @@ _FINANCIAL_QUANTITY_LABELS: dict[str, str] = {
     **FINANCIAL_QUANTITY_LABELS,
     "scheme_promises_and_revisions": "Scheme launch promises, amendments, & published outlays",
     "public_examination_conduct": "Public examination conduct, schedule disruptions, & candidate impact",
+    "custody_overrun_and_contempt": "Post-acquittal detention overrun days, court contempt orders & compensation",
 }
 
 HANDLE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,31}$")
@@ -170,6 +173,7 @@ OPEN_CHOICE_PROJECTS = frozenset(
         ONLY_ONE_BID_PROJECT_SLUG,
         SOVEREIGN_LIES_PROJECT_SLUG,
         AUDITING_GOVERNMENT_EXAMS_PROJECT_SLUG,
+        INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG,
     }
 )
 
@@ -3803,6 +3807,10 @@ class DeskService:
             summary["auditing_government_exams"] = self._auditing_government_exams_summary(conn, mission_row=mission_row)
             return summary
 
+        if methodology_code == INNOCENT_BUT_LOCKED_UP_METHODOLOGY:
+            summary["innocent_but_locked_up"] = self._innocent_but_locked_up_summary(conn, mission_row=mission_row)
+            return summary
+
         # Budget / procurement / audit projects (P1, M1-M8, etc.)
         verified_cnt = sum(1 for f in findings if f.get("status") == "verified")
         peer_review_cnt = sum(1 for f in findings if f.get("status") in ("peer_review", "raw_lead"))
@@ -4019,6 +4027,7 @@ class DeskService:
                         ONLY_ONE_BID_METHODOLOGY,
                         SOVEREIGN_LIES_METHODOLOGY,
                         AUDITING_GOVERNMENT_EXAMS_METHODOLOGY,
+                        INNOCENT_BUT_LOCKED_UP_METHODOLOGY,
                     )
                 )
                 else _TASK_LIST_COLUMNS
@@ -5242,6 +5251,10 @@ class DeskService:
                 return None
             if isinstance(val, (int, float)) and math.isfinite(float(val)):
                 return int(val)
+            if isinstance(val, str):
+                cleaned = val.strip()
+                if cleaned.isdigit() or (cleaned.startswith("-") and cleaned[1:].isdigit()):
+                    return int(cleaned)
             return None
 
         by_jurisdiction_level: dict[str, dict[str, Any]] = {
@@ -6872,6 +6885,861 @@ class DeskService:
             "anchor_cases": anchor_cases_out,
             "leads": leads_out,
             "dry_run_summary": dry_run_summary,
+            "documents_url": f"/api/missions/{slug}/documents.csv",
+            "coverage_url": f"/api/missions/{slug}/coverage.json",
+        }
+
+    def get_innocent_but_locked_up_summary(self) -> dict[str, Any]:
+        """Public summary endpoint payload for Project 10 (Innocent But Locked Up)."""
+        slug = self.resolve_slug(INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG)
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT * FROM missions WHERE slug = ? OR methodology_code = ? LIMIT 1",
+                (slug, INNOCENT_BUT_LOCKED_UP_METHODOLOGY),
+            ).fetchone()
+            if row is not None:
+                return self._innocent_but_locked_up_summary(conn, mission_row=row)
+        coverage = _project_coverage(slug)
+        if not coverage:
+            raise HTTPException(status_code=404, detail="Project 'innocent-but-locked-up' not found")
+        return self._innocent_but_locked_up_summary(None, mission_row=None)
+
+    def _innocent_but_locked_up_summary(self, conn: Any, *, mission_row: Any) -> dict[str, Any]:
+        """Fallback-safe multi-portal 4-stage custody-overrun & contempt summary for P10."""
+        from aiwatchdogs.engines.innocent_but_locked_up import (
+            ID_CODE_TO_PORTAL_CATEGORY,
+            MAX_YEAR,
+            MIN_YEAR,
+            OVERRUN_MECHANISM_RULES,
+            P10_DEFAULT_HOOK,
+            PORTAL_CATEGORY_LABELS,
+            SIGNAL_CATEGORIES,
+            VALID_CHAIN_STATUSES,
+            VALID_COURT_TIERS,
+            VALID_OVERRUN_MECHANISMS,
+            VALID_PORTAL_CATEGORIES,
+        )
+
+        mid = str(mission_row["id"]) if mission_row is not None else None
+        slug = str(mission_row["slug"]) if mission_row is not None else INNOCENT_BUT_LOCKED_UP_PROJECT_SLUG
+        coverage = _project_coverage(slug)
+
+        def _opt_int(val: Any) -> int | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return int(val)
+            if isinstance(val, str):
+                cleaned = val.strip()
+                if cleaned.isdigit() or (cleaned.startswith("-") and cleaned[1:].isdigit()):
+                    return int(cleaned)
+            return None
+
+        def _opt_float(val: Any) -> float | None:
+            if isinstance(val, bool) or val is None:
+                return None
+            if isinstance(val, (int, float)) and math.isfinite(float(val)):
+                return round(float(val), 2)
+            return None
+
+        portal_map: dict[str, dict[str, Any]] = {
+            pcat: {
+                "portal_category": pcat,
+                "label": label,
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "leads": 0,
+                "cleared": 0,
+            }
+            for pcat, label in PORTAL_CATEGORY_LABELS.items()
+        }
+        raw_portals = coverage.get("by_portal_category")
+        if isinstance(raw_portals, list):
+            for pitem in raw_portals:
+                if not isinstance(pitem, dict):
+                    continue
+                pcat = str(pitem.get("portal_category") or "").strip().lower()
+                if pcat in portal_map:
+                    portal_map[pcat]["tasks"] = int(pitem.get("tasks") or 0)
+        elif isinstance(raw_portals, dict):
+            for pcat, pval in raw_portals.items():
+                pk = str(pcat).strip().lower()
+                if pk in portal_map:
+                    if isinstance(pval, dict):
+                        portal_map[pk]["tasks"] = int(pval.get("tasks") or 0)
+                    elif isinstance(pval, (int, float)) and not isinstance(pval, bool):
+                        portal_map[pk]["tasks"] = int(pval)
+
+        year_map: dict[int, dict[str, Any]] = {
+            yr: {
+                "year": yr,
+                "tasks": 0,
+                "done": 0,
+                "claimed": 0,
+                "open": 0,
+                "pct": 0.0,
+                "leads": 0,
+                "cleared": 0,
+                "full_4_stage": 0,
+                "overrun_days": 0,
+            }
+            for yr in range(MIN_YEAR, MAX_YEAR + 1)
+        }
+        raw_years = coverage.get("by_year")
+        if isinstance(raw_years, list):
+            for yitem in raw_years:
+                if not isinstance(yitem, dict):
+                    continue
+                yr = _opt_int(yitem.get("year"))
+                if yr in year_map:
+                    year_map[yr]["tasks"] = int(yitem.get("tasks") or 0)
+                    year_map[yr]["full_4_stage"] = int(yitem.get("full_4_stage") or yitem.get("four_stage_cases") or 0)
+                    year_map[yr]["overrun_days"] = int(yitem.get("overrun_days") or 0)
+        elif isinstance(raw_years, dict):
+            for yk, yval in raw_years.items():
+                yr = _opt_int(yk)
+                if yr in year_map:
+                    if isinstance(yval, dict):
+                        year_map[yr]["tasks"] = int(yval.get("tasks") or 0)
+                        year_map[yr]["full_4_stage"] = int(yval.get("full_4_stage") or yval.get("four_stage_cases") or 0)
+                        year_map[yr]["overrun_days"] = int(yval.get("overrun_days") or 0)
+                    elif isinstance(yval, (int, float)) and not isinstance(yval, bool):
+                        year_map[yr]["tasks"] = int(yval)
+
+        by_court_tier: dict[str, dict[str, int]] = {
+            tier: {"tasks": 0, "done": 0, "leads": 0, "cleared": 0}
+            for tier in ("supreme_court", "high_court", "district_court", "statutory_body")
+        }
+        raw_tiers = coverage.get("by_court_tier") if isinstance(coverage.get("by_court_tier"), dict) else {}
+        for tier in by_court_tier:
+            val = raw_tiers.get(tier)
+            if isinstance(val, dict):
+                by_court_tier[tier]["tasks"] = int(val.get("tasks") or 0)
+            elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                by_court_tier[tier]["tasks"] = int(val)
+
+        by_mechanism: dict[str, dict[str, int]] = {
+            m: {"tasks": 0, "leads": 0}
+            for m in (*SIGNAL_CATEGORIES, "timely_release_or_compliant")
+        }
+        raw_mechs = coverage.get("by_mechanism") or coverage.get("by_signal_category")
+        if isinstance(raw_mechs, dict):
+            for m in VALID_OVERRUN_MECHANISMS:
+                val = raw_mechs.get(m)
+                if isinstance(val, dict):
+                    by_mechanism[m]["tasks"] = int(val.get("tasks") or 0)
+                elif isinstance(val, (int, float)) and not isinstance(val, bool):
+                    by_mechanism[m]["tasks"] = int(val)
+
+        by_signal: dict[str, int] = {sig: 0 for sig in SIGNAL_CATEGORIES}
+        rule_to_signal = {rule: mech for mech, rule in OVERRUN_MECHANISM_RULES.items()}
+
+        by_chain_status: dict[str, int] = {
+            "full_4_stage_chain": 0,
+            "partial_3_stage": 0,
+            "institutional_record": 0,
+            "compliant_control": 0,
+        }
+        raw_chain = coverage.get("by_chain_status") or coverage.get("by_stage_completeness")
+        if isinstance(raw_chain, dict):
+            for cs in by_chain_status:
+                val = raw_chain.get(cs)
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    by_chain_status[cs] = int(val)
+
+        states_map: dict[str, dict[str, Any]] = {}
+        raw_states = coverage.get("states") if isinstance(coverage.get("states"), list) else coverage.get("by_state_ut")
+        if isinstance(raw_states, list):
+            for sitem in raw_states:
+                if not isinstance(sitem, dict):
+                    continue
+                sname = str(sitem.get("state_ut") or sitem.get("jurisdiction") or "").strip()
+                if not sname:
+                    continue
+                jur = str(sitem.get("jurisdiction") or (sname if sname.startswith(("State:", "UT:", "Union")) else f"State:{sname}")).strip()
+                states_map[jur] = {
+                    "state_ut": str(sitem.get("state_ut")).strip() if isinstance(sitem.get("state_ut"), str) and sitem.get("state_ut").strip() else None,
+                    "jurisdiction": jur,
+                    "tasks": int(sitem.get("tasks") or 0),
+                    "done": 0,
+                    "leads": 0,
+                    "cleared": 0,
+                    "full_4_stage": int(sitem.get("full_4_stage") or 0),
+                    "total_overrun_days": int(sitem.get("total_overrun_days") or 0),
+                    "compensation_inr": round(_safe_finite_float(sitem.get("compensation_inr"), 0.0), 2),
+                }
+
+        courts_map: dict[str, dict[str, Any]] = {}
+        raw_courts = coverage.get("top_courts") if isinstance(coverage.get("top_courts"), list) else coverage.get("by_court")
+        if isinstance(raw_courts, list):
+            for citem in raw_courts:
+                if not isinstance(citem, dict):
+                    continue
+                cname = str(citem.get("court_name") or citem.get("court") or "").strip()
+                if not cname:
+                    continue
+                courts_map[cname] = {
+                    "court_name": cname,
+                    "court_tier": str(citem.get("court_tier") or "high_court"),
+                    "state_ut": str(citem.get("state_ut")).strip() if isinstance(citem.get("state_ut"), str) and citem.get("state_ut").strip() else None,
+                    "tasks": int(citem.get("tasks") or 0),
+                    "leads": 0,
+                    "full_4_stage": int(citem.get("full_4_stage") or 0),
+                }
+
+        prisons_map: dict[str, dict[str, Any]] = {}
+        raw_prisons = coverage.get("top_prisons") if isinstance(coverage.get("top_prisons"), list) else []
+        for pritem in raw_prisons:
+            if not isinstance(pritem, dict):
+                continue
+            pname = str(pritem.get("prison_name") or "").strip()
+            if not pname:
+                continue
+            prisons_map[pname] = {
+                "prison_name": pname,
+                "state_ut": str(pritem.get("state_ut")).strip() if isinstance(pritem.get("state_ut"), str) and pritem.get("state_ut").strip() else None,
+                "tasks": int(pritem.get("tasks") or 0),
+                "leads": 0,
+                "total_overrun_days": int(pritem.get("total_overrun_days") or 0),
+            }
+
+        anchor_raw = coverage.get("anchor_case")
+        anchor_case: dict[str, Any] | None = dict(anchor_raw) if isinstance(anchor_raw, dict) else None
+        if anchor_case is not None:
+            anchor_case.setdefault("finding_id", None)
+
+        db_total_tasks = 0
+        db_unique_docs: set[str] = set()
+        db_full_4_stage = 0
+        db_contempt_tasks = 0
+        db_verified_releases = 0
+        db_cleared_controls = 0
+        db_overrun_days_list: list[int] = []
+        db_total_comp_inr = 0.0
+        has_coverage = bool(coverage)
+
+        if conn is not None and mid is not None:
+            portal_db_counts: dict[str, dict[str, int]] = {
+                pcat: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "cleared": 0}
+                for pcat in VALID_PORTAL_CATEGORIES
+            }
+            year_db_counts: dict[int, dict[str, int]] = {
+                yr: {"tasks": 0, "done": 0, "claimed": 0, "open": 0, "cleared": 0}
+                for yr in range(MIN_YEAR, MAX_YEAR + 1)
+            }
+
+            for r in conn.execute(
+                "SELECT id, status, "
+                "CASE WHEN status = 'completed' AND NOT EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS is_cleared "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status != 'retired'",
+                (mid,),
+            ).fetchall():
+                raw_tid = str(r["id"] or "").removeprefix("prj-")
+                st = str(r["status"] or "")
+                is_cl = int(r["is_cleared"] or 0) == 1
+                db_total_tasks += 1
+                parts = raw_tid.split("-")
+                pcat = ID_CODE_TO_PORTAL_CATEGORY.get(parts[1], "court_portal") if len(parts) >= 3 and parts[0] == "p10" else "court_portal"
+                yr_parsed = _opt_int(parts[2]) if len(parts) >= 3 and parts[0] == "p10" else None
+
+                pb = portal_db_counts[pcat]
+                pb["tasks"] += 1
+                if st == "completed":
+                    pb["done"] += 1
+                    if is_cl:
+                        pb["cleared"] += 1
+                elif st == "claimed":
+                    pb["claimed"] += 1
+                elif st == "queued":
+                    pb["open"] += 1
+
+                if yr_parsed in year_db_counts:
+                    yb = year_db_counts[yr_parsed]
+                    yb["tasks"] += 1
+                    if st == "completed":
+                        yb["done"] += 1
+                        if is_cl:
+                            yb["cleared"] += 1
+                    elif st == "claimed":
+                        yb["claimed"] += 1
+                    elif st == "queued":
+                        yb["open"] += 1
+
+            for pcat, pentry in portal_map.items():
+                dbc = portal_db_counts[pcat]
+                if dbc["tasks"] > 0:
+                    pentry["tasks"] = dbc["tasks"]
+                    pentry["done"] = dbc["done"]
+                    pentry["claimed"] = dbc["claimed"]
+                    pentry["open"] = dbc["open"]
+                    pentry["cleared"] = dbc["cleared"]
+                else:
+                    pentry["open"] = max(0, pentry["tasks"] - pentry["done"] - pentry["claimed"])
+
+            for yr, yentry in year_map.items():
+                dbc = year_db_counts[yr]
+                if dbc["tasks"] > 0:
+                    yentry["tasks"] = dbc["tasks"]
+                    yentry["done"] = dbc["done"]
+                    yentry["claimed"] = dbc["claimed"]
+                    yentry["open"] = dbc["open"]
+                    yentry["cleared"] = dbc["cleared"]
+                else:
+                    yentry["open"] = max(0, yentry["tasks"] - yentry["done"] - yentry["claimed"])
+
+            if not has_coverage and db_total_tasks > 0:
+                for tr in conn.execute(
+                    "SELECT id, status, payload_json FROM tasks WHERE mission_id = ? "
+                    "AND task_type != 'peer_verify' AND status != 'retired' LIMIT 1500",
+                    (mid,),
+                ).fetchall():
+                    t_payload = loads_json(tr["payload_json"], {})
+                    t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                    t_spec = t_ctx.get("innocent_but_locked_up") if isinstance(t_ctx.get("innocent_but_locked_up"), dict) else {}
+                    if not t_spec:
+                        continue
+                    rurl = str(t_payload.get("retrieval_url") or "").strip()
+                    if rurl:
+                        db_unique_docs.add(rurl)
+                    surl = str(t_payload.get("secondary_url") or "").strip()
+                    if surl:
+                        db_unique_docs.add(surl)
+
+                    mech = str(t_spec.get("overrun_mechanism") or "").strip().lower()
+                    ctier = str(t_spec.get("court_tier") or "high_court").strip().lower()
+                    yr_val = _opt_int(t_spec.get("year"))
+                    jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                    sut = t_spec.get("state_ut")
+                    sut_clean = str(sut).strip() if isinstance(sut, str) and sut.strip() else None
+
+                    s1 = bool(t_spec.get("stage_1_acquittal_verified"))
+                    s2 = bool(t_spec.get("stage_2_continued_detention_verified"))
+                    s3 = bool(t_spec.get("stage_3_contempt_verified"))
+                    s4 = bool(t_spec.get("stage_4_release_verified"))
+                    scount = sum(1 for f in (s1, s2, s3, s4) if f)
+                    ov_days = _opt_int(t_spec.get("overrun_days"))
+                    comp = _safe_finite_float(t_spec.get("compensation_inr"), 0.0)
+
+                    if mech in by_mechanism:
+                        by_mechanism[mech]["tasks"] += 1
+                    if mech == "timely_release_or_compliant":
+                        db_cleared_controls += 1
+                        by_chain_status["compliant_control"] += 1
+                    elif scount == 4:
+                        by_chain_status["full_4_stage_chain"] += 1
+                        db_full_4_stage += 1
+                    elif scount == 3:
+                        by_chain_status["partial_3_stage"] += 1
+                    else:
+                        by_chain_status["institutional_record"] += 1
+
+                    if s3:
+                        db_contempt_tasks += 1
+                    if s4 or bool(t_spec.get("release_verified")):
+                        db_verified_releases += 1
+                    if ov_days is not None and ov_days > 0:
+                        db_overrun_days_list.append(ov_days)
+                    if comp > 0:
+                        db_total_comp_inr += comp
+
+                    if ctier in by_court_tier:
+                        by_court_tier[ctier]["tasks"] += 1
+
+                    if yr_val in year_map:
+                        if scount == 4 and mech != "timely_release_or_compliant":
+                            year_map[yr_val]["full_4_stage"] += 1
+                        if ov_days is not None and ov_days > 0:
+                            year_map[yr_val]["overrun_days"] += ov_days
+
+                    st_entry = states_map.setdefault(
+                        jur,
+                        {
+                            "state_ut": sut_clean,
+                            "jurisdiction": jur,
+                            "tasks": 0,
+                            "done": 0,
+                            "leads": 0,
+                            "cleared": 0,
+                            "full_4_stage": 0,
+                            "total_overrun_days": 0,
+                            "compensation_inr": 0.0,
+                        },
+                    )
+                    st_entry["tasks"] += 1
+                    if scount == 4 and mech != "timely_release_or_compliant":
+                        st_entry["full_4_stage"] += 1
+                    if ov_days is not None and ov_days > 0:
+                        st_entry["total_overrun_days"] += ov_days
+                    if comp > 0:
+                        st_entry["compensation_inr"] = round(st_entry["compensation_inr"] + comp, 2)
+
+                    cname = str(t_spec.get("contempt_court") or t_spec.get("acquittal_court") or "").strip()
+                    if cname:
+                        c_entry = courts_map.setdefault(
+                            cname,
+                            {
+                                "court_name": cname,
+                                "court_tier": ctier if ctier in VALID_COURT_TIERS else "high_court",
+                                "state_ut": sut_clean,
+                                "tasks": 0,
+                                "leads": 0,
+                                "full_4_stage": 0,
+                            },
+                        )
+                        c_entry["tasks"] += 1
+                        if scount == 4 and mech != "timely_release_or_compliant":
+                            c_entry["full_4_stage"] += 1
+
+                    pname = str(t_spec.get("prison_name") or "").strip()
+                    if pname:
+                        pr_entry = prisons_map.setdefault(
+                            pname,
+                            {
+                                "prison_name": pname,
+                                "state_ut": sut_clean,
+                                "tasks": 0,
+                                "leads": 0,
+                                "total_overrun_days": 0,
+                            },
+                        )
+                        pr_entry["tasks"] += 1
+                        if ov_days is not None and ov_days > 0:
+                            pr_entry["total_overrun_days"] += ov_days
+
+                    if anchor_case is None and bool(t_spec.get("is_anchor_case")):
+                        anchor_case = {
+                            "task_id": str(tr["id"]).removeprefix("prj-"),
+                            "finding_id": None,
+                            "case_title": str(t_spec.get("case_title") or ""),
+                            "portal_category": str(t_spec.get("portal_category") or "court_portal"),
+                            "court_tier": ctier,
+                            "state_ut": sut_clean,
+                            "jurisdiction": jur,
+                            "year": yr_val or MAX_YEAR,
+                            "overrun_mechanism": mech,
+                            "stages_verified_count": scount,
+                            "chain_status": (
+                                "compliant_control"
+                                if mech == "timely_release_or_compliant"
+                                else ("full_4_stage_chain" if scount == 4 else ("partial_3_stage" if scount == 3 else "institutional_record"))
+                            ),
+                            "acquittal_order_date": t_spec.get("acquittal_order_date"),
+                            "acquittal_court": str(t_spec.get("acquittal_court") or ""),
+                            "acquittal_case_number": str(t_spec.get("acquittal_case_number") or ""),
+                            "acquittal_quote": str(t_spec.get("acquittal_quote") or ""),
+                            "prison_name": pname,
+                            "custody_authority": str(t_spec.get("custody_authority") or ""),
+                            "non_release_reason": str(t_spec.get("non_release_reason") or ""),
+                            "overrun_days": ov_days,
+                            "overrun_window": str(t_spec.get("overrun_window") or ""),
+                            "contempt_case_number": t_spec.get("contempt_case_number"),
+                            "contempt_court": t_spec.get("contempt_court"),
+                            "contempt_filing_date": t_spec.get("contempt_filing_date"),
+                            "contempt_order_date": t_spec.get("contempt_order_date"),
+                            "contempt_quote": t_spec.get("contempt_quote"),
+                            "release_date": t_spec.get("release_date"),
+                            "release_verified": bool(t_spec.get("release_verified")),
+                            "compensation_inr": _opt_float(t_spec.get("compensation_inr")),
+                            "judicial_direction_summary": str(t_spec.get("judicial_direction_summary") or ""),
+                            "source_url": rurl,
+                            "secondary_url": surl or None,
+                            "portal_url": str(t_payload.get("source_landing_page") or ""),
+                        }
+
+            # Always overlay live completed-task progress (`done`, `cleared`) into by_court_tier & states_map
+            for tr in conn.execute(
+                "SELECT t.payload_json, "
+                "CASE WHEN EXISTS ("
+                "  SELECT 1 FROM findings f WHERE f.mission_id = t.mission_id AND f.task_id = t.id"
+                ") THEN 1 ELSE 0 END AS has_finding "
+                "FROM tasks t WHERE t.mission_id = ? AND t.task_type != 'peer_verify' AND t.status = 'completed' "
+                "LIMIT 1500",
+                (mid,),
+            ).fetchall():
+                t_payload = loads_json(tr["payload_json"], {})
+                t_ctx = t_payload.get("context") if isinstance(t_payload.get("context"), dict) else {}
+                t_spec = t_ctx.get("innocent_but_locked_up") if isinstance(t_ctx.get("innocent_but_locked_up"), dict) else {}
+                if not t_spec:
+                    continue
+                is_cleared_task = int(tr["has_finding"] or 0) == 0
+                ctier = str(t_spec.get("court_tier") or "high_court").strip().lower()
+                if ctier in by_court_tier:
+                    by_court_tier[ctier]["done"] += 1
+                    if is_cleared_task:
+                        by_court_tier[ctier]["cleared"] += 1
+                jur = str(t_spec.get("jurisdiction") or "Union of India").strip()
+                sut = t_spec.get("state_ut")
+                sut_clean = str(sut).strip() if isinstance(sut, str) and sut.strip() else None
+                st_entry = states_map.setdefault(
+                    jur,
+                    {
+                        "state_ut": sut_clean,
+                        "jurisdiction": jur,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "full_4_stage": 0,
+                        "total_overrun_days": 0,
+                        "compensation_inr": 0.0,
+                    },
+                )
+                st_entry["done"] += 1
+                if is_cleared_task:
+                    st_entry["cleared"] += 1
+        else:
+            for pentry in portal_map.values():
+                pentry["open"] = pentry["tasks"]
+            for yentry in year_map.values():
+                yentry["open"] = yentry["tasks"]
+
+        for pentry in portal_map.values():
+            pentry["pct"] = round(pentry["done"] / pentry["tasks"] * 100.0, 2) if pentry["tasks"] else 0.0
+        for yentry in year_map.values():
+            yentry["pct"] = round(yentry["done"] / yentry["tasks"] * 100.0, 2) if yentry["tasks"] else 0.0
+
+        leads = verified = peer_review = 0
+        flagged_comp_cr = 0.0
+        top_leads: list[dict[str, Any]] = []
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+        if conn is not None and mid is not None:
+            live = (
+                "mission_id = ? AND COALESCE(quarantined, 0) = 0 "
+                "AND status NOT IN ('quarantined', 'retracted', 'retracted_false_positive')"
+            )
+            for r in conn.execute(
+                f"SELECT id, title, entity_name, jurisdiction, severity, status, rule_triggered, "
+                f"monetary_exposure_inr, anomaly_metrics_json, source_url, task_id "
+                f"FROM findings WHERE {live} ORDER BY id ASC",
+                (mid,),
+            ).fetchall():
+                leads += 1
+                st = str(r["status"] or "")
+                if st == "verified":
+                    verified += 1
+                elif st in ("peer_review", "raw_lead"):
+                    peer_review += 1
+
+                comp_inr = _safe_finite_float(r["monetary_exposure_inr"], 0.0)
+                flagged_comp_cr += comp_inr / 1e7
+
+                metrics = loads_json(r["anomaly_metrics_json"], {})
+                metrics = metrics if isinstance(metrics, dict) else {}
+
+                rule = str(r["rule_triggered"] or "").strip()
+                sig = str(metrics.get("signal_category") or rule_to_signal.get(rule) or "").strip()
+                mech = str(metrics.get("overrun_mechanism") or sig).strip()
+                if sig in by_signal:
+                    by_signal[sig] += 1
+                if mech in by_mechanism:
+                    by_mechanism[mech]["leads"] += 1
+
+                pcat = str(metrics.get("portal_category") or "court_portal").strip().lower()
+                if pcat in portal_map:
+                    portal_map[pcat]["leads"] += 1
+
+                yr_val = _opt_int(metrics.get("year"))
+                if yr_val in year_map:
+                    year_map[yr_val]["leads"] += 1
+
+                ctier = str(metrics.get("court_tier") or "high_court").strip().lower()
+                if ctier in by_court_tier:
+                    by_court_tier[ctier]["leads"] += 1
+
+                jur = str(metrics.get("jurisdiction") or r["jurisdiction"] or "Union of India").strip()
+                sut_val = metrics.get("state_ut")
+                sut_clean = str(sut_val).strip() if isinstance(sut_val, str) and sut_val.strip() else None
+                st_entry = states_map.setdefault(
+                    jur,
+                    {
+                        "state_ut": sut_clean,
+                        "jurisdiction": jur,
+                        "tasks": 0,
+                        "done": 0,
+                        "leads": 0,
+                        "cleared": 0,
+                        "full_4_stage": 0,
+                        "total_overrun_days": 0,
+                        "compensation_inr": 0.0,
+                    },
+                )
+                st_entry["leads"] += 1
+
+                cname = str(metrics.get("contempt_court") or metrics.get("acquittal_court") or "").strip()
+                if cname:
+                    c_entry = courts_map.setdefault(
+                        cname,
+                        {
+                            "court_name": cname,
+                            "court_tier": ctier if ctier in VALID_COURT_TIERS else "high_court",
+                            "state_ut": sut_clean,
+                            "tasks": 0,
+                            "leads": 0,
+                            "full_4_stage": 0,
+                        },
+                    )
+                    c_entry["leads"] += 1
+
+                pname = str(metrics.get("prison_name") or "").strip()
+                if pname:
+                    pr_entry = prisons_map.setdefault(
+                        pname,
+                        {
+                            "prison_name": pname,
+                            "state_ut": sut_clean,
+                            "tasks": 0,
+                            "leads": 0,
+                            "total_overrun_days": 0,
+                        },
+                    )
+                    pr_entry["leads"] += 1
+
+                is_anchor = bool(metrics.get("is_anchor_case"))
+                scount = _opt_int(metrics.get("stages_verified_count")) or 0
+                cstatus = str(metrics.get("chain_status") or "institutional_record")
+                if cstatus not in VALID_CHAIN_STATUSES:
+                    cstatus = "institutional_record"
+                ov_days = _opt_int(metrics.get("overrun_days"))
+                comp_opt = _opt_float(metrics.get("compensation_inr"))
+
+                if is_anchor:
+                    if anchor_case is None:
+                        anchor_case = {
+                            "task_id": str(r["task_id"] or "").removeprefix("prj-") or None,
+                            "finding_id": str(r["id"]),
+                            "case_title": str(metrics.get("case_title") or r["title"] or ""),
+                            "portal_category": pcat,
+                            "court_tier": ctier,
+                            "state_ut": sut_clean,
+                            "jurisdiction": jur,
+                            "year": yr_val or MAX_YEAR,
+                            "overrun_mechanism": mech,
+                            "stages_verified_count": scount,
+                            "chain_status": cstatus,
+                            "acquittal_order_date": metrics.get("acquittal_order_date"),
+                            "acquittal_court": str(metrics.get("acquittal_court") or ""),
+                            "acquittal_case_number": str(metrics.get("acquittal_case_number") or ""),
+                            "acquittal_quote": str(metrics.get("acquittal_quote") or ""),
+                            "prison_name": pname,
+                            "custody_authority": str(metrics.get("custody_authority") or r["entity_name"] or ""),
+                            "non_release_reason": str(metrics.get("non_release_reason") or ""),
+                            "overrun_days": ov_days,
+                            "overrun_window": str(metrics.get("overrun_window") or ""),
+                            "contempt_case_number": metrics.get("contempt_case_number"),
+                            "contempt_court": metrics.get("contempt_court"),
+                            "contempt_filing_date": metrics.get("contempt_filing_date"),
+                            "contempt_order_date": metrics.get("contempt_order_date"),
+                            "contempt_quote": metrics.get("contempt_quote"),
+                            "release_date": metrics.get("release_date"),
+                            "release_verified": bool(metrics.get("release_verified")),
+                            "compensation_inr": comp_opt,
+                            "judicial_direction_summary": str(metrics.get("judicial_direction_summary") or ""),
+                            "source_url": str(r["source_url"] or ""),
+                            "secondary_url": None,
+                            "portal_url": str(r["source_url"] or ""),
+                        }
+                    elif not anchor_case.get("finding_id"):
+                        anchor_case["finding_id"] = str(r["id"])
+
+                top_leads.append(
+                    {
+                        "finding_id": str(r["id"]),
+                        "title": str(r["title"] or ""),
+                        "case_key": str(metrics.get("case_key") or ""),
+                        "case_title": str(metrics.get("case_title") or r["title"] or ""),
+                        "entity_name": str(r["entity_name"] or ""),
+                        "portal_category": pcat,
+                        "court_tier": ctier,
+                        "state_ut": sut_clean,
+                        "jurisdiction": jur,
+                        "year": yr_val or MAX_YEAR,
+                        "overrun_mechanism": mech,
+                        "signal_category": sig,
+                        "stages_verified_count": scount,
+                        "chain_status": cstatus,
+                        "acquittal_order_date": metrics.get("acquittal_order_date"),
+                        "acquittal_court": str(metrics.get("acquittal_court") or ""),
+                        "acquittal_case_number": str(metrics.get("acquittal_case_number") or ""),
+                        "acquittal_quote": str(metrics.get("acquittal_quote") or ""),
+                        "prison_name": pname,
+                        "custody_authority": str(metrics.get("custody_authority") or r["entity_name"] or ""),
+                        "non_release_reason": str(metrics.get("non_release_reason") or ""),
+                        "overrun_days": ov_days,
+                        "overrun_window": str(metrics.get("overrun_window") or ""),
+                        "contempt_case_number": metrics.get("contempt_case_number"),
+                        "contempt_court": metrics.get("contempt_court"),
+                        "contempt_filing_date": metrics.get("contempt_filing_date"),
+                        "contempt_order_date": metrics.get("contempt_order_date"),
+                        "contempt_quote": metrics.get("contempt_quote"),
+                        "release_date": metrics.get("release_date"),
+                        "release_verified": bool(metrics.get("release_verified")),
+                        "compensation_inr": comp_opt,
+                        "judicial_direction_summary": str(metrics.get("judicial_direction_summary") or ""),
+                        "is_anchor_case": is_anchor,
+                        "severity": str(r["severity"] or "medium"),
+                        "status": st,
+                        "_sort_anchor": 1 if is_anchor else 0,
+                        "_sort_sev": sev_rank.get(str(r["severity"] or "").lower(), 0),
+                        "_sort_stages": scount,
+                        "_sort_days": ov_days if ov_days is not None else -1,
+                        "_sort_comp": comp_inr,
+                    }
+                )
+
+            if anchor_case is not None and not anchor_case.get("finding_id") and anchor_case.get("task_id"):
+                raw_tid = str(anchor_case.get("task_id") or "").strip()
+                pref_tid = raw_tid if raw_tid.startswith("prj-") else f"prj-{raw_tid}"
+                arow = conn.execute(
+                    f"SELECT id FROM findings WHERE {live} AND task_id IN (?, ?) ORDER BY id ASC LIMIT 1",
+                    (mid, raw_tid, pref_tid),
+                ).fetchone()
+                if arow is not None:
+                    anchor_case["finding_id"] = str(arow["id"])
+
+        top_leads.sort(
+            key=lambda x: (
+                -int(x["_sort_anchor"]),
+                -int(x["_sort_sev"]),
+                -int(x["_sort_stages"]),
+                -int(x["_sort_days"]),
+                -float(x["_sort_comp"]),
+                str(x["finding_id"]),
+            )
+        )
+        cleaned_top_leads = [
+            {k: v for k, v in item.items() if not k.startswith("_sort_")}
+            for item in top_leads[:20]
+        ]
+
+        by_portal_list = sorted(
+            portal_map.values(),
+            key=lambda p: (-int(p["tasks"]), -int(p["leads"]), str(p["portal_category"])),
+        )
+        by_year_list = [year_map[yr] for yr in range(MIN_YEAR, MAX_YEAR + 1)]
+        states_list = sorted(
+            states_map.values(),
+            key=lambda s: (
+                0 if s["jurisdiction"] == "Union of India" else 1,
+                -int(s["tasks"]),
+                -int(s["leads"]),
+                str(s["jurisdiction"]).lower(),
+            ),
+        )
+        top_courts_list = sorted(
+            courts_map.values(),
+            key=lambda c: (-int(c["tasks"]), -int(c["leads"]), str(c["court_name"]).lower()),
+        )[:30]
+        top_prisons_list = sorted(
+            prisons_map.values(),
+            key=lambda p: (-int(p["tasks"]), -int(p["total_overrun_days"]), str(p["prison_name"]).lower()),
+        )[:30]
+
+        states_uts_count = sum(
+            1
+            for s in states_list
+            if s["jurisdiction"] != "Union of India" and (s["tasks"] > 0 or s["leads"] > 0)
+        )
+        total_tasks_resolved = int(
+            coverage.get("total_tasks")
+            or db_total_tasks
+            or (mission_row["total_tasks"] if mission_row is not None else 0)
+            or 0
+        )
+
+        computed_median: float | None = None
+        computed_max: int | None = None
+        if db_overrun_days_list:
+            sorted_days = sorted(db_overrun_days_list)
+            mid_idx = len(sorted_days) // 2
+            if len(sorted_days) % 2 == 1:
+                computed_median = float(sorted_days[mid_idx])
+            else:
+                computed_median = round((sorted_days[mid_idx - 1] + sorted_days[mid_idx]) / 2.0, 1)
+            computed_max = sorted_days[-1]
+
+        cov_median = coverage.get("median_overrun_days")
+        median_overrun = (
+            round(float(cov_median), 1)
+            if isinstance(cov_median, (int, float)) and not isinstance(cov_median, bool) and math.isfinite(float(cov_median))
+            else computed_median
+        )
+        max_overrun = _opt_int(coverage.get("max_overrun_days"))
+        if max_overrun is None:
+            max_overrun = computed_max
+
+        return {
+            "hook": str(coverage.get("hook") or P10_DEFAULT_HOOK),
+            "generated_on": str(coverage.get("generated_on") or ""),
+            "as_of_date": str(coverage.get("as_of_date") or ""),
+            "year_range": [MIN_YEAR, MAX_YEAR],
+            "total_tasks": total_tasks_resolved,
+            "unique_documents_covered": int(
+                coverage.get("unique_documents_covered")
+                or coverage.get("documents_count")
+                or len(db_unique_docs)
+            ),
+            "states_and_uts_covered": int(coverage.get("states_and_uts_covered") or states_uts_count),
+            "courts_covered": int(coverage.get("courts_covered") or len(courts_map)),
+            "prisons_named": int(coverage.get("prisons_named") or len(prisons_map)),
+            "full_4_stage_tasks": int(
+                coverage.get("full_4_stage_tasks")
+                or coverage.get("four_stage_cases_count")
+                or by_chain_status["full_4_stage_chain"]
+                or db_full_4_stage
+            ),
+            "contempt_tasks": int(
+                coverage.get("contempt_tasks")
+                or coverage.get("contempt_petitions_count")
+                or db_contempt_tasks
+            ),
+            "verified_release_tasks": int(
+                coverage.get("verified_release_tasks")
+                or coverage.get("verified_releases_count")
+                or db_verified_releases
+            ),
+            "cleared_control_tasks_embedded": int(
+                coverage.get("cleared_control_tasks_embedded")
+                or by_mechanism["timely_release_or_compliant"]["tasks"]
+                or db_cleared_controls
+            ),
+            "total_overrun_days_documented": int(
+                coverage.get("total_overrun_days_documented")
+                or coverage.get("total_verified_overrun_days")
+                or sum(db_overrun_days_list)
+            ),
+            "median_overrun_days": median_overrun,
+            "max_overrun_days": max_overrun,
+            "total_compensation_ordered_inr": round(
+                _safe_finite_float(
+                    coverage.get("total_compensation_ordered_inr")
+                    if coverage.get("total_compensation_ordered_inr") is not None
+                    else coverage.get("total_compensation_inr"),
+                    db_total_comp_inr,
+                ),
+                2,
+            ),
+            "leads": leads,
+            "verified": verified,
+            "peer_review": peer_review,
+            "cleared_tasks": int(mission_row["cleared_count"] or 0) if mission_row is not None else 0,
+            "flagged_compensation_inr_cr": round(flagged_comp_cr, 4),
+            "by_portal_category": by_portal_list,
+            "by_year": by_year_list,
+            "by_court_tier": by_court_tier,
+            "by_mechanism": by_mechanism,
+            "by_signal": by_signal,
+            "by_chain_status": by_chain_status,
+            "states": states_list,
+            "top_courts": top_courts_list,
+            "top_prisons": top_prisons_list,
+            "anchor_case": anchor_case,
+            "top_leads": cleaned_top_leads,
             "documents_url": f"/api/missions/{slug}/documents.csv",
             "coverage_url": f"/api/missions/{slug}/coverage.json",
         }
