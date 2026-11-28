@@ -315,45 +315,119 @@
   gap: 24px 32px;
 }
 
-/* Findings page: a single-column news list. One headline, one short brief, one meta line. */
+/* Findings page: a news list laid out like Pulse. A header row, a trending word line, then
+   headlines flowing down three columns with no rules between them. */
 .pulse-page {
-  max-width: 808px;
-  padding-top: 32px;
+  max-width: 1080px;
+  padding-top: 28px;
   padding-bottom: 48px;
 }
 
+.pulse-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 32px;
+}
+
 .pulse-title {
-  font-size: 30px;
-  line-height: 1.15;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  margin: 0 0 6px;
+  font-size: 34px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
 }
 
 .pulse-tagline {
-  margin: 0 0 20px;
+  margin: 0;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-4);
+}
+
+.pulse-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.pulse-search {
+  width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-6);
+  color: var(--ink-4);
+  background: var(--paper);
+}
+
+.pulse-search:focus-within {
+  border-color: var(--ink);
+}
+
+.pulse-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  padding: 7px 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.pulse-status-filter {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.pulse-trending {
+  margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  line-height: 1.25;
+}
+
+.pulse-trending-label {
   font-size: 15px;
-  line-height: 1.5;
-  color: var(--ink-3);
-  max-width: 62ch;
+  color: var(--saffron-ink);
+  margin-right: 8px;
+}
+
+.pulse-trend {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.pulse-trend:hover {
+  color: var(--saffron-ink);
 }
 
 .pulse-topics {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 16px;
-  padding: 10px 0;
+  margin-top: 20px;
+  padding-top: 12px;
   border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
 }
 
 .pulse-topic {
   background: none;
   border: 0;
-  padding: 4px 0;
+  padding: 3px 0;
   font: inherit;
-  font-size: 14px;
-  color: var(--ink-3);
+  font-size: 13.5px;
+  color: var(--ink-4);
   cursor: pointer;
   border-bottom: 2px solid transparent;
 }
@@ -369,59 +443,42 @@
 }
 
 .pulse-topic:focus-visible,
+.pulse-trend:focus-visible,
 .pulse-headline:focus-visible,
 .pulse-source:focus-visible {
   outline: 2px solid var(--navy-ink);
   outline-offset: 2px;
 }
 
-.pulse-tools {
-  display: flex;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.pulse-search {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--r-6);
-  color: var(--ink-3);
-  background: var(--paper);
-}
-
-.pulse-search:focus-within {
-  border-color: var(--ink);
-}
-
-.pulse-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  padding: 9px 0;
-  font: inherit;
-  font-size: 14px;
-  color: var(--ink);
-}
-
 .pulse-count {
-  margin: 14px 0 0;
-  font-size: 13px;
+  margin: 10px 0 0;
+  font-size: 12.5px;
   color: var(--ink-4);
   font-variant-numeric: tabular-nums;
 }
 
 .pulse-list {
   list-style: none;
-  margin: 4px 0 0;
+  margin: 22px 0 0;
   padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 48px;
   transition: opacity 120ms ease;
+}
+
+@media (max-width: 999px) {
+  .pulse-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+  }
+}
+
+@media (max-width: 639px) {
+  .pulse-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .pulse-list.is-loading {
@@ -429,15 +486,15 @@
 }
 
 .pulse-item {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--rule-soft);
+  padding: 0 0 30px;
 }
 
 .pulse-headline {
-  display: inline;
-  font-size: 18px;
-  line-height: 1.35;
-  font-weight: 600;
+  display: block;
+  font-size: 22px;
+  line-height: 1.22;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--ink);
   text-decoration: none;
   overflow-wrap: anywhere;
@@ -448,20 +505,16 @@
   text-underline-offset: 3px;
 }
 
-.pulse-headline:visited {
-  color: var(--ink-3);
-}
-
 .pulse-brief {
-  margin: 5px 0 0;
-  font-size: 15px;
+  margin: 12px 0 0;
+  font-size: 14.5px;
   line-height: 1.5;
   color: var(--ink-2);
   overflow-wrap: anywhere;
 }
 
 .pulse-meta {
-  margin-top: 7px;
+  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -575,8 +628,20 @@
   .pulse-page {
     padding-top: 20px;
   }
+  .pulse-header {
+    grid-template-columns: 1fr;
+  }
   .pulse-title {
-    font-size: 25px;
+    font-size: 28px;
+  }
+  .pulse-tools {
+    flex-direction: column;
+  }
+  .pulse-search {
+    width: auto;
+  }
+  .pulse-trending {
+    margin-top: 18px;
   }
   .pulse-topics {
     flex-wrap: nowrap;
@@ -588,11 +653,8 @@
     flex: none;
     min-height: 36px;
   }
-  .pulse-tools {
-    flex-direction: column;
-  }
   .pulse-headline {
-    font-size: 17px;
+    font-size: 20px;
   }
 }
 
