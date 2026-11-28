@@ -77,6 +77,14 @@ const LIVE_PROJECTS = [
     summary:
       'The government made a promise when it launched the scheme. Did it keep it? Audits 1,000 Union and State/UT scheme records — anchored by the Sovereign Gold Bond (SGB) walk-back — comparing launch terms against subsequent amendments, cuts, restrictions, or discontinuations.',
   },
+  {
+    code: 'P10',
+    slug: 'innocent-but-locked-up',
+    title: 'Innocent But Locked Up',
+    tag: WORK_TYPE_TAGS.custody_overrun,
+    summary:
+      'The court declared them acquitted and ordered release. Why did the prison keep them locked up until contempt was filed? Audits 1,000 official court, prison, police, NHRC/SHRC, NALSA/SLSA, parliamentary, and CAG records (2021–2026) across the 4-stage custody chain.',
+  },
 ];
 
 const EXPLORE_LINKS = [

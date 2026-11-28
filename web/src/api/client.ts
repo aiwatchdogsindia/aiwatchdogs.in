@@ -28,6 +28,7 @@ import type {
   RecordEvent,
   RtiDraft,
   VerificationCheckState,
+  VisualInnocentButLockedUp,
   VisualSovereignLies,
   WhisperItem,
   TaskUsage,
@@ -581,7 +582,9 @@ export function normalizeMission(raw: Record<string, unknown>): MissionItem {
                   ? 'P7'
                   : slug === 'sovereign-lies' || methodologyCode.toUpperCase() === 'P8'
                     ? 'P8'
-                    : methodologyCode;
+                    : slug === 'innocent-but-locked-up' || methodologyCode.toUpperCase() === 'P10'
+                      ? 'P10'
+                      : methodologyCode;
   return {
     id: raw.id as string | number | undefined,
     slug,
@@ -905,6 +908,20 @@ export const api = {
       raw.sovereign_lies && typeof raw.sovereign_lies === 'object' && !Array.isArray(raw.sovereign_lies)
         ? (raw.sovereign_lies as VisualSovereignLies)
         : (raw as unknown as VisualSovereignLies);
+    return inner;
+  },
+
+  async getInnocentButLockedUpSummary(signal?: AbortSignal): Promise<VisualInnocentButLockedUp> {
+    const raw = await fetchJson<Record<string, unknown>>(
+      '/api/projects/innocent-but-locked-up/summary',
+      { signal },
+    );
+    const inner =
+      raw.innocent_but_locked_up &&
+      typeof raw.innocent_but_locked_up === 'object' &&
+      !Array.isArray(raw.innocent_but_locked_up)
+        ? (raw.innocent_but_locked_up as VisualInnocentButLockedUp)
+        : (raw as unknown as VisualInnocentButLockedUp);
     return inner;
   },
 

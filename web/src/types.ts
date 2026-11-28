@@ -906,6 +906,223 @@ export interface VisualSovereignLies {
   coverage_url?: string;
 }
 
+export type InnocentButLockedUpPortalCategory =
+  | 'court_portal'
+  | 'prison_portal'
+  | 'police_portal'
+  | 'nhrc_shrc'
+  | 'nalsa_slsa'
+  | 'parliament'
+  | 'govt_ministry'
+  | 'cag_audit';
+
+export type InnocentButLockedUpCourtTier =
+  | 'supreme_court'
+  | 'high_court'
+  | 'district_court'
+  | 'statutory_body';
+
+export type InnocentButLockedUpMechanism =
+  | 'post_acquittal_contempt_overrun'
+  | 'bail_or_release_order_contempt'
+  | 'warrant_or_faster_transmission_delay'
+  | 'statutory_commission_detention_finding'
+  | 'institutional_compliance_gap'
+  | 'timely_release_or_compliant';
+
+export type InnocentButLockedUpChainStatus =
+  | 'full_4_stage_chain'
+  | 'partial_3_stage'
+  | 'institutional_record'
+  | 'compliant_control';
+
+export interface VisualInnocentButLockedUpPortal {
+  portal_category: InnocentButLockedUpPortalCategory | string;
+  label?: string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  leads?: number;
+  cleared?: number;
+}
+
+export interface VisualInnocentButLockedUpYear {
+  year: number | string;
+  tasks: number;
+  done?: number;
+  claimed?: number;
+  open?: number;
+  pct?: number;
+  leads?: number;
+  cleared?: number;
+  full_4_stage?: number;
+  overrun_days?: number;
+}
+
+export interface VisualInnocentButLockedUpCourtTierCounts {
+  tasks: number;
+  done?: number;
+  leads?: number;
+  cleared?: number;
+}
+
+export interface VisualInnocentButLockedUpMechanismCounts {
+  tasks: number;
+  leads: number;
+  done?: number;
+  cleared?: number;
+}
+
+export interface VisualInnocentButLockedUpState {
+  state_ut?: string | null;
+  jurisdiction?: string | null;
+  tasks: number;
+  done?: number;
+  leads: number;
+  cleared?: number;
+  full_4_stage?: number;
+  total_overrun_days?: number;
+  compensation_inr?: number;
+}
+
+export interface VisualInnocentButLockedUpCourt {
+  court_name: string;
+  court_tier: InnocentButLockedUpCourtTier | string;
+  state_ut?: string | null;
+  tasks: number;
+  leads: number;
+  full_4_stage?: number;
+}
+
+export interface VisualInnocentButLockedUpPrison {
+  prison_name: string;
+  state_ut?: string | null;
+  tasks: number;
+  leads: number;
+  total_overrun_days?: number;
+}
+
+export interface VisualInnocentButLockedUpAnchor {
+  task_id?: string;
+  finding_id?: string | null;
+  case_title: string;
+  portal_category: InnocentButLockedUpPortalCategory | string;
+  court_tier?: InnocentButLockedUpCourtTier | string;
+  state_ut?: string | null;
+  jurisdiction?: string | null;
+  year?: number | string | null;
+  document_ref?: string | null;
+  overrun_mechanism?: InnocentButLockedUpMechanism | string;
+  stages_verified_count?: number | null;
+  chain_status?: InnocentButLockedUpChainStatus | string;
+  acquittal_order_date?: string | null;
+  acquittal_court?: string | null;
+  acquittal_case_number?: string | null;
+  acquittal_order_type?: string | null;
+  acquittal_quote?: string | null;
+  prison_name?: string | null;
+  custody_authority?: string | null;
+  non_release_reason?: string | null;
+  overrun_days?: number | null;
+  overrun_window?: string | null;
+  contempt_case_number?: string | null;
+  contempt_court?: string | null;
+  contempt_filing_date?: string | null;
+  contempt_order_date?: string | null;
+  contempt_quote?: string | null;
+  release_date?: string | null;
+  release_verified?: boolean;
+  compensation_inr?: number | null;
+  judicial_direction_summary?: string | null;
+  source_url?: string | null;
+  secondary_url?: string | null;
+  portal_url?: string | null;
+  source_sha256?: string | null;
+  secondary_sha256?: string | null;
+}
+
+export interface VisualInnocentButLockedUpLead {
+  finding_id: string;
+  title: string;
+  case_key?: string;
+  case_title: string;
+  entity_name?: string;
+  portal_category: InnocentButLockedUpPortalCategory | string;
+  court_tier?: InnocentButLockedUpCourtTier | string;
+  state_ut?: string | null;
+  jurisdiction?: string | null;
+  year?: number | string | null;
+  document_ref?: string | null;
+  overrun_mechanism: InnocentButLockedUpMechanism | string;
+  signal_category: string;
+  stages_verified_count?: number | null;
+  chain_status?: InnocentButLockedUpChainStatus | string;
+  acquittal_order_date?: string | null;
+  acquittal_court?: string | null;
+  acquittal_case_number?: string | null;
+  acquittal_order_type?: string | null;
+  acquittal_quote?: string | null;
+  prison_name?: string | null;
+  custody_authority?: string | null;
+  non_release_reason?: string | null;
+  overrun_days?: number | null;
+  overrun_window?: string | null;
+  contempt_case_number?: string | null;
+  contempt_court?: string | null;
+  contempt_filing_date?: string | null;
+  contempt_order_date?: string | null;
+  contempt_quote?: string | null;
+  release_date?: string | null;
+  release_verified?: boolean;
+  compensation_inr?: number | null;
+  judicial_direction_summary?: string | null;
+  is_anchor_case?: boolean;
+  severity?: string;
+  status: string;
+}
+
+export interface VisualInnocentButLockedUp {
+  hook?: string;
+  generated_on?: string;
+  as_of_date?: string;
+  year_range?: [number, number] | number[] | string;
+  total_tasks: number;
+  unique_documents_covered?: number;
+  states_and_uts_covered?: number;
+  courts_covered?: number;
+  prisons_named?: number;
+  full_4_stage_tasks?: number;
+  contempt_tasks?: number;
+  verified_release_tasks?: number;
+  cleared_control_tasks_embedded?: number;
+  total_overrun_days_documented?: number;
+  median_overrun_days?: number | null;
+  max_overrun_days?: number | null;
+  total_compensation_ordered_inr?: number;
+  leads: number;
+  verified: number;
+  peer_review: number;
+  cleared_tasks: number;
+  flagged_compensation_inr_cr?: number;
+  by_portal_category?:
+    | VisualInnocentButLockedUpPortal[]
+    | Record<string, VisualInnocentButLockedUpPortal | number>;
+  by_year?: VisualInnocentButLockedUpYear[];
+  by_court_tier?: Record<string, VisualInnocentButLockedUpCourtTierCounts | number>;
+  by_mechanism?: Record<string, VisualInnocentButLockedUpMechanismCounts | number>;
+  by_signal?: Record<string, number>;
+  by_chain_status?: Record<string, number>;
+  states?: VisualInnocentButLockedUpState[];
+  top_courts?: VisualInnocentButLockedUpCourt[];
+  top_prisons?: VisualInnocentButLockedUpPrison[];
+  anchor_case?: VisualInnocentButLockedUpAnchor | null;
+  top_leads?: VisualInnocentButLockedUpLead[];
+  documents_url?: string;
+  coverage_url?: string;
+}
+
 export interface ProjectVisualSummary {
   methodology_code: string;
   status_counts: VisualStatusCounts;
@@ -917,6 +1134,7 @@ export interface ProjectVisualSummary {
   parliaments_to_do_list?: VisualParliamentsToDoList;
   only_one_bid?: VisualOnlyOneBid;
   sovereign_lies?: VisualSovereignLies;
+  innocent_but_locked_up?: VisualInnocentButLockedUp;
 }
 
 export interface MissionItem {

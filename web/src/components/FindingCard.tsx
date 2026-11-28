@@ -3,11 +3,17 @@ import { CheckCircle2, CircleDashed, FileText, ShieldAlert, ShieldCheck } from '
 import { ACTION_TAGS, FINDING_TAGS, getFindingTag, getWorkTypeTag } from '../lib/tags';
 import type { FindingItem } from '../types';
 import {
+  extractInnocentButLockedUpMetrics,
   extractOnlyOneBidMetrics,
   extractSovereignLiesMetrics,
+  formatChainStatus,
+  formatCourtTier,
+  formatCustodyOverrunMechanism,
   formatInr,
   formatJurisdictionLabel,
   formatOnlyOneBidBidsSummary,
+  formatOverrunDays,
+  formatPortalCategory,
   formatProcurementAmountType,
   formatProcurementSignal,
   formatRelativeTime,
@@ -76,6 +82,23 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
     ? formatJurisdictionLabel(p8Record.jurisdiction, p8Record.stateOrUt, p8Record.jurisdictionLevel)
     : null;
 
+  const p10Record =
+    finding.methodology_code === 'P10' && !isQuarantined
+      ? extractInnocentButLockedUpMetrics(finding.anomaly_metrics)
+      : null;
+  const p10Mechanism =
+    p10Record && (p10Record.overrunMechanism || p10Record.signalCategory)
+      ? formatCustodyOverrunMechanism(p10Record.overrunMechanism || p10Record.signalCategory)
+      : null;
+  const p10Portal = p10Record?.portalCategory
+    ? formatPortalCategory(p10Record.portalCategory)
+    : null;
+  const p10Tier = p10Record?.courtTier ? formatCourtTier(p10Record.courtTier) : null;
+  const p10Chain = p10Record
+    ? formatChainStatus(p10Record.chainStatus, p10Record.stagesVerifiedCount)
+    : null;
+  const p10OverrunText = p10Record ? formatOverrunDays(p10Record.overrunDays) : null;
+
   return (
     <article
       className={`finding-card status-${finding.status}`}
@@ -132,6 +155,21 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
           {p8Record?.isSgbAnchor && (
             <span className="p8-sgb-chip" title="Flagship Sovereign Gold Bond anchor case">
               SGB Anchor
+            </span>
+          )}
+          {p10Mechanism && (
+            <span className={p10Mechanism.chipClass} title={`Custody mechanism: ${p10Mechanism.label}`}>
+              {p10Mechanism.shortLabel}
+            </span>
+          )}
+          {p10Chain && (
+            <span className={p10Chain.chipClass} title={p10Chain.label}>
+              {p10Chain.shortLabel}
+            </span>
+          )}
+          {p10Record?.isAnchorCase && (
+            <span className="p10-anchor-chip" title="Flagship 4-stage post-acquittal custody anchor case">
+              Anchor Case
             </span>
           )}
           {hasCorrections && sm.id !== 'corrected' && (
@@ -307,6 +345,109 @@ export function FindingCard({ finding, onSelect, compact = false }: FindingCardP
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {p10Record && (
+        <div className="fc-p10-strip" aria-label="4-stage post-acquittal custody chain summary">
+          <div className="fc-p8-meta-row">
+            {p10Portal && <span className={p10Portal.chipClass}>{p10Portal.shortLabel}</span>}
+            {p10Tier && <span className={p10Tier.chipClass}>{p10Tier.shortLabel}</span>}
+            {(p10Record.stateUt || p10Record.jurisdiction) && (
+              <span className="tag-mono">
+                {p10Record.stateUt || formatJurisdictionLabel(p10Record.jurisdiction)}
+              </span>
+            )}
+            {p10Record.year != null && <span className="tag-mono tabular">{String(p10Record.year)}</span>}
+            {p10OverrunText && p10Record.overrunDays != null && p10Record.overrunDays > 0 && (
+              <span className="p10-overrun-pill tabular">+{p10OverrunText} overrun</span>
+            )}
+            {p10Record.compensationInr != null && p10Record.compensationInr > 0 && (
+              <span className="tag-mono tabular">{formatInr(p10Record.compensationInr)} comp.</span>
+            )}
+          </div>
+
+          <ol className="fc-p10-stages" aria-label="Four-stage custody timeline">
+            <li
+              className={`fc-p10-stage fc-p10-stage--s1${
+                p10Record.stage1AcquittalVerified || p10Record.acquittalOrderDate || p10Record.acquittalCourt
+                  ? ' is-verified'
+                  : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">1 · Acquitted</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [p10Record.acquittalOrderDate, p10Record.acquittalCourt || p10Record.acquittalCaseNumber]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || 'Release order'}
+              </span>
+            </li>
+            <li
+              className={`fc-p10-stage fc-p10-stage--s2${
+                p10Record.stage2ContinuedDetentionVerified || p10Record.prisonName || (p10Record.overrunDays ?? 0) > 0
+                  ? ' is-verified'
+                  : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">2 · Held in Prison</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [
+                    p10Record.prisonName || p10Record.custodyAuthority,
+                    p10OverrunText && (p10Record.overrunDays ?? 0) > 0 ? `+${p10OverrunText}` : p10Record.overrunWindow,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || 'Detention overrun'}
+              </span>
+            </li>
+            <li
+              className={`fc-p10-stage fc-p10-stage--s3${
+                p10Record.stage3ContemptVerified || p10Record.contemptCaseNumber || p10Record.contemptCourt
+                  ? ' is-verified'
+                  : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">3 · Contempt</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [
+                    p10Record.contemptCaseNumber || p10Record.contemptCourt,
+                    p10Record.contemptFilingDate || p10Record.contemptOrderDate,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || (p10Mechanism?.isCleared ? 'Not required' : 'Proceeding logged')}
+              </span>
+            </li>
+            <li
+              className={`fc-p10-stage fc-p10-stage--s4${
+                p10Record.stage4ReleaseVerified || p10Record.releaseVerified || p10Record.releaseDate
+                  ? ' is-verified'
+                  : ''
+              }`}
+            >
+              <span className="fc-p10-stage-kicker">4 · Released</span>
+              <span className="fc-p10-stage-val">
+                {clipCardText(
+                  [
+                    p10Record.releaseDate || (p10Record.releaseVerified ? 'Release verified' : null),
+                    p10Record.compensationInr != null && p10Record.compensationInr > 0
+                      ? formatInr(p10Record.compensationInr)
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                  compact ? 42 : 68,
+                ) || 'Compliance recorded'}
+              </span>
+            </li>
+          </ol>
         </div>
       )}
 

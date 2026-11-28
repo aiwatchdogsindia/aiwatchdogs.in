@@ -3420,6 +3420,711 @@
   max-width: 400px;
 }
 
+/* ---------- P10 Innocent But Locked Up: 4-Stage Custody Timeline, Multi-Portal Explorer & Dossier ---------- */
+
+.p10-mech,
+.p10-portal,
+.p10-tier,
+.p10-chain,
+.p10-anchor-chip,
+.p10-overrun-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: var(--r-999);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  border: 1px solid var(--rule);
+}
+
+.p10-mech--acquittal-contempt {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border-color: #E2B8B0;
+}
+
+.p10-mech--release-contempt {
+  color: #7D2618;
+  background: #FDF1EE;
+  border-color: #E5B9B0;
+}
+
+.p10-mech--transmission {
+  color: var(--in-work-ink);
+  background: #FFF4E6;
+  border-color: var(--in-work-ring);
+}
+
+.p10-mech--commission {
+  color: #5E3A00;
+  background: #FDF7E7;
+  border-color: #E5C887;
+}
+
+.p10-mech--compliance {
+  color: #0E3A63;
+  background: #EEF4FA;
+  border-color: #C2D4E6;
+}
+
+.p10-mech--compliant {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border-color: var(--ep-verified-bd);
+}
+
+.p10-mech--other {
+  color: var(--ink-3);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p10-portal--court {
+  color: #000080;
+  background: #EEF0FA;
+  border-color: #BFC4E6;
+}
+
+.p10-portal--prison {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border-color: #E2B8B0;
+}
+
+.p10-portal--police {
+  color: #5E3A00;
+  background: #FDF7E7;
+  border-color: #E5C887;
+}
+
+.p10-portal--nhrc {
+  color: #7D2618;
+  background: #FDF1EE;
+  border-color: #E5B9B0;
+}
+
+.p10-portal--nalsa {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border-color: var(--ep-verified-bd);
+}
+
+.p10-portal--parliament {
+  color: var(--in-work-ink);
+  background: #FFF4E6;
+  border-color: var(--in-work-ring);
+}
+
+.p10-portal--govt {
+  color: #0E3A63;
+  background: #EEF4FA;
+  border-color: #C2D4E6;
+}
+
+.p10-portal--cag,
+.p10-portal--other {
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p10-tier--sc {
+  color: #000080;
+  background: #EEF0FA;
+  border-color: #BFC4E6;
+  font-weight: 600;
+}
+
+.p10-tier--hc {
+  color: #0E3A63;
+  background: #EEF4FA;
+  border-color: #C2D4E6;
+}
+
+.p10-tier--dc {
+  color: #4A3519;
+  background: #F7F2E8;
+  border-color: #D8C7A8;
+}
+
+.p10-tier--stat,
+.p10-tier--other {
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p10-chain--full {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border-color: #E2B8B0;
+  font-weight: 600;
+}
+
+.p10-chain--partial {
+  color: var(--in-work-ink);
+  background: #FFF4E6;
+  border-color: var(--in-work-ring);
+}
+
+.p10-chain--institutional {
+  color: var(--ink-2);
+  background: var(--sunk);
+  border-color: var(--rule-strong);
+}
+
+.p10-chain--compliant {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border-color: var(--ep-verified-bd);
+}
+
+.p10-anchor-chip {
+  color: #000080;
+  background: #EEF0FA;
+  border-color: #A8B0DF;
+  font-weight: 600;
+}
+
+.p10-overrun-pill {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border-color: #E2B8B0;
+  font-weight: 600;
+}
+
+/* 4-Stage Visual Custody Timeline (Visualiser Anchor & FindingDrawer) */
+.p10-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.p10-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top-width: 3px;
+  min-width: 0;
+}
+
+.p10-stage--s1 {
+  border-top-color: #000080;
+}
+
+.p10-stage--s2 {
+  border-top-color: #A2321F;
+}
+
+.p10-stage--s3 {
+  border-top-color: #A84F00;
+}
+
+.p10-stage--s4 {
+  border-top-color: var(--green);
+}
+
+.p10-stage--unrecorded {
+  opacity: 0.78;
+  border-style: dashed;
+  border-top-style: solid;
+}
+
+.p10-stage-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.p10-stage-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  border-radius: var(--r-999);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #FFFFFF;
+  flex-shrink: 0;
+}
+
+.p10-stage--s1 .p10-stage-num {
+  background: #000080;
+}
+
+.p10-stage--s2 .p10-stage-num {
+  background: #A2321F;
+}
+
+.p10-stage--s3 .p10-stage-num {
+  background: #A84F00;
+}
+
+.p10-stage--s4 .p10-stage-num {
+  background: var(--green);
+}
+
+.p10-stage-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+}
+
+.p10-stage-badge {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 1px 7px;
+  border-radius: var(--r-4);
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--rule);
+  background: var(--sunk);
+  color: var(--ink-2);
+}
+
+.p10-stage-badge--s2 {
+  color: #8A1C0C;
+  background: #FBEAE7;
+  border-color: #E2B8B0;
+}
+
+.p10-stage-badge--s4 {
+  color: var(--ep-verified-fg);
+  background: var(--ep-verified-bg);
+  border-color: var(--ep-verified-bd);
+}
+
+.p10-stage-primary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.44;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+
+.p10-stage-sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.42;
+  color: var(--ink-3);
+  overflow-wrap: break-word;
+}
+
+.p10-stage-quote {
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  background: var(--sunk);
+  border-left: 2px solid var(--rule-strong);
+  border-radius: var(--r-4);
+  font-size: 12px;
+  line-height: 1.42;
+  font-style: italic;
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+
+/* Compact 4-stage node pills inside leads table */
+.p10-mini-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 3px;
+}
+
+.p10-mini-node {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-999);
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--rule-strong);
+  background: var(--sunk);
+  color: var(--ink-4);
+}
+
+.p10-mini-node--s1.is-done {
+  background: #000080;
+  border-color: #000080;
+  color: #FFFFFF;
+}
+
+.p10-mini-node--s2.is-done {
+  background: #A2321F;
+  border-color: #A2321F;
+  color: #FFFFFF;
+}
+
+.p10-mini-node--s3.is-done {
+  background: #A84F00;
+  border-color: #A84F00;
+  color: #FFFFFF;
+}
+
+.p10-mini-node--s4.is-done {
+  background: var(--green);
+  border-color: var(--green);
+  color: #FFFFFF;
+}
+
+.pv-p10-lead-chain {
+  min-width: 175px;
+}
+
+/* P10 Visualiser Layout */
+.pv-p10-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pv-p10-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pv-p10-kpi--tasks {
+  border-top: 2px solid #000080;
+}
+
+.pv-p10-kpi--chain {
+  border-top: 2px solid #A2321F;
+}
+
+.pv-p10-kpi--overrun {
+  border-top: 2px solid var(--accent);
+}
+
+.pv-p10-kpi--outcomes {
+  border-top: 2px solid var(--green);
+}
+
+.pv-p10-anchor {
+  border: 1px solid #C5CAE8;
+  border-left: 4px solid #000080;
+  border-radius: var(--r-8);
+  background: linear-gradient(180deg, #FAFBFD 0%, var(--sunk) 100%);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pv-p10-portal-bar {
+  display: flex;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r-999);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  overflow: hidden;
+}
+
+.pv-p10-seg {
+  display: block;
+  height: 100%;
+}
+
+.pv-p10-seg--court {
+  background: #000080;
+}
+
+.pv-p10-seg--prison {
+  background: #A2321F;
+}
+
+.pv-p10-seg--police {
+  background: #8A5A00;
+}
+
+.pv-p10-seg--nhrc {
+  background: #C2412D;
+}
+
+.pv-p10-seg--nalsa {
+  background: var(--green);
+}
+
+.pv-p10-seg--parliament {
+  background: var(--accent);
+}
+
+.pv-p10-seg--govt {
+  background: #1B4B7A;
+}
+
+.pv-p10-seg--cag {
+  background: var(--ink-3);
+}
+
+.pv-p10-portal-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pv-p10-portal-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 11px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.pv-p10-portal-btn:hover {
+  border-color: var(--ink-4);
+}
+
+.pv-p10-portal-btn[aria-pressed='true'],
+.pv-p10-portal-btn--active {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.pv-p10-portal-num {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.pv-p10-year-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.pv-p10-year-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pv-p10-year-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 10px;
+  border-radius: var(--r-6);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.pv-p10-year-btn:hover {
+  border-color: var(--ink-4);
+}
+
+.pv-p10-year-btn[aria-pressed='true'],
+.pv-p10-year-btn--active {
+  border-color: #000080;
+  box-shadow: inset 0 0 0 1px #000080;
+}
+
+.pv-p10-year-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.pv-p10-year-fill {
+  background: #000080;
+}
+
+.pv-p10-mech-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.pv-p10-mech-fill--acquittal-contempt {
+  background: #A2321F;
+}
+
+.pv-p10-mech-fill--release-contempt {
+  background: #C2412D;
+}
+
+.pv-p10-mech-fill--transmission {
+  background: var(--accent);
+}
+
+.pv-p10-mech-fill--commission {
+  background: #8A5A00;
+}
+
+.pv-p10-mech-fill--compliance {
+  background: #1B4B7A;
+}
+
+.pv-p10-mech-fill--compliant {
+  background: var(--green);
+}
+
+.pv-p10-prisons-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule-soft);
+}
+
+.pv-p10-prison-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--rule);
+  background: var(--sunk);
+}
+
+.pv-p10-prison-state {
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+/* P10 FindingCard 4-Stage Strip */
+.fc-p10-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-6);
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+}
+
+.fc-p10-stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.fc-p10-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 8px;
+  border-radius: var(--r-4);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-top-width: 2px;
+  min-width: 0;
+}
+
+.fc-p10-stage--s1 {
+  border-top-color: #000080;
+}
+
+.fc-p10-stage--s2 {
+  border-top-color: #A2321F;
+}
+
+.fc-p10-stage--s3 {
+  border-top-color: #A84F00;
+}
+
+.fc-p10-stage--s4 {
+  border-top-color: var(--green);
+}
+
+.fc-p10-stage:not(.is-verified) {
+  opacity: 0.72;
+}
+
+.fc-p10-stage-kicker {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-4);
+}
+
+.fc-p10-stage-val {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+
+/* P10 FindingDrawer 4-Stage Dossier Card */
+.drawer-p10-card {
+  border-left: 3px solid #000080;
+}
+
+.drawer-p10-card--compliant {
+  border-left-color: var(--green);
+}
+
+.drawer-p10-metrics-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.drawer-p10-metrics-bar--with-comp {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.drawer-p10-box--s1 {
+  border-top: 2px solid #000080;
+}
+
+.drawer-p10-box--s2 {
+  border-top: 2px solid #A2321F;
+}
+
+.drawer-p10-box--s4 {
+  border-top: 2px solid var(--green);
+}
+
+.drawer-p10-doc-col--order {
+  border-top: 2px solid #000080;
+}
+
+.drawer-p10-doc-col--contempt {
+  border-top: 2px solid #A2321F;
+}
+
+.p10-timeline--drawer {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 /* ============================================================================
    6. PROJECT CARDS, COLLAPSIBLE DISCLOSURES & COMPACT TASK PICKER
    ============================================================================ */
@@ -3771,8 +4476,16 @@
   .pv-matrix-overview,
   .pv-sections-grid,
   .pv-p7-kpi-grid,
-  .pv-p8-kpi-grid {
+  .pv-p8-kpi-grid,
+  .pv-p10-kpi-grid,
+  .pv-p10-portal-grid,
+  .p10-timeline,
+  .fc-p10-stages {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pv-p10-year-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -3792,11 +4505,15 @@
   .pv-p8-sgb-grid,
   .pv-p8-tier-cards,
   .pv-p8-mech-grid,
+  .pv-p10-mech-grid,
   .drawer-p7-grid,
   .drawer-p7-values-split,
   .drawer-p8-compare-grid,
   .drawer-p8-delta-bar,
   .drawer-p8-delta-bar--with-exposure,
+  .drawer-p10-metrics-bar,
+  .drawer-p10-metrics-bar--with-comp,
+  .p10-timeline--drawer,
   .fc-p7-facts-grid,
   .fc-p8-compare-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -4645,8 +5362,29 @@
     padding: 6px 10px;
   }
 
-  .pv-p8-sgb-anchor {
+  .pv-p8-sgb-anchor,
+  .pv-p10-anchor {
     padding: 14px 12px;
+  }
+
+  .p10-timeline,
+  .fc-p10-stages,
+  .pv-p10-portal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pv-p10-year-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pv-p10-portal-btn,
+  .pv-p10-year-btn {
+    min-height: 44px;
+    padding: 10px 12px;
+  }
+
+  .pv-p10-lead-chain {
+    min-width: 0;
   }
 
   .pv-p8-mech-btn {
