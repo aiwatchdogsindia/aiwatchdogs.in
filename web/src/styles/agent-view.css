@@ -137,13 +137,13 @@
 /* Header tooltip opens BELOW button (dark pill on white header) */
 .av-toggle-tip--header {
   top: calc(100% + 8px);
-  background: #1B1A17;
-  color: #FFFFFF;
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .av-toggle-tip--header::after {
   bottom: 100%;
-  border-bottom-color: #1B1A17;
+  border-bottom-color: var(--ink);
 }
 
 /* Footer tooltip opens ABOVE button (crisp white pill with explicit dark ink on navy footer) */
@@ -152,8 +152,8 @@
   left: auto;
   right: 0;
   transform: translateY(-4px);
-  background: #FFFFFF;
-  color: #1B1A17;
+  background: var(--paper);
+  color: var(--ink);
 }
 
 .av-toggle-tip--footer::after {
@@ -161,7 +161,7 @@
   left: auto;
   right: 11px;
   transform: none;
-  border-top-color: #FFFFFF;
+  border-top-color: var(--paper);
 }
 
 .av-toggle-wrap:hover .av-toggle-tip,
@@ -219,7 +219,7 @@
     padding: 10px 14px;
     font-size: 13px;
     border-radius: 6px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    box-shadow: 0 2px 8px var(--x-000000-a12-sh);
   }
 
   .av-raw-md {
@@ -244,8 +244,8 @@
   position: relative;
   min-height: 100vh;
   width: 100%;
-  background: #FFFFFF;
-  color: #000000;
+  background: var(--paper);
+  color: var(--x-000000);
 }
 
 .av-raw-md {
@@ -270,10 +270,10 @@
   right: 10px;
   z-index: 20;
   padding: 2px 7px;
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  border: 1px solid var(--x-000000-a16);
   border-radius: 3px;
-  background: rgba(255, 255, 255, 0.92);
-  color: #444444;
+  background: var(--x-ffffff-a92);
+  color: var(--x-444444);
   font-family: monospace;
   font-size: 11.5px;
   line-height: 1.35;
@@ -282,28 +282,9 @@
 
 .av-raw-exit:hover,
 .av-raw-exit:focus-visible {
-  color: #000000;
-  border-color: #000000;
+  color: var(--x-000000);
+  border-color: var(--x-000000);
   outline: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .av-raw-shell {
-    background: #121212;
-    color: #E5E5E5;
-  }
-
-  .av-raw-exit {
-    border-color: rgba(255, 255, 255, 0.22);
-    background: rgba(18, 18, 18, 0.9);
-    color: #BDBDBD;
-  }
-
-  .av-raw-exit:hover,
-  .av-raw-exit:focus-visible {
-    color: #FFFFFF;
-    border-color: #FFFFFF;
-  }
 }
 
 @media print {

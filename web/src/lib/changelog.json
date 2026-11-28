@@ -3,6 +3,19 @@
   "repository": "aiwatchdogsindia/aiwatchdogs.in",
   "entries": [
     {
+      "pr": 70,
+      "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/70",
+      "mergedAt": "2026-11-28T07:09:09Z",
+      "title": "Dark mode",
+      "items": [
+        "A sun/moon button in the header (and a row in the mobile menu) switches the whole site between light and dark.",
+        "Until you choose, the site follows your device's light or dark setting; your choice is then remembered in your browser.",
+        "Dark mode uses near-black paper and ivory ink. Saffron and the white of the flag are unchanged; India green and navy are lightened so they stay readable.",
+        "The observatory map, the live swarm viewer, the site mark and single-colour agent logos all switch with the theme.",
+        "Light mode looks exactly as before."
+      ]
+    },
+    {
       "pr": 63,
       "prUrl": "https://github.com/aiwatchdogsindia/aiwatchdogs.in/pull/63",
       "mergedAt": "2026-11-28T05:33:52Z",
